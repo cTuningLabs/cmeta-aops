@@ -67,7 +67,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          pip install "git+https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/ctuninglabs/cmeta.git@main"
+          pip install "git+https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/cTuningLabs/cmeta.git@main"
 
       - name: Install current data repo package
         run: |
