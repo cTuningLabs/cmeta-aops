@@ -1,2 +1,2 @@
-# cmeta-ops
-cMeta ops repository
+# cMeta ops repository
+
