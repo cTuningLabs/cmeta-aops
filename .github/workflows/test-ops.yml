@@ -65,13 +65,10 @@ jobs:
 
       - name: Install cMeta framework
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_USER: gfursin
+          GH_TOKEN: ${{ secrets.PRIVATE_GH_TOKEN_CMETA }}
         run: |
-          pip install "git+https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/cTuningLabs/cmeta.git@main"
-
-      - name: Install current data repo package
-        run: |
-          pip install -e .
+          pip install "git+https://${GH_USER}:${GH_TOKEN}@github.com/cTuningLabs/cmeta.git@main"
 
       - name: Test cMeta
         run: |
