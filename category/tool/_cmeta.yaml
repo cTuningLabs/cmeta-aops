@@ -1,0 +1,12 @@
+artifact: c393ba5c6fa14f66
+authors: Grigori Fursin
+base_category_default_api_versions:
+  '1': 1
+category: category,dd9ea50e7f76467f
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+creation_timestamp: '2026-01-09T13:11:49.062831+00:00'
+last_api_version: 1
+min_cmeta_version:
+  '1': 0.19.5
+no_index: true
+
