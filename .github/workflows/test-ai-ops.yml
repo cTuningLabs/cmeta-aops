@@ -1,10 +1,10 @@
 #
-# cMeta Ops
+# cMeta AI Ops
 #
-# Copyright (C) 2025 Grigori Fursin and cTuning Labs. All rights reserved.
+# Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 #
 
-name: Test cMeta Ops
+name: Test cMeta AI Ops
 
 on:
   push:
