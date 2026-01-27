@@ -351,6 +351,7 @@ class Category(InitCategory):
                 if 'tmp' not in cache_artifact['cmeta'].get('tags',[]) and not update and not clean:
 
                     if con and verbose:
+                        print ('')
                         print (f'INFO Reusing task result from {cache_path}')
 
                     if not path:

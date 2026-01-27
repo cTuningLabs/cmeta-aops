@@ -1,20 +1,21 @@
 #
-# cMeta AI Ops
+# cMeta AOps
 #
 # Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 #
 
-name: Test cMeta AI Ops
+name: Test cMeta core AOps
 
 on:
-  push:
-    paths:
-      - '**'
-      - '!**.md'
-  pull_request:
-    branches:
-      - main
-      - dev
+  workflow_dispatch:
+#  push:
+#    paths:
+#      - '**'
+#      - '!**.md'
+#  pull_request:
+#    branches:
+#      - main
+#      - dev
 
 defaults:
   run:
@@ -26,7 +27,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.10", "3.14"]
+        python-version: ["3.9", "3.14"]
 
     runs-on: ${{ matrix.os }}
 
@@ -76,5 +77,3 @@ jobs:
         run: |
           cx --reindex
           cx --version
-
-
