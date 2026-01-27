@@ -35,10 +35,11 @@ class Category(InitCategory):
         return {'return':0}
 
     ############################################################
-    def detect_(self, state, arg1, exe_path=None, path=None, paths=[]):
+    def detect_(self, state, arg1, file_path=None, path=None, paths=[]):
         """
         """
-        import platform
+        self.cm.j(state['category_cmeta'])
+        input('xyz')
 
         self.logger.debug("RUNNING tool detect_ v1")
 
@@ -61,17 +62,15 @@ class Category(InitCategory):
         cmeta = artifact['cmeta']
         desc = r['loaded_files']['desc.yaml']['data']
 
-        self.cm.j(desc)
-
         # cMeta platform detection: only windows, linux, macos
         r = self.cm.utils.sys.get_min_raw_host_info()
         if r['return']>0: return r
 
-        host_os = r['os'].lower()
+        host_os = r['os_lower']
 
         # Resolve exe_path
-        if exe_path is None:
-            exes = desc['exe']
+        if file_path is None:
+            exes = desc['file']
 
             exe = exes.get(host_os, exes['default'])
 
@@ -80,6 +79,9 @@ class Category(InitCategory):
                 exe = exe.replace('{{exe_ext_win}}', '.exe')
             else:
                 exe = exe.replace('{{exe_ext_win}}', '')
+
+            if type(paths) == str:
+                paths = paths.split(os.pathsep)
 
             search_paths = paths.copy()
 
@@ -92,16 +94,24 @@ class Category(InitCategory):
             if len(search_paths) == 0:
                 search_paths = [os.getcwd()]
 
+                env_paths = os.environ.get('PATH','').strip()
+                if env_paths != '':
+                    search_paths += env_paths.split(os.pathsep)
+
             for spath in search_paths:
                 candidate = os.path.join(spath, exe)
                 if os.path.isfile(candidate):
-                    exe_path = candidate
+                    file_path = candidate
                     break
 
-        if exe_path is None:
-            return {'return':1, 'error': f'failed to find {exe}'}    
+        if file_path is None:
+            return {'return':16, 'error': f'failed to find {exe}'}    
+
+        if file_path!='' and not os.path.isfile(file_path):
+            return {'return':16, 'error': f'failed to find {file_path}'}    
+
 
     
-        print (exe_path)
+        print (file_path)
 
         return {'return':0}

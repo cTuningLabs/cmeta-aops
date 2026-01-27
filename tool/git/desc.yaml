@@ -1,0 +1,6 @@
+file: 
+  default: git{{exe_ext_win}}
+cmd_match_group: 1
+cmd_match_version: git version ([\d.]+)
+cmd_get_version: '{{exe_path}} --version'
+

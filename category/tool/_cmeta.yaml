@@ -7,6 +7,9 @@ copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
 creation_timestamp: '2026-01-09T13:11:49.062831+00:00'
 last_api_version: 1
 min_cmeta_version:
-  '1': 0.19.5
+  '1': 0.19.6
 no_index: true
+uses:
+  '-':
+    xyz: abc
 
