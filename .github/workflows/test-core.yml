@@ -78,15 +78,9 @@ jobs:
           cx --reindex
           cx --version
 
-      - name: Add cTuning server API key
-        env:
-          CTUNING_SERVER_API_KEY: ${{ secrets.PRIVATE_CTUNING_SERVER_API_KEY }}
+      - name: Plug this repo
         run: |
-          cx config set ctuning_server --meta.api_key=${{ secrets.CTUNING_SERVER_API_KEY }}
-
-      - name: Get latest repo from cTuning.ai
-        run: |
-          cx repo get cmeta://ctuninglabs@cmeta-aops
+          cx repo plug .
 
       - name: List tasks
         run: |
