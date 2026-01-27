@@ -68,6 +68,7 @@ jobs:
         env:
           GH_USER: gfursin
           GH_TOKEN: ${{ secrets.PRIVATE_GH_TOKEN_CMETA }}
+          CTUNING_SERVER_API_KEY: ${{ secrets.PRIVATE_CTUNING_SERVER_API_KEY }}
         run: |
           git clone https://${GH_USER}:${GH_TOKEN}@github.com/cTuningLabs/cmeta.git
           cd cmeta
@@ -77,3 +78,16 @@ jobs:
         run: |
           cx --reindex
           cx --version
+
+      - name: Add cTuning server API key
+        run: |
+          cx config set ctuning_server --meta.api_key=${{ secrets.CTUNING_SERVER_API_KEY }}
+
+      - name: List tasks
+        run: |
+          cx task list
+
+      - name: Clone some repo
+        run: |
+          cxt git-clone https://github.com/ctuning/mlcommons-ck --cache
+
