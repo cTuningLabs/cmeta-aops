@@ -1,0 +1,30 @@
+﻿params_aliases:
+  arg2: uses.test-0005b.url
+  url: uses.test-0005b.url
+
+uses:
+- task: host
+- alias: test-0005a
+  task: test-0004
+- alias: test-0005b
+  task: test-0004
+
+# Linux & macOS
+- name: Dummy (Linux/macOS)
+  if: runner.os == 'Windows'
+  run: |
+    echo "=================="
+    echo "Running on Windows"
+    echo "=================="
+
+uses:
+- task: host
+
+  save: state.xyz 
+  save: (assume state.tasks) host.{{host.env.XYZ}}.abc
+
+
+what if cache
+what if save results to state ...
+meoize
+

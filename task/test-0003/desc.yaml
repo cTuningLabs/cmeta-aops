@@ -1,0 +1,16 @@
+﻿params_aliases:
+  arg2: uses.test-0003-clone-git.url
+  url: uses.test-0003-clone-git.url
+uses:
+- alias: test-0003-clone-git
+  task: clone-git,af9422df6ea241ec
+  url: https://github.com/mlcommons/ck
+  cache: True
+- alias: test-0003-clone-git2
+  task: clone-git,af9422df6ea241ec
+  url: https://github.com/ctuning/artifact-evaluation
+  cache: True
+- alias: test-0003-clone-git3
+  task: clone-git,af9422df6ea241ec
+  url: https://github.com/ctuning/mlcommons-ck
+  cache: True

@@ -1,6 +1,6 @@
 ﻿import os
 
-from task_c36be4b9314a45e0.api.v1 import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask
 
 class CTask(InitCTask):
     """
@@ -88,10 +88,12 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        self.logger.debug("RUNNING TASK RUN git-clone")
+        self.logger.debug("RUNNING TASK clone-git-repo run")
 
         con = state['control'].get('con', False)
         verbose = state['control'].get('verbose', False)
+
+        space = '  ' * state['tasks']['nested_call']
 
         _params = {}
 
@@ -129,7 +131,7 @@ class CTask(InitCTask):
 
                     if verbose:
                         print ('')
-                        print (f'RUN rm {path_to_git_repo}')
+                        print (f'{space}RUN rm {path_to_git_repo}')
 
                     r = self.cm.utils.files.safe_delete_directory(path_to_git_repo, fail_on_error=self.cm.fail_on_error, logger=self.logger)
                     if r['return']>0: return r
@@ -142,7 +144,7 @@ class CTask(InitCTask):
         if not os.path.isdir(path_to_git_repo):
             cmd = f'git clone {url} {directory}{xdepth}'
 
-            r = self.cm.utils.sys.run(cmd, env = env, timeout = timeout, con = con, verbose = verbose, text_cmd = 'RUN')
+            r = self.cm.utils.sys.run(cmd, env = env, timeout = timeout, con = con, verbose = verbose, text_cmd = 'RUN', space = space)
             if r['return']>0: return self.cm._error2(r, self.cm)
 
             ###################################################################
@@ -150,7 +152,6 @@ class CTask(InitCTask):
             if not os.path.isdir(path_to_git_repo):
                 err = f'Git repo directory was not created: {path_to_git_repo}'
                 return self.cm._error(err, 1, None, self.cm.fail_on_error)
-
 
         if os.path.isdir(path_to_git_repo):
 
@@ -215,7 +216,7 @@ class CTask(InitCTask):
 
             if len(cmds)>0:
                 for cmd in cmds:
-                    rx = self.cm.utils.sys.run(cmd, env = env, timeout = timeout, con = con, verbose = verbose, text_cmd = 'RUN')
+                    rx = self.cm.utils.sys.run(cmd, env = env, timeout = timeout, con = con, verbose = verbose, text_cmd = 'RUN', space = space)
                     if rx['return']>0: 
                         fail = True
                         break

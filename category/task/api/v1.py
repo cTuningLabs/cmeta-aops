@@ -8,20 +8,6 @@ import time
 import copy
 
 from cmeta.category import InitCategory
-from .ctask import InitCTask
-
-
-# TBD: change cmeta -> params to cmeta -> input -> params that can be reused 
-#   see how to deal with directory and update <- must be picked up from the input ...
-#
-
-# TBD: move task to the common ...
-# TBD:  how to deal with multiple 
-# TBD:  how to save externally and pick up externally in some directory?
-
-# TBD: expose git detect, etc - what if inside installation
-# TBD: pipelines 
-
 
 class Category(InitCategory):
     """
@@ -29,7 +15,10 @@ class Category(InitCategory):
 
     def __init__(self, *args, **kwargs):
 
-        self.CACHE_FILE_WITH_RESULTS = 'cmeta-task-result.json'
+        self.CACHE_FILE_WITH_RESULTS = 'cmeta-task-cached-result.json'
+        self.CACHE_FILE_WITH_STATE = 'cmeta-task-cached-state.json'
+        self.SAVE_FILE_WITH_RESULTS = 'cmeta-task-saved-result.json'
+        self.SAVE_FILE_WITH_STATE = 'cmeta-task-saved-state.json'
 
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
@@ -84,6 +73,8 @@ class Category(InitCategory):
             update: bool = False,          # Rerun task and update cache entry even if exists
             clean: bool = False,           # Clean cache entry or path 
 
+            uses: dict = None,
+
             **params: dict,                # Parameters passed to a given task module
     ):
 
@@ -109,21 +100,48 @@ class Category(InitCategory):
         api = state['control'].get('api', 1)
         inside_cli = 'cli' in state.get('origin',{})
 
+        state_tasks = state.setdefault('tasks', {})
+        nested_call = state_tasks.setdefault('nested_call', 0)
+        space = '  ' * nested_call
+
         cur_dir = os.getcwd()
         cache_path = None
         workdir = cur_dir
 
+        uses_categories = self.cmeta['uses_categories']
+
+        if uses is not None and type(uses) != dict:
+            err = f'type of "uses" is {type(uses)} in {__name__} but it must be "dict"'
+            return self.cm._error(err, 1, None, self.cm.fail_on_error)
+
         ###########################################################################################
-        # SELECT ARTIFACT
+        # EXTRA PACKAGE FOR MEMOIZATION
+
+        r = self.cm.packages.get_all(self.cmeta['uses_pip_packages'], con = con)
+        if r['return']>0: return self.cm._error2(r, self.cm)
+        mpkg = r['mpkg']
+
+        deepdiff = mpkg['deepdiff']
+
+        from deepdiff import DeepDiff
+
+        ###########################################################################################
+        # SELECT TASK ARTIFACT
 
         # Call base find function to find an artifact with a website
-        p = {'category':'utils,234ce5e3262e4d52',
+        p = {'category':uses_categories['utils'],
              'command':'select_artifact',
              'select_category':state['category'],
              'select_artifact':arg1,
              'select_tags':tags,
              'con':con,
-             'quiet':quiet}
+             'quiet':quiet,
+             'load_files':['desc'],
+             'space':space,
+             'load_api': True,
+             'load_api_ver': ver,
+             'load_api_class': 'CTask',
+        }
 
         r = self.cm.access(p)
         if r['return']>0: 
@@ -132,53 +150,21 @@ class Category(InitCategory):
             return self.cm._error(r['error'], ret, None, self.cm.fail_on_error)
 
         artifact = r['artifact']
+        cdesc = r['loaded_files']['desc'].get('data', {})
 
         artifact_path = artifact['path']
         cmeta = artifact['cmeta']
         cmeta_ref_parts = artifact['cmeta_ref_parts']
 
-        artifact_alias = cmeta_ref_parts.get('artifact_alias', '')
-        artifact_uid = cmeta_ref_parts['artifact_uid']
-        artifact_au = artifact_alias if artifact_alias is not None and artifact_alias != '' else artifact_uid
-        category_uid = cmeta_ref_parts['category_uid']
+        artifact_alias = r['artifact_alias']
+        artifact_uid = r['artifact_uid']
+        artifact_au = r['artifact_au']
 
-        # Check version
-        xver = '1'
-        if ver is not None and str(ver) != '0':
-            xver = ver
-        elif inside_cli or str(ver) == '0':
-            if cmeta.get('last_api_version') is not None:
-                xver = str(cmeta['last_api_version'])
+        category_uid = r['category_uid']
 
-        # Check min cMeta versions
-        min_cmeta_version = cmeta.get('min_cmeta_version_api')
-        if min_cmeta_version is None:
-            min_cmeta_version = cmeta.get('min_cmeta_version',{}).get(xver)
-
-        if min_cmeta_version is not None:
-            cm_version = self.cm.__version__
-            r = self.cm.utils.common.compare_versions(min_cmeta_version, cm_version)
-            if r['return']>0: return r
-            if r['comparison'] == '>':
-                err = f'the task "{artifact_au}" requires min cMeta version "{min_cmeta_version}" but "{cm_version}" is installed'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
-
-        task_api_path = os.path.join(artifact_path, f'api_v{xver}.py')
-
-        if ver is not None and not os.path.isfile(task_api_path):
-            err = f'task module not found: {task_api_path}'
-            return self.cm._error(err, 1, None, self.cm.fail_on_error)
-
-        result = {'return':0}
-
-        task_api_code = None
-        if os.path.isfile(task_api_path):
-            r = self.cm.utils.sys.load_module(task_api_path, self.cm.module_cache, fail_on_error = self.fail_on_error, 
-                                              init_class="CTask", cmeta=self.cm, suffix=category_uid, self_meta=cmeta)
-            if r['return'] >0: return r
-
-            task_api_code = r['cache']['initialized_class']
-
+        task_api_path = r['api_path']
+        task_api_code = r['api_code']
+        
         if task_api_code is not None and info:
             r = self.cm.utils.names.restore_cmeta_obj(cmeta_ref_parts, key='artifact', fail_on_error = self.fail_on_error)
             if r['return']>0: return r
@@ -192,30 +178,193 @@ class Category(InitCategory):
             if con:
                 print (help_text)
 
-            result['help'] = help_text
-
-            return result
-
-
+            return {'return':0, 'help': help_text}
 
         ###########################################################################################
         # UNIFY PARAMS - most commonly convert args to keys
 
         uparams = params.copy()
 
-        params_aliases = cmeta.get('params_aliases', {})
-        if len(params_aliases):
+        params_aliases = cdesc.get('params_aliases', {})
+        if params_aliases:
             for k in params_aliases:
-                kk = params_aliases[k]
+                key = params_aliases[k]
 
                 if k in uparams:
-                    uparams[kk] = uparams.pop(k)
+                    if k not in uparams:
+                        continue
+
+                    v = uparams.pop(k)
+
+                    if '.' in key:
+                        fix_keys = True
+
+                        key_parts = key.split('.')
+
+                        current_dict = {}
+                        current_dict_root = current_dict
+
+                        first_key = key_parts[0]
+                        
+                        # Navigate/create nested structure
+                        root_key = True
+                        for nested_key in key_parts[:-1]:
+                            if root_key and fix_keys:
+                                nested_key = nested_key.replace('-', '_')
+                            if nested_key not in current_dict:
+                                current_dict[nested_key] = {}
+                            current_dict = current_dict[nested_key]
+                            root_key = False
+                        
+                        # Set the final value
+                        if not isinstance(current_dict, dict):
+                            raise TypeError(f"{current_dict} must be a dict, not {type(current_dict).__name__}")
+
+                        current_dict[key_parts[-1]] = v
+
+                        if first_key == 'uses':
+                            if not uses: uses = {}
+                            uses = self.cm.utils.common.deep_merge(uses, current_dict_root['uses'], append_lists=True)
+
+                        elif first_key == 'state':
+                            state = self.cm.utils.common.deep_merge(state, current_dict_root['state'], append_lists=True)
+
+                        else:
+                            uparams = self.cm.utils.common.deep_merge(uparams, current_dict_root, append_lists=True)
+
+                    else:
+                        uparams[key] = v
 
         if update:
             uparams['update'] = True
         if clean:
             uparams['clean'] = True
+
+        ###########################################################################################
+        # UPDATE STATE AND PRINT TASK
+
+        if con and verbose:
+            if nested_call>0: print ('')
+            print (f'{space}' + '=' * (100-len(space)))
+            print (f'{space}TASK: {artifact_alias} ({artifact_path})')
+
+
+
+
+
+
+
+
+        # ??????????????????????????????????????????????????????????????????
+
+        state_uses = state_tasks.setdefault('uses', {})
+        print ('xyz=',uses)
+        if uses:
+            print ('  xyz1')
+            state_uses = self.cm.utils.common.deep_merge(state_uses, uses, append_lists=True)
+
+
+
+
+
+
+        calls = state_tasks.setdefault('calls', [])
+        call_params = state['params']
+        call_repro = {'params': call_params, 'nested_call': nested_call}
+
+        results = state_tasks.setdefault('results', {})
+        result = {'return':0}
+
+
+        ###########################################################################################
+        # PROCESS MEMOIZATION
+        for step in range(0, len(calls)):
+            call = calls[step]
+
+            params = call['params']
+             
+            if 'result' in call and not DeepDiff(params, call_params, ignore_order=True):
+                # equivalent (i.e. not different)
+                if con and verbose:
+                   print ('')
+                   print (f'{space}REUSE: load task result from the state (step {step})')
+
+                return copy.deepcopy(call['result'])
+
+
+        calls.append(call_repro)
+
+        ###########################################################################################
+        # CHECK DEPENDENCIES
+        task_uses = cdesc.get('uses', [])
+
+        if task_uses:
+
+           for task_input in task_uses:
  
+#               self.cm.j(task_input)
+#               input('xyz')
+
+               ii = copy.deepcopy(task_input)
+
+               task = ii.pop('task', '')
+
+               r = self.cm.utils.names.parse_cmeta_name(task)
+               if r['return']>0: return self.cm._error2(dep_result, self.cm)
+
+               task_alias = r['name'].get('alias')
+               task_uid = r['name'].get('uid')
+
+               if not task_alias and not task_uid:
+                   err = f'the requirement in task "{artifact_alias}" misses task name or uid'
+                   return self.cm._error(err, 1, None, self.cm.fail_on_error)
+
+               self_run = False
+
+               if not self_run and task_uid is not None and artifact_uid is not None and artifact_uid.strip().lower() == task_uid.strip().lower():
+                   self_run = True
+
+               if not self_run and task_alias is not None and artifact_alias is not None and artifact_alias.strip().lower() == task_alias.strip().lower():
+                   self_run = True
+
+               if self_run:
+                   err = f'task {artifact_au} can\'t call itself'
+                   return self.cm._error(err, 1, None, self.cm.fail_on_error)
+
+               ii['arg1'] = task
+
+               alias = ii.pop('alias', None)
+
+               xalias = alias if alias else task_alias
+
+               # Check if must update from sub-tasks vars
+               if state_uses:
+                   for dep_key in state_uses:
+                       if (alias and dep_key == alias) or (task and dep_key == task):
+                           dep_params = state_uses[dep_key]
+
+                           ii = self.cm.utils.common.deep_merge(ii, dep_params, append_lists=True)
+
+               if 'category' not in ii: ii['category'] = cmeta['category']
+               if 'command' not in ii: ii['command'] = 'run'
+
+               ii['con'] = con
+               ii['quiet'] = quiet
+               ii['verbose'] = verbose
+
+               # Update state for tasks
+               state_tasks['nested_call'] += 1
+
+               ii['state'] = state
+
+               dep_result = self.cm.access(ii)
+               if dep_result['return']>0: return self.cm._error2(dep_result, self.cm)
+
+               results[xalias] = dep_result
+
+               state_tasks['nested_call'] -= 1
+
+
 
         ###########################################################################################
         # PROCESS CACHE
@@ -228,7 +377,7 @@ class Category(InitCategory):
 
         if cache:
             # Check if compatible with cache
-            if cmeta.get('no_cache', False):
+            if cdesc.get('no_cache', False):
                 err = f'the task "{artifact_au}" does not support cache'
                 return self.cm._error(err, 1, None, self.cm.fail_on_error)
 
@@ -254,8 +403,8 @@ class Category(InitCategory):
                 else:
                     cache_tags += cache_extra_tags.split(',')
 
-            # Check if params keys are defined in cmeta to be added to cache_tags
-            cache_params_keys = cmeta.get('cache_params', [])
+            # Check if params keys are defined in cdesc to be added to cache_tags
+            cache_params_keys = cdesc.get('cache_params', [])
             if len(cache_params_keys)>0:
                 for k in cache_params_keys:
                     v = uparams.get(k)
@@ -271,7 +420,7 @@ class Category(InitCategory):
                 if 'cache_alias_template' in r: cache_alias_template = r['cache_alias_template']
 
             # Check if exists
-            ii = {'category':'cache,1ebdcc1cc30c4022',
+            ii = {'category':uses_categories['cache'],
                   'command':'find',
                  }
 
@@ -304,12 +453,18 @@ class Category(InitCategory):
 
             if len(cache_artifacts)>1:
 
-                text = f'More than 1 cache entry found for task "{artifact_alias}"'
+                text = ''
+
+                if verbose:
+                    text += '\n'
+
+                text += f'{space}WARNING: More than 1 cache entry found for task "{artifact_alias}"'
+
                 if len(cache_params)>0:
                     text += ' with parameters:\n'
                     for p in sorted(cache_params):
                         v = str(cache_params[p])
-                        text += f'      * params.{p} = {v}\n'
+                        text += f'{space}      * params.{p} = {v}\n'
                     text += '\n'
                 else:
                     text += '. '
@@ -317,7 +472,7 @@ class Category(InitCategory):
                 text += 'Please select'
 
                 # Call base find function to find an artifact with a website
-                p = {'category': 'utils,234ce5e3262e4d52',
+                p = {'category': uses_categories['utils'],
                      'command': 'select_artifact',
                      'select_category': 'cache',
                      'select_text': text,
@@ -325,10 +480,11 @@ class Category(InitCategory):
                      'cmeta_params_keys': ['params', 'path'],
                      'skip_uids': True,
                      'con':con,
-                     'quiet':quiet}
+                     'quiet':quiet,
+                     'space':space}
 
-                if 'sort_keys' in cmeta:
-                    p['sort_keys'] = cmeta['sort_keys']
+                if 'sort_keys' in cdesc:
+                    p['sort_keys'] = cdesc['sort_keys']
 
                 r = self.cm.access(p)
                 if r['return']>0: 
@@ -352,7 +508,7 @@ class Category(InitCategory):
 
                     if con and verbose:
                         print ('')
-                        print (f'INFO Reusing task result from {cache_path}')
+                        print (f'{space}REUSE: load task result from {cache_path}')
 
                     if not path:
                         path = cache_path
@@ -361,7 +517,12 @@ class Category(InitCategory):
                     r = self.cm.utils.files.read_file(task_result_file)
                     if r['return']>0: return self.cm._error2(r, self.cm)
 
-                    return r['data']
+                    result = r['data']
+
+                    # To avoid changing working copies
+                    call_repro['result'] = copy.deepcopy(result)
+
+                    return result
 
                 cache_cmeta_ref_parts = cache_artifact['cmeta_ref_parts']
                 cache_alias = cache_cmeta_ref_parts['artifact_alias']
@@ -383,7 +544,7 @@ class Category(InitCategory):
                    if cache_repo:
                        cache_name = cache_repo + ':' + cache_name
 
-               r = self.cm.access({'category':'cache,1ebdcc1cc30c4022',
+               r = self.cm.access({'category':uses_categories['cache'],
                                    'command':'create',
                                    'arg1':cache_name,
                                    'tags':cache_tags + ['tmp'],
@@ -396,7 +557,7 @@ class Category(InitCategory):
 
             if con and verbose:
                 print ('')
-                print (f'USE cMeta cache: {cache_path}')
+                print (f'{space}CACHE: use {cache_path}')
 
             # Check if result already exists in the path and without error - it means rebuilding existing cache entry ...
             if path and os.path.isdir(path):
@@ -410,7 +571,7 @@ class Category(InitCategory):
                     if result['return'] == 0:
                         if con and verbose:
                             print ('')
-                            print (f'REUSE result: {task_result_file}')
+                            print (f'{space}REUSE: result: {task_result_file}')
 
                         skip = True
 
@@ -425,16 +586,16 @@ class Category(InitCategory):
         if not os.path.isdir(workdir):
             os.makedirs(workdir, exist_ok=True)
 
-        if con and verbose:
+        if con and verbose and workdir != cur_dir:
             print ('')
-            print (f'RUN cd {workdir}')
+            print (f'{space}RUN cd {workdir}')
 
         os.chdir(workdir)
 
         if task_result_file and os.path.isfile(task_result_file) and (clean or update):
             if con and verbose:
                 print ('')
-                print (f'RUN rm {task_result_file}')
+                print (f'{space}RUN rm {task_result_file}')
 
             os.remove(task_result_file)
 
@@ -445,7 +606,7 @@ class Category(InitCategory):
         if task_api_code is not None and not skip:
             if con and verbose:
                 print ('')
-                print (f'RUN TASK {artifact_alias}')
+                print (f'{space}RUN TASK CODE: {task_api_path}')
 
             result = task_api_code.run(state, **uparams)
 
@@ -472,13 +633,15 @@ class Category(InitCategory):
         _impact['self_time'] = time.perf_counter() - time_start2
         _impact['self_time_with_cmeta'] = time.perf_counter() - time_start
 
+        # To avoid changing working copies
+        call_repro['result'] = copy.deepcopy(result)
 
         ###########################################################################################
         # UPDATE CACHE
 
         if update_cache:
             # TBD -> maybe move result error there for debugging?
-            ii = {'category':'cache,1ebdcc1cc30c4022',
+            ii = {'category':uses_categories['cache'],
                   'command':'update',
                   'arg1':cache_name,
                   'new_tags':['tmp-'],
@@ -492,14 +655,26 @@ class Category(InitCategory):
             if r['return']>0: return self.cm._error2(r, self.cm)
 
         # Save result to cache for reuse
-        if cache or save:
+        if cache:
             r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_RESULTS, result)
+            if r['return']>0: return self.cm._error2(r, self.cm)
+            r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_STATE, state)
+            if r['return']>0: return self.cm._error2(r, self.cm)
+
+        if save:
+            r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_RESULTS, result)
+            if r['return']>0: return self.cm._error2(r, self.cm)
+            r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_STATE, state)
             if r['return']>0: return self.cm._error2(r, self.cm)
 
 
         ###########################################################################################
         # RESTORE ORIGINAL DIRECTORY
 
-        os.chdir(cur_dir)
+        if con and verbose and workdir != cur_dir:
+            print ('')
+            print (f'{space}RUN: cd {cur_dir}')
 
+        os.chdir(cur_dir)
+  
         return result

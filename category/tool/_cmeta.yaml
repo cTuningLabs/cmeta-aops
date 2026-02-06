@@ -8,8 +8,7 @@ creation_timestamp: '2026-01-09T13:11:49.062831+00:00'
 last_api_version: 1
 min_cmeta_version:
   '1': 0.19.6
+uses_categories:
+  utils: utils,234ce5e3262e4d52
 no_index: true
-uses:
-  '-':
-    xyz: abc
 

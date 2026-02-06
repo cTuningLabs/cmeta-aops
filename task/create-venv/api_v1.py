@@ -1,6 +1,6 @@
 ﻿import os
 
-from task_c36be4b9314a45e0.api.v1 import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask
 
 class CTask(InitCTask):
     """

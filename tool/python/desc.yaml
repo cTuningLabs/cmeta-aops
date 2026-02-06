@@ -1,0 +1,6 @@
+names:
+  - python3{{file_ext_exe}}
+  - python{{file_ext_exe}}
+cmd_match_group: 1
+cmd_match_version: python version ([\d.]+)
+cmd_get_version: '{{exe_path}} --version'

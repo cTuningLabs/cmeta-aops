@@ -35,32 +35,54 @@ class Category(InitCategory):
         return {'return':0}
 
     ############################################################
-    def detect_(self, state, arg1, file_path=None, path=None, paths=[]):
-        """
-        """
-        self.cm.j(state['category_cmeta'])
-        input('xyz')
+    def which(self, params):
+        return self.where_(**params)
 
-        self.logger.debug("RUNNING tool detect_ v1")
+    ############################################################
+    def find_path_(self, state, arg1, tags = None, path = None, paths = [], space = '', ver = None):
+        """
+        """
+        self.logger.debug("RUNNING tool find_path v1")
 
         con = state['control'].get('con', False)
+        quiet = state['control'].get('quiet', False)
+        verbose = state['control'].get('verbose', False)
 
         # Call base find function to find an artifact with a website
-        p = self._prepare_input_from_state(state, base = True)
-
-        p['command'] = 'read'
-        p['con'] = False
-        p['arg1'] = arg1
-        p['load_files'] = ['desc.yaml']
+        p = {'category':self.cmeta['uses_categories']['utils'],
+             'command':'select_artifact',
+             'select_category':state['category'],
+             'select_artifact':arg1,
+             'select_tags':tags,
+             'con':con,
+             'quiet':quiet,
+             'load_files':['desc'],
+             'space':space,
+             'load_api': True,
+             'load_api_ver': ver,
+             'load_api_class': 'CTool',
+        }
 
         r = self.cm.access(p)
-        if r['return']>0: return r
+        if r['return']>0: 
+            ret = r['return']
+            if ret == 16: ret = 1
+            return self.cm._error(r['error'], ret, None, self.cm.fail_on_error)
 
         artifact = r['artifact']
+        cmeta = artifact['cmeta']
+        desc = r['loaded_files']['desc'].get('data', {})
 
         tool_path = artifact['path']
-        cmeta = artifact['cmeta']
-        desc = r['loaded_files']['desc.yaml']['data']
+        tool_api_code = r['api_code']
+
+        artifact_au = r['artifact_au']
+
+
+        print (tool_api_code)
+
+
+
 
         # cMeta platform detection: only windows, linux, macos
         r = self.cm.utils.sys.get_min_raw_host_info()
@@ -68,29 +90,33 @@ class Category(InitCategory):
 
         host_os = r['os_lower']
 
+
+        substs = {
+          'windows':{'file_ext_exe': '.exe'},
+          'linux':{'file_ext_exe': '.'},
+        }
+
+        
+        subst = substs[host_os] if host_os in substs else substs['linux']
+
         # Resolve exe_path
-        if file_path is None:
-            exes = desc['file']
+        found_paths = []
 
-            exe = exes.get(host_os, exes['default'])
+        if path and os.path.isfile(path):
+            found_paths = [path]
 
-            # Detect OS and adjust exe extension
-            if host_os == 'windows':
-                exe = exe.replace('{{exe_ext_win}}', '.exe')
-            else:
-                exe = exe.replace('{{exe_ext_win}}', '')
+        else:
+            if path and not os.path.isdir(path):
+                return {'return':1, 'error': f'tool "{path}" doesn\'t exist'}
 
             if type(paths) == str:
                 paths = paths.split(os.pathsep)
 
-            search_paths = paths.copy()
-
-            if path is not None:
+            if path:
                 search_paths = [path]
             else:
-                if len(paths)>0:
-                    search_paths = paths
-              
+                search_paths = paths.copy()
+
             if len(search_paths) == 0:
                 search_paths = [os.getcwd()]
 
@@ -98,20 +124,54 @@ class Category(InitCategory):
                 if env_paths != '':
                     search_paths += env_paths.split(os.pathsep)
 
-            for spath in search_paths:
-                candidate = os.path.join(spath, exe)
-                if os.path.isfile(candidate):
-                    file_path = candidate
-                    break
+            names = desc['names']
 
-        if file_path is None:
-            return {'return':16, 'error': f'failed to find {exe}'}    
+            for name in names:
 
-        if file_path!='' and not os.path.isfile(file_path):
-            return {'return':16, 'error': f'failed to find {file_path}'}    
+                r = self.cm.utils.common.expand_string(name, subst)
+                if r['return']>0: return self.cm._error2(r, self)
 
+                name = r['string']
 
-    
-        print (file_path)
+                find_without_ext = False
+                if name.endswith('.'):
+                    find_without_ext = True
+                    name = name[:-1]
 
-        return {'return':0}
+                for spath in search_paths:
+                    candidate = os.path.join(spath, name)
+
+                    # Handle wildcards in name
+                    if '*' in name or '?' in name:
+                        import glob
+
+                        pattern = os.path.join(spath, name)
+                        matches = glob.glob(pattern)
+                        for match in matches:
+                            if os.path.isfile(match) and match not in found_paths:
+                                to_add = True
+
+                                if find_without_ext:
+                                    if os.path.splitext(match)[1] != "":
+                                        to_add = False
+
+                                if to_add:
+                                    found_paths.append(match)
+
+                    elif os.path.isfile(candidate):
+                        if candidate not in found_paths:
+                            found_paths.append(candidate)
+
+        if not found_paths:
+            return {'return':16, 'error': f'failed to find tool "{artifact_au}"'}
+
+        if con:
+            for path in found_paths:
+                s = path
+                real_path = os.path.realpath(path)
+                if real_path != path:
+                    s += f' ({real_path})'
+
+                print (s)
+
+        return {'return':0, 'found_paths': found_paths}

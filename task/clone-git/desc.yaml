@@ -1,0 +1,19 @@
+cache_params:
+- url
+- branch
+- new_branch
+- fetch
+- tag
+- checkout
+- update_submodules
+params_aliases:
+  arg2: url
+  arg3: directory
+uses:
+- task: test-0001,ef02424ec0384665
+  test: True
+sort_keys:
+- '@cmeta.params.name'
+- '@cmeta.params.version-'
+- '@cmeta.params.tag-'
+

@@ -1,0 +1,263 @@
+{
+  "category": {
+    "artifact_alias": "task",
+    "artifact_uid": "c36be4b9314a45e0",
+    "category_alias": "category",
+    "category_uid": "dd9ea50e7f76467f",
+    "repo_alias": "ctuninglabs@cmeta-aops",
+    "repo_uid": "3cb4ee4f444048f6"
+  },
+  "category_artifact": {
+    "cmeta": {
+      "artifact": "c36be4b9314a45e0",
+      "authors": "[Grigori Fursin](https://cKnowledge.org/gfursin)",
+      "category": "category,dd9ea50e7f76467f",
+      "copyright": "2025 Grigori Fursin and cTuning Labs. All rights reserved. See the cMeta COPYRIGHT and LICENSE files for details.",
+      "creation_timestamp": "2025-12-01T16:58:22.327355",
+      "extra_flags_help": "--info or ",
+      "last_api_version": 1,
+      "min_cmeta_version": {
+        "1": "0.21.2"
+      },
+      "uses_categories": {
+        "cache": "cache,1ebdcc1cc30c4022",
+        "utils": "utils,234ce5e3262e4d52"
+      },
+      "uses_pip_packages": {
+        "deepdiff": null
+      }
+    },
+    "cmeta_ref_parts": {
+      "artifact_alias": "task",
+      "artifact_uid": "c36be4b9314a45e0",
+      "category_alias": "category",
+      "category_uid": "dd9ea50e7f76467f",
+      "repo_alias": "ctuninglabs@cmeta-aops",
+      "repo_uid": "3cb4ee4f444048f6"
+    },
+    "path": "D:\\!FGG_Repos\\repos\\ctuninglabs@cmeta-aops\\category\\task"
+  },
+  "category_cmeta": {
+    "artifact": "c36be4b9314a45e0",
+    "authors": "[Grigori Fursin](https://cKnowledge.org/gfursin)",
+    "category": "category,dd9ea50e7f76467f",
+    "copyright": "2025 Grigori Fursin and cTuning Labs. All rights reserved. See the cMeta COPYRIGHT and LICENSE files for details.",
+    "creation_timestamp": "2025-12-01T16:58:22.327355",
+    "extra_flags_help": "--info or ",
+    "last_api_version": 1,
+    "min_cmeta_version": {
+      "1": "0.21.2"
+    },
+    "uses_categories": {
+      "cache": "cache,1ebdcc1cc30c4022",
+      "utils": "utils,234ce5e3262e4d52"
+    },
+    "uses_pip_packages": {
+      "deepdiff": null
+    }
+  },
+  "command": "run",
+  "control": {
+    "category": "task,c36be4b9314a45e0",
+    "command": "run",
+    "con": true,
+    "quiet": false,
+    "verbose": true
+  },
+  "last_self_time": 0.0014851000159978867,
+  "nested_call": 0,
+  "origin": {
+    "cli": {
+      "caller": "cx",
+      "cmd": [
+        ".",
+        "run",
+        "--save"
+      ]
+    },
+    "params": {
+      "_cli": {
+        "caller": "cx",
+        "cmd": [
+          ".",
+          "run",
+          "--save"
+        ]
+      },
+      "arg1": "ctuninglabs@cmeta-aops,3cb4ee4f444048f6:test-0001,ef02424ec0384665",
+      "category": "task,c36be4b9314a45e0",
+      "command": "run",
+      "con": true,
+      "save": true
+    }
+  },
+  "params": {
+    "arg1": "enable-long-paths-win,a5ddea8d0773466d",
+    "category": "task,c36be4b9314a45e0",
+    "command": "run",
+    "con": true,
+    "quiet": false,
+    "verbose": true
+  },
+  "tasks": {
+    "calls": [
+      {
+        "nested_call": 0,
+        "params": {
+          "_cli": {
+            "caller": "cx",
+            "cmd": [
+              ".",
+              "run",
+              "--save"
+            ]
+          },
+          "arg1": "ctuninglabs@cmeta-aops,3cb4ee4f444048f6:test-0001,ef02424ec0384665",
+          "category": "task,c36be4b9314a45e0",
+          "command": "run",
+          "con": true,
+          "save": true
+        },
+        "result": {
+          "_impact": {
+            "self_time": 1.00000761449337e-06,
+            "self_time_with_cmeta": 0.37665190000552684
+          },
+          "return": 0
+        }
+      },
+      {
+        "nested_call": 1,
+        "params": {
+          "arg1": "host,96ac7118439c4490",
+          "category": "task,c36be4b9314a45e0",
+          "command": "run",
+          "con": true,
+          "quiet": false,
+          "verbose": true
+        },
+        "result": {
+          "ENV": {
+            "x": "y"
+          },
+          "_impact": {
+            "self_time": 1.5400000847876072e-05,
+            "self_time_with_cmeta": 0.0015188000397756696
+          },
+          "return": 0
+        }
+      },
+      {
+        "nested_call": 1,
+        "params": {
+          "arg1": "enable-long-paths-win,a5ddea8d0773466d",
+          "category": "task,c36be4b9314a45e0",
+          "command": "run",
+          "con": true,
+          "quiet": false,
+          "verbose": true
+        },
+        "result": {
+          "_impact": {
+            "self_time": 0.0013623000122606754,
+            "self_time_with_cmeta": 0.0028102000360377133
+          },
+          "enabled": true,
+          "return": 0
+        }
+      },
+      {
+        "nested_call": 1,
+        "params": {
+          "arg1": "detect-host-info,c9e845c22f944730",
+          "category": "task,c36be4b9314a45e0",
+          "command": "run",
+          "con": true,
+          "quiet": false,
+          "verbose": true
+        },
+        "result": {
+          "_impact": {
+            "self_time": 3.390002530068159e-05,
+            "self_time_with_cmeta": 0.0015552000259049237
+          },
+          "return": 0
+        }
+      },
+      {
+        "nested_call": 1,
+        "params": {
+          "arg1": "detect-host-info,c9e845c22f944730",
+          "category": "task,c36be4b9314a45e0",
+          "command": "run",
+          "con": true,
+          "min": true,
+          "quiet": false,
+          "verbose": true
+        },
+        "result": {
+          "_impact": {
+            "self_time": 3.279995871707797e-05,
+            "self_time_with_cmeta": 0.0010942999506369233
+          },
+          "return": 0
+        }
+      },
+      {
+        "nested_call": 1,
+        "params": {
+          "arg1": "test-0002",
+          "category": "task,c36be4b9314a45e0",
+          "command": "run",
+          "con": true,
+          "quiet": false,
+          "test": true,
+          "verbose": true
+        },
+        "result": {
+          "_impact": {
+            "self_time": 9.00006853044033e-07,
+            "self_time_with_cmeta": 0.0103950000484474
+          },
+          "return": 0
+        }
+      }
+    ],
+    "nested_call": 0,
+    "results": {
+      "detect-host-info": {
+        "_impact": {
+          "self_time": 3.279995871707797e-05,
+          "self_time_with_cmeta": 0.0010942999506369233
+        },
+        "return": 0
+      },
+      "enable-long-paths-win": {
+        "_impact": {
+          "self_time": 0.0013623000122606754,
+          "self_time_with_cmeta": 0.0028102000360377133
+        },
+        "enabled": true,
+        "return": 0
+      },
+      "host": {
+        "ENV": {
+          "x": "y"
+        },
+        "_impact": {
+          "self_time": 1.5400000847876072e-05,
+          "self_time_with_cmeta": 0.0015188000397756696
+        },
+        "return": 0
+      },
+      "test-0002": {
+        "_impact": {
+          "self_time": 9.00006853044033e-07,
+          "self_time_with_cmeta": 0.0103950000484474
+        },
+        "return": 0
+      }
+    },
+    "uses": {}
+  }
+}
