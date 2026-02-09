@@ -1,16 +1,36 @@
-﻿params_aliases:
+﻿redirect_params:
   arg2: uses.test-0003-clone-git.url
   url: uses.test-0003-clone-git.url
+
 uses:
-- alias: test-0003-clone-git
-  task: clone-git,af9422df6ea241ec
-  url: https://github.com/mlcommons/ck
-  cache: True
-- alias: test-0003-clone-git2
-  task: clone-git,af9422df6ea241ec
-  url: https://github.com/ctuning/artifact-evaluation
-  cache: True
-- alias: test-0003-clone-git3
-  task: clone-git,af9422df6ea241ec
-  url: https://github.com/ctuning/mlcommons-ck
-  cache: True
+
+- task: runner,1e48cc0c5f6041a5
+  name: "Get runner info"
+
+- task: clone-git,af9422df6ea241ec
+  key: test-0003-clone-git
+  local: True
+  with:
+    url: https://github.com/mlcommons/ck
+    cache: True
+
+- task: clone-git,af9422df6ea241ec
+  key: test-0003-clone-git2
+  local: True
+  with:
+    url: "{{local.test-0003-clone-git.url}}"
+    cache: True
+
+- task: clone-git,af9422df6ea241ec
+  key: test-0003-clone-git3
+  local: True
+  with:
+    url: https://github.com/ctuning/mlcommons-ck
+    cache: True
+
+- task: clone-git,af9422df6ea241ec
+  key: test-0003-clone-git4
+  with:
+    url: "{{local.test-0003-clone-git.url}}"
+#    branch: "{{params.flag1|xyz}}"
+    cache: True

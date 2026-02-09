@@ -2,11 +2,11 @@
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
+_min = min
+
 class CTask(InitCTask):
     """
     """
-
-    _min = min
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
@@ -30,32 +30,7 @@ class CTask(InitCTask):
 
         space = '  ' * state['tasks']['nested_call']
 
-        state_results = state['tasks']['results']
-
         result = {'return':0}
 
-        print (min)
-        print (_min)
-
-
-
-
-
-
-
-
-        result_host = state_results['host']
-
-        print (result_host)
-
-
-        ENV = result_host.setdefault('ENV', {})
-        PATH = ENV.setdefault('+PATH', [])
-        
-        PATH.append('C:\\!Progs\\Python3.9.13')
-        PATH.append('C:\\!Progs\\Python3.9.13')
-
-
-        result['tool_python_exe_path'] = 'C:\\!Progs\\Python3.9.13\\python.exe'
 
         return result

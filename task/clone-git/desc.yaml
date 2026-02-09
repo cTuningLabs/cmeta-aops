@@ -6,12 +6,15 @@ cache_params:
 - tag
 - checkout
 - update_submodules
-params_aliases:
+redirect_params:
   arg2: url
   arg3: directory
 uses:
-- task: test-0001,ef02424ec0384665
-  test: True
+- task: host,96ac7118439c4490
+  global: True
+- task: enable-long-paths-win,a5ddea8d0773466d
+  if: '"{{global.host.os.uname}}" == "windows"'
+  global: True
 sort_keys:
 - '@cmeta.params.name'
 - '@cmeta.params.version-'

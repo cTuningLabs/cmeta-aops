@@ -73,7 +73,7 @@ class Category(InitCategory):
             update: bool = False,          # Rerun task and update cache entry even if exists
             clean: bool = False,           # Clean cache entry or path 
 
-            uses: dict = None,
+            use: dict = None,
 
             **params: dict,                # Parameters passed to a given task module
     ):
@@ -110,20 +110,16 @@ class Category(InitCategory):
 
         uses_categories = self.cmeta['uses_categories']
 
-        if uses is not None and type(uses) != dict:
-            err = f'type of "uses" is {type(uses)} in {__name__} but it must be "dict"'
-            return self.cm._error(err, 1, None, self.cm.fail_on_error)
+        if use is not None and type(use) != dict:
+             err = f'type of "use" is "{type(use)}" in "{__name__}" but it must be "dict"'
+             return self.cm._error(err, 1, None, self.cm.fail_on_error)
 
-        ###########################################################################################
-        # EXTRA PACKAGE FOR MEMOIZATION
+        if use is None:
+            use = {}
 
-        r = self.cm.packages.get_all(self.cmeta['uses_pip_packages'], con = con)
-        if r['return']>0: return self.cm._error2(r, self.cm)
-        mpkg = r['mpkg']
-
-        deepdiff = mpkg['deepdiff']
-
-        from deepdiff import DeepDiff
+        state_use = state_tasks.setdefault('use', {})
+        if use:
+            state_use = self.cm.utils.common.deep_merge(state_use, copy.deepcopy(use), append_lists=True)
 
         ###########################################################################################
         # SELECT TASK ARTIFACT
@@ -181,14 +177,27 @@ class Category(InitCategory):
             return {'return':0, 'help': help_text}
 
         ###########################################################################################
+        # PRINT SELECTED TASK
+
+        if con and verbose:
+            if nested_call>0: print ('')
+            print (f'{space}' + '=' * (100-len(space)))
+            print (f'{space}TASK: {artifact_alias} ({artifact_path})')
+
+        ###########################################################################################
+        # PREPARE GLOBAL SCRATCHPAD
+
+        _global = state_tasks.setdefault('global', {})
+
+        ###########################################################################################
         # UNIFY PARAMS - most commonly convert args to keys
 
         uparams = params.copy()
 
-        params_aliases = cdesc.get('params_aliases', {})
-        if params_aliases:
-            for k in params_aliases:
-                key = params_aliases[k]
+        redirect_params = cdesc.get('redirect_params', {})
+        if redirect_params:
+            for k in redirect_params:
+                key = redirect_params[k]
 
                 if k in uparams:
                     if k not in uparams:
@@ -222,9 +231,8 @@ class Category(InitCategory):
 
                         current_dict[key_parts[-1]] = v
 
-                        if first_key == 'uses':
-                            if not uses: uses = {}
-                            uses = self.cm.utils.common.deep_merge(uses, current_dict_root['uses'], append_lists=True)
+                        if first_key == 'use':
+                            _use = self.cm.utils.common.deep_merge(_use, current_dict_root['use'], append_lists=True)
 
                         elif first_key == 'state':
                             state = self.cm.utils.common.deep_merge(state, current_dict_root['state'], append_lists=True)
@@ -240,74 +248,54 @@ class Category(InitCategory):
         if clean:
             uparams['clean'] = True
 
-        ###########################################################################################
-        # UPDATE STATE AND PRINT TASK
-
-        if con and verbose:
-            if nested_call>0: print ('')
-            print (f'{space}' + '=' * (100-len(space)))
-            print (f'{space}TASK: {artifact_alias} ({artifact_path})')
-
-
-
-
-
-
-
-
-        # ??????????????????????????????????????????????????????????????????
-
-        state_uses = state_tasks.setdefault('uses', {})
-        print ('xyz=',uses)
-        if uses:
-            print ('  xyz1')
-            state_uses = self.cm.utils.common.deep_merge(state_uses, uses, append_lists=True)
-
-
-
-
-
-
-        calls = state_tasks.setdefault('calls', [])
-        call_params = state['params']
-        call_repro = {'params': call_params, 'nested_call': nested_call}
-
-        results = state_tasks.setdefault('results', {})
         result = {'return':0}
 
 
+
+
         ###########################################################################################
-        # PROCESS MEMOIZATION
-        for step in range(0, len(calls)):
-            call = calls[step]
+        # SAVE CALL IF SELF.DEBUG (maybe should use some other flag?)
 
-            params = call['params']
-             
-            if 'result' in call and not DeepDiff(params, call_params, ignore_order=True):
-                # equivalent (i.e. not different)
-                if con and verbose:
-                   print ('')
-                   print (f'{space}REUSE: load task result from the state (step {step})')
+        if self.cm.debug:
+            calls = state_tasks.setdefault('calls', [])
 
-                return copy.deepcopy(call['result'])
+            call_repro = {'params': state['params'].copy(), 'nested_call': nested_call}
+
+            calls.append(call_repro)
 
 
-        calls.append(call_repro)
+
+
+
+
+
+
 
         ###########################################################################################
         # CHECK DEPENDENCIES
-        task_uses = cdesc.get('uses', [])
+        uses = cdesc.get('uses', [])
 
-        if task_uses:
+        _local = {}
 
-           for task_input in task_uses:
- 
-#               self.cm.j(task_input)
-#               input('xyz')
+        if uses:
 
-               ii = copy.deepcopy(task_input)
+           for sub_task_desc in uses:
 
-               task = ii.pop('task', '')
+               # *********************************************************************************
+               # Process individual sub-task
+
+               sub_space = '  ' * (nested_call + 1)
+
+               name = sub_task_desc.get('name', '')
+               if name and con and verbose:
+                   print ('')
+                   print (f'{sub_space}==> {name}')
+
+               # *********************************************************************************
+               # Check if this is another task or CMD
+
+               task = sub_task_desc.get('task', None)
+               store_in_global = sub_task_desc.get('global', False)
 
                r = self.cm.utils.names.parse_cmeta_name(task)
                if r['return']>0: return self.cm._error2(dep_result, self.cm)
@@ -318,6 +306,9 @@ class Category(InitCategory):
                if not task_alias and not task_uid:
                    err = f'the requirement in task "{artifact_alias}" misses task name or uid'
                    return self.cm._error(err, 1, None, self.cm.fail_on_error)
+
+               # *********************************************************************************
+               # Check if self call and forbid it to avoid infinite loop
 
                self_run = False
 
@@ -331,19 +322,57 @@ class Category(InitCategory):
                    err = f'task {artifact_au} can\'t call itself'
                    return self.cm._error(err, 1, None, self.cm.fail_on_error)
 
+               # *********************************************************************************
+               # Check storage key and location
+
+               key = sub_task_desc.get('key', None)
+               sub_task_storage_key = None
+               if key:
+                   sub_task_storage_key = key
+               elif task and task_alias:
+                   sub_task_storage_key = task_alias 
+
+               # If not local  result already exists in global, skip sub-task
+               if store_in_global and sub_task_storage_key and sub_task_storage_key in _global:
+                   if con and verbose:
+                       print ('')
+                       print (f'{space}REUSE: load task result from _global["{sub_task_storage_key}"]')
+
+                   continue
+
+               values_to_expand = {'global':state_tasks['global'], 'local':_local, 'params':uparams}
+
+               # *********************************************************************************
+               # Check conditions
+
+               _if = sub_task_desc.get('if', '')
+               if _if:
+                   r = self.cm.utils.common.expand_string(_if, values_to_expand)
+                   if r['return']>0: return self.cm._error2(r, self)
+
+                   _if = r['string']
+
+                   r = self.cm.utils.common.restricted_bool_eval(_if, {})
+                   if r['return']>0: return self.cm._error2(r, self)
+
+                   # If condition is not met, skip sub-task
+                   if not r['result']:
+                       continue
+
+               # *********************************************************************************
+               # Run task
+               _with = sub_task_desc.get('with', {})
+
+               if type(_with) is not dict:
+                   err = f'"with" key must be "dict" in {sub_task_desc} in "{__name__}"'
+                   return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                  
+               ii = copy.deepcopy(_with)
+
+               r = self.cm.utils.common.expand_strings_in_dict(ii, values_to_expand)
+               if r['return']>0: return self.cm._error2(r, self)
+
                ii['arg1'] = task
-
-               alias = ii.pop('alias', None)
-
-               xalias = alias if alias else task_alias
-
-               # Check if must update from sub-tasks vars
-               if state_uses:
-                   for dep_key in state_uses:
-                       if (alias and dep_key == alias) or (task and dep_key == task):
-                           dep_params = state_uses[dep_key]
-
-                           ii = self.cm.utils.common.deep_merge(ii, dep_params, append_lists=True)
 
                if 'category' not in ii: ii['category'] = cmeta['category']
                if 'command' not in ii: ii['command'] = 'run'
@@ -357,23 +386,53 @@ class Category(InitCategory):
 
                ii['state'] = state
 
-               dep_result = self.cm.access(ii)
-               if dep_result['return']>0: return self.cm._error2(dep_result, self.cm)
+               # Check if must update from sub-tasks vars
+               if state_use:
+                   for use_key in state_use:
+                       if sub_task_storage_key and use_key == sub_task_storage_key:
+                           use_params = state_use[use_key]
 
-               results[xalias] = dep_result
+                           ii = self.cm.utils.common.deep_merge(ii, use_params, append_lists=True)
+
+               sub_task_result = self.cm.access(ii)
+
+               if sub_task_result['return']>0: 
+                   return self.cm._error2(sub_task_result, self.cm)
 
                state_tasks['nested_call'] -= 1
+
+               # *********************************************************************************
+               # Check where to store the result
+
+               if sub_task_storage_key:
+                   if store_in_global:
+                       _global[sub_task_storage_key] = sub_task_result
+                   else:
+                       _local[sub_task_storage_key] = sub_task_result
 
 
 
         ###########################################################################################
+        # SAVE LOCAL TO STATE TO BE USED WITH TASK CODE IF NEEDED ...
+        # IT SHOULD NOT BE USED OUTSIDE A RUNNING TASK
+
+        state_tasks['local'] = _local
+
+        ###########################################################################################
         # PROCESS CACHE
+
         task_result_file = None
         update_cache = False
 
         cache_params = {}
         if cache_extra_params:
             cache_params = copy.deepcopy(cache_extra_params)
+
+
+
+
+
+
 
         if cache:
             # Check if compatible with cache
@@ -506,6 +565,9 @@ class Category(InitCategory):
 
                 if 'tmp' not in cache_artifact['cmeta'].get('tags',[]) and not update and not clean:
 
+                    ###########################################################################################
+                    # RETURN CACHED RESULT
+
                     if con and verbose:
                         print ('')
                         print (f'{space}REUSE: load task result from {cache_path}')
@@ -520,7 +582,8 @@ class Category(InitCategory):
                     result = r['data']
 
                     # To avoid changing working copies
-                    call_repro['result'] = copy.deepcopy(result)
+                    if self.cm.debug:
+                        call_repro['result'] = copy.deepcopy(result)
 
                     return result
 
@@ -599,8 +662,10 @@ class Category(InitCategory):
 
             os.remove(task_result_file)
 
+
+
         ###########################################################################################
-        # RUN TASK
+        # RUN TASK CODE IF EXISTS
 
         time_start2 = time.perf_counter()
         if task_api_code is not None and not skip:
@@ -618,6 +683,10 @@ class Category(InitCategory):
 
             return self.cm._error(result['error'], result['return'], None, self.cm.fail_on_error)
  
+
+
+
+
         # Check if extra params were produced by the task that should be added to cache entry
         _update_params = result.pop('_update_params', {})
         if len(_update_params)>0 and cache:
@@ -629,12 +698,15 @@ class Category(InitCategory):
         if len(cache_params)>0:
             result['_params'] = cache_params
 
+
+
+
         _impact = result.setdefault('_impact', {})
         _impact['self_time'] = time.perf_counter() - time_start2
         _impact['self_time_with_cmeta'] = time.perf_counter() - time_start
 
-        # To avoid changing working copies
-        call_repro['result'] = copy.deepcopy(result)
+        if self.cm.debug:
+            call_repro['result'] = copy.deepcopy(result)
 
         ###########################################################################################
         # UPDATE CACHE
@@ -676,5 +748,5 @@ class Category(InitCategory):
             print (f'{space}RUN: cd {cur_dir}')
 
         os.chdir(cur_dir)
-  
+
         return result

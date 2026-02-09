@@ -1,2 +1,7 @@
-﻿params_aliases:
+﻿redirect_params:
 uses:
+- task: host,96ac7118439c4490
+  global: True
+- task: enable-long-paths-win,a5ddea8d0773466d
+  if: '"{{global.host.os.uname}}" == "windows"'
+  global: True

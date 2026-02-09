@@ -13,6 +13,7 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             state: dict,        # cMeta state
+            flag1 = None,
     ):
 
         """
@@ -31,11 +32,14 @@ class CTask(InitCTask):
 
         _params = {}
 
-        results = state['tasks']['results']
+        _global = state['tasks']['global']
+        _local = state['tasks']['local']
 
-        path_repo1 = results['test-0003-clone-git']['path_to_git_repo']
-        path_repo2 = results['test-0003-clone-git2']['path_to_git_repo']
-        path_repo3 = results['test-0003-clone-git3']['path_to_git_repo']
+        path_repo1 = _local['test-0003-clone-git']['path_to_git_repo']
+        path_repo2 = _local['test-0003-clone-git2']['path_to_git_repo']
+        path_repo3 = _local['test-0003-clone-git3']['path_to_git_repo']
+
+        print (flag1)
 
         if con:
             print ('')
