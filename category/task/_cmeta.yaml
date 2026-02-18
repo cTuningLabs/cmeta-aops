@@ -7,10 +7,8 @@ creation_timestamp: '2025-12-01T16:58:22.327355'
 extra_flags_help: '--info or '
 last_api_version: 1
 min_cmeta_version:
-  '1': 0.21.2
+  '1': 0.23.0
+no_index: true
 uses_categories:
   cache: cache,1ebdcc1cc30c4022
   utils: utils,234ce5e3262e4d52
-uses_pip_packages:
-  deepdiff: null
-

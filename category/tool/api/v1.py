@@ -1,4 +1,5 @@
 import os
+import copy
 
 from cmeta.category import InitCategory
 
@@ -35,11 +36,7 @@ class Category(InitCategory):
         return {'return':0}
 
     ############################################################
-    def which(self, params):
-        return self.where_(**params)
-
-    ############################################################
-    def find_path_(self, state, arg1, tags = None, path = None, paths = [], space = '', ver = None):
+    def find_path_(self, state, path = None, paths = None, space = None, context={}, desc={}):
         """
         """
         self.logger.debug("RUNNING tool find_path v1")
@@ -48,56 +45,14 @@ class Category(InitCategory):
         quiet = state['control'].get('quiet', False)
         verbose = state['control'].get('verbose', False)
 
-        # Call base find function to find an artifact with a website
-        p = {'category':self.cmeta['uses_categories']['utils'],
-             'command':'select_artifact',
-             'select_category':state['category'],
-             'select_artifact':arg1,
-             'select_tags':tags,
-             'con':con,
-             'quiet':quiet,
-             'load_files':['desc'],
-             'space':space,
-             'load_api': True,
-             'load_api_ver': ver,
-             'load_api_class': 'CTool',
-        }
+        state_tasks = state.setdefault('tasks', {})
 
-        r = self.cm.access(p)
-        if r['return']>0: 
-            ret = r['return']
-            if ret == 16: ret = 1
-            return self.cm._error(r['error'], ret, None, self.cm.fail_on_error)
+        if space is None:
+            nested_call = state_tasks.setdefault('nested_call', 0)
+            space = '  ' * nested_call
 
-        artifact = r['artifact']
-        cmeta = artifact['cmeta']
-        desc = r['loaded_files']['desc'].get('data', {})
-
-        tool_path = artifact['path']
-        tool_api_code = r['api_code']
-
-        artifact_au = r['artifact_au']
-
-
-        print (tool_api_code)
-
-
-
-
-        # cMeta platform detection: only windows, linux, macos
-        r = self.cm.utils.sys.get_min_raw_host_info()
-        if r['return']>0: return r
-
-        host_os = r['os_lower']
-
-
-        substs = {
-          'windows':{'file_ext_exe': '.exe'},
-          'linux':{'file_ext_exe': '.'},
-        }
-
-        
-        subst = substs[host_os] if host_os in substs else substs['linux']
+        if not paths:
+            paths = []
 
         # Resolve exe_path
         found_paths = []
@@ -128,10 +83,14 @@ class Category(InitCategory):
 
             for name in names:
 
-                r = self.cm.utils.common.expand_string(name, subst)
-                if r['return']>0: return self.cm._error2(r, self)
+                r = self.cm.utils.common.expand_string(name, context)
+                if r['return']>0: return self.cm._error2(r, self.cm)
 
                 name = r['string']
+
+                if con and verbose:
+                    print ('')
+                    print (f'{space}SEARCH: file {name} ...')
 
                 find_without_ext = False
                 if name.endswith('.'):
@@ -139,14 +98,20 @@ class Category(InitCategory):
                     name = name[:-1]
 
                 for spath in search_paths:
+                    spath = spath.strip()
+
+                    if not spath:
+                        continue
+
                     candidate = os.path.join(spath, name)
 
                     # Handle wildcards in name
-                    if '*' in name or '?' in name:
+                    if '*' in spath or '?' in spath or '*' in name or '?' in name:
                         import glob
 
                         pattern = os.path.join(spath, name)
-                        matches = glob.glob(pattern)
+                        matches = glob.iglob(pattern, recursive = True)
+                  
                         for match in matches:
                             if os.path.isfile(match) and match not in found_paths:
                                 to_add = True
@@ -162,16 +127,68 @@ class Category(InitCategory):
                         if candidate not in found_paths:
                             found_paths.append(candidate)
 
-        if not found_paths:
-            return {'return':16, 'error': f'failed to find tool "{artifact_au}"'}
-
-        if con:
-            for path in found_paths:
-                s = path
-                real_path = os.path.realpath(path)
-                if real_path != path:
-                    s += f' ({real_path})'
-
-                print (s)
-
         return {'return':0, 'found_paths': found_paths}
+
+    ############################################################
+    def setup(self, params):
+        """
+        """
+
+        self.logger.debug("RUNNING tool api v1 setup")
+
+        p = self._prepare_input_from_params(params, base = False)
+
+        p['category'] = self.cmeta['uses_categories']['task']
+        p['command'] = 'run'
+        p['name'] = params.get('arg1')
+        p['arg1'] = self.cmeta['uses_artifacts']['tool::setup-tool']
+
+        return self.cm.access(p)
+
+    ############################################################
+    def run(self, params):
+        """
+        """
+
+        self.logger.debug("RUNNING tool api v1 run")
+
+        state = params['state']
+
+        p = self._prepare_input_from_params(params)
+
+        unparsed = p.pop('unparsed', [])
+
+        # Setup tool
+        p.update({'category': self.cmeta['uses_categories']['task'],
+                  'command': 'run',
+                  'state': state,
+        })
+
+        pp = copy.deepcopy(p)
+
+        p['arg1'] = self.cmeta['uses_artifacts']['tool::setup-tool']
+        p['name'] = params.get('arg1')
+
+        r = self.cm.access(p)
+        if r['return']>0: return self.cm._error2(r, self.cm)
+
+        path = r['path']
+
+        cmd = path
+
+        for param in unparsed:
+            param = param.strip()
+            if ' ' in param and not param.startswith('"'):
+                param = '"' + param + '"'
+
+            cmd += ' ' + param
+        
+        # Run tool
+        pp['arg1'] = self.cmeta['uses_artifacts']['tool::cmd']
+        pp['cmd'] = cmd
+        pp['state'] = state
+
+        r = self.cm.access(pp)
+        if r['return']>0: return self.cm._error2(r, self.cm)
+
+        return r

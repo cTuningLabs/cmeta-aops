@@ -31,18 +31,6 @@ class CTask(InitCTask):
 
         space = '  ' * state['tasks']['nested_call']
 
-        _params = {}
-
-        results = state['tasks']['results']
-
-        path_repo1 = results['test-dummy3-clone-git-repo']['path_to_git_repo']
-        path_repo2 = results['test-dummy3-clone-git-repo2']['path_to_git_repo']
-        path_repo3 = results['test-dummy3-clone-git-repo3']['path_to_git_repo']
-
-        result = {'return':0,
-                  'path_repo1': path_repo1,
-                  'path_repo2': path_repo2,
-                  'path_repo3': path_repo3,
-        }
+        result = {'return':0}
 
         return result

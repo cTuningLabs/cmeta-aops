@@ -1,1 +1,1 @@
-﻿cx task run git-clone https://github.com/ctuning/mlcommons-ck --cache -j --verbose- %*
+﻿cx task run clone-git https://github.com/ctuning/mlcommons-ck --cache -j --verbose- %*

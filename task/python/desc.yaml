@@ -1,3 +1,3 @@
-﻿redirect_params:
+﻿params_map:
 uses:
 - task: host

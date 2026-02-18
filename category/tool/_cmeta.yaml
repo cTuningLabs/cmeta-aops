@@ -7,8 +7,10 @@ copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
 creation_timestamp: '2026-01-09T13:11:49.062831+00:00'
 last_api_version: 1
 min_cmeta_version:
-  '1': 0.19.6
-uses_categories:
-  utils: utils,234ce5e3262e4d52
+  '1': 0.23.0
 no_index: true
-
+uses_artifacts:
+  tool::cmd: cmd,c9ba0a88df394d7f
+  tool::setup-tool: setup-tool,a2f9b61079ce4333
+uses_categories:
+  task: task,c36be4b9314a45e0

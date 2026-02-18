@@ -1,0 +1,10 @@
+﻿store_global: True       # force
+storage_key: init_nvcc   # force storage key to avoid mixing up in the future
+
+uses:
+- task: runner,1e48cc0c5f6041a5
+
+- task: setup-tool,a2f9b61079ce4333
+  storage_key: nvcc
+  with:
+    name: nvcc

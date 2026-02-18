@@ -1,6 +1,6 @@
 names:
-  - git{{file_ext_exe}}
-cmd_match_group: 1
-cmd_match_version: git version ([\d.]+)
+  - git{{global.host.vars.file_ext_exe}}
+match_version: 
+  - regex: "git version ([0-9]+(?:[.\\-][0-9A-Za-z]+)*)"
+    group: 1
 cmd_get_version: '{{exe_path}} --version'
-

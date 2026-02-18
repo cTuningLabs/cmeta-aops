@@ -51,7 +51,7 @@ class CTask(InitCTask):
         tag = params.get('tag')
         if tag:
             if cache_alias_extra !='':
-                cache_alias_extra += '--'
+                cache_alias_extra += ','
             cache_alias_extra += tag
 
         if cache_alias_extra != '':
@@ -72,11 +72,8 @@ class CTask(InitCTask):
             checkout: str = None,
             update_submodules: bool = False,
             env: dict = {},
-            clean: bool = False,
             timeout: int = None,
-            update: bool = False,
             force: bool = False,
-            path: str = None,
     ):
 
         """
@@ -93,7 +90,11 @@ class CTask(InitCTask):
         con = state['control'].get('con', False)
         verbose = state['control'].get('verbose', False)
 
+        state_tasks = state['tasks']
+
         space = '  ' * state['tasks']['nested_call']
+        clean = state['tasks']['control'].get('clean', False)
+        update = state['tasks']['control'].get('update', False)
 
         _params = {}
 

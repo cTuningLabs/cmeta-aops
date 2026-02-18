@@ -1,0 +1,1 @@
+﻿cxt setup-tool python --tool-path=c:\!progs\Python3.13.5

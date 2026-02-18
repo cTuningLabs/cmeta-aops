@@ -1,8 +1,0 @@
-﻿uses:
-- task: host,96ac7118439c4490
-- task: enable-long-paths-win,a5ddea8d0773466d
-- task: detect-host-info,c9e845c22f944730
-- task: enable-long-paths-win,a5ddea8d0773466d
-- task: detect-host-info,c9e845c22f944730
-  min: true
-- task: enable-long-paths-win,a5ddea8d0773466d

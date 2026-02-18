@@ -1,0 +1,3 @@
+cx . run --url="https://zenodo.org/records/13868077/files/cm-artifact-os-windows-32.zip?download=1" --md5sum=1590399cb7141ea342049b1205db3b32 --unzip --clean_after_unzip --check_file=bin/wget.exe --tool=cmeta --path=d:\work5 --directory=xyz %* --clean --save --save_here
+cx . run --url="https://cKnowledge.org/ai/data/zlib123dllx64-bin.zip" --md5sum=b261d1a3535d526148d2ceca02aa120c --unzip --path=d:\work5 --directory=xyz %* --save --save_here
+cx . run --url="https://cKnowledge.org/ai/data/xz-5.2.9-win64.zip" --md5sum=c4ddb935f98037891be941f6aa3308e7 --unzip --path=d:\work5 --directory=xyz %* --save --save_here

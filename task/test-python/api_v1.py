@@ -13,6 +13,7 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             state: dict,        # cMeta state
+            env: dict = {},
     ):
 
         """
@@ -24,38 +25,42 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        self.logger.debug("RUNNING TASK test-dummy3 run")
+        self.logger.debug("RUNNING TASK test-python run")
 
         con = state['control'].get('con', False)
         verbose = state['control'].get('verbose', False)
 
         space = '  ' * state['tasks']['nested_call']
 
-        _params = {}
+        _global = state['tasks']['global']
+        _aggregated = state['tasks']['aggregated']
 
-        state_results = state['tasks']['results']
+        result = {'return':0}
+        
 
-        result_host = state_results['host']
-        result_python = state_results['python']
 
-        print (result_host)
-        print (result_python)
 
-        ENV = result_host['ENV']
 
-        tool_python_exe_path = result_python['tool_python_exe_path']
 
-        cmd = tool_python_exe_path + ' --version'
+        os_env = _global['host']['os_env']
 
-        default_env = {}
 
-        r = self.cm.utils.sys.run(cmd, env=ENV, envs=default_env, con=con, verbose=verbose)
+        envs = _aggregated['env']
+
+
+        print (envs)
+        print (env)
+
+        cmd = 'python --version'
+        result['cmd'] = cmd
+
+        r = self.cm.utils.sys.run(cmd, env = env, envs = envs, genv = {}, os_env = os_env, 
+                                  con = con, verbose = verbose, space = space)
         if r['return']>0: return r
 
         rc = r['returncode']
         
         print (rc)
 
-        result = {'return':0}
 
         return result

@@ -50,15 +50,6 @@ class InitCTask:
 
 
     ############################################################
-    def customimze_cache_artifact(self,
-                                  state,
-                                  cache_alias_template,
-                                  cache_alias_extra,
-                                  cache_meta,
-                                  cache_tags,
-                                  cache_params,
-                                  params,
-                                  **extra,
-        ):
+    def customize_cache_artifact(self, *args, **params):
         return {'return':0}
 

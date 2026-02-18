@@ -43,6 +43,6 @@ class CTask(InitCTask):
             os_name = 'macOS'
 
         result['os'] = os_name
-
+        result['os_lower'] = os_name.lower()
 
         return result

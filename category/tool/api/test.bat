@@ -1,0 +1,1 @@
+﻿cx tool run winget -j --save -- --version

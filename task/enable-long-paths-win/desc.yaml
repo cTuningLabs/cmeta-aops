@@ -1,0 +1,4 @@
+﻿store_global: True                   # force
+storage_key: enable-long-paths-win   # force storage key to avoid mixing up in the future
+
+fail_if_not_win: True

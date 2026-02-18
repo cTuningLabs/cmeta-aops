@@ -1,3 +1,0 @@
-﻿uses:
-- task: runner,1e48cc0c5f6041a5
-  name: "Initialize runner"

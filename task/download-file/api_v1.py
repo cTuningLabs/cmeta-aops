@@ -1,0 +1,344 @@
+﻿import os
+
+from task_c36be4b9314a45e0.api.ctask import InitCTask
+
+class CTask(InitCTask):
+    """
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, module_file_path = __file__, **kwargs)
+
+    ############################################################
+    def check_params(self,
+                     state: dict,
+                     params: dict,
+    ):
+        """
+        We need this function to resolve name if not provided,
+        to be able to customize cache_artifact properly.
+
+        We can also add extra checks on unified params here.
+        """
+
+        result = {'return':0}
+
+        url = params.get('url')
+        if not url:
+            return self.cm._error(f'URL is not defined in {__name__}', 1, None, self.cm.fail_on_error)
+
+        filename = params.get('filename')
+
+        urls = self._process_urls(url)
+        files = self._process_files(filename)
+
+        if files:
+            filename = files[0]
+        else:
+            filename = self._extract_filename_from_url(urls[0])
+
+        if not filename:
+            if url:
+                return self.cm._error(f'couldn\'t extract filename from {url} in {__name__}', 1, None, self.cm.fail_on_error)
+            return self.cm._error(f'filename is not defined in {__name__}', 1, None, self.cm.fail_on_error)
+
+        params['filename'] = filename
+
+        return result
+
+
+    ############################################################
+    def customize_cache_artifact(self,
+                                 state,
+                                 cache_alias_template,
+                                 cache_alias_extra,
+                                 cache_meta,
+                                 cache_tags,
+                                 cache_params,
+                                 params,
+                                 **extra,
+        ):
+
+        result = {'return':0}
+
+        r = self.check_params(state, params)
+        self.cm._catch_error2(r) 
+
+        filename = params['filename']
+
+        result['cache_alias_extra'] = filename
+
+        return result
+
+
+    def _extract_filename_from_url(self, url):
+
+        urltail = os.path.basename(url)
+        urlhead = os.path.dirname(url)
+
+        filename = None
+        if "." in urltail and "/" in urlhead:
+            # Check if ? after filename
+            j = urltail.find('?')
+            if j>0:
+                urltail=urltail[:j]
+            filename = urltail
+
+        return filename
+
+
+    def _process_urls(self, url):
+
+        if type(url) == list:
+            urls = url
+        else:
+            if ',' in url:
+                urls = url.split(',')
+            else:
+                urls = [url]
+
+        return urls
+
+    def _process_files(self, filename):
+        files = []
+        if filename:
+            if type(filename) == list:
+                files = filename
+            else:
+                if ',' in filename:
+                    files = filename.split(',')
+                elif filename != '':
+                    files = [filename]
+
+        return files
+
+    ############################################################
+    def run(self,
+            state: dict,        # cMeta state
+            url: str = None,    
+            env: dict = {},
+            skip_ssl_certificate: bool = False,
+            filename: str = None,
+            md5sum: str = None,
+            check_file: bool = False,
+            directory: str = None,
+            headers: dict = None,
+            api_key: str = None,
+            tool: str = 'cmeta',
+            unzip: bool = False,
+            unzip_overwrite: bool = True,
+            clean_after_unzip: bool = False,
+            strip_folders: int = 0,
+            timeout: int = 0,
+    ):
+
+        """
+        Clone git repo.
+
+        Returns:
+            dict: A cMeta dictionary with the following keys:
+                - **return** (int): 0 if success, >0 if error.
+                - **error** (str): Error message if `return > 0`.
+        """
+
+        self.logger.debug("RUNNING TASK clone-git-repo run")
+
+        con = state['control'].get('con', False)
+        verbose = state['control'].get('verbose', False)
+
+        space = '  ' * state['tasks']['nested_call']
+        clean = state['tasks']['control'].get('clean', False)
+        update = state['tasks']['control'].get('update', False)
+
+        _params = {}
+
+        if not url:
+            return self.cm._error(f'URL is not defined in {__name__}', 1, None, self.cm.fail_on_error)
+
+        # Check if multiple URLs, files and md5sums
+        urls = self._process_urls(url)
+
+        files = self._process_files(filename)
+
+        md5sums = []
+        if md5sum:
+            if type(md5sum) == list:
+                md5sums = md5sum
+            else:
+                if ',' in md5sum:
+                    md5sums = md5sum.split(',')
+                elif md5sum != '':
+                    md5sums = [md5sum]
+
+        ###################################################################
+        workdir = os.getcwd()
+
+        if not directory:
+            path_to_files = workdir
+        else:
+            if not self.cm.utils.files.is_dir_within_path(workdir, directory):
+                err = f'"{directory}" should not go out of the working directory "{workdir}"'
+                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+
+            path_to_files = os.path.join(workdir, directory)
+
+            if os.path.isdir(path_to_files):
+                if clean:
+                    if con and verbose:
+                        print ('')
+                        print (f'{space}RUN: rm {path_to_files}')
+
+                    r = self.cm.utils.files.remove_files_and_dirs_in_path(path_to_files)
+                    self.cm._catch_error2(r, self.cm)
+
+                    try:
+                        import shutil
+                        shutil.rmtree(path_to_files)
+                    except Exception as e:
+                        err = f'can\'t remove directory "{path_to_files}"'
+                        return self.cm._error(err, 1, None, self.cm.fail_on_error)
+
+            if not os.path.isdir(path_to_files):
+                os.makedirs(path_to_files)
+
+        ###################################################################
+        # Check file
+        result = {'return':0}
+
+        check_file_with_path = None
+        if check_file:
+            check_file_with_path = os.path.normpath(os.path.join(path_to_files, check_file))
+
+        filename_with_path = None
+        filesize = None
+
+        if not check_file_with_path or not os.path.isfile(check_file_with_path):
+
+            ###################################################################
+            # Prepare CMDs
+            rr = {}
+
+            success = False
+            error = ''
+            for u in range(0, len(urls)):
+                url = urls[u]
+
+                if len(files)>0:
+                    filename = files[u]
+                else:
+                    filename = self._extract_filename_from_url(url)
+
+                filename_with_path = os.path.join(path_to_files, filename)
+
+                # Check if need to clean
+                if os.path.isfile(filename_with_path) and clean:
+                    os.remove(filename_with_path)
+
+                # Download if doesn't exist
+                if not os.path.isfile(filename_with_path):
+                    if tool == 'cmeta':
+
+                        rr = self.cm.utils.net.download(url, 
+                                                        path = directory, 
+                                                        show_progress = con, 
+                                                        fail_on_error = self.cm.fail_on_error, 
+                                                        skip_ssl_certificate = skip_ssl_certificate, 
+                                                        headers = headers,
+                                                        api_key = api_key,
+                                                        space = space,
+                             )
+                        if rr['return'] == 0:
+                            success = True
+                        else:
+                            error = rr['error']
+
+                    else:
+                        err = f'download tool {tool} is not yet supported in {__name__}'
+                        return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                else:
+                    success = True
+
+                if success:
+                    if len(md5sums)>0:
+                        md5sum = md5sums[u]
+
+                        if verbose:
+                            print ('')
+                            print (f'{space}RUN: Checking md5sum for {filename}: {md5sum}')
+
+                        r = self.cm.utils.files.md5sum(path = filename_with_path)
+                        self.cm._catch_error2(r, self.cm)
+
+                        md5sum_calculated = r['md5sum']
+
+                        if md5sum_calculated != md5sum:
+                            error = f'md5sum failed: {md5sum_calculated}'
+                            success = False
+
+                if success:
+                    break    
+
+            if not success:
+                err = f"failed downloading file from {','.join(urls)}\n{error}"
+                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+
+            filesize = os.path.getsize(filename_with_path)
+
+            if unzip:
+                if filename.endswith('.zip'):
+                    if verbose:
+                        print ('')
+                        print (f'{space}RUN: unzip {filename_with_path}')
+
+                    if strip_folders != '': strip_folders = int(strip_folders)
+
+                    r = self.cm.utils.files.unzip(filename_with_path, 
+                                                  path = directory, 
+                                                  remove_directories = strip_folders,
+                                                  overwrite = unzip_overwrite, 
+                                                  clean = clean_after_unzip,
+                                                  fail_on_error = self.cm.fail_on_error)
+                    self.cm._catch_error2(r, self.cm)
+
+                    if clean_after_unzip and os.path.isfile(filename_with_path):
+                        if verbose:
+                            print (f'{space}RUN: rm {filename_with_path}')
+
+                        os.remove(filename_with_path)
+
+                else:
+                    err = f'extension is not yet supported for unzip {filename}'
+                    return self.cm._error(err, 1, None, self.cm.fail_on_error)
+           
+
+        ###################################################################
+        # Check file again
+        if check_file_with_path:
+            if not os.path.isfile(check_file_with_path):
+                err = f'couldn\'t find check file "{check_file_with_path}"'
+                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                
+            result['check_file'] = check_file
+            result['path_to_check_file'] = check_file_with_path
+
+        result['path_to_files'] = path_to_files
+
+        if filename_with_path:
+            result['path_to_file'] = filename_with_path
+
+        if filesize:
+            result['file_size'] = filesize
+
+        if con:
+            if verbose:
+                print ('')
+                if filename_with_path:
+                    print (f'{space}FILE: downloaded {filename_with_path}')
+                print (f'{space}PATH: downloaded files {path_to_files}')
+            else:
+                if filename_with_path:
+                    print (f'{space}Downloaded file: {filename_with_path}')
+                else:
+                    print (f'{space}Path to files: {path_to_files}')
+        
+        return result

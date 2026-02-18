@@ -1,0 +1,14 @@
+names:
+  - winget{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: 'v([\d.]+)'
+    group: 1
+
+cmd_get_version: '{{exe_path}} --version'
+
+win_only: True
+
+install_help:
+  windows: Please install "winget" tool as described at 
+    https://learn.microsoft.com/en-us/windows/package-manager/winget !

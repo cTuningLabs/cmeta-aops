@@ -15,6 +15,17 @@ class CTask(InitCTask):
 
 
     ############################################################
+    def check_params(self,
+                     state: dict,
+                     params: dict = {},
+    ):
+        r = self.cm._check_params(params, ['env','bits','timeout','extra'], __name__)
+        if r['return']>0: return self.cm._error2(r, self.cm)
+
+        return {'return':0}
+
+
+    ############################################################
     def run(self,
             state: dict,        # cMeta state
             env: dict = {},
@@ -37,7 +48,13 @@ class CTask(InitCTask):
 
         env_os = os.environ
 
-        result = {'return':0, 'env':env.copy(), 'env_os':env_os.copy()}
+        # Convert +keys to lists
+        _env = env.copy()
+        self.cm.utils.sys.plus_env(_env)
+
+        result = {'return':0, 
+                  'os_env':env_os.copy()
+        }
 
         ##################################################################
         # Check various platform info
@@ -56,7 +73,7 @@ class CTask(InitCTask):
                 cmd = 'getconf LONG_BIT'
 
                 r = self.cm.utils.sys.run(cmd, env = env, genv = env_os, timeout = timeout, capture_output = True,
-                                          con = con, verbose = verbose, text_cmd = 'RUN', space = space)
+                                          con = False, verbose = verbose, text_cmd = 'RUN', space = space)
                 if r['return']>0: return self.cm._error2(r, self.cm)
                 if r['returncode'] == 0:
                     s = r['stdout'].strip()
@@ -96,7 +113,7 @@ class CTask(InitCTask):
             cmd = 'uname'
 
             r = self.cm.utils.sys.run(cmd, env = env, genv = env_os, timeout = timeout, capture_output = True,
-                                      con = con, verbose = verbose, text_cmd = 'RUN', space = space)
+                                      con = False, verbose = verbose, text_cmd = 'RUN', space = space)
             if r['return']>0: return self.cm._error2(r, self.cm)
             if r['returncode'] == 0:
                 uname = r['stdout'].strip().lower()
@@ -116,7 +133,7 @@ class CTask(InitCTask):
             uarch = None
 
             r = self.cm.utils.sys.run(cmd, env = env, genv = env_os, timeout = timeout, capture_output = True,
-                                      con = con, verbose = verbose, text_cmd = 'RUN', space = space)
+                                      con = False, verbose = verbose, text_cmd = 'RUN', space = space)
             if r['return']>0: return self.cm._error2(r, self.cm)
             if r['returncode'] == 0:
                 uarch = r['stdout'].strip().lower()
@@ -144,5 +161,48 @@ class CTask(InitCTask):
 
         # Finish automation
         result['os'] = host_os
+
+        # Common vars
+        all_vars = {
+          'windows':{
+            'file_ext_exe': '.exe',
+            'file_ext_exe_search': '.exe',
+            'file_ext_bat': '.bat',
+            'call_script': 'call',
+            'cmd_sep': '&&',
+          },
+          'linux':{
+            'file_ext_exe': '',
+            'file_ext_exe_search': '.',
+            'file_ext_bat': '.sh',
+            'call_script': '.',
+            'cmd_sep': '&&',
+          },
+          'macos':{
+            'file_ext_exe': '',
+            'file_ext_exe_search': '.',
+            'file_ext_bat': '.sh',
+            'call_script': '.',
+            'cmd_sep': '&&',
+          },
+        }
+
+        vars_os = uname if uname in all_vars else 'linux'
+        
+        result['vars'] = all_vars[vars_os]
+
+        # Initialize for global use !
+        result['_aggregate'] = {'env':_env}
+
+        # Check if not Windows and ~/.local/bin exists but not in PATH:
+        home = os.path.expanduser("~")
+
+        host_os['home_path'] = home
+
+        if os.name != 'nt':
+            path_local_bin = os.path.join(home, '.local', 'bin')
+            if os.path.isdir(path_local_bin) and path_local_bin not in os.environ.get('PATH',''):
+                _path = _env.setdefault('+PATH', [])
+                _path.append(path_local_bin)
 
         return result

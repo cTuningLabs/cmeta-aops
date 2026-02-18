@@ -1,0 +1,17 @@
+store_global: True                 # force
+storage_key: setup-min-win-tools   # force storage key to avoid mixing up in the future
+cache: True                        # force
+
+uses:
+- task: host,96ac7118439c4490
+
+- task: download-file,03fed13e2e0447cf
+  store_global: True
+  storage_key: download-file--min-win-tools
+  cache: True
+  with:
+    url: "https://zenodo.org/records/13868077/files/cm-artifact-os-windows-32.zip?download=1"
+    md5sum: 1590399cb7141ea342049b1205db3b32 
+    unzip: True
+    clean_after_unzip: True
+    check_file: "bin\\wget.exe"
