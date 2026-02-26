@@ -12,7 +12,7 @@ class CTask(InitCTask):
 
     ############################################################
     def run(self,
-            state: dict,        # cMeta state
+            ctx: dict,        # cMeta context
     ):
 
         """
@@ -26,10 +26,10 @@ class CTask(InitCTask):
 
         self.logger.debug("RUNNING TASK test-dummy3 run")
 
-        con = state['control'].get('con', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * state['tasks']['nested_call']
+        space = '  ' * ctx['tasks']['nested_call']
 
         result = {'return':0}
 

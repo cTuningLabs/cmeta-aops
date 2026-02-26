@@ -12,7 +12,7 @@ class CTask(InitCTask):
 
     ############################################################
     def run(self,
-            state: dict,        # cMeta state
+            ctx: dict,        # cMeta context
             env: dict = {},
     ):
 
@@ -25,25 +25,34 @@ class CTask(InitCTask):
 
         self.logger.debug("RUNNING TASK test-dummy3 run")
 
-        con = state['control'].get('con', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * state['tasks']['nested_call']
+        ctx_tasks = ctx['tasks']
+        ctx_tasks_control = ctx['tasks']['control']
+
+        cur_dir = ctx_tasks_control['cur_dir']
+        work_dir = ctx_tasks_control['work_dir']
+        task_path = ctx_tasks_control['task_path']
+
+        space = '  ' * ctx_tasks['nested_call']
 
         result = {'return':0}
 
-        clang_cpp = state['tasks']['global']['setup-tool--clang_cpp']
+        clang_cpp = ctx['tasks']['global']['setup-tool--clang_cpp']
 
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')
 
-        cmds = ['"'+clang_cpp['path']+'"' + ' src/test.cpp -o tmp/test.exe',
+        src_file = os.path.join(task_path, 'src', 'test.cpp')
+
+        cmds = ['"'+clang_cpp['path']+'"' + f' {src_file} -o tmp/test.exe',
                 'tmp\\test.exe']
 
         for cmd in cmds:
             ii = {'category': self.category_alias + ',' + self.category_uid,
                   'command': 'run',
-                  'state': state,
+                  'ctx': ctx,
                   'arg1': 'cmd,c9ba0a88df394d7f',
                   'cmd': cmd,
                   'env': env,
@@ -55,7 +64,7 @@ class CTask(InitCTask):
             }
 
             rx = self.cm.access(ii)
-            if rx['return']>0: return self.cm._error2(rx, self.cm)
+            if self.cm.catch_error(rx): return rx
 
             returncode = rx['returncode']
             if returncode>0:

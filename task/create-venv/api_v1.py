@@ -12,7 +12,7 @@ class CTask(InitCTask):
 
     ############################################################
     def run(self, 
-            state, 
+            ctx, 
             url=None):
         """
         """

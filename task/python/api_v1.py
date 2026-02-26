@@ -12,7 +12,7 @@ class CTask(InitCTask):
 
     ############################################################
     def run(self,
-            state: dict,        # cMeta state
+            ctx: dict,        # cMeta context
     ):
 
         """
@@ -22,15 +22,15 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        con = state['control'].get('con', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * state['tasks']['nested_call']
+        space = '  ' * ctx['tasks']['nested_call']
 
         _params = {}
 
-        state_results = state['tasks']['results']
-        result_host = state_results['host']
+        ctx_results = ctx['tasks']['results']
+        result_host = ctx_results['host']
 
         print (result_host)
 

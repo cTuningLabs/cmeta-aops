@@ -16,18 +16,18 @@ class CTask(InitCTask):
 
     ############################################################
     def check_params(self,
-                     state: dict,
+                     ctx: dict,
                      params: dict = {},
     ):
-        r = self.cm._check_params(params, ['env','bits','timeout','extra'], __name__)
-        if r['return']>0: return self.cm._error2(r, self.cm)
+        r = self.cm.check_params(params, ['env','bits','timeout','extra'], __name__)
+        if self.cm.catch_error(r): return r
 
         return {'return':0}
 
 
     ############################################################
     def run(self,
-            state: dict,        # cMeta state
+            ctx: dict,        # cMeta context
             env: dict = {},
             bits: int = None,
             timeout: int = 10,
@@ -41,10 +41,10 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        con = state['control'].get('con', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * state['tasks']['nested_call']
+        space = '  ' * ctx['tasks']['nested_call']
 
         env_os = os.environ
 
@@ -74,7 +74,7 @@ class CTask(InitCTask):
 
                 r = self.cm.utils.sys.run(cmd, env = env, genv = env_os, timeout = timeout, capture_output = True,
                                           con = False, verbose = verbose, text_cmd = 'RUN', space = space)
-                if r['return']>0: return self.cm._error2(r, self.cm)
+                if self.cm.catch_error(r): return r
                 if r['returncode'] == 0:
                     s = r['stdout'].strip()
                     if len(s) > 0 and len(s) < 4:
@@ -114,7 +114,7 @@ class CTask(InitCTask):
 
             r = self.cm.utils.sys.run(cmd, env = env, genv = env_os, timeout = timeout, capture_output = True,
                                       con = False, verbose = verbose, text_cmd = 'RUN', space = space)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
             if r['returncode'] == 0:
                 uname = r['stdout'].strip().lower()
 
@@ -134,7 +134,7 @@ class CTask(InitCTask):
 
             r = self.cm.utils.sys.run(cmd, env = env, genv = env_os, timeout = timeout, capture_output = True,
                                       con = False, verbose = verbose, text_cmd = 'RUN', space = space)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
             if r['returncode'] == 0:
                 uarch = r['stdout'].strip().lower()
 

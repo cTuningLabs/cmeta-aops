@@ -12,7 +12,7 @@ class CTask(InitCTask):
 
     ############################################################
     def customize_cache_artifact(self,
-                                 state,
+                                 ctx,
                                  cache_alias_template,
                                  cache_alias_extra,
                                  cache_meta,
@@ -61,7 +61,7 @@ class CTask(InitCTask):
 
     ############################################################
     def run(self,
-            state: dict,        # cMeta state
+            ctx: dict,        # cMeta context
             url: str = None,    
             directory: str = None,
             depth: int = None,
@@ -87,19 +87,19 @@ class CTask(InitCTask):
 
         self.logger.debug("RUNNING TASK clone-git-repo run")
 
-        con = state['control'].get('con', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        state_tasks = state['tasks']
+        ctx_tasks = ctx['tasks']
 
-        space = '  ' * state['tasks']['nested_call']
-        clean = state['tasks']['control'].get('clean', False)
-        update = state['tasks']['control'].get('update', False)
+        space = '  ' * ctx_tasks['nested_call']
+        clean = ctx_tasks['control'].get('clean', False)
+        update = ctx_tasks['control'].get('update', False)
 
         _params = {}
 
         if url is None or url == '':
-            return self.cm._error(f'URL is not defined in {__name__}', 1, None, self.cm.fail_on_error)
+            return self.cm.error(f'URL is not defined in {__name__}')
 
         if tag and not checkout:
             checkout = tag
@@ -146,13 +146,12 @@ class CTask(InitCTask):
             cmd = f'git clone {url} {directory}{xdepth}'
 
             r = self.cm.utils.sys.run(cmd, env = env, timeout = timeout, con = con, verbose = verbose, text_cmd = 'RUN', space = space)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
 
             ###################################################################
             # Prepare output
             if not os.path.isdir(path_to_git_repo):
-                err = f'Git repo directory was not created: {path_to_git_repo}'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'Git repo directory was not created: {path_to_git_repo}')
 
         if os.path.isdir(path_to_git_repo):
 
@@ -232,17 +231,17 @@ class CTask(InitCTask):
             if not fail:
                 # Read text files
                 r = self.cm.utils.files.safe_read_file(temp_file_branch, retry_if_not_found=1)
-                if r['return']>0: return self.cm._error2(rx, self.cm)
+                if self.cm.catch_error(r): return r
                 branch = r['data'].strip()
                 _params['branch'] = branch
 
                 r = self.cm.utils.files.safe_read_file(temp_file_checkout, retry_if_not_found=1)
-                if r['return']>0: return self.cm._error2(rx, self.cm)
+                if self.cm.catch_error(r): return r
                 checkout = r['data'].strip()
                 _params['checkout'] = checkout
 
                 r = self.cm.utils.files.safe_read_file(temp_file_tag, retry_if_not_found=1)
-                if r['return']>0: return self.cm._error2(rx, self.cm)
+                if self.cm.catch_error(r): return r
                 tag = r['data'].strip()
                 _params['tag'] = tag
 
@@ -253,7 +252,8 @@ class CTask(InitCTask):
 
             # Quit if fail
             if fail:
-                return self.cm._error2(rx, self.cm)
+                self.cm.catch_error(rx)
+                return rx
 
 
         ###################################################################
@@ -267,7 +267,7 @@ class CTask(InitCTask):
         ###################################################################
         # Check size and time ...
         r = self.cm.utils.sys.get_dir_size(path_to_git_repo, unit='MB', skip_datetime=True)
-        if r['return']>0: return self.cm._error2(r, self.cm)
+        if self.cm.catch_error(r): return r
         del(r['return'])
 
         result['_impact'] = {'dir_size':r}

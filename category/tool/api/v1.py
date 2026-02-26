@@ -12,7 +12,7 @@ class Category(InitCategory):
 
 
     ############################################################
-    def test_(self, state, arg1=None, flag1=False):
+    def test_(self, ctx, arg1=None, flag1=False):
         """
         """
 
@@ -36,19 +36,19 @@ class Category(InitCategory):
         return {'return':0}
 
     ############################################################
-    def find_path_(self, state, path = None, paths = None, space = None, context={}, desc={}):
+    def find_path_(self, ctx, path = None, paths = None, space = None, context={}, desc={}):
         """
         """
         self.logger.debug("RUNNING tool find_path v1")
 
-        con = state['control'].get('con', False)
-        quiet = state['control'].get('quiet', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        state_tasks = state.setdefault('tasks', {})
+        ctx_tasks = ctx.setdefault('tasks', {})
 
         if space is None:
-            nested_call = state_tasks.setdefault('nested_call', 0)
+            nested_call = ctx_tasks.setdefault('nested_call', 0)
             space = '  ' * nested_call
 
         if not paths:
@@ -84,7 +84,7 @@ class Category(InitCategory):
             for name in names:
 
                 r = self.cm.utils.common.expand_string(name, context)
-                if r['return']>0: return self.cm._error2(r, self.cm)
+                if self.cm.catch_error(r): return r
 
                 name = r['string']
 
@@ -152,7 +152,7 @@ class Category(InitCategory):
 
         self.logger.debug("RUNNING tool api v1 run")
 
-        state = params['state']
+        ctx = params['ctx']
 
         p = self._prepare_input_from_params(params)
 
@@ -161,7 +161,7 @@ class Category(InitCategory):
         # Setup tool
         p.update({'category': self.cmeta['uses_categories']['task'],
                   'command': 'run',
-                  'state': state,
+                  'ctx': ctx,
         })
 
         pp = copy.deepcopy(p)
@@ -170,7 +170,7 @@ class Category(InitCategory):
         p['name'] = params.get('arg1')
 
         r = self.cm.access(p)
-        if r['return']>0: return self.cm._error2(r, self.cm)
+        if self.cm.catch_error(r): return r
 
         path = r['path']
 
@@ -186,9 +186,9 @@ class Category(InitCategory):
         # Run tool
         pp['arg1'] = self.cmeta['uses_artifacts']['tool::cmd']
         pp['cmd'] = cmd
-        pp['state'] = state
+        pp['ctx'] = ctx
 
         r = self.cm.access(pp)
-        if r['return']>0: return self.cm._error2(r, self.cm)
+        self.cm.catch_error(r)
 
         return r

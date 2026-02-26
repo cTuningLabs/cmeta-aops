@@ -12,7 +12,7 @@ class CTask(InitCTask):
 
     ############################################################
     def run(self,
-            state: dict,        # cMeta state
+            ctx: dict,        # cMeta context
             env: dict = {},
             bits: int = None,
             timeout: int = 10,
@@ -26,14 +26,14 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        con = state['control'].get('con', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * state['tasks']['nested_call']
+        space = '  ' * ctx['tasks']['nested_call']
 
         result = {'return':0}
 
-        _global = state['tasks']['global']
+        _global = ctx['tasks']['global']
 
         # Should be resolved
         nvcc = _global['nvcc']

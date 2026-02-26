@@ -16,15 +16,15 @@ class Category(InitCategory):
     def __init__(self, *args, **kwargs):
 
         self.CACHE_FILE_WITH_RESULTS = 'cmeta-task-cached-result.json'
-        self.CACHE_FILE_WITH_STATE = 'cmeta-task-cached-state.json'
+        self.CACHE_FILE_WITH_CTX = 'cmeta-task-cached-ctx.json'
         self.SAVE_FILE_WITH_RESULTS = 'cmeta-task-saved-result.json'
-        self.SAVE_FILE_WITH_STATE = 'cmeta-task-saved-state.json'
+        self.SAVE_FILE_WITH_CTX = 'cmeta-task-saved-ctx.json'
 
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
 
     ############################################################
-    def test_(self, state, arg1=None, flag1=False):
+    def test_(self, ctx, arg1=None, flag1=False):
         """
         """
 
@@ -52,7 +52,7 @@ class Category(InitCategory):
     ############################################################
     def run_(
             self,
-            state: dict,                      # cMeta state
+            ctx: dict,                        # cMeta context
             arg1: str = None,                 # Task artifact alias or UID
             tags: str = None,                 # Optional tag filter
             ver: int = None,                  # version
@@ -87,7 +87,7 @@ class Category(InitCategory):
         Run a task.
 
         Args:
-            state (dict): cMeta state.
+            ctx (dict): cMeta context.
             arg1 (str | None): Artifact alias or UID.
             tags (str | list | None): Optional tag filter.
 
@@ -99,32 +99,31 @@ class Category(InitCategory):
 
         time_start = time.perf_counter()
 
-        con = state['control'].get('con', False)
-        quiet = state['control'].get('quiet', False)
-        verbose = state['control'].get('verbose', False)
-        api = state['control'].get('api', 1)
-        inside_cli = 'cli' in state.get('origin',{})
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
+        api = ctx['control'].get('api', 1)
+        inside_cli = 'cli' in ctx.get('origin',{})
 
-        state_tasks = state.setdefault('tasks', {})
-        nested_call = state_tasks.setdefault('nested_call', 0)
+        ctx_tasks = ctx.setdefault('tasks', {})
+        nested_call = ctx_tasks.setdefault('nested_call', 0)
         space = '  ' * nested_call
 
         cur_dir = os.getcwd()
         cache_path = None
-        workdir = cur_dir
+        work_dir = cur_dir
 
         uses_categories = self.cmeta['uses_categories']
 
         if use is not None and type(use) != dict:
-             err = f'type of "use" is "{type(use)}" in "{__name__}" but it must be "dict"'
-             return self.cm._error(err, 1, None, self.cm.fail_on_error)
+             return self.cm.error(f'type of "use" is "{type(use)}" in "{__name__}" but it must be "dict"')
 
         if use is None:
             use = {}
 
-        state_use = state_tasks.setdefault('use', {})
+        ctx_use = ctx_tasks.setdefault('use', {})
         if use:
-            state_use = self.cm.utils.common.deep_merge(state_use, copy.deepcopy(use), append_lists=True)
+            ctx_use = self.cm.utils.common.deep_merge(ctx_use, copy.deepcopy(use), append_lists=True)
 
         ###########################################################################################
         # SELECT TASK ARTIFACT
@@ -132,7 +131,7 @@ class Category(InitCategory):
         # Call base find function to find an artifact with a website
         p = {'category':uses_categories['utils'],
              'command':'select_artifact',
-             'select_category':state['category'],
+             'select_category':ctx['category'],
              'select_artifact':arg1,
              'select_tags':tags,
              'con':con,
@@ -145,15 +144,12 @@ class Category(InitCategory):
         }
 
         r = self.cm.access(p)
-        if r['return']>0: 
-            ret = r['return']
-            if ret == 16: ret = 1
-            return self.cm._error(r['error'], ret, None, self.cm.fail_on_error)
+        if self.cm.catch_error(r, fail16=True): return r
 
         artifact = r['artifact']
         cdesc = r['loaded_files']['desc'].get('data', {})
 
-        artifact_path = artifact['path']
+        task_path = artifact['path']
         cmeta = artifact['cmeta']
         cmeta_ref_parts = artifact['cmeta_ref_parts']
 
@@ -178,11 +174,11 @@ class Category(InitCategory):
 
         if task_api_code is not None and info:
             r = self.cm.utils.names.restore_cmeta_obj(cmeta_ref_parts, key='artifact', fail_on_error = self.fail_on_error)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
             category_str = r['obj']
 
             r = self.cm.utils.sys.get_api_info(task_api_code, 'run', f'task run {artifact_au}')
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
 
             help_text = r['api_info']
 
@@ -193,8 +189,7 @@ class Category(InitCategory):
 
 
         if cdesc.get('fail_if_not_win', False) and os.name != 'nt':
-            err = f'the task "{artifact_au}" can run only on Windows'
-            return self.cm._error(err, 1, None, self.cm.fail_on_error)
+            return self.cm.error(f'the task "{artifact_au}" can run only on Windows')
 
         ###########################################################################################
         # PRINT SELECTED TASK
@@ -202,14 +197,14 @@ class Category(InitCategory):
         if con and verbose:
             if nested_call>0: print ('')
             print (f'{space}' + '=' * (100-len(space)))
-            print (f'{space}TASK: {artifact_alias} ({artifact_path})')
+            print (f'{space}TASK: {artifact_alias} ({task_path})')
 
 
         ###########################################################################################
         # PREPARE GLOBAL CONTEXT AND DUMMY RESULT
 
-        _global = state_tasks.setdefault('global', {})
-        _aggregated = state_tasks.setdefault('aggregated', {})
+        _global = ctx_tasks.setdefault('global', {})
+        _aggregated = ctx_tasks.setdefault('aggregated', {})
         _local = {}
 
         result = {'return':0}
@@ -253,15 +248,16 @@ class Category(InitCategory):
                         
                         # Set the final value
                         if not isinstance(current_dict, dict):
-                            raise TypeError(f"{current_dict} must be a dict, not {type(current_dict).__name__}")
+                            x = type(current_dict).__name__
+                            raise TypeError(f"{current_dict} must be a dict, not {x}")
 
                         current_dict[key_parts[-1]] = v
 
                         if first_key == 'use':
                             _use = self.cm.utils.common.deep_merge(_use, current_dict_root['use'], append_lists=True)
 
-                        elif first_key == 'state':
-                            state = self.cm.utils.common.deep_merge(state, current_dict_root['state'], append_lists=True)
+                        elif first_key == 'ctx':
+                            ctx = self.cm.utils.common.deep_merge(ctx, current_dict_root['ctx'], append_lists=True)
 
                         else:
                             uparams = self.cm.utils.common.deep_merge(uparams, current_dict_root, append_lists=True)
@@ -274,8 +270,8 @@ class Category(InitCategory):
         # RUN EXTRA CHECK FROM CODE IF EXISTS
         task_extra_uses = []
         if task_api_code is not None and hasattr(task_api_code, 'check_params') and callable(getattr(task_api_code, 'check_params')):
-            r = task_api_code.check_params(state, uparams)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            r = task_api_code.check_params(ctx, uparams)
+            if self.cm.catch_error(r): return r
 
             if 'uses' in r:
                 task_extra_uses = r['uses']
@@ -285,9 +281,9 @@ class Category(InitCategory):
 
         call_repro = None
         if self.cm.debug:
-            calls = state_tasks.setdefault('calls', [])
+            calls = ctx_tasks.setdefault('calls', [])
 
-            call_repro = {'params': state['params'].copy(), 'nested_call': nested_call}
+            call_repro = {'params': ctx['params'].copy(), 'nested_call': nested_call}
 
             calls.append(call_repro)
 
@@ -315,7 +311,8 @@ class Category(InitCategory):
             storage_key = str(artifact_alias)
 
         r = self.cm.utils.common.expand_string(storage_key, context)
-        if r['return']>0: return self.cm._error2(r, self.cm)
+        if self.cm.catch_error(r): return r
+
         storage_key = r['string']
 
         # If not local  result already exists in global, skip sub-task
@@ -328,9 +325,9 @@ class Category(InitCategory):
             result = copy.deepcopy(_global[storage_key])
 
             # Do not aggregate - already done!
-            r = self._finish_run(state, con, verbose, workdir, cur_dir, space, save, result, save_here,
+            r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
                                  call_repro, aggregate = False)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
             
             return result
 
@@ -344,22 +341,22 @@ class Category(InitCategory):
 
         # Set up local context
         if uses:
-            r = self.use_(state, 
+            r = self.use_(ctx, 
                           desc = uses, 
                           nested_call = nested_call, 
                           local = _local,
                           task_artifact_alias = artifact_alias, 
                           task_artifact_uid = artifact_uid,
             )
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
 
 
 
         ###########################################################################################
-        # SAVE LOCAL TO STATE TO BE USED WITH TASK CODE IF NEEDED ...
+        # SAVE LOCAL TO CONTEXT TO BE USED WITH TASK CODE IF NEEDED ...
         # IT SHOULD NOT BE USED OUTSIDE A RUNNING TASK
 
-        state_tasks['local'] = _local
+        ctx_tasks['local'] = _local
 
         ###########################################################################################
         # PROCESS CACHE
@@ -377,8 +374,7 @@ class Category(InitCategory):
         if cache:
             # Check if compatible with cache
             if cdesc.get('no_cache', False):
-                err = f'the task "{artifact_au}" does not support cache'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'the task "{artifact_au}" does not support cache')
 
             # Need to prepare alias and tags
             cache_alias_template = f'task,{artifact_alias}{{cache_alias_extra}}'
@@ -417,8 +413,8 @@ class Category(InitCategory):
 
 
             if task_api_code is not None:
-                r = task_api_code.customize_cache_artifact(state, cache_alias_template, cache_alias_extra, cache_meta, cache_tags, cache_params, uparams)
-                if r['return']>0: return self.cm._error2(r, self.cm)
+                r = task_api_code.customize_cache_artifact(ctx, cache_alias_template, cache_alias_extra, cache_meta, cache_tags, cache_params, uparams)
+                if self.cm.catch_error(r): return r
 
                 if cache_name is None and 'cache_name' in r: cache_name = r['cache_name']
                 if cache_alias_extra is None and 'cache_alias_extra' in r: cache_alias_extra = r['cache_alias_extra']
@@ -513,11 +509,15 @@ class Category(InitCategory):
                 if 'sort_keys' in cdesc:
                     p['sort_keys'] = cdesc['sort_keys']
 
+
+# CHECK LOGIC WITH 16 AND ERROR/DEBUG !
+
                 r = self.cm.access(p)
-                if r['return']>0: 
-                    ret = r['return']
-                    if ret == 16: ret = 1
-                    return self.cm._error(r['error'], ret, None, self.cm.fail_on_error)
+                if self.cm.catch_error(r, fail16 = True): return r
+#                if r['return']>0: 
+#                    ret = r['return']
+#                    if ret == 16: ret = 1
+#                    return self.cm._error(r['error'], ret, None, self.cm.fail_on_error)
 
                 cache_artifacts = [r['artifact']]
 
@@ -548,8 +548,7 @@ class Category(InitCategory):
 
                     task_result_file = os.path.join(path, self.CACHE_FILE_WITH_RESULTS)
                     r = self.cm.utils.files.read_file(task_result_file)
-                    if r['return']>0 and r['return']!=16: 
-                        return self.cm._error2(r, self.cm)
+                    if self.cm.catch_error(r): return r
 
                     # If not found but cache exists, often the path is outside cache and was deleted - need to recreate!
                     # similar to turning --update and or --clean option
@@ -562,9 +561,9 @@ class Category(InitCategory):
                             else:
                                 _local[storage_key] = result
 
-                        r = self._finish_run(state, con, verbose, workdir, cur_dir, space, save, result, save_here,
+                        r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
                                              call_repro, aggregate = True)
-                        if r['return']>0: return self.cm._error2(r, self.cm)
+                        if self.cm.catch_error(r): return r
 
                         return result
 
@@ -604,7 +603,7 @@ class Category(InitCategory):
                                        'tags':cache_tags + ['tmp'],
                                        'meta':cache_meta
                        })
-                   if r['return']>0: return self.cm._error2(r, self.cm)
+                   if self.cm.catch_error(r): return r
 
                    cache_path = r['path']
                    cache_meta = r['meta']
@@ -618,7 +617,7 @@ class Category(InitCategory):
                 task_result_file = os.path.join(path, self.CACHE_FILE_WITH_RESULTS)
                 if os.path.isfile(task_result_file) and not update and not clean:
                     r = self.cm.utils.files.read_file(task_result_file)
-                    if r['return']>0: return self.cm._error2(r, self.cm)
+                    if self.cm.catch_error(r): return r
 
                     result = r['data']
                     
@@ -633,18 +632,18 @@ class Category(InitCategory):
         ###########################################################################################
         # PREPARE WORKING DIRECTORY
         if path:
-            workdir = path
+            work_dir = path
         elif cache_path:
-            workdir = cache_path
+            work_dir = cache_path
             
-        if not os.path.isdir(workdir):
-            os.makedirs(workdir, exist_ok=True)
+        if not os.path.isdir(work_dir):
+            os.makedirs(work_dir, exist_ok=True)
 
-        if con and verbose and workdir != cur_dir:
+        if con and verbose and work_dir != cur_dir:
             print ('')
-            print (f'{space}RUN: cd {workdir}')
+            print (f'{space}RUN: cd {work_dir}')
 
-        os.chdir(workdir)
+        os.chdir(work_dir)
 
         if task_result_file and os.path.isfile(task_result_file) and (clean or update):
             if con and verbose:
@@ -658,10 +657,10 @@ class Category(InitCategory):
         ###########################################################################################
         # RUN TASK CODE IF EXISTS
 
-        # Restore basic state control that may be changed by deps
-        state['control']['con'] = con
-        state['control']['quiet'] = quiet
-        state['control']['verbose'] = verbose
+        # Restore basic context control that may be changed by deps
+        ctx['control']['con'] = con
+        ctx['control']['quiet'] = quiet
+        ctx['control']['verbose'] = verbose
 
         time_start2 = time.perf_counter()
         if not skip and task_api_code is not None \
@@ -670,24 +669,29 @@ class Category(InitCategory):
                 print ('')
                 print (f'{space}RUN TASK CODE: {task_api_path}')
 
-            state_tasks_control = state['tasks']['control'] = {}
+            ctx_tasks_control = ctx['tasks']['control'] = {}
             if update:
-                state_tasks_control['update'] = True
+                ctx_tasks_control['update'] = True
             if clean:
-                state_tasks_control['clean'] = True
+                ctx_tasks_control['clean'] = True
             if new:
-                state_tasks_control['new'] = True
+                ctx_tasks_control['new'] = True
 
-            result = task_api_code.run(state, **uparams)
+            ctx_tasks_control['cur_dir'] = cur_dir
+            ctx_tasks_control['work_dir'] = work_dir
+            ctx_tasks_control['task_path'] = task_path
+            ctx_tasks_control['task_api_path'] = task_api_path
+            ctx_tasks_control['task_desc'] = cdesc
+
+            result = task_api_code.run(ctx, **uparams)
 
             # Check if success or fail
             if result['return']>0:
                 if cache:
                     r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_RESULTS, result)
-                    if r['return']>0: return self.cm._error2(r, self.cm)
+                    if self.cm.catch_error(r): return r
 
-                return self.cm._error(result['error'], result['return'], None, self.cm.fail_on_error)
- 
+                return self.cm.error(result['error'], result['return'])
 
 
 
@@ -723,14 +727,14 @@ class Category(InitCategory):
                 ii['meta'] = {'params':cache_params}
 
             r = self.cm.access(ii)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
 
         # Save result to cache for reuse
         if cache:
             r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_RESULTS, result)
-            if r['return']>0: return self.cm._error2(r, self.cm)
-            r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_STATE, state)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
+            r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_CTX, ctx)
+            if self.cm.catch_error(r): return r
 
         # Finish run
         if storage_key:
@@ -739,9 +743,9 @@ class Category(InitCategory):
             else:
                 _local[storage_key] = result
 
-        r = self._finish_run(state, con, verbose, workdir, cur_dir, space, save, result, save_here,
+        r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
                              call_repro, aggregate = True)
-        if r['return']>0: return self.cm._error2(r, self.cm)
+        if self.cm.catch_error(r): return r
 
         return result
 
@@ -751,10 +755,10 @@ class Category(InitCategory):
 
     def _finish_run(
                    self,
-                   state = {},
+                   ctx = {},
                    con = False,
                    verbose = False,
-                   workdir = None,
+                   work_dir = None,
                    cur_dir = None,
                    space = '',
                    save = False,
@@ -771,18 +775,18 @@ class Category(InitCategory):
         # Check aggregated results
         if aggregate and '_aggregate' in result:
             _aggregate = result['_aggregate']
-            state_tasks = state.setdefault('tasks', {})
-            _aggregated = state_tasks.setdefault('aggregated', {})
+            ctx_tasks = ctx.setdefault('tasks', {})
+            _aggregated = ctx_tasks.setdefault('aggregated', {})
             _aggregated = self.cm.utils.common.deep_merge(_aggregated, _aggregate, append_lists = True, prepend_lists=True)
 
-        # Save results in the workdir directory (cache, path, etc)
+        # Save results in the work_dir directory (cache, path, etc)
         if save:
             r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_RESULTS, result)
-            if r['return']>0: return self.cm._error2(r, self.cm)
-            r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_STATE, state)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
+            r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_CTX, ctx)
+            if self.cm.catch_error(r): return r
 
-        if con and verbose and workdir != cur_dir:
+        if con and verbose and work_dir != cur_dir:
             print ('')
             print (f'{space}RUN: cd {cur_dir}')
 
@@ -791,9 +795,9 @@ class Category(InitCategory):
         # Save results in the current directory where this task was called from
         if save_here:
             r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_RESULTS, result)
-            if r['return']>0: return self.cm._error2(r, self.cm)
-            r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_STATE, state)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
+            r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_CTX, ctx)
+            if self.cm.catch_error(r): return r
 
         return {'return':0}
 
@@ -801,7 +805,7 @@ class Category(InitCategory):
     ############################################################
     def use_(
             self,
-            state: dict,
+            ctx: dict,
             desc: dict = {},
             nested_call: int = 0,
             local = {},
@@ -813,7 +817,7 @@ class Category(InitCategory):
         Resolve sub_tasks
 
         Args:
-            state (dict): cMeta state.
+            ctx (dict): cMeta context.
 
         Returns:
             dict: A cMeta dictionary with the following keys:
@@ -821,16 +825,16 @@ class Category(InitCategory):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        con = state['control'].get('con', False)
-        quiet = state['control'].get('quiet', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        state_tasks = state.setdefault('tasks', {})
+        ctx_tasks = ctx.setdefault('tasks', {})
 
-        _global = state_tasks.setdefault('global', {})
+        _global = ctx_tasks.setdefault('global', {})
         _local = local
 
-        state_use = state_tasks.setdefault('use', {})
+        ctx_use = ctx_tasks.setdefault('use', {})
 
         for sub_task_desc in desc:
 
@@ -841,8 +845,7 @@ class Category(InitCategory):
 
             task = sub_task_desc.get('task', None)
             if not task:
-                err = f'the requirement in task "{task_artifact_alias}" misses "task" name or uid'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'the requirement in task "{task_artifact_alias}" misses "task" name or uid')
 
             name = sub_task_desc.get('name', '')
             if name and con and verbose:
@@ -860,8 +863,8 @@ class Category(InitCategory):
             unknown_keys = [k for k in sub_task_desc.keys() if k not in ['task', 'with', 'storage_key', 'store_global', 'cache', 
                                                                          'if', 'skip_if_not_win', 'category', 'command']]
             if unknown_keys:
-                err = f'unknown key(s) "{','.join(unknown_keys)}" in sub-task description in "{__name__}"'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                x = ','.join(unknown_keys)
+                return self.cm.error(f'unknown key(s) "{x}" in sub-task description in "{__name__}"')
 
 
             # Load task to check some extra params
@@ -873,7 +876,7 @@ class Category(InitCategory):
                                 'arg1': task,
                                 'load_files':['desc'],
             })
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
 
             sub_task_cmeta_desc = r['loaded_files']['desc'].get('data',{})
             sub_task_cmeta_ref_parts = r['artifact']['cmeta_ref_parts']
@@ -882,16 +885,14 @@ class Category(InitCategory):
             task_uid = sub_task_cmeta_ref_parts.get('artifact_uid')
 
             if not task_alias and not task_uid:
-                err = f'the requirement in task "{task_artifact_alias}" misses task name or uid'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'the requirement in task "{task_artifact_alias}" misses task name or uid')
 
 
             # Prepare input
             _with = sub_task_desc.get('with', {})
 
             if type(_with) is not dict:
-                err = f'"with" key must be "dict" in {sub_task_desc} in "{__name__}"'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'"with" key must be "dict" in {sub_task_desc} in "{__name__}"')
                
             context = {
                'global':_global, 
@@ -912,7 +913,7 @@ class Category(InitCategory):
 
             if force_storage_key:
                 r = self.cm.utils.common.expand_string(force_storage_key, context)
-                if r['return']>0: return self.cm._error2(r, self.cm)
+                if self.cm.catch_error(r): return r
                 force_storage_key = r['string']
 
             # Quick check (though should be checked by running task but we can skip)
@@ -930,12 +931,12 @@ class Category(InitCategory):
             _if = sub_task_desc.get('if', '')
             if _if:
                 r = self.cm.utils.common.expand_string(_if, context)
-                if r['return']>0: return self.cm._error2(r, self.cm)
+                if self.cm.catch_error(r): return r
 
                 _if = r['string']
 
                 r = self.cm.utils.common.restricted_bool_eval(_if, {})
-                if r['return']>0: return self.cm._error2(r, self.cm)
+                if self.cm.catch_error(r): return r
 
                 # If condition is not met, skip sub-task
                 if not r['result']:
@@ -950,7 +951,7 @@ class Category(InitCategory):
             if force_storage_key: ii['storage_key'] = force_storage_key
 
             r = self.cm.utils.common.expand_strings_in_dict(ii, context)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
 
             ii['arg1'] = task
 
@@ -961,24 +962,22 @@ class Category(InitCategory):
             ii['quiet'] = quiet
             ii['verbose'] = verbose
 
-            # Update state for tasks
-            state_tasks['nested_call'] += 1
+            # Update context for tasks
+            ctx_tasks['nested_call'] += 1
 
-            ii['state'] = state
+            ii['ctx'] = ctx
 
             # Check if must update via use dict
-            if state_use:
-                for use_key in state_use:
+            if ctx_use:
+                for use_key in ctx_use:
                     if force_storage_key and use_key == force_storage_key:
-                        use_params = state_use[use_key]
+                        use_params = ctx_use[use_key]
 
                         ii = self.cm.utils.common.deep_merge(ii, use_params, append_lists=True)
 
             sub_task_result = self.cm.access(ii)
+            if self.cm.catch_error(sub_task_result): return sub_task_result
 
-            if sub_task_result['return']>0: 
-                return self.cm._error2(sub_task_result, self.cm)
-
-            state_tasks['nested_call'] -= 1
+            ctx_tasks['nested_call'] -= 1
 
         return {'return':0}

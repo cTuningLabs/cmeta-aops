@@ -19,7 +19,7 @@ class CTask(InitCTask):
 
     ############################################################
     def run(self,
-            state: dict,        # cMeta state
+            ctx: dict,        # cMeta context
             env: dict = {},
             delay: int = 3,
             timeout: int = 30,
@@ -32,10 +32,10 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        con = state['control'].get('con', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * state['tasks']['nested_call']
+        space = '  ' * ctx['tasks']['nested_call']
 
         result = {'return':0}
 
@@ -58,19 +58,19 @@ class CTask(InitCTask):
             cmd = f'powershell start {path_to_script} -v runas'
 
             r = self.cm.utils.sys.run(cmd, env = env, timeout = int(timeout), con = con, verbose = verbose, text_cmd = 'RUN:', space = space)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
 
             if r['returncode']!=0:
                 if con:
                     print ('')
-                return self.cm._error(f'Command timed out in {__name__}', 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'Command timed out in {__name__}')
 
             if r['returncode']>0:
                 x = r.get('stderr')
                 x = '' if not x else ' '+x
                 if con:
                     print ('')
-                return self.cm._error(f'Command failed{x} in {__name__}', 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'Command failed{x} in {__name__}')
 
             # Trying again
             enabled = self._check_if_enabled()

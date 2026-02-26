@@ -11,17 +11,17 @@ class CTask(InitCTask):
 
     ############################################################
     def check_params(self,
-                     state: dict,
+                     ctx: dict,
                      params: dict = {},
     ):
-        r = self.cm._check_params(params, [], __name__)
-        if r['return']>0: return self.cm._error2(r, self.cm)
+        r = self.cm.check_params(params, [], __name__)
+        if self.cm.catch_error(r): return r
 
         return {'return':0}
 
     ############################################################
     def run(self,
-            state: dict,        # cMeta state
+            ctx: dict,        # cMeta context
     ):
 
         """
@@ -35,16 +35,16 @@ class CTask(InitCTask):
 
         self.logger.debug("RUNNING TASK clone-git-repo run")
 
-        con = state['control'].get('con', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * state['tasks']['nested_call']
-        clean = state['tasks']['control'].get('clean', False)
-        update = state['tasks']['control'].get('update', False)
+        space = '  ' * ctx['tasks']['nested_call']
+        clean = ctx['tasks']['control'].get('clean', False)
+        update = ctx['tasks']['control'].get('update', False)
 
         _params = {}
 
-        _global = state['tasks']['global']
+        _global = ctx['tasks']['global']
 
         result = {'return':0}
 

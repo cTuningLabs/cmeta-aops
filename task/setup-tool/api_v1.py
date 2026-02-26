@@ -17,7 +17,7 @@ class CTask(InitCTask):
 
     ############################################################
     def check_params(self,
-                     state: dict,
+                     ctx: dict,
                      params: dict,
     ):
         """
@@ -30,12 +30,12 @@ class CTask(InitCTask):
         if self.cm.debug:
             self.logger.debug("RUNNING TASK setup-tool check_params")
 
-        con = state['control'].get('con', False)
-        quiet = state['control'].get('quiet', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        state_tasks = state['tasks']
-        nested_call = state_tasks.setdefault('nested_call', 0)
+        ctx_tasks = ctx['tasks']
+        nested_call = ctx_tasks.setdefault('nested_call', 0)
         space = '  ' * nested_call
 
         name = params.get('name')
@@ -59,10 +59,7 @@ class CTask(InitCTask):
         }
 
         r = self.cm.access(p)
-        if r['return']>0: 
-            ret = r['return']
-            if ret == 16: ret = 1
-            return self.cm._error(r['error'], ret, None, self.cm.fail_on_error)
+        if self.cm.catch_error(r, fail16=True): return r
 
         artifact_au = r['artifact_au']
 
@@ -81,7 +78,7 @@ class CTask(InitCTask):
 
     ############################################################
     def customize_cache_artifact(self,
-                                 state,
+                                 ctx,
                                  cache_alias_template,
                                  cache_alias_extra,
                                  cache_meta,
@@ -110,7 +107,7 @@ class CTask(InitCTask):
 
     ############################################################
     def run(self,
-            state: dict,                # cMeta state
+            ctx: dict,                  # cMeta context
             name: str = None,           # Tool name
             tool_tags: str = None,      # Tool tags
             tool_api_ver: int = None,   # Tool api ver (if has code)
@@ -136,18 +133,18 @@ class CTask(InitCTask):
         if self.cm.debug:
             self.logger.debug("RUNNING TASK setup-tool run")
 
-        con = state['control'].get('con', False)
-        quiet = state['control'].get('quiet', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        state_tasks = state['tasks']
-        nested_call = state_tasks.setdefault('nested_call', 0)
+        ctx_tasks = ctx['tasks']
+        nested_call = ctx_tasks.setdefault('nested_call', 0)
         space = '  ' * nested_call
 
         _params = {}
 
-        _global = state['tasks']['global']
-        _aggregated = state['tasks']['aggregated']
+        _global = ctx['tasks']['global']
+        _aggregated = ctx['tasks']['aggregated']
         _local = {}
 
         uname = _global['host']['os']['uname']
@@ -177,10 +174,7 @@ class CTask(InitCTask):
         }
 
         r = self.cm.access(p)
-        if r['return']>0: 
-            ret = r['return']
-            if ret == 16: ret = 1
-            return self.cm._error(r['error'], ret, None, self.cm.fail_on_error)
+        if self.cm.catch_error(r, fail16=True): return r
 
         artifact = r['artifact']
         cmeta = artifact['cmeta']
@@ -211,7 +205,7 @@ class CTask(InitCTask):
                   'con': con,
                   'quiet': quiet,
                   'verbose': verbose,
-                  'state': state,
+                  'ctx': ctx,
                   'desc': uses,
                   'nested_call': nested_call,
                   'local': _local,
@@ -219,7 +213,7 @@ class CTask(InitCTask):
                   'task_artifact_uid': task_artifact_uid,
                  }
             r = self.cm.access(ii)
-            if r['return']>0: return self.cm._error2(r, self.cm)
+            if self.cm.catch_error(r): return r
 
 
 
@@ -306,12 +300,12 @@ class CTask(InitCTask):
                     }
 
                     if build and hasattr(tool_api_code, 'build') and callable(getattr(tool_api_code, 'build')):
-                        r = tool_api_code.build(state, install_params)
+                        r = tool_api_code.build(ctx, install_params)
                     elif hasattr(tool_api_code, 'install') and callable(getattr(tool_api_code, 'install')):
-                        r = tool_api_code.install(state, install_params)
+                        r = tool_api_code.install(ctx, install_params)
 
                     if r:
-                        if r['return']>0: return self.cm._error2(r, self.cm)
+                        if self.cm.catch_error(r): return r
 
                         if not r.get('failed', False):
                             failed = False
@@ -338,8 +332,7 @@ class CTask(InitCTask):
                             print ('='*80)
 
                     x = f' with version "{version}"' if version else ''
-                    err = f'failed to find tool "{artifact_au}"{x}'
-                    return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                    return self.cm.error(err = f'failed to find tool "{artifact_au}"{x}')
 
 
             ############################################################################
@@ -357,8 +350,7 @@ class CTask(InitCTask):
                      'context':context,
                 }
                 r = self.cm.access(p)
-                if r['return']>0: 
-                    return self.cm._error2(r, self.cm)
+                if self.cm.catch_error(r): return r
 
                 found_paths = r['found_paths']
 
@@ -368,8 +360,7 @@ class CTask(InitCTask):
                     installation = True
                     continue
 
-                err = f'failed to find tool "{artifact_au}"'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'failed to find tool "{artifact_au}"')
 
             ############################################################################
             # Get versions
@@ -399,7 +390,7 @@ class CTask(InitCTask):
 
                     ii = {'category': self.category_alias + ',' + self.category_uid,
                           'command': 'run',
-                          'state': state,
+                          'ctx': ctx,
                           'arg1': 'cmd,c9ba0a88df394d7f',
                           'cmd': cmd,
                           'env': env,
@@ -407,6 +398,7 @@ class CTask(InitCTask):
                           'con': _con, 
                           'verbose': _verbose, 
                           'text_cmd': 'RUN:', 
+                          'fail_if_nonzero_return_code': False,
                           'capture_output': True,
                     }
 
@@ -430,8 +422,7 @@ class CTask(InitCTask):
                     installation = True
                     continue
 
-                err = f'failed to find tool "{artifact_au}" with version'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'failed to find tool "{artifact_au}" with version')
 
 
             ############################################################################
@@ -478,8 +469,7 @@ class CTask(InitCTask):
                     installation = True
                     continue
 
-                err = f'failed to find tool "{artifact_au}" with parsed version'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'failed to find tool "{artifact_au}" with parsed version')
 
 
             ############################################################################
@@ -513,8 +503,7 @@ class CTask(InitCTask):
                     installation = True
                     continue
 
-                err = f'failed to find tool "{artifact_au}" with matched version'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'failed to find tool "{artifact_au}" with matched version')
 
             if detection:
                 detection = False
@@ -529,6 +518,9 @@ class CTask(InitCTask):
         ############################################################################
         # Select tool
 
+        import sys
+        print (sys.executable)
+
         if len(matched_paths_with_versions) == 1:
             selection = 0
             sorted_matched_paths_with_versions = matched_paths_with_versions
@@ -541,13 +533,34 @@ class CTask(InitCTask):
                 key=lambda a: self.cm.utils.common.build_sort_key(a, sort_keys)
             )
 
+            # Check if customization available
+            if hasattr(tool_api_code, 'sort_paths') and callable(getattr(tool_api_code, 'sort_paths')):
+                r = tool_api_code.sort_paths(ctx, sorted_matched_paths_with_versions)
+                if self.cm.catch_error(r): return r
+
+                input('xyz2')
+
+
+            if r:
+                if self.cm.catch_error(r): return r
+
+                if not r.get('failed', False):
+                    failed = False
+
+                found_paths = r.get('found_paths')
+
+                if found_paths:
+                    skip_search = True
+                else:
+                    found_paths = None
+
             selection = 0
 
             if con:
                 num = 0
 
                 print ('')
-                print (f'{space}Detected {name}:')
+                print (f'{space}Detected "{name}":')
                 print ('')
 
                 for x in sorted_matched_paths_with_versions:
@@ -571,8 +584,7 @@ class CTask(InitCTask):
                     selection = 0 if x == '' else int(x)
 
                     if selection < 0 or selection >= num:
-                        err = 'selection out of range'
-                        return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                        return self.cm.error('selection out of range')
 
 
         ############################################################################

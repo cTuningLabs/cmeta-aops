@@ -12,7 +12,7 @@ class CTask(InitCTask):
 
     ############################################################
     def run(self,
-            state: dict,        # cMeta state
+            ctx: dict,        # cMeta context
             env: dict = {},
     ):
 
@@ -23,29 +23,38 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        self.cm.utils.files.write_file('tmp-state.json', state)
+        self.cm.utils.files.write_file('tmp-ctx.json', ctx)
 
         self.logger.debug("RUNNING TASK test-dummy3 run")
 
-        con = state['control'].get('con', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * state['tasks']['nested_call']
+        ctx_tasks = ctx['tasks']
+        ctx_tasks_control = ctx['tasks']['control']
+
+        cur_dir = ctx_tasks_control['cur_dir']
+        work_dir = ctx_tasks_control['work_dir']
+        task_path = ctx_tasks_control['task_path']
+
+        space = '  ' * ctx_tasks['nested_call']
 
         result = {'return':0}
 
-        nvcc = state['tasks']['global']['setup-tool--nvcc']
+        nvcc = ctx['tasks']['global']['setup-tool--nvcc']
 
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')
 
-        cmds = ['"'+nvcc['path']+'"' + ' src/list_devices.cu -o tmp/list_devices',
+        src_file = os.path.join(task_path, 'src', 'list_devices.cu')
+
+        cmds = ['"'+nvcc['path']+'"' + f' {src_file} -o tmp/list_devices',
                 'tmp\list_devices.exe']
 
         for cmd in cmds:
             ii = {'category': self.category_alias + ',' + self.category_uid,
                   'command': 'run',
-                  'state': state,
+                  'ctx': ctx,
                   'arg1': 'cmd,c9ba0a88df394d7f',
                   'cmd': cmd,
                   'env': env,
@@ -57,7 +66,7 @@ class CTask(InitCTask):
             }
 
             rx = self.cm.access(ii)
-            if rx['return']>0: return self.cm._error2(rx, self.cm)
+            if self.cm.catch_error(rx): return rx
 
             returncode = rx['returncode']
             if returncode>0:

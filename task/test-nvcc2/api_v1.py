@@ -12,7 +12,7 @@ class CTask(InitCTask):
 
     ############################################################
     def run(self,
-            state: dict,        # cMeta state
+            ctx: dict,        # cMeta context
             env: dict = {},
     ):
 
@@ -23,18 +23,18 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        self.cm.utils.files.write_file('tmp-state.json', state)
+        self.cm.utils.files.write_file('tmp-ctx.json', ctx)
 
         self.logger.debug("RUNNING TASK test-dummy3 run")
 
-        con = state['control'].get('con', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * state['tasks']['nested_call']
+        space = '  ' * ctx['tasks']['nested_call']
 
         result = {'return':0}
 
-        nvcc = state['tasks']['global']['nvcc']
+        nvcc = ctx['tasks']['global']['nvcc']
 
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')
@@ -45,7 +45,7 @@ class CTask(InitCTask):
         for cmd in cmds:
             ii = {'category': self.category_alias + ',' + self.category_uid,
                   'command': 'run',
-                  'state': state,
+                  'ctx': ctx,
                   'arg1': 'cmd,c9ba0a88df394d7f',
                   'cmd': cmd,
                   'env': env,
@@ -57,7 +57,7 @@ class CTask(InitCTask):
             }
 
             rx = self.cm.access(ii)
-            if rx['return']>0: return self.cm._error2(rx, self.cm)
+            if self.cm.catch_error(rx): return rx
 
             returncode = rx['returncode']
             if returncode>0:

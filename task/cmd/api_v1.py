@@ -13,7 +13,7 @@ class CTask(InitCTask):
 
     ############################################################
     def run(self,
-            state: dict,        # cMeta state
+            ctx: dict,        # cMeta context
             cmd: str = "",
             env: dict = {},
             genv: dict = {},
@@ -37,13 +37,13 @@ class CTask(InitCTask):
 
         self.logger.debug("RUNNING TASK run")
 
-        con = state['control'].get('con', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * state['tasks']['nested_call']
+        space = '  ' * ctx['tasks']['nested_call']
 
-        _global = state['tasks']['global']
-        _aggregated = state['tasks']['aggregated']
+        _global = ctx['tasks']['global']
+        _aggregated = ctx['tasks']['aggregated']
 
         os_env = _global['host']['os_env']
 
@@ -64,7 +64,7 @@ class CTask(InitCTask):
                                        print_env_keys = print_env_keys,
                                        print_extra_line = print_extra_line,
         )
-        if result['return']>0: return self.cm._error2(result, self.cm)
+        if self.cm.catch_error(result): return result
 
         returncode = result['returncode']
 
@@ -72,7 +72,6 @@ class CTask(InitCTask):
         result['cmd'] = cmd
 
         if fail_if_nonzero_return_code and returncode>0:
-            err = f'CMD "{cmd}" failed with return code {returncode}'
-            return self.cm._error(err, 99, None, self.cm.fail_on_error)
+            return self.cm.error(f'CMD "{cmd}" failed with return code {returncode}', 99)
 
         return result

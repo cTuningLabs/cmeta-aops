@@ -12,7 +12,7 @@ class CTool(InitCTool):
 
     ############################################################
     def install(self,
-                state: dict,
+                ctx: dict,
                 params: dict,
     ):
         """
@@ -41,7 +41,7 @@ class CTool(InitCTool):
 
         ii = {'category': 'task,c36be4b9314a45e0',
               'command': 'run',
-              'state': state,
+              'ctx': ctx,
               'arg1': 'cmd,c9ba0a88df394d7f',
               'cmd': cmd,
               'env': env,
@@ -52,7 +52,7 @@ class CTool(InitCTool):
         }
 
         rx = self.cm.access(ii)
-        if rx['return']>0: return self.cm._error2(rx, self.cm)
+        if self.cm.catch_error(rx): return rx
 
         returncode = rx['returncode']
         if returncode>0:

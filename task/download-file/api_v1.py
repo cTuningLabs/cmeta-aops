@@ -11,7 +11,7 @@ class CTask(InitCTask):
 
     ############################################################
     def check_params(self,
-                     state: dict,
+                     ctx: dict,
                      params: dict,
     ):
         """
@@ -25,7 +25,7 @@ class CTask(InitCTask):
 
         url = params.get('url')
         if not url:
-            return self.cm._error(f'URL is not defined in {__name__}', 1, None, self.cm.fail_on_error)
+            return self.cm.error(f'URL is not defined in {__name__}')
 
         filename = params.get('filename')
 
@@ -39,8 +39,8 @@ class CTask(InitCTask):
 
         if not filename:
             if url:
-                return self.cm._error(f'couldn\'t extract filename from {url} in {__name__}', 1, None, self.cm.fail_on_error)
-            return self.cm._error(f'filename is not defined in {__name__}', 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'couldn\'t extract filename from {url} in {__name__}')
+            return self.cm.error(f'filename is not defined in {__name__}')
 
         params['filename'] = filename
 
@@ -49,7 +49,7 @@ class CTask(InitCTask):
 
     ############################################################
     def customize_cache_artifact(self,
-                                 state,
+                                 ctx,
                                  cache_alias_template,
                                  cache_alias_extra,
                                  cache_meta,
@@ -61,8 +61,8 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
-        r = self.check_params(state, params)
-        self.cm._catch_error2(r) 
+        r = self.check_params(ctx, params)
+        if self.cm.catch_error(r): return r
 
         filename = params['filename']
 
@@ -114,7 +114,7 @@ class CTask(InitCTask):
 
     ############################################################
     def run(self,
-            state: dict,        # cMeta state
+            ctx: dict,        # cMeta context
             url: str = None,    
             env: dict = {},
             skip_ssl_certificate: bool = False,
@@ -143,17 +143,17 @@ class CTask(InitCTask):
 
         self.logger.debug("RUNNING TASK clone-git-repo run")
 
-        con = state['control'].get('con', False)
-        verbose = state['control'].get('verbose', False)
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * state['tasks']['nested_call']
-        clean = state['tasks']['control'].get('clean', False)
-        update = state['tasks']['control'].get('update', False)
+        space = '  ' * ctx['tasks']['nested_call']
+        clean = ctx['tasks']['control'].get('clean', False)
+        update = ctx['tasks']['control'].get('update', False)
 
         _params = {}
 
         if not url:
-            return self.cm._error(f'URL is not defined in {__name__}', 1, None, self.cm.fail_on_error)
+            return self.cm.error(f'URL is not defined in {__name__}')
 
         # Check if multiple URLs, files and md5sums
         urls = self._process_urls(url)
@@ -177,8 +177,7 @@ class CTask(InitCTask):
             path_to_files = workdir
         else:
             if not self.cm.utils.files.is_dir_within_path(workdir, directory):
-                err = f'"{directory}" should not go out of the working directory "{workdir}"'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'"{directory}" should not go out of the working directory "{workdir}"')
 
             path_to_files = os.path.join(workdir, directory)
 
@@ -189,14 +188,13 @@ class CTask(InitCTask):
                         print (f'{space}RUN: rm {path_to_files}')
 
                     r = self.cm.utils.files.remove_files_and_dirs_in_path(path_to_files)
-                    self.cm._catch_error2(r, self.cm)
+                    if self.cm.catch_error(r): return r
 
                     try:
                         import shutil
                         shutil.rmtree(path_to_files)
                     except Exception as e:
-                        err = f'can\'t remove directory "{path_to_files}"'
-                        return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                        return self.cm.error(f'can\'t remove directory "{path_to_files}"')
 
             if not os.path.isdir(path_to_files):
                 os.makedirs(path_to_files)
@@ -253,8 +251,7 @@ class CTask(InitCTask):
                             error = rr['error']
 
                     else:
-                        err = f'download tool {tool} is not yet supported in {__name__}'
-                        return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                        return self.cm.error(f'download tool {tool} is not yet supported in {__name__}')
                 else:
                     success = True
 
@@ -267,7 +264,7 @@ class CTask(InitCTask):
                             print (f'{space}RUN: Checking md5sum for {filename}: {md5sum}')
 
                         r = self.cm.utils.files.md5sum(path = filename_with_path)
-                        self.cm._catch_error2(r, self.cm)
+                        if self.cm.catch_error(r): return r
 
                         md5sum_calculated = r['md5sum']
 
@@ -279,8 +276,8 @@ class CTask(InitCTask):
                     break    
 
             if not success:
-                err = f"failed downloading file from {','.join(urls)}\n{error}"
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                x = ','.join(urls)
+                return self.cm.error(f"failed downloading file from {x}\n{error}")
 
             filesize = os.path.getsize(filename_with_path)
 
@@ -298,7 +295,7 @@ class CTask(InitCTask):
                                                   overwrite = unzip_overwrite, 
                                                   clean = clean_after_unzip,
                                                   fail_on_error = self.cm.fail_on_error)
-                    self.cm._catch_error2(r, self.cm)
+                    if self.cm.catch_error(r): return r
 
                     if clean_after_unzip and os.path.isfile(filename_with_path):
                         if verbose:
@@ -307,16 +304,14 @@ class CTask(InitCTask):
                         os.remove(filename_with_path)
 
                 else:
-                    err = f'extension is not yet supported for unzip {filename}'
-                    return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                    return self.cm.error(f'extension is not yet supported for unzip {filename}')
            
 
         ###################################################################
         # Check file again
         if check_file_with_path:
             if not os.path.isfile(check_file_with_path):
-                err = f'couldn\'t find check file "{check_file_with_path}"'
-                return self.cm._error(err, 1, None, self.cm.fail_on_error)
+                return self.cm.error(f'couldn\'t find check file "{check_file_with_path}"')
                 
             result['check_file'] = check_file
             result['path_to_check_file'] = check_file_with_path
