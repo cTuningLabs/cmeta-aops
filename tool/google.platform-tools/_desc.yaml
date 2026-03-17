@@ -1,0 +1,18 @@
+names:
+  - adb{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: '^version\s+(\d+\.\d+\.\d+(?:-\d+)?)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+install_cmd:
+  windows: "{{global.tool--winget.qpath}} install --id=Google.PlatformTools -e --no-upgrade"
+
+install_cmd_version:
+  windows: "{{global.tool--winget.qpath}} install --id=Google.PlatformTools -e --version={{simple_version}} --no-upgrade"
+
+extra_paths:
+  windows:
+    - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"

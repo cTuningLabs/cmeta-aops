@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlsys"
+dynamic = ["version"]
+description = "MLSys is a lightweight front-end for running, benchmarking, and optimizing ML systems, powered by the cMeta framework."
+readme = "README.md"
+requires-python = ">=3.9"
+license-files = ["COPYRIGHT", "LICENSE"]
+authors = [
+    {name = "Grigori Fursin", email = "gfursin@ctuninglabs.com"},
+    {name = "cTuning Labs"}
+]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Information Technology",
+    "Topic :: Software Development",
+    "Topic :: System",
+    "Topic :: Scientific/Engineering",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+dependencies = [
+     "cmeta",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "flake8",
+]
+
+all = ["mlsys[dev]"]
+
+
+[project.scripts]
+mlsys = "mlsys.cli:main_mlsys"
+
+[tool.setuptools.dynamic]
+version = {attr = "mlsys.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mlsys*"]
+
+[tool.setuptools]
+
+[tool.setuptools.exclude-package-data]
+"*" = [
+    "__pycache__",
+    "*.pyc",
+    "*.pyo",
+    "**/__pycache__",
+    "**/*.pyc",
+    "**/*.pyo"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["mlsys"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]

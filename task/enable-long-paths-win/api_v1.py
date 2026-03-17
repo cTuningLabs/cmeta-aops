@@ -1,6 +1,10 @@
 ﻿"""
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-License: Proprietary - contact the author for licensing information.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
+All rights reserved.
+
+Proprietary and confidential.
+This software may not be copied, modified, distributed, or used
+without explicit permission from the copyright holder.
 """
 
 import os
@@ -35,7 +39,7 @@ class CTask(InitCTask):
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * ctx['tasks']['nested_call']
+        space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
 
         result = {'return':0}
 

@@ -23,7 +23,11 @@ class CTask(InitCTask):
             fail_if_nonzero_return_code: bool = True,
             text_cmd: str = 'RUN:',
             print_env_keys: list = None,
-            print_extra_line: bool = False,
+            print_extra_line: bool = True,
+            print_cur_dir: bool = False,
+            hide_in_cmd: list = None,
+            hide_in_env: list = None,
+            unparsed: list = [],
     ):
 
         """
@@ -40,7 +44,7 @@ class CTask(InitCTask):
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * ctx['tasks']['nested_call']
+        space = '  ' * (ctx['tasks']['nested_call'] + 1) if verbose else ''
 
         _global = ctx['tasks']['global']
         _aggregated = ctx['tasks']['aggregated']
@@ -49,11 +53,20 @@ class CTask(InitCTask):
 
         envs = _aggregated.get('env', {})
 
+        if unparsed:
+            for u in unparsed:
+                if cmd != '':
+                    cmd += ' '
+
+                cmd += self.cm.utils.files.quote_path(u)
+
         result = self.cm.utils.sys.run(cmd, 
                                        env = env, 
                                        envs = envs, 
                                        genv = genv, 
                                        os_env = os_env,
+                                       hide_in_cmd = hide_in_cmd,
+                                       hide_in_env = hide_in_env,
                                        timeout = timeout, 
                                        capture_output = capture_output,
                                        capture_env = capture_env,
@@ -63,8 +76,9 @@ class CTask(InitCTask):
                                        space = space,
                                        print_env_keys = print_env_keys,
                                        print_extra_line = print_extra_line,
+                                       print_cur_dir = print_cur_dir,
         )
-        if self.cm.catch_error(result): return result
+        if self.cm.catch_error(result, fail16=True): return result
 
         returncode = result['returncode']
 

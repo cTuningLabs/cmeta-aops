@@ -29,7 +29,7 @@ class CTask(InitCTask):
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * ctx['tasks']['nested_call']
+        space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
 
         result = {'return':0}
 

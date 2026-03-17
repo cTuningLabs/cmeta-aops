@@ -1,6 +1,10 @@
 """
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-License: Proprietary - contact the author for licensing information.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
+All rights reserved.
+
+Proprietary and confidential.
+This software may not be copied, modified, distributed, or used
+without explicit permission from the copyright holder.
 """
 
 import os
@@ -19,6 +23,33 @@ class Category(InitCategory):
         self.CACHE_FILE_WITH_CTX = 'cmeta-task-cached-ctx.json'
         self.SAVE_FILE_WITH_RESULTS = 'cmeta-task-saved-result.json'
         self.SAVE_FILE_WITH_CTX = 'cmeta-task-saved-ctx.json'
+
+        self.control1 = [
+            'arg1', 
+            'task_name', 
+            'tags', 
+            'ver', 
+            'info', 
+            'save', 
+            'save_here', 
+            'use', 
+            'store_global', 
+            'storage_key',
+        ]
+
+        self.control2 = [
+            'path', 
+            'skip', 
+            'cache', 
+            'cache_repo', 
+            'cache_name',
+            'cache_extra_alias', 
+            'cache_extra_params', 
+            'cache_extra_tags',
+            'update', 
+            'clean', 
+            'new',
+        ]
 
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
@@ -48,70 +79,49 @@ class Category(InitCategory):
         return {'return':0}
 
 
-
     ############################################################
-    def run_(
+    def run(
             self,
-            ctx: dict,                        # cMeta context
-            arg1: str = None,                 # Task artifact alias or UID
-            tags: str = None,                 # Optional tag filter
-            ver: int = None,                  # version
-
-            info: bool = False,               # If True, show help about params passed to a given task module (Python API and flags)
-
-            path: str = None,                 # Working directory (change path there)
-            save: bool = False,               # Force save results even if not cached
-            save_here: bool = False,          #
-            skip: bool = False,               # If True, skip task run but keep all the rest
-
-            cache: bool = None,               # If True, use cache to process this task
-            cache_repo: str = None,           # Force to use non "local" repo
-            cache_name: str = None,           # Use custom cache alias instead of automatically generated one
-            cache_alias_extra: str = None, 
-            cache_extra_params: dict = None,
-            cache_extra_tags: str = None,
-
-            update: bool = False,             # Rerun task and update cache entry even if exists
-            clean: bool = False,              # Clean cache entry or path 
-            new: bool = False,                # Create new entry (for new versions)
-
-            use: dict = None,
-
-            store_global: bool = None,              # Force store in global memory
-            storage_key: str = None,          # Force storage key
-
-            **params: dict,                   # Parameters passed to a given task module
+            params,
     ):
-
         """
-        Run a task.
-
-        Args:
-            ctx (dict): cMeta context.
-            arg1 (str | None): Artifact alias or UID.
-            tags (str | list | None): Optional tag filter.
-
-        Returns:
-            dict: A cMeta dictionary with the following keys:
-                - **return** (int): 0 if success, >0 if error.
-                - **error** (str): Error message if `return > 0`.
         """
+
+        self.cm.outdated(__file__, self.cmeta)
+
+        ctx = params['ctx']
+
+        inside_cli = 'cli' in ctx.get('origin',{})
 
         time_start = time.perf_counter()
 
+        arg1 = params.get('arg1')
+        if params.get('task_name'): arg1 = params['task_name']
+        tags = params.get('tags')
+        ver = params.get('ver')
+        info = params.get('info')
+        use = params.get('use')
+
+        save = params.get('save', False)
+        save_here = params.get('save_here', False)
+   
+        store_global = params.get('store_global')
+        storage_key = params.get('storage_key')
+
         con = ctx['control'].get('con', False)
+
         quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
-        api = ctx['control'].get('api', 1)
-        inside_cli = 'cli' in ctx.get('origin',{})
 
         ctx_tasks = ctx.setdefault('tasks', {})
         nested_call = ctx_tasks.setdefault('nested_call', 0)
-        space = '  ' * nested_call
+        space = '  ' * nested_call if verbose else ''
 
         cur_dir = os.getcwd()
         cache_path = None
         work_dir = cur_dir
+
+        cache_sep = self.cmeta['cache_alias_separator']
 
         uses_categories = self.cmeta['uses_categories']
 
@@ -128,7 +138,6 @@ class Category(InitCategory):
         ###########################################################################################
         # SELECT TASK ARTIFACT
 
-        # Call base find function to find an artifact with a website
         p = {'category':uses_categories['utils'],
              'command':'select_artifact',
              'select_category':ctx['category'],
@@ -136,18 +145,19 @@ class Category(InitCategory):
              'select_tags':tags,
              'con':con,
              'quiet':quiet,
-             'load_files':['desc'],
+             'load_files':['_desc'],
              'space':space,
              'load_api': True,
              'load_api_ver': ver,
              'load_api_class': 'CTask',
+             'inside_cli': inside_cli,
         }
 
         r = self.cm.access(p)
         if self.cm.catch_error(r, fail16=True): return r
 
         artifact = r['artifact']
-        cdesc = r['loaded_files']['desc'].get('data', {})
+        cdesc = r['loaded_files']['_desc'].get('data', {})
 
         task_path = artifact['path']
         cmeta = artifact['cmeta']
@@ -165,12 +175,23 @@ class Category(InitCategory):
         
         if task_api_code is not None:
             task_api_code.cmeta = cmeta
+            task_api_code.task_cmeta = self.cmeta
+            task_api_code.cache_sep = cache_sep
             task_api_code.cdesc = cdesc
             task_api_code.artifact_alias = artifact_alias
             task_api_code.artifact_uid = artifact_uid
             task_api_code.artifact_au = artifact_au
             task_api_code.category_alias = category_alias
             task_api_code.category_uid = category_uid
+
+            load_api_ver_resolved = r['load_api_ver_resolved']
+            task_api_code.api_ver = load_api_ver_resolved
+
+            if ctx['control'].get('repro', False):
+                ctx['repro']['ver'] = load_api_ver_resolved
+
+        ###########################################################################################
+        # CHECK INFO (HELP)
 
         if task_api_code is not None and info:
             r = self.cm.utils.names.restore_cmeta_obj(cmeta_ref_parts, key='artifact', fail_on_error = self.fail_on_error)
@@ -187,6 +208,8 @@ class Category(InitCategory):
 
             return {'return':0, 'help': help_text}
 
+        ###########################################################################################
+        # CHECK WINDOWS
 
         if cdesc.get('fail_if_not_win', False) and os.name != 'nt':
             return self.cm.error(f'the task "{artifact_au}" can run only on Windows')
@@ -201,19 +224,15 @@ class Category(InitCategory):
 
 
         ###########################################################################################
-        # PREPARE GLOBAL CONTEXT AND DUMMY RESULT
+        # Unify params to customize task, map for convenience and leave control params
+        cparams = {}
+        uparams = {}
 
-        _global = ctx_tasks.setdefault('global', {})
-        _aggregated = ctx_tasks.setdefault('aggregated', {})
-        _local = {}
-
-        result = {'return':0}
-
-
-        ###########################################################################################
-        # UNIFY PARAMS - most commonly convert args to keys
-
-        uparams = params.copy()
+        for key in params:
+            if key in self.control1 + self.control2:
+                cparams[key] = params[key]
+            elif key != 'ctx':
+                uparams[key] = params[key]
 
         params_map = cdesc.get('params_map', {})
         if params_map:
@@ -267,14 +286,50 @@ class Category(InitCategory):
 
 
         ###########################################################################################
-        # RUN EXTRA CHECK FROM CODE IF EXISTS
+        # PREPARE GLOBAL CONTEXT AND DUMMY RESULT
+
+        result = {'return':0}
+
+        ctx_tasks.setdefault('global', {})
+
+        saved_local = ctx_tasks.get('local')
+        ctx_tasks['local'] = {}
+
+        saved_uparams = ctx_tasks.get('params')
+        ctx_tasks['params'] = uparams
+
+        # Useful to aggregate various info for the whole pipeline (such as env for complex run/compilation)
+        _aggregated = ctx_tasks.setdefault('aggregated', {})
+
+        ###########################################################################################
+        # CHECK DEPENDENCIES BEFORE INIT CALL TO TASK API (IF EXISTS)
+        # Can update global/local deps
+
+        uses_before_init = cdesc.get('uses_before_init', []).copy()
+        if uses_before_init:
+            r = self.use_(ctx, 
+                          desc = uses_before_init, 
+                          local = ctx_tasks['local'],
+                          task_artifact_alias = artifact_alias, 
+                          task_artifact_uid = artifact_uid,
+            )
+            if self.cm.catch_error(r): return r
+
+        ###########################################################################################
+        # RUN INIT FROM TASK CODE IF EXISTS
+        # Can check and update params 
+
         task_extra_uses = []
-        if task_api_code is not None and hasattr(task_api_code, 'check_params') and callable(getattr(task_api_code, 'check_params')):
-            r = task_api_code.check_params(ctx, uparams)
+        if task_api_code is not None and hasattr(task_api_code, 'init') and callable(getattr(task_api_code, 'init')):
+            r = task_api_code.init(ctx, ctx_tasks['params'])
             if self.cm.catch_error(r): return r
 
             if 'uses' in r:
                 task_extra_uses = r['uses']
+
+            # Customized storage_key!
+            if r.get('storage_key'):
+                storage_key = r['storage_key']
 
         ###########################################################################################
         # SAVE CALL IF SELF.DEBUG (maybe should use some other flag?)
@@ -288,48 +343,89 @@ class Category(InitCategory):
             calls.append(call_repro)
 
         ###########################################################################################
-        # CHECK GLOBAL OR LOCAL STORAGE FOR THIS TASK
+        # FINISH RESOLVING STORAGE KEY AND WHERE TO STORE RESULT
 
-        context = {
-           'global':_global, 
-           'local':_local, 
-           'params':uparams,
-        }
+        if store_global is None:
+            store_global = cdesc.get('store_global')
 
-        # Resolve storage_key and where to store
-        store_in_global = False
-        if store_global is not None:
-            store_in_global = store_global
-        elif 'store_global' in cdesc:
-            store_in_global = cdesc['store_global']
+        if not storage_key:
+            storage_key = cdesc.get('storage_key')
 
-        if storage_key is None:
-            if 'storage_key' in cdesc:
-                storage_key = cdesc['storage_key']
+        if storage_key:
+            r = self.cm.utils.common.expand_string(storage_key, ctx_tasks)
+            if self.cm.catch_error(r): return r
+            storage_key = r['string']
 
-        if storage_key is None:
+        if not storage_key:
             storage_key = str(artifact_alias)
 
-        r = self.cm.utils.common.expand_string(storage_key, context)
-        if self.cm.catch_error(r): return r
 
-        storage_key = r['string']
 
-        # If not local  result already exists in global, skip sub-task
-        if store_in_global and storage_key and storage_key in _global:
+        ###########################################################################################
+        # If not local and result already exists in global, reuse result
+
+        if store_global and storage_key and storage_key in ctx_tasks['global']:
+
             # REUSE DEPENDENCY RESULT FROM GLOBAL CONTEXT!!!
             if con and verbose:
                 print ('')
-                print (f'{space}REUSE: load task result from _global["{storage_key}"]')
+                print (f'{space}REUSE: load task result from ctx["tasks"]["global"]["{storage_key}"]')
 
-            result = copy.deepcopy(_global[storage_key])
+            result = copy.deepcopy(ctx_tasks['global'][storage_key])
 
             # Do not aggregate - already done!
             r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
-                                 call_repro, aggregate = False)
+                                 call_repro, aggregate = False, 
+                                 saved_uparams = saved_uparams, saved_local = saved_local,
+            )
             if self.cm.catch_error(r): return r
             
             return result
+
+
+        ###########################################################################################
+        # UPDATE PARAMS FROM USE ...
+
+        if ctx_use:
+            for use_key in ctx_use:
+                if use_key == storage_key:
+                    use_params = ctx_use[use_key].copy()
+
+                    use_control_params = {}
+
+                    for k in list(use_params.keys()):
+                        if k in self.control2:
+                            use_control_params[k] = use_params.pop(k)
+
+                    if use_params:
+                        ctx_tasks['params'] = self.cm.utils.common.deep_merge(ctx_tasks['params'], use_params, append_lists=True)
+                    if use_control_params:
+                        cparams = self.cm.utils.common.deep_merge(cparams, use_control_params, append_lists=True)
+
+        ###########################################################################################
+        # CHECK PARAMS INCLUDING FROM --use. ...
+
+        if task_api_code is not None and hasattr(task_api_code, 'check_params') and callable(getattr(task_api_code, 'check_params')):
+            r = task_api_code.check_params(ctx, ctx_tasks['params'], cparams)
+            if self.cm.catch_error(r): return r
+
+
+        ###########################################################################################
+        # EXPAND ALL CONTROL PARAMS
+
+        path = cparams.get('path')
+        skip = cparams.get('skip', False)
+
+        cache = cparams.get('cache')
+        cache_repo = cparams.get('cache_repo')
+        cache_name = cparams.get('cache_name')
+        cache_extra_alias = cparams.get('cache_extra_alias')
+        cache_extra_params = cparams.get('cache_extra_params')
+        cache_extra_tags = cparams.get('cache_extra_tags')
+
+        update = cparams.get('udpate', False)
+        clean = cparams.get('clean', False)
+        new = cparams.get('new', False)
 
 
         ###########################################################################################
@@ -343,20 +439,11 @@ class Category(InitCategory):
         if uses:
             r = self.use_(ctx, 
                           desc = uses, 
-                          nested_call = nested_call, 
-                          local = _local,
+                          local = ctx_tasks['local'],
                           task_artifact_alias = artifact_alias, 
                           task_artifact_uid = artifact_uid,
             )
             if self.cm.catch_error(r): return r
-
-
-
-        ###########################################################################################
-        # SAVE LOCAL TO CONTEXT TO BE USED WITH TASK CODE IF NEEDED ...
-        # IT SHOULD NOT BE USED OUTSIDE A RUNNING TASK
-
-        ctx_tasks['local'] = _local
 
         ###########################################################################################
         # PROCESS CACHE
@@ -376,8 +463,11 @@ class Category(InitCategory):
             if cdesc.get('no_cache', False):
                 return self.cm.error(f'the task "{artifact_au}" does not support cache')
 
+            # May have been updated by various customizations and uses from above ...
+            uparams = ctx_tasks['params']
+
             # Need to prepare alias and tags
-            cache_alias_template = f'task,{artifact_alias}{{cache_alias_extra}}'
+            cache_alias_template = f'task{cache_sep}{artifact_alias}{{cache_extra_alias}}'
 
             # Note that cache_meta will be used first to match existing cache entries 
             # and later updated with extra things that shouldn't be matched, such as path
@@ -411,13 +501,12 @@ class Category(InitCategory):
                 if v is not None:
                     cache_params[k] = v
 
-
             if task_api_code is not None:
-                r = task_api_code.customize_cache_artifact(ctx, cache_alias_template, cache_alias_extra, cache_meta, cache_tags, cache_params, uparams)
+                r = task_api_code.customize_cache_artifact(ctx, cache_alias_template, cache_extra_alias, cache_meta, cache_tags, cache_params, uparams)
                 if self.cm.catch_error(r): return r
 
                 if cache_name is None and 'cache_name' in r: cache_name = r['cache_name']
-                if cache_alias_extra is None and 'cache_alias_extra' in r: cache_alias_extra = r['cache_alias_extra']
+                if 'cache_extra_alias' in r: cache_extra_alias = r['cache_extra_alias']
                 if 'cache_alias_template' in r: cache_alias_template = r['cache_alias_template']
 
             # Check if exists
@@ -440,6 +529,7 @@ class Category(InitCategory):
             if new:
                 cache_artifacts = []
             else:
+                # Search in cache !
                 r = self.cm.access(ii)
                 if r['return']>0 and r['return']!=16: return r
 
@@ -460,19 +550,25 @@ class Category(InitCategory):
 
             tmp_cache_artifacts = []
 
+            ###########################################################################################
             if len(cache_artifacts)>0:
                 # If multiple ones, remove unfinished ones
                 finished_cache_artifacts = []
 
                 for cache_artifact in cache_artifacts:
-                    if 'tmp' in cache_artifact['cmeta'].get('tags',[]):
+                    ca_tool_path = cache_artifact['cmeta'].get('params',{}).get('tool_path')
+                    if 'tmp' in cache_artifact['cmeta'].get('tags',[]) or \
+                       (ca_tool_path and not (os.path.isfile(ca_tool_path) or os.path.isdir(ca_tool_path))):
+                        if 'tmp' not in cache_artifact['cmeta'].get('tags',[]):
+                            cache_artifact['cmeta'].setdefault('tags',[])
+                            cache_artifact['cmeta']['tags'].append('tmp')
                         tmp_cache_artifacts.append(cache_artifact)
                     else:
                         finished_cache_artifacts.append(cache_artifact)
 
-                if len(finished_cache_artifacts)>0:
-                    cache_artifacts = finished_cache_artifacts
+                cache_artifacts = finished_cache_artifacts
 
+            ###########################################################################################
             if len(cache_artifacts)>1:
 
                 text = ''
@@ -509,19 +605,13 @@ class Category(InitCategory):
                 if 'sort_keys' in cdesc:
                     p['sort_keys'] = cdesc['sort_keys']
 
-
-# CHECK LOGIC WITH 16 AND ERROR/DEBUG !
-
                 r = self.cm.access(p)
                 if self.cm.catch_error(r, fail16 = True): return r
-#                if r['return']>0: 
-#                    ret = r['return']
-#                    if ret == 16: ret = 1
-#                    return self.cm._error(r['error'], ret, None, self.cm.fail_on_error)
 
                 cache_artifacts = [r['artifact']]
 
 
+            ###########################################################################################
             if len(cache_artifacts) == 1:
                 cache_artifact = cache_artifacts[0]
 
@@ -530,7 +620,6 @@ class Category(InitCategory):
 
                 if not path:
                     path = cache_meta.get('path')
-
 
 
                 ###############################################################################################
@@ -556,20 +645,22 @@ class Category(InitCategory):
                         result = r['data']
 
                         if storage_key:
-                            if store_in_global:
-                                _global[storage_key] = result
+                            if store_global:
+                                ctx_tasks['global'][storage_key] = result
                             else:
-                                _local[storage_key] = result
+                                ctx_tasks['local'][storage_key] = result
 
                         r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
-                                             call_repro, aggregate = True)
+                                             call_repro, aggregate = True,
+                                             saved_uparams = saved_uparams, saved_local = saved_local,
+                        )
                         if self.cm.catch_error(r): return r
 
                         return result
 
 
 
-                ###############################################################################################
+                ###########\####################################################################################
                 cache_cmeta_ref_parts = cache_artifact['cmeta_ref_parts']
                 cache_alias = cache_cmeta_ref_parts['artifact_alias']
                 cache_uid = cache_cmeta_ref_parts['artifact_uid']
@@ -579,6 +670,7 @@ class Category(InitCategory):
                 update_cache = True
 
 
+            ###########################################################################################
             if len(cache_artifacts) == 0:
                # Create with tmp tag
                update_cache = True
@@ -586,14 +678,18 @@ class Category(InitCategory):
                if len(tmp_cache_artifacts)>0:
                    # Reuse the first from tmp cache artifacts to avoid creating many tmp ones
                    cache_path = tmp_cache_artifacts[0]['path']
-                   cache_meta = tmp_cache_artifacts[0]['meta']
+                   cache_meta = tmp_cache_artifacts[0]['cmeta']
+                   cache_cmeta_ref_parts = tmp_cache_artifacts[0]['cmeta_ref_parts']
+                   cache_alias = cache_cmeta_ref_parts['artifact_alias']
+                   cache_uid = cache_cmeta_ref_parts['artifact_uid']
+                   cache_name = f'{cache_alias},{cache_uid}'
 
                else:
                    if cache_name is None or cache_name == '':
                        cache_uid = self.cm.utils.generate_cmeta_uid()
-                       cache_alias_extra = '' if cache_alias_extra is None else ',' + cache_alias_extra
-                       cache_alias = cache_alias_template.replace('{cache_alias_extra}', cache_alias_extra)
-                       cache_name = f'{cache_alias},{cache_uid},{cache_uid}'
+                       cache_extra_alias = '' if cache_extra_alias is None else cache_sep + cache_extra_alias
+                       cache_alias = cache_alias_template.replace('{cache_extra_alias}', cache_extra_alias)
+                       cache_name = f'{cache_alias}{cache_sep}{cache_uid},{cache_uid}'
                        if cache_repo:
                            cache_name = cache_repo + ':' + cache_name
 
@@ -608,9 +704,14 @@ class Category(InitCategory):
                    cache_path = r['path']
                    cache_meta = r['meta']
 
+            if cache_name is None:
+                return self.cm.error('Inconsistency in task cache handling since cache_name is None')
+            if cache_path is None:
+                return self.cm.error('Inconsistency in task cache handling since cache_path is None')
+
             if con and verbose:
                 print ('')
-                print (f'{space}CACHE: use {cache_path}')
+                print (f'{space}CACHE: use "{cache_path}"')
 
             # Check if result already exists in the path and without error - it means rebuilding existing cache entry ...
             if path and os.path.isdir(path):
@@ -657,11 +758,6 @@ class Category(InitCategory):
         ###########################################################################################
         # RUN TASK CODE IF EXISTS
 
-        # Restore basic context control that may be changed by deps
-        ctx['control']['con'] = con
-        ctx['control']['quiet'] = quiet
-        ctx['control']['verbose'] = verbose
-
         time_start2 = time.perf_counter()
         if not skip and task_api_code is not None \
             and hasattr(task_api_code, 'run') and callable(getattr(task_api_code, 'run')):
@@ -669,7 +765,7 @@ class Category(InitCategory):
                 print ('')
                 print (f'{space}RUN TASK CODE: {task_api_path}')
 
-            ctx_tasks_control = ctx['tasks']['control'] = {}
+            ctx_tasks_control = ctx['tasks']['run_control'] = {}
             if update:
                 ctx_tasks_control['update'] = True
             if clean:
@@ -682,6 +778,9 @@ class Category(InitCategory):
             ctx_tasks_control['task_path'] = task_path
             ctx_tasks_control['task_api_path'] = task_api_path
             ctx_tasks_control['task_desc'] = cdesc
+
+            if cache_params:
+                ctx_tasks_control['cache_params'] = cache_params
 
             result = task_api_code.run(ctx, **uparams)
 
@@ -715,6 +814,10 @@ class Category(InitCategory):
         # UPDATE CACHE
 
         if update_cache:
+            if con and verbose:
+                print ('')
+                print (f'{space}UPDATE: cache in {cache_name}')
+           
             # TBD -> maybe move result error there for debugging?
             ii = {'category':uses_categories['cache'],
                   'command':'update',
@@ -738,13 +841,15 @@ class Category(InitCategory):
 
         # Finish run
         if storage_key:
-            if store_in_global:
-                _global[storage_key] = result
+            if store_global:
+                ctx_tasks['global'][storage_key] = result
             else:
-                _local[storage_key] = result
+                ctx_tasks['local'][storage_key] = result
 
         r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
-                             call_repro, aggregate = True)
+                             call_repro, aggregate = True,
+                             saved_uparams = saved_uparams, saved_local = saved_local,
+        )
         if self.cm.catch_error(r): return r
 
         return result
@@ -766,6 +871,8 @@ class Category(InitCategory):
                    save_here = False,
                    call_repro = None,
                    aggregate = True,
+                   saved_uparams = None,
+                   saved_local = None,
     ):
 
         # Save output for reproducibility
@@ -781,6 +888,11 @@ class Category(InitCategory):
 
         # Save results in the work_dir directory (cache, path, etc)
         if save:
+            if con:
+                x = os.getcwd()
+                print ('')
+                print (f'SAVE: in path "{x}"')
+
             r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_RESULTS, result)
             if self.cm.catch_error(r): return r
             r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_CTX, ctx)
@@ -794,10 +906,18 @@ class Category(InitCategory):
 
         # Save results in the current directory where this task was called from
         if save_here:
+            if con:
+                print ('')
+                print (f'SAVE: in path "{cur_dir}"')
+
             r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_RESULTS, result)
             if self.cm.catch_error(r): return r
             r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_CTX, ctx)
             if self.cm.catch_error(r): return r
+
+        
+        ctx['tasks']['params'] = saved_uparams if saved_uparams else {}
+        ctx['tasks']['local'] = saved_local if saved_local else {}
 
         return {'return':0}
 
@@ -807,8 +927,7 @@ class Category(InitCategory):
             self,
             ctx: dict,
             desc: dict = {},
-            nested_call: int = 0,
-            local = {},
+            local = None,
             task_artifact_alias = None,
             task_artifact_uid = None,
     ):
@@ -830,18 +949,17 @@ class Category(InitCategory):
         verbose = ctx['control'].get('verbose', False)
 
         ctx_tasks = ctx.setdefault('tasks', {})
+        nested_call = ctx_tasks.setdefault('nested_call', 0)
+        sub_space = '  ' * (nested_call + 1) if verbose else ''
 
-        _global = ctx_tasks.setdefault('global', {})
-        _local = local
-
-        ctx_use = ctx_tasks.setdefault('use', {})
+        if local:
+            saved_local = ctx_tasks.get('local', {})
+            ctx_tasks['local'] = local
 
         for sub_task_desc in desc:
 
             # *********************************************************************************
             # Process individual sub-task
-
-            sub_space = '  ' * (nested_call + 1)
 
             task = sub_task_desc.get('task', None)
             if not task:
@@ -866,71 +984,25 @@ class Category(InitCategory):
                 x = ','.join(unknown_keys)
                 return self.cm.error(f'unknown key(s) "{x}" in sub-task description in "{__name__}"')
 
-
-            # Load task to check some extra params
+            # Prepare input
             sub_task_category = 'task,' + self.cmeta['artifact'] if 'category' not in sub_task_desc else sub_task_desc['category']
             sub_task_command = 'run' if 'command' not in sub_task_desc else sub_task_desc['command']
 
-            r = self.cm.access({'category': sub_task_category,
-                                'command': 'load',
-                                'arg1': task,
-                                'load_files':['desc'],
-            })
-            if self.cm.catch_error(r): return r
-
-            sub_task_cmeta_desc = r['loaded_files']['desc'].get('data',{})
-            sub_task_cmeta_ref_parts = r['artifact']['cmeta_ref_parts']
-
-            task_alias = sub_task_cmeta_ref_parts.get('artifact_alias')
-            task_uid = sub_task_cmeta_ref_parts.get('artifact_uid')
-
-            if not task_alias and not task_uid:
-                return self.cm.error(f'the requirement in task "{task_artifact_alias}" misses task name or uid')
-
-
-            # Prepare input
             _with = sub_task_desc.get('with', {})
 
             if type(_with) is not dict:
                 return self.cm.error(f'"with" key must be "dict" in {sub_task_desc} in "{__name__}"')
                
-            context = {
-               'global':_global, 
-               'local':_local, 
-               'params':_with, 
-            }
-
             force_store_global = sub_task_desc.get('store_global')
             force_storage_key = sub_task_desc.get('storage_key')
             force_cache = sub_task_desc.get('cache')
-
-            if not force_storage_key:
-                # Check from sub task meta description to be able to update input via "use"
-                if sub_task_cmeta_desc.get('storage_key'):
-                    force_storage_key = sub_task_cmeta_desc['storage_key']
-                elif task and task_alias:
-                    force_storage_key = task_alias 
-
-            if force_storage_key:
-                r = self.cm.utils.common.expand_string(force_storage_key, context)
-                if self.cm.catch_error(r): return r
-                force_storage_key = r['string']
-
-            # Quick check (though should be checked by running task but we can skip)
-            if force_store_global and force_storage_key and force_storage_key in _global:
-                # REUSE DEPENDENCY RESULT FROM GLOBAL CONTEXT!!!
-                if con and verbose:
-                    print ('')
-                    print (f'{sub_space}REUSE: load task result from _global["{force_storage_key}"]')
-
-                continue
 
             # *********************************************************************************
             # Check conditions
 
             _if = sub_task_desc.get('if', '')
             if _if:
-                r = self.cm.utils.common.expand_string(_if, context)
+                r = self.cm.utils.common.expand_string(_if, ctx_tasks)
                 if self.cm.catch_error(r): return r
 
                 _if = r['string']
@@ -950,9 +1022,10 @@ class Category(InitCategory):
             if force_store_global: ii['store_global'] = force_store_global
             if force_storage_key: ii['storage_key'] = force_storage_key
 
-            r = self.cm.utils.common.expand_strings_in_dict(ii, context)
+            r = self.cm.utils.common.expand_strings_in_dict(ii, ctx_tasks)
             if self.cm.catch_error(r): return r
 
+            ii['ctx'] = ctx
             ii['arg1'] = task
 
             ii['category'] = sub_task_category
@@ -965,19 +1038,12 @@ class Category(InitCategory):
             # Update context for tasks
             ctx_tasks['nested_call'] += 1
 
-            ii['ctx'] = ctx
-
-            # Check if must update via use dict
-            if ctx_use:
-                for use_key in ctx_use:
-                    if force_storage_key and use_key == force_storage_key:
-                        use_params = ctx_use[use_key]
-
-                        ii = self.cm.utils.common.deep_merge(ii, use_params, append_lists=True)
-
             sub_task_result = self.cm.access(ii)
             if self.cm.catch_error(sub_task_result): return sub_task_result
 
             ctx_tasks['nested_call'] -= 1
 
-        return {'return':0}
+        if local:
+            ctx_tasks['local'] = saved_local
+
+        return {'return':0, 'local': local}

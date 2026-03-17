@@ -1,0 +1,20 @@
+storage_key: nvcc
+
+names:
+  - nvcc{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: "Cuda compilation tools.*?\\bV([0-9]+(?:\\.[0-9]+)+)\\b"
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+uses:
+- task: setup,a2f9b61079ce4333
+  name: mvcc,e823256bbbe54b4e
+  skip_if_not_win: True
+
+extra_paths:
+  windows:
+    - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\**"
+    - "D:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\**"

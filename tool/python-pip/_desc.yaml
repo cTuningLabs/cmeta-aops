@@ -1,0 +1,18 @@
+storage_key: pip
+
+cache_params_use: 
+  python:
+    version: "{{global.python.version}}" # This version must be already resolved here, therefore not fuzzy
+
+path: "{{global.python.qpath}}"
+cmd: "{{global.python.qpath}} -m pip"
+cmd_filename: "{{global.python.filename}} -m pip"
+cmd_get_version: "{{global.python.qpath}} -m pip --version"
+
+match_version: 
+  - regex: "pip ([0-9]+(?:[.\\-][0-9A-Za-z]+)*)"
+    group: 1
+
+uses:
+- task: setup,a2f9b61079ce4333
+  name: python,c00fb574d8ca4463

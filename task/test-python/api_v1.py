@@ -30,37 +30,41 @@ class CTask(InitCTask):
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * ctx['tasks']['nested_call']
+        ctx_tasks = ctx['tasks']
+        ctx_tasks_control = ctx['tasks']['run_control']
 
-        _global = ctx['tasks']['global']
-        _aggregated = ctx['tasks']['aggregated']
+        cur_dir = ctx_tasks_control['cur_dir']
+        work_dir = ctx_tasks_control['work_dir']
+        task_path = ctx_tasks_control['task_path']
+
+        space = '  ' * ctx_tasks['nested_call'] if verbose else ''
 
         result = {'return':0}
-        
 
+#        python_path = ctx_tasks['global']['tool--python']['qpath']
+        python_path = ctx_tasks['global']['python']['qpath']
 
+        cmd = f'"{python_path}" --version'
 
+        ii = {'category': self.category_alias + ',' + self.category_uid,
+              'command': 'run',
+              'ctx': ctx,
+              'arg1': 'cmd,c9ba0a88df394d7f',
+              'cmd': cmd,
+              'env': env,
+              'con': con, 
+              'verbose': verbose, 
+              'text_cmd': 'RUN:',
+              'print_env_keys': ['PATH'], 
+              'print_extra_line': True,
+        }
 
+        rx = self.cm.access(ii)
+        if self.cm.catch_error(rx): return rx
 
-        os_env = _global['host']['os_env']
-
-
-        envs = _aggregated['env']
-
-
-        print (envs)
-        print (env)
-
-        cmd = 'python --version'
-        result['cmd'] = cmd
-
-        r = self.cm.utils.sys.run(cmd, env = env, envs = envs, genv = {}, os_env = os_env, 
-                                  con = con, verbose = verbose, space = space)
-        if r['return']>0: return r
-
-        rc = r['returncode']
-        
-        print (rc)
+        returncode = rx['returncode']
+        if returncode>0:
+            return {'return':99, 'error': f'cmd "{cmd}" failed with return code "{returncode}"'}
 
 
         return result

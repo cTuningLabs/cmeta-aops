@@ -18,6 +18,7 @@ class CTask(InitCTask):
     def check_params(self,
                      ctx: dict,
                      params: dict = {},
+                     cparams: dict = {},
     ):
         r = self.cm.check_params(params, ['env','bits','timeout','extra'], __name__)
         if self.cm.catch_error(r): return r
@@ -44,7 +45,7 @@ class CTask(InitCTask):
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * ctx['tasks']['nested_call']
+        space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
 
         env_os = os.environ
 

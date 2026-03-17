@@ -1,0 +1,18 @@
+names:
+  - uv{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: "uv ([0-9]+(?:[.\\-][0-9A-Za-z]+)*)"
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+install_help_text:
+  Please install "uv" tool as described at 
+    https://docs.astral.sh/uv/getting-started/installation !
+
+install_cmd:
+  windows: "{{global.tool--winget.qpath}} install --id=astral-sh.uv -e"
+
+install_cmd_version:
+  windows: "{{global.tool--winget.qpath}} install --id=astral-sh.uv -e --version={{simple_version}}"

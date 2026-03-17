@@ -1,0 +1,3 @@
+﻿store_global: False
+storage_key: detect-python-env
+cache: False

@@ -14,7 +14,7 @@ class CTask(InitCTask):
     def customize_cache_artifact(self,
                                  ctx,
                                  cache_alias_template,
-                                 cache_alias_extra,
+                                 cache_extra_alias,
                                  cache_meta,
                                  cache_tags,
                                  cache_params,
@@ -26,8 +26,8 @@ class CTask(InitCTask):
 
         url = params.get('url')
 
-        if cache_alias_extra is None: 
-            cache_alias_extra = ''
+        if cache_extra_alias is None: 
+            cache_extra_alias = ''
 
         if url is not None and url != '':
             if url.endswith('.git'):
@@ -45,17 +45,18 @@ class CTask(InitCTask):
 
                 if j4>0:
                     x2 = url[j4+1:]
-
-                    cache_alias_extra = x2 + '@' + x1
+                    if cache_extra_alias !='':
+                        cache_extra_alias += self.cache_sep
+                    cache_extra_alias = x2 + '@' + x1
 
         tag = params.get('tag')
         if tag:
-            if cache_alias_extra !='':
-                cache_alias_extra += ','
-            cache_alias_extra += tag
+            if cache_extra_alias !='':
+                cache_extra_alias += self.cache_sep
+            cache_extra_alias += tag
 
-        if cache_alias_extra != '':
-            result['cache_alias_extra'] = cache_alias_extra
+        if cache_extra_alias != '':
+            result['cache_extra_alias'] = cache_extra_alias
 
         return result
 
@@ -92,7 +93,7 @@ class CTask(InitCTask):
 
         ctx_tasks = ctx['tasks']
 
-        space = '  ' * ctx_tasks['nested_call']
+        space = '  ' * ctx_tasks['nested_call'] if verbose else ''
         clean = ctx_tasks['control'].get('clean', False)
         update = ctx_tasks['control'].get('update', False)
 

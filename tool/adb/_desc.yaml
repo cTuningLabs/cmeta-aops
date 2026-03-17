@@ -1,0 +1,20 @@
+names:
+  - adb{{global.host.vars.file_ext_exe}}
+
+cache_params_use: 
+  tool--google-platform-tools:
+    version: "{{global.tool--google-platform-tools.version}}" # This version must be already resolved here, therefore not fuzzy
+
+match_version: 
+  - regex: 'android debug bridge version\s+(\d+\.\d+\.\d+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: Google.PlatformTools,27ca12e6f43449fc
+
+extra_paths:
+  windows:
+    - "{{global.tool--google-platform-tools.path_bin}}"

@@ -49,13 +49,20 @@ class Category(InitCategory):
 
         if space is None:
             nested_call = ctx_tasks.setdefault('nested_call', 0)
-            space = '  ' * nested_call
+            space = '  ' * nested_call if verbose else ''
 
         if not paths:
             paths = []
 
         # Resolve exe_path
         found_paths = []
+
+        if not path and 'path' in desc:
+            path = desc['path']
+
+            r = self.cm.utils.common.expand_string(path, context)
+            if self.cm.catch_error(r): return r
+            path = r['string']
 
         if path and os.path.isfile(path):
             found_paths = [path]
@@ -79,13 +86,12 @@ class Category(InitCategory):
                 if env_paths != '':
                     search_paths += env_paths.split(os.pathsep)
 
-            names = desc['names']
+            names = desc.get('names', [])
 
             for name in names:
 
                 r = self.cm.utils.common.expand_string(name, context)
                 if self.cm.catch_error(r): return r
-
                 name = r['string']
 
                 if con and verbose:
@@ -121,10 +127,26 @@ class Category(InitCategory):
                                         to_add = False
 
                                 if to_add:
-                                    found_paths.append(match)
+                                    match = os.path.normpath(match)
+
+                                    for _match in found_paths:
+                                        if os.path.normcase(_match) == os.path.normcase(match):
+                                            to_add = False
+                                            break
+
+                                    if to_add:
+                                        found_paths.append(match)
 
                     elif os.path.isfile(candidate):
-                        if candidate not in found_paths:
+                        candidate = os.path.normpath(candidate)
+
+                        to_add = True
+                        for _candidate in found_paths:
+                            if os.path.normcase(_candidate) == os.path.normcase(candidate):
+                                to_add = False
+                                break
+
+                        if to_add:
                             found_paths.append(candidate)
 
         return {'return':0, 'found_paths': found_paths}
@@ -141,7 +163,7 @@ class Category(InitCategory):
         p['category'] = self.cmeta['uses_categories']['task']
         p['command'] = 'run'
         p['name'] = params.get('arg1')
-        p['arg1'] = self.cmeta['uses_artifacts']['tool::setup-tool']
+        p['arg1'] = self.cmeta['uses_artifacts']['tool::setup']
 
         return self.cm.access(p)
 
@@ -166,15 +188,13 @@ class Category(InitCategory):
 
         pp = copy.deepcopy(p)
 
-        p['arg1'] = self.cmeta['uses_artifacts']['tool::setup-tool']
+        p['arg1'] = self.cmeta['uses_artifacts']['tool::setup']
         p['name'] = params.get('arg1')
 
         r = self.cm.access(p)
         if self.cm.catch_error(r): return r
 
-        path = r['path']
-
-        cmd = path
+        cmd = r['cmd']
 
         for param in unparsed:
             param = param.strip()
@@ -183,10 +203,18 @@ class Category(InitCategory):
 
             cmd += ' ' + param
         
-        # Run tool
+        # Clean some params (needed for "setup tool" task but not for "cmd" task)
+
+        for k in ['detect','install', 'build', 'skip_install', 'skip_detect', 'skip_build',
+                  'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 'with',
+                  'version']:
+            if k in pp:
+                del(pp[k])
+
         pp['arg1'] = self.cmeta['uses_artifacts']['tool::cmd']
         pp['cmd'] = cmd
         pp['ctx'] = ctx
+        pp['print_extra_line'] = True
 
         r = self.cm.access(pp)
         self.cm.catch_error(r)

@@ -10,9 +10,9 @@ class CTask(InitCTask):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
     ############################################################
-    def check_params(self,
-                     ctx: dict,
-                     params: dict,
+    def init(self,
+             ctx: dict,
+             params: dict,
     ):
         """
         We need this function to resolve name if not provided,
@@ -51,7 +51,7 @@ class CTask(InitCTask):
     def customize_cache_artifact(self,
                                  ctx,
                                  cache_alias_template,
-                                 cache_alias_extra,
+                                 cache_extra_alias,
                                  cache_meta,
                                  cache_tags,
                                  cache_params,
@@ -61,16 +61,20 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
-        r = self.check_params(ctx, params)
-        if self.cm.catch_error(r): return r
-
         filename = params['filename']
 
-        result['cache_alias_extra'] = filename
+        if cache_extra_alias is None: 
+            cache_extra_alias = ''
+
+        if cache_extra_alias !='':
+            cache_extra_alias += self.cache_sep
+        cache_extra_alias += filename
+
+        result['cache_extra_alias'] = cache_extra_alias
 
         return result
 
-
+    ############################################################
     def _extract_filename_from_url(self, url):
 
         urltail = os.path.basename(url)
@@ -141,14 +145,14 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        self.logger.debug("RUNNING TASK clone-git-repo run")
+        self.logger.debug("RUNNING TASK download run api_v1")
 
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * ctx['tasks']['nested_call']
-        clean = ctx['tasks']['control'].get('clean', False)
-        update = ctx['tasks']['control'].get('update', False)
+        space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
+        clean = ctx['tasks']['run_control'].get('clean', False)
+        update = ctx['tasks']['run_control'].get('update', False)
 
         _params = {}
 
@@ -237,6 +241,7 @@ class CTask(InitCTask):
                     if tool == 'cmeta':
 
                         rr = self.cm.utils.net.download(url, 
+                                                        filename = filename + '.download',
                                                         path = directory, 
                                                         show_progress = con, 
                                                         fail_on_error = self.cm.fail_on_error, 
@@ -256,6 +261,8 @@ class CTask(InitCTask):
                     success = True
 
                 if success:
+                    os.replace(filename + '.download', filename)
+
                     if len(md5sums)>0:
                         md5sum = md5sums[u]
 

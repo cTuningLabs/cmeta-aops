@@ -29,22 +29,28 @@ class CTask(InitCTask):
         verbose = ctx['control'].get('verbose', False)
 
         ctx_tasks = ctx['tasks']
-        ctx_tasks_control = ctx['tasks']['control']
+        ctx_tasks_control = ctx['tasks']['run_control']
 
         cur_dir = ctx_tasks_control['cur_dir']
         work_dir = ctx_tasks_control['work_dir']
         task_path = ctx_tasks_control['task_path']
 
-        space = '  ' * ctx_tasks['nested_call']
+        space = '  ' * ctx_tasks['nested_call'] if verbose else ''
 
         result = {'return':0}
 
-        clang_cpp = ctx['tasks']['global']['setup-tool--clang_cpp']
+        clang_cpp = ctx['tasks']['global']['tool--clang_cpp']
 
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')
 
-        src_file = os.path.join(task_path, 'src', 'test.cpp')
+        host = ctx_tasks['global']['host']
+        uname = host['os']['uname']
+
+        for source_file in [f'test-{uname}.cpp', 'test.cpp']:
+            src_file = os.path.join(task_path, 'src', source_file)
+            if os.path.isfile(src_file):
+                break
 
         cmds = ['"'+clang_cpp['path']+'"' + f' {src_file} -o tmp/test.exe',
                 'tmp\\test.exe']

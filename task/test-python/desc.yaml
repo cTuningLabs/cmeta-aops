@@ -1,6 +1,0 @@
-﻿uses:
-- task: runner,1e48cc0c5f6041a5
-
-- task: setup-tool,a2f9b61079ce4333
-  with:
-    name: python

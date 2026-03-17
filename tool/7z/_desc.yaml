@@ -1,0 +1,10 @@
+names:
+  - 7z{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: '7-zip ([\d.]+)'
+    group: 1
+  - regex: '7-zip \[32\] ([\d.]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}}'

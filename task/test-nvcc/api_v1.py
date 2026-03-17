@@ -31,25 +31,24 @@ class CTask(InitCTask):
         verbose = ctx['control'].get('verbose', False)
 
         ctx_tasks = ctx['tasks']
-        ctx_tasks_control = ctx['tasks']['control']
+        ctx_tasks_control = ctx['tasks']['run_control']
 
         cur_dir = ctx_tasks_control['cur_dir']
         work_dir = ctx_tasks_control['work_dir']
         task_path = ctx_tasks_control['task_path']
 
-        space = '  ' * ctx_tasks['nested_call']
+        space = '  ' * ctx_tasks['nested_call'] if verbose else ''
 
         result = {'return':0}
 
-        nvcc = ctx['tasks']['global']['setup-tool--nvcc']
+        nvcc = ctx['tasks']['global']['nvcc']
 
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')
 
         src_file = os.path.join(task_path, 'src', 'list_devices.cu')
 
-        cmds = ['"'+nvcc['path']+'"' + f' {src_file} -o tmp/list_devices',
-                'tmp\list_devices.exe']
+        cmds = [nvcc['qpath'] + f' {src_file} -o tmp/list_devices', 'tmp\list_devices.exe']
 
         for cmd in cmds:
             ii = {'category': self.category_alias + ',' + self.category_uid,

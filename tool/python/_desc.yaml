@@ -1,0 +1,27 @@
+storage_key: python
+
+cache_params_with: True
+
+names:
+  - python3{{global.host.vars.file_ext_exe}}
+  - python3.*{{global.host.vars.file_ext_exe}}
+  - python{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: "python ([0-9]+(?:[.\\-][0-9A-Za-z]+)*)"
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+install_help_text: Check https://www.python.org/ for more details!
+
+install_uses:
+  windows:
+    - task: venv,bb68247d2fde489d
+      version: "{{params.version|}}"
+
+env_path_keys:
+- PATH
+- PYTHONPATH
+- _OLD_VIRTUAL_PATH
+

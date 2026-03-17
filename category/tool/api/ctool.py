@@ -1,6 +1,10 @@
 ﻿"""
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-License: Proprietary - contact the author for licensing information.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
+All rights reserved.
+
+Proprietary and confidential.
+This software may not be copied, modified, distributed, or used
+without explicit permission from the copyright holder.
 """
 
 from pathlib import Path
@@ -25,7 +29,7 @@ class InitCTool:
 
         path_parts = file_path.parts
         
-        task_module_name = '#' + path_parts[-3] + '#' + path_parts[-2] + '.' + module_name
+        task_module_name = '___' + path_parts[-3] + '___.' + path_parts[-2] + '.' + module_name
 
         module_path = os.path.dirname(module_file_path)
         path = os.path.dirname(module_path)

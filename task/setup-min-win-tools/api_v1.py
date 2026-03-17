@@ -13,6 +13,7 @@ class CTask(InitCTask):
     def check_params(self,
                      ctx: dict,
                      params: dict = {},
+                     cparams: dict = {},
     ):
         r = self.cm.check_params(params, [], __name__)
         if self.cm.catch_error(r): return r
@@ -38,9 +39,9 @@ class CTask(InitCTask):
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * ctx['tasks']['nested_call']
-        clean = ctx['tasks']['control'].get('clean', False)
-        update = ctx['tasks']['control'].get('update', False)
+        space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
+        clean = ctx['tasks']['run_control'].get('clean', False)
+        update = ctx['tasks']['run_control'].get('update', False)
 
         _params = {}
 

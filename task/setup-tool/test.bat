@@ -1,1 +1,0 @@
-﻿cxt setup-tool python --tool-path={{sys.executable}}
