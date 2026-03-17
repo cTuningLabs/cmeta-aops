@@ -60,7 +60,7 @@ class CTask(InitCTask):
                   'con': con, 
                   'verbose': verbose, 
                   'text_cmd': 'RUN:',
-                  'print_env_keys': ['PATH'],
+#                  'print_env_keys': ['PATH'],
                   'print_extra_line': True,
             }
 

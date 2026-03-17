@@ -170,7 +170,7 @@ class CTool(InitCTool):
         """
         """
         if self.cm.debug:
-            self.logger.debug("RUNNING TOOL python api_v1 update_paths")
+            self.logger.debug("RUNNING TOOL python api_v1 check_features")
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)

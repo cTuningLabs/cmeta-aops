@@ -9,6 +9,9 @@ match_version:
 
 cmd_get_version: '{{tool_path}} --version'
 
+install_help_text:
+  Please install CUDA from https://developer.nvidia.com/cuda/toolkit !
+
 extra_paths:
   windows:
     - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\**"

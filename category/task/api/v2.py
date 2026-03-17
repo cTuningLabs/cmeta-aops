@@ -418,7 +418,7 @@ class Category(InitCategory):
         ###########################################################################################
         # PRINT FINAL TASK PARAMS
 
-        _params = ctx_tasks['params']
+        _params = copy.deepcopy(ctx_tasks['params'])
         if _params and con and verbose:
             print ('')
             for k in _params:
@@ -787,6 +787,12 @@ class Category(InitCategory):
                     if r['return'] == 0:
                         result = r['data']
 
+                        # Dynamic update to result (even if cached)
+                        if task_api_code is not None and hasattr(task_api_code, 'finish_dynamic_result') and callable(getattr(task_api_code, 'finish_dynamic_result')):
+                            r = task_api_code.finish_dynamic_result(ctx, result, _params)
+                            if self.cm.catch_error(r): return r
+                            if 'result' in r: result = r['result']
+
                         if storage_key:
                             if store_global:
                                 ctx_tasks['global'][storage_key] = result
@@ -993,6 +999,12 @@ class Category(InitCategory):
             if self.cm.catch_error(r): return r
             r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_CTX, ctx)
             if self.cm.catch_error(r): return r
+
+        # Dynamic update to result (even if cached)
+        if task_api_code is not None and hasattr(task_api_code, 'finish_dynamic_result') and callable(getattr(task_api_code, 'finish_dynamic_result')):
+            r = task_api_code.finish_dynamic_result(ctx, result, _params)
+            if self.cm.catch_error(r): return r
+            if 'result' in r: result = r['result']
 
         # Finish run
         if storage_key:

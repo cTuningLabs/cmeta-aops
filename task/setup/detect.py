@@ -343,6 +343,7 @@ def detect_existing_tool(self,
         # Do not sort priority ones but move them out
         priority_matched_paths_with_versions = []
         normal_matched_paths_with_versions = []
+
         for a in matched_paths_with_versions:
             if a.get('priority', False):
                 priority_matched_paths_with_versions.append(a)
@@ -401,7 +402,6 @@ def detect_existing_tool(self,
 
     tool = sorted_matched_paths_with_versions[selection]
 
-
     path = tool['path']
     detected_version = tool['detected_version']
     cmd_call = tool.get('cmd_call')
@@ -444,8 +444,20 @@ def detect_existing_tool(self,
     result['qpath'] = self.cm.utils.files.quote_path(path)
     result['version'] = detected_version
 
-    result['path_bin'] = os.path.dirname(path)
+    path_bin = os.path.dirname(path)
+    result['path_bin'] = path_bin
     result['qpath_bin'] = self.cm.utils.files.quote_path(result['path_bin'])
+
+    path_bin_norm = os.path.abspath(os.path.normpath(path_bin))
+    x = os_env.get('PATH', '').strip()
+    if x != '':
+        env_paths = x.split(os.pathsep)
+
+        for p in env_paths:
+            if os.path.abspath(os.path.normpath(p)) == path_bin_norm:
+                result['path_bin_in_env'] = True
+                break
+
 
     if version:
         result['requested_version'] = version

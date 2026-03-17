@@ -3,3 +3,5 @@
 
 - task: setup,a2f9b61079ce4333
   name: nvcc
+  with:
+    add_env: true

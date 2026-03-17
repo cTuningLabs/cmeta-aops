@@ -435,3 +435,47 @@ class CTask(InitCTask):
                 _update_params['tool_path'] = os.path.normpath(tool_path)
 
         return result
+
+
+    ############################################################
+    def finish_dynamic_result(self,
+                              ctx: dict,
+                              result: dict = {},
+                              params: dict = {},
+    ):
+        """
+        Mostly used to update storage_key
+        """
+
+        if self.cm.debug:
+            self.logger.debug("RUNNING TASK setup finish_dynamic_result")
+
+        _result = {'return':0}
+
+        name = params.get('name')
+        tool_tags = params.get('tool_tags')
+        tool_api_ver = params.get('tool_api_ver')
+
+        r = self.read_tool(
+            ctx=ctx,
+            name=name,
+            tool_tags=tool_tags,
+            tool_api_ver=tool_api_ver,
+        )
+        if self.cm.catch_error(r, fail16=True): 
+            r['return'] = 1
+            return r
+
+        tool_api_code = r['tool_api_code']
+
+        if hasattr(tool_api_code, 'finish_dynamic_result') and callable(getattr(tool_api_code, 'finish_dynamic_result')):
+            r = tool_api_code.finish_dynamic_result(
+                 ctx, 
+                 result, 
+                 params, 
+            )
+            if self.cm.catch_error(r): return r
+
+            if 'result' in r: _result['result'] = r['result']
+
+        return _result

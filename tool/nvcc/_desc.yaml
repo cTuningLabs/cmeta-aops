@@ -1,5 +1,11 @@
 storage_key: nvcc
 
+cache_params_use: 
+  tool--microsoft-sdk:
+    version: "{{global.tool--microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
+  tool--mvcc:
+    version: "{{global.tool--mvcc.version}}" # This version must be already resolved here, therefore not fuzzy
+
 names:
   - nvcc{{global.host.vars.file_ext_exe}}
 
@@ -9,10 +15,18 @@ match_version:
 
 cmd_get_version: '{{tool_path}} --version'
 
+install_help_text:
+  Please install CUDA from https://developer.nvidia.com/cuda/toolkit !
+
 uses:
-- task: setup,a2f9b61079ce4333
-  name: mvcc,e823256bbbe54b4e
-  skip_if_not_win: True
+  - task: host,96ac7118439c4490
+
+  - task: setup,a2f9b61079ce4333
+    name: cuda,805716c4f32d42cf
+
+  - task: setup,a2f9b61079ce4333
+    name: mvcc,e823256bbbe54b4e
+    skip_if_not_win: True
 
 extra_paths:
   windows:
