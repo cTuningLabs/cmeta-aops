@@ -1,3 +1,5 @@
+storage_key: gcc
+
 names:
   - gcc{{global.host.vars.file_ext_exe}}
   - gcc-?{{global.host.vars.file_ext_exe}}

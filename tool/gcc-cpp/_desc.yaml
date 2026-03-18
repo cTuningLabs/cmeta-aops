@@ -1,6 +1,8 @@
+storage_key: gcc-cpp
+
 only_paths:
   all:
-    - "{{global.tool--gcc.path_bin}}"
+    - "{{global.gcc.path_bin}}"
 
 names:
   - g++{{global.host.vars.file_ext_exe}}

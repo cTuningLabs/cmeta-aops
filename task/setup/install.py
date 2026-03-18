@@ -95,6 +95,9 @@ def install_tool(self,
                 print (f'{space}      Skipped!')
             else:
                 proceed = True
+    else:
+        return {'return':16, 'error':f'no installation procedure for tool "{artifact_au}"'}
+
 
     if not proceed:
         return result

@@ -1,5 +1,14 @@
+storage_key: llvm
+
 names:
   - clang{{global.host.vars.file_ext_exe}}
+
+cache_params_use: 
+  windows:
+    tool--microsoft-sdk:
+      version: "{{global.tool--microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
+    msvc:
+      version: "{{global.msvc.version}}" # This version must be already resolved here, therefore not fuzzy
 
 match_version: 
   - regex: "clang version\\s*([\\d.]+)"
@@ -11,3 +20,13 @@ uses:
 - task: setup,a2f9b61079ce4333
   name: msvc,e823256bbbe54b4e
   skip_if_not_win: True
+
+install_cmd:
+  darwin: '{{global.tool--curl.qpath}} -LsSf https://astral.sh/uv/install.sh | sh'
+
+install_cmd_version:
+  darwin: '{{global.tool--curl.qpath}} -LsSf https://astral.sh/uv/{{simple_version}}/install.sh | sh'
+
+install_help_text:
+  Please check https://releases.llvm.org
+    or https://visualstudio.microsoft.com/vs/community !

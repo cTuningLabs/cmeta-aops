@@ -1,6 +1,8 @@
+storage_key: clang
+
 only_paths:
   all:
-    - "{{global.tool--llvm.path_bin}}"
+    - "{{global.llvm.path_bin}}"
 
 names:
   - clang{{global.host.vars.file_ext_exe}}
@@ -14,3 +16,7 @@ cmd_get_version: '{{tool_path}} --version'
 uses:
 - task: setup,a2f9b61079ce4333
   name: llvm,532bab2de2e94c7d
+
+install_help_text:
+  Please check https://releases.llvm.org
+    or https://visualstudio.microsoft.com/vs/community !

@@ -39,7 +39,7 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
-        compiler = ctx['tasks']['global']['tool--clang-cpp']
+        compiler = ctx['tasks']['global']['clang-cpp']
 
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')

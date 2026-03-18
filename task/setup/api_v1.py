@@ -391,6 +391,10 @@ class CTask(InitCTask):
                     if r['return'] == 0:
                         result = r
                         success = True
+            elif con:
+                print ('')
+                err = r['error']
+                print (f'{space}WARNING: {err}')
 
         ##############################################################################
         if not success and build and not skip_build:
@@ -415,6 +419,10 @@ class CTask(InitCTask):
                     if r['return'] == 0:
                         result = r
                         success = True
+            elif con:
+                print ('')
+                err = r['error']
+                print (f'{space}WARNING: {err}')
 
         ##############################################################################
         if not success:

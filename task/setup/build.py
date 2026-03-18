@@ -28,4 +28,4 @@ def build_tool(self,
     if self.cm.debug:
         self.logger.debug("RUNNING TASK setup build")
 
-    return {'return': 16, 'error':'build is not implemented'}
+    return {'return': 16, 'error':'TBD: build is not yet implemented in cMeta'}

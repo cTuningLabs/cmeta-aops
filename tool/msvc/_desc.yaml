@@ -1,3 +1,5 @@
+storage_key: msvc
+
 names:
   - cl.exe
 
