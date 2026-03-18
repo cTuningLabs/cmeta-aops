@@ -26,4 +26,5 @@ install_help_text:
 
 install_uses:
   darwin:
-    - task: brew,27859c999bdd4085
+    - task: setup,a2f9b61079ce4333
+      name: brew,27859c999bdd4085
