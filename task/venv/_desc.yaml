@@ -1,0 +1,12 @@
+﻿store_global: True     # force
+storage_key: venv      # force storage key to avoid mixing up in the future
+#cache: True           # don't cache since can be created in the current directory
+
+cache_params:
+- "@version" # Treat @keys as fuzzy versions or versions with conditions during cMeta search!
+
+uses_before_init:
+- task: runner,1e48cc0c5f6041a5
+
+- task: setup,a2f9b61079ce4333
+  name: uv,92f171fc18714ebd

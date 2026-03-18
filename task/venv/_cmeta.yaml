@@ -1,0 +1,13 @@
+artifact: bb68247d2fde489d
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+creation_timestamp: '2026-01-19T15:40:51.387488+00:00'
+min_cmeta_version_api: 0.21.2
+tags:
+- setup
+- uv
+- venv
+uses_categories:
+  tool: tool,c393ba5c6fa14f66
+  utils: utils,234ce5e3262e4d52
