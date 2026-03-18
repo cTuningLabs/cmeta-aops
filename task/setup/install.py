@@ -154,7 +154,7 @@ def install_tool(self,
                     elif '{{version}}' in install_cmd_ver:
                         install_cmd = install_cmd_ver.replace('{{version}}', version)
 
-                    elif '{{simple_version}}' in install_cmd_ver:
+                    elif '{{simple_version}}' in install_cmd_ver or '{{major_version}}' in install_cmd_ver:
                         simple_version = True
                         for k in ['>', '<', '*', '?']:
                             if k in version:
@@ -166,7 +166,13 @@ def install_tool(self,
                             if xversion.startswith('=='):
                                 xversion = xversion[2:]
 
+                            major_version = xversion
+                            j = major_version.find('.')
+                            if j>0:
+                                major_version = major_version[:j]
+
                             install_cmd = install_cmd_ver.replace('{{simple_version}}', xversion)
+                            install_cmd = install_cmd_ver.replace('{{major_version}}', major_version)
 
         if hasattr(tool_api_code, 'customize_install_cmd') and callable(getattr(tool_api_code, 'customize_install_cmd')):
             r = tool_api_code.customize_install_cmd(ctx, install_cmd, install_params)

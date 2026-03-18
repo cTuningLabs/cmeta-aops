@@ -102,7 +102,7 @@ def detect_existing_tool(self,
                     x = str(x).strip()
                     if x != '':
                         paths = x.split(os.pathsep)
-                  
+
             x = os_env.get('PATH', '').strip()
             if x != '':
                 paths += x.split(os.pathsep)

@@ -15,10 +15,10 @@ uses:
   skip_if_not_win: True
 
 install_cmd:
-  darwin: 'TEST'
+  darwin: '{{global.tool--brew.qpath}} install llvm'
 
 install_cmd_version:
-  darwin: 'TEST'
+  darwin: '{{global.tool--brew.qpath}} install llvm@{{major_version}}'
 
 install_help_text:
   Please check https://releases.llvm.org
@@ -28,3 +28,7 @@ install_uses:
   darwin:
     - task: setup,a2f9b61079ce4333
       name: brew,27859c999bdd4085
+
+extra_paths:
+  darwin:
+    - "/opt/homebrew/opt/llvm*/**"

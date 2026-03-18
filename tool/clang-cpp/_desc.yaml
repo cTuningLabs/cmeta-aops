@@ -1,5 +1,10 @@
 storage_key: clang-cpp
 
+cache_params_use: 
+  all:
+    llvm:
+      version: "{{global.llvm.version}}"
+
 only_paths:
   all:
     - "{{global.llvm.path_bin}}"
