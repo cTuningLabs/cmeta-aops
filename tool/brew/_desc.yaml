@@ -1,0 +1,8 @@
+names:
+  - brew{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: ' version ([\d.]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} -h'
