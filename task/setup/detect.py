@@ -436,7 +436,10 @@ def detect_existing_tool(self,
     else:
         cmd = self.cm.utils.files.quote_path(result['path'])
 
-    result['cmd'] = cmd
+    r = self.cm.utils.common.expand_string(cmd, ctx_tasks)
+    if self.cm.catch_error(r): return r
+
+    result['cmd'] = r['string']
 
     if cmd_call:
         result['cmd_call_script'] = cmd_call
