@@ -1,12 +1,5 @@
 storage_key: nvcc
 
-cache_params_use: 
-  windows:
-    tool--microsoft-sdk:
-      version: "{{global.tool--microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
-    msvc:
-      version: "{{global.msvc.version}}" # This version must be already resolved here, therefore not fuzzy
-
 names:
   - nvcc{{global.host.vars.file_ext_exe}}
 
