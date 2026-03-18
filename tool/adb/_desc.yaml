@@ -2,8 +2,9 @@ names:
   - adb{{global.host.vars.file_ext_exe}}
 
 cache_params_use: 
-  tool--google-platform-tools:
-    version: "{{global.tool--google-platform-tools.version}}" # This version must be already resolved here, therefore not fuzzy
+  all:
+    tool--google-platform-tools:
+      version: "{{global.tool--google-platform-tools.version}}" # This version must be already resolved here, therefore not fuzzy
 
 match_version: 
   - regex: 'android debug bridge version\s+(\d+\.\d+\.\d+)'

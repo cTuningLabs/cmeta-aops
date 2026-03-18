@@ -13,6 +13,12 @@ install_help_text:
 
 install_cmd:
   windows: "{{global.tool--winget.qpath}} install --id=astral-sh.uv -e"
+  linux: '{{global.tool--curl.qpath}} -LsSf https://astral.sh/uv/install.sh | sh'
 
 install_cmd_version:
   windows: "{{global.tool--winget.qpath}} install --id=astral-sh.uv -e --version={{simple_version}}"
+  linux: '{{global.tool--curl.qpath}} -LsSf https://astral.sh/uv/{{simple_version}}/install.sh | sh'
+
+extra_paths:
+  linux:
+    - "{{user_home}}/.local/bin"

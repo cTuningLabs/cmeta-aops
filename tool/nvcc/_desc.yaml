@@ -1,10 +1,11 @@
 storage_key: nvcc
 
 cache_params_use: 
-  tool--microsoft-sdk:
-    version: "{{global.tool--microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
-  tool--mvcc:
-    version: "{{global.tool--mvcc.version}}" # This version must be already resolved here, therefore not fuzzy
+  windows:
+    tool--microsoft-sdk:
+      version: "{{global.tool--microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
+    tool--msvc:
+      version: "{{global.tool--msvc.version}}" # This version must be already resolved here, therefore not fuzzy
 
 names:
   - nvcc{{global.host.vars.file_ext_exe}}
@@ -25,10 +26,12 @@ uses:
     name: cuda,805716c4f32d42cf
 
   - task: setup,a2f9b61079ce4333
-    name: mvcc,e823256bbbe54b4e
+    name: msvc,e823256bbbe54b4e
     skip_if_not_win: True
 
 extra_paths:
   windows:
     - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\**"
     - "D:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\**"
+  linux:
+    - "/usr/local/**"

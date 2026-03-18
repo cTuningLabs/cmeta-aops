@@ -23,8 +23,6 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        self.cm.utils.files.write_file('tmp-ctx.json', ctx)
-
         self.logger.debug("RUNNING TASK test-dummy3 run")
 
         con = ctx['control'].get('con', False)
@@ -41,27 +39,21 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
-        nvcc = ctx['tasks']['global']['nvcc']
+        compiler = ctx['tasks']['global']['tool--msvc']
 
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')
 
-        src_file = os.path.join(task_path, 'src', 'list_devices.cu')
-
         host = ctx_tasks['global']['host']
         uname = host['os']['uname']
 
-        exe_file = 'list_devices' + host['vars']['file_ext_exe']
+        for source_file in [f'test-{uname}.cpp', 'test.cpp']:
+            src_file = os.path.join(task_path, 'src', source_file)
+            if os.path.isfile(src_file):
+                break
 
-        if uname == 'windows':
-            ext = '.exe'
-        else:
-            ext = ''
-
-        cmds = [
-          nvcc['qpath'] + f' {src_file} -o tmp' + os.sep + exe_file, 
-          'tmp' + os.sep + exe_file,
-        ]
+        cmds = [compiler['qpath'] + f' /EHsc {src_file} /Fo:tmp\\test.obj /Fe:tmp\\test.exe',
+                'tmp\\test.exe']
 
         for cmd in cmds:
             ii = {'category': self.category_alias + ',' + self.category_uid,
@@ -73,7 +65,7 @@ class CTask(InitCTask):
                   'con': con, 
                   'verbose': verbose, 
                   'text_cmd': 'RUN:',
-#                  'print_env_keys': ['PATH'],
+#                  'print_env_keys': ['PATH'], 
                   'print_extra_line': True,
             }
 

@@ -63,13 +63,17 @@ def install_tool(self,
     # Check deps (winget, sudo apt / curl on Linux/MacOS)
     install_uses_all = []
 
-    if os_key in task_desc.get('install_uses', []):
-        # TBD: add check that a list otherwise may appear as weird error later
-        install_uses_all += task_desc['install_uses'][os_key]
+    install_uses_task = task_desc.get('install_uses', [])
+    if install_uses_task:
+        x = install_uses_task.get('all') if 'all' in install_uses_task else install_uses_task.get(os_key)
+        if x:
+            install_uses_all += x
 
-    if os_key in desc.get('install_uses', []):
-        # TBD: add check that a list otherwise may appear as weird error later
-        install_uses_all += desc['install_uses'][os_key]
+    install_uses = desc.get('install_uses', [])
+    if install_uses:
+        x = install_uses.get('all') if 'all' in install_uses else install_uses.get(os_key)
+        if x:
+            install_uses_all += x
 
     proceed = False
 

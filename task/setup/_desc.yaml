@@ -19,6 +19,9 @@ install_uses:
       name: winget,4a6b40ba0d4d49fb
       skip_install: True
       skip_build: True
+  linux:
+    - task: setup,a2f9b61079ce4333
+      name: curl,bfbb8526694d4f21
 
 env_path_keys:
 - PATH

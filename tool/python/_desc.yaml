@@ -16,7 +16,7 @@ cmd_get_version: '{{tool_path}} --version'
 install_help_text: Check https://www.python.org/ for more details!
 
 install_uses:
-  windows:
+  all:
     - task: venv,bb68247d2fde489d
       version: "{{params.version|}}"
 

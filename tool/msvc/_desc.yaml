@@ -1,0 +1,19 @@
+names:
+  - cl.exe
+
+cache_params_use: 
+  windows:
+    tool--microsoft-sdk:
+      version: "{{global.tool--microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
+    tool--microsoft-visual-studio:
+      version: "{{global.tool--microsoft-visual-studio.version}}" # This version must be already resolved here, therefore not fuzzy
+
+match_version: 
+  - regex: 'version\s*([\d.]+)'
+    group: 1
+
+cmd_get_version: 'cl.exe'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: microsoft.visual-studio,b30299aeb2bd4c6e

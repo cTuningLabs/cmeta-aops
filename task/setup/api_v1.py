@@ -138,6 +138,10 @@ class CTask(InitCTask):
         # Check tool path
         tool_path = params.get('tool_path')
         if tool_path:
+            if tool_path == '{{sys.executable}}':
+                import sys
+                tool_path = sys.executable
+
             if not os.path.isfile(tool_path):
                 return self.cm.error(f'path to tool "{tool_path}" not found')
 
@@ -194,6 +198,8 @@ class CTask(InitCTask):
         tool_api_code = r['tool_api_code']
         artifact_au = r['artifact_au']
 
+        uname = ctx['tasks']['global']['host']['os']['uname']
+
         # Check if params keys are defined in cdesc to be added to cache_tags
         for k in desc.get('cache_params', []):
             # Check if need to expand
@@ -222,14 +228,25 @@ class CTask(InitCTask):
             if 'with' in params:
                 cache_params['with'] = params['with']
 
-        if desc.get('cache_params_use'):
-            v = desc['cache_params_use'].copy()
+        desc_cache_params_use = desc.get('cache_params_use')
+        if desc_cache_params_use:
+            v = None
 
-            r = self.cm.utils.common.expand_strings_in_dict(v, ctx['tasks'])
-            if self.cm.catch_error(r): return r
+            if 'all' in desc_cache_params_use:
+                v = desc_cache_params_use['all']
+            elif uname in desc_cache_params_use:
+                v = desc_cache_params_use[uname]
+            elif 'linux' in desc_cache_params_use:
+                v = desc_cache_params_use['linux']
 
-            cache_params_use = cache_params.setdefault('use', {})
-            cache_params_use = self.cm.utils.common.deep_merge(cache_params_use, v, append_lists=True)
+            if v:
+                v = v.copy()
+
+                r = self.cm.utils.common.expand_strings_in_dict(v, ctx['tasks'])
+                if self.cm.catch_error(r): return r
+
+                cache_params_use = cache_params.setdefault('use', {})
+                cache_params_use = self.cm.utils.common.deep_merge(cache_params_use, v, append_lists=True)
 
 
         # Check if extra init from a tool

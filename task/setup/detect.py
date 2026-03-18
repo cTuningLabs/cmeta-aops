@@ -82,9 +82,12 @@ def detect_existing_tool(self,
         if 'only_paths' in desc:
             all_only_paths = desc['only_paths']
 
-            key = uname if uname in all_only_paths else 'linux'
-
-            paths = all_only_paths[key]
+            if 'all' in all_only_paths:
+                paths = all_only_paths['all']
+            elif uname in all_only_paths:
+                paths = all_only_paths[uname]
+            elif 'linux' in all_only_paths:
+                paths = all_only_paths['linux']
 
         else:
 
@@ -113,9 +116,12 @@ def detect_existing_tool(self,
 
                 key = uname if uname in all_extra_paths else 'linux'
 
-                extra_paths = all_extra_paths[key]
+                extra_paths = all_extra_paths.get(key)
 
-                paths += extra_paths
+                if extra_paths:
+                    for p in extra_paths:
+                        p = p.replace('{{user_home}}', os.path.expanduser("~"))
+                        paths.append(p)
 
         r = self.cm.utils.common.expand_strings_in_dict(paths, ctx_tasks)
         if self.cm.catch_error(r): return r
@@ -148,6 +154,8 @@ def detect_existing_tool(self,
     # Check/update paths via tool code 
     # (for example remove ones that doesn't have some capabilities)
 
+    found_paths_with_versions = {}
+
     if not force_path and hasattr(tool_api_code, 'update_paths') and callable(getattr(tool_api_code, 'update_paths')):
         r = tool_api_code.update_paths(ctx, found_paths, params)
         if self.cm.catch_error(r): return r
@@ -157,8 +165,6 @@ def detect_existing_tool(self,
 
         if 'found_paths_with_versions' in r:
             found_paths_with_versions = r['found_paths_with_versions']
-
-    found_paths_with_versions = {}
 
     if hasattr(tool_api_code, 'detect_versions') and callable(getattr(tool_api_code, 'detect_versions')):
         r = tool_api_code.detect_versions(ctx, found_paths, params)
@@ -248,6 +254,12 @@ def detect_existing_tool(self,
         x = ''
         return self.cm.error(f'failed to find tool "{artifact_au}"{x}', 16)
 
+    if self.cm.debug:
+        print ('')
+        print ('Found paths with versions:')
+        self.cm.j(found_paths_with_versions)
+        print ('')
+
     ############################################################################
     # Parse versions
 
@@ -291,6 +303,12 @@ def detect_existing_tool(self,
 
     if not parsed_paths_with_versions:
         return self.cm.error(f'failed to find tool "{artifact_au}" with parsed version', 16)
+
+    if self.cm.debug:
+        print ('')
+        print ('Parsed paths with versions:')
+        self.cm.j(parsed_paths_with_versions)
+        print ('')
 
 
     ############################################################################
@@ -416,7 +434,9 @@ def detect_existing_tool(self,
     if 'cmd' in desc:
         cmd = desc['cmd']
     else:
-        cmd = result['path']
+        cmd = self.cm.utils.files.quote_path(result['path'])
+
+    result['cmd'] = cmd
 
     if cmd_call:
         result['cmd_call_script'] = cmd_call
@@ -432,7 +452,7 @@ def detect_existing_tool(self,
     r = self.cm.utils.common.expand_string(cmd, ctx_tasks)
     if self.cm.catch_error(r): return r
 
-    result['cmd'] = r['string']
+    result['cmd_call'] = r['string']
 
     cmd_filename = result['filename']
     if 'cmd_filename' in desc:

@@ -1,6 +1,8 @@
-﻿uses:
+﻿fail_if_not_win: True
+
+uses:
 
 - task: runner,1e48cc0c5f6041a5
 
 - task: setup,a2f9b61079ce4333
-  name: clang_cpp,c0f077b9c14d4ba1
+  name: msvc,e823256bbbe54b4e

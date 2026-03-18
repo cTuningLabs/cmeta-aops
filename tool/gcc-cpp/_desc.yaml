@@ -1,0 +1,18 @@
+only_paths:
+  all:
+    - "{{global.tool--gcc.path_bin}}"
+
+names:
+  - g++{{global.host.vars.file_ext_exe}}
+  - g++-?{{global.host.vars.file_ext_exe}}
+  - g++-??{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: 'g\+\+(?:-\d+)?(?:\s+\([^)]*\))?\s+(\d+\.\d+\.\d+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+uses:
+- task: setup,a2f9b61079ce4333
+  name: gcc,222c51b9e9eb4887

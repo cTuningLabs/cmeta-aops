@@ -9,5 +9,5 @@ cmd_get_version: '{{tool_path}} --version'
 
 uses:
 - task: setup,a2f9b61079ce4333
-  name: mvcc,e823256bbbe54b4e
+  name: msvc,e823256bbbe54b4e
   skip_if_not_win: True

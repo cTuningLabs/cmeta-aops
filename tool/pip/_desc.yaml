@@ -7,8 +7,9 @@ cache_params:
 cache_params_with: True
 
 cache_params_use: 
-  python:
-    version: "{{global.python.version}}" # This version must be already resolved here, therefore not fuzzy
+  all:
+    python:
+      version: "{{global.python.version}}" # This version must be already resolved here, therefore not fuzzy
 
 match_version: 
   - regex: "version: (.+)"

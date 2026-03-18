@@ -71,7 +71,10 @@ class CTool(InitCTool):
             rx = self.cm.access(ii)
             if self.cm.catch_error(rx): return rx
 
-            returncode = rx['returncode']
+            returncode = rx['returncode']                                            
+
+            if returncode != 0:
+                return self.cm.error(f'failed to detect CUDA capabilties using CMD "{nvidia_smi_cmd}" in "{__file__}"')
 
             if returncode == 0:
                 import csv
@@ -82,7 +85,6 @@ class CTool(InitCTool):
                 devices = list(reader)
 
                 features['devices'] = clean_devices(devices)
-
 
         return {'return':0, 'paths':paths}
 
@@ -95,7 +97,7 @@ def clean_devices(devices):
         cleaned = {}
 
         for raw_key, raw_value in device.items():
-            key = raw_key.strip().lower()
+            key = raw_key.strip()
             value = raw_value.strip()
 
             # Keep cleaned original key/value
@@ -115,7 +117,6 @@ def clean_devices(devices):
                 if num_match:
                     mib_value = int(num_match.group(1))
                     cleaned[new_key] = mib_value * 1024 * 1024
-
 
         cleaned_devices.append(cleaned)
 

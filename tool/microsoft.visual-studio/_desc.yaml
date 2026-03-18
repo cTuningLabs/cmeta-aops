@@ -2,16 +2,17 @@ names:
   - vcvars{{global.host.os.bits}}{{global.host.vars.file_ext_bat}}
 
 cache_params_use: 
-  tool--microsoft-sdk:
-    version: "{{global.tool--microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
+  windows:
+    tool--microsoft-sdk:
+      version: "{{global.tool--microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
 
 match_version: 
   - regex: 'version\s*([\d.]+)'
     group: 1
 
-cmd_call_script: '{{tool_path}} {{global.tool--microsoft-sdk.version}}'
+cmd_call_script: '{{tool_path}} {{global.tool--microsoft-sdk.version}} '
 
-cmd: 'cl.exe'
+cmd: ''
 cmd_get_version: 'cl.exe'
 
 uses:

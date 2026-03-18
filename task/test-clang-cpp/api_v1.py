@@ -39,7 +39,7 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
-        clang_cpp = ctx['tasks']['global']['tool--clang_cpp']
+        compiler = ctx['tasks']['global']['tool--clang-cpp']
 
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')
@@ -52,8 +52,12 @@ class CTask(InitCTask):
             if os.path.isfile(src_file):
                 break
 
-        cmds = ['"'+clang_cpp['path']+'"' + f' {src_file} -o tmp/test.exe',
-                'tmp\\test.exe']
+        exe_file = 'test' + host['vars']['file_ext_exe']
+
+        cmds = [
+          compiler['qpath'] + f' {src_file} -o ' + os.path.join('tmp', exe_file),
+          os.path.join('tmp', exe_file),
+        ]
 
         for cmd in cmds:
             ii = {'category': self.category_alias + ',' + self.category_uid,
@@ -65,7 +69,7 @@ class CTask(InitCTask):
                   'con': con, 
                   'verbose': verbose, 
                   'text_cmd': 'RUN:',
-                  'print_env_keys': ['PATH'], 
+#                  'print_env_keys': ['PATH'], 
                   'print_extra_line': True,
             }
 

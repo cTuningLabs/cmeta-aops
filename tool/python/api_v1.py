@@ -201,20 +201,23 @@ class CTool(InitCTool):
 
             to_add = True
 
+            ii = {'category': 'task,c36be4b9314a45e0',
+                  'command': 'run',
+                  'arg1': 'detect-python-env,8b55a595f3284ceb',
+                  'ctx': ctx,
+                  'python_path': python_path,
+            }
+
+            r = self.cm.access(ii)
+            if self.cm.catch_error(r): return r
+
+            is_virtual = r['is_virtual']
+            features['is_virtual'] = is_virtual
+
             if venv:
                 to_add = False
 
-                ii = {'category': 'task,c36be4b9314a45e0',
-                      'command': 'run',
-                      'arg1': 'detect-python-env,8b55a595f3284ceb',
-                      'ctx': ctx,
-                      'python_path': python_path,
-                }
-
-                r = self.cm.access(ii)
-                if self.cm.catch_error(r): return r
-
-                if r['is_virtual']:
+                if is_virtual:
                     to_add = True
 
                     features['venv'] = True
@@ -222,11 +225,17 @@ class CTool(InitCTool):
 
                     activate_script_path = r.get('script_path')
                     if activate_script_path:
+                        host = ctx['tasks']['global']['host']
+
+                        cmd_activate_script_path = host['vars']['call_script'] + ' ' + activate_script_path
+
+                        features['cmd_venv_activate_scipt'] = cmd_activate_script_path
+
                         ii = {'category': 'task,c36be4b9314a45e0',
                               'command': 'run',
                               'ctx': ctx,
                               'arg1': 'cmd,c9ba0a88df394d7f',
-                              'cmd': activate_script_path,
+                              'cmd': cmd_activate_script_path,
                               'env': env,
                               'timeout': timeout,
                               'con': con, 
