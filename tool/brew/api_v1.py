@@ -24,9 +24,12 @@ class CTool(InitCTool):
 
         result = {'return':0}
 
+        sudo_installed = ctx['tasks']['global']['host'].get('os_extra', {}).get('sudo', False)
         passwordless_sudo = ctx['tasks']['global']['host'].get('os_extra', {}).get('passwordless_sudo', False)
 
-        if passwordless_sudo:
+        # If sudo is not installed, we think that we are likely inside container
+        # and can turn on noninteractive mode too
+        if passwordless_sudo or not sudo_installed:
             env['NONINTERACTIVE'] = 1
 
         result['timeout'] = None

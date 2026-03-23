@@ -1,6 +1,20 @@
 names:
   - git{{global.host.vars.file_ext_exe}}
+
 match_version: 
   - regex: "git version ([0-9]+(?:[.\\-][0-9A-Za-z]+)*)"
     group: 1
+
 cmd_get_version: '{{tool_path}} --version'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+  darwin: 'xcode-select --install'
+
+install_cmd_version:
+  linux: '{{global.host.os_extra.install_cmd_sudo_version}}'
+  darwin: 'xcode-select --install'
+
+requires_sudo:
+  linux: True
+  darwin: True

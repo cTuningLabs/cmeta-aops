@@ -23,3 +23,11 @@ cmd_get_version: '{{tool_path}} --version'
 uses:
 - task: setup,a2f9b61079ce4333
   name: gcc,222c51b9e9eb4887
+
+package_name: 'g++'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+
+install_cmd_version:
+  linux: '{{global.host.os_extra.install_cmd_sudo_version}}'

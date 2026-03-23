@@ -228,7 +228,8 @@ def detect_linux_env():
         "id": "ubuntu",
         "id_like": "debian",
         "package_manager": "apt-get",
-        "cmd": "apt-get install -y {{package_name}}",
+        "install_cmd": "apt-get install -y {{name}}",
+        "install_cmd_version": "apt-get install -y {{name}}={{version}}",
         "cmd_sudo": "sudo ",
         "sudo": True,
         "passwordless_sudo": False,
@@ -356,6 +357,23 @@ def detect_linux_env():
         }
         return commands.get(package_manager)
 
+    def install_command_for_version(package_manager):
+        commands_version = {
+            "brew": "brew install {{name}}@{{version}}",
+            "apt": "apt install -y {{name}}={{version}}",
+            "apt-get": "apt-get install -y {{name}}={{version}}",
+            "dnf": "dnf install -y {{name}}-{{version}}",
+            "microdnf": "microdnf install -y {{name}}-{{version}}",
+            "yum": "yum install -y {{name}}-{{version}}",
+            "apk": "apk add {{name}}={{version}}",
+            "pacman": "pacman -S --noconfirm {{name}}",
+            "zypper": "zypper --non-interactive install {{name}}={{version}}",
+            "xbps-install": "xbps-install -y {{name}}-{{version}}",
+            "emerge": "emerge ={{name}}-{{version}}",
+            "nix-env": "nix-env -iA nixpkgs.{{name}}",
+        }
+        return commands_version.get(package_manager)
+
     def detect_sudo():
         sudo_path = shutil.which("sudo")
         if not sudo_path:
@@ -388,16 +406,20 @@ def detect_linux_env():
 
     package_manager = choose_best_package_manager(distro_id, id_like)
     cmd = install_command_for(package_manager)
+    cmd_version = install_command_for_version(package_manager)
 
     sudo_installed, passwordless_sudo = detect_sudo()
-    cmd_sudo = "sudo " if sudo_installed else ""
+    cmd_sudo = f"sudo {cmd}" if sudo_installed else cmd
+    cmd_sudo_version = f"sudo {cmd_version}" if sudo_installed else cmd_version
 
     return {
         "id": distro_id,
         "id_like": id_like,
         "package_manager": package_manager,
-        "cmd": cmd,
-        "cmd_sudo": cmd_sudo,
+        "install_cmd": cmd,
+        "install_cmd_version": cmd_version,
+        "install_cmd_sudo": cmd_sudo,
+        "install_cmd_sudo_version": cmd_sudo_version,
         "sudo": sudo_installed,
         "passwordless_sudo": passwordless_sudo,
     }

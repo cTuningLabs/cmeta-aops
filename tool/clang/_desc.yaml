@@ -23,5 +23,11 @@ uses:
   name: llvm,532bab2de2e94c7d
   version: "{{params.version|}}"
 
+uses_os:
+  linux:
+    - task: setup,a2f9b61079ce4333
+      name: gcc,222c51b9e9eb4887
+  darwin:
+
 install_help_text:
   Please check https://releases.llvm.org !

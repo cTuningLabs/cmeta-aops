@@ -55,23 +55,26 @@ def install_tool(self,
     result = {'return': 16, 'error':f'tool {artifact_print_name}{with_version} was not installed'}
 
     # Check direct or custom installation
-    install_cmd = desc.get('install_cmd', {})
-    os_key = uname if (uname == 'windows' or uname in install_cmd) else 'linux'
-    install_cmd = install_cmd.get('all') if 'all' in install_cmd else install_cmd.get(os_key)
+    install_cmd_desc = desc.get('install_cmd', {})
+
+    os_key = uname if (uname == 'windows' or uname in install_cmd_desc) else 'linux'
+    install_cmd = install_cmd_desc.get('all') if 'all' in install_cmd_desc else install_cmd_desc.get(os_key)
 
     has_custom_install = True if hasattr(tool_api_code, 'install') and callable(getattr(tool_api_code, 'install')) else False
 
     # Check deps (winget, sudo apt / curl on Linux/MacOS)
     install_uses_all = []
 
-    install_uses_task = task_desc.get('install_uses', [])
+    install_uses_task = task_desc.get('install_uses', {})
     if install_uses_task and not desc.get('skip_common_install_uses', False):
+        os_key = uname if (uname == 'windows' or uname in install_uses_task) else 'linux'
         x = install_uses_task.get('all') if 'all' in install_uses_task else install_uses_task.get(os_key)
         if x:
             install_uses_all += x
 
-    install_uses = desc.get('install_uses', [])
+    install_uses = desc.get('install_uses', {})
     if install_uses:
+        os_key = uname if (uname == 'windows' or uname in install_uses) else 'linux'
         x = install_uses.get('all') if 'all' in install_uses else install_uses.get(os_key)
         if x:
             install_uses_all += x
@@ -121,7 +124,8 @@ def install_tool(self,
         if self.cm.catch_error(r): return r
 
 
-    requires_sudo = desc.get('requires_sudo',{})
+    requires_sudo = desc.get('requires_sudo', {})
+    os_key = uname if (uname == 'windows' or uname in requires_sudo) else 'linux'
     x = requires_sudo.get('all') if 'all' in requires_sudo else requires_sudo.get(os_key)
     if x:
         # Turn on non-interactive mode unless passwordless sudo
@@ -166,6 +170,7 @@ def install_tool(self,
         if version:
             install_cmd_version = desc.get('install_cmd_version')
             if install_cmd_version: 
+                os_key = uname if (uname == 'windows' or uname in install_cmd_version) else 'linux'
                 install_cmd_ver = install_cmd_version['all'] if 'all' in install_cmd_version else install_cmd_version.get(os_key)
 
                 if install_cmd_ver:
@@ -210,6 +215,10 @@ def install_tool(self,
         r = self.cm.utils.common.expand_string(install_cmd, ctx_tasks)
         if self.cm.catch_error(r): return r
         install_cmd = r['string']
+
+        # Update package name if installation is from host ...
+        package_name = desc['package_name'] if 'package_name' in desc else artifact_au
+        install_cmd = install_cmd.replace('{{name}}', package_name)
 
         # Run installation
         ii = {'category': 'task,c36be4b9314a45e0',

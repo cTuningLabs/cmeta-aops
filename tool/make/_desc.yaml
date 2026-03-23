@@ -1,0 +1,8 @@
+names:
+  - make{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: "gnu make ([0-9]+(?:[.\\-][0-9A-Za-z]+)*)"
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'

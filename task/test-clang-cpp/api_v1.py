@@ -55,7 +55,7 @@ class CTask(InitCTask):
         exe_file = 'test' + host['vars']['file_ext_exe']
 
         cmds = [
-          compiler['qpath'] + f' {src_file} -o ' + os.path.join('tmp', exe_file),
+          compiler['qpath'] + f' {src_file} -v -o ' + os.path.join('tmp', exe_file),
           os.path.join('tmp', exe_file),
         ]
 

@@ -18,7 +18,11 @@ install_uses:
     - task: setup,a2f9b61079ce4333
       name: curl,bfbb8526694d4f21
       skip_build: True
+    - task: setup,a2f9b61079ce4333
+      name: git,959d8c0fbc004bd0
+      skip_build: True
   darwin:
+    # Git should be installed by brew installer via xcode if not installed ...
     - task: setup,a2f9b61079ce4333
       name: curl,bfbb8526694d4f21
       skip_install: True # Available on MacOS by default!

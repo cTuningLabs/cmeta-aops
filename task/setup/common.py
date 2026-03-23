@@ -31,6 +31,8 @@ def read_tool(self,
 
     _local = {}
 
+    uname = ctx_tasks['global']['host']['os']['uname']
+
     ###########################################################################################
     # SELECT TOOL ARTIFACT
 
@@ -81,7 +83,15 @@ def read_tool(self,
     ###########################################################################################
     # CHECK DEPENDENCIES
     if not skip_uses:
-        uses = cdesc.get('uses', [])
+        uses = cdesc.get('uses', []).copy()
+
+        uses_os_desc = cdesc.get('uses_os', {})
+        if uses_os_desc:
+            os_key = uname if (uname == 'windows' or uname in uses_os_desc) else 'linux'
+            uses_os = uses_os_desc['all'] if 'all' in uses_os_desc else uses_os_desc.get(os_key)
+
+            if uses_os:
+                uses += uses_os
 
         if uses:
             ii = {'category': self.category_alias + ',' + self.category_uid,
