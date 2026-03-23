@@ -78,6 +78,7 @@ class CTask(InitCTask):
         desc = r['desc']
         tool_api_code = r['tool_api_code']
         artifact_au = r['artifact_au']
+        artifact_print_name = r['artifact_print_name']
 
         result = {'return':0}
 
@@ -317,6 +318,7 @@ class CTask(InitCTask):
         space = r['space']
         desc = r['desc']
         artifact_au = r['artifact_au']
+        artifact_print_name = r['artifact_print_name']
 
         cache_params = ctx['tasks']['run_control'].get('cache_params')
 
@@ -446,7 +448,7 @@ class CTask(InitCTask):
             if _with:
                 if x != '': x += ' and'
                 x += f' with params "{_with}"'
-            return self.cm.error(f'failed to find tool "{artifact_au}"{x}')
+            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x}')
 
         ##############################################################################
         # Check path to tool

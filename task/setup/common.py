@@ -53,18 +53,30 @@ def read_tool(self,
         return r
 
     artifact = r['artifact']
+
     cdesc = r['loaded_files']['_desc'].get('data', {})
+
     tool_api_code = r['api_code']
     if tool_api_code:
         tool_api_code.cmeta = artifact['cmeta']
         tool_api_code.cdesc = cdesc
         tool_api_code.cache_sep = self.cache_sep
+
     artifact_au = r['artifact_au']
+
+    artifact_print_name = artifact_au
+    if 'artifact_print_name' in cdesc:
+        artifact_print_name = cdesc['artifact_print_name']
+
+        r = self.cm.utils.common.expand_string(artifact_print_name, ctx_tasks)
+        if self.cm.catch_error(r): return r
+
+        artifact_print_name = r['string']
 
     ###########################################################################################
     # CHECK IF FAIL ON NON WINDOWS
     if cdesc.get('win_only', False) and os.name != 'nt':
-        return {'return': 1, 'error': f'the tool "{artifact_au}" can run only on Windows'}
+        return {'return': 1, 'error': f'the tool "{artifact_print_name}" can run only on Windows'}
 
     ###########################################################################################
     # CHECK DEPENDENCIES
@@ -95,4 +107,5 @@ def read_tool(self,
         'desc': cdesc,
         'tool_api_code': tool_api_code,
         'artifact_au': artifact_au,
+        'artifact_print_name': artifact_print_name,
     }

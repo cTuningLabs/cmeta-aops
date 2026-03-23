@@ -52,6 +52,7 @@ def detect_existing_tool(self,
     desc = tool_read['desc']
     tool_api_code = tool_read['tool_api_code']
     artifact_au = tool_read['artifact_au']
+    artifact_print_name = tool_read['artifact_print_name']
 
     ############################################################################
     # PREPARE PATHS TO SEARCH
@@ -148,7 +149,7 @@ def detect_existing_tool(self,
     if not found_paths:
 #        x = '' if not params else f' with params {params}'
         x = ''
-        return self.cm.error(f'failed to find tool "{artifact_au}"{x}', 16)
+        return self.cm.error(f'failed to find tool "{artifact_print_name}"{x}', 16)
 
     ############################################################################
     # Check/update paths via tool code 
@@ -252,7 +253,7 @@ def detect_existing_tool(self,
     if not found_paths_with_versions:
 #        x = '' if not params else f' with params "{params}"'
         x = ''
-        return self.cm.error(f'failed to find tool "{artifact_au}"{x}', 16)
+        return self.cm.error(f'failed to find tool "{artifact_print_name}"{x}', 16)
 
     if self.cm.debug:
         print ('')
@@ -302,7 +303,7 @@ def detect_existing_tool(self,
             parsed_paths_with_versions.append(x)
 
     if not parsed_paths_with_versions:
-        return self.cm.error(f'failed to find tool "{artifact_au}" with parsed version', 16)
+        return self.cm.error(f'failed to find tool "{artifact_print_name}" with parsed version', 16)
 
     if self.cm.debug:
         print ('')
@@ -336,7 +337,7 @@ def detect_existing_tool(self,
                 matched_paths_with_versions.append(x)
 
     if not matched_paths_with_versions:
-        return self.cm.error(f'failed to find tool "{artifact_au}" with matched version', 16)
+        return self.cm.error(f'failed to find tool "{artifact_print_name}" with matched version', 16)
 
     if hasattr(tool_api_code, 'check_features') and callable(getattr(tool_api_code, 'check_features')):
         r = tool_api_code.check_features(ctx, matched_paths_with_versions, params)
@@ -375,7 +376,7 @@ def detect_existing_tool(self,
         sorted_matched_paths_with_versions = priority_matched_paths_with_versions + sorted_normal_matched_paths_with_versions
 
         if not sorted_matched_paths_with_versions:
-            return self.cm.error(f'failed to find tool "{artifact_au}" with matched version', 16)
+            return self.cm.error(f'failed to find tool "{artifact_print_name}" with matched version', 16)
 
         # Finish selection
         selection = 0
@@ -411,7 +412,7 @@ def detect_existing_tool(self,
                     return self.cm.error('selection out of range')
 
                 if selection == -1:
-                    return self.cm.error(f'user forced to install or build tool "{artifact_au}"', 16)
+                    return self.cm.error(f'user forced to install or build tool "{artifact_print_name}"', 16)
 
 
     ############################################################################

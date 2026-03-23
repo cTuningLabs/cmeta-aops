@@ -1,5 +1,7 @@
 storage_key: 'pip-{{params.with.package}}'
 
+artifact_print_name: 'pip ({{params.with.package}})'
+
 cache_params:
   - package
   - "@version"                  # Treat @keys such as this version as fuzzy versions or versions with conditions during cMeta search!

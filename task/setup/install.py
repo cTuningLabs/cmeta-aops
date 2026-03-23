@@ -38,6 +38,7 @@ def install_tool(self,
     desc = tool_read['desc']
     tool_api_code = tool_read['tool_api_code']
     artifact_au = tool_read['artifact_au']
+    artifact_print_name = tool_read['artifact_print_name']
 
     ctx_tasks = ctx['tasks']
     nested_call = ctx_tasks.setdefault('nested_call', 0)
@@ -51,7 +52,7 @@ def install_tool(self,
         if with_version != '': with_version += ' and'
         with_version += f' with params "{_with}"'
 
-    result = {'return': 16, 'error':f'tool {artifact_au}{with_version} was not installed'}
+    result = {'return': 16, 'error':f'tool {artifact_print_name}{with_version} was not installed'}
 
     # Check direct or custom installation
     install_cmd = desc.get('install_cmd', {})
@@ -83,11 +84,11 @@ def install_tool(self,
 
         if proceed:   
             print ('')
-            print (f'{space}INFO: attempting to install tool "{artifact_au}"{with_version} ...')
+            print (f'{space}INFO: attempting to install tool "{artifact_print_name}"{with_version} ...')
 
         elif con:
             print ('')
-            x = input (f'{space}INFO: would you like to install tool "{artifact_au}"{with_version} (Y/n)? ')
+            x = input (f'{space}INFO: would you like to install tool "{artifact_print_name}"{with_version} (Y/n)? ')
 
             x = x.strip().lower()
 
@@ -96,7 +97,7 @@ def install_tool(self,
             else:
                 proceed = True
     else:
-        return {'return':16, 'error':f'no installation procedure for tool "{artifact_au}"'}
+        return {'return':16, 'error':f'no installation procedure for tool "{artifact_print_name}"'}
 
 
     if not proceed:
