@@ -164,7 +164,7 @@ class CTask(InitCTask):
         host_os['uarch'] = uarch
 
         # If Linux, detect extra env:
-        if uname == 'linux':
+        if uname != 'windows':
             x = detect_linux_env()
             result['os_extra'] = x
 
@@ -269,6 +269,7 @@ def detect_linux_env():
         like_tokens = [x.strip().lower() for x in (id_like or "").split() if x.strip()]
 
         present = {
+            "brew": shutil.which("brew") is not None,
             "apt": shutil.which("apt") is not None,
             "apt-get": shutil.which("apt-get") is not None,
             "dnf": shutil.which("dnf") is not None,
@@ -287,6 +288,9 @@ def detect_linux_env():
                 if present.get(candidate):
                     return candidate
             return None
+
+        if distro_id == "darwin":
+            return first_present(["brew"])
 
         if distro_id == "alpine":
             return first_present(["apk"])
@@ -337,6 +341,7 @@ def detect_linux_env():
 
     def install_command_for(package_manager):
         commands = {
+            "brew": "brew install {{name}}",
             "apt": "apt install -y {{name}}",
             "apt-get": "apt-get install -y {{name}}",
             "dnf": "dnf install -y {{name}}",
@@ -370,9 +375,16 @@ def detect_linux_env():
 
         return True, passwordless
 
-    os_info = parse_os_release()
-    distro_id = os_info.get("ID")
-    id_like = os_info.get("ID_LIKE")
+    os_name = platform.system().strip().lower()
+
+    if os_name == "darwin":
+        distro_id = "darwin"
+        # Compatibility alias requested by caller-side logic.
+        id_like = "debian"
+    else:
+        os_info = parse_os_release()
+        distro_id = os_info.get("ID")
+        id_like = os_info.get("ID_LIKE")
 
     package_manager = choose_best_package_manager(distro_id, id_like)
     cmd = install_command_for(package_manager)
