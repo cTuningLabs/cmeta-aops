@@ -57,6 +57,7 @@ class CTool(InitCTool):
                               ctx: dict,
                               install_cmd: str = None,
                               params: dict = {},
+                              *misc: dict,
     ):
         """
         """

@@ -23,8 +23,7 @@ install_cmd_version:
   linux: '{{global.brew.qpath}} install llvm@{{major_version}}'
 
 install_help_text:
-  Please check https://releases.llvm.org
-    or https://visualstudio.microsoft.com/vs/community !
+  Please check https://releases.llvm.org !
 
 install_uses:
   linux:
@@ -32,5 +31,7 @@ install_uses:
       name: brew,27859c999bdd4085
 
 extra_paths:
+  linux:
+    - "/home/linuxbrew/.linuxbrew/bin"
   darwin:
     - "/opt/homebrew/opt/llvm*/**"

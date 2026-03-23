@@ -165,7 +165,12 @@ class CTask(InitCTask):
 
         # If Linux, detect extra env:
         if uname == 'linux':
-            result['os_extra'] = detect_linux_env()
+            x = detect_linux_env()
+            result['os_extra'] = x
+
+            y = '1' if x.get('passwordless_sudo', False) else '0'
+            result['passwordless_sudo_noninteractive_int'] = y
+
 
         # Finish automation
         result['os'] = host_os

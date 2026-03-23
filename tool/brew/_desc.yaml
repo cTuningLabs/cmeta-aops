@@ -8,7 +8,7 @@ match_version:
 cmd_get_version: '{{tool_path}} --version'
 
 install_cmd:
-  linux: '{{global.curl.qpath}} -LsSf https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash'
+  linux: '/bin/bash -c "$({{global.curl.qpath}} -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
   darwin: '/bin/bash -c "$({{global.curl.qpath}} -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
 
 skip_common_install_uses: True
@@ -27,3 +27,7 @@ install_uses:
 requires_sudo:
   linux: True
   darwin: True
+
+extra_paths:
+  linux:
+    - "/home/linuxbrew/.linuxbrew/bin"

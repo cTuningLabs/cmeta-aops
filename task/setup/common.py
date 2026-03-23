@@ -15,6 +15,7 @@ def read_tool(self,
         name: str = None,           # Tool name
         tool_tags: str = None,      # Tool tags
         tool_api_ver: int = None,   # Tool api ver (if has code)
+        skip_uses: bool = False,    # Skip uses in init when we resolve storage key and params
 ):
 
     if self.cm.debug:
@@ -67,23 +68,24 @@ def read_tool(self,
 
     ###########################################################################################
     # CHECK DEPENDENCIES
-    uses = cdesc.get('uses', [])
+    if not skip_uses:
+        uses = cdesc.get('uses', [])
 
-    if uses:
-        ii = {'category': self.category_alias + ',' + self.category_uid,
-              'command': 'use',
-              'con': con,
-              'quiet': quiet,
-              'verbose': verbose,
-              'ctx': ctx,
-              'desc': uses,
-              'task_artifact_alias': self.artifact_alias,
-              'task_artifact_uid': self.artifact_uid,
-              'task_artifact_path': self.artifact_path,
-             }
+        if uses:
+            ii = {'category': self.category_alias + ',' + self.category_uid,
+                  'command': 'use',
+                  'con': con,
+                  'quiet': quiet,
+                  'verbose': verbose,
+                  'ctx': ctx,
+                  'desc': uses,
+                  'task_artifact_alias': self.artifact_alias,
+                  'task_artifact_uid': self.artifact_uid,
+                  'task_artifact_path': self.artifact_path,
+                 }
 
-        r = self.cm.access(ii)
-        if self.cm.catch_error(r): return r
+            r = self.cm.access(ii)
+            if self.cm.catch_error(r): return r
 
     return {
         'return': 0,

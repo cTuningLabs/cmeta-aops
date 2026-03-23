@@ -69,6 +69,7 @@ class CTask(InitCTask):
             name=name,
             tool_tags=tool_tags,
             tool_api_ver=tool_api_ver,
+            skip_uses = True,
         )
         if self.cm.catch_error(r, fail16=True): 
             r['return'] = 1
@@ -366,7 +367,7 @@ class CTask(InitCTask):
 
                 if con and verbose:
                     print ('')
-                    print (f'{space}WARNING: ' + err)
+                    print (f'{space}WARNING: {err} !')
 
         ##############################################################################
         if not success and install and not skip_install:
@@ -394,7 +395,7 @@ class CTask(InitCTask):
             elif con:
                 print ('')
                 err = r['error']
-                print (f'{space}WARNING: {err}')
+                print (f'{space}WARNING: {err} !')
 
         ##############################################################################
         if not success and build and not skip_build:
@@ -422,7 +423,7 @@ class CTask(InitCTask):
             elif con:
                 print ('')
                 err = r['error']
-                print (f'{space}WARNING: {err}')
+                print (f'{space}WARNING: {err} !')
 
         ##############################################################################
         if not success:

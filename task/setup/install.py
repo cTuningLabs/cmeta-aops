@@ -124,12 +124,20 @@ def install_tool(self,
     x = requires_sudo.get('all') if 'all' in requires_sudo else requires_sudo.get(os_key)
     if x:
         # Turn on non-interactive mode unless passwordless sudo
-        # XYZ: TO CHECK PASSWORDLESS SUDO
-        if verbose:
+        # You may customize it further via customize_install_cmd
+        if con:
             print ('')
             print (f'{space}WARNING: this installation requires SUDO ...')
 
+        # It's needed to use bash that checks for sudo (even if in non-interactive mode)...
         timeout = None
+
+        passwordless_sudo = ctx_tasks['global']['host'].get('os_extra', {}).get('passwordless_sudo', False)
+    
+        if passwordless_sudo:
+            if verbose:
+                print ('')
+                print (f'{space}WARNING: passwordless SUDO detected ...')
 
 
     install_params = params.copy()
@@ -188,11 +196,14 @@ def install_tool(self,
                             install_cmd = install_cmd.replace('{{major_version}}', major_version)
 
         if hasattr(tool_api_code, 'customize_install_cmd') and callable(getattr(tool_api_code, 'customize_install_cmd')):
-            r = tool_api_code.customize_install_cmd(ctx, install_cmd, install_params)
+            r = tool_api_code.customize_install_cmd(ctx, install_cmd, install_params, env, timeout)
             if self.cm.catch_error(r): return r
 
             if 'install_cmd' in r: 
                 install_cmd = r['install_cmd']
+
+            if 'timeout' in r:
+                timeout = r['timeout']
 
         # Update from task context
         r = self.cm.utils.common.expand_string(install_cmd, ctx_tasks)
