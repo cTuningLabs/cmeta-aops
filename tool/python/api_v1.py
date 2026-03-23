@@ -145,6 +145,7 @@ class CTool(InitCTool):
 #        if os.path.isfile(path_venv_python):
 #            paths.insert(0, '!' + path_venv_python)
 
+
         return {'return':0, 'paths':paths}
 
     ############################################################
@@ -169,12 +170,15 @@ class CTool(InitCTool):
     ):
         """
         """
+
         if self.cm.debug:
             self.logger.debug("RUNNING TOOL python api_v1 check_features")
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
+
+        con = False if not verbose else con
 
         _with = params.get('with', {})
         venv = _with.get('venv')

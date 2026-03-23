@@ -23,7 +23,7 @@ install_uses:
   windows:
     - task: setup,a2f9b61079ce4333
       name: winget,4a6b40ba0d4d49fb
-      skip_install: True
+      skip_install: True # Available on Windows by default!
       skip_build: True
   linux:
     - task: setup,a2f9b61079ce4333
@@ -32,12 +32,11 @@ install_uses:
   darwin:
     - task: setup,a2f9b61079ce4333
       name: curl,bfbb8526694d4f21
-      skip_install: True
+      skip_install: True # Available on MacOS by default!
       skip_build: True
     - task: setup,a2f9b61079ce4333
       name: brew,27859c999bdd4085
       skip_build: True
-
 
 
 # Add env path keys to aggregated if detected

@@ -64,7 +64,7 @@ def install_tool(self,
     install_uses_all = []
 
     install_uses_task = task_desc.get('install_uses', [])
-    if install_uses_task:
+    if install_uses_task and not desc.get('skip_common_install_uses', False):
         x = install_uses_task.get('all') if 'all' in install_uses_task else install_uses_task.get(os_key)
         if x:
             install_uses_all += x
@@ -120,6 +120,18 @@ def install_tool(self,
         if self.cm.catch_error(r): return r
 
 
+    requires_sudo = desc.get('requires_sudo',{})
+    x = requires_sudo.get('all') if 'all' in requires_sudo else requires_sudo.get(os_key)
+    if x:
+        # Turn on non-interactive mode unless passwordless sudo
+        # XYZ: TO CHECK PASSWORDLESS SUDO
+        if verbose:
+            print ('')
+            print (f'{space}WARNING: this installation requires SUDO ...')
+
+        timeout = None
+
+
     install_params = params.copy()
 
     install_params.update({
@@ -131,6 +143,7 @@ def install_tool(self,
        'result': result,
        'timeout': timeout,
     })
+
 
     if has_custom_install:
         r = tool_api_code.install(ctx, install_params)
@@ -200,6 +213,7 @@ def install_tool(self,
               # Important to be able to continue processing detect/install/build
               'fail_if_nonzero_return_code': False, 
         }
+
 
         rx = self.cm.access(ii)
         if self.cm.catch_error(rx): return rx

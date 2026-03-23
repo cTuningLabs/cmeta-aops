@@ -187,7 +187,7 @@ def detect_existing_tool(self,
 
         if cmd_version and match_version:
             for xpath in found_paths:
-                
+
                 path = xpath[1:] if xpath.startswith('!') else xpath
 
                 qpath = self.cm.utils.files.quote_path(path)
@@ -344,7 +344,6 @@ def detect_existing_tool(self,
 
         if 'paths' in r: 
             matched_paths_with_versions = r['paths']
-
 
     ############################################################################
     # Sort version

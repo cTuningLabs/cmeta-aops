@@ -9,3 +9,21 @@ cmd_get_version: '{{tool_path}} --version'
 
 install_cmd:
   linux: '{{global.curl.qpath}} -LsSf https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash'
+  darwin: '/bin/bash -c "$({{global.curl.qpath}} -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+
+skip_common_install_uses: True
+
+install_uses:
+  linux:
+    - task: setup,a2f9b61079ce4333
+      name: curl,bfbb8526694d4f21
+      skip_build: True
+  darwin:
+    - task: setup,a2f9b61079ce4333
+      name: curl,bfbb8526694d4f21
+      skip_install: True # Available on MacOS by default!
+      skip_build: True
+
+requires_sudo:
+  linux: True
+  darwin: True
