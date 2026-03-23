@@ -5,10 +5,10 @@ names:
 
 cache_params_use: 
   windows:
-    tool--microsoft-sdk:
-      version: "{{global.tool--microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
-    tool--microsoft-visual-studio:
-      version: "{{global.tool--microsoft-visual-studio.version}}" # This version must be already resolved here, therefore not fuzzy
+    microsoft-sdk:
+      version: "{{global.microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
+    microsoft-visual-studio:
+      version: "{{global.microsoft-visual-studio.version}}" # This version must be already resolved here, therefore not fuzzy
 
 match_version: 
   - regex: 'version\s*([\d.]+)'

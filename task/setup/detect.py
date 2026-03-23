@@ -447,7 +447,7 @@ def detect_existing_tool(self,
         cmd = cmd_call + ' ' + host['vars']['cmd_sep'] + ' ' + cmd
 
         env_added = tool['env_added']
-        for key in self.cdesc['env_path_keys']:
+        for key in self.cdesc['add_env_path_keys']:
             if key in list(env_added.keys()):
                 env_added['+'+key] = env_added.pop(key).split(os.pathsep)
         result['_aggregate'] = {'env': env_added}

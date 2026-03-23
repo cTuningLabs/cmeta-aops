@@ -3,8 +3,8 @@ names:
 
 cache_params_use: 
   all:
-    tool--google-platform-tools:
-      version: "{{global.tool--google-platform-tools.version}}" # This version must be already resolved here, therefore not fuzzy
+    google-platform-tools:
+      version: "{{global.google-platform-tools.version}}" # This version must be already resolved here, therefore not fuzzy
 
 match_version: 
   - regex: 'android debug bridge version\s+(\d+\.\d+\.\d+)'
@@ -18,4 +18,4 @@ uses:
 
 extra_paths:
   windows:
-    - "{{global.tool--google-platform-tools.path_bin}}"
+    - "{{global.google-platform-tools.path_bin}}"

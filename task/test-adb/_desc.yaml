@@ -6,4 +6,4 @@
   name: adb,c80f2c9d7d5a4b93
 
 - task: cmd,c9ba0a88df394d7f
-  cmd: '{{global.tool--adb.qpath}} devices'
+  cmd: '{{global.adb.qpath}} devices'

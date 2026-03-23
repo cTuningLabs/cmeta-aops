@@ -309,7 +309,7 @@ class CTool(InitCTool):
             venv_extra_env = result.get('features',{}).get('venv_extra_env',{})
             if venv_extra_env:
                 env_added = venv_extra_env.copy()
-                for key in self.cdesc['env_path_keys']:
+                for key in self.cdesc['add_env_path_keys']:
                     if key in list(env_added.keys()):
                         env_added['+'+key] = env_added.pop(key).split(os.pathsep)
                 result['_aggregate'] = {'env': env_added}

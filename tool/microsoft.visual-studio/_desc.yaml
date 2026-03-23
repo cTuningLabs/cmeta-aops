@@ -3,14 +3,14 @@ names:
 
 cache_params_use: 
   windows:
-    tool--microsoft-sdk:
-      version: "{{global.tool--microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
+    microsoft-sdk:
+      version: "{{global.microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
 
 match_version: 
   - regex: 'version\s*([\d.]+)'
     group: 1
 
-cmd_call_script: '{{tool_path}} {{global.tool--microsoft-sdk.version}} '
+cmd_call_script: '{{tool_path}} {{global.microsoft-sdk.version}} '
 
 cmd: ''
 cmd_get_version: 'cl.exe'

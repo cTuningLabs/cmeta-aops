@@ -3,6 +3,9 @@ import platform
 import sys
 import struct
 import copy
+import shutil
+import subprocess
+
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
@@ -20,7 +23,8 @@ class CTask(InitCTask):
                      params: dict = {},
                      cparams: dict = {},
     ):
-        r = self.cm.check_params(params, ['env','bits','timeout','extra'], __name__)
+        # Just more user-friendly check for params (duplicate of "run")
+        r = self.cm.check_params(params, ['env', 'bits', 'timeout'], __name__)
         if self.cm.catch_error(r): return r
 
         return {'return':0}
@@ -32,7 +36,6 @@ class CTask(InitCTask):
             env: dict = {},
             bits: int = None,
             timeout: int = 10,
-            extra: bool = False,
     ):
 
         """
@@ -160,6 +163,10 @@ class CTask(InitCTask):
 
         host_os['uarch'] = uarch
 
+        # If Linux, detect extra env:
+        if uname == 'linux':
+            result['os_extra'] = detect_linux_env()
+
         # Finish automation
         result['os'] = host_os
 
@@ -179,7 +186,7 @@ class CTask(InitCTask):
             'call_script': '.',
             'cmd_sep': '&&',
           },
-          'macos':{
+          'darwin':{
             'file_ext_exe': '',
             'file_ext_exe_search': '.',
             'file_ext_bat': '.sh',
@@ -207,3 +214,173 @@ class CTask(InitCTask):
                 _path.append(path_local_bin)
 
         return result
+
+
+def detect_linux_env():
+    """
+    Returns a dict like:
+    {
+        "id": "ubuntu",
+        "id_like": "debian",
+        "package_manager": "apt-get",
+        "cmd": "apt-get install -y {{package_name}}",
+        "cmd_sudo": "sudo ",
+        "sudo": True,
+        "passwordless_sudo": False,
+    }
+    """
+
+    def parse_os_release():
+        data = {}
+
+        for path in ("/etc/os-release", "/usr/lib/os-release"):
+            if not os.path.exists(path):
+                continue
+
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for raw_line in f:
+                        line = raw_line.strip()
+                        if not line or line.startswith("#") or "=" not in line:
+                            continue
+
+                        key, value = line.split("=", 1)
+                        value = value.strip()
+
+                        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                            value = value[1:-1]
+
+                        data[key] = value
+
+                if data:
+                    return data
+            except OSError:
+                continue
+
+        return data
+
+    def choose_best_package_manager(distro_id, id_like):
+        distro_id = (distro_id or "").strip().lower()
+        like_tokens = [x.strip().lower() for x in (id_like or "").split() if x.strip()]
+
+        present = {
+            "apt": shutil.which("apt") is not None,
+            "apt-get": shutil.which("apt-get") is not None,
+            "dnf": shutil.which("dnf") is not None,
+            "microdnf": shutil.which("microdnf") is not None,
+            "yum": shutil.which("yum") is not None,
+            "apk": shutil.which("apk") is not None,
+            "pacman": shutil.which("pacman") is not None,
+            "zypper": shutil.which("zypper") is not None,
+            "xbps-install": shutil.which("xbps-install") is not None,
+            "emerge": shutil.which("emerge") is not None,
+            "nix-env": shutil.which("nix-env") is not None,
+        }
+
+        def first_present(candidates):
+            for candidate in candidates:
+                if present.get(candidate):
+                    return candidate
+            return None
+
+        if distro_id == "alpine":
+            return first_present(["apk"])
+
+        if distro_id in {"ubuntu", "debian", "linuxmint", "raspbian", "pop", "neon"} or "debian" in like_tokens:
+            return first_present(["apt-get", "apt"])
+
+        if distro_id == "amzn":
+            return first_present(["dnf", "yum", "microdnf"])
+
+        if distro_id == "fedora":
+            return first_present(["dnf", "microdnf", "yum"])
+
+        if distro_id in {"rhel", "rocky", "almalinux", "centos", "ol", "virtuozzo"}:
+            return first_present(["dnf", "microdnf", "yum"])
+
+        if "rhel" in like_tokens or "fedora" in like_tokens or "centos" in like_tokens:
+            return first_present(["dnf", "microdnf", "yum"])
+
+        if distro_id in {"opensuse", "opensuse-leap", "opensuse-tumbleweed", "sles", "sled"} or "suse" in like_tokens:
+            return first_present(["zypper"])
+
+        if distro_id in {"arch", "manjaro", "endeavouros"} or "arch" in like_tokens:
+            return first_present(["pacman"])
+
+        if distro_id == "void":
+            return first_present(["xbps-install"])
+
+        if distro_id == "gentoo":
+            return first_present(["emerge"])
+
+        if distro_id == "nixos" or "nixos" in like_tokens:
+            return first_present(["nix-env"])
+
+        return first_present([
+            "apt-get",
+            "apt",
+            "dnf",
+            "microdnf",
+            "yum",
+            "apk",
+            "zypper",
+            "pacman",
+            "xbps-install",
+            "emerge",
+            "nix-env",
+        ])
+
+    def install_command_for(package_manager):
+        commands = {
+            "apt": "apt install -y {{name}}",
+            "apt-get": "apt-get install -y {{name}}",
+            "dnf": "dnf install -y {{name}}",
+            "microdnf": "microdnf install -y {{name}}",
+            "yum": "yum install -y {{name}}",
+            "apk": "apk add {{name}}",
+            "pacman": "pacman -S --noconfirm {{name}}",
+            "zypper": "zypper --non-interactive install {{name}}",
+            "xbps-install": "xbps-install -y {{name}}",
+            "emerge": "emerge {{name}}",
+            "nix-env": "nix-env -iA nixpkgs.{{name}}",
+        }
+        return commands.get(package_manager)
+
+    def detect_sudo():
+        sudo_path = shutil.which("sudo")
+        if not sudo_path:
+            return False, False
+
+        try:
+            result = subprocess.run(
+                [sudo_path, "-n", "true"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            passwordless = (result.returncode == 0)
+        except Exception:
+            passwordless = False
+
+        return True, passwordless
+
+    os_info = parse_os_release()
+    distro_id = os_info.get("ID")
+    id_like = os_info.get("ID_LIKE")
+
+    package_manager = choose_best_package_manager(distro_id, id_like)
+    cmd = install_command_for(package_manager)
+
+    sudo_installed, passwordless_sudo = detect_sudo()
+    cmd_sudo = "sudo " if sudo_installed else ""
+
+    return {
+        "id": distro_id,
+        "id_like": id_like,
+        "package_manager": package_manager,
+        "cmd": cmd,
+        "cmd_sudo": cmd_sudo,
+        "sudo": sudo_installed,
+        "passwordless_sudo": passwordless_sudo,
+    }

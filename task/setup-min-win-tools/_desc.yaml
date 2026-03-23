@@ -2,7 +2,10 @@ store_global: True                 # force
 storage_key: setup-min-win-tools   # force storage key to avoid mixing up in the future
 cache: True                        # force
 
+# Do not use runner since it is used inside runner!
 uses:
+- task: init,ee7466d402654266
+
 - task: host,96ac7118439c4490
 
 - task: download-file,03fed13e2e0447cf

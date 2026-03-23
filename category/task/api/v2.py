@@ -433,7 +433,13 @@ class Category(InitCategory):
         skip = cparams.get('skip', False)
 
         cache = cparams.get('cache')
+
         cache_repo = cparams.get('cache_repo')
+        # Check if was forced by ctx --use.host.init.cache_repo ...
+        x_cache_repo = ctx_tasks.get('global', {}).get('init', {}).get('default_cache_repo')
+        if x_cache_repo:
+            cache_repo = x_cache_repo
+
         cache_name = cparams.get('cache_name')
         cache_extra_alias = cparams.get('cache_extra_alias')
         cache_extra_params = cparams.get('cache_extra_params')
@@ -488,15 +494,22 @@ class Category(InitCategory):
 
             # Note that cache_meta will be used first to match existing cache entries 
             # and later updated with extra things that shouldn't be matched, such as path
-            cache_meta = {'cref':{'category_alias': 'task',
-                                  'category_uid': category_uid,
-                                  'artifact_alias': artifact_alias,
-                                  'artifact_uid': artifact_uid,
-                                 },
-                          'params':{},
-                         }
+            cache_meta = {
+              'cref':{
+                'category_alias': 'task',
+                'category_uid': category_uid,
+                'artifact_alias': artifact_alias,
+                'artifact_uid': artifact_uid,
+              },
+              'params':{},
+            }
 
-            cache_tags = ['task', category_uid, artifact_alias, artifact_uid]
+            cache_tags = [
+              'task', 
+              category_uid, 
+              artifact_alias, 
+              artifact_uid,
+            ]
 
             # Notice that path should also separate entries, i.e.
             # if we want to download a file to a different place, it should have 

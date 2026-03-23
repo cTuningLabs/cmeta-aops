@@ -8,10 +8,10 @@ match_version:
 cmd_get_version: '{{tool_path}} --version'
 
 install_cmd:
-  windows: "{{global.tool--winget.qpath}} install --id=Google.PlatformTools -e --no-upgrade"
+  windows: "{{global.winget.qpath}} install --id=Google.PlatformTools -e --no-upgrade"
 
 install_cmd_version:
-  windows: "{{global.tool--winget.qpath}} install --id=Google.PlatformTools -e --version={{simple_version}} --no-upgrade"
+  windows: "{{global.winget.qpath}} install --id=Google.PlatformTools -e --version={{simple_version}} --no-upgrade"
 
 extra_paths:
   windows:

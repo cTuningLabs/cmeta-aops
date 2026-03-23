@@ -54,10 +54,10 @@ class InitCTask:
 
     ############################################################
     def init_call(self,
-                   ctx,
-                   category = None,
-                   command = None,
-                   task = None,
+                  ctx,
+                  category = None,
+                  command = None,
+                  task = None,
         ):
 
         params = {}
@@ -76,6 +76,9 @@ class InitCTask:
 
 
     ############################################################
-    def customize_cache_artifact(self, *args, **params):
+    def customize_cache_artifact(self, 
+                                 *args, 
+                                 **params
+        ):
         return {'return':0}
-
+ 

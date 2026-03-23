@@ -41,7 +41,6 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
-#        python_path = ctx_tasks['global']['tool--python']['qpath']
         python_path = ctx_tasks['global']['python']['qpath']
 
         cmd = f'"{python_path}" --version'

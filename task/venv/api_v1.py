@@ -55,7 +55,7 @@ class CTask(InitCTask):
             env = params.get('env', {})
 
             # Add version if supported
-            uv_qpath = _global['tool--uv']['qpath']
+            uv_qpath = _global['uv']['qpath']
 
             cmd = uv_qpath + ' python list --all-versions'
             ii = {'category': 'task,c36be4b9314a45e0',
@@ -78,7 +78,6 @@ class CTask(InitCTask):
             versions = rx['stdout']
 
             params['version'] = resolve_with_uv(versions, version)
-
         
         if params.get('here') or params.get('with',{}).get('here'):
             cparams['path'] = ctx['origin']['pwd']
@@ -92,8 +91,6 @@ class CTask(InitCTask):
     ):
 
         """
-        Clone git repo.
-
         Returns:
             dict: A cMeta dictionary with the following keys:
                 - **return** (int): 0 if success, >0 if error.
@@ -119,7 +116,7 @@ class CTask(InitCTask):
         env = kwargs.get('env', {})
 
         # Add version if supported
-        uv_qpath = _global['tool--uv']['qpath']
+        uv_qpath = _global['uv']['qpath']
 
         ##################################################################
         install_cmd = uv_qpath + ' venv --seed'

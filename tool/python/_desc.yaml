@@ -20,7 +20,8 @@ install_uses:
     - task: venv,bb68247d2fde489d
       version: "{{params.version|}}"
 
-env_path_keys:
+# Add env path keys to aggregated if detected
+add_env_path_keys:
 - PATH
 - PYTHONPATH
 - _OLD_VIRTUAL_PATH

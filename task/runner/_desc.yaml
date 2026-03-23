@@ -2,6 +2,8 @@
 storage_key: runner    # force storage key to avoid mixing up in the future
 
 uses:
+- task: init,ee7466d402654266
+
 - task: host,96ac7118439c4490
 
 - task: enable-long-paths-win,a5ddea8d0773466d

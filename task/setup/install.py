@@ -172,7 +172,7 @@ def install_tool(self,
                                 major_version = major_version[:j]
 
                             install_cmd = install_cmd_ver.replace('{{simple_version}}', xversion)
-                            install_cmd = install_cmd_ver.replace('{{major_version}}', major_version)
+                            install_cmd = install_cmd.replace('{{major_version}}', major_version)
 
         if hasattr(tool_api_code, 'customize_install_cmd') and callable(getattr(tool_api_code, 'customize_install_cmd')):
             r = tool_api_code.customize_install_cmd(ctx, install_cmd, install_params)
