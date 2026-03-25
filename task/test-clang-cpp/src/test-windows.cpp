@@ -22,5 +22,7 @@ int main()
     printEnv("UCRTVersion");
     printEnv("VCToolsVersion");
 
+    std::cout << "\nC++ compiler test: success" << std::endl;
+
     return 0;
 }
