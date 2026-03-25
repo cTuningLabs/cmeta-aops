@@ -10,11 +10,17 @@ cmd_get_version: '{{tool_path}} --version'
 install_cmd:
   linux: '{{global.host.os_extra.install_cmd_sudo}}'
   darwin: 'xcode-select --install'
+  windows: "{{global.winget.qpath}} install --id=Git.Git -e --no-upgrade"
 
 install_cmd_version:
   linux: '{{global.host.os_extra.install_cmd_sudo_version}}'
   darwin: 'xcode-select --install'
+  windows: "{{global.winget.qpath}} install --id=Git.Git -e --version={{simple_version}} --no-upgrade"
 
 requires_sudo:
   linux: True
   darwin: True
+
+extra_paths:
+  windows:
+    - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
