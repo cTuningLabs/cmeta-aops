@@ -23,9 +23,9 @@ cmd_filename: "{{global.python.filename}} -m pip"
 cmd_get_version: '{{global.pip.cmd}} show {{params.with.package}}'
 
 install_cmd:
-  all: "{{global.pip.cmd}} install {{params.with.flags|$None}} {{params.with.package}} {{params.with.post_flags|$None}}"
+  all: "{{global.pip.cmd}} install {{params.with.flags|}} {{params.with.package}} {{params.with.post_flags|}}"
 install_cmd_version:
-  all: '{{global.pip.cmd}} install {{params.with.flags|$None}} "{{params.with.package}}{{pip_version}} {{params.with.post_flags|$None}}"'
+  all: '{{global.pip.cmd}} install {{params.with.flags|}} "{{params.with.package}}{{pip_version}} {{params.with.post_flags|}}"'
 
 uses:
   - task: setup,a2f9b61079ce4333
