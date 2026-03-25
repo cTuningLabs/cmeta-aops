@@ -94,8 +94,8 @@ class CTask(InitCTask):
         ctx_tasks = ctx['tasks']
 
         space = '  ' * ctx_tasks['nested_call'] if verbose else ''
-        clean = ctx_tasks['control'].get('clean', False)
-        update = ctx_tasks['control'].get('update', False)
+        clean = ctx_tasks['run_control'].get('clean', False)
+        update = ctx_tasks['run_control'].get('update', False)
 
         _params = {}
 
