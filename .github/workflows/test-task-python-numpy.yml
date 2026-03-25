@@ -94,3 +94,7 @@ jobs:
       - name: Test python with numpy
         run: |
           cxt test-python-numpy --use.pip-numpy.version=">=2" -v -q
+
+      - name: Dummy
+        run: |
+          echo "DONE"
