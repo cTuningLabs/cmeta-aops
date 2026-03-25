@@ -4,7 +4,7 @@
 # Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 #
 
-name: Test cMeta AOps task clang++
+name: Test cMeta AOps task clang++ 22
 
 on:
   workflow_dispatch:
@@ -93,7 +93,7 @@ jobs:
 
       - name: Test clang++
         run: |
-          cxt test-clang-cpp -v -q
+          cxt test-clang-cpp -v -q --use.llvm.version=22
 
       - name: Dummy
         run: |
