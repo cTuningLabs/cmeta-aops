@@ -23,16 +23,29 @@ class CTask(InitCTask):
     ):
 
         """
+        It just stores init config
+
         Returns:
             dict: A cMeta dictionary with the following keys:
                 - **return** (int): 0 if success, >0 if error.
                 - **error** (str): Error message if `return > 0`.
         """
 
-        # It just stores init config
-
         result = {'return':0}
 
+        # Check in config::task
+        r = self.cm.access({
+          'category':'config,cc6bfe174be847ed', 
+          'command':'get', 
+          'arg1':'task',
+        })
+        if self.cm.catch_error(r): return r
+
+        cfg = r['config_cmeta']
+        if cfg:
+            result.update(cfg)
+
+        # Update from API/CLI
         if default_cache_repo:
             result[default_cache_repo] = default_cache_repo
 

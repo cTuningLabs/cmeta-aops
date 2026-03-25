@@ -12,11 +12,11 @@ install_help_text:
     https://docs.astral.sh/uv/getting-started/installation !
 
 install_cmd:
-  windows: "{{global.winget.qpath}} install --id=astral-sh.uv -e"
+  windows: "{{global.winget.qpath}} install --id=astral-sh.uv -e {{global.init.winget_install_flags|}}"
   linux: '{{global.curl.qpath}} -LsSf https://astral.sh/uv/install.sh | sh'
 
 install_cmd_version:
-  windows: "{{global.winget.qpath}} install --id=astral-sh.uv -e --version={{simple_version}}"
+  windows: "{{global.winget.qpath}} install --id=astral-sh.uv -e --version={{simple_version}} {{global.init.winget_install_flags|}}"
   linux: '{{global.curl.qpath}} -LsSf https://astral.sh/uv/{{simple_version}}/install.sh | sh'
 
 extra_paths:
