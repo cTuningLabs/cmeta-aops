@@ -26,7 +26,10 @@ jobs:
   tests:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+#        os: [ubuntu-latest, windows-latest, macos-latest]
+# FGG: windows doesn't work with LLVM via winget (asks for admin rights 
+# - need to add custom install with portable clang+llvm-<version>-x86_64-pc-windows-msvc.tar.xz)
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.9", "3.14"]
 
     runs-on: ${{ matrix.os }}
@@ -89,7 +92,7 @@ jobs:
       - name: Set quite flags for winget on Windows
         if: runner.os == 'Windows'
         run: |
-          cx config set task --meta.winget_install_flags="--silent --accept-source-agreements --accept-package-agreements"
+          cx config set task --meta.winget_install_flags="--silent --accept-source-agreements --accept-package-agreements --disable-interactivity"
 
       - name: Test clang++
         run: |
