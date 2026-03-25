@@ -34,7 +34,7 @@ install_uses:
 
 extra_paths:
   linux:
-    - "/home/linuxbrew/.linuxbrew/bin"
+    - "/home/linuxbrew/.linuxbrew/**"
   darwin:
     - "/opt/homebrew/opt/llvm*/**"
   windows:
