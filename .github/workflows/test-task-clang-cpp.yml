@@ -4,7 +4,7 @@
 # Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 #
 
-name: Test cMeta core AOps
+name: Test cMeta task clang-cpp
 
 on:
   workflow_dispatch:
@@ -86,6 +86,6 @@ jobs:
         run: |
           cx task list
 
-      - name: Clone some repo
+      - name: Test python with numpy
         run: |
-          cxt git-clone https://github.com/ctuning/mlcommons-ck --cache
+          cxt test-python-numpy -v -q
