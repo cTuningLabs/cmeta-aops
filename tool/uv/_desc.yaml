@@ -22,3 +22,5 @@ install_cmd_version:
 extra_paths:
   linux:
     - "{{user_home}}/.local/bin"
+  windows:
+    - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
