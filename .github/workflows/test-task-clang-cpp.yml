@@ -93,7 +93,7 @@ jobs:
 
       - name: Test python with numpy
         run: |
-          cxt test-python-numpy -v -q
+          cxt test-clang-cpp -v -q
 
       - name: Dummy
         run: |
