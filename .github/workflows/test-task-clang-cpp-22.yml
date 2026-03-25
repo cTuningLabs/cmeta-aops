@@ -94,9 +94,10 @@ jobs:
         run: |
           cx config set task --meta.winget_install_flags="--silent --accept-source-agreements --accept-package-agreements --disable-interactivity"
 
+# It's tricky to specify exact version here - doesn't see to be enforced
       - name: Test clang++
         run: |
-          cxt test-clang-cpp -v -q --use.llvm.version=22.1.0
+          cxt test-clang-cpp -v -q --use.llvm.version=22
 
       - name: Dummy
         run: |
