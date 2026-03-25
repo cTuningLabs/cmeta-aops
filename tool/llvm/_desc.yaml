@@ -37,3 +37,8 @@ extra_paths:
     - "/home/linuxbrew/.linuxbrew/bin"
   darwin:
     - "/opt/homebrew/opt/llvm*/**"
+  windows:
+    - "C:\\Program Files\\LLVM\\**"
+    - "C:\\Program Files\\LLVM-*\\**"
+    - "D:\\Program Files\\LLVM\\**"
+    - "D:\\Program Files\\LLVM-*\\**"
