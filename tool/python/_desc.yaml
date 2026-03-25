@@ -18,7 +18,7 @@ install_help_text: Check https://www.python.org/ for more details!
 install_uses:
   all:
     - task: venv,bb68247d2fde489d
-      version: "{{params.version|}}"
+      version: "{{params.version|$None}}"
 
 # Add env path keys to aggregated if detected
 add_env_path_keys:
