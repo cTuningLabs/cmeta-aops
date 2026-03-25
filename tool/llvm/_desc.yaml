@@ -42,3 +42,4 @@ extra_paths:
     - "C:\\Program Files\\LLVM-*\\**"
     - "D:\\Program Files\\LLVM\\**"
     - "D:\\Program Files\\LLVM-*\\**"
+    - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
