@@ -10,4 +10,4 @@
     package: numpy
 
 - task: cmd,c9ba0a88df394d7f
-  cmd: '{{global.python.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}app.py'
+  cmd: '{{global.python.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}app.py --extra_line={{params.extra_line|$False}}'

@@ -93,7 +93,7 @@ jobs:
 
       - name: Test python with numpy
         run: |
-          cxt test-python-numpy --use.pip-numpy.version=">=2" -v -q
+          cxt test-python-numpy --use.pip-numpy.version=">=2" -v -q --extra_line
 
       - name: Dummy
         run: |
