@@ -6,3 +6,9 @@ match_version:
     group: 1
 
 cmd_get_version: '{{tool_path}} --version'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+
+install_cmd_version:
+  linux: '{{global.host.os_extra.install_cmd_sudo_version}}'

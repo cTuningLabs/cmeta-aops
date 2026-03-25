@@ -46,7 +46,8 @@ class CTask(InitCTask):
         r = self.cm.check_params(params, [
                 'detect','install', 'build', 'skip_install', 'skip_detect', 'skip_build',
                 'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 
-                'version', 'env', 'timeout', 'with', 'arg3',
+                'version', 'env', 'timeout', 'with', 'arg3', 'ignore_install_errors',
+                'ignore_build_errors',
             ], __name__)
         if self.cm.catch_error(r): return r
 
@@ -282,6 +283,9 @@ class CTask(InitCTask):
         install = kwargs.get('install')
         build = kwargs.get('build')
 
+        ignore_install_errors = kwargs.get('ignore_install_errors', False)
+        ignore_build_errors = kwargs.get('ignore_build_errors', False)
+
         kwargs_copy = kwargs.copy()
 
         here = kwargs_copy.get('here', False)
@@ -376,10 +380,10 @@ class CTask(InitCTask):
             # Attempt to install tool
 
             r = self.install_tool(ctx, **kwargs_copy)
-            if self.cm.catch_error(r): return r
+            if not ignore_install_errors and self.cm.catch_error(r): return r
 
-            if r['return'] == 0:
-                if not r.get('failed', False):
+            if r['return'] == 0 or ignore_install_errors:
+                if ignore_install_errors or not r.get('failed', False):
                     found_path = r.get('found_path')
                     found_paths = r.get('found_paths')
 
@@ -404,10 +408,10 @@ class CTask(InitCTask):
             # Attempt to build tool
 
             r = self.build_tool(ctx, **kwargs_copy)
-            if self.cm.catch_error(r): return r
+            if not ignore_build_errors and self.cm.catch_error(r): return r
 
-            if r['return'] == 0:
-                if not r.get('failed', False):
+            if r['return'] == 0 or ignore_build_errors:
+                if ignore_build_errors or not r.get('failed', False):
                     found_path = r.get('found_path')
                     found_paths = r.get('found_paths')
 

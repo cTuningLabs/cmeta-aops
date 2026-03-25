@@ -19,7 +19,7 @@ def detect_existing_tool(self,
         paths: str = None,
         version: str = None,        # Tool required version
         env: dict = {},
-        timeout: int = 10,
+        timeout: int = 60,
         tool_read: dict = {},       # Preloaded tool data from read_tool
         task_desc: dict = {},
         install: bool = None,
