@@ -4,7 +4,7 @@
 # Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 #
 
-name: Test cMeta task clang-cpp
+name: Test cMeta AOps task clang-cpp
 
 on:
   workflow_dispatch:

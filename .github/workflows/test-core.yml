@@ -4,7 +4,7 @@
 # Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 #
 
-name: Test cMeta core AOps
+name: Test cMeta AOps core
 
 on:
   workflow_dispatch:
@@ -88,4 +88,4 @@ jobs:
 
       - name: Clone some repo
         run: |
-          cxt git-clone https://github.com/ctuning/mlcommons-ck --cache
+          cxt clone-git,af9422df6ea241ec https://github.com/ctuning/mlcommons-ck --cache

@@ -4,7 +4,7 @@
 # Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 #
 
-name: Test cMeta task python with numpy
+name: Test cMeta AOps task python with numpy
 
 on:
   workflow_dispatch:
