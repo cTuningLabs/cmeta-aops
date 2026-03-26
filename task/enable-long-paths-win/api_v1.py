@@ -67,14 +67,14 @@ class CTask(InitCTask):
             if r['returncode']!=0:
                 if con:
                     print ('')
-                return self.cm.error(f'Command timed out in {__name__}')
+                return self.cm.error(f'Command timed out in "{__file__}" ({__name__})')
 
             if r['returncode']>0:
                 x = r.get('stderr')
                 x = '' if not x else ' '+x
                 if con:
                     print ('')
-                return self.cm.error(f'Command failed{x} in {__name__}')
+                return self.cm.error(f'Command failed{x} in "{__file__}" ({__name__})')
 
             # Trying again
             enabled = self._check_if_enabled()

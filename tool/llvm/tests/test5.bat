@@ -1,0 +1,1 @@
+﻿cxt setup llvm --version=">=22.1.2" --custom_install

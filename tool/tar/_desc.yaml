@@ -1,17 +1,15 @@
-storage_key: gcc
-
 names:
-  - gcc{{global.host.vars.file_ext_exe}}
-  - gcc-?{{global.host.vars.file_ext_exe}}
-  - gcc-??{{global.host.vars.file_ext_exe}}
+  - tar{{global.host.vars.file_ext_exe}}
 
 match_version: 
-  - regex: 'gcc(?:-\d+)?(?:\s+\([^)]*\))?\s+(\d+\.\d+\.\d+)'
+  - regex: 'bsdtar\s+(\d+\.\d+\.\d+)'
+    group: 1
+  - regex: 'tar \(GNU tar\)\s+(\d+(?:\.\d+)+)'
     group: 1
 
 cmd_get_version: '{{tool_path}} --version'
 
-package_name: gcc
+package_name: tar
 
 install_cmd:
   linux: '{{global.host.os_extra.install_cmd_sudo}}'

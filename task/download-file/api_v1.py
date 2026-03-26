@@ -25,7 +25,7 @@ class CTask(InitCTask):
 
         url = params.get('url')
         if not url:
-            return self.cm.error(f'URL is not defined in {__name__}')
+            return self.cm.error(f'URL is not defined in "{__file__}" ({__name__})')
 
         filename = params.get('filename')
 
@@ -39,8 +39,8 @@ class CTask(InitCTask):
 
         if not filename:
             if url:
-                return self.cm.error(f'couldn\'t extract filename from {url} in {__name__}')
-            return self.cm.error(f'filename is not defined in {__name__}')
+                return self.cm.error(f'couldn\'t extract filename from {url} in "{__file__}" ({__name__})')
+            return self.cm.error(f'filename is not defined in "{__file__}" ({__name__})')
 
         params['filename'] = filename
 
@@ -61,16 +61,19 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
-        filename = params['filename']
+        # It's dangerous because filenames can contain weird characters
+        # Either clean it or rely on manually added cache_extra_alias
 
-        if cache_extra_alias is None: 
-            cache_extra_alias = ''
-
-        if cache_extra_alias !='':
-            cache_extra_alias += self.cache_sep
-        cache_extra_alias += filename
-
-        result['cache_extra_alias'] = cache_extra_alias
+#        filename = params['filename']
+#
+#        if cache_extra_alias is None: 
+#            cache_extra_alias = ''
+#
+#        if cache_extra_alias !='':
+#            cache_extra_alias += self.cache_sep
+#        cache_extra_alias += filename
+#
+#        result['cache_extra_alias'] = cache_extra_alias
 
         return result
 
@@ -133,11 +136,11 @@ class CTask(InitCTask):
             unzip_overwrite: bool = True,
             clean_after_unzip: bool = False,
             strip_folders: int = 0,
-            timeout: int = 0,
+            timeout: int = None,
     ):
 
         """
-        Clone git repo.
+        Download file.
 
         Returns:
             dict: A cMeta dictionary with the following keys:
@@ -157,7 +160,7 @@ class CTask(InitCTask):
         _params = {}
 
         if not url:
-            return self.cm.error(f'URL is not defined in {__name__}')
+            return self.cm.error(f'URL is not defined in "{__file__}" ({__name__})')
 
         # Check if multiple URLs, files and md5sums
         urls = self._process_urls(url)
@@ -217,7 +220,6 @@ class CTask(InitCTask):
         if not check_file_with_path or not os.path.isfile(check_file_with_path):
 
             ###################################################################
-            # Prepare CMDs
             rr = {}
 
             success = False
@@ -256,7 +258,7 @@ class CTask(InitCTask):
                             error = rr['error']
 
                     else:
-                        return self.cm.error(f'download tool {tool} is not yet supported in {__name__}')
+                        return self.cm.error(f'download tool {tool} is not yet supported in "{__file__}" ({__name__})')
                 else:
                     success = True
 
@@ -289,12 +291,13 @@ class CTask(InitCTask):
             filesize = os.path.getsize(filename_with_path)
 
             if unzip:
+                if strip_folders and strip_folders != '': 
+                    strip_folders = int(strip_folders)
+
                 if filename.endswith('.zip'):
                     if verbose:
                         print ('')
                         print (f'{space}RUN: unzip {filename_with_path}')
-
-                    if strip_folders != '': strip_folders = int(strip_folders)
 
                     r = self.cm.utils.files.unzip(filename_with_path, 
                                                   path = directory, 
@@ -304,14 +307,40 @@ class CTask(InitCTask):
                                                   fail_on_error = self.cm.fail_on_error)
                     if self.cm.catch_error(r): return r
 
-                    if clean_after_unzip and os.path.isfile(filename_with_path):
-                        if verbose:
-                            print (f'{space}RUN: rm {filename_with_path}')
+                elif (filename.endswith('.tar.xz') or \
+                      filename.endswith('.tar.gz') or \
+                      filename.endswith('.tar.bz2') or \
+                      filename.endswith('.tgz')):
 
-                        os.remove(filename_with_path)
+                    if verbose:
+                        print ('')
+                        print (f'{space}RUN: untar {filename_with_path}')
+
+                    ii = {'ctx': ctx,
+                          'category': self.category_alias + ',' + self.category_uid,
+                          'command': 'run',
+                          'arg1': 'untar-file,a49b3cbd6f8f4bd6',
+                          'con': con, 
+                          'verbose': verbose, 
+                          'filename': filename_with_path,
+                          'env': env,
+                          'directory': directory,
+                          'clean_after_untar': clean_after_unzip,
+                          'strip_folders': strip_folders,
+                          'timeout': timeout,
+                    }
+
+                    rx = self.cm.access(ii)
+                    if self.cm.catch_error(rx): return rx
 
                 else:
-                    return self.cm.error(f'extension is not yet supported for unzip {filename}')
+                    return self.cm.error(f'extension is not yet supported for unzip/untar {filename}')
+
+                if clean_after_unzip and os.path.isfile(filename_with_path):
+                    if verbose:
+                        print (f'{space}RUN: rm {filename_with_path}')
+
+                    os.remove(filename_with_path)
            
 
         ###################################################################

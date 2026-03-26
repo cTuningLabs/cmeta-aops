@@ -100,7 +100,7 @@ class CTask(InitCTask):
         _params = {}
 
         if url is None or url == '':
-            return self.cm.error(f'URL is not defined in {__name__}')
+            return self.cm.error(f'URL is not defined in "{__file__}" ({__name__})')
 
         if tag and not checkout:
             checkout = tag

@@ -45,9 +45,11 @@ class CTask(InitCTask):
 
         r = self.cm.check_params(params, [
                 'detect','install', 'build', 'skip_install', 'skip_detect', 'skip_build',
+                'skip_install_uses', 'skip_build_uses',
                 'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 
                 'version', 'env', 'timeout', 'with', 'arg3', 'ignore_install_errors',
                 'ignore_build_errors',
+                'custom_install', 'custom_build',
             ], __name__)
         if self.cm.catch_error(r): return r
 
@@ -295,7 +297,9 @@ class CTask(InitCTask):
         detect = kwargs_copy.pop('detect', None)
         skip_detect = kwargs_copy.pop('skip_detect', False)
         skip_install = kwargs_copy.pop('skip_install', False)
+        skip_install_uses = kwargs_copy.get('skip_install_uses', False)
         skip_build = kwargs_copy.pop('skip_build', False)
+        skip_build_uses = kwargs_copy.get('skip_build_uses', False)
 
         result = {'return':0}
 
@@ -347,6 +351,32 @@ class CTask(InitCTask):
                 if install is None: install = False
 
         success = False
+
+        ##############################################################################
+        if version:
+            # Prepare various versions for further reuse
+            version_pip = '==' + version if version and version[0].isdigit() else version
+            version_simple = True
+            version_major = None
+
+            for k in ['>', '<', '*', '?']:
+                if k in version:
+                    version_simple = None
+                    break
+
+            if version_simple is True:
+                version_simple = version
+                if version_simple.startswith('=='):
+                    version_simple = version_simple[2:]
+
+                version_major = version_simple
+                j = version_major.find('.')
+                if j>0:
+                    version_major = version_major[:j]
+
+            kwargs_copy['version_pip'] = version_pip
+            kwargs_copy['version_simple'] = version_simple
+            kwargs_copy['version_major'] = version_major
 
         ##############################################################################
         if detect and not skip_detect:

@@ -8,3 +8,22 @@ match_version:
     group: 1
 
 cmd_get_version: '{{tool_path}}'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+  darwin: '{{global.brew.qpath}} install p7zip'
+  windows: "{{global.winget.qpath}} install 7zip.7zip -e --no-upgrade {{global.init.winget_install_flags|}}"
+
+install_cmd_version:
+  linux: '{{global.host.os_extra.install_cmd_sudo_version}}'
+  darwin: '{{global.brew.qpath}} install p7zip@{{major_version}}'
+  windows: "{{global.winget.qpath}} install 7zip.7zip -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"
+
+extra_paths:
+  windows:
+    - "C:\\Program Files\\7-Zip\\**"
+    - "D:\\Program Files\\7-Zip\\**"
+
+uses:
+   - task: setup-min-win-tools,2b5ee26b8d444ef6
+     if: '"{{global.host.os.uname}}" == "windows"'

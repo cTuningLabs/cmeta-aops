@@ -17,12 +17,16 @@ def install_tool(self,
         tool_path: str = None,
         paths: str = None,
         version: str = None,        # Tool required version
+        version_pip: str = None,        # Tool required version
+        version_simple: str = None,        # Tool required version
+        version_major: str = None,        # Tool required version
         env: dict = {},
         timeout: int = None,
         tool_read: dict = {},       # Preloaded tool data from read_tool
         task_desc: dict = {},
         install: bool = None,
         build: bool = None,
+        skip_install_uses: bool = None,
         **params
 ):
 
@@ -61,6 +65,11 @@ def install_tool(self,
     install_cmd = install_cmd_desc.get('all') if 'all' in install_cmd_desc else install_cmd_desc.get(os_key)
 
     has_custom_install = True if hasattr(tool_api_code, 'install') and callable(getattr(tool_api_code, 'install')) else False
+
+    force_custom_install = params.get('custom_install', False)
+
+    if force_custom_install and not has_custom_install:
+        return self.cm.error(f'custom install is forced but not available in "{__file__}"')
 
     # Check deps (winget, sudo apt / curl on Linux/MacOS)
     install_uses_all = []
@@ -106,7 +115,7 @@ def install_tool(self,
     if not proceed:
         return result
 
-    if install_uses_all:
+    if install_uses_all and not skip_install_uses:
         ii = {'category': self.category_alias + ',' + self.category_uid,
               'command': 'use',
               'con': con,
@@ -152,20 +161,37 @@ def install_tool(self,
           'con': con,
           'quiet': quiet,
           'verbose': verbose,
+          'space': space,
        },
        'result': result,
+       'version': version,
+       'version_pip': version_pip,
+       'version_simple': version_simple,
+       'version_major': version_major,
+       'env': env,
        'timeout': timeout,
     })
 
 
     if has_custom_install:
-        r = tool_api_code.install(ctx, install_params)
+        r = tool_api_code.install(ctx, install_params, install_cmd)
         if self.cm.catch_error(r): return r
+
+        if r['return']>0 and con:
+            err = r['error']
+            print ('')
+            print (f'{space}WARNING: custom installation failed ({err})')
 
         result = r
 
+        if 'install_cmd' in r:
+            # Can alter or skip CMD (if set to None)
+            install_cmd = r['install_cmd']
 
-    elif install_cmd:
+            if install_cmd:
+                force_custom_install = False # to be able to proceed with install_cmd if needed ...
+
+    if install_cmd and not force_custom_install:
         # Add version if supported
         if version:
             install_cmd_version = desc.get('install_cmd_version')
@@ -201,6 +227,8 @@ def install_tool(self,
                             install_cmd = install_cmd_ver.replace('{{simple_version}}', xversion)
                             install_cmd = install_cmd.replace('{{major_version}}', major_version)
 
+        package_name = desc['package_name'] if 'package_name' in desc else artifact_au
+
         if hasattr(tool_api_code, 'customize_install_cmd') and callable(getattr(tool_api_code, 'customize_install_cmd')):
             r = tool_api_code.customize_install_cmd(ctx, install_cmd, install_params, env, timeout)
             if self.cm.catch_error(r): return r
@@ -211,13 +239,15 @@ def install_tool(self,
             if 'timeout' in r:
                 timeout = r['timeout']
 
+            if 'package_name' in r:
+                package_name = r['package_name']
+
         # Update from task context
         r = self.cm.utils.common.expand_string(install_cmd, ctx_tasks)
         if self.cm.catch_error(r): return r
         install_cmd = r['string']
 
         # Update package name if installation is from host ...
-        package_name = desc['package_name'] if 'package_name' in desc else artifact_au
         install_cmd = install_cmd.replace('{{name}}', package_name)
 
         # Run installation

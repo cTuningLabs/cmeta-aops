@@ -324,6 +324,7 @@ class CTool(InitCTool):
     def install(self,
                 ctx: dict,
                 params: dict,
+                cmd: str = None,
     ):
         """
         """

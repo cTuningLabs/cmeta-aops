@@ -1,20 +1,20 @@
 names:
-  - bzip2{{global.host.vars.file_ext_exe}}
+  - unzip{{global.host.vars.file_ext_exe}}
 
 match_version: 
-  - regex: ' version ([\d.]+)'
+  - regex: 'UnZip\s+([\d.]+)'
     group: 1
 
 cmd_get_version: '{{tool_path}} -h'
 
 install_cmd:
   linux: '{{global.host.os_extra.install_cmd_sudo}}'
-  darwin: '{{global.brew.qpath}} install bzip2'
+  darwin: '{{global.brew.qpath}} install unzip'
 # no installation procedure on windows for now via winget - use various tools
 
 install_cmd_version:
   linux: '{{global.host.os_extra.install_cmd_sudo_version}}'
-  darwin: '{{global.brew.qpath}} install bzip2@{{major_version}}'
+  darwin: '{{global.brew.qpath}} install unzip@{{major_version}}'
 
 uses:
    - task: setup-min-win-tools,2b5ee26b8d444ef6

@@ -1,0 +1,21 @@
+names:
+  - xz{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: '^xz\s+\(XZ Utils\)\s+(\d+(?:\.\d+)+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+package_name: 'xz-utils'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+  darwin: '{{global.brew.qpath}} install xz'
+# not available on windows in winget
+#  windows: "{{global.winget.qpath}} install XZ.Utils -e --no-upgrade {{global.init.winget_install_flags|}}"
+
+install_cmd_version:
+  linux: '{{global.host.os_extra.install_cmd_sudo_version}}'
+  darwin: '{{global.brew.qpath}} install xz@{{major_version}}'
+#  windows: "{{global.winget.qpath}} install XZ.Utils -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"

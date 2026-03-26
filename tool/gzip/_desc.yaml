@@ -1,0 +1,20 @@
+names:
+  - gzip{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: 'gzip\s+([0-9]+(?:\.[0-9]+)*)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+  darwin: '{{global.brew.qpath}} install gzip'
+
+install_cmd_version:
+  linux: '{{global.host.os_extra.install_cmd_sudo_version}}'
+  darwin: '{{global.brew.qpath}} install gzip@{{major_version}}'
+
+uses:
+   - task: setup-min-win-tools,2b5ee26b8d444ef6
+     if: '"{{global.host.os.uname}}" == "windows"'

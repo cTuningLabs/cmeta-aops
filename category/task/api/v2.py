@@ -123,7 +123,7 @@ class Category(InitCategory):
         uses_categories = self.cmeta['uses_categories']
 
         if use is not None and type(use) != dict:
-             return self.cm.error(f'type of "use" is "{type(use)}" in "{__name__}" but it must be "dict"')
+             return self.cm.error(f'type of "use" is "{type(use)}" in "{__file__}" ({__name__}) but it must be "dict"')
 
         if use is None:
             use = {}
@@ -1138,11 +1138,14 @@ class Category(InitCategory):
             ctx_tasks['local'] = local
 
         for sub_task_desc in desc:
+            if type(sub_task_desc) != dict:
+                return self.cm.error(f'sub-task is not "dict" in task "{task_artifact_alias}" in "{__file__}" ({sub_task_desc})')
+
             ii = copy.deepcopy(sub_task_desc)
 
             task = ii.pop('task', None)
             if not task:
-                return self.cm.error(f'the requirement in task "{task_artifact_alias}" misses "task" name or uid')
+                return self.cm.error(f'the requirement in task "{task_artifact_alias}" misses "task" name or uid in "{__file__}" ({sub_task_desc})')
 
             if ii.pop('skip_if_not_win', False) and os.name != 'nt':
                 continue

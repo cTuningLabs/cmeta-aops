@@ -16,6 +16,9 @@ def build_tool(self,
         tool_path: str = None,
         paths: str = None,
         version: str = None,        # Tool required version
+        version_pip: str = None,        # Tool required version
+        version_simple: str = None,        # Tool required version
+        version_major: str = None,        # Tool required version
         env: dict = {},
         timeout: int = None,
         tool_read: dict = {},       # Preloaded tool data from read_tool
