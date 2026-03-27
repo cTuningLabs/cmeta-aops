@@ -63,7 +63,7 @@ class CTool(InitCTool):
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
-        space = ctx['control'].get('space', '')
+        space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
 
         _with = params.get('with', {})
         venv = _with.get('venv')

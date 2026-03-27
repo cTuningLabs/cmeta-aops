@@ -41,7 +41,7 @@ class CTool(InitCTool):
         con = params.get('control', {}).get('con', False)
         quiet = params.get('control', {}).get('quiet', False)
         verbose = params.get('control', {}).get('verbose', False)
-        space = params.get('control', {}).get('space', '')
+        space = '  ' * ctx_tasks['nested_call'] if verbose else ''
 
         env = params.get('env')
         timeout = params.get('timeout')
