@@ -136,6 +136,7 @@ class CTask(InitCTask):
               'env': env,
               'timeout': timeout,
               'con': con, 
+              'quiet': quiet,
               'verbose': verbose, 
               'text_cmd': f'RUN:', 
               # Important to be able to continue processing detect/install/build

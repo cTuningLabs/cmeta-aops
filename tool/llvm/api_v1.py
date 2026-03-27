@@ -39,6 +39,7 @@ class CTool(InitCTool):
             }
 
         con = params.get('control', {}).get('con', False)
+        quiet = params.get('control', {}).get('quiet', False)
         verbose = params.get('control', {}).get('verbose', False)
         space = params.get('control', {}).get('space', '')
 
@@ -92,6 +93,7 @@ class CTool(InitCTool):
               'env': env,
               'timeout': timeout,
               'con': con, 
+              'quiet': quiet, 
               'verbose': verbose, 
               'unzip': True,
               'clean': True,

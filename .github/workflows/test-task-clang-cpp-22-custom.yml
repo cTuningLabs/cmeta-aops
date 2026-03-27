@@ -1,0 +1,95 @@
+#
+# cMeta AOps
+#
+# Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+#
+
+name: Test cMeta AOps task clang++ 22.1.2 with custom install
+
+on:
+  workflow_dispatch:
+#  push:
+#    paths:
+#      - '**'
+#      - '!**.md'
+#  pull_request:
+#    branches:
+#      - main
+#      - dev
+
+defaults:
+  run:
+    shell: bash
+    working-directory: .
+
+jobs:
+  tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.14"]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Linux & macOS
+      - name: Dummy (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          echo "======================="
+          echo "Running on Linux/macOS"
+          echo "======================="
+
+      # Windows
+      - name: Run pytest (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo =======================
+          echo Running on Windows
+          echo =======================
+        shell: cmd
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Print python version
+        run: |
+          python --version
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+
+      - name: Install cMeta framework
+        env:
+          GH_USER: gfursin
+          GH_TOKEN: ${{ secrets.PRIVATE_GH_TOKEN_CMETA }}
+        run: |
+          git clone https://${GH_USER}:${GH_TOKEN}@github.com/cTuningLabs/cmeta.git
+          cd cmeta
+          pip install .[all]
+
+      - name: Test cMeta
+        run: |
+          cx --reindex
+          cx --version
+
+      - name: Plug this repo
+        run: |
+          cx repo plug .
+
+      - name: List tasks
+        run: |
+          cx task list
+
+      - name: Test clang++ with custom install
+        run: |
+          cxt test-clang-cpp -v -q --use.llvm.version=22.1.2 --use.llvm.custom_install --use.llvm.skip_install_uses -j
+
+      - name: Dummy
+        run: |
+          echo "DONE"

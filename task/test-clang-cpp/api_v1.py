@@ -26,6 +26,7 @@ class CTask(InitCTask):
         self.logger.debug("RUNNING TASK test-dummy3 run")
 
         con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
 
         ctx_tasks = ctx['tasks']
@@ -67,6 +68,7 @@ class CTask(InitCTask):
                   'cmd': cmd,
                   'env': env,
                   'con': con, 
+                  'quiet': quiet,
                   'verbose': verbose, 
                   'text_cmd': 'RUN:',
 #                  'print_env_keys': ['PATH'], 

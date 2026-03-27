@@ -61,6 +61,7 @@ class CTool(InitCTool):
                   'env': env,
                   'timeout': timeout,
                   'con': con, 
+                  'quiet': quiet,
                   'verbose': verbose, 
                   'text_cmd': 'RUN:', 
                   'capture_output': True,

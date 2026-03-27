@@ -89,6 +89,7 @@ class CTask(InitCTask):
         self.logger.debug("RUNNING TASK clone-git-repo run")
 
         con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
 
         ctx_tasks = ctx['tasks']

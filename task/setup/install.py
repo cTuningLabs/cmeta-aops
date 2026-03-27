@@ -259,6 +259,7 @@ def install_tool(self,
               'env': env,
               'timeout': timeout,
               'con': con, 
+              'quiet': quiet, 
               'verbose': verbose, 
               'text_cmd': 'RUN:', 
               # Important to be able to continue processing detect/install/build

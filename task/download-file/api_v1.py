@@ -151,6 +151,7 @@ class CTask(InitCTask):
         self.logger.debug("RUNNING TASK download run api_v1")
 
         con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
 
         space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
@@ -321,6 +322,7 @@ class CTask(InitCTask):
                           'command': 'run',
                           'arg1': 'untar-file,a49b3cbd6f8f4bd6',
                           'con': con, 
+                          'quiet': quiet,
                           'verbose': verbose, 
                           'filename': filename_with_path,
                           'env': env,
