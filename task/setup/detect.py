@@ -68,242 +68,253 @@ def detect_existing_tool(self,
     uname = host['os']['uname']
     envs = ctx_tasks['aggregated']['env']
 
-    force_path = True if path or paths else False
-
-    if path:
-        if path == '{{sys.executable}}':
-            import sys
-            path = sys.executable
-        elif os.path.isdir(path):
-            paths = [path]
-            path = None
-        elif not os.path.isfile(path):
-            return {'return':1, 'error':f'tool "{path}" not found'}
-
-    elif not paths:
-        paths = []
-
-        if 'only_paths' in desc:
-            all_only_paths = desc['only_paths']
-
-            if 'all' in all_only_paths:
-                paths = all_only_paths['all']
-            elif uname in all_only_paths:
-                paths = all_only_paths[uname]
-            elif 'linux' in all_only_paths:
-                paths = all_only_paths['linux']
-
-        else:
-
-            x = envs.get('PATH', '').strip()
-            if x != '':
-                paths = x.split(os.pathsep)
-            else:
-                x = envs.get('+PATH', [])
-                if type(x) == list and len(x)>0:
-                    paths = x.copy()
-                else:
-                    x = str(x).strip()
-                    if x != '':
-                        paths = x.split(os.pathsep)
-
-            x = os_env.get('PATH', '').strip()
-            if x != '':
-                paths += x.split(os.pathsep)
-
-            x = os.environ.get('CMETA_TOOL_EXTRA_PATHS', '').strip()
-            if x != '':
-                paths += x.split(os.pathsep)
-
-            if 'extra_paths' in desc:
-                all_extra_paths = desc['extra_paths']
-
-                key = uname if uname in all_extra_paths else 'linux'
-
-                extra_paths = all_extra_paths.get(key)
-
-                if extra_paths:
-                    for p in extra_paths:
-                        p = p.replace('{{user_home}}', os.path.expanduser("~"))
-                        paths.append(p)
-
-        r = self.cm.utils.common.expand_strings_in_dict(paths, ctx_tasks)
-        if self.cm.catch_error(r): return r
-
     ############################################################################
-    # Call base find function to find tools
-    p = {'category':self.cmeta['uses_categories']['tool'],
-         'command':'find_path',
-         'desc':desc,
-         'con':con,
-         'verbose':verbose,
-         'quiet':quiet,
-         'space':space,
-         'path':path,
-         'paths':paths,
-         'context':ctx_tasks,
-    }
-
-    r = self.cm.access(p)
-    if self.cm.catch_error(r): return r
-
-    found_paths = r['found_paths']
-
-    if not found_paths:
-#        x = '' if not params else f' with params {params}'
-        x = ''
-        return self.cm.error(f'failed to find tool "{artifact_print_name}"{x}', 16)
-
-    ############################################################################
-    # Check/update paths via tool code 
-    # (for example remove ones that doesn't have some capabilities)
-
+    # Check if custom detect
     found_paths_with_versions = {}
-
-    if not force_path and hasattr(tool_api_code, 'update_paths') and callable(getattr(tool_api_code, 'update_paths')):
-        r = tool_api_code.update_paths(ctx, found_paths, params)
-        if self.cm.catch_error(r): return r
-
-        if 'paths' in r: 
-            found_paths = r['paths']
-
-        if 'found_paths_with_versions' in r:
-            found_paths_with_versions = r['found_paths_with_versions']
-
-    if hasattr(tool_api_code, 'detect_versions') and callable(getattr(tool_api_code, 'detect_versions')):
-        r = tool_api_code.detect_versions(ctx, found_paths, params)
-        if self.cm.catch_error(r): return r
-
-        if 'found_paths_with_versions' in r:
-            found_paths_with_versions = r['found_paths_with_versions']
-
-    ############################################################################
-    # Get versions if not forced by TOOL API CODE in the previous step
-
-    match_version = desc.get('match_version', None)
-
-    if not found_paths_with_versions:
-
-        cmd_call_script = desc.get('cmd_call_script')
-        cmd_call = None
-
-        cmd_version = desc.get('cmd_get_version', None)
-
-        if cmd_version and match_version:
-            for xpath in found_paths:
-
-                path = xpath[1:] if xpath.startswith('!') else xpath
-
-                qpath = self.cm.utils.files.quote_path(path)
-
-                cmd = cmd_version.replace('{{tool_path}}', qpath)
-
-                r = self.cm.utils.common.expand_string(cmd, ctx_tasks)
-                if self.cm.catch_error(r): return r
-                cmd = r['string']
-
-                cmd_call = None
-                if cmd_call_script:
-                    cmd_call = host['vars']['call_script'] + ' ' + cmd_call_script.replace('{{tool_path}}', qpath)
-
-                    r = self.cm.utils.common.expand_string(cmd_call, ctx_tasks)
-                    if self.cm.catch_error(r): return r
-                    cmd_call = r['string']
-
-                    cmd = cmd_call + ' ' + host['vars']['cmd_sep'] + ' ' + cmd
-
-                _con = _verbose = True if self.cm.debug else False
-
-                ii = {'category': self.category_alias + ',' + self.category_uid,
-                      'command': 'run',
-                      'ctx': ctx,
-                      'arg1': 'cmd,c9ba0a88df394d7f',
-                      'cmd': cmd,
-                      'env': env,
-                      'timeout': timeout,
-                      'con': _con, 
-                      'verbose': _verbose, 
-                      'text_cmd': 'RUN:', 
-                      'fail_if_nonzero_return_code': False,
-                      'capture_output': True,
-                }
-
-                # We can capture ENV difference for scripts that initalize tools
-                # such as Microsoft Visual Studio or Intel compilers ...
-
-                if cmd_call_script:
-                    ii['capture_env'] = True
-
-                rx = self.cm.access(ii)
-                if self.cm.debug:
-                    print ('='*60)
-                    print ('Output of versiond detection:')
-                    print ('')
-                    self.cm.j(rx)
-                    print ('='*60)
-
-                if self.cm.catch_error(rx): return rx
-
-                returncode = rx['returncode']
-                if returncode == 0:
-                    output = rx['stdout'] + '\n' + rx['stderr']
-
-                    found_paths_with_versions[xpath] = {'output': output, 'cmd_call': cmd_call, 'cmd': cmd}
-
-                if cmd_call_script:
-                    found_paths_with_versions[xpath]['env_added'] = rx['env_added']
-
-    if not found_paths_with_versions:
-#        x = '' if not params else f' with params "{params}"'
-        x = ''
-        return self.cm.error(f'failed to find tool "{artifact_print_name}"{x}', 16)
-
-    if self.cm.debug:
-        print ('')
-        print ('Found paths with versions:')
-        self.cm.j(found_paths_with_versions)
-        print ('')
-
-    ############################################################################
-    # Parse versions
-
     parsed_paths_with_versions = []
 
-    for path in found_paths_with_versions:
-        x = found_paths_with_versions[path]
-        output = x['output']
+    if hasattr(tool_api_code, 'detect') and callable(getattr(tool_api_code, 'detect')):
+        r = tool_api_code.detect(ctx, params)
+        if self.cm.catch_error(r): return r
 
-        detected = False
-        detected_version = None
+        if 'parsed_paths_with_versions' in r:
+            parsed_paths_with_versions = r['parsed_paths_with_versions']
 
-        for match in match_version:
-            match_regex = match['regex']
-            match_group = match['group']
+    else:
+        force_path = True if path or paths else False
 
-            matches = re.search(match_regex, output, re.IGNORECASE | re.MULTILINE)
+        if path:
+            if path == '{{sys.executable}}':
+                import sys
+                path = sys.executable
+            elif os.path.isdir(path):
+                paths = [path]
+                path = None
+            elif not os.path.isfile(path):
+                return {'return':1, 'error':f'tool "{path}" not found'}
 
-            if self.cm.debug:
-                print ('')
-                print (f'Attempt to find version in {path}:')
-                print ('')
-                print ('Output:')
-                print ('')
-                print (output)
-                print ('')
-                print (matches)
+        elif not paths:
+            paths = []
 
-            if matches:
-                detected_version = matches.group(match_group)
-                detected = True
-                break
+            if 'only_paths' in desc:
+                all_only_paths = desc['only_paths']
 
-        if detected:
-            x['detected_version'] = detected_version
-            if path.startswith('!'):
-                x['priority'] = True
-                path = path[1:]
-            x['path'] = path
-            parsed_paths_with_versions.append(x)
+                if 'all' in all_only_paths:
+                    paths = all_only_paths['all']
+                elif uname in all_only_paths:
+                    paths = all_only_paths[uname]
+                elif 'linux' in all_only_paths:
+                    paths = all_only_paths['linux']
+
+            else:
+
+                x = envs.get('PATH', '').strip()
+                if x != '':
+                    paths = x.split(os.pathsep)
+                else:
+                    x = envs.get('+PATH', [])
+                    if type(x) == list and len(x)>0:
+                        paths = x.copy()
+                    else:
+                        x = str(x).strip()
+                        if x != '':
+                            paths = x.split(os.pathsep)
+
+                x = os_env.get('PATH', '').strip()
+                if x != '':
+                    paths += x.split(os.pathsep)
+
+                x = os.environ.get('CMETA_TOOL_EXTRA_PATHS', '').strip()
+                if x != '':
+                    paths += x.split(os.pathsep)
+
+                if 'extra_paths' in desc:
+                    all_extra_paths = desc['extra_paths']
+
+                    key = uname if uname in all_extra_paths else 'linux'
+
+                    extra_paths = all_extra_paths.get(key)
+
+                    if extra_paths:
+                        for p in extra_paths:
+                            p = p.replace('{{user_home}}', os.path.expanduser("~"))
+                            paths.append(p)
+
+            r = self.cm.utils.common.expand_strings_in_dict(paths, ctx_tasks)
+            if self.cm.catch_error(r): return r
+
+        ############################################################################
+        # Call base find function to find tools
+        p = {'category':self.cmeta['uses_categories']['tool'],
+             'command':'find_path',
+             'desc':desc,
+             'con':con,
+             'verbose':verbose,
+             'quiet':quiet,
+             'space':space,
+             'path':path,
+             'paths':paths,
+             'context':ctx_tasks,
+        }
+
+        r = self.cm.access(p)
+        if self.cm.catch_error(r): return r
+
+        found_paths = r['found_paths']
+
+        if not found_paths:
+     #        x = '' if not params else f' with params {params}'
+            x = ''
+            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x}', 16)
+
+        ############################################################################
+        # Check/update paths via tool code 
+        # (for example remove ones that doesn't have some capabilities)
+
+
+        if not force_path and hasattr(tool_api_code, 'update_paths') and callable(getattr(tool_api_code, 'update_paths')):
+            r = tool_api_code.update_paths(ctx, found_paths, params)
+            if self.cm.catch_error(r): return r
+
+            if 'paths' in r: 
+                found_paths = r['paths']
+
+            if 'found_paths_with_versions' in r:
+                found_paths_with_versions = r['found_paths_with_versions']
+
+        if hasattr(tool_api_code, 'detect_versions') and callable(getattr(tool_api_code, 'detect_versions')):
+            r = tool_api_code.detect_versions(ctx, found_paths, params)
+            if self.cm.catch_error(r): return r
+
+            if 'found_paths_with_versions' in r:
+                found_paths_with_versions = r['found_paths_with_versions']
+
+        ############################################################################
+        # Get versions if not forced by TOOL API CODE in the previous step
+
+        match_version = desc.get('match_version', None)
+
+        if not found_paths_with_versions:
+
+            cmd_call_script = desc.get('cmd_call_script')
+            cmd_call = None
+
+            cmd_version = desc.get('cmd_get_version', None)
+
+            if cmd_version and match_version:
+                for xpath in found_paths:
+
+                    path = xpath[1:] if xpath.startswith('!') else xpath
+
+                    qpath = self.cm.utils.files.quote_path(path)
+
+                    cmd = cmd_version.replace('{{tool_path}}', qpath)
+
+                    r = self.cm.utils.common.expand_string(cmd, ctx_tasks)
+                    if self.cm.catch_error(r): return r
+                    cmd = r['string']
+
+                    cmd_call = None
+                    if cmd_call_script:
+                        cmd_call = host['vars']['call_script'] + ' ' + cmd_call_script.replace('{{tool_path}}', qpath)
+
+                        r = self.cm.utils.common.expand_string(cmd_call, ctx_tasks)
+                        if self.cm.catch_error(r): return r
+                        cmd_call = r['string']
+
+                        cmd = cmd_call + ' ' + host['vars']['cmd_sep'] + ' ' + cmd
+
+                    _con = _verbose = True if self.cm.debug else False
+
+                    ii = {'category': self.category_alias + ',' + self.category_uid,
+                          'command': 'run',
+                          'ctx': ctx,
+                          'arg1': 'cmd,c9ba0a88df394d7f',
+                          'cmd': cmd,
+                          'env': env,
+                          'timeout': timeout,
+                          'con': _con, 
+                          'verbose': _verbose, 
+                          'text_cmd': 'RUN:', 
+                          'fail_if_nonzero_return_code': False,
+                          'capture_output': True,
+                    }
+
+                    # We can capture ENV difference for scripts that initalize tools
+                    # such as Microsoft Visual Studio or Intel compilers ...
+
+                    if cmd_call_script:
+                        ii['capture_env'] = True
+
+                    rx = self.cm.access(ii)
+                    if self.cm.debug:
+                        print ('='*60)
+                        print ('Output of version detection:')
+                        print ('')
+                        self.cm.j(rx)
+                        print ('='*60)
+
+                    if self.cm.catch_error(rx): return rx
+
+                    returncode = rx['returncode']
+                    if returncode == 0:
+                        output = rx['stdout'] + '\n' + rx['stderr']
+
+                        found_paths_with_versions[xpath] = {'output': output, 'cmd_call': cmd_call, 'cmd': cmd}
+
+                    if cmd_call_script:
+                        found_paths_with_versions[xpath]['env_added'] = rx['env_added']
+
+        if not found_paths_with_versions:
+    #        x = '' if not params else f' with params "{params}"'
+            x = ''
+            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x}', 16)
+
+        if self.cm.debug:
+            print ('')
+            print ('Found paths with versions:')
+            self.cm.j(found_paths_with_versions)
+            print ('')
+
+        ############################################################################
+        # Parse versions
+
+        for path in found_paths_with_versions:
+            x = found_paths_with_versions[path]
+            output = x['output']
+
+            detected = False
+            detected_version = None
+
+            for match in match_version:
+                match_regex = match['regex']
+                match_group = match['group']
+
+                matches = re.search(match_regex, output, re.IGNORECASE | re.MULTILINE)
+
+                if self.cm.debug:
+                    print ('')
+                    print (f'Attempt to find version in {path}:')
+                    print ('')
+                    print ('Output:')
+                    print ('')
+                    print (output)
+                    print ('')
+                    print (matches)
+
+                if matches:
+                    detected_version = matches.group(match_group)
+                    detected = True
+                    break
+
+            if detected:
+                x['detected_version'] = detected_version
+                if path.startswith('!'):
+                    x['priority'] = True
+                    path = path[1:]
+                x['path'] = path
+                parsed_paths_with_versions.append(x)
+
 
     if not parsed_paths_with_versions:
         return self.cm.error(f'failed to find tool "{artifact_print_name}" with parsed version', 16)
@@ -426,6 +437,10 @@ def detect_existing_tool(self,
     path = tool['path']
     detected_version = tool['detected_version']
     cmd_call = tool.get('cmd_call')
+
+    if 'add_to_result' in tool:
+        add_to_result = tool['add_to_result']
+        result.update(add_to_result)
 
     if 'features' in tool:
         result['features'] = tool['features']

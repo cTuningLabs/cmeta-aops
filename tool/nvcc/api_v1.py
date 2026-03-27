@@ -56,7 +56,7 @@ class CTool(InitCTool):
                'libs': [],
                'includes': [],
                'cmakes': [],
-            }                  
+            }
 
             path_home = os.path.dirname(path_bin)
             _paths['home'] = path_home

@@ -401,7 +401,7 @@ class CTask(InitCTask):
 
                 err = r['error'] + x 
 
-                if con and verbose:
+                if con:
                     print ('')
                     print (f'{space}WARNING: {err} !')
 

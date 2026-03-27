@@ -1,10 +1,1 @@
-names:
-  - Windows.h
-
-only_paths:
-  windows:
-    - "C:\\Program Files (x86)\\Windows Kits\\**\\Include\\**\\um"
-
-match_version: 
-  - regex: '^.*$'
-    group: 0
+empty: True

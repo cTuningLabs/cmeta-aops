@@ -10,9 +10,15 @@ match_version:
 cmd_get_version: '{{tool_path}} --version'
 
 uses:
-- task: setup,a2f9b61079ce4333
-  name: msvc,e823256bbbe54b4e
-  skip_if_not_win: True
+  - task: setup,a2f9b61079ce4333
+    name: msvc,e823256bbbe54b4e
+    if: '"{{global.host.os.uname}}" == "windows"'
+
+  - task: setup,a2f9b61079ce4333
+    name: macosx.sdk,70b0c05382be4e34
+    if: '"{{global.host.os.uname}}" == "darwin"'
+    with:
+      add_env: True
 
 install_cmd:
   darwin: '{{global.brew.qpath}} install llvm'
