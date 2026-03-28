@@ -1,0 +1,33 @@
+names:
+  - tailscale{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: '^\s*(\d+(?:\.\d+)+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+install_cmd:
+  darwin: '{{global.brew.qpath}} install tailscale'
+  linux: '{{global.brew.qpath}} install tailscale'
+  windows: "{{global.winget.qpath}} install --id=Tailscale.Tailscale -e --no-upgrade {{global.init.winget_install_flags|}}"
+
+install_cmd_version:
+  darwin: '{{global.brew.qpath}} install tailscale@{{major_version}}'
+  linux: '{{global.brew.qpath}} install tailscale@{{major_version}}'
+  windows: "{{global.winget.qpath}} install --Tailscale.Tailscale -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"
+
+install_uses:
+  linux:
+    - task: setup,a2f9b61079ce4333
+      name: brew,27859c999bdd4085
+
+extra_paths:
+  linux:
+    - "/home/linuxbrew/.linuxbrew/**"
+  darwin:
+    - "/opt/homebrew/opt/tailscale*/**"
+  windows:
+    - "C:\\Program Files\\Tailscale\\**"
+    - "D:\\Program Files\\Tailscale\\**"
+    - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
