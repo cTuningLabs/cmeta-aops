@@ -5,11 +5,16 @@ import json
 import os
 import platform
 import re
+import struct
 import subprocess
 from ctypes import wintypes
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+
+# ============================================================
+# Generic helpers
+# ============================================================
 
 def _run(cmd: List[str]) -> str:
     p = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -29,12 +34,6 @@ def _to_int(value: Any) -> Optional[int]:
 
 
 def _parse_int_list(spec: str) -> List[int]:
-    """
-    Parse strings like:
-      "0,1,2,3"
-      "0-3"
-      "0-3,8-11"
-    """
     out: List[int] = []
     if not spec:
         return out
@@ -62,6 +61,153 @@ def _cpu_dirs() -> List[Path]:
     )
 
 
+def _sysctl_str(name: str) -> Optional[str]:
+    try:
+        return _run(["sysctl", "-n", name]).strip()
+    except Exception:
+        return None
+
+
+def _sysctl_int(name: str) -> Optional[int]:
+    s = _sysctl_str(name)
+    return _to_int(s)
+
+
+def _sysctl_boolish(name: str) -> Optional[bool]:
+    s = _sysctl_str(name)
+    if s is None:
+        return None
+    s = s.strip().lower()
+    if s in {"1", "true", "yes"}:
+        return True
+    if s in {"0", "false", "no"}:
+        return False
+    return None
+
+
+# ============================================================
+# Unified architecture schema
+# ============================================================
+
+def _python_arch_raw() -> str:
+    return (
+        platform.machine()
+        or platform.uname().machine
+        or platform.uname().processor
+        or ""
+    ).strip()
+
+
+def _default_interpreter_bits() -> int:
+    return struct.calcsize("P") * 8
+
+
+def _normalize_arch_name(raw: str) -> Dict[str, Any]:
+    r = (raw or "").strip().lower().replace("-", "_")
+
+    aliases = {
+        "amd64": "x86_64",
+        "x64": "x86_64",
+        "x86_64": "x86_64",
+        "em64t": "x86_64",
+
+        "i386": "x86_32",
+        "i486": "x86_32",
+        "i586": "x86_32",
+        "i686": "x86_32",
+        "x86": "x86_32",
+
+        "arm64": "arm64",
+        "aarch64": "arm64",
+        "arm64e": "arm64",
+
+        "arm": "arm32",
+        "armv6l": "arm32",
+        "armv7l": "arm32",
+        "armv8l": "arm32",
+
+        "riscv64": "riscv64",
+        "riscv32": "riscv32",
+
+        "ppc64": "ppc64",
+        "ppc64le": "ppc64",
+        "powerpc64": "ppc64",
+        "powerpc64le": "ppc64",
+
+        "ppc": "ppc32",
+        "powerpc": "ppc32",
+
+        "ia64": "ia64",
+        "itanium": "ia64",
+
+        "mips": "mips",
+        "mips64": "mips64",
+    }
+
+    normalized = aliases.get(r, "unknown")
+
+    family = "unknown"
+    bits: Optional[int] = None
+
+    if normalized == "x86_64":
+        family, bits = "x86", 64
+    elif normalized == "x86_32":
+        family, bits = "x86", 32
+    elif normalized == "arm64":
+        family, bits = "arm", 64
+    elif normalized == "arm32":
+        family, bits = "arm", 32
+    elif normalized == "riscv64":
+        family, bits = "riscv", 64
+    elif normalized == "riscv32":
+        family, bits = "riscv", 32
+    elif normalized == "ppc64":
+        family, bits = "ppc", 64
+    elif normalized == "ppc32":
+        family, bits = "ppc", 32
+    elif normalized == "ia64":
+        family, bits = "ia64", 64
+    elif normalized == "mips64":
+        family, bits = "mips", 64
+    elif normalized == "mips":
+        family, bits = "mips", None
+
+    return {
+        "arch_raw": raw,
+        "arch_normalized": normalized,
+        "arch_family": family,
+        "arch_bits": bits,
+        "interpreter_bits": _default_interpreter_bits(),
+    }
+
+
+def _empty_normalized_features() -> Dict[str, bool]:
+    return {
+        "sse": False,
+        "sse2": False,
+        "ssse3": False,
+        "sse4_1": False,
+        "sse4_2": False,
+        "avx": False,
+        "avx2": False,
+        "avx512f": False,
+        "neon": False,
+        "asimd": False,
+        "sve": False,
+        "sve2": False,
+        "aes": False,
+        "sha1": False,
+        "sha2": False,
+        "crc32": False,
+        "vmx_or_svm": False,
+        "arm_v8": False,
+    }
+
+
+# ============================================================
+# Linux
+# ============================================================
+
 def _linux_usable_cpu_count() -> Optional[int]:
     if hasattr(os, "sched_getaffinity"):
         try:
@@ -82,10 +228,6 @@ def _linux_usable_cpu_count() -> Optional[int]:
 
 
 def _linux_sysfs_topology() -> Dict[str, Any]:
-    """
-    Build topology from /sys/devices/system/cpu/cpuX/topology.
-    This is useful even when lscpu is unavailable.
-    """
     cpus = []
     packages: Dict[str, set] = {}
     cores: Dict[tuple, set] = {}
@@ -94,11 +236,6 @@ def _linux_sysfs_topology() -> Dict[str, Any]:
     for cpu_dir in _cpu_dirs():
         cpu_id = int(cpu_dir.name[3:])
         topo = cpu_dir / "topology"
-
-        physical_package_id = None
-        core_id = None
-        thread_siblings = None
-        core_siblings = None
 
         def read_text(p: Path) -> Optional[str]:
             try:
@@ -141,9 +278,12 @@ def _linux_sysfs_topology() -> Dict[str, Any]:
         "packages_sysfs": {
             str(k): sorted(v) for k, v in sorted(packages.items(), key=lambda x: int(x[0]))
         },
-        "core_capacity_groups": {
-            str(k): sorted(v) for k, v in sorted(capacities.items(), key=lambda x: int(x[0]))
-        },
+        "core_classes": {
+            "kind": "cpu_capacity",
+            "groups": {
+                str(k): sorted(v) for k, v in sorted(capacities.items(), key=lambda x: int(x[0]))
+            },
+        } if capacities else {"kind": "cpu_capacity", "groups": {}},
     }
 
 
@@ -162,6 +302,7 @@ def _linux_lscpu() -> Dict[str, Any]:
         out["cores_per_socket"] = _to_int(flat.get("Core(s) per socket"))
         out["threads_per_core"] = _to_int(flat.get("Thread(s) per core"))
         out["logical_cpu_count_lscpu"] = _to_int(flat.get("CPU(s)"))
+        out["arch_raw_lscpu"] = flat.get("Architecture")
     except Exception as e:
         out["lscpu_error"] = str(e)
 
@@ -187,6 +328,54 @@ def _linux_lscpu() -> Dict[str, Any]:
     return out
 
 
+def _linux_features() -> Dict[str, Any]:
+    raw = set()
+
+    cpuinfo = Path("/proc/cpuinfo")
+    if cpuinfo.exists():
+        try:
+            for line in cpuinfo.read_text().splitlines():
+                if ":" not in line:
+                    continue
+                k, v = [x.strip() for x in line.split(":", 1)]
+                lk = k.lower()
+                if lk in ("flags", "features"):
+                    raw.update(v.split())
+        except Exception:
+            pass
+
+    norm = _empty_normalized_features()
+    norm.update({
+        "sse": "sse" in raw,
+        "sse2": "sse2" in raw,
+        "ssse3": "ssse3" in raw,
+        "sse4_1": "sse4_1" in raw or "sse4.1" in raw,
+        "sse4_2": "sse4_2" in raw or "sse4.2" in raw,
+        "avx": "avx" in raw,
+        "avx2": "avx2" in raw,
+        "avx512f": "avx512f" in raw,
+        "neon": "neon" in raw,
+        "asimd": "asimd" in raw,
+        "sve": "sve" in raw,
+        "sve2": "sve2" in raw,
+        "aes": "aes" in raw,
+        "sha1": "sha1" in raw,
+        "sha2": "sha2" in raw or "sha256" in raw,
+        "crc32": "crc32" in raw,
+        "vmx_or_svm": "vmx" in raw or "svm" in raw,
+    })
+
+    if norm["asimd"]:
+        norm["neon"] = True
+    if norm["neon"]:
+        norm["asimd"] = True
+
+    return {
+        "features_raw": sorted(raw),
+        "features_normalized": norm,
+    }
+
+
 def _linux_info() -> Dict[str, Any]:
     info: Dict[str, Any] = {
         "platform": "linux",
@@ -195,28 +384,87 @@ def _linux_info() -> Dict[str, Any]:
     }
     info.update(_linux_lscpu())
     info.update(_linux_sysfs_topology())
+    info.update(_linux_features())
 
-    # Prefer lscpu counts when available; otherwise fall back to sysfs-derived counts.
     if info.get("socket_count") is None:
         info["socket_count"] = info.get("package_count_sysfs")
+
     if info.get("physical_core_count") is None:
         info["physical_core_count"] = info.get("physical_core_count_sysfs")
 
-    # Derive physical_core_count from lscpu summary if possible.
     if info.get("physical_core_count") is None:
         s = info.get("socket_count")
         c = info.get("cores_per_socket")
         if s is not None and c is not None:
             info["physical_core_count"] = s * c
 
+    raw_arch = info.get("arch_raw_lscpu") or _python_arch_raw()
+    info.update(_normalize_arch_name(raw_arch))
+
     return info
 
 
-def _sysctl_int(name: str) -> Optional[int]:
-    try:
-        return int(_run(["sysctl", "-n", name]))
-    except Exception:
-        return None
+# ============================================================
+# macOS
+# ============================================================
+
+def _macos_features() -> Dict[str, Any]:
+    raw = set()
+    norm = _empty_normalized_features()
+
+    # Intel-style feature strings
+    for key in ("machdep.cpu.features", "machdep.cpu.leaf7_features"):
+        s = _sysctl_str(key)
+        if s:
+            feats = {x.lower() for x in s.split()}
+            raw.update(feats)
+
+    # Apple-silicon-ish / sysctl probes
+    probes = {
+        "neon": ["hw.optional.neon", "hw.optional.AdvSIMD"],
+        "asimd": ["hw.optional.arm.FEAT_AdvSIMD", "hw.optional.AdvSIMD"],
+        "aes": ["hw.optional.aes", "hw.optional.arm.FEAT_AES"],
+        "sha1": ["hw.optional.arm.FEAT_SHA1"],
+        "sha2": ["hw.optional.arm.FEAT_SHA256", "hw.optional.arm.FEAT_SHA2"],
+        "crc32": ["hw.optional.armv8_crc32", "hw.optional.arm.FEAT_CRC32"],
+        "sve": ["hw.optional.arm.FEAT_SVE"],
+        "sve2": ["hw.optional.arm.FEAT_SVE2"],
+        "arm_v8": ["hw.optional.armv8_1_atomics", "hw.optional.armv8_crc32"],
+    }
+
+    for feat_name, keys in probes.items():
+        for key in keys:
+            val = _sysctl_boolish(key)
+            if val:
+                norm[feat_name] = True
+                raw.add(key.lower())
+                break
+
+    intel_aliases = {
+        "sse": ["sse"],
+        "sse2": ["sse2"],
+        "ssse3": ["ssse3"],
+        "sse4_1": ["sse4.1", "sse4_1"],
+        "sse4_2": ["sse4.2", "sse4_2"],
+        "avx": ["avx1.0", "avx"],
+        "avx2": ["avx2"],
+        "avx512f": ["avx512f"],
+        "aes": ["aes"],
+    }
+
+    for dst, names in intel_aliases.items():
+        if any(name in raw for name in names):
+            norm[dst] = True
+
+    if norm["asimd"]:
+        norm["neon"] = True
+    if norm["neon"]:
+        norm["asimd"] = True
+
+    return {
+        "features_raw": sorted(raw),
+        "features_normalized": norm,
+    }
 
 
 def _macos_info() -> Dict[str, Any]:
@@ -224,7 +472,7 @@ def _macos_info() -> Dict[str, Any]:
         "platform": "macos",
         "logical_cpu_count": os.cpu_count(),
         "usable_logical_cpu_count": os.cpu_count(),
-        "physical_cpu_count": _sysctl_int("hw.physicalcpu"),
+        "physical_core_count": _sysctl_int("hw.physicalcpu"),
         "logical_cpu_count_sysctl": _sysctl_int("hw.logicalcpu"),
         "nperflevels": _sysctl_int("hw.nperflevels"),
         "performance_levels": [],
@@ -233,20 +481,38 @@ def _macos_info() -> Dict[str, Any]:
     nperf = info["nperflevels"]
     if nperf:
         levels = []
+        groups = {}
         for i in range(nperf):
-            levels.append({
+            phys = _sysctl_int(f"hw.perflevel{i}.physicalcpu")
+            logi = _sysctl_int(f"hw.perflevel{i}.logicalcpu")
+            row = {
                 "perflevel": i,
-                "physicalcpu": _sysctl_int(f"hw.perflevel{i}.physicalcpu"),
-                "logicalcpu": _sysctl_int(f"hw.perflevel{i}.logicalcpu"),
-            })
-        info["performance_levels"] = levels
+                "physicalcpu": phys,
+                "logicalcpu": logi,
+            }
+            levels.append(row)
+            groups[f"perflevel{i}"] = row
 
+        info["performance_levels"] = levels
+        info["core_classes"] = {
+            "kind": "perflevel",
+            "groups": groups,
+        }
+    else:
+        info["core_classes"] = {
+            "kind": "perflevel",
+            "groups": {},
+        }
+
+    info.update(_macos_features())
+    info.update(_normalize_arch_name(_python_arch_raw()))
     return info
 
 
-# ---------------- Windows low-level topology ----------------
+# ============================================================
+# Windows
+# ============================================================
 
-# Constants from Windows headers
 RelationProcessorCore = 0
 RelationProcessorPackage = 3
 
@@ -256,17 +522,13 @@ LTP_PC_SMT = 0x1
 
 class GROUP_AFFINITY(ctypes.Structure):
     _fields_ = [
-        ("Mask", ctypes.c_size_t),  # ULONG_PTR
+        ("Mask", ctypes.c_size_t),
         ("Group", wintypes.WORD),
         ("Reserved", wintypes.WORD * 3),
     ]
 
 
 class PROCESSOR_RELATIONSHIP_HEADER(ctypes.Structure):
-    """
-    Fixed-size prefix of PROCESSOR_RELATIONSHIP.
-    We only need the header plus the first GROUP_AFFINITY.
-    """
     _fields_ = [
         ("Flags", wintypes.BYTE),
         ("EfficiencyClass", wintypes.BYTE),
@@ -289,7 +551,7 @@ def _windows_wmi_info() -> Dict[str, Any]:
 
     ps = r"""
 $items = Get-CimInstance Win32_Processor |
-  Select-Object DeviceID, Name, NumberOfCores, NumberOfLogicalProcessors
+  Select-Object DeviceID, Name, Architecture, NumberOfCores, NumberOfLogicalProcessors
 $items | ConvertTo-Json -Depth 3
 """.strip()
 
@@ -312,11 +574,28 @@ $items | ConvertTo-Json -Depth 3
     return info
 
 
+def _windows_architecture_from_wmi(packages: List[Dict[str, Any]]) -> str:
+    mapping = {
+        0: "x86",
+        1: "mips",
+        2: "alpha",
+        3: "powerpc",
+        5: "arm",
+        6: "ia64",
+        9: "x64",
+        12: "arm64",
+    }
+    for pkg in packages:
+        val = pkg.get("Architecture")
+        if val is not None:
+            try:
+                return mapping.get(int(val), str(val))
+            except Exception:
+                return str(val)
+    return _python_arch_raw()
+
+
 def _windows_getlogicalprocessorinfoex() -> Dict[str, Any]:
-    """
-    Enumerate cores/packages and per-core EfficiencyClass using
-    GetLogicalProcessorInformationEx.
-    """
     info: Dict[str, Any] = {
         "core_rows": [],
         "package_rows": [],
@@ -330,11 +609,8 @@ def _windows_getlogicalprocessorinfoex() -> Dict[str, Any]:
 
     needed = wintypes.DWORD(0)
     ok = func(RelationProcessorCore, None, ctypes.byref(needed))
-    if ok:
-        # Unexpected, but continue
-        pass
     err = ctypes.get_last_error()
-    if err != ERROR_INSUFFICIENT_BUFFER:
+    if not ok and err != ERROR_INSUFFICIENT_BUFFER:
         raise ctypes.WinError(err)
 
     buf = ctypes.create_string_buffer(needed.value)
@@ -352,8 +628,6 @@ def _windows_getlogicalprocessorinfoex() -> Dict[str, Any]:
 
         base = offset + ctypes.sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX_HEADER)
         prh = PROCESSOR_RELATIONSHIP_HEADER.from_buffer(buf, base)
-
-        # First GROUP_AFFINITY starts right after PROCESSOR_RELATIONSHIP_HEADER.
         ga_offset = base + ctypes.sizeof(PROCESSOR_RELATIONSHIP_HEADER)
         ga = GROUP_AFFINITY.from_buffer(buf, ga_offset)
 
@@ -385,9 +659,13 @@ def _windows_getlogicalprocessorinfoex() -> Dict[str, Any]:
         g["logical_cpu_count"] += row["logical_cpu_count"]
         if row["smt"]:
             g["smt_core_count"] += 1
-    info["efficiency_class_groups"] = groups
 
-    # Packages
+    info["efficiency_class_groups"] = groups
+    info["core_classes"] = {
+        "kind": "efficiency_class",
+        "groups": groups,
+    }
+
     needed = wintypes.DWORD(0)
     ok = func(RelationProcessorPackage, None, ctypes.byref(needed))
     err = ctypes.get_last_error()
@@ -413,6 +691,43 @@ def _windows_getlogicalprocessorinfoex() -> Dict[str, Any]:
     return info
 
 
+def _windows_features() -> Dict[str, Any]:
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    f = kernel32.IsProcessorFeaturePresent
+    f.argtypes = [wintypes.DWORD]
+    f.restype = wintypes.BOOL
+
+    PF_XMMI_INSTRUCTIONS_AVAILABLE = 6
+    PF_XMMI64_INSTRUCTIONS_AVAILABLE = 10
+    PF_ARM_V8_INSTRUCTIONS_AVAILABLE = 29
+    PF_SSSE3_INSTRUCTIONS_AVAILABLE = 36
+    PF_SSE4_1_INSTRUCTIONS_AVAILABLE = 37
+    PF_SSE4_2_INSTRUCTIONS_AVAILABLE = 38
+    PF_AVX_INSTRUCTIONS_AVAILABLE = 39
+    PF_AVX2_INSTRUCTIONS_AVAILABLE = 40
+    PF_AVX512F_INSTRUCTIONS_AVAILABLE = 41
+
+    norm = _empty_normalized_features()
+    norm.update({
+        "sse": bool(f(PF_XMMI_INSTRUCTIONS_AVAILABLE)),
+        "sse2": bool(f(PF_XMMI64_INSTRUCTIONS_AVAILABLE)),
+        "ssse3": bool(f(PF_SSSE3_INSTRUCTIONS_AVAILABLE)),
+        "sse4_1": bool(f(PF_SSE4_1_INSTRUCTIONS_AVAILABLE)),
+        "sse4_2": bool(f(PF_SSE4_2_INSTRUCTIONS_AVAILABLE)),
+        "avx": bool(f(PF_AVX_INSTRUCTIONS_AVAILABLE)),
+        "avx2": bool(f(PF_AVX2_INSTRUCTIONS_AVAILABLE)),
+        "avx512f": bool(f(PF_AVX512F_INSTRUCTIONS_AVAILABLE)),
+        "arm_v8": bool(f(PF_ARM_V8_INSTRUCTIONS_AVAILABLE)),
+    })
+
+    raw = [k for k, v in norm.items() if v]
+
+    return {
+        "features_raw": sorted(raw),
+        "features_normalized": norm,
+    }
+
+
 def _windows_info() -> Dict[str, Any]:
     info: Dict[str, Any] = {
         "platform": "windows",
@@ -427,15 +742,25 @@ def _windows_info() -> Dict[str, Any]:
         info.update(api_info)
     except Exception as e:
         info["api_error"] = str(e)
+        info.setdefault("core_classes", {"kind": "efficiency_class", "groups": {}})
 
-    # Prefer API package/core counts when available.
+    info.update(_windows_features())
+
     if info.get("package_count") is None and info.get("package_count_api") is not None:
         info["package_count"] = info["package_count_api"]
+
     if info.get("physical_core_count") is None and info.get("physical_core_count_api") is not None:
         info["physical_core_count"] = info["physical_core_count_api"]
 
+    raw_arch = _windows_architecture_from_wmi(info.get("packages", []))
+    info.update(_normalize_arch_name(raw_arch))
+
     return info
 
+
+# ============================================================
+# Public API
+# ============================================================
 
 def get_cpu_inventory() -> Dict[str, Any]:
     system = platform.system()
@@ -445,9 +770,17 @@ def get_cpu_inventory() -> Dict[str, Any]:
         return _macos_info()
     if system == "Windows":
         return _windows_info()
+
     return {
         "platform": system.lower(),
         "logical_cpu_count": os.cpu_count(),
+        "usable_logical_cpu_count": os.cpu_count(),
+        "physical_core_count": None,
+        "package_count": None,
+        "core_classes": {"kind": "unknown", "groups": {}},
+        "features_raw": [],
+        "features_normalized": _empty_normalized_features(),
+        **_normalize_arch_name(_python_arch_raw()),
     }
 
 
