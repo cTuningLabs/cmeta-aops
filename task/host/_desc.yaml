@@ -1,2 +1,5 @@
 ﻿store_global: True    # force
 storage_key: host     # force storage key to avoid mixing up in the future
+
+uses:
+  - task: init,ee7466d402654266

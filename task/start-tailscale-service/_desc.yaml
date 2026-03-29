@@ -1,0 +1,14 @@
+uses:
+  - task: host,96ac7118439c4490
+
+  - task: setup,a2f9b61079ce4333
+    name: tailscale,85ccb347faed443e
+
+  - task: force-fail,fbc834fe54894aec
+    if: '"{{global.host.os.uname}}" != "darwin"'
+    text: "start-tailscale-service task currently works only on MacOS"
+
+  - task: setup,a2f9b61079ce4333
+    name: brew,27859c999bdd4085
+    if: '"{{global.host.os.uname}}" == "darwin"'
+  
