@@ -103,6 +103,8 @@ class CTask(InitCTask):
         if url is None or url == '':
             return self.cm.error(f'URL is not defined in "{__file__}" ({__name__})')
 
+        path_to_git_bin = ctx_tasks['global']['git']['qpath']
+
         if tag and not checkout:
             checkout = tag
 
@@ -145,7 +147,7 @@ class CTask(InitCTask):
         xdepth = f' --depth {depth}' if depth != None and depth != '' else ''
 
         if not os.path.isdir(path_to_git_repo):
-            cmd = f'git clone {url} {directory}{xdepth}'
+            cmd = f'{path_to_git_bin} clone {url} {directory}{xdepth}'
 
             r = self.cm.utils.sys.run(cmd, env = env, timeout = timeout, con = con, verbose = verbose, text_cmd = 'RUN', space = space)
             if self.cm.catch_error(r): return r
@@ -165,14 +167,14 @@ class CTask(InitCTask):
                 cmd = f'cd {directory}'
 
                 if update:
-                    cmd += ' && git fetch --all --tags --prune'
+                    cmd += f' && {path_to_git_bin} fetch --all --tags --prune'
                     if fetch:
                         cmd += ' ' + fetch
                 elif fetch:
-                    cmd += ' && git fetch ' + fetch
+                    cmd += f' && {path_to_git_bin} fetch ' + fetch
 
                 if branch or checkout:
-                    cmd += ' && git checkout'
+                    cmd += f' && {path_to_git_bin} checkout'
 
                     if new:
                         cmd +=' -b'
@@ -189,8 +191,8 @@ class CTask(InitCTask):
             # Submodules update
 
             if update_submodules:
-                cmds.append(f'cd {directory} && git submodule sync')
-                cmds.append(f'cd {directory} && git submodule update --init --recursive')
+                cmds.append(f'cd {directory} && {path_to_git_bin} submodule sync')
+                cmds.append(f'cd {directory} && {path_to_git_bin} submodule update --init --recursive')
 
             ###################################################################
             # TBD: add detect current git checkout and branch
@@ -198,19 +200,19 @@ class CTask(InitCTask):
             if r['return']>0: return r
             temp_file_branch = r['filepath']
 
-            cmds.append(f'cd {directory} && git rev-parse --abbrev-ref HEAD > {temp_file_branch}')
+            cmds.append(f'cd {directory} && {path_to_git_bin} rev-parse --abbrev-ref HEAD > {temp_file_branch}')
 
             r = self.cm.utils.files.gen_temp_filepath()
             if r['return']>0: return r
             temp_file_checkout = r['filepath']
 
-            cmds.append(f'cd {directory} && git rev-parse HEAD > {temp_file_checkout}')
+            cmds.append(f'cd {directory} && {path_to_git_bin} rev-parse HEAD > {temp_file_checkout}')
 
             r = self.cm.utils.files.gen_temp_filepath()
             if r['return']>0: return r
             temp_file_tag = r['filepath']
 
-            cmds.append(f'cd {directory} && git describe --tags --dirty --always > {temp_file_tag}')
+            cmds.append(f'cd {directory} && {path_to_git_bin} describe --tags --dirty --always > {temp_file_tag}')
 
             ###################################################################
             # Run commands

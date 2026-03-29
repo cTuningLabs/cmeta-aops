@@ -22,5 +22,11 @@ requires_sudo:
   darwin: True
 
 extra_paths:
+  linux:
+    - "/home/linuxbrew/.linuxbrew/**"
+  darwin:
+    - "/opt/homebrew/opt/cmake*/**"
   windows:
     - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
+    - "C:\\Program Files\\Git\\**\\"
+    - "D:\\Program Files\\Git\\**\\"

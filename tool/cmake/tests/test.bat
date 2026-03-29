@@ -1,1 +1,1 @@
-﻿cx . setup --skip_detect -j
+﻿cx . setup --skip_detect -j -q

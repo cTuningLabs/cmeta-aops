@@ -1,0 +1,3 @@
+﻿store_global: False   # force
+storage_key: fail     # force storage key to avoid mixing up in the future
+cache: False          # don't cache
