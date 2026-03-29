@@ -58,6 +58,7 @@ class CTool(InitCTool):
         if uname == 'windows':
             uos = 'windows'
             uext = '.zip'
+            udir = None
             if uarch == 'amd64':
                 uarch2 = 'x86_64'
             elif uarch == 'arm64':
@@ -65,6 +66,7 @@ class CTool(InitCTool):
         elif uname == 'linux':
             uos = 'linux'
             uext = '.tar.gz'
+            udir = None
             if uarch == 'amd64':
                 uarch2 = 'x86_64'
             elif uarch == 'arm64':
@@ -73,6 +75,7 @@ class CTool(InitCTool):
             uos = 'macos'
             uarch2 = 'universal'
             uext = '.tar.gz'
+            udir = 'CMake.app/Contents'
 
         if not uarch2:
             return {
@@ -85,7 +88,12 @@ class CTool(InitCTool):
         url = f'https://github.com/Kitware/CMake/releases/download/v{version_simple}/{filename}'
 
         directory = 'content'
-        path_to_cmake = os.path.join(os.getcwd(), directory, 'bin', 'cmake' + _global['host']['vars']['file_ext_exe'])
+
+        ubin = 'bin'
+        if udir:
+            ubin = os.path.join(udir, ubin)
+
+        path_to_cmake = os.path.join(os.getcwd(), directory, ubin, 'cmake' + _global['host']['vars']['file_ext_exe'])
 
         if con:
             cur_dir = os.getcwd()
@@ -113,6 +121,7 @@ class CTool(InitCTool):
               'clean_after_unzip': True,
               'strip_folders': 1,
               'check_file': path_to_cmake,
+              'make_check_file_executable': True,
         }
 
         rx = self.cm.access(ii)

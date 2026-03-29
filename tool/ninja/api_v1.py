@@ -71,7 +71,7 @@ class CTool(InitCTool):
                 uarch2 = '-aarch64'
         elif uname == 'darwin':
             uos = 'mac'
-            uarch2 = None
+            uarch2 = ''
 
         if uarch2 is None:
             return {
@@ -92,6 +92,7 @@ class CTool(InitCTool):
             print (f'{space}INFO: Current path: {cur_dir}')
             print (f'{space}INFO: ninja download URL: {url}')
             print (f'{space}INFO: Check file: {path_to_ninja}')
+            print ('')
 
         ###########################################################################################
         # Attempt to download file
@@ -112,6 +113,7 @@ class CTool(InitCTool):
               'clean_after_unzip': True,
               'strip_folders': 0,
               'check_file': path_to_ninja,
+              'make_check_file_executable': True,
         }
 
         rx = self.cm.access(ii)

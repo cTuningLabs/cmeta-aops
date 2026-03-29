@@ -1,4 +1,5 @@
-﻿import os
+import os
+import stat
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
@@ -137,6 +138,7 @@ class CTask(InitCTask):
             clean_after_unzip: bool = False,
             strip_folders: int = 0,
             timeout: int = None,
+            make_check_file_executable: bool = False,
     ):
 
         """
@@ -350,16 +352,19 @@ class CTask(InitCTask):
                         print (f'{space}RUN: rm {filename_with_path}')
 
                     os.remove(filename_with_path)
-           
 
         ###################################################################
         # Check file again
         if check_file_with_path:
             if not os.path.isfile(check_file_with_path):
                 return self.cm.error(f'couldn\'t find check file "{check_file_with_path}"')
-                
+
             result['check_file'] = check_file
             result['path_to_check_file'] = check_file_with_path
+
+        if make_check_file_executable and os.name != 'nt':
+            st = os.stat(check_file)
+            os.chmod(check_file, st.st_mode | stat.S_IXUSR)
 
         result['path_to_files'] = path_to_files
 
@@ -380,5 +385,5 @@ class CTask(InitCTask):
                     print (f'{space}Downloaded file: {filename_with_path}')
                 else:
                     print (f'{space}Path to files: {path_to_files}')
-        
+
         return result
