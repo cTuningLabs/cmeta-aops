@@ -38,6 +38,12 @@ class CTask(InitCTask):
 
         path_to_tailscale = ctx['tasks']['global']['tailscale']['qpath']
 
+        if con and not quiet:
+            print ('')
+            print ('WARNING: make sure that you run start-tailscale-service in the Desktop terminal since it may open browser to log in to tailscale!')
+            print ('')
+            x = input('Press Enter to continue: ')
+
         cmd = 'sudo brew services start tailscale'
 
         ii = {'category': self.category_alias + ',' + self.category_uid,
