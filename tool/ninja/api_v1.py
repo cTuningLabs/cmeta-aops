@@ -56,7 +56,7 @@ class CTool(InitCTool):
         filename = None
 
         uext = '.zip'
-
+        uarch2 = None
         if uname == 'windows':
             uos = 'win'
             if uarch == 'amd64':
@@ -71,8 +71,9 @@ class CTool(InitCTool):
                 uarch2 = '-aarch64'
         elif uname == 'darwin':
             uos = 'mac'
+            uarch2 = None
 
-        if not uos:
+        if uarch2 is None:
             return {
                 'return': 16, 
                 'error': f'custom install for ninja could not create download URL',
