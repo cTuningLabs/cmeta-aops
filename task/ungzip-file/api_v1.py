@@ -71,8 +71,7 @@ class CTask(InitCTask):
             filename: str = None,
             env: dict = {},
             directory: str = None,
-            clean_after_untar: bool = False,
-            strip_folders: int = None,
+            clean_after_ungzip: bool = False,
             timeout: int = None,
             fail_if_nonzero_return_code: bool = True,
     ):
@@ -100,62 +99,7 @@ class CTask(InitCTask):
 
         _local = {}
 
-        uses = None
-
-        flags = '-xvf'
-
-        if filename.endswith('.xz'):
-            flags = '-xf'
-
-            if uname != 'windows':
-                uses = [{
-                  'task': 'setup,a2f9b61079ce4333',
-                  'name': 'xz,ed6519b03186488d',
-                }]
-
-        elif filename.endswith('.tar.gz') or filename.endswith('.tgz'):
-            flags = '-xvzf'
-
-            if uname != 'windows':
-                uses = [{
-                  'task': 'setup,a2f9b61079ce4333',
-                  'name': 'gzip',
-                }]
-                
-        elif filename.endswith('.tar.bz2'):
-            flags = '-xvjf'
-
-            if uname != 'windows':
-                uses = [{
-                  'task': 'setup,a2f9b61079ce4333',
-                  'name': 'bzip2,97c4bde150494ca6',
-                }]
-
-
-        # Check extra deps
-        if uses:
-            ii = {'category': self.category_alias + ',' + self.category_uid,
-                  'command': 'use',
-                  'con': con,
-                  'quiet': quiet,
-                  'verbose': verbose,
-                  'ctx': ctx,
-                  'desc': uses,
-                  'local': _local,
-                  'task_artifact_alias': self.artifact_alias,
-                  'task_artifact_uid': self.artifact_uid,
-                  'task_artifact_path': self.artifact_path,
-                 }
-
-            r = self.cm.access(ii)
-            if self.cm.catch_error(r): return r
-
-
-        tar_path = ctx['tasks']['global']['tar']['qpath']
-
-# FGG: should not make such default since can break logic in related tasks
-#        if not directory:
-#            directory = 'content'
+        ungzip_path = ctx['tasks']['global']['gzip']['qpath']
 
         if not directory:
             directory = os.getcwd()
@@ -166,10 +110,7 @@ class CTask(InitCTask):
         if not os.path.exists(path):
             os.makedirs(path)
  
-        cmd = tar_path + ' ' + flags + ' ' + filename + ' -C ' + qpath
-
-        if strip_folders:
-            cmd += f' --strip-components={strip_folders}'
+        cmd = f'{ungzip_path} {filename} -d {qpath}'
 
         ii = {'category': self.category_alias + ',' + self.category_uid,
               'command': 'run',
@@ -190,7 +131,7 @@ class CTask(InitCTask):
         rx = self.cm.access(ii)
         if self.cm.catch_error(rx): return rx
 
-        if clean_after_untar and os.path.isfile(filename):
+        if clean_after_ungzip and os.path.isfile(filename):
             if verbose:
                 print (f'{space}RUN: rm {filename}')
 
