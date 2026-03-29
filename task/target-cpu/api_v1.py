@@ -1,7 +1,8 @@
-﻿import os
-import platform
+﻿import copy
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
+
+from . import logic
 
 class CTask(InitCTask):
     """
@@ -32,6 +33,9 @@ class CTask(InitCTask):
 
         space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
 
-        result = {'return':0}
+        result = {
+          'return':0,
+          'features': logic.get_cpu_inventory(),
+        }
 
         return result

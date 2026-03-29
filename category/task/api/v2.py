@@ -642,9 +642,10 @@ class Category(InitCategory):
                      'artifacts': cache_artifacts,
                      'cmeta_params_keys': ['params', 'path'],
                      'skip_uids': True,
-                     'con':con,
-                     'quiet':quiet,
-                     'space':space,
+                     'con': con,
+                     'quiet': quiet,
+                     'space': space,
+                     'allow_skip': True,
                 }
 
                 if 'sort_keys' in cdesc:
@@ -661,7 +662,10 @@ class Category(InitCategory):
                     r['return'] = 1
                     return r
 
-                cache_artifacts = [r['artifact']]
+                if r.get('skipped', False):
+                    cache_artifacts = []
+                else:
+                    cache_artifacts = [r['artifact']]
 
 
             ###########################################################################################

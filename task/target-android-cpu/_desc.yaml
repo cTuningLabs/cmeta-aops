@@ -1,0 +1,7 @@
+store_global: True               # force
+storage_key: target-android-cpu  # force storage key to avoid mixing up in the future
+cache: False                     # force
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: adb,c80f2c9d7d5a4b93

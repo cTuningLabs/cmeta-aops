@@ -8,6 +8,12 @@ match_version:
 cmd_get_version: '{{tool_path}} --version'
 
 extra_paths:
+  linux:
+    - "/home/linuxbrew/.linuxbrew/**"
+  darwin:
+    - "/opt/homebrew/opt/cmake*/**"
   windows:
      - "C:\\Program Files\\Microsoft Visual Studio\\**\\CMake\\**\\"
      - "D:\\Program Files\\Microsoft Visual Studio\\**\\CMake\\**\\"
+     - "C:\\Program Files\\CMake\\**\\"
+     - "D:\\Program Files\\CMake\\**\\"

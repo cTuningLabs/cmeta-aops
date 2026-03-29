@@ -153,8 +153,9 @@ class CTask(InitCTask):
 
         tar_path = ctx['tasks']['global']['tar']['qpath']
 
-        if not directory:
-            directory = 'content'
+# FGG: should not make such default since can break logic in related tasks
+#        if not directory:
+#            directory = 'content'
 
         path = os.path.abspath(directory)
         qpath = self.cm.utils.files.quote_path(path)

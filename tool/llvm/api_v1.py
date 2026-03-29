@@ -29,7 +29,12 @@ class CTool(InitCTool):
         uname = _global['host']['os']['uname']
         uarch = _global['host']['os']['uarch']
 
+        version = params.get('version')
         version_simple = params.get('version_simple')
+
+        if not version:
+            version = '22.1.2'
+            version_simple = '22.1.2'
 
         if not version_simple:
             return {
@@ -73,7 +78,8 @@ class CTool(InitCTool):
 
         url = f'https://github.com/llvm/llvm-project/releases/download/llvmorg-{version_simple}/{filename}'
 
-        path_to_clang = os.path.join(os.getcwd(), 'content', 'bin', 'clang' + _global['host']['vars']['file_ext_exe'])
+        directory = 'content'
+        path_to_clang = os.path.join(os.getcwd(), directory, 'bin', 'clang' + _global['host']['vars']['file_ext_exe'])
 
         if con:
             cur_dir = os.getcwd()
@@ -90,6 +96,7 @@ class CTool(InitCTool):
               'arg1': 'download-file,03fed13e2e0447cf',
               'ctx': ctx,
               'url': url,
+              'directory': directory,
               'env': env,
               'timeout': timeout,
               'con': con, 
@@ -105,5 +112,5 @@ class CTool(InitCTool):
         rx = self.cm.access(ii)
         if self.cm.catch_error(rx): return rx
 
-        return {'return':0, 'found_path': path_to_clang}
+        return {'return':0, 'found_path': path_to_clang, 'version': version}
 

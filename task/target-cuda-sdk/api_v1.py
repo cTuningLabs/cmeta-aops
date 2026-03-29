@@ -1,5 +1,4 @@
-﻿import os
-import platform
+﻿import copy
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
@@ -30,32 +29,16 @@ class CTask(InitCTask):
         quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
 
-        ctx_tasks = ctx['tasks']
+        space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
 
-        if '#runner' in ctx_tasks['global']:
-            # runner is already running and called from somewhere again
-            return {'return':0}
+        features = copy.deepcopy(ctx['tasks']['global']['cuda']['features'])
+        features_nvcc = copy.deepcopy(ctx['tasks']['global']['nvcc']['features'])
 
-        # Set lock
-        ctx_tasks['global']['#runner'] = {}
+        features = self.cm.utils.common.deep_merge(features, features_nvcc, append_lists=True)
 
-        space = '  ' * ctx_tasks['nested_call'] if verbose else ''
-
-        result = {'return':0}
-
-        ######################################################################
-        os_name = platform.system()
-
-        result['platform_system'] = os_name
-        result['platform_system_lower'] = os_name.lower()
-
-        if os_name.lower() == 'darwin':
-            os_name = 'macOS'
-
-        result['os'] = os_name
-        result['os_lower'] = os_name.lower()
-
-        # Remove lock
-        del (ctx_tasks['global']['#runner'])
+        result = {
+          'return':0,
+          'features': features,
+        }
 
         return result

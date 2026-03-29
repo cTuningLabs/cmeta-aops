@@ -264,7 +264,14 @@ class CTask(InitCTask):
                     success = True
 
                 if success:
-                    os.replace(filename + '.download', filename)
+                    f1 = filename + '.download'
+                    f2 = filename
+
+                    if directory:
+                        f1 = os.path.join(directory, f1)
+                        f2 = os.path.join(directory, f2)
+
+                    os.replace(f1, f2)
 
                     if len(md5sums)>0:
                         md5sum = md5sums[u]

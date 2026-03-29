@@ -1,0 +1,7 @@
+store_global: True           # force
+storage_key: target-cuda-sdk # force storage key to avoid mixing up in the future
+cache: False                 # force
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: nvcc,7f0e9193fef74919

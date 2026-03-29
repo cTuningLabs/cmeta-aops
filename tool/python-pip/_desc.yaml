@@ -15,5 +15,5 @@ match_version:
     group: 1
 
 uses:
-- task: setup,a2f9b61079ce4333
-  name: python,c00fb574d8ca4463
+  - task: setup,a2f9b61079ce4333
+    name: python,c00fb574d8ca4463
