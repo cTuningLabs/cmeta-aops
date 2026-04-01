@@ -16,6 +16,7 @@ def read_tool(self,
         tool_tags: str = None,      # Tool tags
         tool_api_ver: int = None,   # Tool api ver (if has code)
         skip_uses: bool = False,    # Skip uses in init when we resolve storage key and params
+        params: dict = None,
 ):
 
     if self.cm.debug:
@@ -50,21 +51,54 @@ def read_tool(self,
          'load_api_class': 'CTool',
     }
 
+    pp = p.copy()
+
     r = self.cm.access(p)
-    if self.cm.catch_error(r, fail16=True):
-        return r
+    if self.cm.catch_error(r, fail16=True): return r
 
     artifact = r['artifact']
 
     cdesc = r['loaded_files']['_desc'].get('data', {})
 
+    _error = cdesc.get('_error')
+    if _error:
+        return self.cm.error(_error)
+
     tool_api_code = r['api_code']
+    tool_api_code2 = None
+
+    # Check for redirect (for tools such as pip-torch, etc)
+    _base_tool = cdesc.get('_base_tool')
+    _update_params = cdesc.get('_update_params')
+
+    artifact_au = r['artifact_au']
+
     if tool_api_code:
         tool_api_code.cmeta = artifact['cmeta']
         tool_api_code.cdesc = cdesc
         tool_api_code.cache_sep = self.cache_sep
+        tool_api_code.task_setup_code = self
 
-    artifact_au = r['artifact_au']
+    if cdesc.get('can_have_sub_tool', False):
+        if tool_api_code and hasattr(tool_api_code, 'customize_code') and callable(getattr(tool_api_code, 'customize_code')):
+            r = tool_api_code.customize_code(ctx, params)
+            if self.cm.catch_error(r): return r
+
+            artifacts = r['artifacts']
+            if len(artifacts)>0:
+                _sub_tool_cmeta_ref_parts = artifacts[0]['cmeta_ref_parts']
+                _sub_tool = _sub_tool_cmeta_ref_parts['artifact_alias'] + ',' if 'artifact_alias' in _sub_tool_cmeta_ref_parts else ''
+                _sub_tool += _sub_tool_cmeta_ref_parts['artifact_uid']
+
+                pp['select_artifact'] = _sub_tool
+                del(pp['select_tags'])
+
+                r = self.cm.access(pp)
+                if self.cm.catch_error(r, fail16=True): return r
+                
+                tool_api_code2 = r['api_code']
+                if tool_api_code2:
+                    tool_api_code2.task_setup_tool_code = tool_api_code
 
     artifact_print_name = artifact_au
     if 'artifact_print_name' in cdesc:
@@ -116,6 +150,8 @@ def read_tool(self,
         'local': _local,
         'desc': cdesc,
         'tool_api_code': tool_api_code,
+        'tool_api_code2': tool_api_code2,
         'artifact_au': artifact_au,
         'artifact_print_name': artifact_print_name,
+        '_update_params': _update_params,
     }

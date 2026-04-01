@@ -4,6 +4,7 @@ cache_params_use:
   all:
     llvm:
       version: "{{global.llvm.version}}"
+      path: "{{global.llvm.path}}"
 
 only_paths:
   all:

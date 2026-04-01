@@ -10,6 +10,7 @@ without explicit permission from the copyright holder.
 
 def build_tool(self,
         ctx: dict,                  # cMeta context
+        _result: dict,              # Aggregated result for setup
         name: str = None,           # Tool name
         tool_tags: str = None,      # Tool tags
         tool_api_ver: int = None,   # Tool api ver (if has code)
@@ -23,6 +24,7 @@ def build_tool(self,
         timeout: int = None,
         tool_read: dict = {},       # Preloaded tool data from read_tool
         task_desc: dict = {},
+        task_extra_control: dict = {},
         install: bool = None,
         build: bool = None,
         **params

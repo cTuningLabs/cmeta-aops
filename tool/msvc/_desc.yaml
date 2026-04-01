@@ -7,8 +7,10 @@ cache_params_use:
   windows:
     microsoft-sdk:
       version: "{{global.microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
+      path: "{{global.microsoft-sdk.path}}" 
     microsoft-visual-studio:
       version: "{{global.microsoft-visual-studio.version}}" # This version must be already resolved here, therefore not fuzzy
+      path: "{{global.microsoft-visual-studio.path}}" 
 
 match_version: 
   - regex: 'version\s*([\d.]+)'

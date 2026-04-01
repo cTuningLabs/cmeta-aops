@@ -4,6 +4,7 @@ cache_params_use:
   all:
     gcc:
       version: "{{global.gcc.version}}"
+      path: "{{global.gcc.path}}"
 
 only_paths:
   all:

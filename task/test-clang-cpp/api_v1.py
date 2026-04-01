@@ -1,4 +1,13 @@
-﻿import os
+﻿"""
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
+All rights reserved.
+
+Proprietary and confidential.
+This software may not be copied, modified, distributed, or used
+without explicit permission from the copyright holder.
+"""
+
+import os
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
@@ -41,6 +50,8 @@ class CTask(InitCTask):
         result = {'return':0}
 
         compiler = ctx['tasks']['global']['clang-cpp']
+        compiler_path = compiler['path']
+        compiler_qpath = compiler['qpath']
 
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')
@@ -56,7 +67,7 @@ class CTask(InitCTask):
         exe_file = 'test' + host['vars']['file_ext_exe']
 
         cmds = [
-          compiler['qpath'] + f' {src_file} -v -o ' + os.path.join('tmp', exe_file),
+          compiler_qpath + f' {src_file} -v -o ' + os.path.join('tmp', exe_file),
           os.path.join('tmp', exe_file),
         ]
 
@@ -82,5 +93,9 @@ class CTask(InitCTask):
             if returncode>0:
                 return {'return':99, 'error': f'cmd "{cmd}" failed with return code "{returncode}"'}
 
+
+        print ('='*80)
+        print (f'CLANG PATH: {compiler_path}')
+        print ('='*80)
 
         return result

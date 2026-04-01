@@ -421,9 +421,10 @@ class Category(InitCategory):
         _params = copy.deepcopy(ctx_tasks['params'])
         if _params and con and verbose:
             print ('')
+            print (f'{space}PARAMS for task "{artifact_au}":')
             for k in _params:
                 v = _params[k]
-                print(f'{space}* {k} = {v}')
+                print(f'{space}  * {k} = {v}')
 
 
         ###########################################################################################
@@ -445,10 +446,9 @@ class Category(InitCategory):
         cache_extra_params = cparams.get('cache_extra_params')
         cache_extra_tags = cparams.get('cache_extra_tags')
 
-        update = cparams.get('udpate', False)
+        update = cparams.get('update', False)
         clean = cparams.get('clean', False)
         new = cparams.get('new', False)
-
 
         ###########################################################################################
         # CHECK DEPENDENCIES
@@ -475,6 +475,8 @@ class Category(InitCategory):
         update_cache = False
 
         cache_params = {}
+        cache_features = {}
+
         if cache_extra_params:
             cache_params = copy.deepcopy(cache_extra_params)
 
@@ -545,12 +547,24 @@ class Category(InitCategory):
                     cache_params[k] = v
 
             if task_api_code is not None:
-                r = task_api_code.customize_cache_artifact(ctx, cache_alias_template, cache_extra_alias, cache_meta, cache_tags, cache_params, uparams)
+                r = task_api_code.customize_cache_artifact(
+                      ctx, 
+                      cache_alias_template, 
+                      cache_extra_alias, 
+                      cache_meta, 
+                      cache_tags, 
+                      cache_params, 
+                      uparams,
+                      cache_features = cache_features,
+                )
                 if self.cm.catch_error(r): return r
 
-                if cache_name is None and 'cache_name' in r: cache_name = r['cache_name']
-                if 'cache_extra_alias' in r: cache_extra_alias = r['cache_extra_alias']
-                if 'cache_alias_template' in r: cache_alias_template = r['cache_alias_template']
+                if cache_name is None and 'cache_name' in r: 
+                    cache_name = r['cache_name']
+                if 'cache_extra_alias' in r: 
+                    cache_extra_alias = r['cache_extra_alias']
+                if 'cache_alias_template' in r: 
+                    cache_alias_template = r['cache_alias_template']
 
             # Check if exists
             ii = {'category': uses_categories['cache'],
@@ -572,7 +586,8 @@ class Category(InitCategory):
             if new:
                 cache_artifacts = []
             else:
-                # Search in cache !
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                # Search in cache !                                                                
                 r = self.cm.access(ii)
                 if r['return']>0 and r['return']!=16: return r
 
@@ -594,10 +609,10 @@ class Category(InitCategory):
                     del(cache_params[key])
 
             ###########################################################################################
+            # If multiple cache entries found, remove unfinished ones
             tmp_cache_artifacts = []
 
             if len(cache_artifacts)>0:
-                # If multiple ones, remove unfinished ones
                 finished_cache_artifacts = []
 
                 for cache_artifact in cache_artifacts:
@@ -612,6 +627,78 @@ class Category(InitCategory):
                         finished_cache_artifacts.append(cache_artifact)
 
                 cache_artifacts = finished_cache_artifacts
+
+            ###########################################################################################
+            # Check if has cache_features
+            if cache_features and len(cache_artifacts)>0:
+                # First try to find if there are matching ones
+                matched_cache_artifacts = []
+                unmatched_cache_artifacts = []
+
+                for cache_artifact in cache_artifacts:
+                    x = cache_artifact['cmeta'].get('params', {})
+
+                    if self.cm.utils.common.matches_query(x, 
+                                                          cache_features, 
+                                                          match_version_func = self.cm.repos.match_version_func, 
+                                                          match_empty_version = True):
+                        matched_cache_artifacts.append(cache_artifact)
+                    else:
+                        unmatched_cache_artifacts.append(cache_artifact)
+
+                # If have matched artifacts, good - can keep going ...
+                if matched_cache_artifacts:
+                    cache_artifacts = matched_cache_artifacts
+
+                elif unmatched_cache_artifacts:
+                    text = ''
+
+                    if verbose:
+                        text += '\n'
+
+                    text += f'{space}WARNING: cache entries found for task "{artifact_alias}"'
+
+                    if cache_meta_params_copy:
+                        text += ' with parameters:\n'
+                        for p in sorted(cache_meta_params_copy):
+                            v = str(cache_meta_params_copy[p])
+                            text += f'{space}      * params.{p} = {v}\n'
+
+                    text += f'{space}'
+
+                    if cache_meta_params_copy:
+                        text += 'and '
+
+                    text += 'with features:\n'
+                    for p in sorted(cache_features):
+                        v = str(cache_features[p])
+                        text += f'{space}      * params.{p} = {v}\n'
+
+                    if con:
+                        print (text)
+
+                    x = f'{space}However, only one cache entry should exist with such parameters and different features.'
+                    if quiet or update:
+                        print (f'{x} Updating ...')
+                    else:
+                        y = input(f'{space}{x} Update (Y/n)? ').strip().lower()
+                        
+                        if y in ['n', 'no']:
+                            return self.cm.error(text + ' Cache update was cancelled by user')
+
+                    update = True
+                    cache_artifacts = unmatched_cache_artifacts
+
+            ###########################################################################################
+            # Merge back cache_features to cache_params
+
+            if cache_features:
+                for key in list(cache_features.keys()):
+                    if key.startswith('@'):
+                        del(cache_features[key])
+
+                cache_meta['params'] = self.cm.utils.common.deep_merge(cache_meta['params'], cache_features, append_lists=False)
+                cache_params = self.cm.utils.common.deep_merge(cache_params, cache_features, append_lists=False)
 
             ###########################################################################################
             if len(cache_artifacts)>1:
@@ -952,8 +1039,11 @@ class Category(InitCategory):
             if cache_params:
                 ctx_tasks_control['cache_params'] = cache_params
 
+            #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # Run custom code!
             result = task_api_code.run(ctx, **uparams)
-
+            #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 
             # Check if success or fail
             if result['return']>0:
                 if cache:
@@ -1000,6 +1090,7 @@ class Category(InitCategory):
             ii = {'category':uses_categories['cache'],
                   'command':'update',
                   'arg1':cache_name,
+                  'replace_lists': True,
                   'new_tags':['tmp-'],
                  }
 

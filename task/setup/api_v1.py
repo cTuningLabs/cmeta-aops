@@ -44,11 +44,12 @@ class CTask(InitCTask):
             self.logger.debug("RUNNING TASK setup init")
 
         r = self.cm.check_params(params, [
-                'detect','install', 'build', 'skip_install', 'skip_detect', 'skip_build',
+                'detect','install', 'build', 
+                'skip_detect', 'skip_install', 'skip_build',
                 'skip_install_uses', 'skip_build_uses',
                 'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 
-                'version', 'env', 'timeout', 'with', 'arg3', 'ignore_install_errors',
-                'ignore_build_errors',
+                'version', 'env', 'timeout', 'with', 'arg3', 
+                'ignore_install_errors', 'ignore_build_errors',
                 'custom_install', 'custom_build',
             ], __name__)
         if self.cm.catch_error(r): return r
@@ -65,6 +66,10 @@ class CTask(InitCTask):
         tool_tags = params.get('tool_tags')
         tool_api_ver = params.get('tool_api_ver')
 
+        if con and verbose:
+            print ('')
+            print (f'{space}RUN SETUP TASK INIT: {name} ("{__file__})')
+
         ###########################################################################################
         # SELECT TOOL ARTIFACT
         r = self.read_tool(
@@ -73,6 +78,7 @@ class CTask(InitCTask):
             tool_tags=tool_tags,
             tool_api_ver=tool_api_ver,
             skip_uses = True,
+            params = params,
         )
         if self.cm.catch_error(r, fail16=True): 
             r['return'] = 1
@@ -80,6 +86,7 @@ class CTask(InitCTask):
 
         desc = r['desc']
         tool_api_code = r['tool_api_code']
+        tool_api_code2 = r.get('tool_api_code2')
         artifact_au = r['artifact_au']
         artifact_print_name = r['artifact_print_name']
 
@@ -89,11 +96,19 @@ class CTask(InitCTask):
             result['uses'] = desc['uses']
 
         # Update params
+        _update_params = r.get('_update_params')
+        if _update_params:
+            params = self.cm.utils.common.deep_merge(params, _update_params, append_lists=True)
+
         params['name'] = artifact_au
 
         storage_key = desc.get('storage_key')
 
         # Check if extra init from a tool
+        if tool_api_code2 and hasattr(tool_api_code2, 'init2') and callable(getattr(tool_api_code2, 'init2')):
+            r = tool_api_code2.init2(ctx, params)
+            if self.cm.catch_error(r): return r
+
         if hasattr(tool_api_code, 'init') and callable(getattr(tool_api_code, 'init')):
             r = tool_api_code.init(ctx, params)
             if self.cm.catch_error(r): return r
@@ -126,6 +141,7 @@ class CTask(InitCTask):
             name=name,
             tool_tags=tool_tags,
             tool_api_ver=tool_api_ver,
+            params = params,
         )
         if self.cm.catch_error(r, fail16=True): 
             r['return'] = 1
@@ -183,6 +199,8 @@ class CTask(InitCTask):
 
         result['cache_extra_alias'] = cache_extra_alias
 
+        cache_features = extra['cache_features']
+
         name = params.get('name')
         tool_tags = params.get('tool_tags')
         tool_api_ver = params.get('tool_api_ver')
@@ -190,10 +208,11 @@ class CTask(InitCTask):
         ###########################################################################################
         # SELECT TOOL ARTIFACT
         r = self.read_tool(
-            ctx=ctx,
-            name=name,
-            tool_tags=tool_tags,
-            tool_api_ver=tool_api_ver,
+            ctx = ctx,
+            name = name,
+            tool_tags = tool_tags,
+            tool_api_ver = tool_api_ver,
+            params = params,
         )
         if self.cm.catch_error(r, fail16=True): 
             r['return'] = 1
@@ -206,27 +225,36 @@ class CTask(InitCTask):
         uname = ctx['tasks']['global']['host']['os']['uname']
 
         # Check if params keys are defined in cdesc to be added to cache_tags
-        for k in desc.get('cache_params', []):
-            # Check if need to expand
-            v = None
+        desc_cache_params = desc.get('cache_params', [])
+        desc_cache_features = desc.get('cache_features', [])
 
-            if k.startswith('{{') or k.startswith('}}'):
-                k = k[2:-2]
+        for dsc in [
+                   (desc_cache_params, cache_params),
+                   (desc_cache_features, cache_features),
+            ]:
 
-                kk = k[1:] if k.startswith('@') else k
+            for k in dsc[0]:
 
-                r = self.cm.utils.common.expand_string('{{'+kk+'}}', ctx['tasks'])
-                if self.cm.catch_error(r): return r
-                v = r['string']
+                # Check if need to expand
+                v = None
 
-            else:
-                kk = k[1:] if k.startswith('@') else k
+                if k.startswith('{{') or k.startswith('}}'):
+                    k = k[2:-2]
 
-            if v is None:
-                v = params.get(kk)
+                    kk = k[1:] if k.startswith('@') else k
 
-            if v is not None:
-                cache_params[k] = v
+                    r = self.cm.utils.common.expand_string('{{'+kk+'}}', ctx['tasks'])
+                    if self.cm.catch_error(r): return r
+
+                    v = r['string']
+
+                else:
+                    kk = k[1:] if k.startswith('@') else k
+
+                    v = self.cm.utils.common.smart_get(params, kk, None)
+
+                if v is not None:
+                     self.cm.utils.common.smart_set(dsc[1], k, v)
 
 
         if desc.get('cache_params_with', False):
@@ -250,18 +278,19 @@ class CTask(InitCTask):
                 r = self.cm.utils.common.expand_strings_in_dict(v, ctx['tasks'])
                 if self.cm.catch_error(r): return r
 
+                # CREATE IN cache_params['use']
                 cache_params_use = cache_params.setdefault('use', {})
                 cache_params_use = self.cm.utils.common.deep_merge(cache_params_use, v, append_lists=True)
 
-
         # Check if extra init from a tool
-        if hasattr(tool_api_code, 'customize_cache_artifact') and callable(getattr(tool_api_code, 'customize_cache_artifact')):
-            r = tool_api_code.customize_cache_artifact(
+        if hasattr(tool_api_code, 'customize_tool_cache_artifact') and callable(getattr(tool_api_code, 'customize_tool_cache_artifact')):
+            r = tool_api_code.customize_tool_cache_artifact(
                  ctx, 
                  result, 
                  params, 
                  cache_tags, 
                  cache_params,
+                 cache_features,
             )
             if self.cm.catch_error(r): return r
 
@@ -309,12 +338,35 @@ class CTask(InitCTask):
         quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
 
+        nested_call = ctx_tasks.setdefault('nested_call', 0)
+        space = '  ' * nested_call if verbose else ''
+
+        cache_params = ctx_tasks['run_control'].get('cache_params')
+
+        clean = ctx_tasks['run_control'].get('clean', False)
+        update = ctx_tasks['run_control'].get('update', False)
+        new = ctx_tasks['run_control'].get('new', False)
+
+        # TBD: add better support for clean, update and new in tools
+        #  for now:
+        #  * partial support in pip only ...
+        #  * just for simplicity, if any of these is set,
+        #    force skip detect to go to install or build
+
+        if clean or update:
+            if con and verbose:
+                print ('')
+                print (f'{space}INFO: force reinstall or rebuild')
+
+            skip_detect = True
+
         # Read tool
         r = self.read_tool(
-            ctx=ctx,
-            name=name,
-            tool_tags=tool_tags,
-            tool_api_ver=tool_api_ver,
+            ctx = ctx,
+            name = name,
+            tool_tags = tool_tags,
+            tool_api_ver = tool_api_ver,
+            params = kwargs,
         )
         if self.cm.catch_error(r, fail16=True): 
             r['return'] = 1
@@ -322,13 +374,15 @@ class CTask(InitCTask):
 
         kwargs_copy['tool_read'] = r
         kwargs_copy['task_desc'] = self.cdesc
+        kwargs_copy['task_extra_control'] = {
+          'clean': clean, 
+          'update': update,
+          'new': new,
+        }
 
-        space = r['space']
         desc = r['desc']
         artifact_au = r['artifact_au']
         artifact_print_name = r['artifact_print_name']
-
-        cache_params = ctx['tasks']['run_control'].get('cache_params')
 
         uname = ctx_tasks['global']['host']['os']['uname']
 
@@ -409,8 +463,10 @@ class CTask(InitCTask):
         if not success and install and not skip_install:
             # Attempt to install tool
 
-            r = self.install_tool(ctx, **kwargs_copy)
+            r = self.install_tool(ctx, result, **kwargs_copy)
             if not ignore_install_errors and self.cm.catch_error(r): return r
+
+            _update_params = r.get('_update_params')
 
             if r['return'] == 0 or ignore_install_errors:
                 if ignore_install_errors or not r.get('failed', False):
@@ -428,20 +484,33 @@ class CTask(InitCTask):
                     if r['return'] == 0:
                         result = r
                         success = True
+
+                        if _update_params:
+                            _result_update_params = result.setdefault('_update_params', {})
+                            _result_update_params = self.cm.utils.common.deep_merge(_result_update_params, _update_params, append_lists=True)
+
+                    elif con:
+                        print ('')
+                        err = r['error']
+                        print (f'{space}INSTALL WARNING: {err} !')
+
             elif con:
                 print ('')
                 err = r['error']
-                print (f'{space}WARNING: {err} !')
+                print (f'{space}INSTALL WARNING: {err} !')
+
 
         ##############################################################################
         if not success and build and not skip_build:
             # Attempt to build tool
 
-            r = self.build_tool(ctx, **kwargs_copy)
+            r = self.build_tool(ctx, result, **kwargs_copy)
             if not ignore_build_errors and self.cm.catch_error(r): return r
 
-            if r['return'] == 0 or ignore_build_errors:
-                if ignore_build_errors or not r.get('failed', False):
+            _update_params = r.get('_update_params')
+
+            if r['return'] == 0 or ignore_install_errors:
+                if ignore_install_errors or not r.get('failed', False):
                     found_path = r.get('found_path')
                     found_paths = r.get('found_paths')
 
@@ -456,10 +525,20 @@ class CTask(InitCTask):
                     if r['return'] == 0:
                         result = r
                         success = True
+
+                        if _update_params:
+                            _result_update_params = result.setdefault('_update_params', {})
+                            _result_update_params = self.cm.utils.common.deep_merge(_result_update_params, _update_params, append_lists=True)
+
+                    elif con:
+                        print ('')
+                        err = r['error']
+                        print (f'{space}BUILD WARNING: {err} !')
+
             elif con:
                 print ('')
                 err = r['error']
-                print (f'{space}WARNING: {err} !')
+                print (f'{space}BUILD WARNING: {err} !')
 
         ##############################################################################
         if not success:
@@ -519,10 +598,11 @@ class CTask(InitCTask):
         tool_api_ver = params.get('tool_api_ver')
 
         r = self.read_tool(
-            ctx=ctx,
-            name=name,
-            tool_tags=tool_tags,
-            tool_api_ver=tool_api_ver,
+            ctx = ctx,
+            name = name,
+            tool_tags = tool_tags,
+            tool_api_ver = tool_api_ver,
+            params = params,
         )
         if self.cm.catch_error(r, fail16=True): 
             r['return'] = 1
@@ -541,3 +621,4 @@ class CTask(InitCTask):
             if 'result' in r: _result['result'] = r['result']
 
         return _result
+

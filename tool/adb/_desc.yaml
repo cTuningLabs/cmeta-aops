@@ -5,6 +5,7 @@ cache_params_use:
   all:
     google-platform-tools:
       version: "{{global.google-platform-tools.version}}" # This version must be already resolved here, therefore not fuzzy
+      path: "{{global.google-platform-tools.path}}" 
 
 match_version: 
   - regex: 'android debug bridge version\s+(\d+\.\d+\.\d+)'

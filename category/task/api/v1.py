@@ -427,7 +427,6 @@ class Category(InitCategory):
         clean = cparams.get('clean', False)
         new = cparams.get('new', False)
 
-
         ###########################################################################################
         # CHECK DEPENDENCIES
         uses = cdesc.get('uses', []).copy()
@@ -502,12 +501,23 @@ class Category(InitCategory):
                     cache_params[k] = v
 
             if task_api_code is not None:
-                r = task_api_code.customize_cache_artifact(ctx, cache_alias_template, cache_extra_alias, cache_meta, cache_tags, cache_params, uparams)
+                r = task_api_code.customize_cache_artifact(
+                      ctx, 
+                      cache_alias_template, 
+                      cache_extra_alias, 
+                      cache_meta, 
+                      cache_tags, 
+                      cache_params, 
+                      uparams,
+                )
                 if self.cm.catch_error(r): return r
 
-                if cache_name is None and 'cache_name' in r: cache_name = r['cache_name']
-                if 'cache_extra_alias' in r: cache_extra_alias = r['cache_extra_alias']
-                if 'cache_alias_template' in r: cache_alias_template = r['cache_alias_template']
+                if cache_name is None and 'cache_name' in r: 
+                    cache_name = r['cache_name']
+                if 'cache_extra_alias' in r: 
+                    cache_extra_alias = r['cache_extra_alias']
+                if 'cache_alias_template' in r: 
+                    cache_alias_template = r['cache_alias_template']
 
             # Check if exists
             ii = {'category':uses_categories['cache'],
@@ -757,7 +767,6 @@ class Category(InitCategory):
 
         ###########################################################################################
         # RUN TASK CODE IF EXISTS
-
         time_start2 = time.perf_counter()
         if not skip and task_api_code is not None \
             and hasattr(task_api_code, 'run') and callable(getattr(task_api_code, 'run')):

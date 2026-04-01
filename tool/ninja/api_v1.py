@@ -1,4 +1,13 @@
-﻿import os
+﻿"""
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
+All rights reserved.
+
+Proprietary and confidential.
+This software may not be copied, modified, distributed, or used
+without explicit permission from the copyright holder.
+"""
+
+import os
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 
@@ -119,5 +128,9 @@ class CTool(InitCTool):
         rx = self.cm.access(ii)
         if self.cm.catch_error(rx): return rx
 
-        return {'return':0, 'found_path': path_to_ninja}
+        return {
+          'return': 0, 
+          'install_cmd': None, 
+          'found_path': path_to_ninja,
+        }
 

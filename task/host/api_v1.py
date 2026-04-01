@@ -1,11 +1,20 @@
-﻿import os
+﻿"""
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
+All rights reserved.
+
+Proprietary and confidential.
+This software may not be copied, modified, distributed, or used
+without explicit permission from the copyright holder.
+"""
+
+import os
 import platform
 import sys
 import struct
 import copy
 import shutil
 import subprocess
-
+import socket
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
@@ -46,6 +55,7 @@ class CTask(InitCTask):
         """
 
         con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
 
         space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
@@ -175,6 +185,8 @@ class CTask(InitCTask):
         # Finish automation
         result['os'] = host_os
 
+        result['hostname'] = get_hostname_info()
+
         # Common vars
         all_vars = {
           'windows':{
@@ -204,6 +216,8 @@ class CTask(InitCTask):
         
         result['vars'] = all_vars[vars_os]
 
+        result['ck'] = {'version':self.cm.__version__}
+
         # Initialize for global use !
         result['_aggregate'] = {'env':_env}
 
@@ -220,7 +234,7 @@ class CTask(InitCTask):
 
         return result
 
-
+###################################################################################################
 def detect_linux_env():
     """
     Returns a dict like:
@@ -423,3 +437,76 @@ def detect_linux_env():
         "sudo": sudo_installed,
         "passwordless_sudo": passwordless_sudo,
     }
+
+###################################################################################################
+def get_hostname_info():
+    result = {
+        "hostname": None,
+        "ipv4": None,
+        "ipv6": None,
+        "ipv4_default": None,
+        "ipv6_default": None,
+    }
+
+    # --- Hostname ---
+    try:
+        result["hostname"] = socket.gethostname()
+    except Exception:
+        pass
+
+    ipv4_set = set()
+    ipv6_set = set()
+
+    # --- Helper: outbound IP (best/default IP) ---
+    def get_outbound_ip(family, target):
+        try:
+            s = socket.socket(family, socket.SOCK_DGRAM)
+            try:
+                s.connect(target)
+                return s.getsockname()[0]
+            finally:
+                s.close()
+        except Exception:
+            return None
+
+    # Get default IPs first (most important)
+    ipv4_default = get_outbound_ip(socket.AF_INET, ("8.8.8.8", 80))
+    ipv6_default = get_outbound_ip(socket.AF_INET6, ("2001:4860:4860::8888", 80))
+
+    result["ipv4_default"] = ipv4_default
+    result["ipv6_default"] = ipv6_default
+
+    if ipv4_default:
+        ipv4_set.add(ipv4_default)
+    if ipv6_default:
+        ipv6_set.add(ipv6_default)
+
+    # --- Hostname resolution (adds more IPs) ---
+    try:
+        infos = socket.getaddrinfo(socket.gethostname(), None)
+        for family, _, _, _, sockaddr in infos:
+            ip = sockaddr[0]
+            if family == socket.AF_INET:
+                ipv4_set.add(ip)
+            elif family == socket.AF_INET6:
+                ipv6_set.add(ip)
+    except Exception:
+        pass
+
+    # --- Cleanup helper ---
+    def finalize(ip_set):
+        if not ip_set:
+            return None
+
+        # Prefer non-loopback addresses
+        non_loopback = [
+            ip for ip in ip_set
+            if not ip.startswith("127.") and ip != "::1"
+        ]
+
+        return non_loopback if non_loopback else list(ip_set)
+
+    result["ipv4"] = finalize(ipv4_set)
+    result["ipv6"] = finalize(ipv6_set)
+
+    return result

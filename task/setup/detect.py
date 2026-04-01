@@ -25,6 +25,7 @@ def detect_existing_tool(self,
         timeout: int = 60,
         tool_read: dict = {},       # Preloaded tool data from read_tool
         task_desc: dict = {},
+        task_extra_control: dict = {},
         install: bool = None,
         build: bool = None,
         **params
@@ -72,6 +73,8 @@ def detect_existing_tool(self,
     # Check if custom detect
     found_paths_with_versions = {}
     parsed_paths_with_versions = []
+
+    warning = ''
 
     if hasattr(tool_api_code, 'detect') and callable(getattr(tool_api_code, 'detect')):
         r = tool_api_code.detect(ctx, params)
@@ -315,6 +318,10 @@ def detect_existing_tool(self,
                 x['path'] = path
                 parsed_paths_with_versions.append(x)
 
+                warning += f'\n  * detected version for "{path}": "{detected_version}"'
+
+            else:
+                warning += f'\n  * version for "{path}" was not detected from output "{output}"'
 
     if not parsed_paths_with_versions:
         return self.cm.error(f'failed to find tool "{artifact_print_name}" with parsed version', 16)
@@ -351,7 +358,7 @@ def detect_existing_tool(self,
                 matched_paths_with_versions.append(x)
 
     if not matched_paths_with_versions:
-        return self.cm.error(f'failed to find tool "{artifact_print_name}" with matched version', 16)
+        return self.cm.error(f'failed to find tool "{artifact_print_name}" with matched version ({version}):{warning}', 16)
 
     if hasattr(tool_api_code, 'check_features') and callable(getattr(tool_api_code, 'check_features')):
         r = tool_api_code.check_features(ctx, matched_paths_with_versions, params)
@@ -498,7 +505,6 @@ def detect_existing_tool(self,
             if os.path.abspath(os.path.normpath(p)) == path_bin_norm:
                 result['path_bin_in_env'] = True
                 break
-
 
     if version:
         result['requested_version'] = version

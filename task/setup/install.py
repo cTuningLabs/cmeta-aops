@@ -11,6 +11,7 @@ import os
 
 def install_tool(self,
         ctx: dict,                  # cMeta context
+        _result: dict,              # Aggregated result for setup
         name: str = None,           # Tool name
         tool_tags: str = None,      # Tool tags
         tool_api_ver: int = None,   # Tool api ver (if has code)
@@ -24,11 +25,12 @@ def install_tool(self,
         timeout: int = None,
         tool_read: dict = {},       # Preloaded tool data from read_tool
         task_desc: dict = {},
+        task_extra_control: dict = {},
         install: bool = None,
         build: bool = None,
         skip_install_uses: bool = None,
         **params
-):
+    ):
 
     if self.cm.debug:
         self.logger.debug("RUNNING TASK setup install")
@@ -41,6 +43,7 @@ def install_tool(self,
     _local = tool_read['local']
     desc = tool_read['desc']
     tool_api_code = tool_read['tool_api_code']
+    tool_api_code2 = tool_read.get('tool_api_code2')
     artifact_au = tool_read['artifact_au']
     artifact_print_name = tool_read['artifact_print_name']
 
@@ -60,9 +63,12 @@ def install_tool(self,
 
     # Check direct or custom installation
     install_cmd_desc = desc.get('install_cmd', {})
-
     os_key = uname if (uname == 'windows' or uname in install_cmd_desc) else 'linux'
     install_cmd = install_cmd_desc.get('all') if 'all' in install_cmd_desc else install_cmd_desc.get(os_key)
+
+    install_cmd_ver_desc = desc.get('install_cmd_version', {})
+    os_key = uname if (uname == 'windows' or uname in install_cmd_ver_desc) else 'linux'
+    install_cmd_ver = install_cmd_ver_desc['all'] if 'all' in install_cmd_ver_desc else install_cmd_ver_desc.get(os_key)
 
     has_custom_install = True if hasattr(tool_api_code, 'install') and callable(getattr(tool_api_code, 'install')) else False
 
@@ -156,13 +162,19 @@ def install_tool(self,
 
     install_params = params.copy()
 
+    _control = {
+      'con': con,
+      'quiet': quiet,
+      'verbose': verbose,
+      'space': space,
+      'clean': task_extra_control['clean'],
+      'update': task_extra_control['update'],
+      'new': task_extra_control['new'],
+    }
+
+
     install_params.update({
-       'control': {
-          'con': con,
-          'quiet': quiet,
-          'verbose': verbose,
-          'space': space,
-       },
+       'control': _control,
        'result': result,
        'version': version,
        'version_pip': version_pip,
@@ -183,6 +195,7 @@ def install_tool(self,
             print (f'{space}WARNING: custom installation failed ({err})')
 
         result = r
+        # MAY CONTAIN 'found_path' from install!
 
         if 'install_cmd' in r:
             # Can alter or skip CMD (if set to None)
@@ -193,42 +206,51 @@ def install_tool(self,
 
     if install_cmd and not force_custom_install:
         # Add version if supported
-        if version:
-            install_cmd_version = desc.get('install_cmd_version')
-            if install_cmd_version: 
-                os_key = uname if (uname == 'windows' or uname in install_cmd_version) else 'linux'
-                install_cmd_ver = install_cmd_version['all'] if 'all' in install_cmd_version else install_cmd_version.get(os_key)
+        if version and install_cmd_ver:
+            if '{{pip_version}}' in install_cmd_ver:
+                xversion = '=='+version if version and version[0].isdigit() else version
+                install_cmd = install_cmd_ver.replace('{{pip_version}}', xversion)
 
-                if install_cmd_ver:
-                    if '{{pip_version}}' in install_cmd_ver:
-                        xversion = '=='+version if version and version[0].isdigit() else version
-                        install_cmd = install_cmd_ver.replace('{{pip_version}}', xversion)
+            elif '{{version}}' in install_cmd_ver:
+                install_cmd = install_cmd_ver.replace('{{version}}', version)
 
-                    elif '{{version}}' in install_cmd_ver:
-                        install_cmd = install_cmd_ver.replace('{{version}}', version)
+            elif '{{simple_version}}' in install_cmd_ver or '{{major_version}}' in install_cmd_ver:
+                simple_version = True
+                for k in ['>', '<', '*', '?']:
+                    if k in version:
+                        simple_version = False
+                        break
 
-                    elif '{{simple_version}}' in install_cmd_ver or '{{major_version}}' in install_cmd_ver:
-                        simple_version = True
-                        for k in ['>', '<', '*', '?']:
-                            if k in version:
-                                simple_version = False
-                                break
+                if simple_version:
+                    xversion = version
+                    if xversion.startswith('=='):
+                        xversion = xversion[2:]
 
-                        if simple_version:
-                            xversion = version
-                            if xversion.startswith('=='):
-                                xversion = xversion[2:]
+                    major_version = xversion
+                    j = major_version.find('.')
+                    if j>0:
+                        major_version = major_version[:j]
 
-                            major_version = xversion
-                            j = major_version.find('.')
-                            if j>0:
-                                major_version = major_version[:j]
-
-                            install_cmd = install_cmd_ver.replace('{{simple_version}}', xversion)
-                            install_cmd = install_cmd.replace('{{major_version}}', major_version)
+                    install_cmd = install_cmd_ver.replace('{{simple_version}}', xversion)
+                    install_cmd = install_cmd.replace('{{major_version}}', major_version)
 
         package_name = desc['package_name'] if 'package_name' in desc else artifact_au
 
+        # Start from possible sub-tool to customize install cmd and params
+        if tool_api_code2 and hasattr(tool_api_code2, 'customize_install_cmd2') and callable(getattr(tool_api_code2, 'customize_install_cmd2')):
+            r = tool_api_code2.customize_install_cmd2(ctx, install_cmd, install_params, env, timeout)
+            if self.cm.catch_error(r): return r
+
+            if 'install_cmd' in r: 
+                install_cmd = r['install_cmd']
+
+            if 'timeout' in r:
+                timeout = r['timeout']
+
+            if 'package_name' in r:
+                package_name = r['package_name']
+
+        # Then finish updating install cmd and params
         if hasattr(tool_api_code, 'customize_install_cmd') and callable(getattr(tool_api_code, 'customize_install_cmd')):
             r = tool_api_code.customize_install_cmd(ctx, install_cmd, install_params, env, timeout)
             if self.cm.catch_error(r): return r
@@ -249,6 +271,8 @@ def install_tool(self,
 
         # Update package name if installation is from host ...
         install_cmd = install_cmd.replace('{{name}}', package_name)
+
+        result['install_cmd'] = install_cmd
 
         # Run installation
         ii = {'category': 'task,c36be4b9314a45e0',
@@ -281,6 +305,5 @@ def install_tool(self,
     if hasattr(tool_api_code, 'post_install') and callable(getattr(tool_api_code, 'post_install')):
         r = tool_api_code.post_install(ctx, install_params)
         if self.cm.catch_error(r): return r
-
 
     return result

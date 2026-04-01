@@ -1,17 +1,23 @@
 storage_key: 'pip-{{params.with.package}}'
 
-artifact_print_name: 'pip ({{params.with.package}})'
+artifact_print_name: 'pip ({{params.with.package|-}},{{params.arg3|}})'
+
+can_have_sub_tool: True # Can have sub tools pip-{name}
+
+cache_params_with: False # Otherwise add various flags that mix up cache detection
 
 cache_params:
-  - package
-  - "@version"                  # Treat @keys such as this version as fuzzy versions or versions with conditions during cMeta search!
-
-cache_params_with: True
+  - with.package
 
 cache_params_use: 
   all:
     python:
       version: "{{global.python.version}}" # This version must be already resolved here, therefore not fuzzy
+      path: "{{global.python.path}}" # Path can be from the different venv
+
+cache_features:
+  - with.extras
+
 
 match_version: 
   - regex: "version: (.+)"
@@ -23,9 +29,9 @@ cmd_filename: "{{global.python.filename}} -m pip"
 cmd_get_version: '{{global.pip.cmd}} show {{params.with.package}}'
 
 install_cmd:
-  all: '{{global.pip.cmd}} install {{params.with.flags|}} {{params.with.package}} {{params.with.post_flags|}}'
+  all: '{{global.pip.cmd}} install {{params.with.flags|}} {{custom_package}} {{params.with.post_flags|}}'
 install_cmd_version:
-  all: '{{global.pip.cmd}} install {{params.with.flags|}} "{{params.with.package}}{{pip_version}}" {{params.with.post_flags|}}'
+  all: '{{global.pip.cmd}} install {{params.with.flags|}} {{custom_package}}{{custom_version}} {{params.with.post_flags|}}'
 
 uses:
   - task: setup,a2f9b61079ce4333

@@ -1,4 +1,13 @@
-﻿from __future__ import annotations
+﻿"""
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
+All rights reserved.
+
+Proprietary and confidential.
+This software may not be copied, modified, distributed, or used
+without explicit permission from the copyright holder.
+"""
+
+from __future__ import annotations
 
 import ctypes
 import json
@@ -83,6 +92,24 @@ def _sysctl_boolish(name: str) -> Optional[bool]:
     if s in {"0", "false", "no"}:
         return False
     return None
+
+
+def _join_nonempty(parts: List[Optional[str]], sep: str = ", ") -> Optional[str]:
+    items = [str(p).strip() for p in parts if p is not None and str(p).strip()]
+    return sep.join(items) if items else None
+
+
+def _compose_extended_identifier(
+    name: Optional[str],
+    descriptor: Optional[str],
+    vendor: Optional[str],
+) -> Optional[str]:
+    head = str(name or "").strip()
+    detail = _join_nonempty([descriptor, vendor])
+
+    if head and detail and detail not in head:
+        return f"{head} ({detail})"
+    return head or detail
 
 
 # ============================================================
@@ -376,6 +403,80 @@ def _linux_features() -> Dict[str, Any]:
     }
 
 
+def _linux_identifier_info() -> Dict[str, Any]:
+    cpuinfo = Path("/proc/cpuinfo")
+    if not cpuinfo.exists():
+        return {}
+
+    try:
+        fields: Dict[str, str] = {}
+        for line in cpuinfo.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                if fields:
+                    break
+                continue
+            if ":" not in line:
+                continue
+            key, value = [x.strip() for x in line.split(":", 1)]
+            fields.setdefault(key.lower(), value)
+    except Exception:
+        return {}
+
+    if not fields:
+        return {}
+
+    model_name = fields.get("model name") or fields.get("hardware")
+    vendor = fields.get("vendor_id") or fields.get("cpu implementer")
+
+    signature_parts = []
+    family = fields.get("cpu family")
+    model = fields.get("model")
+    stepping = fields.get("stepping")
+    if family:
+        signature_parts.append(f"Family {family}")
+    if model:
+        signature_parts.append(f"Model {model}")
+    if stepping:
+        signature_parts.append(f"Stepping {stepping}")
+
+    arch_parts = []
+    cpu_arch = fields.get("cpu architecture")
+    cpu_variant = fields.get("cpu variant")
+    cpu_part = fields.get("cpu part")
+    cpu_revision = fields.get("cpu revision")
+    if cpu_arch:
+        arch_parts.append(f"Arch {cpu_arch}")
+    if cpu_variant:
+        arch_parts.append(f"Variant {cpu_variant}")
+    if cpu_part:
+        arch_parts.append(f"Part {cpu_part}")
+    if cpu_revision:
+        arch_parts.append(f"Revision {cpu_revision}")
+
+    descriptor = _join_nonempty([
+        " ".join(signature_parts) if signature_parts else None,
+        " ".join(arch_parts) if arch_parts else None,
+    ])
+
+    cpu_signature = {
+        "model_name": model_name,
+        "vendor": vendor,
+        "family": family,
+        "model": model,
+        "stepping": stepping,
+        "cpu_architecture": cpu_arch,
+        "cpu_variant": cpu_variant,
+        "cpu_part": cpu_part,
+        "cpu_revision": cpu_revision,
+    }
+
+    return {
+        "cpu_signature": {k: v for k, v in cpu_signature.items() if v not in (None, "")},
+        "extended_identifier": _compose_extended_identifier(model_name, descriptor, vendor),
+    }
+
+
 def _linux_info() -> Dict[str, Any]:
     info: Dict[str, Any] = {
         "platform": "linux",
@@ -385,6 +486,7 @@ def _linux_info() -> Dict[str, Any]:
     info.update(_linux_lscpu())
     info.update(_linux_sysfs_topology())
     info.update(_linux_features())
+    info.update(_linux_identifier_info())
 
     if info.get("socket_count") is None:
         info["socket_count"] = info.get("package_count_sysfs")
@@ -467,6 +569,43 @@ def _macos_features() -> Dict[str, Any]:
     }
 
 
+def _macos_identifier_info() -> Dict[str, Any]:
+    brand = _sysctl_str("machdep.cpu.brand_string")
+    vendor = _sysctl_str("machdep.cpu.vendor")
+    family = _sysctl_str("machdep.cpu.family")
+    model = _sysctl_str("machdep.cpu.model")
+    stepping = _sysctl_str("machdep.cpu.stepping")
+
+    signature_parts = []
+    if family:
+        signature_parts.append(f"Family {family}")
+    if model:
+        signature_parts.append(f"Model {model}")
+    if stepping:
+        signature_parts.append(f"Stepping {stepping}")
+
+    arm_brand = None
+    if not brand:
+        arm_brand = _sysctl_str("hw.machine")
+
+    cpu_signature = {
+        "brand": brand or arm_brand,
+        "vendor": vendor,
+        "family": family,
+        "model": model,
+        "stepping": stepping,
+    }
+
+    return {
+        "cpu_signature": {k: v for k, v in cpu_signature.items() if v not in (None, "")},
+        "extended_identifier": _compose_extended_identifier(
+            brand or arm_brand,
+            " ".join(signature_parts) if signature_parts else None,
+            vendor,
+        ),
+    }
+
+
 def _macos_info() -> Dict[str, Any]:
     info: Dict[str, Any] = {
         "platform": "macos",
@@ -505,6 +644,7 @@ def _macos_info() -> Dict[str, Any]:
         }
 
     info.update(_macos_features())
+    info.update(_macos_identifier_info())
     info.update(_normalize_arch_name(_python_arch_raw()))
     return info
 
@@ -549,9 +689,13 @@ def _windows_wmi_info() -> Dict[str, Any]:
         "packages": [],
     }
 
+    processor_identifier = (os.environ.get("PROCESSOR_IDENTIFIER") or "").strip()
+    if processor_identifier:
+        info["processor_identifier"] = processor_identifier
+
     ps = r"""
 $items = Get-CimInstance Win32_Processor |
-  Select-Object DeviceID, Name, Architecture, NumberOfCores, NumberOfLogicalProcessors
+  Select-Object DeviceID, Name, Description, Caption, Manufacturer, ProcessorId, Family, Stepping, Architecture, NumberOfCores, NumberOfLogicalProcessors
 $items | ConvertTo-Json -Depth 3
 """.strip()
 
@@ -560,7 +704,25 @@ $items | ConvertTo-Json -Depth 3
         data = json.loads(raw)
         if isinstance(data, dict):
             data = [data]
+
+        for pkg in data:
+            description = str(pkg.get("Description") or pkg.get("Caption") or "").strip()
+            manufacturer = str(pkg.get("Manufacturer") or "").strip()
+
+            if description and manufacturer:
+                pkg["ExtendedIdentifier"] = f"{description}, {manufacturer}"
+            elif description:
+                pkg["ExtendedIdentifier"] = description
+            elif processor_identifier:
+                pkg["ExtendedIdentifier"] = processor_identifier
+
         info["packages"] = data
+        if data:
+            info["extended_identifier"] = (
+                data[0].get("ExtendedIdentifier")
+                or data[0].get("Description")
+                or data[0].get("Name")
+            )
         info["package_count"] = len(data)
         info["physical_core_count"] = sum(
             int(x.get("NumberOfCores") or 0) for x in data
@@ -570,6 +732,9 @@ $items | ConvertTo-Json -Depth 3
         )
     except Exception as e:
         info["wmi_error"] = str(e)
+
+    if info.get("extended_identifier") is None and processor_identifier:
+        info["extended_identifier"] = processor_identifier
 
     return info
 

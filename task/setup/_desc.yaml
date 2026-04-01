@@ -6,15 +6,15 @@ params_map:
   arg2: name
 
 cache_params:
-- name
-- "@version" # Treat @keys as fuzzy versions or versions with conditions during cMeta search!
-- tool_path  # To separate various tools (python for example) even with the same name/version
+  - name
+  - "@version" # Treat @keys as fuzzy versions or versions with conditions during cMeta search!
+  - tool_path  # To separate various tools (python for example) even with the same name/version
 
 
 # Normally this dependency is already added by higher-level tasks
 # but if we decide to use setup direct from CMD, it will set up host
 uses_before_init:
-- task: runner,1e48cc0c5f6041a5
+  - task: runner,1e48cc0c5f6041a5
 
 
 # We prepare most common deps for installation for different platforms
@@ -41,10 +41,10 @@ install_uses:
 
 # Add env path keys to aggregated if detected
 add_env_path_keys:
-- PATH
-- PYTHONPATH
-- EXTERNAL_INCLUDE
-- INCLUDE
-- LIB
-- LIBPATH
-- WindowsLibPath
+  - PATH
+  - PYTHONPATH
+  - EXTERNAL_INCLUDE
+  - INCLUDE
+  - LIB
+  - LIBPATH
+  - WindowsLibPath

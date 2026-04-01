@@ -1,6 +1,12 @@
 storage_key: python
 
-cache_params_with: True
+#cache_params_with: True
+cache_params_with: False # moved explicitly to cache_params to avoid unexpected effects
+
+cache_params:
+  - with.venv
+  - with.pip
+  - venv_path
 
 names:
   - python3{{global.host.vars.file_ext_exe}}

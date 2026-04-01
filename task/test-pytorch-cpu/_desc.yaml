@@ -1,8 +1,8 @@
 ﻿uses:
   - task: runner,1e48cc0c5f6041a5
-
-  - task: setup,a2f9b61079ce4333
-    name: cuda
+    use:
+      target:
+        compute: cpu
 
   - task: setup,a2f9b61079ce4333
     name: python
@@ -17,5 +17,17 @@
     with:
       package: torch
 
+  - task: setup,a2f9b61079ce4333
+    name: pip
+    with:
+      package: torchaudio
+
+  - task: setup,a2f9b61079ce4333
+    name: pip
+    with:
+      package: torchvision
+
   - task: cmd,c9ba0a88df394d7f
+    env:
+      CMETA_COMPUTE: '{{global.target.compute}}'
     cmd: '{{global.python.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}app.py'

@@ -1,4 +1,13 @@
-﻿import os
+﻿"""
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
+All rights reserved.
+
+Proprietary and confidential.
+This software may not be copied, modified, distributed, or used
+without explicit permission from the copyright holder.
+"""
+
+import os
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 
@@ -55,9 +64,18 @@ class CTool(InitCTool):
         if not _venv_path:
             _venv_path = _with.get('venv_path')
 
-        _venv_here = params.get('venv_here')
-        if not _venv_here:
-            _venv_here = _with.get('venv_here')
+        _venv_here = None
+        if not _venv_path:
+           _venv_here = params.get('venv_here')
+           if not _venv_here:
+               _venv_here = _with.get('venv_here')
+
+           if _venv_here:
+               _venv_path = os.getcwd()
+
+        if _venv_path:
+            _venv_path = os.path.abspath(_venv_path)
+            params['venv_path'] = _venv_path
 
         if _venv_path or _venv_here:
             ctx_tasks = ctx.setdefault('tasks', {})
@@ -66,8 +84,8 @@ class CTool(InitCTool):
 
             if _venv_path:
                 ctx_tasks_use_venv['path'] = _venv_path
-            if _venv_here:
-                ctx_tasks_use_venv['here'] = _venv_here
+#            if _venv_here:
+#                ctx_tasks_use_venv['here'] = _venv_here
 
         # Check if here and try to find python in current directory
         if _here:
@@ -97,22 +115,25 @@ class CTool(InitCTool):
         return result
 
     ############################################################
-    def customize_cache_artifact(self,
-                                 ctx,
-                                 result,
-                                 params,
-                                 cache_tags,
-                                 cache_params,
+    def customize_tool_cache_artifact(self,
+                                      ctx,
+                                      result,
+                                      params,
+                                      cache_tags,
+                                      cache_params,
+                                      cache_features,
         ):
 
         if self.cm.debug:
-            self.logger.debug("RUNNING TASK tool python customize_cache_artifact")
+            self.logger.debug("RUNNING TASK tool python customize_tool_cache_artifact")
 
 #        _with = params.get('with', {})
 #
 #        if _with:
 #            cache_params_with = cache_params.setdefault('with',{})
 #            cache_params_with.update(_with)
+
+
 
         return {'return':0, 'result': result}
 
@@ -326,7 +347,7 @@ class CTool(InitCTool):
     def install(self,
                 ctx: dict,
                 params: dict,
-                cmd: str = None,
+                install_cmd: str = None,
     ):
         """
         """
@@ -340,5 +361,13 @@ class CTool(InitCTool):
 
         path_to_python = _global['venv']['path_to_python']
 
-        return {'return':0, 'found_path':path_to_python}
+        # venv_path specify root venv that we force append '.venv' to.
+        # that's why we need to go 1 level above here
+        _update_params = {'venv_path': os.path.dirname(_global['venv']['path_to_venv'])}
 
+        return {
+          'return': 0, 
+          'install_cmd': None, 
+          'found_path': path_to_python, 
+          '_update_params': _update_params,
+        }
