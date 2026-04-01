@@ -4,7 +4,7 @@
 # Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 #
 
-name: Test cMeta AOps task python with torch
+name: Test cMeta AOps task pytorch
 
 on:
   workflow_dispatch:
@@ -93,7 +93,7 @@ jobs:
 
       - name: Test python with torch
         run: |
-          cxt test-python-torch -v -q --extra_line
+          cxt test-pytorch -v -q --extra_line
 
       - name: Dummy
         run: |
