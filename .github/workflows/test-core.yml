@@ -88,4 +88,4 @@ jobs:
 
       - name: Clone some repo
         run: |
-          cxt clone-git,af9422df6ea241ec https://github.com/ctuning/mlcommons-ck --cache
+          cxt clone-git,af9422df6ea241ec -v -q https://github.com/ctuning/mlcommons-ck --cache 
