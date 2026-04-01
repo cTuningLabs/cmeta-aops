@@ -28,4 +28,4 @@ class CTool(InitCTool):
         """
 
         # Call function in tool::pip
-        return self.task_setup_tool_code._common_compute_init(ctx, params)
+        return self.task_setup_tool_code._common_compute_init(ctx, params, skip_extras = True)
