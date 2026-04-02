@@ -40,10 +40,12 @@ class CTool(InitCTool):
 
         version = params.get('version')
         version_simple = params.get('version_simple')
+        version_major = params.get('version_major')
 
         if not version:
             version = '22.1.2'
             version_simple = '22.1.2'
+            version_major = '22'
 
         if not version_simple:
             return {
@@ -59,8 +61,6 @@ class CTool(InitCTool):
 
         env = params.get('env')
         timeout = params.get('timeout')
-
-        version_major = int(params.get('version_major'))
 
         url = None
         filename = None

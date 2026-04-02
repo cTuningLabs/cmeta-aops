@@ -28,6 +28,7 @@ class CTask(InitCTask):
                 'lang',
                 'extra_tags',
                 'extra_match',
+                'name',
             ], __name__)
         if self.cm.catch_error(r): return r
 
@@ -39,6 +40,7 @@ class CTask(InitCTask):
             lang: str = None,   # string or list of compute (task::target-{name})
             extra_tags = None,  # extra tags to force specific compiler, etc (clang, gcc-cpp, msvc, etc)
             extra_match = None, # extra match dict
+            name: str = None,   # force tool name directly without tags or extra tags
     ):
 
         """
@@ -75,25 +77,25 @@ class CTask(InitCTask):
 
         ###########################################################################################
         # SELECT TOOL ARTIFACT
+        if not name:
+            p = {'category': self.cmeta['uses_categories']['utils'],
+                 'command': 'select_artifact',
+                 'select_category': self.cmeta['uses_categories']['tool'],
+                 'select_tags': tool_tags,
+                 'select_match': tool_match,
+                 'con': con,
+                 'quiet': quiet,
+                 'verbose': verbose,
+                 'space': space,
+                 'print_extra_line': True,
+            }
 
-        p = {'category': self.cmeta['uses_categories']['utils'],
-             'command': 'select_artifact',
-             'select_category': self.cmeta['uses_categories']['tool'],
-             'select_tags': tool_tags,
-             'select_match': tool_match,
-             'con': con,
-             'quiet': quiet,
-             'verbose': verbose,
-             'space': space,
-             'print_extra_line': True,
-        }
+            r = self.cm.access(p)
+            if self.cm.catch_error(r, fail16=True): return r
 
-        r = self.cm.access(p)
-        if self.cm.catch_error(r, fail16=True): return r
+            artifact = r['artifact']
 
-        artifact = r['artifact']
-
-        tool_name = artifact['cmeta_ref_parts']['artifact_alias']
+            name = artifact['cmeta_ref_parts']['artifact_alias']
 
         ###########################################################################################
         # SETUP TOOL
@@ -103,7 +105,7 @@ class CTask(InitCTask):
              'category': self.category_alias + ',' + self.category_uid,
              'command': 'run',
              'arg1': 'setup,a2f9b61079ce4333',
-             'name': tool_name,
+             'name': name,
              'con': con,
              'quiet': quiet,
              'verbose': verbose,
@@ -115,5 +117,11 @@ class CTask(InitCTask):
         ###########################################################################################
         # COPY TO RESULT AND UNIFY IF NEEDED
         result = r
+
+        result['tool'] = {
+          'name': name,
+          'tags': tool_tags,
+          'match': tool_match,
+        }
 
         return result
