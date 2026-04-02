@@ -1,9 +1,13 @@
 ﻿import os
+import vllm
 import torch
 
 
 print ('='*80)
 print ("CMETA_COMPUTE:", os.environ.get('CMETA_COMPUTE'))
+
+print ('')
+print ("vLLM version:", vllm.__version__)
 
 print ('')
 print ("Torch version:", torch.__version__)
@@ -24,5 +28,26 @@ if torch.cuda.is_available():
 
     print ('')
     print ("System CUDA driver version:", driver)
+
+
+print ('='*80)
+
+from vllm import LLM, SamplingParams
+
+# Initialize model (use a small one for testing)
+llm = LLM(model="facebook/opt-125m")
+
+# Define sampling parameters
+sampling_params = SamplingParams(
+    temperature=0.7,
+    max_tokens=50
+)
+
+# Run inference
+outputs = llm.generate("Hello, my name is", sampling_params)
+
+# Print result
+for output in outputs:
+    print(output.outputs[0].text)
 
 print ('='*80)
