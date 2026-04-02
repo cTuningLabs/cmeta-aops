@@ -27,5 +27,7 @@ class CTool(InitCTool):
         """
         """
 
+        return {'return':0}
+
         #TBD
-        return self.task_setup_tool_code._common_compute_init(ctx, params, skip_extras = True)
+        #return self.task_setup_tool_code._common_compute_init(ctx, params, skip_extras = True)
