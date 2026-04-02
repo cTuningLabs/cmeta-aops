@@ -17,6 +17,7 @@ cache_params_use:
 
 cache_features:
   - with.extras
+  - with.variations
 
 
 match_version: 

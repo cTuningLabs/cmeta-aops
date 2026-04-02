@@ -26,8 +26,6 @@ class CTask(InitCTask):
     ):
 
         """
-        Test dummy3.
-
         Returns:
             dict: A cMeta dictionary with the following keys:
                 - **return** (int): 0 if success, >0 if error.

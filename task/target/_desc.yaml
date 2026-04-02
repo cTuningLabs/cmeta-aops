@@ -1,3 +1,6 @@
 store_global: True   # force
 storage_key: target  # force storage key to avoid mixing up in the future
 cache: False         # force
+
+params_map:
+  arg2: compute

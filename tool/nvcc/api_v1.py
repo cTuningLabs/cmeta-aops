@@ -25,12 +25,31 @@ class CTool(InitCTool):
              params: dict = {},
     ):
         """
-        Mostly used to update storage_key
+        Mostly used to update storage_key and prepare deps (uses)
         """
 
-        result = {'return':0}
+        if self.cm.debug:
+            self.logger.debug("RUNNING TOOL nvcc api_v1 init")
 
-        return result
+        uname = ctx['tasks']['global']['host']['os']['uname']
+
+        if uname == 'darwin':
+            return self.cm.error(f'tool "nvcc" does not support MacOS')
+
+        compiler_extra_tags = params.get('with', {}).get('compiler_extra_tags')
+        compiler_extra_match = params.get('with', {}).get('compiler_extra_match')
+
+        if compiler_extra_match is None or compiler_extra_match == '': 
+            compiler_extra_match = {}
+
+        supports_nvcc_os = compiler_extra_match.setdefault('supports_nvcc_os', []) 
+        if uname not in supports_nvcc_os:
+            supports_nvcc_os.append(uname)
+
+        ctx['tasks']['local']['compiler_extra_tags'] = compiler_extra_tags
+        ctx['tasks']['local']['compiler_extra_match'] = compiler_extra_match
+
+        return {'return':0}
 
     ############################################################
     def check_features(self,
@@ -149,6 +168,7 @@ class CTool(InitCTool):
 
             _aggregate_env['CUDA_HOME'] = cuda_home
             _aggregate_env['CUDA_PATH'] = cuda_home
+            _aggregate_env['CUDAHOSTCXX'] = ctx['tasks']['global']['compiler']['path']
 
             _path = _aggregate_env.setdefault('+PATH', [])
             _path.insert(0, cuda_bin)

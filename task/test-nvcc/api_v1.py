@@ -34,7 +34,7 @@ class CTask(InitCTask):
 
 #        self.cm.utils.files.write_file('tmp-ctx.json', ctx)
 
-        self.logger.debug("RUNNING TASK test-dummy3 run")
+        self.logger.debug("RUNNING TASK test-nvcc run")
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
@@ -57,6 +57,7 @@ class CTask(InitCTask):
             os.makedirs('tmp')
 
         src_file = os.path.join(task_path, 'src', 'list_devices.cu')
+        qsrc_file = self.cm.utils.files.quote_path(src_file)
 
         host = ctx_tasks['global']['host']
         uname = host['os']['uname']
@@ -69,7 +70,7 @@ class CTask(InitCTask):
             ext = ''
 
         cmds = [
-          nvcc['qpath'] + f' {src_file} -o tmp' + os.sep + exe_file, 
+          nvcc['qpath'] + f' {qsrc_file} -v -o tmp' + os.sep + exe_file, 
           'tmp' + os.sep + exe_file,
         ]
 

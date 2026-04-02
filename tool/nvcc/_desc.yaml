@@ -18,9 +18,10 @@ uses:
   - task: setup,a2f9b61079ce4333
     name: cuda,805716c4f32d42cf
 
-  - task: setup,a2f9b61079ce4333
-    name: msvc,e823256bbbe54b4e
-    skip_if_not_win: True
+  - task: compiler,f3925b201c704bde
+    lang: cpp
+    extra_tags: '{{local.compiler_extra_tags}}'
+    extra_match: '{{local.compiler_extra_match}}'
 
 extra_paths:
   windows:

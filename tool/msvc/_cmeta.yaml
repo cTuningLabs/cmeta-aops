@@ -3,4 +3,13 @@ authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
 copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
-
+sort: 1000
+supports_nvcc_os:
+- windows
+supports_os:
+- windows
+tags:
+- lang-c
+- lang-cpp
+- msvc
+- msvc-cpp

@@ -1,0 +1,11 @@
+store_global: True     # force
+storage_key: compiler  # force storage key to avoid mixing up in the future
+cache: False           # force
+
+params_map:
+  arg2: lang
+  arg3: extra_tags
+
+uses_before_init:
+  - task: runner,1e48cc0c5f6041a5
+#  - task: host,96ac7118439c4490

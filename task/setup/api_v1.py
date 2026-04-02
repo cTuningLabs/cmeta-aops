@@ -164,7 +164,7 @@ class CTask(InitCTask):
                 tool_path = sys.executable
 
             if not os.path.isfile(tool_path):
-                return self.cm.error(f'path to tool "{tool_path}" not found')
+                return self.cm.error(f'path to tool "{tool_path}" not found in "{__file__}"')
 
             params['tool_path'] = os.path.normpath(tool_path)
 
@@ -561,7 +561,7 @@ class CTask(InitCTask):
             if _with:
                 if x != '': x += ' and'
                 x += f' with params "{_with}"'
-            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x}')
+            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x} in "{__file__}"')
 
         ##############################################################################
         # Check path to tool

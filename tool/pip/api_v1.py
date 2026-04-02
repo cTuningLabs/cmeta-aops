@@ -66,7 +66,7 @@ class CTool(InitCTool):
 
         # Check _with parameters (others are checked in "setup" task)
         r = self.cm.check_params(_with, [
-                'arg3', 'package', 'extras', 
+                'arg3', 'package', 'extras', 'variations',
                 'file', 'url', 'url_tag',
                 'flags', 'post_flags',
             ], __name__)
@@ -223,6 +223,10 @@ class CTool(InitCTool):
 
         extras = _with.setdefault('extras', [])
 
+        # We need variations to differentiate different installations with different features (cpu, gpu ...)
+        variations = _with.setdefault('variations', {})
+        variations_compute = variations.setdefault('compute', [])
+
         result = {'return':0}
 
         # Check target compute
@@ -236,6 +240,9 @@ class CTool(InitCTool):
             if not skip_extras and 'cuda' not in extras:
                 extras.append('cuda')
 
+            if 'cuda' not in variations_compute:
+                variations_compute.append('cuda')
+                
             # Wrong torch variation may be installed so we need to force update it ...
             if '--force-reinstall' not in flags:
                 if flags != '': flags += ' '
@@ -264,6 +271,9 @@ class CTool(InitCTool):
         # Add CPU as default base
         if not skip_extras and 'cpu' not in extras:
             extras.append('cpu')
+
+        if 'cpu' not in variations_compute:
+            variations_compute.append('cpu')
 
         if post_flags:
             _with['post_flags'] = post_flags
