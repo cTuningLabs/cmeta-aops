@@ -1,6 +1,8 @@
 ﻿import os
 import vllm
 import torch
+#from multiprocessing import freeze_support
+from vllm import LLM, SamplingParams
 
 def main():
     print ('='*80)
@@ -32,26 +34,40 @@ def main():
 
     print ('='*80)
 
-    from vllm import LLM, SamplingParams
-
-    # Initialize model (use a small one for testing)
-    llm = LLM(model="facebook/opt-125m")
-
-    # Define sampling parameters
-    sampling_params = SamplingParams(
-        temperature=0.7,
-        max_tokens=50
+    llm = LLM(
+        model="facebook/opt-125m",
+        gpu_memory_utilization=0.70,
+        max_model_len=512,
+        max_num_seqs=1,
+#        cpu_offload_gb=2,
     )
 
-    # Run inference
-    outputs = llm.generate("Hello, my name is", sampling_params)
+    params = SamplingParams(
+        temperature=0.0,
+        max_tokens=32,
+    )
 
-    # Print result
-    print ('='*80)
-    for output in outputs:
-        print(output.outputs[0].text)
+    prompts = [
+      "Hello, my name is",
+      "The capital of France is",
+    ]
 
-    print ('='*80)
+    for prompt in prompts:
+        print ('='*80)
+
+        print (f'Prompt: {prompt}')
+        print ('')
+
+        print ('Answer:')
+        print ('')
+
+        outputs = llm.generate([prompt], params)
+
+        for output in outputs:
+            print(output.outputs[0].text)
+
+        print ('='*80)
 
 if __name__ == "__main__":
+ #   freeze_support()
     main()
