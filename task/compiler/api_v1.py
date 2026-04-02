@@ -85,6 +85,7 @@ class CTask(InitCTask):
              'quiet': quiet,
              'verbose': verbose,
              'space': space,
+             'print_extra_line': True,
         }
 
         r = self.cm.access(p)

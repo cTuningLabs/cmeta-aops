@@ -168,7 +168,6 @@ class CTool(InitCTool):
 
             _aggregate_env['CUDA_HOME'] = cuda_home
             _aggregate_env['CUDA_PATH'] = cuda_home
-            _aggregate_env['CUDAHOSTCXX'] = ctx['tasks']['global']['compiler']['path']
 
             _path = _aggregate_env.setdefault('+PATH', [])
             _path.insert(0, cuda_bin)

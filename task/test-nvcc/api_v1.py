@@ -23,6 +23,7 @@ class CTask(InitCTask):
     def run(self,
             ctx: dict,        # cMeta context
             env: dict = {},
+            flags: str = '',
     ):
 
         """
@@ -69,8 +70,16 @@ class CTask(InitCTask):
         else:
             ext = ''
 
+        cpp_compiler_qpath = ctx_tasks['global']['compiler']['qpath']
+
+
+        if flags: 
+            flags += ' '
+
+        flags += f'-v -ccbin={cpp_compiler_qpath} --allow-unsupported-compiler'
+
         cmds = [
-          nvcc['qpath'] + f' {qsrc_file} -v -o tmp' + os.sep + exe_file, 
+          nvcc['qpath'] + f' {qsrc_file} {flags} -v -o tmp' + os.sep + exe_file, 
           'tmp' + os.sep + exe_file,
         ]
 
