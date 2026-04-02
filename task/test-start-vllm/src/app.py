@@ -47,6 +47,7 @@ def main():
     outputs = llm.generate("Hello, my name is", sampling_params)
 
     # Print result
+    print ('='*80)
     for output in outputs:
         print(output.outputs[0].text)
 
