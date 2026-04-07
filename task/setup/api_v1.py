@@ -44,7 +44,7 @@ class CTask(InitCTask):
             self.logger.debug("RUNNING TASK setup init")
 
         r = self.cm.check_params(params, [
-                'detect','install', 'build', 
+                'detect','install', 'build', 'versions',
                 'skip_detect', 'skip_install', 'skip_build',
                 'skip_install_uses', 'skip_build_uses',
                 'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 
@@ -92,6 +92,30 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
+        if params.get('versions', False):
+            if not desc.get('cmd_get_versions'):
+                return self.cm.error(f'not CMD to find available versions for the tool "{artifact_print_name}" in "{__file__}"')
+
+            if desc.get('cmd_get_versions_uses'):
+                _uses = desc['cmd_get_versions_uses']
+
+                ii = {'category': self.category_alias + ',' + self.category_uid,
+                      'command': 'use',
+                      'con': con,
+                      'quiet': quiet,
+                      'verbose': verbose,
+                      'ctx': ctx,
+                      'desc': _uses,
+                      'local': {},
+                      'task_artifact_alias': self.artifact_alias,
+                      'task_artifact_uid': self.artifact_uid,
+                      'task_artifact_path': self.artifact_path,
+                     }
+
+                r = self.cm.access(ii)
+                if self.cm.catch_error(r): return r
+
+
         if 'uses' in desc:
             result['uses'] = desc['uses']
 
@@ -134,6 +158,12 @@ class CTask(InitCTask):
         tool_tags = params.get('tool_tags')
         tool_api_ver = params.get('tool_api_ver')
 
+        ctx_tasks = ctx['tasks']
+
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
+
         ###########################################################################################
         # SELECT TOOL ARTIFACT
         r = self.read_tool(
@@ -150,6 +180,9 @@ class CTask(InitCTask):
         desc = r['desc']
         tool_api_code = r['tool_api_code']
         artifact_au = r['artifact_au']
+        artifact_print_name = r['artifact_print_name']
+
+        result = {'return': 0}
 
         # Check if extra init from a tool
         if hasattr(tool_api_code, 'check_params') and callable(getattr(tool_api_code, 'check_params')):
@@ -168,7 +201,101 @@ class CTask(InitCTask):
 
             params['tool_path'] = os.path.normpath(tool_path)
 
-        return {'return':0}
+
+        ###########################################################################################
+        # Checking versions
+        if params.get('versions', False):
+            cmd_versions = desc.get('cmd_get_versions')
+
+            r = self.cm.utils.common.expand_string(cmd_versions, ctx_tasks)
+            if self.cm.catch_error(r): return r
+            cmd_versions = r['string']
+
+            _con = _verbose = True if self.cm.debug else False
+
+            env = params.get('env')
+            timeout = params.get('timeout')
+
+            ii = {'category': self.category_alias + ',' + self.category_uid,
+                  'command': 'run',
+                  'ctx': ctx,
+                  'arg1': 'cmd,c9ba0a88df394d7f',
+                  'cmd': cmd_versions,
+                  'env': env,
+                  'timeout': timeout,
+                  'con': _con, 
+                  'verbose': _verbose, 
+                  'text_cmd': 'RUN:', 
+                  'fail_if_nonzero_return_code': False,
+                  'capture_output': True,
+            }
+
+            rx = self.cm.access(ii)
+            if self.cm.debug:
+                print ('='*60)
+                print ('Output of versions detection:')
+                print ('')
+                self.cm.j(rx)
+                print ('='*60)
+
+            if self.cm.catch_error(rx): return rx
+
+            versions = []
+            returncode = rx['returncode']
+            output = ''
+            if returncode >0:
+                err = rx['stderr'] + '\n' + rx['stdout']
+                return self.cm.error(f'failed to get versions for tool "{artifact_print_name}" in "{__file__}":\n{err}')
+
+            output = rx['stdout'] + '\n' + rx['stderr']
+
+            # Attempt to detect versions (pip, git, etc)
+            j = output.find('Available versions:')
+            if j>=0:
+                # Attempt to decode as pip
+                sversions = output[j+19:].strip()
+                j = sversions.find('\n')
+                if j>0:
+                    sversions = sversions[:j].strip()
+                versions = self.cm.utils.common.split_clean(sversions, ',')
+            elif desc.get('cmd_get_versions_regex'):
+                # Attempt to decode with regex
+                cmd_get_versions_regex = desc['cmd_get_versions_regex']
+                import re
+                for s in output.splitlines():
+                    match = re.search(cmd_get_versions_regex, s)
+                    if match:
+                        v = match.group(1)
+                        if v not in versions:
+                            versions.append(v)
+            else:
+                versions = output.splitlines()
+
+            # Sort 
+            if versions:
+                dversions = [{'version': x} for x in versions]
+
+                sort_keys = ['@version-']
+
+                dversions = sorted(
+                   dversions,
+                   key=lambda v: self.cm.utils.common.build_sort_key(v, sort_keys),
+                )
+
+                versions = [dv['version'] for dv in dversions]
+
+            result['stop'] = True
+            result['versions'] = versions
+
+            if con:
+                print ('')
+                print ('Detected versions:')
+                print ('')
+
+                if versions:
+                    print (', '.join(versions))
+
+        return result
 
     ############################################################
     def customize_cache_artifact(self,

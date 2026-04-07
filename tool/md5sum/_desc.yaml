@@ -1,0 +1,18 @@
+names:
+  - md5sum{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: '\b\d+(?:\.\d+)+'
+    group: 0
+
+cmd_get_version: '{{tool_path}} --version'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+
+install_cmd_version:
+  linux: '{{global.host.os_extra.install_cmd_sudo_version}}'
+
+uses:
+   - task: setup-min-win-tools,2b5ee26b8d444ef6
+     if: '"{{global.host.os.uname}}" == "windows"'

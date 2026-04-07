@@ -18,6 +18,11 @@ match_version:
     group: 1
 
 cmd_get_version: '{{tool_path}} --version'
+cmd_get_versions: '{{global.uv.qpath}} python list --all-versions'
+cmd_get_versions_uses: 
+  - task: setup,a2f9b61079ce4333
+    name: uv,92f171fc18714ebd
+cmd_get_versions_regex: 'cpython-([^-]+)-'
 
 install_help_text: Check https://www.python.org/ for more details!
 

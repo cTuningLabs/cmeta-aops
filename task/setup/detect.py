@@ -174,7 +174,6 @@ def detect_existing_tool(self,
         # Check/update paths via tool code 
         # (for example remove ones that doesn't have some capabilities)
 
-
         if not force_path and hasattr(tool_api_code, 'update_paths') and callable(getattr(tool_api_code, 'update_paths')):
             r = tool_api_code.update_paths(ctx, found_paths, params)
             if self.cm.catch_error(r): return r
@@ -208,10 +207,17 @@ def detect_existing_tool(self,
                 for xpath in found_paths:
 
                     path = xpath[1:] if xpath.startswith('!') else xpath
-
                     qpath = self.cm.utils.files.quote_path(path)
 
                     cmd = cmd_version.replace('{{tool_path}}', qpath)
+
+                    if '{{root_tool_path}}' in cmd_version:
+                        root_path = os.path.dirname(path)
+                        qroot_path = self.cm.utils.files.quote_path(root_path)
+
+                        cmd = cmd.replace('{{root_tool_path}}', qroot_path)
+
+                    cmd = cmd.replace('{{os_sep}}', os.sep)
 
                     r = self.cm.utils.common.expand_string(cmd, ctx_tasks)
                     if self.cm.catch_error(r): return r

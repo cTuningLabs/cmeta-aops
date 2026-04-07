@@ -6,3 +6,10 @@ match_version:
     group: 1
 
 cmd_get_version: '{{tool_path}} --version'
+
+extra_paths:
+  windows:
+    - "C:\\Program Files\\Docker\\Docker\\**"
+    - "D:\\Program Files\\Docker\\Docker\\**"
+  linux:
+    - "/usr/local/**"

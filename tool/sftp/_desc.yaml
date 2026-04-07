@@ -1,0 +1,19 @@
+names:
+  - sftp{{global.host.vars.file_ext_exe}}
+
+cache_params_use: 
+  all:
+    open-ssh:
+      version: "{{global.open-ssh.version}}"
+      path: "{{global.open-ssh.path}}"
+
+match_version: 
+  - regex: 'OpenSSH(?:_for_[^_]+)?_(\d+\.\d+p\d+)'
+    group: 1
+
+cmd_get_version: '{{global.open-ssh.qpath}} -V'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: open-ssh,504895ca6bb04154
+    version: "{{params.version|$None}}"

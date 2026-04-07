@@ -28,6 +28,8 @@ path: "{{global.pip.path}}"
 cmd: "{{global.pip.cmd}}"
 cmd_filename: "{{global.python.filename}} -m pip"
 cmd_get_version: '{{global.pip.cmd}} show {{params.with.package}}'
+cmd_get_versions: '{{global.pip.cmd}} index versions {{params.with.package}}'
+
 
 install_cmd:
   all: '{{global.pip.cmd}} install {{params.with.flags|}} {{custom_package}} {{params.with.post_flags|}}'

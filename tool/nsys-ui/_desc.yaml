@@ -1,0 +1,20 @@
+names:
+  - nsys-ui{{global.host.vars.file_ext_exe}}
+
+cache_params_use: 
+  all:
+    nsys:
+      version: "{{global.nsys.version}}"
+      path: "{{global.nsys.path}}"
+
+# Reuse version from nsys !
+match_version: 
+  - regex: "version\\s*([\\d.]+)"
+    group: 1
+
+cmd_get_version: '{{global.nsys.qpath}} --version'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: nsys,08982359a2c14316
+    version: "{{params.version|$None}}"

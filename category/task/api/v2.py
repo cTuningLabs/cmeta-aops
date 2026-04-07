@@ -33,6 +33,7 @@ class Category(InitCategory):
             'save', 
             'save_here', 
             'use', 
+            'uses',
             'store_global', 
             'storage_key',
         ]
@@ -99,6 +100,7 @@ class Category(InitCategory):
         ver = params.get('ver')
         info = params.get('info')
         use = params.get('use')
+        uses = params.get('uses')
 
         save = params.get('save', False)
         save_here = params.get('save_here', False)
@@ -410,10 +412,14 @@ class Category(InitCategory):
 
         ###########################################################################################
         # CHECK PARAMS INCLUDING FROM --use. ...
+        # May do some basic tasks and stop
 
         if task_api_code is not None and hasattr(task_api_code, 'check_params') and callable(getattr(task_api_code, 'check_params')):
             r = task_api_code.check_params(ctx, ctx_tasks['params'], cparams)
             if self.cm.catch_error(r): return r
+
+            if r.get('stop', False):
+                return r
 
         ###########################################################################################
         # PRINT FINAL TASK PARAMS
@@ -452,15 +458,18 @@ class Category(InitCategory):
 
         ###########################################################################################
         # CHECK DEPENDENCIES
-        uses = cdesc.get('uses', []).copy()
+        _uses = cdesc.get('uses', []).copy()
 
         if task_extra_uses:
-            uses += task_extra_uses
+            _uses += task_extra_uses
+
+        if uses:
+            _uses += uses
 
         # Set up local context
-        if uses:
+        if _uses:
             r = self.use_(ctx, 
-                          desc = uses, 
+                          desc = _uses, 
                           local = ctx_tasks['local'],
                           task_artifact_alias = artifact_alias, 
                           task_artifact_uid = artifact_uid,
@@ -858,7 +867,8 @@ class Category(InitCategory):
                         if delete:
                             ii = {'category': uses_categories['cache'],
                                   'command': 'delete',
-                                  'arg1': x_cache_artifact_uid,
+                                  # default cache rm is only in local while we need to allow any repo here
+                                  'arg1': '*:' + x_cache_artifact_uid,
                                   'force': True
                             }
 
@@ -866,10 +876,9 @@ class Category(InitCategory):
                                 ii['con'] = True
 
                             r = self.cm.access(ii)
-                            if self.cm.catch_error(r): return r
-
-                            if con: 
-                                print ('')
+                            if self.cm.catch_error(r, fail16=True): 
+                                r['return'] = 1
+                                return r
 
                         if problem:
                             return self.cm.error('selected outdated cache entry was deleted - please restart the task')

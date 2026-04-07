@@ -1,0 +1,36 @@
+names:
+  - gh{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: "gh version\\s*([\\d.]+)"
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+install_cmd:
+  darwin: '{{global.brew.qpath}} install gh'
+  linux: '{{global.brew.qpath}} install gh'
+  windows: "{{global.winget.qpath}} install --id=GitHub.cli -e --no-upgrade {{global.init.winget_install_flags|}}"
+
+install_cmd_version:
+  darwin: '{{global.brew.qpath}} install gh@{{major_version}}'
+  linux: '{{global.brew.qpath}} install gh{{major_version}}'
+  windows: "{{global.winget.qpath}} install --id=GitHub.cli -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"
+
+install_help_text:
+  Please check https://github.com/cli/cli?tab=readme-ov-file !
+
+install_uses:
+  linux:
+    - task: setup,a2f9b61079ce4333
+      name: brew,27859c999bdd4085
+
+extra_paths:
+  linux:
+    - "/home/linuxbrew/.linuxbrew/**"
+  darwin:
+    - "/opt/homebrew/opt/llvm*/**"
+  windows:
+    - "C:\\Program Files\\GitHub CLI\\**"
+    - "D:\\Program Files\\GitHub CLI\\**"
+    - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
