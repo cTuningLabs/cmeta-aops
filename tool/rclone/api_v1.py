@@ -80,7 +80,7 @@ class CTool(InitCTool):
                 uarch2 = 'arm64'
         elif uname == 'darwin':
             uos = 'osx'
-            uext = '.tar.gz'
+            uext = '.zip'
             if uarch == 'amd64':
                 uarch2 = 'amd64'
             elif uarch == 'arm64':
