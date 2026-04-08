@@ -69,12 +69,12 @@ class CTask(InitCTask):
         if chdir:
             if con and verbose:
                 print ('')
-                print (f'{space}CD {chdir}')
+                print (f'{space}INFO: cd "{chdir}"')
             os.chdir(chdir)
         elif chdir_and_stay:
             if con and verbose:
                 print ('')
-                print (f'{space}CD {chdir_and_stay}')
+                print (f'{space}INFO: cd "{chdir_and_stay}"')
             os.chdir(chdir_and_stay)
 
         if unparsed:
@@ -106,7 +106,7 @@ class CTask(InitCTask):
         if chdir:
             if con and verbose:
                 print ('')
-                print (f'{space}CD {cur_dir}')
+                print (f'{space}INFO: cd "{cur_dir}"')
             os.chdir(cur_dir)
 
         if self.cm.catch_error(result, fail16=True): return result
