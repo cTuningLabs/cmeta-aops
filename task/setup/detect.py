@@ -266,18 +266,27 @@ def detect_existing_tool(self,
                     if self.cm.catch_error(rx): return rx
 
                     returncode = rx['returncode']
+
+                    output = ''
+                    stdout = rx.get('stdout')
+                    if stdout:
+                        output += stdout + '\n'
+                    stderr = rx.get('stderr')
+                    if stderr:
+                        output += stderr
+
                     if returncode == 0:
-                        output = rx['stdout'] + '\n' + rx['stderr']
-
                         found_paths_with_versions[xpath] = {'output': output, 'cmd_call': cmd_call, 'cmd': cmd}
+                    else:
+                        warning += f'\nProblem extracting version from {path}:\n{output}\n'
 
-                    if cmd_call_script:
+                    if cmd_call_script and 'env_added' in rx:
                         found_paths_with_versions[xpath]['env_added'] = rx['env_added']
 
         if not found_paths_with_versions:
     #        x = '' if not params else f' with params "{params}"'
             x = ''
-            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x}', 16)
+            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x}', 16, extra = {'warning':warning})
 
         if self.cm.debug:
             print ('')
@@ -330,7 +339,7 @@ def detect_existing_tool(self,
                 warning += f'\n  * version for "{path}" was not detected from output "{output}"'
 
     if not parsed_paths_with_versions:
-        return self.cm.error(f'failed to find tool "{artifact_print_name}" with parsed version', 16)
+        return self.cm.error(f'failed to find tool "{artifact_print_name}" with parsed version', 16, extra = {'warning': warning})
 
     if self.cm.debug:
         print ('')

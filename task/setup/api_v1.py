@@ -533,6 +533,8 @@ class CTask(InitCTask):
 
         success = False
 
+        warning = ''
+
         ##############################################################################
         if version:
             # Prepare various versions for further reuse
@@ -616,15 +618,21 @@ class CTask(InitCTask):
                             _result_update_params = result.setdefault('_update_params', {})
                             _result_update_params = self.cm.utils.common.deep_merge(_result_update_params, _update_params, append_lists=True)
 
-                    elif con:
-                        print ('')
-                        err = r['error']
-                        print (f'{space}INSTALL WARNING: {err} !')
+            xerror = r.get('error')
+            xwarning = r.get('warning')
+            
+            if xwarning:
+                if warning:
+                    warning += '\n\n'
+                warning += xwarning
 
-            elif con:
+            if xerror and con:
                 print ('')
-                err = r['error']
-                print (f'{space}INSTALL WARNING: {err} !')
+                print (f'{space}INSTALL WARNING: {xerror} !')
+            if verbose and xwarning:
+                print (f'\n{space}Extra install warning:\n\n{xwarning} !')
+
+
 
 
         ##############################################################################
@@ -651,21 +659,24 @@ class CTask(InitCTask):
 
                     if r['return'] == 0:
                         result = r
+
                         success = True
 
                         if _update_params:
                             _result_update_params = result.setdefault('_update_params', {})
                             _result_update_params = self.cm.utils.common.deep_merge(_result_update_params, _update_params, append_lists=True)
 
-                    elif con:
-                        print ('')
-                        err = r['error']
-                        print (f'{space}BUILD WARNING: {err} !')
+            xerror = r.get('error')
+            xwarning = r.get('warning')
+            
+            if xwarning:
+                warning += xwarning
 
-            elif con:
+            if xerror and con:
                 print ('')
-                err = r['error']
-                print (f'{space}BUILD WARNING: {err} !')
+                print (f'{space}BUILD WARNING: {xerror} !')
+            if verbose and xwarning:
+                print (f'\n{space}Extra build warning:\n\n{xwarning} !')
 
         ##############################################################################
         if not success:
@@ -688,7 +699,11 @@ class CTask(InitCTask):
             if _with:
                 if x != '': x += ' and'
                 x += f' with params "{_with}"'
-            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x} in "{__file__}"')
+
+            extra = {}
+            if warning:
+                extra['warning'] = warning
+            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x} in "{__file__}"', extra = extra)
 
         ##############################################################################
         # Check path to tool
@@ -701,6 +716,9 @@ class CTask(InitCTask):
             _update_params = result.setdefault('_update_params',{})
             if 'tool_path' not in _update_params:
                 _update_params['tool_path'] = os.path.normpath(tool_path)
+
+        if warning:
+            result['warning'] = warning
 
         return result
 

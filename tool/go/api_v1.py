@@ -29,7 +29,7 @@ class CTool(InitCTool):
         """
 
         if self.cm.debug:
-            self.logger.debug("RUNNING TOOL rclone api_v1 install")
+            self.logger.debug("RUNNING TOOL go api_v1 install")
 
         ctx_tasks = ctx['tasks']
 
@@ -42,13 +42,13 @@ class CTool(InitCTool):
         version_simple = params.get('version_simple')
 
         if not version:
-            version = '1.73.3'
+            version = '1.26.2'
             version_simple = version
 
         if not version_simple:
             return {
                 'return': 16, 
-                'error': f'custom install for rclone can use only exact/simple versions in "{__file__}"',
+                'error': f'custom install for "go" can use only exact/simple versions in "{__file__}"',
                 'install_cmd': cmd, # this is needed to proceed with the main installation routine !
             }
 
@@ -64,41 +64,34 @@ class CTool(InitCTool):
         url = None
         filename = None
 
+        if uarch == 'amd64':
+            uarch2 = 'amd64'
+        elif uarch == 'arm64':
+            uarch2 = 'arm64'
+
         if uname == 'windows':
             uos = 'windows'
             uext = '.zip'
-            if uarch == 'amd64':
-                uarch2 = 'amd64'
-            elif uarch == 'arm64':
-                uarch2 = 'arm64'
         elif uname == 'linux':
             uos = 'linux'
-            uext = '.zip'
-            if uarch == 'amd64':
-                uarch2 = 'amd64'
-            elif uarch == 'arm64':
-                uarch2 = 'arm64'
+            uext = '.tar.gz'
         elif uname == 'darwin':
-            uos = 'osx'
-            uext = '.zip'
-            if uarch == 'amd64':
-                uarch2 = 'amd64'
-            elif uarch == 'arm64':
-                uarch2 = 'arm64'
+            uos = 'darwin'
+            uext = '.tar.gz'
 
         if not uarch2:
             return {
                 'return': 16, 
-                'error': f'custom install for rclone could not create download URL',
+                'error': f'custom install for "go" could not create download URL',
             }
 
-        filename = f'rclone-v{version_simple}-{uos}-{uarch2}{uext}'
+        filename = f'go{version_simple}.{uos}-{uarch2}{uext}'
 
-        url = f'https://github.com/rclone/rclone/releases/download/v{version_simple}/{filename}'
+        url = f'https://go.dev/dl/{filename}'
 
         directory = 'content'
 
-        path_to_tool = os.path.join(os.getcwd(), directory, 'rclone' + _global['host']['vars']['file_ext_exe'])
+        path_to_tool = os.path.join(os.getcwd(), directory, 'go', 'bin', 'go' + _global['host']['vars']['file_ext_exe'])
 
         if con:
             cur_dir = os.getcwd()
@@ -124,7 +117,7 @@ class CTool(InitCTool):
               'unzip': True,
               'clean': True,
               'clean_after_unzip': True,
-              'strip_folders': 1,
+              'strip_folders': 0,
               'check_file': path_to_tool,
               'make_check_file_executable': True,
         }
