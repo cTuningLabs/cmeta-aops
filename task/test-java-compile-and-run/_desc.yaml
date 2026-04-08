@@ -1,0 +1,15 @@
+﻿uses:
+- task: runner,1e48cc0c5f6041a5
+
+- task: setup,a2f9b61079ce4333
+  name: javac,0afea425d2a94eb6
+
+- task: setup,a2f9b61079ce4333
+  name: java,6c8d509f22c841e8
+
+- task: cmd,c9ba0a88df394d7f
+  cmd: '{{global.javac.qpath}} -d "{{task_artifact_path}}{{os_sep}}tmp" {{task_artifact_path}}{{os_sep}}src{{os_sep}}hello.java'
+
+- task: cmd,c9ba0a88df394d7f
+  cmd: '{{global.java.qpath}} -cp "{{task_artifact_path}}{{os_sep}}tmp" hello param1 --param2'
+  unparsed: '{{params.unparsed|$None}}'

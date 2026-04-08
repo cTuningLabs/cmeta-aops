@@ -195,6 +195,7 @@ class CTask(InitCTask):
             'file_ext_bat': '.bat',
             'call_script': 'call',
             'cmd_sep': '&&',
+            'os_sep': '\\',
           },
           'linux':{
             'file_ext_exe': '',
@@ -202,6 +203,7 @@ class CTask(InitCTask):
             'file_ext_bat': '.sh',
             'call_script': '.',
             'cmd_sep': '&&',
+            'os_sep': '/',
           },
           'darwin':{
             'file_ext_exe': '',
@@ -209,6 +211,7 @@ class CTask(InitCTask):
             'file_ext_bat': '.sh',
             'call_script': '.',
             'cmd_sep': '&&',
+            'os_sep': '/',
           },
         }
 

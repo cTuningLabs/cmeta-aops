@@ -1,0 +1,22 @@
+names:
+  - javac{{global.host.vars.file_ext_exe}}
+
+cache_params_use: 
+  all:
+    openjdk:
+      version: "{{global.openjdk.version}}"
+      path: "{{global.openjdk.path}}"
+
+force_tool_path: "{{global.openjdk.path_bin}}{{global.host.vars.os_sep}}javac{{global.host.vars.file_ext_exe}}"
+
+# Reuse version from openjdk !
+match_version: 
+  - regex: 'javac\s+([^\s]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} -version'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: openjdk,5bc3b6e965174534
+    version: "{{params.version|$None}}"

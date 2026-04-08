@@ -84,6 +84,13 @@ def detect_existing_tool(self,
             parsed_paths_with_versions = r['parsed_paths_with_versions']
 
     else:
+        if desc.get('force_tool_path') and not (path or paths):
+            path = desc['force_tool_path']
+
+            r = self.cm.utils.common.expand_string(path, ctx_tasks)
+            if self.cm.catch_error(r): return r
+            path = r['string']
+
         force_path = True if path or paths else False
 
         if path:
