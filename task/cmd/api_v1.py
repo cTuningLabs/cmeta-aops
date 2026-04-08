@@ -24,6 +24,8 @@ class CTask(InitCTask):
     def run(self,
             ctx: dict,        # cMeta context
             cmd: str = "",
+            chdir: str = None,
+            chdir_and_stay: str = None,
             env: dict = {},
             genv: dict = {},
             timeout: int = None,
@@ -62,6 +64,19 @@ class CTask(InitCTask):
 
         envs = _aggregated.get('env', {})
 
+        cur_dir = os.getcwd()
+
+        if chdir:
+            if con and verbose:
+                print ('')
+                print (f'{space}CD {chdir}')
+            os.chdir(chdir)
+        elif chdir_and_stay:
+            if con and verbose:
+                print ('')
+                print (f'{space}CD {chdir_and_stay}')
+            os.chdir(chdir_and_stay)
+
         if unparsed:
             for u in unparsed:
                 if cmd != '':
@@ -87,6 +102,13 @@ class CTask(InitCTask):
                                        print_extra_line = print_extra_line,
                                        print_cur_dir = print_cur_dir,
         )
+
+        if chdir:
+            if con and verbose:
+                print ('')
+                print (f'{space}CD {cur_dir}')
+            os.chdir(cur_dir)
+
         if self.cm.catch_error(result, fail16=True): return result
 
         returncode = result['returncode']
