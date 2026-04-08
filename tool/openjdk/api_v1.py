@@ -95,10 +95,9 @@ class CTool(InitCTool):
         url = f'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-{version_simple}/{filename}'
 
         directory = 'content'
-        if extra_path:
-            directory = os.path.join(directory, extra_path)
+        directory2 = os.path.join(directory, extra_path) if extra_path else directory
 
-        path_to_tool = os.path.join(os.getcwd(), directory, 'bin', 'javac' + _global['host']['vars']['file_ext_exe'])
+        path_to_tool = os.path.join(os.getcwd(), directory2, 'bin', 'javac' + _global['host']['vars']['file_ext_exe'])
 
         if con:
             cur_dir = os.getcwd()
