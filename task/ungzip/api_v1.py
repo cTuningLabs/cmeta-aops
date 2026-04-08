@@ -80,7 +80,7 @@ class CTask(InitCTask):
             filename: str = None,
             env: dict = {},
             directory: str = None,
-            clean_after_unzip: bool = False,
+            clean_after_ungzip: bool = False,
             timeout: int = None,
             fail_if_nonzero_return_code: bool = True,
     ):
@@ -94,7 +94,7 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        self.logger.debug("RUNNING TASK untar-file run api_v1")
+        self.logger.debug("RUNNING TASK ungzip run api_v1")
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
@@ -108,11 +108,7 @@ class CTask(InitCTask):
 
         _local = {}
 
-        unzip_path = ctx['tasks']['global']['unzip']['qpath']
-
-# FGG: should not make such default since can break logic in related tasks
-#        if not directory:
-#            directory = 'content'
+        ungzip_path = ctx['tasks']['global']['gzip']['qpath']
 
         if not directory:
             directory = os.getcwd()
@@ -123,7 +119,7 @@ class CTask(InitCTask):
         if not os.path.exists(path):
             os.makedirs(path)
  
-        cmd = f'{unzip_path} {filename} -d {qpath}'
+        cmd = f'{ungzip_path} {filename} -d {qpath}'
 
         ii = {'category': self.category_alias + ',' + self.category_uid,
               'command': 'run',
@@ -144,7 +140,7 @@ class CTask(InitCTask):
         rx = self.cm.access(ii)
         if self.cm.catch_error(rx): return rx
 
-        if clean_after_unzip and os.path.isfile(filename):
+        if clean_after_ungzip and os.path.isfile(filename):
             if verbose:
                 print (f'{space}RUN: rm {filename}')
 

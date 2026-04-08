@@ -1,0 +1,8 @@
+names:
+  - winrar{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: '^[^\s]+'
+    group: 0
+
+cmd_get_version: '{{root_tool_path}}{{os_sep}}rar -iver'

@@ -33,7 +33,7 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        self.logger.debug("RUNNING TASK untar-file run api_v1")
+        self.logger.debug("RUNNING TASK start-tailscale-service run api_v1")
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)

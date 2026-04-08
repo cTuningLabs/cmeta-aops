@@ -1,0 +1,11 @@
+﻿uses:
+- task: runner,1e48cc0c5f6041a5
+
+- task: setup,a2f9b61079ce4333
+  name: python
+
+- task: setup,a2f9b61079ce4333
+  name: streamlit,08f215c37f724648
+
+- task: cmd,c9ba0a88df394d7f
+  cmd: '{{global.streamlit.qpath}} hello'

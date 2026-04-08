@@ -1,0 +1,21 @@
+names:
+  - streamlit{{global.host.vars.file_ext_exe}}
+
+cache_params_use: 
+  all:
+    pip-streamlit:
+      version: "{{global.pip-streamlit.version}}"
+      path: "{{global.pip.path}}"
+
+match_version: 
+  - regex: 'version: (.+)'
+    group: 1
+
+cmd_get_version: '{{global.pip.cmd}} show streamlit'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: pip,c4987bc3955347f2
+    version: "{{params.version|$None}}"
+    with:
+      package: streamlit

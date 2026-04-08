@@ -1,0 +1,12 @@
+names:
+  - tsh{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: 'Teleport v([0-9]+(?:\.[0-9]+)*[A-Za-z0-9\-]*)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} version'
+
+install_help_text:
+  Please install tsh from https://goteleport.com !
+
