@@ -1,0 +1,8 @@
+﻿uses:
+- task: runner,1e48cc0c5f6041a5
+
+- task: setup,a2f9b61079ce4333
+  name: mojo,666e926f670a4dbc
+
+- task: cmd,c9ba0a88df394d7f
+  cmd: '{{global.mojo.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}hello.mojo'

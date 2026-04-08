@@ -1,0 +1,24 @@
+names:
+  - mojo{{global.host.vars.file_ext_exe}}
+
+cache_params_use: 
+  all:
+    pip-mojo:
+      version: "{{global.pip-mojo.version}}"
+      path: "{{global.pip.path}}"
+
+match_version: 
+  - regex: 'version: (.+)'
+    group: 1
+
+cmd_get_version: '{{global.pip.cmd}} show mojo'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: pip,c4987bc3955347f2
+    version: "{{params.version|$None}}"
+    with:
+      package: mojo
+      post_flags: '--index https://whl.modular.com/nightly/simple/ --prerelease allow'
+
+force_tool_path: "{{global.python.path_bin}}{{global.host.vars.os_sep}}mojo{{global.host.vars.file_ext_exe}}"

@@ -19,3 +19,5 @@ uses:
     version: "{{params.version|$None}}"
     with:
       package: accelerate
+
+force_tool_path: "{{global.python.path_bin}}{{global.host.vars.os_sep}}accelerate{{global.host.vars.file_ext_exe}}"
