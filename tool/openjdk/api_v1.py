@@ -69,6 +69,8 @@ class CTool(InitCTool):
         elif uarch == 'arm64':
             uarch2 = 'aarch64'
 
+        extra_path = None
+
         if uname == 'windows':
             uos = 'windows'
             uext = '.zip'
@@ -78,6 +80,7 @@ class CTool(InitCTool):
         elif uname == 'darwin':
             uos = 'mac'
             uext = '.tar.gz'
+            extra_path = os.path.join('Contents', 'Home')
 
         if not uarch2:
             return {
@@ -92,6 +95,8 @@ class CTool(InitCTool):
         url = f'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-{version_simple}/{filename}'
 
         directory = 'content'
+        if extra_path:
+            directory = os.path.join(directory, extra_path)
 
         path_to_tool = os.path.join(os.getcwd(), directory, 'bin', 'javac' + _global['host']['vars']['file_ext_exe'])
 
