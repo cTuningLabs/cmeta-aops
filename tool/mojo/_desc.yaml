@@ -19,6 +19,6 @@ uses:
     version: "{{params.version|$None}}"
     with:
       package: mojo
-      post_flags: '--index https://whl.modular.com/nightly/simple/ --prerelease allow'
+      post_flags: '--index https://whl.modular.com/nightly/simple/'
 
 force_tool_path: "{{global.python.path_bin}}{{global.host.vars.os_sep}}mojo{{global.host.vars.file_ext_exe}}"
