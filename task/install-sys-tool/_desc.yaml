@@ -1,0 +1,25 @@
+﻿store_global: True
+storage_key: 'sys-tool-{{params.package}}'
+cache: True
+
+params_map:
+  arg2: package
+  arg3: version
+
+cache_extra_alias: '{{params.package}}'
+
+cache_params:
+  - package
+
+cache_features:
+  version: '{{params.version|}}'
+
+uses_before_init:
+  - task: host,96ac7118439c4490
+
+sort_keys:
+  - 'cmeta.params.package'
+
+uses:
+  - task: cmd,c9ba0a88df394d7f
+    cmd: '{{local.cmd}}'

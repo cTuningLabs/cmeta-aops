@@ -7,7 +7,8 @@ creation_timestamp: '2025-12-01T16:58:22.327355'
 extra_flags_help: '--info or '
 last_api_version: 2
 min_cmeta_version:
-  '1': 0.24.5
+  '1': 0.24.1
+  '2': 0.26.3
 #no_index: true
 uses_categories:
   cache: cache,1ebdcc1cc30c4022

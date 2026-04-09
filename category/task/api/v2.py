@@ -329,6 +329,11 @@ class Category(InitCategory):
             r = task_api_code.init(ctx, ctx_tasks['params'])
             if self.cm.catch_error(r): return r
 
+            if r.get('skip_run', False):
+                # Early exit !!!
+                return r
+
+
             if 'uses' in r:
                 task_extra_uses = r['uses']
 
@@ -448,9 +453,34 @@ class Category(InitCategory):
             cache_repo = x_cache_repo
 
         cache_name = cparams.get('cache_name')
+        if not cache_name:
+            cache_name = cdesc.get('cache_name')
+            if cache_name:
+                r = self.cm.utils.common.expand_string(cache_name, ctx_tasks)
+                if self.cm.catch_error(r): return r
+                cache_name = r['string']
+
         cache_extra_alias = cparams.get('cache_extra_alias')
+        if not cache_extra_alias:
+            cache_extra_alias = cdesc.get('cache_extra_alias')
+            if cache_extra_alias:
+                r = self.cm.utils.common.expand_string(cache_extra_alias, ctx_tasks)
+                if self.cm.catch_error(r): return r
+                cache_extra_alias = r['string']
+
         cache_extra_params = cparams.get('cache_extra_params')
+        if not cache_extra_params:
+            cache_extra_params = cdesc.get('cache_extra_params')
+            if cache_extra_params:
+                r = self.cm.utils.common.expand_strings_in_dict(cache_extra_params, ctx_tasks)
+                if self.cm.catch_error(r): return r
+
         cache_extra_tags = cparams.get('cache_extra_tags')
+        if not cache_extra_tags:
+            cache_extra_tags = cdesc.get('cache_extra_tags')
+            if cache_extra_tags:
+                r = self.cm.utils.common.expand_strings_in_list(cache_extra_tags, ctx_tasks)
+                if self.cm.catch_error(r): return r
 
         update = cparams.get('update', False)
         clean = cparams.get('clean', False)
@@ -484,7 +514,11 @@ class Category(InitCategory):
         update_cache = False
 
         cache_params = {}
-        cache_features = {}
+
+        cache_features = cdesc.get('cache_features')
+        if cache_features:
+            r = self.cm.utils.common.expand_strings_in_dict(cache_features, ctx_tasks)
+            if self.cm.catch_error(r): return r
 
         if cache_extra_params:
             cache_params = copy.deepcopy(cache_extra_params)

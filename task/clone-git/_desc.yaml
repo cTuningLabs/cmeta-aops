@@ -1,3 +1,7 @@
+params_map:
+  arg2: url
+  arg3: directory
+
 cache_params:
   - url
   - branch
@@ -6,10 +10,6 @@ cache_params:
   - tag
   - checkout
   - update_submodules
-
-params_map:
-  arg2: url
-  arg3: directory
 
 uses:
   - task: host,96ac7118439c4490

@@ -1,0 +1,21 @@
+﻿cache: False                     # force by default
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: install-sys-tool,38596f32da974d46
+    os: darwin
+    package: xeyes
+
+  - task: install-sys-tool,38596f32da974d46
+    os: linux
+    package: x11-apps
+
+
+  - task: install-sys-tool,38596f32da974d46
+    os: linux,darwin
+    package: xauth
+
+  - task: cmd,c9ba0a88df394d7f
+    cmd: 'touch "$HOME/.Xauthority"'
+    if: '"{{global.host.os.uname}}" in ["linux", "darwin"]'

@@ -180,7 +180,18 @@ class CTask(InitCTask):
 
             y = '1' if x.get('passwordless_sudo', False) else '0'
             result['passwordless_sudo_noninteractive_int'] = y
-
+        else:
+           result['os_extra'] = {
+             "id": "windows",
+             "id_like": "windows",
+             "install_cmd": "winget install {{name}}",
+             "install_cmd_sudo": "winget install {{name}}",
+             "install_cmd_sudo_version": "winget install {{name}} --version {{version}}",
+             "install_cmd_version": "winget install {{name}} --version {{version}}",
+             "package_manager": "winget",
+             "passwordless_sudo": True,
+             "sudo": False,
+           }
 
         # Finish automation
         result['os'] = host_os
