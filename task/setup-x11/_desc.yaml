@@ -8,13 +8,18 @@ uses:
     package: xeyes
 
   - task: install-sys-tool,38596f32da974d46
-    os: linux
-    package: x11-apps
-
+    os: darwin
+    package: xauth
 
   - task: install-sys-tool,38596f32da974d46
-    os: linux,darwin
+    os: linux
+    package: x11-apps
+    sudo: True
+
+  - task: install-sys-tool,38596f32da974d46
+    os: linux
     package: xauth
+    sudo: True
 
   - task: cmd,c9ba0a88df394d7f
     cmd: 'touch "$HOME/.Xauthority"'

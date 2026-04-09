@@ -58,7 +58,7 @@ class CTask(InitCTask):
                 else:
                     return {'return':0, 'skip_run': True}
 
-        sudo = params.get('sudo', True)
+        sudo = params.get('sudo', False)
         version = params.get('version')
         flags = params.get('flags')
 
