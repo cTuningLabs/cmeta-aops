@@ -1,0 +1,10 @@
+artifact: da2513e34cb04f77
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+creation_timestamp: '2026-01-19T15:40:51.387488+00:00'
+last_update_timestamp: '2026-04-10T09:55:17.979343+00:00'
+min_cmeta_version_api: 0.26.3
+tags:
+- setup
+- x11

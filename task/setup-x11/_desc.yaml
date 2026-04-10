@@ -15,6 +15,12 @@ uses:
     os: linux
     package: x11-apps
     sudo: True
+    if: '"{{global.host.os_extra.id}}" not in ["rocky"]'
+
+  - task: install-sys-tool,38596f32da974d46
+    os_id: rocky
+    package: xterm
+    sudo: True
 
   - task: install-sys-tool,38596f32da974d46
     os: linux

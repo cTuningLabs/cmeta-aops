@@ -31,6 +31,7 @@ class CTask(InitCTask):
         r = self.cm.check_params(params, [
                 'package', 
                 'os', 
+                'os_id', 
                 'fail_if_wrong_host_os',
                 'sudo',
                 'version',
@@ -47,14 +48,29 @@ class CTask(InitCTask):
             if type(target_os) == str:
                 target_os = target_os.split(',')
 
-        if target_os:
-            uname = ctx['tasks']['global']['host']['os']['uname']
+        target_os_id = params.get('os_id')
+        if target_os_id:
+            if type(target_os_id) == str:
+                target_os_id = target_os_id.split(',')
 
+        uname = ctx['tasks']['global']['host']['os']['uname']
+        os_id = ctx['tasks']['global']['host']['os_extra']['id']
+
+        if target_os:
             fail_if_wrong_host_os = params.get('fail_if_wrong_host_os', False)
 
             if uname not in target_os:
                 if fail_if_wrong_host_os:
                     return self.cm.error(f'host OS "{uname}" is not supported for sys-tool "{package}" "{__file__}"')
+                else:
+                    return {'return':0, 'skip_run': True}
+
+        if target_os_id:
+            fail_if_wrong_host_os = params.get('fail_if_wrong_host_os', False)
+
+            if os_id not in target_os_id:
+                if fail_if_wrong_host_os:
+                    return self.cm.error(f'host OS ID "{os_id}" is not supported for sys-tool "{package}" "{__file__}"')
                 else:
                     return {'return':0, 'skip_run': True}
 
@@ -83,5 +99,6 @@ class CTask(InitCTask):
 
         result['cmd'] = cmd
         result['host_os'] = uname
+        result['host_os_id'] = os_id
 
         return result
