@@ -10,4 +10,4 @@
     package: gradio
 
 - task: cmd,c9ba0a88df394d7f
-  cmd: '{{global.python.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}app.py --extra_line={{params.extra_line|$False}}'
+  cmd: '{{global.python.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}app.py --server-name {{params.server_name|127.0.0.1}} --server-port {{params.server_port|7860}}'
