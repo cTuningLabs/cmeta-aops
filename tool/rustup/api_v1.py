@@ -129,7 +129,8 @@ class CTool(InitCTool):
         ###########################################################################################
         # Attempt to run init
 
-        cmd = f'{filename} -y --no-modify-path'
+        start_exe_prefix = _global['host']['vars']['start_exe_prefix']
+        cmd = f'{start_exe_prefix}{filename} -y --no-modify-path'
 
         if 'RUSTUP_HOME' not in env: env['RUSTUP_HOME'] = content_dir
         if 'CARGO_HOME' not in env: env['CARGO_HOME'] = content_dir
