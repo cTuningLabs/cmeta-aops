@@ -162,7 +162,7 @@ class CTool(InitCTool):
 
         ###########################################################################################
         # Finish configuring
-        path_to_tool = os.path.join(content_dir, 'bin', 'rustup.exe')
+        path_to_tool = os.path.join(content_dir, 'bin', f'rustup{uext}')
 
         return {
           'return': 0, 
