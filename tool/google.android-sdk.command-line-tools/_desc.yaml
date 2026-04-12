@@ -1,0 +1,15 @@
+names:
+  - sdkmanager{{global.host.vars.file_ext_bat}}
+
+match_version: 
+  - regex: '^\S+'
+    group: 0
+
+cmd_get_version: '{{tool_path}} --version'
+
+extra_paths:
+  windows:
+    - "C:\\Program Files\\Android\\**"
+    - "C:\\Program Files (x86)\\Android*\\**"
+    - "D:\\Program Files\\Android\\**"
+    - "D:\\Program Files (x86)\\Android*\\**"

@@ -1,0 +1,14 @@
+names:
+  - rustc{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: 'rustc\s+([\d\.]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/rust-lang/rust'
+cmd_get_versions_uses: 
+  - task: setup,a2f9b61079ce4333
+    name: git,959d8c0fbc004bd0
+cmd_get_versions_regex: 'refs/tags/(?:[A-Za-z0-9_.-]*[-v])?([^^\s]+)(?:\^\{\})?$'
+cmd_get_versions_regex_group: 1

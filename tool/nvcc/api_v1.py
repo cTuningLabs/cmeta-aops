@@ -170,7 +170,8 @@ class CTool(InitCTool):
             _aggregate_env['CUDA_PATH'] = cuda_home
 
             _path = _aggregate_env.setdefault('+PATH', [])
-            _path.insert(0, cuda_bin)
+            if cuda_bin not in _path:
+                _path.insert(0, cuda_bin)
 
             _result['result'] = result
 

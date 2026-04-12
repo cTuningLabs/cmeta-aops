@@ -1191,6 +1191,7 @@ class Category(InitCategory):
                    aggregate = True,
                    saved_uparams = None,
                    saved_local = None,
+                   skip_if_exist_in_list = True,
     ):
 
         # Save output for reproducibility
@@ -1199,10 +1200,17 @@ class Category(InitCategory):
 
         # Check aggregated results
         if aggregate and '_aggregate' in result:
+            print (aggregate)
             _aggregate = result['_aggregate']
             ctx_tasks = ctx.setdefault('tasks', {})
             _aggregated = ctx_tasks.setdefault('aggregated', {})
-            _aggregated = self.cm.utils.common.deep_merge(_aggregated, _aggregate, append_lists = True, prepend_lists=True)
+            _aggregated = self.cm.utils.common.deep_merge(
+              _aggregated, 
+              _aggregate, 
+              append_lists = True, 
+              prepend_lists = True, 
+              skip_if_exist_in_list = True,
+            )
 
         # Save results in the work_dir directory (cache, path, etc)
         if save:

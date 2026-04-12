@@ -15,12 +15,13 @@ uses:
     os: linux
     package: x11-apps
     sudo: True
-    if: '"{{global.host.os_extra.id}}" not in ["rocky"]'
+    if: '"fedora" not in "{{global.host.os_extra.id_like}}"'
 
   - task: install-sys-tool,38596f32da974d46
-    os_id: rocky
+    os: linux
     package: xterm
     sudo: True
+    if: '"fedora" in "{{global.host.os_extra.id_like}}"'
 
   - task: install-sys-tool,38596f32da974d46
     os: linux

@@ -1,0 +1,11 @@
+names:
+  - rustup{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: 'rustup\s+([\d\.]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+install_help_text:
+  Please check https://rust-lang.org/tools/install !

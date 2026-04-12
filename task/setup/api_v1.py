@@ -261,11 +261,14 @@ class CTask(InitCTask):
             elif desc.get('cmd_get_versions_regex'):
                 # Attempt to decode with regex
                 cmd_get_versions_regex = desc['cmd_get_versions_regex']
+                cmd_get_versions_regex_group = desc.get('cmd_get_versions_regex_group')
+                if not cmd_get_versions_regex_group:
+                    cmd_get_versions_regex_group = 1
                 import re
                 for s in output.splitlines():
                     match = re.search(cmd_get_versions_regex, s)
                     if match:
-                        v = match.group(1)
+                        v = match.group(cmd_get_versions_regex_group)
                         if v not in versions:
                             versions.append(v)
             else:
