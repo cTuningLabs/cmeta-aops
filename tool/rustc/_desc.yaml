@@ -12,3 +12,24 @@ cmd_get_versions_uses:
     name: git,959d8c0fbc004bd0
 cmd_get_versions_regex: 'refs/tags/(?:[A-Za-z0-9_.-]*[-v])?([^^\s]+)(?:\^\{\})?$'
 cmd_get_versions_regex_group: 1
+
+install_cmd:
+  all: "{{global.rustup.qpath}} toolchain install"
+
+install_cmd_version:
+  all: "{{global.rustup.qpath}} toolchain install {{simple_version}}"
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: rustup,24f3f18c49864687
+
+cache_params_use: 
+  all:
+    rustup:
+      path: "{{global.rustup.path}}"
+
+extra_paths:
+  windows:
+    - "{{global.rustup.path_home}}\\**"
+  linux:
+    - "{{global.rustup.path_home}}/**"

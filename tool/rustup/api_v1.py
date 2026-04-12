@@ -41,11 +41,7 @@ class CTool(InitCTool):
         version = params.get('version')
         version_simple = params.get('version_simple')
 
-        if not version:
-            version = '1.26.0'
-            version_simple = version
-
-        if not version_simple:
+        if version and not version_simple:
             return {
                 'return': 16, 
                 'error': f'custom install for "rustup" can use only exact/simple versions in "{__file__}"',
@@ -89,7 +85,11 @@ class CTool(InitCTool):
 
         filename = f'rustup-init{uext}'
 
-        url = f'https://static.rust-lang.org/rustup/archive/{version_simple}/{uarch2}-{uos}/{filename}'
+        if version_simple:
+            sub_path = f'archive/{version_simple}'
+        else:
+            sub_path = 'dist'
+        url = f'https://static.rust-lang.org/rustup/{sub_path}/{uarch2}-{uos}/{filename}'
 
         cur_dir = os.getcwd()
         directory = 'content'

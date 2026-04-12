@@ -26,6 +26,7 @@ class CTask(InitCTask):
             cmd: str = "",
             chdir: str = None,
             chdir_and_stay: str = None,
+            mkdir: str = None,
             env: dict = {},
             genv: dict = {},
             timeout: int = None,
@@ -65,6 +66,12 @@ class CTask(InitCTask):
         envs = _aggregated.get('env', {})
 
         cur_dir = os.getcwd()
+
+        if mkdir:
+            if con and verbose:
+                print ('')
+                print (f'{space}INFO: mkdir -p "{chdir}"')
+            os.makedirs(mkdir, exist_ok=True)
 
         if chdir:
             if con and verbose:

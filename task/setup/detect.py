@@ -141,7 +141,12 @@ def detect_existing_tool(self,
                 if 'extra_paths' in desc:
                     all_extra_paths = desc['extra_paths']
 
-                    key = uname if uname in all_extra_paths else 'linux'
+                    if uname in all_extra_paths:
+                        key = uname
+                    elif 'linux' in all_extra_paths:
+                        key = 'linux'
+                    else:
+                        key = 'all'
 
                     extra_paths = all_extra_paths.get(key)
 
