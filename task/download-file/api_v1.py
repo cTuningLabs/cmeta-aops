@@ -47,6 +47,9 @@ class CTask(InitCTask):
         else:
             filename = self._extract_filename_from_url(urls[0])
 
+        print (filename)
+        input('xyz')
+
         if not filename:
             if url:
                 return self.cm.error(f'couldn\'t extract filename from {url} in "{__file__}" ({__name__})')
@@ -94,7 +97,9 @@ class CTask(InitCTask):
         urlhead = os.path.dirname(url)
 
         filename = None
-        if "." in urltail and "/" in urlhead:
+        if urltail and "/" in urlhead:
+#        this doesn't detect filenames without extension!
+#        if "." in urltail and "/" in urlhead:
             # Check if ? after filename
             j = urltail.find('?')
             if j>0:

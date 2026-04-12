@@ -1200,7 +1200,6 @@ class Category(InitCategory):
 
         # Check aggregated results
         if aggregate and '_aggregate' in result:
-            print (aggregate)
             _aggregate = result['_aggregate']
             ctx_tasks = ctx.setdefault('tasks', {})
             _aggregated = ctx_tasks.setdefault('aggregated', {})
