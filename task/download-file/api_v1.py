@@ -47,9 +47,6 @@ class CTask(InitCTask):
         else:
             filename = self._extract_filename_from_url(urls[0])
 
-        print (filename)
-        input('xyz')
-
         if not filename:
             if url:
                 return self.cm.error(f'couldn\'t extract filename from {url} in "{__file__}" ({__name__})')
