@@ -515,7 +515,7 @@ class Category(InitCategory):
 
         cache_params = {}
 
-        cache_features = cdesc.get('cache_features')
+        cache_features = cdesc.get('cache_features', {})
         if cache_features:
             r = self.cm.utils.common.expand_strings_in_dict(cache_features, ctx_tasks)
             if self.cm.catch_error(r): return r
@@ -830,8 +830,8 @@ class Category(InitCategory):
                         if (os.path.isfile(ca_tool_path) or os.path.isdir(ca_tool_path)):
                             x_version = cache_artifact['cmeta'].get('params', {}).get('version')
                             x_name = cache_artifact['cmeta'].get('params', {}).get('name')
-
-                            if x_version and x_name:
+                            skip_cache_version_check = cache_artifact['cmeta'].get('skip_cache_version_check', False)
+                            if not skip_cache_version_check and x_version and x_name:
                                 x_cref = cache_artifact['cmeta'].get('cref')
 
                                 if x_cref.get('artifact_uid') in ['a2f9b61079ce4333'] and \

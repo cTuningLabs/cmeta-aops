@@ -179,6 +179,7 @@ class CTool(InitCTool):
                                       cache_tags,
                                       cache_params,
                                       cache_features,
+                                      cache_meta,
         ):
 
         if self.cm.debug:

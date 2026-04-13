@@ -47,6 +47,7 @@ class CTask(InitCTask):
                 'detect','install', 'build', 'versions',
                 'skip_detect', 'skip_install', 'skip_build',
                 'skip_install_uses', 'skip_build_uses',
+                'skip_cache_version_check',
                 'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 
                 'version', 'env', 'timeout', 'with', 'arg3', 
                 'ignore_install_errors', 'ignore_build_errors',
@@ -386,6 +387,9 @@ class CTask(InitCTask):
                 if v is not None:
                      self.cm.utils.common.smart_set(dsc[1], k, v)
 
+        desc_cache_features_const = desc.get('cache_features_const')
+        if desc_cache_features_const:
+            cache_features = self.cm.utils.common.deep_merge(cache_features, desc_cache_features_const, append_lists=True)
 
         if desc.get('cache_params_with', False):
             if 'with' in params:
@@ -421,6 +425,7 @@ class CTask(InitCTask):
                  cache_tags, 
                  cache_params,
                  cache_features,
+                 cache_meta = cache_meta,
             )
             if self.cm.catch_error(r): return r
 
@@ -459,6 +464,7 @@ class CTask(InitCTask):
         skip_install_uses = kwargs_copy.get('skip_install_uses', False)
         skip_build = kwargs_copy.pop('skip_build', False)
         skip_build_uses = kwargs_copy.get('skip_build_uses', False)
+        skip_cache_version_check = kwargs_copy.get('skip_cache_version_check')
 
         result = {'return':0}
 
@@ -515,6 +521,9 @@ class CTask(InitCTask):
         artifact_print_name = r['artifact_print_name']
 
         uname = ctx_tasks['global']['host']['os']['uname']
+
+        if skip_cache_version_check is None:
+            skip_cache_version_check = desc.get('skip_cache_version_check', False)
 
         # Checking various conditions
         if detect is None and install is None and build is None:
@@ -722,6 +731,9 @@ class CTask(InitCTask):
 
         if warning:
             result['warning'] = warning
+
+        if skip_cache_version_check:
+            result['skip_cache_version_check'] = True
 
         return result
 
