@@ -96,6 +96,7 @@ def install_tool(self,
 
     proceed = False
 
+    ###############################################################################################
     if install_cmd or has_custom_install:
         if quiet or install is True or not con:
             proceed = True
@@ -117,9 +118,25 @@ def install_tool(self,
     else:
         return {'return':16, 'error':f'no installation procedure for tool "{artifact_print_name}"'}
 
-
     if not proceed:
         return result
+
+    ###############################################################################################
+    install_note = desc.get('install_note')
+
+    if install_note:
+        if con:
+            print ('')
+            print (f'{space}{install_note}')
+
+            if not quiet:
+                print ('')
+                input(f'{space}Press Enter to continue:')
+
+            print ('')
+
+    ###############################################################################################
+    requires_sudo = desc.get('requires_sudo', {})
 
     if install_uses_all and not skip_install_uses:
         ii = {'category': self.category_alias + ',' + self.category_uid,

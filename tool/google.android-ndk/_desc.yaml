@@ -1,11 +1,20 @@
 names:
-  - sdkmanager{{global.host.vars.file_ext_bat}}
+  - ndk-which.cmd
 
 match_version: 
-  - regex: '^\S+'
-    group: 0
+  - regex: '^Pkg\.Revision\s*=\s*([^\n]+)'
+    group: 1
 
-cmd_get_version: '{{tool_path}} --version'
+cmd_get_version: 'more {{root_tool_path}}{{os_sep}}source.properties'
+
+install_note: >-
+  Please note that installing Android NDK may require administrative privileges!
+
+install_cmd:
+  all: '{{global.google-android-sdk-command-line-tools.qpath}} "ndk;29.0.14206865"'
+
+install_cmd_version:
+  all: '{{global.google-android-sdk-command-line-tools.qpath}} "ndk;{{simple_version}}"'
 
 extra_paths:
   windows:
@@ -13,3 +22,8 @@ extra_paths:
     - "C:\\Program Files (x86)\\Android*\\**"
     - "D:\\Program Files\\Android\\**"
     - "D:\\Program Files (x86)\\Android*\\**"
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: google.android-sdk.command-line-tools,2ee8eb31da764eef
+  

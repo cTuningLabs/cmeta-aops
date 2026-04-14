@@ -1,0 +1,26 @@
+storage_key: android-ndk-clang-cpp
+
+names:
+  - clang++{{global.host.vars.file_ext_exe}}
+
+cmd_get_version: '{{tool_path}} --version'
+
+cache_params_use: 
+  all:
+    android-ndk:
+      version: "{{global.google-android-ndk.version}}"
+      path: "{{global.google-android-ndk.path_home}}"
+
+only_paths:
+  windows:
+    - "{{global.google-android-ndk.path_home}}\\**"
+  linux:
+    - "{{global.google-android-ndk.path_home}}/**"
+
+match_version: 
+  - regex: 'clang version\s+([\d.]+)'
+    group: 1
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: google.android-ndk,ce4e80d6d26240c0

@@ -467,7 +467,7 @@ class CTask(InitCTask):
         skip_build_uses = kwargs_copy.get('skip_build_uses', False)
         skip_cache_version_check = kwargs_copy.get('skip_cache_version_check')
 
-        result = {'return':0}
+        result = {'return': 0}
 
         ctx_tasks = ctx['tasks']
 
@@ -717,6 +717,14 @@ class CTask(InitCTask):
             if warning:
                 extra['warning'] = warning
             return self.cm.error(f'failed to find tool "{artifact_print_name}"{x} in "{__file__}"', extra = extra)
+
+        ##############################################################################
+        # Add cache path if in cache
+        in_cache = ctx_tasks['run_control'].get('cache', False)
+        if in_cache:
+            path_cmeta_cache = os.getcwd()
+            result['path_cmeta_cache'] = path_cmeta_cache
+            result['qpath_cmeta_cache'] = self.cm.utils.files.quote_path(path_cmeta_cache)
 
         ##############################################################################
         # Check path to tool

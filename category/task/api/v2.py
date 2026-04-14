@@ -1067,7 +1067,10 @@ class Category(InitCategory):
                 print ('')
                 print (f'{space}RUN TASK CODE: {task_api_path}')
 
+            save_ctx_tasks_control = ctx['tasks'].get('run_control', {})
+
             ctx_tasks_control = ctx['tasks']['run_control'] = {}
+
             if update:
                 ctx_tasks_control['update'] = True
             if clean:
@@ -1075,6 +1078,7 @@ class Category(InitCategory):
             if new:
                 ctx_tasks_control['new'] = True
 
+            ctx_tasks_control['cache'] = cache
             ctx_tasks_control['cur_dir'] = cur_dir
             ctx_tasks_control['work_dir'] = work_dir
             ctx_tasks_control['task_path'] = task_path
@@ -1088,6 +1092,9 @@ class Category(InitCategory):
             # Run custom code!
             result = task_api_code.run(ctx, **uparams)
             #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+            # Restore control
+            ctx['tasks']['run_control'] = save_ctx_tasks_control
  
             # Check if success or fail
             if result['return']>0:
@@ -1104,9 +1111,6 @@ class Category(InitCategory):
 
 
                 return self.cm.error(result['error'], result['return'])
-
-
-
 
         # Check if extra params were produced by the task that should be added to cache entry
         _update_params = result.pop('_update_params', {})
