@@ -1,0 +1,756 @@
+{
+  "category": {
+    "artifact_alias": "task",
+    "artifact_uid": "c36be4b9314a45e0",
+    "category_alias": "category",
+    "category_uid": "dd9ea50e7f76467f",
+    "repo_alias": "ctuninglabs@cmeta-aops",
+    "repo_uid": "3cb4ee4f444048f6"
+  },
+  "category_artifact": {
+    "cmeta": {
+      "artifact": "c36be4b9314a45e0",
+      "authors": "[Grigori Fursin](https://cKnowledge.org/gfursin)",
+      "cache_alias_separator": "--",
+      "category": "category,dd9ea50e7f76467f",
+      "copyright": "2025 Grigori Fursin and cTuning Labs. All rights reserved.",
+      "creation_timestamp": "2025-12-01T16:58:22.327355",
+      "extra_flags_help": "--info or ",
+      "last_api_version": 2,
+      "min_cmeta_version": {
+        "1": "0.24.1",
+        "2": "0.26.3"
+      },
+      "uses_categories": {
+        "cache": "cache,1ebdcc1cc30c4022",
+        "utils": "utils,234ce5e3262e4d52"
+      }
+    },
+    "cmeta_ref_parts": {
+      "artifact_alias": "task",
+      "artifact_uid": "c36be4b9314a45e0",
+      "category_alias": "category",
+      "category_uid": "dd9ea50e7f76467f",
+      "repo_alias": "ctuninglabs@cmeta-aops",
+      "repo_uid": "3cb4ee4f444048f6"
+    },
+    "path": "D:\\!FGG_Repos\\repos\\ctuninglabs@cmeta-aops\\category\\task"
+  },
+  "category_cmeta": {
+    "artifact": "c36be4b9314a45e0",
+    "authors": "[Grigori Fursin](https://cKnowledge.org/gfursin)",
+    "cache_alias_separator": "--",
+    "category": "category,dd9ea50e7f76467f",
+    "copyright": "2025 Grigori Fursin and cTuning Labs. All rights reserved.",
+    "creation_timestamp": "2025-12-01T16:58:22.327355",
+    "extra_flags_help": "--info or ",
+    "last_api_version": 2,
+    "min_cmeta_version": {
+      "1": "0.24.1",
+      "2": "0.26.3"
+    },
+    "uses_categories": {
+      "cache": "cache,1ebdcc1cc30c4022",
+      "utils": "utils,234ce5e3262e4d52"
+    }
+  },
+  "command": "run",
+  "control": {
+    "category": "task,c36be4b9314a45e0",
+    "command": "run",
+    "con": true,
+    "verbose": true
+  },
+  "last_self_time": 1.528953500033822,
+  "nested_call": 1,
+  "origin": {
+    "cli": {
+      "caller": "cx",
+      "cmd": [
+        ".",
+        "setup",
+        "-j",
+        "--with.add_env",
+        "--save_here"
+      ]
+    },
+    "control": {
+      "category": "tool,c393ba5c6fa14f66",
+      "command": "setup",
+      "con": true,
+      "json": true,
+      "verbose": true
+    },
+    "params": {
+      "_cli": {
+        "caller": "cx",
+        "cmd": [
+          ".",
+          "setup",
+          "-j",
+          "--with.add_env",
+          "--save_here"
+        ]
+      },
+      "arg1": "ctuninglabs@cmeta-aops,3cb4ee4f444048f6:node-js,238f15e1d6184359",
+      "category": "tool,c393ba5c6fa14f66",
+      "command": "setup",
+      "con": true,
+      "j": true,
+      "save_here": true,
+      "with": {
+        "add_env": true
+      }
+    },
+    "pwd": "D:\\!FGG_Repos\\repos\\ctuninglabs@cmeta-aops\\tool\\node-js"
+  },
+  "tasks": {
+    "aggregated": {
+      "env": {
+        "+PATH": [
+          "C:\\Program Files\\nodejs"
+        ],
+        "NODEJS_HOME": "C:\\Program Files"
+      }
+    },
+    "global": {
+      "enable-long-paths-win": {
+        "_impact": {
+          "self_time": 0.0022555000032298267,
+          "self_time_with_cmeta": 0.0062340000295080245
+        },
+        "enabled": true,
+        "return": 0
+      },
+      "host": {
+        "_aggregate": {
+          "env": {}
+        },
+        "_impact": {
+          "self_time": 0.16746050002984703,
+          "self_time_with_cmeta": 0.17299620003905147
+        },
+        "ck": {
+          "version": "0.26.6"
+        },
+        "hostname": {
+          "hostname": "FGG-LENOVO-P14S",
+          "ipv4": [
+            "192.168.15.58",
+            "172.21.160.1",
+            "172.20.144.1",
+            "100.126.12.65"
+          ],
+          "ipv4_default": "192.168.15.58",
+          "ipv6": [
+            "fe80::cb3b:89ca:c87f:d67",
+            "fe80::bb2e:f380:c315:14cf",
+            "fe80::38cf:9981:ff3f:c28a",
+            "fe80::f5ac:9f9c:24dc:2604"
+          ],
+          "ipv6_default": null
+        },
+        "os": {
+          "bits": 64,
+          "home_path": "C:\\Users\\grigo",
+          "python_bits": 64,
+          "python_os_cpu_count": 16,
+          "python_os_name": "nt",
+          "python_platform": "Windows-11-10.0.26200-SP0",
+          "python_platform_aliased": "Windows-11-10.0.26200-SP0",
+          "python_platform_architecture": [
+            "64bit",
+            "WindowsPE"
+          ],
+          "python_platform_machine": "AMD64",
+          "python_platform_node": "FGG-LENOVO-P14S",
+          "python_platform_processor": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+          "python_platform_release": "11",
+          "python_platform_system": "Windows",
+          "python_platform_terse": "Windows-11",
+          "python_platform_uname": [
+            "Windows",
+            "FGG-LENOVO-P14S",
+            "11",
+            "10.0.26200",
+            "AMD64",
+            "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel"
+          ],
+          "python_platform_version": "10.0.26200",
+          "python_sys_platform": "win32",
+          "uarch": "amd64",
+          "uname": "windows"
+        },
+        "os_env": {
+          "ALLUSERSPROFILE": "C:\\ProgramData",
+          "AL_OMNIVERSE_CONNECTOR_PATH": "C:\\Program Files\\AnyLogic 8.9 Personal Learning Edition\\omniverse-connector\\AnyLogicOmniverseConnector.exe",
+          "APPDATA": "C:\\Users\\grigo\\AppData\\Roaming",
+          "CHOCOLATEYINSTALL": "C:\\ProgramData\\chocolatey",
+          "CHOCOLATEYLASTPATHUPDATE": "133917805810214276",
+          "CLASSPATH": "D:\\!FGG\\Progs\\!fu",
+          "CMETA_AUTHORS": "Grigori Fursin",
+          "CMETA_COPYRIGHT": "Copyright (C) 2026 Grigori Fursin. All rights reserved.",
+          "CMETA_HOME2": "D:\\!FGG_Repos",
+          "CMETA_INTERNAL_REPO_PATH": "D:\\!FGG_Repos\\fgg\\fgg.project\\cMeta\\cmeta\\cmeta\\internal-repo",
+          "CMETA_TOOL_EXTRA_PATHS": "C:\\!Progs\\**",
+          "CMETA_VERBOSE": "true",
+          "CMX_HOME": "D:\\Work1\\CM",
+          "CM_AUTOMATION_CK_CMD": "Far {PATH}",
+          "CM_AUTOMATION_CK_EXTRA_TAGS": "grigori,fursin,cknowledge,ctuning",
+          "CM_AUTOMATION_CK_REPO": "fgg",
+          "CM_AUTOMATION_WORK_CMD": "Far {PATH}",
+          "CM_AUTOMATION_WORK_EXTRA_TAGS": "grigori,fursin,cknowledge,ctuning",
+          "CM_AUTOMATION_WORK_REPO": "fgg",
+          "CM_REPOS": "D:\\Work1\\CM",
+          "CM_SET_VENV_SHELL": "Far \"CM_SET_VENV_WORK\"",
+          "COMMONPROGRAMFILES": "C:\\Program Files\\Common Files",
+          "COMMONPROGRAMFILES(X86)": "C:\\Program Files (x86)\\Common Files",
+          "COMMONPROGRAMW6432": "C:\\Program Files\\Common Files",
+          "COMPUTERNAME": "FGG-LENOVO-P14S",
+          "COMSPEC": "C:\\WINDOWS\\system32\\cmd.exe",
+          "CSERVER_CM_PRINT_HOST_INFO": "yes",
+          "CUDA_PATH": "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2",
+          "CUDA_PATH_V13_2": "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2",
+          "DOKANLIBRARY1": "C:\\Program Files\\Dokan\\Dokan Library-1.5.1\\",
+          "DOKANLIBRARY1_LIBRARYPATH_X64": "C:\\Program Files\\Dokan\\Dokan Library-1.5.1\\lib\\",
+          "DOKANLIBRARY1_LIBRARYPATH_X86": "C:\\Program Files\\Dokan\\Dokan Library-1.5.1\\x86\\lib\\",
+          "DRIVERDATA": "C:\\Windows\\System32\\Drivers\\DriverData",
+          "EFC_13756_1592913036": "1",
+          "FARHOME": "C:\\Program Files\\Far Manager",
+          "FARLANG": "English",
+          "FARLOCALPROFILE": "C:\\Users\\grigo\\AppData\\Local\\Far Manager\\Profile",
+          "FARPROFILE": "C:\\Users\\grigo\\AppData\\Roaming\\Far Manager\\Profile",
+          "GIT_SSH_COMMAND": "ssh.exe",
+          "GOPATH": "C:\\Users\\grigo\\go",
+          "HOMEDRIVE": "C:",
+          "HOMEPATH": "\\Users\\grigo",
+          "IGCCSVC_DB": "AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAAglO2eHcZU0a1H/CJjerikAQAAAACAAAAAAAQZgAAAAEAACAAAACetjSOFOZXdSxqkfUN9gb1BxI93OtdYlQsr65TfJkJiAAAAAAOgAAAAAIAACAAAAAR3OgqpFHHyk5PhIeuJwfcKS8QQbNJSMg4EaRm56AvLGAAAAAPlQiecXmGfeDOFLgaAyBCfLci0kqjK8YsjW0RcRT5CaJgukXNmYlZsWk3OskYIbBhMZJtYB2m8Cs++9dN1mSeF9xWj25ds0qjKRPQM21j/ZWfqbmqj3jIo0x5DiRLqedAAAAAjw73ubtYSDtiv2ezEeq1Bwwr0GzmeafUpOnQ/h+akvQxdMK2/jCmqlRK6ub7xX1fmv6hpRYLHzlPOu8zrdiG0Q==",
+          "LOCALAPPDATA": "C:\\Users\\grigo\\AppData\\Local",
+          "LOGONSERVER": "\\\\FGG-LENOVO-P14S",
+          "NUMBER_OF_PROCESSORS": "16",
+          "OCULUSBASE": "C:\\Program Files\\Oculus\\",
+          "ONEDRIVE": "C:\\Users\\grigo\\OneDrive - cTuning foundation",
+          "OS": "Windows_NT",
+          "PATH": "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\Program Files\\GitHub CLI\\;C:\\!Progs\\Python3.14.0\\Scripts;C:\\!Progs\\Python3.14.0\\;C:\\Program Files\\Oculus\\Support\\oculus-runtime;C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\;C:\\Windows\\System32\\OpenSSH\\;D:\\!FGG\\Progs\\!fu;D:\\!FGG\\Progs\\!Misc;C:\\Program Files\\WinRar;C:\\!Progs\\jdk-21.0.7+6-windows-build\\bin;C:\\!Progs\\MiKTeX\\miktex\\bin\\x64\\;C:\\Program Files\\Graphviz\\bin;C:\\Program Files\\dotnet\\;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files (x86)\\HP\\HP OCR\\DB_Lib\\;C:\\Program Files\\HP\\Common\\HPDestPlgIn\\;C:\\Program Files (x86)\\HP\\Common\\HPDestPlgIn\\;C:\\ProgramData\\chocolatey\\bin;C:\\Program Files\\RedHat\\Podman\\;C:\\Program Files (x86)\\Incredibuild;C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\;C:\\Program Files\\Go\\bin;C:\\Program Files\\nodejs\\;C:\\Program Files (x86)\\AOMEI\\AOMEI Backupper\\8.0.0;C:\\Program Files\\TortoiseGit\\bin;C:\\Program Files\\Tailscale\\;C:\\Program Files\\Microsoft SQL Server\\170\\Tools\\Binn\\;C:\\Program Files\\Microsoft SQL Server\\Client SDK\\ODBC\\170\\Tools\\Binn\\;C:\\Program Files\\PowerToys\\DSCModules\\;C:\\Program Files\\Git\\cmd;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Users\\grigo\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\grigo\\.cargo\\bin;C:\\Users\\grigo\\scoop\\shims;C:\\Users\\grigo\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\grigo\\AppData\\Local\\Programs\\Microsoft VS Code\\bin;C:\\Users\\grigo\\AppData\\Local\\Google\\Cloud SDK\\google-cloud-sdk\\bin;C:\\Users\\grigo\\AppData\\Local\\GitHubDesktop\\bin;C:\\Users\\grigo\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\grigo\\AppData\\Local\\Microsoft\\WinGet\\Links;C:\\Program Files\\HP\\Common\\HPDestPlgIn\\;C:\\Program Files (x86)\\HP\\Common\\HPDestPlgIn\\;C:\\Users\\grigo\\.local\\bin;C:\\Users\\grigo\\go\\bin;C:\\Users\\grigo\\AppData\\Roaming\\npm;C:\\!Progs\\Strawberry\\perl\\bin;C:\\Program Files\\IrfanView;C:\\Users\\grigo\\AppData\\Local\\Programs\\cursor\\resources\\app\\bin;C:\\Users\\grigo\\.dotnet\\tools;C:\\Users\\grigo\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe\\platform-tools;",
+          "PATHEXT": ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC",
+          "PM_PACKAGES_ROOT": "X:\\packman-repo",
+          "PROCESSOR_ARCHITECTURE": "AMD64",
+          "PROCESSOR_IDENTIFIER": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+          "PROCESSOR_LEVEL": "6",
+          "PROCESSOR_REVISION": "ba02",
+          "PROGRAMDATA": "C:\\ProgramData",
+          "PROGRAMFILES": "C:\\Program Files",
+          "PROGRAMFILES(X86)": "C:\\Program Files (x86)",
+          "PROGRAMW6432": "C:\\Program Files",
+          "PSMODULEPATH": "C:\\Users\\grigo\\Documents\\WindowsPowerShell\\Modules;C:\\Users\\grigo\\AppData\\Local\\Google\\Cloud SDK\\google-cloud-sdk\\platform\\PowerShell",
+          "PUBLIC": "C:\\Users\\Public",
+          "SESSIONNAME": "Console",
+          "SYSTEMDRIVE": "C:",
+          "SYSTEMROOT": "C:\\WINDOWS",
+          "TEMP": "c:\\Temp",
+          "TMP": "c:\\Temp",
+          "USERDOMAIN": "FGG-LENOVO-P14S",
+          "USERDOMAIN_ROAMINGPROFILE": "FGG-LENOVO-P14S",
+          "USERNAME": "grigo",
+          "USERPROFILE": "C:\\Users\\grigo",
+          "WINDIR": "C:\\WINDOWS",
+          "ZES_ENABLE_SYSMAN": "1"
+        },
+        "os_extra": {
+          "id": "windows",
+          "id_like": "windows",
+          "install_cmd": "winget install {{name}}",
+          "install_cmd_sudo": "winget install {{name}}",
+          "install_cmd_sudo_version": "winget install {{name}} --version {{version}}",
+          "install_cmd_version": "winget install {{name}} --version {{version}}",
+          "package_manager": "winget",
+          "passwordless_sudo": true,
+          "sudo": false
+        },
+        "return": 0,
+        "vars": {
+          "call_script": "call",
+          "cmd_sep": "&&",
+          "file_ext_bat": ".bat",
+          "file_ext_exe": ".exe",
+          "file_ext_exe_search": ".exe",
+          "os_sep": "\\",
+          "start_exe_prefix": ""
+        }
+      },
+      "init": {
+        "_impact": {
+          "self_time": 0.0017133999499492347,
+          "self_time_with_cmeta": 0.0032818999607115984
+        },
+        "return": 0,
+        "winget_install_flags": "--silent --accept-source-agreements --accept-package-agreements"
+      },
+      "node-js": {
+        "_aggregate": {
+          "env": {
+            "+PATH": [
+              "C:\\Program Files\\nodejs"
+            ],
+            "NODEJS_HOME": "C:\\Program Files"
+          }
+        },
+        "_impact": {
+          "self_time": 0.5469943000352941,
+          "self_time_with_cmeta": 2.1085620000376366
+        },
+        "_params": {
+          "name": "node-js",
+          "tool_path": "C:\\Program Files\\nodejs\\node.exe",
+          "version": "22.18.0"
+        },
+        "cmd": "\"C:\\Program Files\\nodejs\\node.exe\"",
+        "cmd_call": "\"C:\\Program Files\\nodejs\\node.exe\"",
+        "cmd_filename": "node.exe",
+        "filename": "node.exe",
+        "path": "C:\\Program Files\\nodejs\\node.exe",
+        "path_bin": "C:\\Program Files\\nodejs",
+        "path_bin_in_env": true,
+        "path_home": "C:\\Program Files",
+        "qpath": "\"C:\\Program Files\\nodejs\\node.exe\"",
+        "qpath_bin": "\"C:\\Program Files\\nodejs\"",
+        "qpath_home": "\"C:\\Program Files\"",
+        "return": 0,
+        "version": "22.18.0"
+      },
+      "runner": {
+        "_impact": {
+          "self_time": 0.000959100027102977,
+          "self_time_with_cmeta": 1.5284628000226803
+        },
+        "os": "Windows",
+        "os_lower": "windows",
+        "platform_system": "Windows",
+        "platform_system_lower": "windows",
+        "return": 0
+      },
+      "target": {
+        "_impact": {
+          "self_time": 1.3419946000212803,
+          "self_time_with_cmeta": 1.3439751000260003
+        },
+        "compute": [
+          "cpu"
+        ],
+        "features": {
+          "cpu": {
+            "arch_bits": 64,
+            "arch_family": "x86",
+            "arch_normalized": "x86_64",
+            "arch_raw": "x64",
+            "core_classes": {
+              "groups": {
+                "0": {
+                  "efficiency_class": 0,
+                  "logical_cpu_count": 8,
+                  "physical_core_count": 8,
+                  "smt_core_count": 0
+                },
+                "1": {
+                  "efficiency_class": 1,
+                  "logical_cpu_count": 8,
+                  "physical_core_count": 4,
+                  "smt_core_count": 4
+                }
+              },
+              "kind": "efficiency_class"
+            },
+            "core_rows": [
+              {
+                "efficiency_class": 1,
+                "group": 0,
+                "logical_cpu_count": 2,
+                "mask": 3,
+                "smt": true
+              },
+              {
+                "efficiency_class": 1,
+                "group": 0,
+                "logical_cpu_count": 2,
+                "mask": 12,
+                "smt": true
+              },
+              {
+                "efficiency_class": 1,
+                "group": 0,
+                "logical_cpu_count": 2,
+                "mask": 48,
+                "smt": true
+              },
+              {
+                "efficiency_class": 1,
+                "group": 0,
+                "logical_cpu_count": 2,
+                "mask": 192,
+                "smt": true
+              },
+              {
+                "efficiency_class": 0,
+                "group": 0,
+                "logical_cpu_count": 1,
+                "mask": 256,
+                "smt": false
+              },
+              {
+                "efficiency_class": 0,
+                "group": 0,
+                "logical_cpu_count": 1,
+                "mask": 512,
+                "smt": false
+              },
+              {
+                "efficiency_class": 0,
+                "group": 0,
+                "logical_cpu_count": 1,
+                "mask": 1024,
+                "smt": false
+              },
+              {
+                "efficiency_class": 0,
+                "group": 0,
+                "logical_cpu_count": 1,
+                "mask": 2048,
+                "smt": false
+              },
+              {
+                "efficiency_class": 0,
+                "group": 0,
+                "logical_cpu_count": 1,
+                "mask": 4096,
+                "smt": false
+              },
+              {
+                "efficiency_class": 0,
+                "group": 0,
+                "logical_cpu_count": 1,
+                "mask": 8192,
+                "smt": false
+              },
+              {
+                "efficiency_class": 0,
+                "group": 0,
+                "logical_cpu_count": 1,
+                "mask": 16384,
+                "smt": false
+              },
+              {
+                "efficiency_class": 0,
+                "group": 0,
+                "logical_cpu_count": 1,
+                "mask": 32768,
+                "smt": false
+              }
+            ],
+            "efficiency_class_groups": {
+              "0": {
+                "efficiency_class": 0,
+                "logical_cpu_count": 8,
+                "physical_core_count": 8,
+                "smt_core_count": 0
+              },
+              "1": {
+                "efficiency_class": 1,
+                "logical_cpu_count": 8,
+                "physical_core_count": 4,
+                "smt_core_count": 4
+              }
+            },
+            "extended_identifier": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+            "features_normalized": {
+              "aes": false,
+              "arm_v8": false,
+              "asimd": false,
+              "avx": true,
+              "avx2": true,
+              "avx512f": false,
+              "crc32": false,
+              "neon": false,
+              "sha1": false,
+              "sha2": false,
+              "sse": true,
+              "sse2": true,
+              "sse4_1": true,
+              "sse4_2": true,
+              "ssse3": true,
+              "sve": false,
+              "sve2": false,
+              "vmx_or_svm": false
+            },
+            "features_raw": [
+              "avx",
+              "avx2",
+              "sse",
+              "sse2",
+              "sse4_1",
+              "sse4_2",
+              "ssse3"
+            ],
+            "interpreter_bits": 64,
+            "logical_cpu_count": 16,
+            "logical_cpu_count_api": 16,
+            "logical_cpu_count_wmi": 16,
+            "package_count": 1,
+            "package_count_api": 1,
+            "package_rows": [
+              {
+                "relationship": "package",
+                "size": 48
+              }
+            ],
+            "packages": [
+              {
+                "Architecture": 9,
+                "Caption": "Intel64 Family 6 Model 186 Stepping 2",
+                "Description": "Intel64 Family 6 Model 186 Stepping 2",
+                "DeviceID": "CPU0",
+                "ExtendedIdentifier": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+                "Family": 198,
+                "Manufacturer": "GenuineIntel",
+                "Name": "13th Gen Intel(R) Core(TM) i7-1360P",
+                "NumberOfCores": 12,
+                "NumberOfLogicalProcessors": 16,
+                "ProcessorId": "BFEBFBFF000B06A2",
+                "Stepping": null
+              }
+            ],
+            "physical_core_count": 12,
+            "physical_core_count_api": 12,
+            "platform": "windows",
+            "processor_identifier": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+            "usable_logical_cpu_count": 16
+          }
+        },
+        "return": 0
+      },
+      "target-cpu": {
+        "_impact": {
+          "self_time": 1.3378829999710433,
+          "self_time_with_cmeta": 1.3410450000083074
+        },
+        "features": {
+          "arch_bits": 64,
+          "arch_family": "x86",
+          "arch_normalized": "x86_64",
+          "arch_raw": "x64",
+          "core_classes": {
+            "groups": {
+              "0": {
+                "efficiency_class": 0,
+                "logical_cpu_count": 8,
+                "physical_core_count": 8,
+                "smt_core_count": 0
+              },
+              "1": {
+                "efficiency_class": 1,
+                "logical_cpu_count": 8,
+                "physical_core_count": 4,
+                "smt_core_count": 4
+              }
+            },
+            "kind": "efficiency_class"
+          },
+          "core_rows": [
+            {
+              "efficiency_class": 1,
+              "group": 0,
+              "logical_cpu_count": 2,
+              "mask": 3,
+              "smt": true
+            },
+            {
+              "efficiency_class": 1,
+              "group": 0,
+              "logical_cpu_count": 2,
+              "mask": 12,
+              "smt": true
+            },
+            {
+              "efficiency_class": 1,
+              "group": 0,
+              "logical_cpu_count": 2,
+              "mask": 48,
+              "smt": true
+            },
+            {
+              "efficiency_class": 1,
+              "group": 0,
+              "logical_cpu_count": 2,
+              "mask": 192,
+              "smt": true
+            },
+            {
+              "efficiency_class": 0,
+              "group": 0,
+              "logical_cpu_count": 1,
+              "mask": 256,
+              "smt": false
+            },
+            {
+              "efficiency_class": 0,
+              "group": 0,
+              "logical_cpu_count": 1,
+              "mask": 512,
+              "smt": false
+            },
+            {
+              "efficiency_class": 0,
+              "group": 0,
+              "logical_cpu_count": 1,
+              "mask": 1024,
+              "smt": false
+            },
+            {
+              "efficiency_class": 0,
+              "group": 0,
+              "logical_cpu_count": 1,
+              "mask": 2048,
+              "smt": false
+            },
+            {
+              "efficiency_class": 0,
+              "group": 0,
+              "logical_cpu_count": 1,
+              "mask": 4096,
+              "smt": false
+            },
+            {
+              "efficiency_class": 0,
+              "group": 0,
+              "logical_cpu_count": 1,
+              "mask": 8192,
+              "smt": false
+            },
+            {
+              "efficiency_class": 0,
+              "group": 0,
+              "logical_cpu_count": 1,
+              "mask": 16384,
+              "smt": false
+            },
+            {
+              "efficiency_class": 0,
+              "group": 0,
+              "logical_cpu_count": 1,
+              "mask": 32768,
+              "smt": false
+            }
+          ],
+          "efficiency_class_groups": {
+            "0": {
+              "efficiency_class": 0,
+              "logical_cpu_count": 8,
+              "physical_core_count": 8,
+              "smt_core_count": 0
+            },
+            "1": {
+              "efficiency_class": 1,
+              "logical_cpu_count": 8,
+              "physical_core_count": 4,
+              "smt_core_count": 4
+            }
+          },
+          "extended_identifier": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+          "features_normalized": {
+            "aes": false,
+            "arm_v8": false,
+            "asimd": false,
+            "avx": true,
+            "avx2": true,
+            "avx512f": false,
+            "crc32": false,
+            "neon": false,
+            "sha1": false,
+            "sha2": false,
+            "sse": true,
+            "sse2": true,
+            "sse4_1": true,
+            "sse4_2": true,
+            "ssse3": true,
+            "sve": false,
+            "sve2": false,
+            "vmx_or_svm": false
+          },
+          "features_raw": [
+            "avx",
+            "avx2",
+            "sse",
+            "sse2",
+            "sse4_1",
+            "sse4_2",
+            "ssse3"
+          ],
+          "interpreter_bits": 64,
+          "logical_cpu_count": 16,
+          "logical_cpu_count_api": 16,
+          "logical_cpu_count_wmi": 16,
+          "package_count": 1,
+          "package_count_api": 1,
+          "package_rows": [
+            {
+              "relationship": "package",
+              "size": 48
+            }
+          ],
+          "packages": [
+            {
+              "Architecture": 9,
+              "Caption": "Intel64 Family 6 Model 186 Stepping 2",
+              "Description": "Intel64 Family 6 Model 186 Stepping 2",
+              "DeviceID": "CPU0",
+              "ExtendedIdentifier": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+              "Family": 198,
+              "Manufacturer": "GenuineIntel",
+              "Name": "13th Gen Intel(R) Core(TM) i7-1360P",
+              "NumberOfCores": 12,
+              "NumberOfLogicalProcessors": 16,
+              "ProcessorId": "BFEBFBFF000B06A2",
+              "Stepping": null
+            }
+          ],
+          "physical_core_count": 12,
+          "physical_core_count_api": 12,
+          "platform": "windows",
+          "processor_identifier": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+          "usable_logical_cpu_count": 16
+        },
+        "return": 0
+      }
+    },
+    "local": {},
+    "nested_call": 0,
+    "params": {
+      "name": "node-js",
+      "with": {
+        "add_env": true
+      }
+    },
+    "run_control": {
+      "cur_dir": "D:\\!FGG_Repos\\repos\\ctuninglabs@cmeta-aops\\tool\\node-js",
+      "task_api_path": "D:\\!FGG_Repos\\repos\\ctuninglabs@cmeta-aops\\task\\runner\\api_v1.py",
+      "task_desc": {
+        "storage_key": "runner",
+        "store_global": true,
+        "uses": [
+          {
+            "task": "host,96ac7118439c4490"
+          },
+          {
+            "skip_if_not_win": true,
+            "task": "enable-long-paths-win,a5ddea8d0773466d"
+          },
+          {
+            "task": "target,94decb2ddd28441f"
+          }
+        ]
+      },
+      "task_path": "D:\\!FGG_Repos\\repos\\ctuninglabs@cmeta-aops\\task\\runner",
+      "work_dir": "D:\\!FGG_Repos\\repos\\ctuninglabs@cmeta-aops\\tool\\node-js"
+    },
+    "use": {}
+  }
+}

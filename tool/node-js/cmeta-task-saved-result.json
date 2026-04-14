@@ -1,0 +1,32 @@
+{
+  "_aggregate": {
+    "env": {
+      "+PATH": [
+        "C:\\Program Files\\nodejs"
+      ],
+      "NODEJS_HOME": "C:\\Program Files"
+    }
+  },
+  "_impact": {
+    "self_time": 0.5469943000352941,
+    "self_time_with_cmeta": 2.1085620000376366
+  },
+  "_params": {
+    "name": "node-js",
+    "tool_path": "C:\\Program Files\\nodejs\\node.exe",
+    "version": "22.18.0"
+  },
+  "cmd": "\"C:\\Program Files\\nodejs\\node.exe\"",
+  "cmd_call": "\"C:\\Program Files\\nodejs\\node.exe\"",
+  "cmd_filename": "node.exe",
+  "filename": "node.exe",
+  "path": "C:\\Program Files\\nodejs\\node.exe",
+  "path_bin": "C:\\Program Files\\nodejs",
+  "path_bin_in_env": true,
+  "path_home": "C:\\Program Files",
+  "qpath": "\"C:\\Program Files\\nodejs\\node.exe\"",
+  "qpath_bin": "\"C:\\Program Files\\nodejs\"",
+  "qpath_home": "\"C:\\Program Files\"",
+  "return": 0,
+  "version": "22.18.0"
+}
