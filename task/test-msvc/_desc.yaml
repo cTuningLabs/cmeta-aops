@@ -1,8 +1,20 @@
 ﻿fail_if_not_win: True
 
 uses:
+  - task: runner,1e48cc0c5f6041a5
 
-- task: runner,1e48cc0c5f6041a5
+  - task: setup,a2f9b61079ce4333
+    name: msvc,e823256bbbe54b4e
 
-- task: setup,a2f9b61079ce4333
-  name: msvc,e823256bbbe54b4e
+  - task: cmd,c9ba0a88df394d7f
+    mkdir: '{{task_artifact_path}}{{os_sep}}tmp'
+    task_id: 'test-msvc-build,12f87d2418af4840'
+    cmd: >-
+      {{global.msvc.qpath}} /EHsc
+      {{task_artifact_path}}{{os_sep}}src{{os_sep}}test-windows.cpp
+      /Fo:{{task_artifact_path}}{{os_sep}}tmp{{os_sep}}test-windows.obj
+      /Fe:{{task_artifact_path}}{{os_sep}}tmp{{os_sep}}test-windows{{global.host.vars.file_ext_exe}}
+
+  - task: cmd,c9ba0a88df394d7f
+    task_id: 'test-msvc-run,43dbb7a3f21c4e1b'
+    cmd: '{{task_artifact_path}}{{os_sep}}tmp{{os_sep}}test-windows{{global.host.vars.file_ext_exe}}'

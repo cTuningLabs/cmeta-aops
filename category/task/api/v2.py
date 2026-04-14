@@ -28,6 +28,7 @@ class Category(InitCategory):
             'arg1', 
             'task_name', 
             'tags', 
+            't', 
             'ver', 
             'info', 
             'save', 
@@ -97,6 +98,7 @@ class Category(InitCategory):
         arg1 = params.get('arg1')
         if params.get('task_name'): arg1 = params['task_name']
         tags = params.get('tags')
+        if not tags: tags = params.get('t')
         ver = params.get('ver')
         info = params.get('info')
         use = params.get('use')
@@ -1203,6 +1205,7 @@ class Category(InitCategory):
             _aggregate = result['_aggregate']
             ctx_tasks = ctx.setdefault('tasks', {})
             _aggregated = ctx_tasks.setdefault('aggregated', {})
+
             _aggregated = self.cm.utils.common.deep_merge(
               _aggregated, 
               _aggregate, 

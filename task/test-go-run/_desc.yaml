@@ -1,8 +1,8 @@
 ﻿uses:
-- task: runner,1e48cc0c5f6041a5
+  - task: runner,1e48cc0c5f6041a5
 
-- task: setup,a2f9b61079ce4333
-  name: go,8387494b5d574044
+  - task: setup,a2f9b61079ce4333
+    name: go,8387494b5d574044
 
-- task: cmd,c9ba0a88df394d7f
-  cmd: '{{global.go.qpath}} run {{task_artifact_path}}{{os_sep}}src{{os_sep}}hello.go'
+  - task: cmd,c9ba0a88df394d7f
+    cmd: '{{global.go.qpath}} run {{task_artifact_path}}{{os_sep}}src{{os_sep}}hello.go'

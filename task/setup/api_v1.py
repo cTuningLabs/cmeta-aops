@@ -52,6 +52,7 @@ class CTask(InitCTask):
                 'version', 'env', 'timeout', 'with', 'arg3', 
                 'ignore_install_errors', 'ignore_build_errors',
                 'custom_install', 'custom_build',
+                'add_tool_path_to_env',
             ], __name__)
         if self.cm.catch_error(r): return r
 
@@ -725,9 +726,10 @@ class CTask(InitCTask):
             tool_path = kwargs.get('tool_path')
 
         if tool_path:
+            tool_path = os.path.normpath(tool_path)
             _update_params = result.setdefault('_update_params',{})
             if 'tool_path' not in _update_params:
-                _update_params['tool_path'] = os.path.normpath(tool_path)
+                _update_params['tool_path'] = tool_path
 
         if warning:
             result['warning'] = warning
@@ -778,7 +780,19 @@ class CTask(InitCTask):
             )
             if self.cm.catch_error(r): return r
 
-            if 'result' in r: _result['result'] = r['result']
+            if 'result' in r: 
+                result = r['result']
+                _result['result'] = result
+
+        if params.get('add_tool_path_to_env', False):
+            path_bin = result.get('path_bin')
+            if path_bin and os.path.isdir(path_bin):
+                _aggregate = result.setdefault('_aggregate', {})
+                _aggregate_env = _aggregate.setdefault('env', {})
+                _aggregate_env_path = _aggregate_env.setdefault('+PATH', [])
+                _aggregate_env_path.insert(0, path_bin)
+
+                _result['result'] = result
 
         return _result
 

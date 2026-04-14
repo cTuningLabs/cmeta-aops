@@ -20,3 +20,4 @@
   - task: cmd,c9ba0a88df394d7f
     chdir: '{{task_artifact_path}}{{os_sep}}src'
     cmd: '{{global.mojo.qpath}} run lifev1.mojo'
+    task_id: 'test-mojo-life-v1,73e525e1a0254204'

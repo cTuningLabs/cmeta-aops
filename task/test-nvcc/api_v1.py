@@ -83,7 +83,9 @@ class CTask(InitCTask):
           'tmp' + os.sep + exe_file,
         ]
 
-        for cmd in cmds:
+        for icmd in range(0, len(cmds)):
+            cmd = cmds[icmd]
+
             ii = {'category': self.category_alias + ',' + self.category_uid,
                   'command': 'run',
                   'ctx': ctx,
@@ -96,6 +98,8 @@ class CTask(InitCTask):
                   'text_cmd': 'RUN:',
 #                  'print_env_keys': ['PATH'],
                   'print_extra_line': True,
+                  'save_script': f'tmp/save-script-{icmd}{{file_ext_bat}}',
+                  'task_id': f'test-nvcc-{icmd}',
             }
 
             rx = self.cm.access(ii)

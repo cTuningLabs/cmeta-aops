@@ -76,10 +76,6 @@ class CTask(InitCTask):
         rx = self.cm.access(ii)
         if self.cm.catch_error(rx): return rx
 
-
-
-        input('xyz')
-
         cmds = []
 
         cmd = f'{path_to_git_bin} config --list'

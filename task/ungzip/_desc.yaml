@@ -1,5 +1,5 @@
 cache_params:
-- filename
+  - filename
 
 params_map:
   arg2: filename

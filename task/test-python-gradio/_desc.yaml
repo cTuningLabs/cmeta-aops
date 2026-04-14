@@ -1,13 +1,13 @@
 ﻿uses:
-- task: runner,1e48cc0c5f6041a5
+  - task: runner,1e48cc0c5f6041a5
 
-- task: setup,a2f9b61079ce4333
-  name: python
+  - task: setup,a2f9b61079ce4333
+    name: python
 
-- task: setup,a2f9b61079ce4333
-  name: pip
-  with:
-    package: gradio
+  - task: setup,a2f9b61079ce4333
+    name: pip
+    with:
+      package: gradio
 
-- task: cmd,c9ba0a88df394d7f
-  cmd: '{{global.python.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}app.py --server-name {{params.server_name|127.0.0.1}} --server-port {{params.server_port|7860}}'
+  - task: cmd,c9ba0a88df394d7f
+    cmd: '{{global.python.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}app.py --server-name {{params.server_name|127.0.0.1}} --server-port {{params.server_port|7860}}'

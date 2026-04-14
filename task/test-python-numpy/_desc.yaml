@@ -1,13 +1,13 @@
 ﻿uses:
-- task: runner,1e48cc0c5f6041a5
+  - task: runner,1e48cc0c5f6041a5
 
-- task: setup,a2f9b61079ce4333
-  name: python
+  - task: setup,a2f9b61079ce4333
+    name: python
 
-- task: setup,a2f9b61079ce4333
-  name: pip
-  with:
-    package: numpy
+  - task: setup,a2f9b61079ce4333
+    name: pip
+    with:
+      package: numpy
 
-- task: cmd,c9ba0a88df394d7f
-  cmd: '{{global.python.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}app.py --extra_line={{params.extra_line|$False}}'
+  - task: cmd,c9ba0a88df394d7f
+    cmd: '{{global.python.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}app.py --extra_line={{params.extra_line|$False}}'

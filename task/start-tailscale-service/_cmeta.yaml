@@ -5,5 +5,7 @@ copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
 creation_timestamp: '2026-01-19T15:40:51.387488+00:00'
 min_cmeta_version_api: 0.24.6
 tags:
-- download
-- file
+- start
+- tailscale
+- service
+
