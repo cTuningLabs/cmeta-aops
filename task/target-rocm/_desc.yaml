@@ -1,0 +1,7 @@
+store_global: True        # force
+storage_key: target-cuda  # force storage key to avoid mixing up in the future
+cache: False              # force
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: cuda,805716c4f32d42cf
