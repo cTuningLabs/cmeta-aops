@@ -1,4 +1,4 @@
-﻿uses:
+uses:
   - task: runner,1e48cc0c5f6041a5
 
   - task: setup,a2f9b61079ce4333
@@ -14,4 +14,8 @@
       {{task_artifact_path}}{{os_sep}}tmp{{os_sep}}detect-metal{{global.host.vars.file_ext_exe}}
 
   - task: cmd,c9ba0a88df394d7f
-    cmd: '{{task_artifact_path}}{{os_sep}}tmp{{os_sep}}detect-metal{{global.host.vars.file_ext_exe}}'
+    clean_files:
+      - '{{task_artifact_path}}{{os_sep}}tmp{{os_sep}}tmp-detect-metal.json'
+    cmd: >
+      {{task_artifact_path}}{{os_sep}}tmp{{os_sep}}detect-metal{{global.host.vars.file_ext_exe}}
+      {{task_artifact_path}}{{os_sep}}tmp{{os_sep}}tmp-detect-metal.json

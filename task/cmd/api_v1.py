@@ -47,6 +47,7 @@ class CTask(InitCTask):
             save_script_template: str = None,
             open_shell: bool = None,
             open_shell_for_id: str = None,
+            clean_files: list = None,
     ):
 
         """
@@ -96,6 +97,11 @@ class CTask(InitCTask):
                     cmd += ' '
 
                 cmd += self.cm.utils.files.quote_path(u)
+
+        if clean_files:
+            for cf in clean_files:
+               if os.path.isfile(cf):
+                   os.remove(cf)
 
         if not save_script and task_id and save_script_for_id:
             if type(task_id) == str:
