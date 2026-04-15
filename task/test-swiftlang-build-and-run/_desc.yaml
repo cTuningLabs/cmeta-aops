@@ -1,12 +1,12 @@
 ﻿uses:
-- task: runner,1e48cc0c5f6041a5
+  - task: runner,1e48cc0c5f6041a5
 
-- task: setup,a2f9b61079ce4333
-  name: swiftlang,043d6514109e495d
+  - task: setup,a2f9b61079ce4333
+    name: swiftlang,043d6514109e495d
 
-- task: cmd,c9ba0a88df394d7f
-  mkdir: '{{task_artifact_path}}{{os_sep}}tmp'
-  cmd: '{{global.swiftlang.qpath_bin}}{{os_sep}}swiftc {{task_artifact_path}}{{os_sep}}src{{os_sep}}hello.swift -o {{task_artifact_path}}{{os_sep}}tmp{{os_sep}}hello{{global.host.vars.file_ext_exe}}'
+  - task: cmd,c9ba0a88df394d7f
+    mkdir: '{{task_artifact_path}}{{os_sep}}tmp'
+    cmd: '{{global.swiftlang.qpath_bin}}{{os_sep}}swiftc {{task_artifact_path}}{{os_sep}}src{{os_sep}}hello.swift -o {{task_artifact_path}}{{os_sep}}tmp{{os_sep}}hello{{global.host.vars.file_ext_exe}}'
 
-- task: cmd,c9ba0a88df394d7f
-  cmd: '{{task_artifact_path}}{{os_sep}}tmp{{os_sep}}hello{{global.host.vars.file_ext_exe}}'
+  - task: cmd,c9ba0a88df394d7f
+    cmd: '{{task_artifact_path}}{{os_sep}}tmp{{os_sep}}hello{{global.host.vars.file_ext_exe}}'
