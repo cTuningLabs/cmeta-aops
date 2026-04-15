@@ -282,14 +282,14 @@ class CTool(InitCTool):
 
             # Check ROCm wheel
             if '--index-url ' not in post_flags:
-                compute_features = target['features']['cuda']
-                cuda_version = compute_features['versions']['cuda version']
+                compute_features = target['features']['rocm']
+                rocm_version = compute_features['versions']['rocm-smi-lib version']
 
                 found = False
                 ver_lists = ['7.2']
 
                 for ver in ver_lists:
-                    r = self.cm.utils.common.compare_versions(cuda_version, ver)
+                    r = self.cm.utils.common.compare_versions(rocm_version, ver)
                     if r['return'] == 0 and (r['comparison'] == '>' or r['comparison'] == '='):
                         found = True
                         break
