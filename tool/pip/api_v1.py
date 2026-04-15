@@ -296,7 +296,6 @@ class CTool(InitCTool):
 
                 if found:
                     if post_flags != '': post_flags += ' '
-                    ver = ver.replace('.','')
                     post_flags = f'--index-url https://download.pytorch.org/whl/rocm{ver}'
 
         ###########################################################################################
