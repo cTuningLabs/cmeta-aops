@@ -50,12 +50,12 @@ install_uses:
 
 install_cmd:
   linux: '{{global.curl.qpath}} -O https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz && {{global.tar.qpath}} zxf swiftly-$(uname -m).tar.gz && ./swiftly init --quiet-shell-followup'
-  darwin: '{{global.brew.qpath}} install swift'
+  darwin: '{{global.curl.qpath}} -O https://download.swift.org/swiftly/darwin/swiftly.pkg && installer -pkg swiftly.pkg -target CurrentUserHomeDirectory && ~/.swiftly/bin/swiftly init --quiet-shell-followup'
   windows: "{{global.winget.qpath}} install --id=Swift.Toolchain -e --source winget --no-upgrade {{global.init.winget_install_flags|}}"
 
 install_cmd_version:
   linux: '{{global.curl.qpath}} -O https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz && {{global.tar.qpath}} zxf swiftly-$(uname -m).tar.gz && ./swiftly install {{simple_version}}'
-  darwin: '{{global.brew.qpath}} install swift@{{major_version}}'
+  darwin: '{{global.curl.qpath}} -O https://download.swift.org/swiftly/darwin/swiftly.pkg && installer -pkg swiftly.pkg -target CurrentUserHomeDirectory && ~/.swiftly/bin/swiftly install {{simple_version}}'
   windows: "{{global.winget.qpath}} install --id=Swift.Toolchain -e --source winget --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"
 
 install_help_text:
