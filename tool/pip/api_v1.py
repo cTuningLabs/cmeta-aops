@@ -268,6 +268,37 @@ class CTool(InitCTool):
                     ver = ver.replace('.','')
                     post_flags = f'--index-url https://download.pytorch.org/whl/cu{ver}'
 
+        elif 'rocm' in compute:
+            if not skip_extras and 'rocm' not in extras:
+                extras.append('rocm')
+
+            if 'rocm' not in variations_compute:
+                variations_compute.append('rocm')
+                
+            # Wrong torch variation may be installed so we need to force update it ...
+            if '--force-reinstall' not in flags:
+                if flags != '': flags += ' '
+                flags += '--force-reinstall'
+
+            # Check ROCm wheel
+            if '--index-url ' not in post_flags:
+                compute_features = target['features']['cuda']
+                cuda_version = compute_features['versions']['cuda version']
+
+                found = False
+                ver_lists = ['7.2']
+
+                for ver in ver_lists:
+                    r = self.cm.utils.common.compare_versions(cuda_version, ver)
+                    if r['return'] == 0 and (r['comparison'] == '>' or r['comparison'] == '='):
+                        found = True
+                        break
+
+                if found:
+                    if post_flags != '': post_flags += ' '
+                    ver = ver.replace('.','')
+                    post_flags = f'--index-url https://download.pytorch.org/whl/rocm{ver}'
+
         ###########################################################################################
         # Add CPU as default base
         if not skip_extras and 'cpu' not in extras:
