@@ -3,6 +3,7 @@
 
   - task: setup,a2f9b61079ce4333
     name: python
+    version: '<3.13'
 
   - task: setup,a2f9b61079ce4333
     name: pip
