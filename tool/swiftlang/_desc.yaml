@@ -54,8 +54,8 @@ install_cmd:
   windows: "{{global.winget.qpath}} install --id=Swift.Toolchain -e --source winget --no-upgrade {{global.init.winget_install_flags|}}"
 
 install_cmd_version:
-  linux: '{{global.curl.qpath}} -O https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz && {{global.tar.qpath}} zxf swiftly-$(uname -m).tar.gz && ./swiftly install {{simple_version}}'
-  darwin: '{{global.curl.qpath}} -O https://download.swift.org/swiftly/darwin/swiftly.pkg && installer -pkg swiftly.pkg -target CurrentUserHomeDirectory && ~/.swiftly/bin/swiftly install {{simple_version}}'
+  linux: '{{global.curl.qpath}} -O https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz && {{global.tar.qpath}} zxf swiftly-$(uname -m).tar.gz && ./swiftly init --skip-install && ./swiftly install {{simple_version}}'
+  darwin: '{{global.curl.qpath}} -O https://download.swift.org/swiftly/darwin/swiftly.pkg && installer -pkg swiftly.pkg -target CurrentUserHomeDirectory && ~/.swiftly/bin/swiftly init --skip-install && ~/.swiftly/bin/swiftly install {{simple_version}}'
   windows: "{{global.winget.qpath}} install --id=Swift.Toolchain -e --source winget --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"
 
 install_help_text:
@@ -63,9 +63,10 @@ install_help_text:
 
 extra_paths:
   linux:
-    - "/home/fursin/.local/share/swiftly/**"
+    - "{{user_home}}/.local/share/swiftly/**"
     - "/home/linuxbrew/.linuxbrew/**"
   darwin:
+    - "{{user_home}}/Library/Developer/**"
     - "/opt/homebrew/opt/swift*/**"
   windows:
     - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
