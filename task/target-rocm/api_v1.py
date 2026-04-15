@@ -42,7 +42,7 @@ class CTask(InitCTask):
 
         result = {
           'return':0,
-          'features': ctx['tasks']['global']['cuda']['features'],
+          'features': ctx['tasks']['global']['rocm']['features'],
         }
 
         return result
