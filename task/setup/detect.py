@@ -286,6 +286,7 @@ def detect_existing_tool(self,
                     stderr = rx.get('stderr')
                     if stderr:
                         output += stderr
+                    output = output.replace('\r','\n').strip()
 
                     if returncode == 0:
                         found_paths_with_versions[xpath] = {'output': output, 'cmd_call': cmd_call, 'cmd': cmd}
@@ -311,7 +312,9 @@ def detect_existing_tool(self,
 
         for path in found_paths_with_versions:
             x = found_paths_with_versions[path]
-            output = x['output']
+
+            # Occasional mix up on Windows (wsl)
+            output = x['output'].replace('\x00', '') 
 
             detected = False
             detected_version = None

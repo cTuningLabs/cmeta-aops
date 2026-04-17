@@ -1,0 +1,16 @@
+﻿cache: False                     # force by default
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: install-sys-tool,38596f32da974d46
+    os: linux
+    sudo: True
+    package: ncdu
+
+  - task: install-sys-tool,38596f32da974d46
+    os: darwing
+    package: ncdu
+
+  - task: cmd,c9ba0a88df394d7f
+    cmd: '{{global.host.os_extra.sudo_cmd}} ncdu --exclude "/mnt/*" /'

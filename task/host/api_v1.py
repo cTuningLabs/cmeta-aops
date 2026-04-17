@@ -440,6 +440,7 @@ def detect_linux_env():
     cmd_version = install_command_for_version(package_manager)
 
     sudo_installed, passwordless_sudo = detect_sudo()
+    sudo_cmd = 'sudo ' if sudo_installed else ''
     cmd_sudo = f"sudo {cmd}" if sudo_installed else cmd
     cmd_sudo_version = f"sudo {cmd_version}" if sudo_installed else cmd_version
 
@@ -452,6 +453,7 @@ def detect_linux_env():
         "install_cmd_sudo": cmd_sudo,
         "install_cmd_sudo_version": cmd_sudo_version,
         "sudo": sudo_installed,
+        "sudo_cmd": sudo_cmd,
         "passwordless_sudo": passwordless_sudo,
     }
 
