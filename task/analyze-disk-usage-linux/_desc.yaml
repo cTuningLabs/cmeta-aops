@@ -9,7 +9,7 @@ uses:
     package: ncdu
 
   - task: install-sys-tool,38596f32da974d46
-    os: darwing
+    os: darwin
     package: ncdu
 
   - task: cmd,c9ba0a88df394d7f
