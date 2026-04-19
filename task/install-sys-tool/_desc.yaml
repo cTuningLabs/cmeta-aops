@@ -19,6 +19,7 @@ uses_before_init:
 
 sort_keys:
   - 'cmeta.params.package'
+  - '@cmeta.params.version-'
 
 uses:
   - task: cmd,c9ba0a88df394d7f
