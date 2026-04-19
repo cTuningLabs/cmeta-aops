@@ -37,6 +37,7 @@ class Category(InitCategory):
             'uses',
             'store_global', 
             'storage_key',
+            'rem',
         ]
 
         self.control2 = [
@@ -54,32 +55,6 @@ class Category(InitCategory):
         ]
 
         super().__init__(*args, module_file_path = __file__, **kwargs)
-
-
-    ############################################################
-    def test_(self, ctx, arg1=None, flag1=False):
-        """
-        """
-
-        self.logger.debug("RUNNING API v1 test_")
-
-        print (f'arg1={arg1}')
-        print (f'flag1={flag1}')
-
-        return {'return':0}
-
-    ############################################################
-    def test2(self, params):
-        """
-        """
-
-        self.logger.debug("RUNNING API v1 test2")
-
-        import json
-        print (json.dumps(params, indent=2))
-
-        return {'return':0}
-
 
     ############################################################
     def run(
@@ -292,17 +267,19 @@ class Category(InitCategory):
                         uparams[key] = v
 
         ###########################################################################################
-        # PREPARE GLOBAL CONTEXT AND DUMMY RESULT
+        # PREPARE GLOBAL CONTEXT, LOCAL VARS AND DUMMY RESULT
+        # SAVE TEMPORAL PARAMS TO RESTORE AT THE END OF THE TASK !
+        #   TASK MUST BE ATOMIC UNLESS LOCAL VAR IS SAVED VIA USE
 
         result = {'return':0}
 
         ctx_tasks.setdefault('global', {})
 
-        saved_local = ctx_tasks.get('local')
-        ctx_tasks['local'] = {}
-
         saved_uparams = ctx_tasks.get('params')
         ctx_tasks['params'] = uparams
+
+        saved_local = ctx_tasks.get('local')
+        ctx_tasks['local'] = {}
 
         # Useful to aggregate various info for the whole pipeline (such as env for complex run/compilation)
         _aggregated = ctx_tasks.setdefault('aggregated', {})
@@ -313,12 +290,14 @@ class Category(InitCategory):
 
         uses_before_init = cdesc.get('uses_before_init', []).copy()
         if uses_before_init:
-            r = self.use_(ctx, 
-                          desc = uses_before_init, 
-                          local = ctx_tasks['local'],
-                          task_artifact_alias = artifact_alias, 
-                          task_artifact_uid = artifact_uid,
-                          task_artifact_path = task_path,
+            r = self.use_(
+                  ctx, 
+                  desc = uses_before_init, 
+#                  local = ctx_tasks['local'],
+                  local = None,
+                  task_artifact_alias = artifact_alias, 
+                  task_artifact_uid = artifact_uid,
+                  task_artifact_path = task_path,
             )
             if self.cm.catch_error(r): return r
 
@@ -332,9 +311,11 @@ class Category(InitCategory):
             if self.cm.catch_error(r): return r
 
             if r.get('skip_run', False):
-                # Early exit !!!
-                return r
+                # Early exit !!! local and params may have changed in init ...
+                ctx['tasks']['params'] = saved_uparams if saved_uparams else {}
+                ctx['tasks']['local'] = saved_local if saved_local else {}
 
+                return r
 
             if 'uses' in r:
                 task_extra_uses = r['uses']
@@ -389,9 +370,11 @@ class Category(InitCategory):
             result = copy.deepcopy(ctx_tasks['global'][storage_key])
 
             # Do not aggregate - already done!
-            r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
-                                 call_repro, aggregate = False, 
-                                 saved_uparams = saved_uparams, saved_local = saved_local,
+            r = self._finish_run(
+                    ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro, 
+                    aggregate = False, 
+                    saved_uparams = saved_uparams, 
+                    saved_local = saved_local,
             )
             if self.cm.catch_error(r): return r
             
@@ -500,12 +483,14 @@ class Category(InitCategory):
 
         # Set up local context
         if _uses:
-            r = self.use_(ctx, 
-                          desc = _uses, 
-                          local = ctx_tasks['local'],
-                          task_artifact_alias = artifact_alias, 
-                          task_artifact_uid = artifact_uid,
-                          task_artifact_path = task_path,
+            r = self.use_(
+                    ctx, 
+                    desc = _uses, 
+#                    local = ctx_tasks['local'],
+                    local = None,
+                    task_artifact_alias = artifact_alias, 
+                    task_artifact_uid = artifact_uid,
+                    task_artifact_path = task_path,
             )
             if self.cm.catch_error(r): return r
 
@@ -1164,7 +1149,7 @@ class Category(InitCategory):
             if 'result' in r: result = r['result']
 
         # Finish run
-        if storage_key:
+        if storage_key and store_global:
             if store_global:
                 ctx_tasks['global'][storage_key] = result
             else:
@@ -1175,6 +1160,10 @@ class Category(InitCategory):
                              saved_uparams = saved_uparams, saved_local = saved_local,
         )
         if self.cm.catch_error(r): return r
+
+        # Need to duplicate if forced save to local otherwise local will be restored here
+        if storage_key and not store_global:
+            ctx_tasks['local'][storage_key] = result
 
         return result
 
@@ -1285,8 +1274,10 @@ class Category(InitCategory):
         nested_call = ctx_tasks.setdefault('nested_call', 0)
         sub_space = '  ' * (nested_call + 1) if verbose else ''
 
-        if local:
-            saved_local = ctx_tasks.get('local', {})
+        # Local may come from some direct calls from sub-tasks or sub-functions
+        # In such case, preserve current one and use the required one
+        if local is not None:
+            saved_local = ctx_tasks.get('local')
             ctx_tasks['local'] = local
 
         for sub_task_desc in desc:
@@ -1306,6 +1297,36 @@ class Category(InitCategory):
             sub_task_category = 'task,' + self.cmeta['artifact'] if 'category' not in ii else ii['category']
             sub_task_command = 'run' if 'command' not in ii else ii['command']
 
+            # Check OS
+            target_os = ii.pop('if_os', None)
+            target_os_id = ii.pop('if_os_id', None)
+            fail_if_wrong_host_os = ii.pop('fail_if_not_os', False)
+
+            if target_os:
+                if type(target_os) == str:
+                    target_os = target_os.split(',')
+
+            if target_os_id:
+                if type(target_os_id) == str:
+                    target_os_id = target_os_id.split(',')
+
+            if target_os or target_os_id:
+                uname = ctx['tasks']['global']['host']['os']['uname']
+                os_id = ctx['tasks']['global']['host']['os_extra']['id']
+
+                if target_os and uname not in target_os:
+                    if fail_if_wrong_host_os:
+                        return self.cm.error(f'host OS "{uname}" is not supported for "{task_artifact_alias}" in "{__file__}"')
+                    else:
+                        continue
+
+                if target_os_id and os_id not in target_os_id:
+                    if fail_if_wrong_host_os:
+                        return self.cm.error(f'host OS ID "{os_id}" is not supported for "{task_artifact_alias}" in "{__file__}"')
+                    else:
+                        continue
+
+            # Check generic if
             _if = ii.pop('if', None)
             if _if:
                 r = self.cm.utils.common.expand_string(_if, ctx_tasks)
@@ -1320,6 +1341,11 @@ class Category(InitCategory):
                 if not r['result']:
                     continue
 
+            # Check local update
+            _local = ii.pop('local', None)
+            if _local:
+                ctx_tasks['local'] = self.cm.utils.common.deep_merge(ctx_tasks['local'], _local, append_lists=True)
+
             # Expand all params
             ctx_tasks_with_extra_values = ctx_tasks.copy()
             ctx_tasks_with_extra_values['os_sep'] = os.sep
@@ -1330,6 +1356,7 @@ class Category(InitCategory):
             if self.cm.catch_error(r): return r
 
             ii['ctx'] = ctx
+
             ii['arg1'] = task
 
             ii['category'] = sub_task_category
@@ -1346,8 +1373,9 @@ class Category(InitCategory):
             if self.cm.catch_error(sub_task_result): return sub_task_result
 
             ctx_tasks['nested_call'] -= 1
-
-        if local:
+                                                            
+        # Restore local if direct call from external source and not from a given task
+        if local is not None:
             ctx_tasks['local'] = saved_local
 
         return {'return':0, 'local': local}

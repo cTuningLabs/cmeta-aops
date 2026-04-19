@@ -36,7 +36,7 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        self.logger.debug("RUNNING TASK clone-git-repo run")
+        self.logger.debug("RUNNING TASK get-git-config run")
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)

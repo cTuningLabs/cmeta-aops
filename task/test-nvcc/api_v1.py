@@ -100,6 +100,7 @@ class CTask(InitCTask):
                   'print_extra_line': True,
                   'save_script': f'tmp/save-script-{icmd}{{file_ext_bat}}',
                   'task_id': f'test-nvcc-{icmd}',
+                  'storage_key': f'test-nvcc-cmd-{icmd}',
             }
 
             rx = self.cm.access(ii)

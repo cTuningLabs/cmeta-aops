@@ -56,23 +56,19 @@ class CTask(InitCTask):
         uname = ctx['tasks']['global']['host']['os']['uname']
         os_id = ctx['tasks']['global']['host']['os_extra']['id']
 
-        if target_os:
-            fail_if_wrong_host_os = params.get('fail_if_wrong_host_os', False)
+        fail_if_wrong_host_os = params.get('fail_if_wrong_host_os', False)
 
-            if uname not in target_os:
-                if fail_if_wrong_host_os:
-                    return self.cm.error(f'host OS "{uname}" is not supported for sys-tool "{package}" "{__file__}"')
-                else:
-                    return {'return':0, 'skip_run': True}
+        if target_os and uname not in target_os:
+            if fail_if_wrong_host_os:
+                return self.cm.error(f'host OS "{uname}" is not supported for sys-tool "{package}" "{__file__}"')
+            else:
+                return {'return':0, 'skip_run': True}
 
-        if target_os_id:
-            fail_if_wrong_host_os = params.get('fail_if_wrong_host_os', False)
-
-            if os_id not in target_os_id:
-                if fail_if_wrong_host_os:
-                    return self.cm.error(f'host OS ID "{os_id}" is not supported for sys-tool "{package}" "{__file__}"')
-                else:
-                    return {'return':0, 'skip_run': True}
+        if target_os_id and os_id not in target_os_id:
+            if fail_if_wrong_host_os:
+                return self.cm.error(f'host OS ID "{os_id}" is not supported for sys-tool "{package}" "{__file__}"')
+            else:
+                return {'return':0, 'skip_run': True}
 
         sudo = params.get('sudo', False)
         version = params.get('version')

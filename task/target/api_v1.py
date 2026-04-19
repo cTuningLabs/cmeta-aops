@@ -96,7 +96,7 @@ class CTask(InitCTask):
         for c in compute:
             key = f'target-{c}'
 
-            ft = ctx['tasks']['global'][key]['features']
+            ft = ctx['tasks']['global'][key].get('features', {})
 
             features[c] = ft
 

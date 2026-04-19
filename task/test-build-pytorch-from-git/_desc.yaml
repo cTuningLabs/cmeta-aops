@@ -1,0 +1,76 @@
+﻿uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: install-sys-tool,38596f32da974d46
+    os: linux
+    package: build-essential
+    sudo: True
+
+  - task: setup,a2f9b61079ce4333
+    name: python-pip,28399f0bb52c4148
+
+  - task: setup,a2f9b61079ce4333
+    name: clang-cpp,c0f077b9c14d4ba1
+
+  - task: setup,a2f9b61079ce4333
+    name: cmake,e26c11ebb3dd40ca
+
+  - task: setup,a2f9b61079ce4333
+    name: ninja,a3df3c45e9b04830
+
+  - task: clone-git,af9422df6ea241ec
+    store_global: True
+    storage_key: clone-git-pytorch
+    cache: True
+    url: https://github.com/pytorch/pytorch
+    cache_extra_params:
+      name: pytorch
+      src: True
+    cache_extra_tags: 'src,git,github,pytorch'
+
+  - task: get-directory-size,8011c5c45c9748bc
+    text: 'Git repo size BEFORE submodule update:'
+    directory: '{{global.clone-git-pytorch.path_to_git_repo}}'
+    store_global: True
+    storage_key: clone-git-pytorch-size-before-update
+
+  - task: update-git-submodules,344510a999b748d7
+    rem: >
+      This can be done in clone-git with update_submodules=True 
+      but we want to check repo size before and after modules update
+    directory: '{{global.clone-git-pytorch.path_to_git_repo}}'
+
+  - task: get-directory-size,8011c5c45c9748bc
+    text: 'Git repo size AFTER submodule update:'
+    directory: '{{global.clone-git-pytorch.path_to_git_repo}}'
+    store_global: True
+    storage_key: clone-git-pytorch-size-after-update
+
+  - task: cmd,c9ba0a88df394d7f
+    rem: Installing dev group deps from pyproject
+    chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
+    cmd: '{{global.pip.cmd}} install --group dev'
+
+  - task: setup,a2f9b61079ce4333
+    name: pip,c4987bc3955347f2
+    with:
+      package: mkl-static
+
+  - task: setup,a2f9b61079ce4333
+    name: pip,c4987bc3955347f2
+    with:
+      package: mkl-include
+
+  - task: setup,a2f9b61079ce4333
+    name: pip,c4987bc3955347f2
+    with:
+      package: ninja
+
+  - task: cmd,c9ba0a88df394d7f
+    chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
+    env:
+      CMAKE_GENERATOR: Ninja
+      USE_ROCM: 0
+      USE_XPU: 0
+      USE_CUDA: 0
+    cmd: '{{global.pip.cmd}} install --no-build-isolation -v -e .'

@@ -1,0 +1,12 @@
+﻿fail_if_not_win: True
+
+cache: False                     # force by default
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: setup,a2f9b61079ce4333
+    name: wsl,d1fe3345c311425e
+
+  - task: cmd,c9ba0a88df394d7f
+    cmd: '{{global.wsl.qpath}} -l -v'

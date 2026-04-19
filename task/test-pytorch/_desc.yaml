@@ -14,15 +14,16 @@
     with:
       package: torch
 
-  - task: setup,a2f9b61079ce4333
-    name: pip
-    with:
-      package: torchaudio
+# Breaks manually installed stuff
+#  - task: setup,a2f9b61079ce4333
+#    name: pip
+#    with:
+#      package: torchaudio
 
-  - task: setup,a2f9b61079ce4333
-    name: pip
-    with:
-      package: torchvision
+#  - task: setup,a2f9b61079ce4333
+#    name: pip
+#    with:
+#      package: torchvision
 
   - task: cmd,c9ba0a88df394d7f
     env:

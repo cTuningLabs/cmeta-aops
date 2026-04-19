@@ -1,0 +1,23 @@
+store_global: True       # force
+storage_key: target-xpu  # force storage key to avoid mixing up in the future
+cache: False             # force
+
+uses:
+  - task: generate-temp-file,2e96e68cd41046d1
+    storage_key: generate-temp-file-target-xpu
+
+  - task: install-sys-tool,38596f32da974d46
+    os: linux
+    sudo: True
+    package: pciutils
+
+  - task: cmd,c9ba0a88df394d7f
+    if_os: linux
+    cmd: 'lspci | grep -i vga > {{local.generate-temp-file-target-xpu.temp_file}}'
+
+  - task: cmd,c9ba0a88df394d7f
+    if_os: windows
+    cmd: 'wmic path win32_VideoController get name,driverversion > {{local.generate-temp-file-target-xpu.temp_file}}'
+    local:
+      encoding: 'utf-16'
+    

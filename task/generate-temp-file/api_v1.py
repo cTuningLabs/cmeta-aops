@@ -19,23 +19,14 @@ class CTask(InitCTask):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
     ############################################################
-    def check_params(self,
-                     ctx: dict,
-                     params: dict = {},
-                     cparams: dict = {},
-    ):
-        r = self.cm.check_params(params, [], __name__)
-        if self.cm.catch_error(r): return r
-
-        return {'return':0}
-
-    ############################################################
     def run(self,
             ctx: dict,        # cMeta context
+            key: str = None,    
+            template: str = None,
     ):
 
         """
-        Clone git repo.
+        Generate temp file and record in tasks.local.key
 
         Returns:
             dict: A cMeta dictionary with the following keys:
@@ -43,29 +34,24 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        self.logger.debug("RUNNING TASK setup-min-win-tools run")
-
         con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
 
-        space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
-        clean = ctx['tasks']['run_control'].get('clean', False)
-        update = ctx['tasks']['run_control'].get('update', False)
+        ctx_tasks = ctx['tasks']
 
-        _params = {}
-
-        _global = ctx['tasks']['global']
+        space = '  ' * ctx_tasks['nested_call'] if verbose else ''
 
         result = {'return':0}
 
-        path_to_check_file = _global['download-file--min-win-tools']['path_to_check_file']
+        r = self.cm.utils.files.gen_temp_filepath(template=template)
+        if r['return']>0: return r
+        temp_file = r['filepath']
 
-        path_to_bin = os.path.dirname(path_to_check_file)
+        if con:
+            print ('')
+            print (f'{space}INFO: generated temp file "{temp_file}"') 
 
-        env = {'+PATH':[path_to_bin]}
+        result['temp_file'] = temp_file
 
-        result['path_to_bin'] = path_to_bin
-
-        result['_aggregate'] = {'env':env}
-        
         return result
