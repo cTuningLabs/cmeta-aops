@@ -407,13 +407,16 @@ def detect_existing_tool(self,
     else:
         # Need priority key to move some paths above 
         # (that were marked by ! - such as current python interpreter)
-        sort_keys = ['priority', '@detected_version-', 'path']
+        sort_keys = ['priority', '@detected_version-', 'path_len', 'path']
 
         # Do not sort priority ones but move them out
         priority_matched_paths_with_versions = []
         normal_matched_paths_with_versions = []
 
         for a in matched_paths_with_versions:
+            if 'path' in a:
+                a['path_len'] = len(a['path'])
+
             if a.get('priority', False):
                 priority_matched_paths_with_versions.append(a)
             else:

@@ -160,8 +160,6 @@ class CTool(InitCTool):
         install_cmd = install_cmd.replace('{{custom_package}}', custom_package)
 
         # Check force update
-        print (force_update)
-        input('xyz')
         if force_update:
             if not flags:
                 flags = ''
