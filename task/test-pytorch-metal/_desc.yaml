@@ -2,7 +2,7 @@
   - task: runner,1e48cc0c5f6041a5
 
   - task: target,94decb2ddd28441f
-    compute: xpu
+    compute: metal-swift
 
   - task: setup,a2f9b61079ce4333
     name: python
