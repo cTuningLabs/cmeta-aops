@@ -1,3 +1,7 @@
+store_global: True               # force
+storage_key: target-metal-swift  # force storage key to avoid mixing up in the future
+cache: False                     # force
+
 uses:
   - task: runner,1e48cc0c5f6041a5
 
