@@ -1397,7 +1397,16 @@ class Category(InitCategory):
             ctx_tasks['nested_call'] += 1
 
             sub_task_result = self.cm.access(ii)
-            if self.cm.catch_error(sub_task_result): return sub_task_result
+            if self.cm.catch_error(sub_task_result): 
+                err = sub_task_result['error']
+
+                j = err.find('unexpected keyword argument')
+                if j>0:
+                    j1 = err.find('.', j)
+                    if j1>0:
+                        sub_task_result['error'] = err[:j1+1] + f'\n(sub task desc = {sub_task_desc})' + err[j1+1:]
+
+                return sub_task_result
 
             ctx_tasks['nested_call'] -= 1
                                                             

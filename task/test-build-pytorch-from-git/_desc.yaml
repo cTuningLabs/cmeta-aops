@@ -5,7 +5,7 @@
     ask: True
 
   - task: install-sys-tool,38596f32da974d46
-    os: linux
+    if_os: linux
     package: build-essential
     sudo: True
 
@@ -69,13 +69,13 @@
     name: pip,c4987bc3955347f2
     with:
       package: mkl-static
-    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" or {{aggregated.env.CMETA_TARGET_XPU}}" == "1"'
+    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" or "{{aggregated.env.CMETA_TARGET_XPU}}" == "1"'
 
   - task: setup,a2f9b61079ce4333
     name: pip,c4987bc3955347f2
     with:
       package: mkl-include
-    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" or {{aggregated.env.CMETA_TARGET_XPU}}" == "1"'
+    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" or "{{aggregated.env.CMETA_TARGET_XPU}}" == "1"'
 
 
   - task: setup,a2f9b61079ce4333
@@ -87,7 +87,7 @@
 
   - task: cmd,c9ba0a88df394d7f
     task_id: cmd_before_building_triton
-    os: linux
+    if_os: linux
     cmd: make triton
 
 
@@ -99,16 +99,16 @@
 
 # CHECK IF CAN PASS CLEAN FLAG OR SOMETHING ELSE???
 
-#  - task: cmd,c9ba0a88df394d7f
-#    task_id: cmd_before_build
-#    chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
-#    env:
-#      CMAKE_GENERATOR: Ninja
-#    cmd: '{{global.python.qpath}} setup.py clean'
+  - task: cmd,c9ba0a88df394d7f
+    task_id: cmd_before_build
+    chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
+    env:
+      CMAKE_GENERATOR: Ninja
+    cmd: '{{global.python.qpath}} setup.py clean'
 
   - task: cmd,c9ba0a88df394d7f
     chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
     env:
-  #    CMAKE_FRESH: 1
+      CMAKE_FRESH: 1
       CMAKE_GENERATOR: Ninja
     cmd: '{{global.pip.cmd}} install --no-build-isolation -v -e .'
