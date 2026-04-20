@@ -40,6 +40,9 @@ class CTask(InitCTask):
 
         space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
 
+        if 'rocm' not in ctx['tasks']['global']:
+            return self.cm.error(f'ROCm target not found in "{__file__}" ({__name__})')
+
         result = {
           'return':0,
           'features': ctx['tasks']['global']['rocm']['features'],

@@ -52,7 +52,7 @@ class CTask(InitCTask):
                 'version', 'env', 'timeout', 'with', 'arg3', 
                 'ignore_install_errors', 'ignore_build_errors',
                 'custom_install', 'custom_build',
-                'add_tool_path_to_env',
+                'add_tool_path_to_env', 'force_add_tool_path_to_env',
             ], __name__)
         if self.cm.catch_error(r): return r
 
@@ -716,7 +716,9 @@ class CTask(InitCTask):
             extra = {}
             if warning:
                 extra['warning'] = warning
-            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x} in "{__file__}"', extra = extra)
+
+            # xyz: should be 16 or 1 ?
+            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x} in "{__file__}"', 16, extra = extra)
 
         ##############################################################################
         # Add cache path if in cache
@@ -792,13 +794,14 @@ class CTask(InitCTask):
                 result = r['result']
                 _result['result'] = result
 
-        if params.get('add_tool_path_to_env', False):
+        if params.get('add_tool_path_to_env', False) or params.get('force_add_tool_path_to_env', False):
             path_bin = result.get('path_bin')
             if path_bin and os.path.isdir(path_bin):
                 _aggregate = result.setdefault('_aggregate', {})
                 _aggregate_env = _aggregate.setdefault('env', {})
                 _aggregate_env_path = _aggregate_env.setdefault('+PATH', [])
-                _aggregate_env_path.insert(0, path_bin)
+                if path_bin not in _aggregate_env_path or params.get('force_add_tool_path_to_env', False):
+                    _aggregate_env_path.insert(0, path_bin)
 
                 _result['result'] = result
 

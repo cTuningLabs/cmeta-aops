@@ -13,7 +13,7 @@ install_help_text:
   Please install CUDA from https://developer.nvidia.com/cuda/toolkit !
 
 uses:
-  - task: host,96ac7118439c4490
+  - task: runner,1e48cc0c5f6041a5
 
   - task: setup,a2f9b61079ce4333
     name: cuda,805716c4f32d42cf

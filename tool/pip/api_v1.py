@@ -66,9 +66,16 @@ class CTool(InitCTool):
 
         # Check _with parameters (others are checked in "setup" task)
         r = self.cm.check_params(_with, [
-                'arg3', 'package', 'extras', 'variations',
-                'file', 'url', 'url_tag',
-                'flags', 'post_flags',
+                'arg3', 
+                'package', 
+                'extras', 
+                'variations',
+                'file', 
+                'url', 
+                'url_tag',
+                'flags', 
+                'post_flags',
+                'skip_force_reinstall',
             ], __name__)
         if self.cm.catch_error(r): return r
 
@@ -113,10 +120,15 @@ class CTool(InitCTool):
                               ctx: dict,
                               install_cmd: str = None,
                               params: dict = {},
+                              env: dict = {},
+                              timeout: int = None,
+                              uninstall_cmd: str = None,
                               *misc: dict,
     ):
         """
         """
+
+        quiet = params.get('control', {}).get('quiet', False)
 
         result = {'return':0}
 
@@ -161,11 +173,27 @@ class CTool(InitCTool):
 
         # Check force update
         if force_update:
-            if not flags:
-                flags = ''
-            if '--force-reinstall' not in flags:
-                flags += ' --force-reinstall'
-            _with['flags'] = flags.strip()   
+#            if not flags:
+#                flags = ''
+#
+#            if not _with.get('skip_force_reinstall', False) and '--force-reinstall' not in flags:
+#                if flags != '': flags += ' '
+#                flags += '--force-reinstall'
+#
+#            # To avoid reinstalling sub-deps that may be in workflow separately
+#            if '--no-deps' not in flags:
+#                if flags != '': flags += ' '
+#                flags +='--no-deps'
+#
+#            _with['flags'] = flags.strip()   
+
+            uninstall_cmd = uninstall_cmd.replace('{{custom_package}}', custom_package)
+
+            if quiet:
+                uninstall_cmd += ' -y'
+
+            result['uninstall_cmd'] = uninstall_cmd
+            result['run_uninstall_cmd'] = True
 
         result['install_cmd'] = install_cmd
 
@@ -237,6 +265,7 @@ class CTool(InitCTool):
 
         ###########################################################################################
         # Set CUDA if in compute
+
         if 'cuda' in compute:
             if not skip_extras and 'cuda' not in extras:
                 extras.append('cuda')
@@ -244,11 +273,6 @@ class CTool(InitCTool):
             if 'cuda' not in variations_compute:
                 variations_compute.append('cuda')
                 
-            # Wrong torch variation may be installed so we need to force update it ...
-            if '--force-reinstall' not in flags:
-                if flags != '': flags += ' '
-                flags += '--force-reinstall'
-
             # Check CUDA wheel
             if '--index-url ' not in post_flags:
                 compute_features = target['features']['cuda']
@@ -275,11 +299,6 @@ class CTool(InitCTool):
             if 'rocm' not in variations_compute:
                 variations_compute.append('rocm')
                 
-            # Wrong torch variation may be installed so we need to force update it ...
-            if '--force-reinstall' not in flags:
-                if flags != '': flags += ' '
-                flags += '--force-reinstall'
-
             # Check ROCm wheel
             if '--index-url ' not in post_flags:
                 compute_features = target['features']['rocm']
@@ -297,6 +316,18 @@ class CTool(InitCTool):
                 if found:
                     if post_flags != '': post_flags += ' '
                     post_flags = f'--index-url https://download.pytorch.org/whl/rocm{ver}'
+
+        elif 'xpu' in compute:
+            if not skip_extras and 'xpu' not in extras:
+                extras.append('xpu')
+
+            if 'xpu' not in variations_compute:
+                variations_compute.append('xpu')
+                
+            # Check XPU wheel
+            if '--index-url ' not in post_flags:
+                if post_flags != '': post_flags += ' '
+                post_flags = f'--index-url https://download.pytorch.org/whl/xpu'
 
         ###########################################################################################
         # Add CPU as default base

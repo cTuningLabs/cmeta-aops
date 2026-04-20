@@ -349,6 +349,7 @@ class CTool(InitCTool):
                 ctx: dict,
                 params: dict,
                 install_cmd: str = None,
+                *misc: dict,
     ):
         """
         """

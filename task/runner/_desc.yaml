@@ -4,11 +4,8 @@ storage_key: runner    # force storage key to avoid mixing up in the future
 uses:
   - task: host,96ac7118439c4490
 
-  - task: enable-long-paths-win,a5ddea8d0773466d
-    skip_if_not_win: True
-
   #- task: setup-min-win-tools,2b5ee26b8d444ef6
   #  if: '"{{global.host.os.uname}}" == "windows"'
   #  skip_if_not_win: True
 
-  - task: target,94decb2ddd28441f
+  #- task: target,94decb2ddd28441f

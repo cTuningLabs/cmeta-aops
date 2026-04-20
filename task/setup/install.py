@@ -70,6 +70,13 @@ def install_tool(self,
     os_key = uname if (uname == 'windows' or uname in install_cmd_ver_desc) else 'linux'
     install_cmd_ver = install_cmd_ver_desc['all'] if 'all' in install_cmd_ver_desc else install_cmd_ver_desc.get(os_key)
 
+    # Check direct or custom installation
+    uninstall_cmd_desc = desc.get('uninstall_cmd', {})
+    os_key = uname if (uname == 'windows' or uname in uninstall_cmd_desc) else 'linux'
+    uninstall_cmd = uninstall_cmd_desc.get('all') if 'all' in uninstall_cmd_desc else uninstall_cmd_desc.get(os_key)
+
+    run_uninstall_cmd = False
+
     has_custom_install = True if hasattr(tool_api_code, 'install') and callable(getattr(tool_api_code, 'install')) else False
 
     force_custom_install = params.get('custom_install', False)
@@ -203,7 +210,7 @@ def install_tool(self,
 
 
     if has_custom_install:
-        r = tool_api_code.install(ctx, install_params, install_cmd)
+        r = tool_api_code.install(ctx, install_params, install_cmd, uninstall_cmd)
         if self.cm.catch_error(r): return r
 
         if r['return']>0 and con:
@@ -213,6 +220,12 @@ def install_tool(self,
 
         result = r
         # MAY CONTAIN 'found_path' from install!
+
+        if 'run_uninstall_cmd' in r:
+            run_uninstall_cmd = r['run_uninstall_cmd']
+
+        if 'uninstall_cmd' in r:
+            uninstall_cmd = r['uninstall_cmd']
 
         if 'install_cmd' in r:
             # Can alter or skip CMD (if set to None)
@@ -255,8 +268,14 @@ def install_tool(self,
 
         # Start from possible sub-tool to customize install cmd and params
         if tool_api_code2 and hasattr(tool_api_code2, 'customize_install_cmd2') and callable(getattr(tool_api_code2, 'customize_install_cmd2')):
-            r = tool_api_code2.customize_install_cmd2(ctx, install_cmd, install_params, env, timeout)
+            r = tool_api_code2.customize_install_cmd2(ctx, install_cmd, install_params, env, timeout, uninstall_cmd)
             if self.cm.catch_error(r): return r
+
+            if 'run_uninstall_cmd' in r:
+                run_uninstall_cmd = r['run_uninstall_cmd']
+
+            if 'uninstall_cmd' in r: 
+                uninstall_cmd = r['uninstall_cmd']
 
             if 'install_cmd' in r: 
                 install_cmd = r['install_cmd']
@@ -269,8 +288,14 @@ def install_tool(self,
 
         # Then finish updating install cmd and params
         if hasattr(tool_api_code, 'customize_install_cmd') and callable(getattr(tool_api_code, 'customize_install_cmd')):
-            r = tool_api_code.customize_install_cmd(ctx, install_cmd, install_params, env, timeout)
+            r = tool_api_code.customize_install_cmd(ctx, install_cmd, install_params, env, timeout, uninstall_cmd)
             if self.cm.catch_error(r): return r
+
+            if 'run_uninstall_cmd' in r:
+                run_uninstall_cmd = r['run_uninstall_cmd']
+
+            if 'uninstall_cmd' in r: 
+                uninstall_cmd = r['uninstall_cmd']
 
             if 'install_cmd' in r: 
                 install_cmd = r['install_cmd']
@@ -281,6 +306,21 @@ def install_tool(self,
             if 'package_name' in r:
                 package_name = r['package_name']
 
+        # Check uninstall
+        cmds = []
+
+        if run_uninstall_cmd:
+            r = self.cm.utils.common.expand_string(uninstall_cmd, ctx_tasks)
+            if self.cm.catch_error(r): return r
+            uninstall_cmd = r['string']
+
+            # Update package name if installation is from host ...
+            uninstall_cmd = uninstall_cmd.replace('{{name}}', package_name)
+
+            cmds.append(uninstall_cmd)
+
+            result['uninstall_cmd'] = uninstall_cmd
+
         # Update from task context
         r = self.cm.utils.common.expand_string(install_cmd, ctx_tasks)
         if self.cm.catch_error(r): return r
@@ -289,35 +329,36 @@ def install_tool(self,
         # Update package name if installation is from host ...
         install_cmd = install_cmd.replace('{{name}}', package_name)
 
+        cmds.append(install_cmd)
+
         result['install_cmd'] = install_cmd
 
-        # Run installation
-        ii = {'category': 'task,c36be4b9314a45e0',
-              'command': 'run',
-              'ctx': ctx,
-              'arg1': 'cmd,c9ba0a88df394d7f',
-              'cmd': install_cmd,
-              'env': env,
-              'timeout': timeout,
-              'con': con, 
-              'quiet': quiet, 
-              'verbose': verbose, 
-              'text_cmd': 'RUN:', 
-              # Important to be able to continue processing detect/install/build
-              'fail_if_nonzero_return_code': False, 
-        }
+        for cmd in cmds:
+            # Run installation
+            ii = {'category': 'task,c36be4b9314a45e0',
+                  'command': 'run',
+                  'ctx': ctx,
+                  'arg1': 'cmd,c9ba0a88df394d7f',
+                  'cmd': cmd,
+                  'env': env,
+                  'timeout': timeout,
+                  'con': con, 
+                  'quiet': quiet, 
+                  'verbose': verbose, 
+                  'text_cmd': 'RUN:', 
+                  # Important to be able to continue processing detect/install/build
+                  'fail_if_nonzero_return_code': False, 
+            }
 
+            rx = self.cm.access(ii)
+            if self.cm.catch_error(rx): return rx
 
-        rx = self.cm.access(ii)
-        if self.cm.catch_error(rx): return rx
-
-        returncode = rx['returncode']
-        if returncode>0:
-            result['failed'] = True
-        else:
-            # Restart tool detection
-            result = {'return':0, 'found_paths': None}
-
+            returncode = rx['returncode']
+            if returncode>0:
+                result['failed'] = True
+            else:
+                # Restart tool detection
+                result = {'return':0, 'found_paths': None}
     
     if hasattr(tool_api_code, 'post_install') and callable(getattr(tool_api_code, 'post_install')):
         r = tool_api_code.post_install(ctx, install_params)

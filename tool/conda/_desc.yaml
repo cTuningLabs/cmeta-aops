@@ -1,0 +1,19 @@
+names:
+  - conda{{global.host.vars.file_ext_bat}}
+  - conda
+
+match_version: 
+  - regex: '^conda\s*([\d.]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+extra_paths:
+  linux:
+    - "/opt/conda/**"
+    - "/home/linuxbrew/.linuxbrew/**"
+  darwin:
+    - "/opt/conda/**"
+    - "/opt/homebrew/opt/**"
+  windows:
+    - "{{user_home}}\\*conda*\\**"

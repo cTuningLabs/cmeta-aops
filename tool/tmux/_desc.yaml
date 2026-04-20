@@ -1,0 +1,8 @@
+names:
+  - tmux{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: 'tmux\s+([^\s]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} -V'

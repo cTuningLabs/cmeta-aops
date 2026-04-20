@@ -1,0 +1,13 @@
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: force-fail,fbc834fe54894aec
+    if: '"{{global.host.os.uname}}" == "windows"'
+    text: 'task "{{task_artifact_alias}}" does not work on Windows'
+
+  - task: setup,a2f9b61079ce4333
+    name: tmux,cb4a9c7f933d42fa
+
+  - task: cmd,c9ba0a88df394d7f
+    cmd: '{{global.tmux.qpath}} attach'
+  

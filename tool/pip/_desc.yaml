@@ -31,6 +31,8 @@ cmd_get_version: '{{global.pip.cmd}} show {{params.with.package}}'
 cmd_get_versions: '{{global.pip.cmd}} index versions {{params.with.package}}'
 
 
+uninstall_cmd:
+  all: '{{global.pip.cmd}} uninstall {{params.with.uninstall_flags|}} {{custom_package}} {{params.with.uninstall_post_flags|}}'
 install_cmd:
   all: '{{global.pip.cmd}} install {{params.with.flags|}} {{custom_package}} {{params.with.post_flags|}}'
 install_cmd_version:

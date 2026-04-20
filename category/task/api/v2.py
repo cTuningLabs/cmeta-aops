@@ -38,8 +38,11 @@ class Category(InitCategory):
             'store_global', 
             'storage_key',
             'rem',
+            'check_versions',
+            'cv',
         ]
 
+        # Passed further to customization APIs ...
         self.control2 = [
             'path', 
             'skip', 
@@ -71,9 +74,11 @@ class Category(InitCategory):
         time_start = time.perf_counter()
 
         arg1 = params.get('arg1')
-        if params.get('task_name'): arg1 = params['task_name']
+        if params.get('task_name'): 
+            arg1 = params['task_name']
         tags = params.get('tags')
-        if not tags: tags = params.get('t')
+        if tags is None: 
+            tags = params.get('t')
         ver = params.get('ver')
         info = params.get('info')
         use = params.get('use')
@@ -92,6 +97,14 @@ class Category(InitCategory):
         ctx_tasks = ctx.setdefault('tasks', {})
         nested_call = ctx_tasks.setdefault('nested_call', 0)
         space = '  ' * nested_call if verbose else ''
+
+        check_versions = params.get('check_versions')
+        if check_versions is None:
+            check_versions = params.get('check_versions')
+        if check_versions is None:
+            check_versions = ctx['tasks'].get('global', {}).get('init', {}).get('tool', {}).get('check_versions')
+        if check_versions is None:
+            check_versions = False
 
         cur_dir = os.getcwd()
         cache_path = None
@@ -807,7 +820,7 @@ class Category(InitCategory):
                     # Check if tool path and version is correct
                     ca_tool_path = cache_artifact['cmeta'].get('params',{}).get('tool_path')
 
-                    if ca_tool_path:
+                    if check_versions and ca_tool_path:
                         delete = False
                         problem = False
 
@@ -852,23 +865,35 @@ class Category(InitCategory):
 
                                     ctx['control']['con'] = _con
 
-                                    x_detected_version = r['version']
-
-                                    if x_detected_version != x_version:
-                                        problem = True
-
+                                    if r['return'] == 16:
                                         if con:
                                             print ('')
-                                            print (f'WARNING: The version in cache entry {x_cache_artifact_alias} has changed:')
-                                            print ('')
-                                            print (f'  Cache version: {x_version}')
-                                            print (f'  Detected real version: {x_detected_version}')
+                                            print (f'WARNING: The tool in cache entry {x_cache_artifact_alias} is not found anymore:')
                                             print ('')
                                             x = input('Would you like to delete this potentially oudated cache entry (Y/n): ')
                                             print ('')
 
                                             if x.strip().lower() in ['', 'y', 'yes']:
                                                 delete = True
+
+                                    else:
+                                        x_detected_version = r['version']
+
+                                        if x_detected_version != x_version:
+                                            problem = True
+
+                                            if con:
+                                                print ('')
+                                                print (f'WARNING: The version in cache entry {x_cache_artifact_alias} has changed:')
+                                                print ('')
+                                                print (f'  Cache version: {x_version}')
+                                                print (f'  Detected real version: {x_detected_version}')
+                                                print ('')
+                                                x = input('Would you like to delete this potentially oudated cache entry (Y/n): ')
+                                                print ('')
+
+                                                if x.strip().lower() in ['', 'y', 'yes']:
+                                                    delete = True
 
                         elif not (os.path.isfile(ca_tool_path) or os.path.isdir(ca_tool_path)):
                             problem = True
@@ -1351,6 +1376,8 @@ class Category(InitCategory):
             ctx_tasks_with_extra_values['os_sep'] = os.sep
             if task_artifact_path:
                 ctx_tasks_with_extra_values['task_artifact_path'] = task_artifact_path
+            ctx_tasks_with_extra_values['task_artifact_alias'] = task_artifact_alias
+            ctx_tasks_with_extra_values['task_artifact_uid'] = task_artifact_uid
 
             r = self.cm.utils.common.expand_strings_in_dict(ii, ctx_tasks_with_extra_values)
             if self.cm.catch_error(r): return r

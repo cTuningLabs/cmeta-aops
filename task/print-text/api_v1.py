@@ -22,6 +22,7 @@ class CTask(InitCTask):
     def init(self,
              ctx: dict,
              params: dict,
+             skip_enter: bool = False,
     ):
         """
         """
@@ -46,7 +47,7 @@ class CTask(InitCTask):
 
             print (x)
 
-        if not quiet:
+        if not quiet and not skip_enter:
             print ('')
 
             text2 = params.get('text2')

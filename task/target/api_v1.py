@@ -19,11 +19,15 @@ class CTask(InitCTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
+        self.target_artifact_alias_prefix = 'target-'
+
 
     ############################################################
     def run(self,
             ctx: dict,            # cMeta context
             compute: list = None, # string or list of compute (task::target-{name})
+            ask: bool = False,    # ask for compute if not specified
+            add_env: bool = True, # add global ENV
     ):
 
         """
@@ -38,6 +42,8 @@ class CTask(InitCTask):
         verbose = ctx['control'].get('verbose', False)
 
         ctx_tasks = ctx['tasks']
+        nested_call = ctx_tasks.setdefault('nested_call', 0)
+        space = '  ' * nested_call if verbose else ''
 
         if '#target' in ctx_tasks['global']:
             # runner is already running and called from somewhere again
@@ -48,7 +54,40 @@ class CTask(InitCTask):
 
         # Check target compute
         if not compute:
-            compute = ['cpu']
+            if ask:
+                p = {
+                  'category': self.cmeta['uses_categories']['utils'],
+                  'command': 'select_artifact',
+                  'select_category': self.category_alias + ',' + self.category_uid,
+                  'select_artifact': self.target_artifact_alias_prefix + '*',
+                  'select_text': 'Select compute targets (one or separated by comma)',
+                  'allow_multiple': True,
+                  'con': con,
+                  'quiet': quiet,
+                  'verbose': verbose,
+                  'space': space,
+                  'print_extra_line': True,
+                }
+
+                r = self.cm.access(p)
+                if self.cm.catch_error(r, fail16=True): return r
+
+                artifacts = r['artifacts']
+                indexes = r['indexes']
+                compute = []
+
+                for index in indexes:
+                    artifact = artifacts[index]
+                    artifact_alias = artifact['cmeta_ref_parts']['artifact_alias']
+                    compute.append(artifact_alias[len(self.target_artifact_alias_prefix):].lower())
+
+                if con:
+                    print ('')
+                    x = ', '.join(compute)
+                    print (f'{space}INFO: selected compute: {x}')
+
+            else:
+               compute = ['cpu']
         elif type(compute) == str:
             xcompute = []
             for x in compute.split(','):
@@ -63,7 +102,7 @@ class CTask(InitCTask):
 
         for c in compute:
             compute_use = {
-              'task': f'target-{c}',
+              'task': self.target_artifact_alias_prefix + c,
             }
 
             uses.append(compute_use)
@@ -83,7 +122,7 @@ class CTask(InitCTask):
              }
 
         r = self.cm.access(ii)
-        if self.cm.catch_error(r): return r
+        if self.cm.catch_error(r, fail16=True): return r
 
         # Prepare result
         result = {
@@ -94,13 +133,45 @@ class CTask(InitCTask):
         features = {}
 
         for c in compute:
-            key = f'target-{c}'
+            key = self.target_artifact_alias_prefix + c
 
             ft = ctx['tasks']['global'][key].get('features', {})
 
             features[c] = ft
 
         result['features'] = features
+
+        # Check environment vars
+        p = {
+          'category': self.category_alias + ',' + self.category_uid,
+          'command': 'find',
+          'arg1': self.target_artifact_alias_prefix + '*',
+          'load_files':['_desc'],
+        }
+
+        r = self.cm.access(p)
+        if self.cm.catch_error(r, fail16=True): return r
+        
+        env = {'CMETA_TARGETS': ','.join(compute)}
+
+        for c in r.get('artifacts',[]):
+            desc = c['loaded_files']['_desc'].get('data',{})
+            compute_alias = c['cmeta_ref_parts']['artifact_alias'][len(self.target_artifact_alias_prefix):].lower()
+
+            env_set = desc.get('env', {})
+            env_unset = desc.get('env_if_not_used', {})
+
+            if env_set or env_unset:
+                if compute_alias in compute:
+                    env.update(env_set)
+                else:
+                    env.update(env_unset)
+
+        if add_env:
+            _aggregate = result.setdefault('_aggregate', {})
+            _aggregate_env = _aggregate.setdefault('env', {})
+
+            _aggregate_env.update(env)
 
         # Remove lock
         del (ctx_tasks['global']['#target'])

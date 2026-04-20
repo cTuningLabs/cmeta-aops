@@ -157,7 +157,7 @@ class CTask(InitCTask):
                  }
 
             r = self.cm.access(ii)
-            if self.cm.catch_error(r): return r
+            if self.cm.catch_error(r, fail16=True): return r
 
 
         tar_path = ctx['tasks']['global']['tar']['qpath']

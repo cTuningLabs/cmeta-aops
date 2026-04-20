@@ -15,7 +15,7 @@ cache_features:
   version: '{{params.version|}}'
 
 uses_before_init:
-  - task: host,96ac7118439c4490
+  - task: runner,1e48cc0c5f6041a5
 
 sort_keys:
   - 'cmeta.params.package'

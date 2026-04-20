@@ -41,6 +41,7 @@ class CTool(InitCTool):
                 ctx: dict,
                 params: dict,
                 cmd: str = None,
+                *misc: dict,
     ):
         """
         """

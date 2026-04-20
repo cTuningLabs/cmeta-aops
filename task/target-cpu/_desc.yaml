@@ -1,3 +1,11 @@
 store_global: True       # force
 storage_key: target-cpu  # force storage key to avoid mixing up in the future
-cache: False             # force
+cache: True              # force
+
+env_if_not_used:
+  USE_CPU: 0
+  CMETA_TARGET_CPU: 0
+
+env:
+  USE_CPU: 1
+  CMETA_TARGET_CPU: 1

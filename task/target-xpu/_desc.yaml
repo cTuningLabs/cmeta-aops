@@ -20,4 +20,12 @@ uses:
     cmd: 'wmic path win32_VideoController get name,driverversion > {{local.generate-temp-file-target-xpu.temp_file}}'
     local:
       encoding: 'utf-16'
+
+env_if_not_used:
+  USE_XPU: 0
+  CMETA_TARGET_XPU: 0
+
+env:
+  USE_XPU: 1
+  CMETA_TARGET_XPU: 1
     

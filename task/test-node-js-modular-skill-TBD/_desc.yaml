@@ -1,11 +1,11 @@
 ﻿uses:
-- task: runner,1e48cc0c5f6041a5
+  - task: runner,1e48cc0c5f6041a5
 
-- task: setup,a2f9b61079ce4333
-  name: node-js,238f15e1d6184359
+  - task: setup,a2f9b61079ce4333
+    name: node-js,238f15e1d6184359
 
-- task: cmd,c9ba0a88df394d7f
-  cmd: '{{global.node-js.qpath_bin}}/npx skills add modular/skills'
+  - task: cmd,c9ba0a88df394d7f
+    cmd: '{{global.node-js.qpath_bin}}/npx skills add modular/skills'
 
-- task: cmd,c9ba0a88df394d7f
-  cmd: '{{global.node-js.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}test.js'
+  - task: cmd,c9ba0a88df394d7f
+    cmd: '{{global.node-js.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}test.js'

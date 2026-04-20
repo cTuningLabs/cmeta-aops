@@ -6,10 +6,7 @@ params_map:
   arg3: directory
 
 uses:
- - task: host,96ac7118439c4490
+  - task: runner,1e48cc0c5f6041a5
 
- - task: enable-long-paths-win,a5ddea8d0773466d
-   skip_if_not_win: True
-
- - task: setup,a2f9b61079ce4333
-   name: tar,788abc644bf24d86
+  - task: setup,a2f9b61079ce4333
+    name: tar,788abc644bf24d86

@@ -1,8 +1,8 @@
 ﻿uses:
   - task: runner,1e48cc0c5f6041a5
-    use:
-      target:
-        compute: cpu
+
+  - task: target,94decb2ddd28441f
+    compute: cpu
 
   - task: setup,a2f9b61079ce4333
     name: python
