@@ -717,8 +717,8 @@ class CTask(InitCTask):
             if warning:
                 extra['warning'] = warning
 
-            # Normally, should be 1 here and not 16 since setup task failed at this stage
-            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x} in "{__file__}"', 1, extra = extra)
+            # Normally, should not be 16 here and not 16 since setup task failed at this stage
+            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x} in "{__file__}"', 32, extra = extra)
 
         ##############################################################################
         # Add cache path if in cache

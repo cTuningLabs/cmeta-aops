@@ -861,20 +861,32 @@ class Category(InitCategory):
                                         ii['use'] = x_use
 
                                     r = self.cm.access(ii)
-                                    if self.cm.catch_error(r): return r
+                                    # FGG: Note that if something goes wrong with detection of the version,
+                                    # the command will fail, but we should not fail and quit here but continue working ...
+                                    # I also added error 32 if we didn't detect tool or there was some fail.
+                                    # We may want to improve this functionality based on convenience...
 
                                     ctx['control']['con'] = _con
 
-                                    if r['return'] == 16:
+                                    ret = r['return']
+
+#                                    if self.cm.catch_error(r): return r
+
+                                    if ret >0 :
                                         if con:
                                             print ('')
-                                            print (f'WARNING: The tool in cache entry {x_cache_artifact_alias} is not found anymore:')
+                                            print (f'{space}WARNING: There is a problem running the tool in cache entry {x_cache_artifact_alias} to check version:')
                                             print ('')
-                                            x = input('Would you like to delete this potentially oudated cache entry (Y/n): ')
+                                            err = r['error']
+                                            print (f'{space}  {err}')
+                                            print ('')
+                                            x = input(f'{space}Would you like to delete this potentially oudated cache entry (Y/n): ')
                                             print ('')
 
                                             if x.strip().lower() in ['', 'y', 'yes']:
                                                 delete = True
+
+                                        # If console, we ask to delete, otherwise we keep running ...
 
                                     else:
                                         x_detected_version = r['version']
