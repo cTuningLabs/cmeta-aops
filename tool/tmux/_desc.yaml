@@ -14,3 +14,7 @@ install_cmd:
 install_cmd_version:
   linux: '{{global.host.os_extra.install_cmd_sudo_version}}'
   darwin: '{{global.brew.qpath}} install tmux'
+
+extra_paths:
+  darwin:
+    - "/opt/homebrew/opt/**"
