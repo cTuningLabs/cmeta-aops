@@ -177,6 +177,12 @@ def detect_existing_tool(self,
 
         found_paths = r['found_paths']
 
+        if verbose and found_paths:
+            print ('')
+            print (f'{space}INFO: found paths:')
+            for fp in found_paths:
+                print (f'{space}  - {fp}')
+
         if not found_paths:
      #        x = '' if not params else f' with params {params}'
             x = ''

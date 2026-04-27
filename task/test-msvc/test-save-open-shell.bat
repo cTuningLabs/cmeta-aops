@@ -1,2 +1,3 @@
 ﻿cx . run ^
-       --use.cmd.open_shell_for_id=test-msvc-build
+       --use.test-msvc-build.open_shell ^
+       --use.test-msvc-run.open_shell

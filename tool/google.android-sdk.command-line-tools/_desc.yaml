@@ -7,6 +7,9 @@ match_version:
 
 cmd_get_version: '{{tool_path}} --version'
 
+cache_meta_const:
+  skip_cache_version_check: True
+
 extra_paths:
   windows:
     - "C:\\Program Files\\Android\\**"

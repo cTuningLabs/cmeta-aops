@@ -201,31 +201,40 @@ class CTask(InitCTask):
         # Common vars
         all_vars = {
           'windows':{
+            'clean_dir_quiet': 'rmdir /s /q',
             'file_ext_exe': '.exe',
             'file_ext_exe_search': '.exe',
             'file_ext_bat': '.bat',
             'call_script': 'call',
             'start_exe_prefix': '',
             'cmd_sep': '&&',
+            'cmd_new_line': '^',
             'os_sep': '\\',
+            'os_pathsep': ';',
           },
           'linux':{
+            'clean_dir_quiet': 'rm -rf',
             'file_ext_exe': '',
             'file_ext_exe_search': '.',
             'file_ext_bat': '.sh',
             'call_script': '.',
             'start_exe_prefix': './',
             'cmd_sep': '&&',
+            'cmd_new_line': '\\',
             'os_sep': '/',
+            'os_pathsep': ':',
           },
           'darwin':{
+            'clean_dir_quiet': 'rm -rf',
             'file_ext_exe': '',
             'file_ext_exe_search': '.',
             'file_ext_bat': '.sh',
             'call_script': '.',
             'start_exe_prefix': './',
             'cmd_sep': '&&',
+            'cmd_new_line': '\\',
             'os_sep': '/',
+            'os_pathsep': ':',
           },
         }
 

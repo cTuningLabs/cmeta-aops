@@ -395,7 +395,7 @@ class Category(InitCategory):
 
 
         ###########################################################################################
-        # UPDATE PARAMS FROM USE ...
+        # UPDATE PARAMS FROM USE BASED ON STORAGE KEY ...
 
         if ctx_use:
             for use_key in ctx_use:
@@ -1383,13 +1383,34 @@ class Category(InitCategory):
             if _local:
                 ctx_tasks['local'] = self.cm.utils.common.deep_merge(ctx_tasks['local'], _local, append_lists=True)
 
-            # Expand all params
+            # Add extra short-cut params
             ctx_tasks_with_extra_values = ctx_tasks.copy()
             ctx_tasks_with_extra_values['os_sep'] = os.sep
             if task_artifact_path:
                 ctx_tasks_with_extra_values['task_artifact_path'] = task_artifact_path
             ctx_tasks_with_extra_values['task_artifact_alias'] = task_artifact_alias
             ctx_tasks_with_extra_values['task_artifact_uid'] = task_artifact_uid
+
+            for k in ['file_ext_bat', 'cmd_new_line', 'os_sep', 'os_pathsep']:
+                x = ctx['tasks']['global'].get('host',{}).get('vars',{}).get(k)
+                if x: 
+                    ctx_tasks_with_extra_values[k] = x 
+
+            # Check if set env (in aggregated) used by further tasks
+            set_env = ii.pop('set_env', {})
+            if set_env:
+                r = self.cm.utils.common.expand_strings_in_dict(set_env, ctx_tasks_with_extra_values)
+                if self.cm.catch_error(r): return r
+
+                _aggregated = ctx_tasks.setdefault('aggregated', {})
+                _aggregated_env = _aggregated.setdefault('env', {})
+                _aggregated_env = self.cm.utils.common.deep_merge(
+                  _aggregated_env, 
+                  set_env, 
+                  append_lists = True, 
+                  prepend_lists = True, 
+                  skip_if_exist_in_list = True,
+                )
 
             r = self.cm.utils.common.expand_strings_in_dict(ii, ctx_tasks_with_extra_values)
             if self.cm.catch_error(r): return r

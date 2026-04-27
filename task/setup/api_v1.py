@@ -359,10 +359,12 @@ class CTask(InitCTask):
         # Check if params keys are defined in cdesc to be added to cache_tags
         desc_cache_params = desc.get('cache_params', [])
         desc_cache_features = desc.get('cache_features', [])
+        desc_cache_meta = desc.get('cache_meta', [])
 
         for dsc in [
                    (desc_cache_params, cache_params),
                    (desc_cache_features, cache_features),
+                   (desc_cache_meta, cache_meta),
             ]:
 
             for k in dsc[0]:
@@ -391,6 +393,10 @@ class CTask(InitCTask):
         desc_cache_features_const = desc.get('cache_features_const')
         if desc_cache_features_const:
             cache_features = self.cm.utils.common.deep_merge(cache_features, desc_cache_features_const, append_lists=True)
+
+        desc_cache_meta_const = desc.get('cache_meta_const')
+        if desc_cache_meta_const:
+            cache_meta = self.cm.utils.common.deep_merge(cache_meta, desc_cache_meta_const, append_lists=True)
 
         if desc.get('cache_params_with', False):
             if 'with' in params:
@@ -493,9 +499,11 @@ class CTask(InitCTask):
         if clean or update:
             if con and verbose:
                 print ('')
-                print (f'{space}INFO: force reinstall or rebuild')
+                print (f'{space}INFO: starting update ...')
 
-            skip_detect = True
+             # Should specify explicitly
+             # We may use it just to retun setup ...
+#            skip_detect = True
 
         # Read tool
         r = self.read_tool(
@@ -582,7 +590,6 @@ class CTask(InitCTask):
             # Fail if return error > 0 and return error !=16
             # If want to fail on error 16, add "r, fail16=True")
             if self.cm.catch_error(r): return r
-
             if r['return'] == 0:
                 result = r
                 success = True

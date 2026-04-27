@@ -87,7 +87,7 @@ class CTask(InitCTask):
 #                  'print_env_keys': ['PATH'], 
                   'print_extra_line': True,
                   'save_script': f'tmp/save-script-{icmd}' + '{{file_ext_bat}}',
-                  'task_id': f'test-clang-cpp-{icmd}',
+                  'storage_key': f'{self.artifact_alias}-cmd-{icmd}',
             }
 
             rx = self.cm.access(ii)

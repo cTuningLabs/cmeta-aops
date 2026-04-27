@@ -6,27 +6,34 @@
 
   - task: install-sys-tool,38596f32da974d46
     if_os: linux
+    if: '"{{params.install_sys_tools|False}}" == "True"'
     package: build-essential
     sudo: True
 
   - task: setup,a2f9b61079ce4333
     name: python-pip,28399f0bb52c4148
-    add_tool_path_to_env: True
+#    add_tool_path_to_env: True
 
-  - task: setup,a2f9b61079ce4333
-    name: clang-cpp,c0f077b9c14d4ba1
-    force_add_tool_path_to_env: True
+  - task: compiler,f3925b201c704bde
+    storage_key: host_cpp_compiler
+    lang: cpp
+    text: "INFO: Selecting host C++ compiler to build PyTorch"
+
+  - task: compiler,f3925b201c704bde
+    storage_key: host_c_compiler
+    lang: c
+    text: "INFO: Selecting host C compiler to build PyTorch"
 
   - task: setup,a2f9b61079ce4333
     name: cmake,e26c11ebb3dd40ca
-    add_tool_path_to_env: True
+#    add_tool_path_to_env: True
 
   - task: setup,a2f9b61079ce4333
     name: ninja,a3df3c45e9b04830
-    add_tool_path_to_env: True
+#    add_tool_path_to_env: True
 
   - task: cmd,c9ba0a88df394d7f
-    task_id: cmd_before_cloning
+    storage_key: cmd_before_cloning
     cmd: echo "Preparing cloning ..."
 
 # Add dummy with task to stop here to check vars
@@ -65,50 +72,49 @@
     cmd: '{{global.pip.cmd}} install --group dev'
 
 
+  # MKL for Intel
   - task: setup,a2f9b61079ce4333
     name: pip,c4987bc3955347f2
     with:
-      package: mkl-static
-    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" or "{{aggregated.env.CMETA_TARGET_XPU}}" == "1"'
-
-  - task: setup,a2f9b61079ce4333
-    name: pip,c4987bc3955347f2
-    with:
-      package: mkl-include
+      package: mkl-devel
     if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" or "{{aggregated.env.CMETA_TARGET_XPU}}" == "1"'
 
 
+
+  # Ninja
   - task: setup,a2f9b61079ce4333
     name: pip,c4987bc3955347f2
     with:
       package: ninja
+    set_env:
+      CMAKE_GENERATOR: Ninja
 
-
-
+  # Triton for Linux
   - task: cmd,c9ba0a88df394d7f
-    task_id: cmd_before_building_triton
     if_os: linux
-    cmd: make triton
+    storage_key: cmd_before_building_triton
+    chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
+    cmd: 'PATH="{{global.python.qpath_bin}}:$PATH" make PYTHON={{global.python.qpath}} triton'
+
 
 
 
   - task: cmd,c9ba0a88df394d7f
-    task_id: cmd_before_building
+    storage_key: cmd_before_cleaning
     cmd: echo "Preparing building ..."
 
 
-# CHECK IF CAN PASS CLEAN FLAG OR SOMETHING ELSE???
-
-#  - task: cmd,c9ba0a88df394d7f
-#    task_id: cmd_before_build
-#    chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
-#    env:
-#      CMAKE_GENERATOR: Ninja
-#    cmd: '{{global.python.qpath}} setup.py clean'
+  # Clean build
+  - task: print-text,23e0ac84f583466f
+    if: '"{{params.clean_build|False}}" == "True"'
+    text: "WARNING: Your previous PyTorch build will be cleaned!"
+    extra_line: True
+    set_env:
+      CMAKE_FRESH: 1
 
   - task: cmd,c9ba0a88df394d7f
+    if: '"{{params.clean_build|False}}" == "True"'
+    storage_key: cmd_before_build
+    mkdir: '{{global.clone-git-pytorch.path_to_git_repo}}{{os_sep}}build' # create to avoid failing on windows when cleaning it 
     chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
-    env:
-#      CMAKE_FRESH: 1
-      CMAKE_GENERATOR: Ninja
-    cmd: '{{global.pip.cmd}} install --no-build-isolation -v -e .'
+    cmd: '{{global.host.vars.clean_dir_quiet}} build'

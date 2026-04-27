@@ -1,0 +1,32 @@
+storage_key: oneapi
+
+names:
+  - oneapi-vars{{global.host.vars.file_ext_bat}}
+
+cache_params_use: 
+  windows:
+    microsoft-sdk:
+      version: "{{global.microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
+      path: "{{global.microsoft-sdk.path}}" 
+    microsoft-visual-studio:
+      version: "{{global.microsoft-visual-studio.version}}" # This version must be already resolved here, therefore not fuzzy
+      path: "{{global.microsoft-visual-studio.path}}" 
+
+match_version: 
+  - regex: 'oneAPI.*?Compiler\s+\d+\.\d+\.\d+\s*\(\s*(\d+\.\d+\.\d+\.\d+)\s*\)'
+    group: 1
+
+cmd_call_script: '{{tool_path}}'
+cmd: ''
+cmd_get_version: 'icx{{global.host.vars.file_ext_exe}} --version'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: microsoft.visual-studio,b30299aeb2bd4c6e
+
+extra_paths:
+  windows:
+    - "C:\\Program Files (x86)\\Intel\\oneAPI\\**"
+    - "D:\\Program Files (x86)\\Intel\\oneAPI\\**"
+    - "C:\\Program Files\\Intel\\oneAPI\\**"
+    - "D:\\Program Files\\Intel\\oneAPI\\**"

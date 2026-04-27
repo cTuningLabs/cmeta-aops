@@ -373,3 +373,26 @@ class CTool(InitCTool):
           'found_path': path_to_python, 
           '_update_params': _update_params,
         }
+
+    ############################################################
+    def finish_dynamic_result(self,
+                              ctx: dict,
+                              result: dict = {},
+                              params: dict = {},
+    ):
+        """
+        """
+
+        _result = {'return':0}
+
+        _with = params.get('with',{})
+
+        path_bin = result['path_bin']
+
+        path_home = os.path.dirname(path_bin)
+        qpath_home = self.cm.q(path_home)
+
+        result['path_home'] = path_home
+        result['qpath_home'] = qpath_home
+
+        return _result

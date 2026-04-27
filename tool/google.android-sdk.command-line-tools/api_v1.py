@@ -18,22 +18,22 @@ class CTool(InitCTool):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
-    ############################################################
-    def customize_tool_cache_artifact(self,
-                                      ctx,
-                                      result,
-                                      params,
-                                      cache_tags,
-                                      cache_params,
-                                      cache_features,
-                                      cache_meta,
-        ):
-
-        result = {'return':0}
-
-        cache_meta['skip_cache_version_check'] = True
-
-        return result
+#    ############################################################
+#    def customize_tool_cache_artifact(self,
+#                                      ctx,
+#                                      result,
+#                                      params,
+#                                      cache_tags,
+#                                      cache_params,
+#                                      cache_features,
+#                                      cache_meta,
+#        ):
+#
+#        result = {'return':0}
+#
+#        cache_meta['skip_cache_version_check'] = True
+#
+#        return result
 
 
 

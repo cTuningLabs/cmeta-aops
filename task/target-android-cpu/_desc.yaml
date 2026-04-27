@@ -7,9 +7,6 @@ uses:
     name: adb,c80f2c9d7d5a4b93
 
 env_if_not_used:
-  USE_ANDROID_CPU: 0
   CMETA_TARGET_ANDROID_CPU: 0
-
 env:
-  USE_ANDROID_CPU: 1
   CMETA_TARGET_ANDROID_CPU: 1

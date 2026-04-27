@@ -224,7 +224,7 @@ def install_tool(self,
         if 'run_uninstall_cmd' in r:
             run_uninstall_cmd = r['run_uninstall_cmd']
 
-        if 'uninstall_cmd' in r:
+        if r.get('uninstall_cmd'):
             uninstall_cmd = r['uninstall_cmd']
 
         if 'install_cmd' in r:
@@ -271,10 +271,10 @@ def install_tool(self,
             r = tool_api_code2.customize_install_cmd2(ctx, install_cmd, install_params, env, timeout, uninstall_cmd)
             if self.cm.catch_error(r): return r
 
-            if 'run_uninstall_cmd' in r:
+            if r.get('run_uninstall_cmd'):
                 run_uninstall_cmd = r['run_uninstall_cmd']
 
-            if 'uninstall_cmd' in r: 
+            if r.get('uninstall_cmd'):
                 uninstall_cmd = r['uninstall_cmd']
 
             if 'install_cmd' in r: 
@@ -291,10 +291,10 @@ def install_tool(self,
             r = tool_api_code.customize_install_cmd(ctx, install_cmd, install_params, env, timeout, uninstall_cmd)
             if self.cm.catch_error(r): return r
 
-            if 'run_uninstall_cmd' in r:
+            if r.get('run_uninstall_cmd'):
                 run_uninstall_cmd = r['run_uninstall_cmd']
 
-            if 'uninstall_cmd' in r: 
+            if r.get('uninstall_cmd'):
                 uninstall_cmd = r['uninstall_cmd']
 
             if 'install_cmd' in r: 
@@ -309,7 +309,7 @@ def install_tool(self,
         # Check uninstall
         cmds = []
 
-        if run_uninstall_cmd:
+        if run_uninstall_cmd and uninstall_cmd:
             r = self.cm.utils.common.expand_string(uninstall_cmd, ctx_tasks)
             if self.cm.catch_error(r): return r
             uninstall_cmd = r['string']

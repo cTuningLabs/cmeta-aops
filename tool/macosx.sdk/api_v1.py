@@ -65,7 +65,7 @@ class CTool(InitCTool):
         """
         """
         if self.cm.debug:
-            self.logger.debug("RUNNING TOOL macosx.sdk api_v1 update_paths")
+            self.logger.debug("RUNNING TOOL macosx.sdk api_v1 detect")
 
         parsed_paths_with_versions = []
 

@@ -78,6 +78,11 @@ class CTask(InitCTask):
 
         flags += f'-v -ccbin={cpp_compiler_qpath} --allow-unsupported-compiler'
 
+        # Check gencode
+        flag1 = ctx_tasks['global']['nvcc']['features']['auto_gencode_flag']
+        if flag1:
+            flags += ' ' + flag1
+
         cmds = [
           nvcc['qpath'] + f' {qsrc_file} {flags} -v -o tmp' + os.sep + exe_file, 
           'tmp' + os.sep + exe_file,
@@ -98,9 +103,8 @@ class CTask(InitCTask):
                   'text_cmd': 'RUN:',
 #                  'print_env_keys': ['PATH'],
                   'print_extra_line': True,
-                  'save_script': f'tmp/save-script-{icmd}{{file_ext_bat}}',
-                  'task_id': f'test-nvcc-{icmd}',
-                  'storage_key': f'test-nvcc-cmd-{icmd}',
+                  'save_script': f'tmp/save-script-{icmd}' + '{{file_ext_bat}}',
+                  'storage_key': f'{self.artifact_alias}-cmd-{icmd}',
             }
 
             rx = self.cm.access(ii)

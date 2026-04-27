@@ -22,10 +22,12 @@ uses:
       encoding: 'utf-16'
 
 env_if_not_used:
-  USE_XPU: 0
   CMETA_TARGET_XPU: 0
-
 env:
-  USE_XPU: 1
   CMETA_TARGET_XPU: 1
+
+cmake_vars_if_not_used:
+  USE_XPU: 'OFF'
+cmake_vars:
+  USE_XPU: 'ON'
     

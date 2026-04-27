@@ -22,7 +22,6 @@ class CTask(InitCTask):
     def init(self,
              ctx: dict,
              params: dict,
-             skip_enter: bool = False,
     ):
         """
         """
@@ -34,6 +33,8 @@ class CTask(InitCTask):
         extra_line = params.get('extra_line')
         use_space = params.get('use_space')
         press_enter = params.get('press_enter')
+        skip_enter = params.get('skip_enter')
+        force_ask = params.get('force_ask')
 
         space = '  ' * (ctx['tasks']['nested_call'] + 1) if verbose else ''
 
@@ -47,7 +48,7 @@ class CTask(InitCTask):
 
             print (x)
 
-        if not quiet and not skip_enter:
+        if force_ask or (not quiet and not skip_enter):
             print ('')
 
             text2 = params.get('text2')

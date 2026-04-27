@@ -6,6 +6,9 @@ cache_params_use:
       version: "{{global.python.version}}" # This version must be already resolved here, therefore not fuzzy
       path: "{{global.python.path}}" # Path can be from the different venv
 
+cache_meta_const:
+  skip_cache_version_check: True
+
 path: "{{global.python.qpath}}"
 cmd: "{{global.python.qpath}} -m pip"
 cmd_filename: "{{global.python.filename}} -m pip"

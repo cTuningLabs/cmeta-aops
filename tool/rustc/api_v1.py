@@ -32,8 +32,6 @@ class CTool(InitCTool):
 
         _with = params.get('with',{})
 
-        self.cm.j(result)
-
         path_bin = result['path_bin']
 
         path_home = os.path.dirname(path_bin)

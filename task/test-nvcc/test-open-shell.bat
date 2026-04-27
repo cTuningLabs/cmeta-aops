@@ -1,1 +1,1 @@
-﻿cx . run --use.cmd.open_shell_for_id=test-nvcc-0
+﻿cx . run --use.test-nvcc-cmd-0.open_shell

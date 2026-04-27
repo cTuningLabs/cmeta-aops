@@ -29,6 +29,7 @@ class CTask(InitCTask):
                 'extra_tags',
                 'extra_match',
                 'name',
+                'text',
             ], __name__)
         if self.cm.catch_error(r): return r
 
@@ -41,6 +42,7 @@ class CTask(InitCTask):
             extra_tags = None,  # extra tags to force specific compiler, etc (clang, gcc-cpp, msvc, etc)
             extra_match = None, # extra match dict
             name: str = None,   # force tool name directly without tags or extra tags
+            text: str = None,   # Add text before selection to describe what is it used for
     ):
 
         """
@@ -74,6 +76,10 @@ class CTask(InitCTask):
 
         if extra_tags:
             tool_tags += extra_tags
+
+        if text and con:
+            print ('')
+            print (f'{space}{text}')
 
         ###########################################################################################
         # SELECT TOOL ARTIFACT

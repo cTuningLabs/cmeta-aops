@@ -1,0 +1,7 @@
+﻿fail_if_not_win: True
+
+cache: False                     # force by default
+
+uses:
+  - task: cmd,c9ba0a88df394d7f
+    cmd: 'conda init --reverse cmd.exe'

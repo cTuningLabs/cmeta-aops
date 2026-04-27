@@ -187,13 +187,24 @@ class CTool(InitCTool):
 #
 #            _with['flags'] = flags.strip()   
 
-            uninstall_cmd = uninstall_cmd.replace('{{custom_package}}', custom_package)
+            if package_file or package_url:
+                if not flags:
+                    flags = ''
+    
+                # To avoid reinstalling sub-deps that may be in workflow separately
+                if '-U' not in flags:
+                    if flags != '': flags += ' '
+                    flags +='-U'
+    
+                _with['flags'] = flags.strip()   
+            else:    
+                uninstall_cmd = uninstall_cmd.replace('{{custom_package}}', custom_package)
 
-            if quiet:
-                uninstall_cmd += ' -y'
+                if quiet:
+                    uninstall_cmd += ' -y'
 
-            result['uninstall_cmd'] = uninstall_cmd
-            result['run_uninstall_cmd'] = True
+                result['uninstall_cmd'] = uninstall_cmd
+                result['run_uninstall_cmd'] = True
 
         result['install_cmd'] = install_cmd
 

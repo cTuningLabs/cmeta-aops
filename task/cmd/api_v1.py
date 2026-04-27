@@ -42,11 +42,7 @@ class CTask(InitCTask):
             hide_in_env: list = None,
             unparsed: list = [],
             save_script: str = None,
-            task_id: str = None,
-            save_script_for_id: str = None,
-            save_script_template: str = None,
             open_shell: bool = None,
-            open_shell_for_id: str = None,
             clean_files: list = None,
     ):
 
@@ -69,8 +65,25 @@ class CTask(InitCTask):
         _aggregated = ctx['tasks']['aggregated']
 
         os_env = _global['host']['os_env']
-
         envs = _aggregated.get('env', {})
+
+#        print ('===')
+#        print ('os_env_PATH=', os_env.get('PATH'))
+#        print ('===')
+#        print ('os_env_+PATH=', os_env.get('+PATH'))
+#        input('xyz1')
+
+#        print ('===')
+#        print ('envs_PATH=', envs.get('PATH'))
+#        print ('===')
+#        print ('envs_+PATH=', envs.get('+PATH'))
+#        input('xyz2')
+#
+#        print ('===')
+#        print ('env_PATH=', env.get('PATH'))
+#        print ('===')
+#        print ('env_+PATH=', env.get('+PATH'))
+#        input('xyz3')
 
         cur_dir = os.getcwd()
 
@@ -102,34 +115,6 @@ class CTask(InitCTask):
             for cf in clean_files:
                if os.path.isfile(cf):
                    os.remove(cf)
-
-        if not save_script and task_id and save_script_for_id:
-            if type(task_id) == str:
-                task_id = task_id.split(',')
-
-            if type(save_script_for_id) == str:
-                save_script_for_id = save_script_for_id.split(',')
-
-            for tid in task_id:
-                if tid in save_script_for_id:
-                    tid0 = task_id[0]
-                    if save_script_template:
-                        save_script = save_script_template.replace('{{task_id}}', tid0)
-                    else:
-                        save_script = f'cmd-script--{tid0}' + '{{file_ext_bat}}'
-                    break
-
-        if not open_shell and task_id and open_shell_for_id:
-            if type(task_id) == str:
-                task_id = task_id.split(',')
-
-            if type(open_shell_for_id) == str:
-                open_shell_for_id = open_shell_for_id.split(',')
-
-            for tid in task_id:
-                if tid in open_shell_for_id:
-                    open_shell = True
-                    break
 
         if save_script and con and verbose:
             print ('')

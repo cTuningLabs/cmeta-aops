@@ -7,11 +7,14 @@ uses:
     name: nvcc,7f0e9193fef74919
 
 env_if_not_used:
-  USE_CUDA: 0
   CMETA_TARGET_CUDA: 0
   CMETA_TARGET_CUDA_SDK: 0
 
 env:
-  USE_CUDA: 1
   CMETA_TARGET_CUDA: 1
   CMETA_TARGET_CUDA_SDK: 1
+
+cmake_vars_if_not_used:
+  USE_CUDA: 'OFF'
+cmake_vars:
+  USE_CUDA: 'ON'

@@ -58,7 +58,7 @@ class CTool(InitCTool):
                 features_versions.update(versions)
 
             # Checking devices
-            nvidia_smi_path = p['path'] # path to nvidia-smi
+            nvidia_smi_path = self.cm.q(p['path']) # path to nvidia-smi
 
             nvidia_smi_cmd = nvidia_smi_path + ' --query-gpu=index,name,uuid,pci.bus_id,driver_version,memory.total,compute_cap --format=csv'
 
@@ -94,7 +94,30 @@ class CTool(InitCTool):
 
                 devices = list(reader)
 
-                features['devices'] = clean_devices(devices)
+                updated_devices = clean_devices(devices)
+
+                # Check capacity
+                compute_cap_int_min = None
+                compute_cap_int_max = None
+                for device in updated_devices:
+                    compute_cap = device.get('compute_cap')
+                    compute_cap_int = int(compute_cap.replace('.',''))
+                    device['compute_cap_int'] = compute_cap_int
+
+                    if not compute_cap_int_min or compute_cap_int_min > compute_cap_int:
+                        compute_cap_int_min = compute_cap_int
+                    if not compute_cap_int_max or compute_cap_int_max < compute_cap_int:
+                        compute_cap_int_max = compute_cap_int
+
+                features['compute_cap_int_min'] = compute_cap_int_min
+                features['compute_cap_int_max'] = compute_cap_int_max
+
+                features['devices'] = updated_devices
+
+                # process versions to simplify further analysis
+                cuda_version = features.get('versions',{}).get('cuda version')
+                if cuda_version:
+                    features['versions']['cuda_version_int'] = int(cuda_version.replace('.',''))
 
         return {'return':0, 'paths':paths}
 

@@ -54,7 +54,7 @@ class CTask(InitCTask):
         compiler_path = compiler['path']
         compiler_qpath = compiler['qpath']
 
-        adb_path = ctx['tasks']['global']['adb']['qpath']
+        adb_qpath = ctx['tasks']['global']['adb']['qpath']
 
         os.chdir(task_path)
 
@@ -109,9 +109,9 @@ class CTask(InitCTask):
 
         cmds = [
           f'{compiler_qpath} --target={clang_target} -O2 -v -o tmp/test src/test.c',
-          f'{adb_path} {sn} push tmp/test /data/local/tmp/test',
-          f'{adb_path} {sn} shell chmod 755 /data/local/tmp/test',
-          f'{adb_path} {sn} shell /data/local/tmp/test',
+          f'{adb_qpath} {sn} push tmp/test /data/local/tmp/test',
+          f'{adb_qpath} {sn} shell chmod 755 /data/local/tmp/test',
+          f'{adb_qpath} {sn} shell /data/local/tmp/test',
         ]
 
         for icmd in range(0, len(cmds)):
@@ -130,7 +130,7 @@ class CTask(InitCTask):
 #                  'print_env_keys': ['PATH'], 
                   'print_extra_line': True,
                   'save_script': f'tmp/save-script-{icmd}' + '{{file_ext_bat}}',
-                  'task_id': f'test-clang-cpp-{icmd}',
+                  'storage_key': f'test-android-clang-compile-and-run-cmd-{icmd}',
             }
 
             rx = self.cm.access(ii)

@@ -8,9 +8,11 @@ uses:
 
 
 env_if_not_used:
-  USE_ROCM: 0
   CMETA_TARGET_ROCM: 0
-
 env:
-  USE_ROCM: 1
   CMETA_TARGET_ROCM: 1
+
+cmake_vars_if_not_used:
+  USE_ROCM: 'OFF'
+cmake_vars:
+  USE_ROCM: 'ON'

@@ -8,7 +8,7 @@ uses:
 
   - task: cmd,c9ba0a88df394d7f
     mkdir: '{{task_artifact_path}}{{os_sep}}tmp'
-    task_id: 'test-msvc-build,12f87d2418af4840'
+    storage_key: test-msvc-build
     cmd: >-
       {{global.msvc.qpath}} /EHsc
       {{task_artifact_path}}{{os_sep}}src{{os_sep}}test-windows.cpp
@@ -16,5 +16,5 @@ uses:
       /Fe:{{task_artifact_path}}{{os_sep}}tmp{{os_sep}}test-windows{{global.host.vars.file_ext_exe}}
 
   - task: cmd,c9ba0a88df394d7f
-    task_id: 'test-msvc-run,43dbb7a3f21c4e1b'
+    storage_key: test-msvc-run
     cmd: '{{task_artifact_path}}{{os_sep}}tmp{{os_sep}}test-windows{{global.host.vars.file_ext_exe}}'

@@ -20,6 +20,7 @@ uses:
 
   - task: compiler,f3925b201c704bde
     lang: cpp
+    text: "INFO: Selecting host compiler for NVCC"
     extra_tags: '{{local.compiler_extra_tags}}'
     extra_match: '{{local.compiler_extra_match}}'
 

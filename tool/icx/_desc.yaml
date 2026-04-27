@@ -1,0 +1,26 @@
+storage_key: icx
+
+names:
+  - icx{{global.host.vars.file_ext_exe}}
+
+cache_params_use: 
+  windows:
+    microsoft-sdk:
+      version: "{{global.microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
+      path: "{{global.microsoft-sdk.path}}" 
+    microsoft-visual-studio:
+      version: "{{global.microsoft-visual-studio.version}}" # This version must be already resolved here, therefore not fuzzy
+      path: "{{global.microsoft-visual-studio.path}}" 
+    oneapi:
+      version: "{{global.oneapi.version}}" # This version must be already resolved here, therefore not fuzzy
+      path: "{{global.oneapi.path}}" 
+
+match_version: 
+  - regex: 'oneAPI.*?Compiler\s+\d+\.\d+\.\d+\s*\(\s*(\d+\.\d+\.\d+\.\d+)\s*\)'
+    group: 1
+
+cmd_get_version: 'icx{{global.host.vars.file_ext_exe}} --version'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: openapi,3d44b79b6a2b476c

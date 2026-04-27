@@ -1,1 +1,1 @@
-﻿cxt test-clang-cpp --use.cmd.open_shell_for_id=test-clang-cpp-0
+﻿cxt test-clang-cpp --use.test-clang-cpp-cmd-0.open_shell

@@ -29,9 +29,11 @@ uses:
       {{task_artifact_path}}{{os_sep}}tmp{{os_sep}}tmp-detect-metal.json
 
 env_if_not_used:
-  USE_MPS: 0
   CMETA_TARGET_MPS: 0
-
 env:
-  USE_MPS: 1
   CMETA_TARGET_MPS: 1
+
+cmake_vars_if_not_used:
+  USE_MPS: 'OFF'
+cmake_vars:
+  USE_MPS: 'ON'

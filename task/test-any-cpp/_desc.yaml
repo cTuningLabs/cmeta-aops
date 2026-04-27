@@ -1,0 +1,19 @@
+﻿fail_if_not_win: True
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: compiler,f3925b201c704bde
+    lang: cpp
+
+  - task: cmd,c9ba0a88df394d7f
+    mkdir: '{{task_artifact_path}}{{os_sep}}tmp'
+    storage_key: test-cpp-any-build
+    cmd: >-
+      {{global.compiler.qpath}} {{local.flags}}
+      {{task_artifact_path}}{{os_sep}}src{{os_sep}}test.cpp
+      -o {{task_artifact_path}}{{os_sep}}tmp{{os_sep}}test{{global.host.vars.file_ext_exe}}
+
+  - task: cmd,c9ba0a88df394d7f
+    storage_key: test-cpp-any-run
+    cmd: '{{task_artifact_path}}{{os_sep}}tmp{{os_sep}}test{{global.host.vars.file_ext_exe}}'

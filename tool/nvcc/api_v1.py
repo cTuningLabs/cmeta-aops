@@ -42,6 +42,7 @@ class CTool(InitCTool):
         if compiler_extra_match is None or compiler_extra_match == '': 
             compiler_extra_match = {}
 
+        # Add host compiler such as GCC, LLVM, MSVC if needed ...
         supports_nvcc_os = compiler_extra_match.setdefault('supports_nvcc_os', []) 
         if uname not in supports_nvcc_os:
             supports_nvcc_os.append(uname)
@@ -63,20 +64,87 @@ class CTool(InitCTool):
         if self.cm.debug:
             self.logger.debug("RUNNING TOOL nvcc api_v1 check_features")
 
-        uname = ctx['tasks']['global']['host']['os']['uname']
-        uarch = ctx['tasks']['global']['host']['os']['uarch']
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
 
         _with = params.get('with', {})
         env = _with.get('env', {})
         timeout = _with.get('timeout')
+
+        uname = ctx['tasks']['global']['host']['os']['uname']
+        uarch = ctx['tasks']['global']['host']['os']['uarch']
+
+        new_paths = []
+
+        compute_cap_int_min = ctx['tasks']['global']['cuda']['features']['compute_cap_int_min']
+        compute_cap_int_max = ctx['tasks']['global']['cuda']['features']['compute_cap_int_max']
 
         for p in paths:
             # Parsing standard output
             features = p.setdefault('features', {})
 
             path_nvcc = p['path']
-
             path_bin = os.path.dirname(path_nvcc)
+
+            # Check supported arch
+            cmd = self.cm.q(path_nvcc) + ' --list-gpu-arch --list-gpu-code'
+
+            ii = {'category': 'task,c36be4b9314a45e0',
+                  'command': 'run',
+                  'ctx': ctx,
+                  'arg1': 'cmd,c9ba0a88df394d7f',
+                  'cmd': cmd,
+                  'env': env,
+                  'timeout': timeout,
+                  'con': con, 
+                  'quiet': quiet,
+                  'verbose': verbose, 
+                  'text_cmd': 'RUN:', 
+                  'capture_output': True,
+                  # Important to be able to continue processing detect/install/build
+                  'fail_if_nonzero_return_code': False, 
+            }
+
+            rx = self.cm.access(ii)
+            if self.cm.catch_error(rx): return rx
+
+            returncode = rx['returncode']                                            
+
+            if returncode>0:
+                # If can't detect capabilities - skip
+                continue
+
+            else:
+                farch = []
+                fcode = []
+
+                for s in rx['stdout'].strip().splitlines():
+                    ss = s.split(',')
+                    if len(ss) == 2:
+                        sa = ss[0]
+                        sc = ss[1]
+
+                        if sa.startswith('arch=compute_'):
+                            farch.append(int((sa[13:])))
+                            if sc.startswith('code=sm_'):
+                                fcode.append(int(sc[8:]))
+
+                features['supported_arch'] = farch
+                features['supported_arch_min'] = min(farch)
+                features['supported_arch_max'] = max(farch)
+
+                features['supported_code'] = fcode
+                features['supported_code_min'] = min(fcode)
+                features['supported_code_max'] = max(fcode)
+
+                # Prepare common gencode flags based on my device capabilities and NVCC capabilities
+                xarch = compute_cap_int_min if compute_cap_int_min < features['supported_arch_max'] else features['supported_arch_max']
+                xcode = compute_cap_int_min if compute_cap_int_min < features['supported_code_max'] else features['supported_code_max']
+
+                features['auto_gencode_flag'] = f'-gencode arch=compute_{xarch},code=sm_{xcode}'
+
+            # Finish checking various features
 
             _paths = {
                'bin': path_bin,
@@ -142,7 +210,9 @@ class CTool(InitCTool):
                 features_versions = features.setdefault('versions', {})
                 features_versions.update(r['data'])
 
-        return {'return':0, 'paths':paths}
+            new_paths.append(p)
+
+        return {'return':0, 'paths':new_paths}
 
     ############################################################
     def finish_dynamic_result(self,

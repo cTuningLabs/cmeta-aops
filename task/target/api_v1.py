@@ -154,6 +154,9 @@ class CTask(InitCTask):
         
         env = {'CMETA_TARGETS': ','.join(compute)}
 
+        cmake_vars = {}
+        env_vars = {}
+
         for c in r.get('artifacts',[]):
             desc = c['loaded_files']['_desc'].get('data',{})
             compute_alias = c['cmeta_ref_parts']['artifact_alias'][len(self.target_artifact_alias_prefix):].lower()
@@ -161,11 +164,43 @@ class CTask(InitCTask):
             env_set = desc.get('env', {})
             env_unset = desc.get('env_if_not_used', {})
 
-            if env_set or env_unset:
+            if env_set and env_unset:
                 if compute_alias in compute:
-                    env.update(env_set)
-                else:
-                    env.update(env_unset)
+                    env_vars.update(env_set)
+
+            cmake_vars_set = desc.get('cmake_vars', {})
+            cmake_vars_unset = desc.get('cmake_vars_if_not_used', {})
+
+            if cmake_vars_set and cmake_vars_unset:
+                if compute_alias in compute:
+                    cmake_vars.update(cmake_vars_set)
+
+
+        for c in r.get('artifacts',[]):
+            desc = c['loaded_files']['_desc'].get('data',{})
+            compute_alias = c['cmeta_ref_parts']['artifact_alias'][len(self.target_artifact_alias_prefix):].lower()
+
+            env_set = desc.get('env', {})
+            env_unset = desc.get('env_if_not_used', {})
+
+            if env_set and env_unset:
+                for k in env_unset:
+                    if k not in env_vars:
+                        env_vars[k] = env_unset[k]
+
+            cmake_vars_set = desc.get('cmake_vars', {})
+            cmake_vars_unset = desc.get('cmake_vars_if_not_used', {})
+
+            if cmake_vars_set and cmake_vars_unset:
+                for k in cmake_vars_unset:
+                    if k not in cmake_vars:
+                        cmake_vars[k] = cmake_vars_unset[k]
+
+
+        result['cmake_vars'] = cmake_vars
+
+        env.update(env_vars)
+
 
         if add_env:
             _aggregate = result.setdefault('_aggregate', {})
