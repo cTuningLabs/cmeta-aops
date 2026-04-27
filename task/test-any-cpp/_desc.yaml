@@ -1,6 +1,4 @@
-﻿fail_if_not_win: True
-
-uses:
+﻿uses:
   - task: runner,1e48cc0c5f6041a5
 
   - task: compiler,f3925b201c704bde
