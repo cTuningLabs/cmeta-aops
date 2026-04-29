@@ -39,6 +39,7 @@
     skip_print_env: True
     cmd: >-
       {{global.compiler.qpath}} 
+      {{params.compiler_flags|}}
       {{global.compiler.features.flags.catch_errors|}}
       {{global.compiler.features.flags.dynamic_build}}
       {{task_artifact_path}}/src/test.cpp
