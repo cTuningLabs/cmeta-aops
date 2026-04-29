@@ -39,6 +39,8 @@ features:
       include_path: '/I '
       dynamic_build: '/MD'
       static_build: '/MT'
+      dynamic_build_debug: '/MDd'
+      static_build_debug: '/MTd'
       obj_file: '/Fo:'
       exe_file: '/Fe:'
       link_sep: '/link'

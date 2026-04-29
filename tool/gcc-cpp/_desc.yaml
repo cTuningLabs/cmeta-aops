@@ -44,6 +44,8 @@ features:
       include_path: '-I'
       dynamic_build: ''
       static_build: '-static'
+      dynamic_build_debug: ''
+      static_build_debug: '-static'
       exe_file: '-o '
       lib_path: '-L'
       lib_prefix: '-l'

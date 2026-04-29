@@ -312,6 +312,8 @@ class Category(InitCategory):
                   task_artifact_alias = artifact_alias, 
                   task_artifact_uid = artifact_uid,
                   task_artifact_path = task_path,
+                  task_api_code = task_api_code,
+                  uparams = uparams,
             )
             if self.cm.catch_error(r): return r
 
@@ -526,6 +528,8 @@ class Category(InitCategory):
                     task_artifact_alias = artifact_alias, 
                     task_artifact_uid = artifact_uid,
                     task_artifact_path = task_path,
+                    task_api_code = task_api_code,
+                    uparams = uparams,
             )
             if self.cm.catch_error(r): return r
 
@@ -1318,6 +1322,8 @@ class Category(InitCategory):
             task_artifact_alias = None,
             task_artifact_uid = None,
             task_artifact_path = None,
+            task_api_code = None,
+            uparams = None,
     ):
 
         """
@@ -1352,16 +1358,8 @@ class Category(InitCategory):
 
             ii = copy.deepcopy(sub_task_desc)
 
-            task = ii.pop('task', None)
-            if not task:
-                return self.cm.error(f'the requirement in task "{task_artifact_alias}" misses "task" name or uid in "{__file__}" ({sub_task_desc})')
-
             if ii.pop('skip_if_not_win', False) and os.name != 'nt':
                 continue
-
-            # Prepare input
-            sub_task_category = 'task,' + self.cmeta['artifact'] if 'category' not in ii else ii['category']
-            sub_task_command = 'run' if 'command' not in ii else ii['command']
 
             # Check OS
             target_os = ii.pop('if_os', None)
@@ -1444,33 +1442,58 @@ class Category(InitCategory):
             r = self.cm.utils.common.expand_strings_in_dict(ii, ctx_tasks_with_extra_values)
             if self.cm.catch_error(r): return r
 
-            ii['ctx'] = ctx
 
-            ii['arg1'] = task
+            func = ii.pop('internal_func', None)
+            task = ii.pop('task', None)
 
-            ii['category'] = sub_task_category
-            ii['command'] = sub_task_command
+            if not task and not func:
+                return self.cm.error(f'the requirement in task "{task_artifact_alias}" misses "task" or "internal_func" in "{__file__}" ({sub_task_desc})')
 
-            ii['con'] = con
-            ii['quiet'] = quiet
-            ii['verbose'] = verbose
+            if task:
 
-            # Update context for tasks
-            ctx_tasks['nested_call'] += 1
+                ii['ctx'] = ctx
 
-            sub_task_result = self.cm.access(ii)
-            if self.cm.catch_error(sub_task_result): 
-                err = sub_task_result['error']
+                ii['arg1'] = task
 
-                j = err.find('unexpected keyword argument')
-                if j>0:
-                    j1 = err.find('.', j)
-                    if j1>0:
-                        sub_task_result['error'] = err[:j1+1] + f'\n(sub task desc = {sub_task_desc})' + err[j1+1:]
+                ii['category'] = 'task,' + self.cmeta['artifact'] if 'category' not in ii else ii['category']
+                ii['command'] = 'run' if 'command' not in ii else ii['command']
 
-                return sub_task_result
+                ii['con'] = con
+                ii['quiet'] = quiet
+                ii['verbose'] = verbose
 
-            ctx_tasks['nested_call'] -= 1
+                # Update context for tasks
+                ctx_tasks['nested_call'] += 1
+
+                sub_task_result = self.cm.access(ii)
+                if self.cm.catch_error(sub_task_result): 
+                    err = sub_task_result['error']
+
+                    j = err.find('unexpected keyword argument')
+                    if j>0:
+                        j1 = err.find('.', j)
+                        if j1>0:
+                            sub_task_result['error'] = err[:j1+1] + f'\n(sub task desc = {sub_task_desc})' + err[j1+1:]
+
+                    return sub_task_result
+
+                ctx_tasks['nested_call'] -= 1
+            else:
+                if verbose:
+                    print ('')
+                    print (f'{sub_space}RUN INTERNAL FUNC: {func} from task "{task_artifact_alias}"')
+
+                if not task_api_code:
+                    return self.cm.error(f'internal func "{func}" misses code in task "{task_artifact_alias}"')
+
+                task_func = getattr(task_api_code, func, None)
+
+                if not callable(task_func):
+                    return self.cm.error(f'internal func "{func}" is missing in task "{task_artifact_alias}"')
+
+                r = task_func(ctx, ii, control = {'con':con, 'verbose': verbose, 'quiet': quiet}, uparams = uparams)
+                if self.cm.catch_error(r): return r
+
 
         # Restore local if direct call from external source and not from a given task
         if local is not None:

@@ -23,13 +23,13 @@
       env:
         +PATH: '{{global.lib-openssl.features.paths.bin}}'
 
-
   - task: set-local-vars,7638025960534c70
     if_os: linux,darwin
     vars:
       libs: >
          {{global.compiler.features.flags.lib_prefix}}crypto
 
+  - internal_func: set_vars
 
   - task: cmd,c9ba0a88df394d7f
     mkdir: '{{task_artifact_path}}/tmp'
@@ -40,8 +40,9 @@
     cmd: >-
       {{global.compiler.qpath}} 
       {{params.compiler_flags|}}
+      {{local.build_type_flag}}
+      {{local.compiler_flags|}}
       {{global.compiler.features.flags.catch_errors|}}
-      {{global.compiler.features.flags.dynamic_build}}
       {{task_artifact_path}}/src/test.cpp
       {{global.compiler.features.flags.include_path}}{{global.lib-openssl.features.paths.qinclude}}
       {{global.compiler.features.flags.exe_file}}{{task_artifact_path}}/tmp/test{{global.host.vars.file_ext_exe}}
