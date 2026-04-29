@@ -37,3 +37,21 @@ uses_os:
 
 install_help_text:
   Please check https://releases.llvm.org !
+
+features:
+  windows:
+    flags:
+      include_path: '-I'
+      dynamic_build: ''
+      static_build: '-fms-runtime-lib=static'
+      exe_file: '-o '
+      lib_path: '-Wl,/LIBPATH:'
+      lib_prefix: '-Wl,'
+  linux:
+    flags:
+      include_path: '-I'
+      dynamic_build: ''
+      static_build: '-static'
+      exe_file: '-o '
+      lib_path: '-L'
+      lib_prefix: '-l'

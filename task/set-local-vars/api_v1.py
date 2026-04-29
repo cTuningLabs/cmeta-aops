@@ -13,6 +13,8 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             ctx: dict,        # cMeta context
+            vars: dict = None,
+            append_lists: bool = True,
     ):
 
         """
@@ -28,28 +30,9 @@ class CTask(InitCTask):
 
         space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
 
-        temp_file = ctx['tasks']['local']['generate-temp-file-target-xpu']['temp_file']
-        encoding = ctx['tasks']['local']['encoding']
+        result = {'return':0}
 
-        if not os.path.isfile(temp_file):
-            return self.cm.error(f'temp file "{temp_file}" not found in "{__file__}" ({__name__})')
-
-        r = self.cm.utils.files.read_file(temp_file, encoding = encoding)
-        if self.cm.catch_error(r): return r
-
-        data = r['data'].strip()
-        ldata = data.lower()
-
-        if 'intel' not in ldata and 'graphics' not in ldata:
-            return self.cm.error(f'Intel Graphics is not detected in "{__file__}"')
-
-        features = {'output': data}
-
-        # !FGG: just a prototype - can be extended
-
-        result = {
-          'return':0,
-          'features': features
-        }
+        if vars:
+            result['add_to_local'] = vars
 
         return result

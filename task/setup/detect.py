@@ -179,7 +179,7 @@ def detect_existing_tool(self,
 
         if verbose and found_paths:
             print ('')
-            print (f'{space}INFO: found paths:')
+            print (f'{space}INFO: all found paths before checking and pruning:')
             for fp in found_paths:
                 print (f'{space}  - {fp}')
 
@@ -488,8 +488,25 @@ def detect_existing_tool(self,
         add_to_result = tool['add_to_result']
         result.update(add_to_result)
 
-    if 'features' in tool:
-        result['features'] = tool['features']
+    features = None
+
+    if 'features' in desc:
+        _features = desc['features']
+
+        for k in ['all', uname, 'linux']:
+            if k in _features:
+                features = _features[k].copy()
+                break
+
+    _features = tool.get('features')
+    if _features:
+        if features is None:
+            features = _features
+        else:
+            features = self.cm.utils.common.deep_merge(features, _features, append_lists=True)
+
+    if features:
+        result['features'] = features
 
     result['path'] = path
     result['filename'] = os.path.basename(path)

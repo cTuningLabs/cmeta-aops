@@ -1,0 +1,13 @@
+names:
+  - openssl{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: '\b\d+\.\d+\.\d+(?:-[\w]+)?\b'
+    group: 0
+
+cmd_get_version: '{{tool_path}} -version'
+
+extra_paths:
+  windows:
+    - "C:\\Program Files**\\OpenSSL**\\**"
+    - "D:\\Program Files**\\OpenSSL**\\**"

@@ -1,0 +1,22 @@
+storage_key: cudnn
+
+names:
+  - cudnn.h
+
+match_version: 
+  - regex: '^.*$'
+    group: 0
+
+install_help_text:
+  Please install cuDNN from https://developer.nvidia.com/cudnn !
+
+extra_paths:
+  windows:
+    - "C:\\Program Files\\NVIDIA\\CUDNN\\**"
+    - "D:\\Program Files\\NVIDIA\\CUDNN\\**"
+    - "C:\\Program Files (x86)\\NVIDIA\\CUDNN\\**"
+    - "D:\\Program Files (x86)\\NVIDIA\\CUDNN\\**"
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: nvcc,7f0e9193fef74919

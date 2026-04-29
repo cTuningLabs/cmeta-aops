@@ -52,40 +52,64 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
-        nvcc = ctx['tasks']['global']['nvcc']
-
-        if not os.path.isdir('tmp'):
-            os.makedirs('tmp')
-
-        src_file = os.path.join(task_path, 'src', 'list_devices.cu')
-        qsrc_file = self.cm.utils.files.quote_path(src_file)
-
         host = ctx_tasks['global']['host']
         uname = host['os']['uname']
 
-        exe_file = 'list_devices' + host['vars']['file_ext_exe']
+        nvcc = ctx['tasks']['global']['nvcc']
+        cudnn = ctx['tasks']['global']['cudnn']
 
-        if uname == 'windows':
-            ext = '.exe'
-        else:
-            ext = ''
+        exe_file = 'RNN_v8.0' + host['vars']['file_ext_exe']
+        target_exe_file = os.path.join('tmp', exe_file)
 
-        cpp_compiler_qpath = ctx_tasks['global']['compiler']['qpath']
+        src_dir = os.path.join(task_path, 'RNN_v8.0')
+        src_file = os.path.join(src_dir, 'RNN_example.cu')
+        qsrc_file = self.cm.q(src_file)
 
+        # Check includes/libs
+        includes = [
+          src_dir,
+          cudnn['features']['paths']['include'],
+        ]
+
+        # Check libs
+        libs = [
+          src_dir,
+          cudnn['features']['paths']['lib'],
+        ]
+
+        # Assemble flags
+        if flags is None: flags = ''
 
         if flags: 
             flags += ' '
 
-        flags += f'-v -ccbin={cpp_compiler_qpath} --allow-unsupported-compiler'
+        cpp_compiler_qpath = ctx_tasks['global']['compiler']['qpath']
+        flags += f'-ccbin={cpp_compiler_qpath} --allow-unsupported-compiler'
 
         # Check gencode
         flag1 = ctx_tasks['global']['nvcc']['features']['flags']['gencode_auto']
         if flag1:
             flags += ' ' + flag1
 
+        # Check includes and libs
+        for include in includes:
+            flags += ' -I' + self.cm.q(include)
+
+        for lib in libs:
+            flags += ' -L' + self.cm.q(lib)
+
+        cmd_build = nvcc['qpath'] + f' {qsrc_file} {flags} -lcublas -lcudnn -lcudart -o {target_exe_file}'
+
+        # Check DYNAMIC LIBS/BINS
+        cudnn_path_bin = cudnn['features']['paths']['bin']
+
+        if env is None: env = {}
+        env_path = env.setdefault('+PATH',[])
+        env_path.insert(0, cudnn_path_bin)
+
         cmds = [
-          nvcc['qpath'] + f' {qsrc_file} {flags} -v -o tmp' + os.sep + exe_file, 
-          'tmp' + os.sep + exe_file,
+          cmd_build,
+          os.path.join('tmp', exe_file)
         ]
 
         for icmd in range(0, len(cmds)):

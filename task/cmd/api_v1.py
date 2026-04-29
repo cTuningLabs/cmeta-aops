@@ -44,6 +44,7 @@ class CTask(InitCTask):
             save_script: str = None,
             open_shell: bool = None,
             clean_files: list = None,
+            skip_print_env: bool = True,
     ):
 
         """
@@ -143,6 +144,7 @@ class CTask(InitCTask):
             print_cur_dir = print_cur_dir,
             save_script = save_script,
             open_shell = open_shell,
+            skip_print_env = skip_print_env,
         )
 
         if chdir:

@@ -21,3 +21,16 @@ cmd_get_version: 'cl.exe'
 uses:
   - task: setup,a2f9b61079ce4333
     name: microsoft.visual-studio,b30299aeb2bd4c6e
+
+features:
+  windows:
+    flags:
+      catch_errors: '/EHsc'
+      include_path: '/I '
+      dynamic_build: '/MD'
+      static_build: '/MT'
+      obj_file: '/Fo:'
+      exe_file: '/Fe:'
+      link_sep: '/link'
+      lib_path: '/LIBPATH:'
+      lib_prefix: ''

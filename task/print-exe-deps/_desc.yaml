@@ -1,0 +1,17 @@
+﻿params_map:
+  arg2: executable
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: setup,a2f9b61079ce4333
+    if_os: windows
+    name: microsoft.visual-studio
+
+  - task: cmd,c9ba0a88df394d7f
+    if_os: windows
+    cmd: 'dumpbin /dependents {{params.executable}}'
+
+  - task: cmd,c9ba0a88df394d7f
+    if_os: linux
+    cmd: 'ldd {{params.executable}}'

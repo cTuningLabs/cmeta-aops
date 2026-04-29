@@ -203,6 +203,7 @@ class CTask(InitCTask):
           'windows':{
             'clean_dir_quiet': 'rmdir /s /q',
             'file_ext_exe': '.exe',
+            'file_ext_obj': '.obj',
             'file_ext_exe_search': '.exe',
             'file_ext_bat': '.bat',
             'call_script': 'call',
@@ -215,6 +216,7 @@ class CTask(InitCTask):
           'linux':{
             'clean_dir_quiet': 'rm -rf',
             'file_ext_exe': '',
+            'file_ext_obj': '.o',
             'file_ext_exe_search': '.',
             'file_ext_bat': '.sh',
             'call_script': '.',
@@ -227,6 +229,7 @@ class CTask(InitCTask):
           'darwin':{
             'clean_dir_quiet': 'rm -rf',
             'file_ext_exe': '',
+            'file_ext_obj': '.o',
             'file_ext_exe_search': '.',
             'file_ext_bat': '.sh',
             'call_script': '.',

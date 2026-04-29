@@ -20,9 +20,15 @@ cmd_call_script: '{{tool_path}}'
 cmd: ''
 cmd_get_version: 'icx{{global.host.vars.file_ext_exe}} --version'
 
-uses:
-  - task: setup,a2f9b61079ce4333
-    name: microsoft.visual-studio,b30299aeb2bd4c6e
+uses_os:
+  windows:
+    - task: setup,a2f9b61079ce4333
+      name: microsoft.visual-studio,b30299aeb2bd4c6e
+  darwin:
+    - task: force-fail,fbc834fe54894aec
+      text: 'task "{{task_artifact_alias}}" is not supporting MacOS'
+
+
 
 extra_paths:
   windows:
@@ -30,3 +36,6 @@ extra_paths:
     - "D:\\Program Files (x86)\\Intel\\oneAPI\\**"
     - "C:\\Program Files\\Intel\\oneAPI\\**"
     - "D:\\Program Files\\Intel\\oneAPI\\**"
+
+install_help_text:
+  Please install OpenAPI from https://www.intel.com/content/www/us/en/developer/tools/oneapi/overview.html !

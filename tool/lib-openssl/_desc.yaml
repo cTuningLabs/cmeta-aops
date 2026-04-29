@@ -1,0 +1,26 @@
+names:
+  - opensslv.h
+
+match_version: 
+  - regex: '^.*$'
+    group: 0
+
+extra_paths:
+  windows:
+    - "C:\\Program Files**\\OpenSSL**\\**"
+    - "D:\\Program Files**\\OpenSSL**\\**"
+  linux:
+    - "/usr/include/**"
+    - "/usr/local/include/**"
+    - "/home/linuxbrew/.linuxbrew/**"
+  darwin:
+    - "/usr/include/**"
+    - "/usr/local/include/**"
+    - "/opt/homebrew/opt/*ssl*/**"
+
+package_name: 'libssl-dev'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+  darwin: '{{global.brew.qpath}} install openssl'
+  windows: "{{global.winget.qpath}} install OpenSSL -e --no-upgrade {{global.init.winget_install_flags|}}"

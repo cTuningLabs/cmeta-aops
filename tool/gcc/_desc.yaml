@@ -23,3 +23,13 @@ install_cmd:
 
 install_cmd_version:
   linux: '{{global.host.os_extra.install_cmd_sudo_version}}'
+
+features:
+  linux:
+    flags:
+      include_path: '-I'
+      dynamic_build: ''
+      static_build: '-static'
+      exe_file: '-o '
+      lib_path: '-L'
+      lib_prefix: '-l'

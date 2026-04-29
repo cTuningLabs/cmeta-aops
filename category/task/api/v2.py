@@ -291,6 +291,7 @@ class Category(InitCategory):
         saved_uparams = ctx_tasks.get('params')
         ctx_tasks['params'] = uparams
 
+        # Local is only within a given task and sub functions but deps can't update it
         saved_local = ctx_tasks.get('local')
         ctx_tasks['local'] = {}
 
@@ -325,9 +326,19 @@ class Category(InitCategory):
 
             if r.get('skip_run', False):
                 # Early exit !!! local and params may have changed in init ...
-                ctx['tasks']['params'] = saved_uparams if saved_uparams else {}
-                ctx['tasks']['local'] = saved_local if saved_local else {}
+#                ctx['tasks']['params'] = saved_uparams if saved_uparams else {}
+#                ctx['tasks']['local'] = saved_local if saved_local else {}
 
+                # Do not aggregate - already done!
+                r = self._finish_run(
+                        ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro = None, 
+                        aggregate = False, 
+                        saved_uparams = saved_uparams, 
+                        saved_local = saved_local,
+                )
+                if self.cm.catch_error(r): return r
+    
+                # !!! Exit from this function
                 return r
 
             if 'uses' in r:
@@ -391,6 +402,7 @@ class Category(InitCategory):
             )
             if self.cm.catch_error(r): return r
             
+            # !!! Exit from this function
             return result
 
 
@@ -422,6 +434,16 @@ class Category(InitCategory):
             if self.cm.catch_error(r): return r
 
             if r.get('stop', False):
+                # Do not aggregate - already done!
+                r = self._finish_run(
+                        ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro, 
+                        aggregate = False, 
+                        saved_uparams = saved_uparams, 
+                        saved_local = saved_local,
+                )
+                if self.cm.catch_error(r): return r
+
+                # !!! Exit from this function
                 return r
 
         ###########################################################################################
@@ -972,10 +994,12 @@ class Category(InitCategory):
 
                         r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
                                              call_repro, aggregate = True,
-                                             saved_uparams = saved_uparams, saved_local = saved_local,
+                                             saved_uparams = saved_uparams, 
+                                             saved_local = saved_local,
                         )
                         if self.cm.catch_error(r): return r
 
+                        # !!! Exit from this function
                         return result
 
 
@@ -1127,7 +1151,8 @@ class Category(InitCategory):
                 if save or save_here:
                     r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
                                          call_repro, aggregate = True,
-                                         saved_uparams = saved_uparams, saved_local = saved_local,
+                                         saved_uparams = saved_uparams, 
+                                         saved_local = saved_local,
                     )
                     if self.cm.catch_error(r): return r
 
@@ -1194,7 +1219,8 @@ class Category(InitCategory):
 
         r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
                              call_repro, aggregate = True,
-                             saved_uparams = saved_uparams, saved_local = saved_local,
+                             saved_uparams = saved_uparams, 
+                             saved_local = saved_local,
         )
         if self.cm.catch_error(r): return r
 
@@ -1202,6 +1228,10 @@ class Category(InitCategory):
         if storage_key and not store_global:
             ctx_tasks['local'][storage_key] = result
 
+            if result.get('add_to_local'):
+                self.cm.utils.common.deep_merge(ctx_tasks['local'], result['add_to_local'], append_lists=False)
+
+        # !!! Exit from this function
         return result
 
 
@@ -1273,7 +1303,6 @@ class Category(InitCategory):
             r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_CTX, ctx)
             if self.cm.catch_error(r): return r
 
-        
         ctx['tasks']['params'] = saved_uparams if saved_uparams else {}
         ctx['tasks']['local'] = saved_local if saved_local else {}
 
@@ -1442,7 +1471,7 @@ class Category(InitCategory):
                 return sub_task_result
 
             ctx_tasks['nested_call'] -= 1
-                                                            
+
         # Restore local if direct call from external source and not from a given task
         if local is not None:
             ctx_tasks['local'] = saved_local

@@ -142,7 +142,7 @@ class CTool(InitCTool):
                 xarch = compute_cap_int_min if compute_cap_int_min < features['supported_arch_max'] else features['supported_arch_max']
                 xcode = compute_cap_int_min if compute_cap_int_min < features['supported_code_max'] else features['supported_code_max']
 
-                features['auto_gencode_flag'] = f'-gencode arch=compute_{xarch},code=sm_{xcode}'
+                features['flags'] = {'gencode_auto': f'-gencode arch=compute_{xarch},code=sm_{xcode}'}
 
             # Finish checking various features
 
