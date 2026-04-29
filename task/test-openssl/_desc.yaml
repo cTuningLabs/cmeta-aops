@@ -25,7 +25,7 @@
 
 
   - task: set-local-vars,7638025960534c70
-    if_os: linux
+    if_os: linux,darwin
     vars:
       libs: >
          {{global.compiler.features.flags.lib_prefix}}crypto
