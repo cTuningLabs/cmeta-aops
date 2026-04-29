@@ -36,7 +36,7 @@
     chdir: '{{task_artifact_path}}/tmp'
     storage_key: test-build
     save_script: '{{task_artifact_path}}/tmp/tmp-saved-script-build{{file_ext_bat}}'
-    skip_print_env: False
+    skip_print_env: True
     cmd: >-
       {{global.compiler.qpath}} 
       {{global.compiler.features.flags.catch_errors|}}
@@ -51,7 +51,7 @@
   - task: cmd,c9ba0a88df394d7f
     storage_key: test-run
     save_script: '{{task_artifact_path}}/tmp/tmp-saved-script-run{{file_ext_bat}}'
-    skip_print_env: False
+    skip_print_env: True
     cmd: '{{task_artifact_path}}/tmp/test{{global.host.vars.file_ext_exe}}'
     env:
       +PATH: '{{local.env.+PATH|$None}}'
