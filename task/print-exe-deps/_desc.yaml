@@ -15,3 +15,7 @@ uses:
   - task: cmd,c9ba0a88df394d7f
     if_os: linux
     cmd: 'ldd {{params.executable}}'
+
+  - task: cmd,c9ba0a88df394d7f
+    if_os: darwin
+    cmd: 'dyld_info -dependents {{params.executable}}'
