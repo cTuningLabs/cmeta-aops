@@ -93,10 +93,12 @@ class CTask(InitCTask):
 
         if 'OPENSSL_ROOT_DIR' not in env: 
             env['OPENSSL_ROOT_DIR'] = ctx_tasks['global']['lib-openssl']['features']['paths']['root']
+
         if 'CMAKE_C_COMPILER' not in env:
-            env['CMAKE_C_COMPILER'] = ctx['global'['host_c_compiler']['path']
+            env['CMAKE_C_COMPILER'] = ctx['global']['host_c_compiler']['path']
+
         if 'CMAKE_CXX_COMPILER' not in env:
-            env['CMAKE_CXX_COMPILER'] = ctx['global'['host_cpp_compiler']['path']
+            env['CMAKE_CXX_COMPILER'] = ctx['global']['host_cpp_compiler']['path']
 
         # ROCm
         #If you're compiling for AMD ROCm then first run this command:
