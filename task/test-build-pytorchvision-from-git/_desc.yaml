@@ -6,31 +6,24 @@
 
   - task: install-sys-tool,38596f32da974d46
     if_os: linux
-    if: '"{{params.install_sys_tools|False}}" == "True"'
     package: build-essential
     sudo: True
 
   - task: setup,a2f9b61079ce4333
     name: python-pip,28399f0bb52c4148
-#    add_tool_path_to_env: True
+    add_tool_path_to_env: True
 
-  - task: compiler,f3925b201c704bde
-    storage_key: host_cpp_compiler
-    lang: cpp
-    text: "INFO: Selecting host C++ compiler to build PyTorch"
-
-  - task: compiler,f3925b201c704bde
-    storage_key: host_c_compiler
-    lang: c
-    text: "INFO: Selecting host C compiler to build PyTorch"
+  - task: setup,a2f9b61079ce4333
+    name: clang-cpp,c0f077b9c14d4ba1
+    force_add_tool_path_to_env: True
 
   - task: setup,a2f9b61079ce4333
     name: cmake,e26c11ebb3dd40ca
-#    add_tool_path_to_env: True
+    add_tool_path_to_env: True
 
   - task: setup,a2f9b61079ce4333
     name: ninja,a3df3c45e9b04830
-#    add_tool_path_to_env: True
+    add_tool_path_to_env: True
 
   - task: cmd,c9ba0a88df394d7f
     storage_key: cmd_before_cloning
@@ -50,7 +43,6 @@
 
   - task: get-directory-size,8011c5c45c9748bc
     text: 'Git repo size BEFORE submodule update:'
-    if: '"{{params.check_dir_size|}}" == "True"'
     directory: '{{global.clone-git-pytorch.path_to_git_repo}}'
     store_global: True
     storage_key: clone-git-pytorch-size-before-update
@@ -62,7 +54,6 @@
     directory: '{{global.clone-git-pytorch.path_to_git_repo}}'
 
   - task: get-directory-size,8011c5c45c9748bc
-    if: '"{{params.check_dir_size|}}" == "True"'
     text: 'Git repo size AFTER submodule update:'
     directory: '{{global.clone-git-pytorch.path_to_git_repo}}'
     store_global: True
@@ -74,10 +65,19 @@
     cmd: '{{global.pip.cmd}} install --group dev'
 
 
-  # ICX and OneAPI if Intel XPU
+  # MKL for Intel
   - task: setup,a2f9b61079ce4333
-    name: icx,15789d59a5534055
-    if: '"{{aggregated.env.CMETA_TARGET_XPU}}" == "1"'
+    name: pip,c4987bc3955347f2
+    with:
+      package: mkl-static
+    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" or "{{aggregated.env.CMETA_TARGET_XPU}}" == "1"'
+
+  - task: setup,a2f9b61079ce4333
+    name: pip,c4987bc3955347f2
+    with:
+      package: mkl-include
+    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" or "{{aggregated.env.CMETA_TARGET_XPU}}" == "1"'
+
 
   # Ninja
   - task: setup,a2f9b61079ce4333
@@ -91,13 +91,9 @@
   - task: cmd,c9ba0a88df394d7f
     if_os: linux
     storage_key: cmd_before_building_triton
-    chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
     cmd: 'PATH="{{global.python.qpath_bin}}:$PATH" make PYTHON={{global.python.qpath}} triton'
 
 
-  # OpenSSL Lib
-  - task: setup,a2f9b61079ce4333
-    name: lib-openssl,903191f1fab74064
 
 
   - task: cmd,c9ba0a88df394d7f
@@ -116,6 +112,13 @@
   - task: cmd,c9ba0a88df394d7f
     if: '"{{params.clean_build|False}}" == "True"'
     storage_key: cmd_before_build
-    mkdir: '{{global.clone-git-pytorch.path_to_git_repo}}{{os_sep}}build' # create to avoid failing on windows when cleaning it 
     chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
-    cmd: '{{global.host.vars.clean_dir_quiet}} build'
+    cmd: '{{global.python.qpath}} setup.py clean'
+
+
+
+  # Build
+  - task: cmd,c9ba0a88df394d7f
+    storage_key: cmd_before_building
+    chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
+    cmd: '{{global.pip.cmd}} install --no-build-isolation -v -e .'

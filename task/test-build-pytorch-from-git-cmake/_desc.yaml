@@ -79,6 +79,13 @@
     name: icx,15789d59a5534055
     if: '"{{aggregated.env.CMETA_TARGET_XPU}}" == "1"'
 
+  # MKL if CPU or Intel XPU
+  - task: setup,a2f9b61079ce4333
+    name: pip,c4987bc3955347f2
+    with:
+      package: mkl-devel
+    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" or "{{aggregated.env.CMETA_TARGET_XPU}}" == "1"'
+
   # Ninja
   - task: setup,a2f9b61079ce4333
     name: pip,c4987bc3955347f2

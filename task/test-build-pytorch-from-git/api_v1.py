@@ -59,112 +59,45 @@ class CTask(InitCTask):
         uname = host['os']['uname']
 
         path_to_src = ctx_tasks['global']['clone-git-pytorch']['path_to_git_repo']
-        path_to_build = os.path.join(path_to_src, 'build')
 
-        print (path_to_src)
-        input('xyz0')
+        target_compute = ctx_tasks['global']['target']['compute']
 
-        if not skip_configure:
+        _aggregated = ctx['tasks']['aggregated']
 
-            cmake_vars.update({
-              'CMAKE_CXX_COMPILER': '{{global.host_cpp_compiler.qpath}}',
-              'CMAKE_C_COMPILER': '{{global.host_c_compiler.qpath}}',
-              'CMAKE_MAKE_PROGRAM':'{{global.ninja.qpath}}',
-              'CMAKE_PREFIX_PATH':'{{global.python.qpath_home}};"{{global.python.path_home}}\\Library"',
-              'CMAKE_INCLUDE_PATH':'"{{global.python.path_home}}\\Library\\include"',
-              'CMAKE_LIB_PATH':'"{{global.python.path_home}}\\Library\\lib"',
-              'PYTHON_EXECUTABLE':'{{global.python.qpath}}',
-              'INTEL_MKL_DIR':'"{{global.python.path_home}}\\Library"', # On Windows -> Library
-              'INTEL_OMP_DIR':'"{{global.python.path_home}}\\Library"'
-            })
+        if env is None: env = {}
 
-            # Check targets
+        if 'BUILD_TYPE' not in env: env['BUILD_TYPE'] = 'release'
+        if 'BUILD_TEST' not in env: env['BUILD_TEST'] = 'OFF'
+        if 'CMAKE_GENERATOR' not in env: env['CMAKE_GENERATOR'] = 'Ninja'
 
-
-            r = self.cm.utils.common.expand_strings_in_dict(cmake_vars, ctx_tasks)
-            if self.cm.catch_error(r): return r
-
+        if 'xpu' in target_compute:
             if uname == 'windows':
-                for k in cmake_vars:
-                    cmake_vars[k] = cmake_vars[k].replace('\\', '/')
+                # FGG: I had problems installing KINETO on Windows
+                if 'USE_KINETO' not in env: env['USE_KINETO'] = 'OFF'
 
-#            cmd = ctx_tasks['global']['cmake']['qpath'] + ' -S .. -B build -G Ninja'
-            cmd = ctx_tasks['global']['cmake']['qpath'] + ' -B build -G Ninja'
+        cmake_vars_from_target = ctx_tasks['global']['target']['cmake_vars'].copy()
+        for k in cmake_vars_from_target:
+            if k not in env:
+                env[k] = cmake_vars_from_target[k]
 
-            cmake_vars_from_target = ctx_tasks['global']['target']['cmake_vars'].copy()
-            cmake_vars_from_target.update(cmake_vars)
+        # check cmake path and add it to env if needed
+        cmake_bin = ctx_tasks['global']['cmake']['qpath_bin']
 
-            if 'CMAKE_BUILD_TYPE' not in cmake_vars_from_target:
-                cmake_vars_from_target['CMAKE_BUILD_TYPE'] = 'Release'
-            if 'BUILD_TEST' not in cmake_vars_from_target:
-                cmake_vars_from_target['BUILD_TEST'] = 'OFF'
+        aenv = _aggregated.get('env',{})
+        apath = aenv.get('+PATH', [])
 
-            for k in sorted(cmake_vars_from_target):
-                cmd += ' -D' + k + '=' + cmake_vars_from_target[k]
-
-            print (cmd)
-            input('xyz1')
-
-            ii = {'category': self.category_alias + ',' + self.category_uid,
-                  'command': 'run',
-                  'ctx': ctx,
-                  'arg1': 'cmd,c9ba0a88df394d7f',
-#                  'mkdir': path_to_build,
-#                  'chdir': path_to_build,
-                  'chdir': path_to_src,
-                  'cmd': cmd,
-                  'env': env,
-                  'con': con, 
-                  'quiet': quiet,
-                  'verbose': verbose, 
-                  'text_cmd': 'RUN:',
-    #                  'print_env_keys': ['PATH'],
-                  'print_extra_line': True,
-                  'storage_key': 'cmd_before_building',
-            }
-
-            rx = self.cm.access(ii)
-            if self.cm.catch_error(rx): return rx
-
-            returncode = rx['returncode']
-            if returncode>0:
-                return {'return':99, 'error': f'cmd "{cmd}" failed with return code "{returncode}"'}
-
-
+        if cmake_bin not in apath:
+            _path = env.setdefault('+PATH',[])
+            if cmake_bin not in _path:
+                _path.insert(0, cmake_bin)
 
         cpu_count = int(ctx_tasks['global']['host']['os']['python_os_cpu_count']) - 2
         if cpu_count < 1 :
             cpu_count = 1
 
-        cmd = ctx_tasks['global']['cmake']['qpath'] + f' --build build --config Release -j {cpu_count}'
+        if 'MAX_JOBS' not in env: env['MAX_JOBS'] = str(cpu_count)
 
-        print (cmd)
-        input('xyz2')
-
-        ii = {'category': self.category_alias + ',' + self.category_uid,
-              'command': 'run',
-              'ctx': ctx,
-              'arg1': 'cmd,c9ba0a88df394d7f',
-#              'chdir': path_to_build,
-              'chdir': path_to_src,
-              'cmd': cmd,
-              'env': env,
-              'con': con, 
-              'quiet': quiet,
-              'verbose': verbose, 
-              'text_cmd': 'RUN:',
-#                  'print_env_keys': ['PATH'],
-              'print_extra_line': True,
-              'storage_key': 'cmd_before_building',
-        }
-
-        rx = self.cm.access(ii)
-        if self.cm.catch_error(rx): return rx
-
-        cmd = ctx_tasks['global']['python']['qpath'] + f' setup.py bdist_wheel'
-
-        print (cmd)
-        input('xyz')
+        cmd = ctx_tasks['global']['python']['qpath'] + f' -m pip install --no-build-isolation -v -e .'
 
         ii = {'category': self.category_alias + ',' + self.category_uid,
               'command': 'run',
@@ -177,7 +110,6 @@ class CTask(InitCTask):
               'quiet': quiet,
               'verbose': verbose, 
               'text_cmd': 'RUN:',
-#                  'print_env_keys': ['PATH'],
               'print_extra_line': True,
               'storage_key': 'cmd_before_building',
         }
@@ -185,5 +117,18 @@ class CTask(InitCTask):
         rx = self.cm.access(ii)
         if self.cm.catch_error(rx): return rx
 
+        returncode = rx['returncode']
+        if returncode>0:
+            return {'return':99, 'error': f'cmd "{cmd}" failed with return code "{returncode}"'}
+
+
+#        'CMAKE_CXX_COMPILER': '{{global.host_cpp_compiler.qpath}}',
+#        'CMAKE_C_COMPILER': '{{global.host_c_compiler.qpath}}',
+#        'CMAKE_MAKE_PROGRAM':'{{global.ninja.qpath}}',
+#        'CMAKE_PREFIX_PATH':'{{global.python.qpath_home}};"{{global.python.path_home}}\\Library"',
+#        'CMAKE_INCLUDE_PATH':'"{{global.python.path_home}}\\Library\\include"',
+#        'CMAKE_LIB_PATH':'"{{global.python.path_home}}\\Library\\lib"',
+#        'INTEL_MKL_DIR':'"{{global.python.path_home}}\\Library"', # On Windows -> Library
+#        'INTEL_OMP_DIR':'"{{global.python.path_home}}\\Library"',
 
         return result

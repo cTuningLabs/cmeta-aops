@@ -67,6 +67,9 @@ class Category(InitCategory):
         """
         """
 
+        if self.cm.debug:
+            self.logger.debug("RUNNING task api v1 run")
+
         ctx = params['ctx']
 
         inside_cli = 'cli' in ctx.get('origin',{})

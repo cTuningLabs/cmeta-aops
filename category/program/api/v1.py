@@ -11,6 +11,9 @@ import os
 
 from cmeta.category import InitCategory
 
+# We save some internal names to be used as cMeta command
+_compile = compile
+
 class Category(InitCategory):
     """
     """
@@ -35,49 +38,78 @@ class Category(InitCategory):
         """
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
+    ############################################################
+    def compile(self, params):
+        """
+        """
+
+        if self.cm.debug:
+            self.logger.debug("RUNNING program api v1 compile")
+
+        input('xyz')
+
+        p = self._prepare_input_from_params(params, base = False)
+
+        p['category'] = self.cmeta['uses_categories']['task']
+        p['command'] = 'run'
+        p['name'] = params.get('arg1')
+        p['arg1'] = self.cmeta['uses_artifacts']['tool::setup']
+
+        return self.cm.access(p)
 
     ############################################################
-    def test_(
-        self,
-        ctx,  # Execution context dictionary with category, command, and control data.
-        arg1 = None,  # First positional argument from command input.
-        flag1 = False,  # Input parameter used by this function.
-    ):
+    def run(self, params):
         """
-            Args:
-                ctx: Execution context dictionary with category, command, and control data.
-                arg1: First positional argument from command input.
-                flag1: Input parameter used by this function.
-            Returns:
-                dict: Operation result.
-            Raises:
-                Exception: Propagated runtime errors, if any.
         """
 
-        self.logger.debug("RUNNING API v1 test_")
+        if self.cm.debug:
+            self.logger.debug("RUNNING program api v1 run")
 
-        print (f'arg1={arg1}')
-        print (f'flag1={flag1}')
+        input('xyz')
 
-        return {'return':0}
+        ctx = params['ctx']
 
-    ############################################################
-    def test2(
-        self,
-        params,  # Input parameters dictionary.
-    ):
-        """
-            Args:
-                params: Input parameters dictionary.
-            Returns:
-                dict: Operation result.
-            Raises:
-                Exception: Propagated runtime errors, if any.
-        """
+        p = self._prepare_input_from_params(params)
 
-        self.logger.debug("RUNNING API v1 test2")
+        unparsed = p.pop('unparsed', [])
 
-        import json
-        print (json.dumps(params, indent=2))
+        # Setup tool
+        p.update({'category': self.cmeta['uses_categories']['task'],
+                  'command': 'run',
+                  'ctx': ctx,
+        })
 
-        return {'return':0}
+        pp = copy.deepcopy(p)
+
+        p['arg1'] = self.cmeta['uses_artifacts']['tool::setup']
+        p['name'] = params.get('arg1')
+
+        r = self.cm.access(p)
+        if self.cm.catch_error(r): return r
+
+        cmd = r['cmd']
+
+        for param in unparsed:
+            param = param.strip()
+            if ' ' in param and not param.startswith('"'):
+                param = '"' + param + '"'
+
+            cmd += ' ' + param
+        
+        # Clean some params (needed for "setup tool" task but not for "cmd" task)
+
+        for k in ['detect','install', 'build', 'skip_install', 'skip_detect', 'skip_build',
+                  'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 'with',
+                  'version']:
+            if k in pp:
+                del(pp[k])
+
+        pp['arg1'] = self.cmeta['uses_artifacts']['tool::cmd']
+        pp['cmd'] = cmd
+        pp['ctx'] = ctx
+        pp['print_extra_line'] = True
+
+        r = self.cm.access(pp)
+        self.cm.catch_error(r)
+
+        return r

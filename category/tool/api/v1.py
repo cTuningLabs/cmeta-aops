@@ -48,7 +48,9 @@ class Category(InitCategory):
     def find_path_(self, ctx, path = None, paths = None, space = None, context={}, desc={}):
         """
         """
-        self.logger.debug("RUNNING tool find_path v1")
+
+        if self.cm.debug:
+            self.logger.debug("RUNNING tool find_path v1")
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
@@ -165,7 +167,8 @@ class Category(InitCategory):
         """
         """
 
-        self.logger.debug("RUNNING tool api v1 setup")
+        if self.cm.debug:
+            self.logger.debug("RUNNING tool api v1 setup")
 
         p = self._prepare_input_from_params(params, base = False)
 
@@ -181,7 +184,8 @@ class Category(InitCategory):
         """
         """
 
-        self.logger.debug("RUNNING tool api v1 run")
+        if self.cm.debug:
+            self.logger.debug("RUNNING tool api v1 run")
 
         ctx = params['ctx']
 
