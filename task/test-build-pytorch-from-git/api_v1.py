@@ -91,6 +91,19 @@ class CTask(InitCTask):
             if cmake_bin not in _path:
                 _path.insert(0, cmake_bin)
 
+        if 'OPENSSL_ROOT_DIR' not in env: 
+            env['OPENSSL_ROOT_DIR'] = ctx_tasks['global']['lib-openssl']['features']['paths']['root']
+        if 'CMAKE_C_COMPILER' not in env:
+            env['CMAKE_C_COMPILER'] = ctx['global'['host_c_compiler']['path']
+        if 'CMAKE_CXX_COMPILER' not in env:
+            env['CMAKE_CXX_COMPILER'] = ctx['global'['host_cpp_compiler']['path']
+
+        # ROCm
+        #If you're compiling for AMD ROCm then first run this command:
+        #
+        ## Only run this if you're compiling for ROCm
+        #python tools/amd_build/build_amd.py
+
         cpu_count = int(ctx_tasks['global']['host']['os']['python_os_cpu_count']) - 2
         if cpu_count < 1 :
             cpu_count = 1
