@@ -6,16 +6,16 @@
     text: 'task "{{task_artifact_alias}}" does not work on MacOS'
 
   - task: setup,a2f9b61079ce4333
-    name: icx,15789d59a5534055
+    name: icpx,2dd552ea24a34a81
 
   - task: cmd,c9ba0a88df394d7f
     mkdir: '{{task_artifact_path}}{{os_sep}}tmp'
-    storage_key: test-icx-sycl-build
+    storage_key: test-icpx-sycl-build
     cmd: >-
-      {{global.icx.qpath}} -fsycl {{local.flags}}
+      {{global.icpx.qpath}} -fsycl {{local.flags}}
       {{task_artifact_path}}{{os_sep}}src{{os_sep}}test.cpp
       -o {{task_artifact_path}}{{os_sep}}tmp{{os_sep}}test{{global.host.vars.file_ext_exe}}
 
   - task: cmd,c9ba0a88df394d7f
-    storage_key: test-icx-sycl-run
+    storage_key: test-icpx-sycl-run
     cmd: '{{task_artifact_path}}{{os_sep}}tmp{{os_sep}}test{{global.host.vars.file_ext_exe}}'

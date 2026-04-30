@@ -1,13 +1,13 @@
-artifact: 15789d59a5534055
+artifact: 2dd552ea24a34a81
 authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
 copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
-last_update_timestamp: '2026-04-30T14:48:23.230881+00:00'
+last_update_timestamp: '2026-04-30T14:48:27.349331+00:00'
 sort: 4000
 supports_os:
 - linux
 - windows
 tags:
-- lang-c
-- icx
+- lang-cpp
+- icx-cpp

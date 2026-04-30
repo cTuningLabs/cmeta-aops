@@ -1,7 +1,7 @@
-storage_key: icx
+storage_key: icpx
 
 names:
-  - icx{{global.host.vars.file_ext_exe}}
+  - icpx{{global.host.vars.file_ext_exe}}
 
 cache_params_use: 
   windows:
@@ -19,7 +19,7 @@ match_version:
   - regex: 'oneAPI.*?Compiler\s+\d+\.\d+\.\d+\s*\(\s*(\d+\.\d+\.\d+\.\d+)\s*\)'
     group: 1
 
-cmd_get_version: 'icx{{global.host.vars.file_ext_exe}} --version'
+cmd_get_version: 'icpx{{global.host.vars.file_ext_exe}} --version'
 
 uses:
   - task: force-fail,fbc834fe54894aec
