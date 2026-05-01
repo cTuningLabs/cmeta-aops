@@ -146,11 +146,11 @@ class CTask(InitCTask):
         ## Only run this if you're compiling for ROCm
         #python tools/amd_build/build_amd.py
 
-#        cpu_count = int(_global['host']['os']['python_os_cpu_count']) - 2
-#        if cpu_count < 1 :
-#            cpu_count = 1
-#
-#        if 'MAX_JOBS' not in env: env['MAX_JOBS'] = str(cpu_count)
+        cpu_count = int(_global['host']['os']['python_os_cpu_count']) - 2
+        if cpu_count < 1 :
+            cpu_count = 1
+
+        if 'MAX_JOBS' not in env: env['MAX_JOBS'] = str(cpu_count)
 
         cmd = _global['python']['qpath'] + f' -m pip install --no-build-isolation -v -e .'
 

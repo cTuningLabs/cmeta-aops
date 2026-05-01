@@ -26,3 +26,22 @@ if torch.cuda.is_available():
     print ("System CUDA driver version:", driver)
 
 print ('='*80)
+
+device = 'cuda'
+
+x = torch.tensor([1.0, 2.0, 3.0], device=device)
+y = torch.tensor([4.0, 5.0, 6.0], device=device)
+
+z = x + y
+
+print("x device:", x.device)
+print("y device:", y.device)
+print("z device:", z.device)
+
+print("x[0]:", x[0])
+print("y[0]:", y[0])
+print("z[0]:", z[0])
+
+print(z)
+
+print ('='*80)

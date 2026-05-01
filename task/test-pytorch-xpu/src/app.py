@@ -33,9 +33,9 @@ print("x device:", x.device)
 print("y device:", y.device)
 print("z device:", z.device)
 
-print("x[0,0,0]:", x[0])
-print("y[0,0,0]:", y[0])
-print("z[0,0,0]:", z[0])
+print("x[0]:", x[0])
+print("y[0]:", y[0])
+print("z[0]:", z[0])
 
 print(z)
 
