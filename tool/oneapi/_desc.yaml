@@ -26,7 +26,7 @@ uses_os:
       name: microsoft.visual-studio,b30299aeb2bd4c6e
   darwin:
     - task: force-fail,fbc834fe54894aec
-      text: 'task "{{task_artifact_alias}}" is not supporting MacOS'
+      text: 'task "{{task_artifact_alias}} oneapi" is not supporting MacOS'
 
 
 

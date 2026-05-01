@@ -24,7 +24,7 @@ cmd_get_version: 'icpx{{global.host.vars.file_ext_exe}} --version'
 uses:
   - task: force-fail,fbc834fe54894aec
     if: '"{{global.host.os.uname}}" == "darwin"'
-    text: 'task "{{task_artifact_alias}}" is not supporting MacOS'
+    text: 'task "{{task_artifact_alias}} icpx" is not supporting MacOS'
 
   - task: setup,a2f9b61079ce4333
     name: oneapi,3d44b79b6a2b476c
