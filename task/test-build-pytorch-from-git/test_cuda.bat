@@ -6,9 +6,7 @@
    --use.clone-git-pytorch.path="x:\work\pytorch-src\v2.11.0" ^
    --use.cmake.version=4.3.0 ^
    --use.target.compute=cpu,cuda-sdk ^
-   --save_here 
-
-:: --clean_build
+   --save_here --clean_build
 
 
 ::   --use.cmd_before_cleaning.open_shell

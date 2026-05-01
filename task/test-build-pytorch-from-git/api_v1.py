@@ -77,6 +77,19 @@ class CTask(InitCTask):
         if 'BUILD_TEST' not in env: env['BUILD_TEST'] = 'OFF'
         if 'CMAKE_GENERATOR' not in env: env['CMAKE_GENERATOR'] = 'Ninja'
 
+        if 'cpu' in target_compute and 'xpu' not in target_compute:
+            # Point Intel MKL to python 
+            if uname == 'windows':
+                if 'CMAKE_INTEL_MKL_DIR' not in env:
+                    env['CMAKE_INTEL_MKL_DIR'] = os.path.join(_global['python']['path_home'], 'Library')
+                if 'CMAKE_INTEL_OMP_DIR' not in env:
+                    env['CMAKE_INTEL_OMP_DIR'] = os.path.join(_global['python']['path_home'], 'Library')
+            else:
+                if 'CMAKE_INTEL_MKL_DIR' not in env:
+                    env['CMAKE_INTEL_MKL_DIR'] = os.path.join(_global['python']['path_home'], 'lib')
+                if 'CMAKE_INTEL_OMP_DIR' not in env:
+                    env['CMAKE_INTEL_OMP_DIR'] = os.path.join(_global['python']['path_home'], 'lib')
+
         if 'xpu' in target_compute:
             if uname == 'windows':
                 # FGG: I had problems installing KINETO on Windows
