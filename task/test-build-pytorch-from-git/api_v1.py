@@ -73,24 +73,26 @@ class CTask(InitCTask):
 #        if 'CMAKE_INSTALL_PREFIX' not in env: env['CMAKE_INSTALL_PREFIX'] = target_path
 
 
-        if 'BUILD_TYPE' not in env: env['BUILD_TYPE'] = 'release'
+#        if 'BUILD_TYPE' not in env: env['BUILD_TYPE'] = 'release'
         if 'BUILD_TEST' not in env: env['BUILD_TEST'] = 'OFF'
         if 'CMAKE_GENERATOR' not in env: env['CMAKE_GENERATOR'] = 'Ninja'
 
 
 # Use it to detect MKL and other python based stuff on Windows
         if '+CMAKE_PREFIX_PATH' not in env:
-            if uname == 'windows': 
-                env['+CMAKE_PREFIX_PATH'] = os.path.join(_global['python']['path_home'], 'Library') 
+            if uname == 'windows':
+                env['+CMAKE_PREFIX_PATH'] = [os.path.join(_global['python']['path_home'], 'Library'), _global['python']['path_home']]
+            elif uname == 'linux':
+                env['+CMAKE_PREFIX_PATH'] = [os.path.join(_global['python']['path_home'], 'lib'), _global['python']['path_home']]
+
 
 #        if 'cpu' in target_compute and 'xpu' not in target_compute:
-            # Point Intel MKL to python 
-#            if uname == 'windows':
-#                if 'MLK_ROOT_DIR' not in env:
-#                    env['MKL_ROOT'] = os.path.join(_global['python']['path_home'], 'Library')
-#            else:
-#                if 'MKL_ROOT_DIR' not in env:
-#                    env['MKL_ROOT'] = os.path.join(_global['python']['path_home'], 'lib')
+#            # Point Intel MKL to python
+#            if uname == 'linux':
+#                env['MKL_DIR'] = _global['python']['path_home']
+#                env['MKL_ROOT_DIR'] = _global['python']['path_home']
+#                env['MKL_ROOT'] = _global['python']['path_home']
+#                env['MKLROOT'] = _global['python']['path_home']
 
         if 'xpu' in target_compute:
             if uname == 'windows':
