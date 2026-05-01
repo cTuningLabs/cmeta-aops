@@ -27,7 +27,7 @@ uses:
     text: 'task "{{task_artifact_alias}}" is not supporting MacOS'
 
   - task: setup,a2f9b61079ce4333
-    name: openapi,3d44b79b6a2b476c
+    name: oneapi,3d44b79b6a2b476c
 
 install_help_text:
   Please install intel compilers from https://www.intel.com/content/www/us/en/developer/tools/oneapi/overview.html !

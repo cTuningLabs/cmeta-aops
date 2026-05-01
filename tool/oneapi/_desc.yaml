@@ -38,4 +38,4 @@ extra_paths:
     - "D:\\Program Files\\Intel\\oneAPI\\**"
 
 install_help_text:
-  Please install OpenAPI from https://www.intel.com/content/www/us/en/developer/tools/oneapi/overview.html !
+  Please install OneAPI from https://www.intel.com/content/www/us/en/developer/tools/oneapi/overview.html !
