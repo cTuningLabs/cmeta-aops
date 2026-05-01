@@ -12,7 +12,7 @@
 
   - task: setup,a2f9b61079ce4333
     name: python-pip,28399f0bb52c4148
-#    add_tool_path_to_env: True
+
 
   - task: compiler,f3925b201c704bde
     storage_key: host_cpp_compiler_for_pytorch_build
@@ -20,7 +20,6 @@
     text: "INFO: Selecting host C++ compiler to build PyTorch"
     cache: True
     
-
   - task: compiler,f3925b201c704bde
     storage_key: host_c_compiler_for_pytorch_build
     lang: c
@@ -29,17 +28,15 @@
 
   - task: setup,a2f9b61079ce4333
     name: cmake,e26c11ebb3dd40ca
-#    add_tool_path_to_env: True
 
   - task: setup,a2f9b61079ce4333
     name: ninja,a3df3c45e9b04830
-#    add_tool_path_to_env: True
 
   - task: cmd,c9ba0a88df394d7f
     storage_key: cmd_before_cloning
     cmd: echo "Preparing cloning ..."
 
-# Add dummy with task to stop here to check vars
+
 
   - task: clone-git,af9422df6ea241ec
     store_global: True
@@ -87,6 +84,36 @@
   - task: setup,a2f9b61079ce4333
     name: icx,15789d59a5534055
     if: '"{{aggregated.env.CMETA_TARGET_XPU}}" == "1"'
+
+  # MKL if CPU and not Intel XPU
+  - task: setup,a2f9b61079ce4333
+    name: pip,c4987bc3955347f2
+    with:
+      package: mkl
+    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" and "{{aggregated.env.CMETA_TARGET_XPU}}" != "1"'
+
+  # MKL if CPU and not Intel XPU
+  - task: setup,a2f9b61079ce4333
+    name: pip,c4987bc3955347f2
+    with:
+      package: mkl-static
+    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" and "{{aggregated.env.CMETA_TARGET_XPU}}" != "1"'
+
+#  # MKL if CPU and not Intel XPU
+#  - task: setup,a2f9b61079ce4333
+#    name: pip,c4987bc3955347f2
+#    with:
+#      package: mkl-devel
+#    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" and "{{aggregated.env.CMETA_TARGET_XPU}}" != "1"'
+
+  # MKL if CPU and not Intel XPU
+  - task: setup,a2f9b61079ce4333
+    name: pip,c4987bc3955347f2
+    with:
+      package: mkl-include
+    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" and "{{aggregated.env.CMETA_TARGET_XPU}}" != "1"'
+
+
 
   # Ninja
   - task: setup,a2f9b61079ce4333

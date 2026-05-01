@@ -77,18 +77,20 @@ class CTask(InitCTask):
         if 'BUILD_TEST' not in env: env['BUILD_TEST'] = 'OFF'
         if 'CMAKE_GENERATOR' not in env: env['CMAKE_GENERATOR'] = 'Ninja'
 
-        if 'cpu' in target_compute and 'xpu' not in target_compute:
+
+# Use it to detect MKL and other python based stuff on Windows
+        if '+CMAKE_PREFIX_PATH' not in env:
+            if uname == 'windows': 
+                env['+CMAKE_PREFIX_PATH'] = os.path.join(_global['python']['path_home'], 'Library') 
+
+#        if 'cpu' in target_compute and 'xpu' not in target_compute:
             # Point Intel MKL to python 
-            if uname == 'windows':
-                if 'CMAKE_INTEL_MKL_DIR' not in env:
-                    env['CMAKE_INTEL_MKL_DIR'] = os.path.join(_global['python']['path_home'], 'Library')
-                if 'CMAKE_INTEL_OMP_DIR' not in env:
-                    env['CMAKE_INTEL_OMP_DIR'] = os.path.join(_global['python']['path_home'], 'Library')
-            else:
-                if 'CMAKE_INTEL_MKL_DIR' not in env:
-                    env['CMAKE_INTEL_MKL_DIR'] = os.path.join(_global['python']['path_home'], 'lib')
-                if 'CMAKE_INTEL_OMP_DIR' not in env:
-                    env['CMAKE_INTEL_OMP_DIR'] = os.path.join(_global['python']['path_home'], 'lib')
+#            if uname == 'windows':
+#                if 'MLK_ROOT_DIR' not in env:
+#                    env['MKL_ROOT'] = os.path.join(_global['python']['path_home'], 'Library')
+#            else:
+#                if 'MKL_ROOT_DIR' not in env:
+#                    env['MKL_ROOT'] = os.path.join(_global['python']['path_home'], 'lib')
 
         if 'xpu' in target_compute:
             if uname == 'windows':
@@ -104,8 +106,12 @@ class CTask(InitCTask):
                 env['CUDA_TOOLKIT_ROOT_DIR'] = cuda_home
 
             cudnn_home = _global['cudnn']['features']['paths']['home']
-            env['CUDNN_ROOT_DIR'] = cudnn_home
-            #set CUDNN_LIB_DIR=%CUDA_PATH%\lib\x64
+            cudnn_include = _global['cudnn']['features']['paths']['include']
+            cudnn_lib = _global['cudnn']['features']['paths']['lib']
+
+            env['CUDNN_LIB_DIR'] = cudnn_lib
+            env['CUDNN_INCLUDE_DIR'] = cudnn_include
+
 
         cmake_vars_from_target = _global['target']['cmake_vars'].copy()
         for k in cmake_vars_from_target:
@@ -145,6 +151,9 @@ class CTask(InitCTask):
 #        if 'MAX_JOBS' not in env: env['MAX_JOBS'] = str(cpu_count)
 
         cmd = _global['python']['qpath'] + f' -m pip install --no-build-isolation -v -e .'
+
+        print (env)
+        input('xyz')
 
         ii = {'category': self.category_alias + ',' + self.category_uid,
               'command': 'run',
