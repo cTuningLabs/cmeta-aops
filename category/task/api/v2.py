@@ -876,6 +876,7 @@ class Category(InitCategory):
                                           'skip_install': True,
                                           'skip_build': True,
                                           'tool_path': ca_tool_path,
+                                          'timeout': 200,
                                           'quiet': quiet,
                                           'con': False,
                                           'verbose': False,
@@ -909,10 +910,10 @@ class Category(InitCategory):
                                             err = r['error']
                                             print (f'{space}  {err}')
                                             print ('')
-                                            x = input(f'{space}Would you like to delete this potentially oudated cache entry (Y/n): ')
+                                            x = input(f'{space}Would you like to delete this potentially oudated cache entry (y/N): ')
                                             print ('')
 
-                                            if x.strip().lower() in ['', 'y', 'yes']:
+                                            if x.strip().lower() in ['y', 'yes']:
                                                 delete = True
 
                                         # If console, we ask to delete, otherwise we keep running ...

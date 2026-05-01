@@ -16,6 +16,10 @@ extra_paths:
     - "D:\\Program Files\\NVIDIA\\CUDNN\\**"
     - "C:\\Program Files (x86)\\NVIDIA\\CUDNN\\**"
     - "D:\\Program Files (x86)\\NVIDIA\\CUDNN\\**"
+  linux:
+    - "/usr/local/cuda**/include/**"
+    - "/usr/cuda**/include/**"
+    - "/opt/cuda**/include/**"
 
 uses:
   - task: setup,a2f9b61079ce4333

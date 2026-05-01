@@ -17,10 +17,12 @@ else:
     print("No XPU device found")
     exit(1)
 
-if torch.xpu.is_available():
-    device = "xpu"
-else:
-    device = "cpu"
+device = os.environ.get('CMETA_COMPUTE')
+if not device:
+    if torch.xpu.is_available():
+        device = "xpu"
+    else:
+        device = "cpu"
 
 x = torch.tensor([1.0, 2.0, 3.0], device=device)
 y = torch.tensor([4.0, 5.0, 6.0], device=device)

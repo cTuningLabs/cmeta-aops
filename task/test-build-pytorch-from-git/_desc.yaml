@@ -15,14 +15,17 @@
 #    add_tool_path_to_env: True
 
   - task: compiler,f3925b201c704bde
-    storage_key: host_cpp_compiler
+    storage_key: host_cpp_compiler_for_pytorch_build
     lang: cpp
     text: "INFO: Selecting host C++ compiler to build PyTorch"
+    cache: True
+    
 
   - task: compiler,f3925b201c704bde
-    storage_key: host_c_compiler
+    storage_key: host_c_compiler_for_pytorch_build
     lang: c
     text: "INFO: Selecting host C compiler to build PyTorch"
+    cache: True
 
   - task: setup,a2f9b61079ce4333
     name: cmake,e26c11ebb3dd40ca
@@ -72,6 +75,12 @@
     rem: Installing dev group deps from pyproject
     chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
     cmd: '{{global.pip.cmd}} install --group dev'
+
+
+  # cuDNN if CUDA
+  - task: setup,a2f9b61079ce4333
+    name: cudnn,440a30eb25b64853
+    if: '"{{aggregated.env.CMETA_TARGET_CUDA}}" == "1"'
 
 
   # ICX and OneAPI if Intel XPU

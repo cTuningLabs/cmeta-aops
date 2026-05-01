@@ -71,15 +71,25 @@ class CTool(InitCTool):
                  path_bin = os.path.join(path_home, 'bin')
                  if cuda_ver: 
                      path_bin = os.path.join(path_bin, cuda_ver)
+                     if os.path.isdir(path_bin):
+                         path_bin2 = os.path.join(path_bin, uarch)
+                         if os.path.isdir(path_bin2):
+                             path_bin = path_bin2
 
-                 path_lib = os.path.join(path_home, 'lib')
-                 if cuda_ver: 
-                     path_lib = os.path.join(path_lib, cuda_ver)
-
+                 for x in ['lib64', 'lib']:
+                     path_lib = os.path.join(path_home, x)
                      if os.path.isdir(path_lib):
-                         path_lib2 = os.path.join(path_lib, uarch)
-                         if os.path.isdir(path_lib2):
-                             path_lib = path_lib2
+                         if cuda_ver: 
+                             path_lib2 = os.path.join(path_lib, cuda_ver)
+                             if os.path.isdir(path_lib2):
+                                 path_lib = path_lib2
+
+                             if os.path.isdir(path_lib):
+                                 path_lib2 = os.path.join(path_lib, uarch)
+                                 if os.path.isdir(path_lib2):
+                                     path_lib = path_lib2
+                         break
+
 
                  r = self.cm.utils.files.read_file(path_cudnn_version)
                  if self.cm.catch_error(r): return r

@@ -177,6 +177,17 @@ class CTool(InitCTool):
                 if os.path.isdir(path_cmake):
                     _paths['cmake'] = path_cmake
                     _paths['cmakes'].append(path_cmake)
+            elif uname == 'linux':
+
+                path_lib = None 
+                for x in ['lib64', 'lib']:
+                     path_lib = os.path.join(path_home, x)
+                     if os.path.isdir(path_lib):
+                         break
+
+                if path_lib:
+                    _paths['lib'] = path_lib
+                    _paths['libs'].append(path_lib)
 
             path_nvvm = os.path.join(path_home, 'nvvm')
             if os.path.isdir(path_nvvm):
@@ -194,6 +205,11 @@ class CTool(InitCTool):
 
             if uname == 'windows' and uarch == 'amd64':
                 nvvm_path_lib = os.path.join(path_nvvm, 'lib', 'x64')
+                if os.path.isdir(nvvm_path_lib):
+                    _paths['nvvm_path_lib'] = nvvm_path_lib
+                    _paths['libs'].append(nvvm_path_lib)
+            elif uname == 'linux':
+                nvvm_path_lib = os.path.join(path_nvvm, 'lib64')
                 if os.path.isdir(nvvm_path_lib):
                     _paths['nvvm_path_lib'] = nvvm_path_lib
                     _paths['libs'].append(nvvm_path_lib)

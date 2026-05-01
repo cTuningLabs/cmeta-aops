@@ -45,8 +45,10 @@ class CTask(InitCTask):
         verbose = ctx['control'].get('verbose', False)
 
         ctx_tasks = ctx['tasks']
+        _global = ctx_tasks['global']
+
         ctx_tasks_control = ctx['tasks']['run_control']
-        ctx_tasks['global']['cmake']['qpath']
+
         cur_dir = ctx_tasks_control['cur_dir']
         work_dir = ctx_tasks_control['work_dir']
         task_path = ctx_tasks_control['task_path']
@@ -55,16 +57,21 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
-        host = ctx_tasks['global']['host']
+        host = _global['host']
         uname = host['os']['uname']
 
-        path_to_src = ctx_tasks['global']['clone-git-pytorch']['path_to_git_repo']
+        path_to_src = _global['clone-git-pytorch']['path_to_git_repo']
 
-        target_compute = ctx_tasks['global']['target']['compute']
+        target_compute = _global['target']['compute']
 
+        # Prepare env
         _aggregated = ctx['tasks']['aggregated']
 
         if env is None: env = {}
+
+#        This doesn't work - setup overrides it ...
+#        if 'CMAKE_INSTALL_PREFIX' not in env: env['CMAKE_INSTALL_PREFIX'] = target_path
+
 
         if 'BUILD_TYPE' not in env: env['BUILD_TYPE'] = 'release'
         if 'BUILD_TEST' not in env: env['BUILD_TEST'] = 'OFF'
@@ -74,14 +81,26 @@ class CTask(InitCTask):
             if uname == 'windows':
                 # FGG: I had problems installing KINETO on Windows
                 if 'USE_KINETO' not in env: env['USE_KINETO'] = 'OFF'
+                if 'TORCH_XPU_ARCH_LIST' not in env: env['TORCH_XPU_ARCH_LIST'] = 'bmg'
 
-        cmake_vars_from_target = ctx_tasks['global']['target']['cmake_vars'].copy()
+        if 'cuda-sdk' in target_compute:
+            cuda_home = _global['nvcc']['features']['paths']['home']
+            if 'CUDA_PATH' not in env:
+                env['CUDA_PATH'] = cuda_home
+            if 'CUDA_TOOLKIT_ROOT_DIR' not in env:
+                env['CUDA_TOOLKIT_ROOT_DIR'] = cuda_home
+
+            cudnn_home = _global['cudnn']['features']['paths']['home']
+            env['CUDNN_ROOT_DIR'] = cudnn_home
+            #set CUDNN_LIB_DIR=%CUDA_PATH%\lib\x64
+
+        cmake_vars_from_target = _global['target']['cmake_vars'].copy()
         for k in cmake_vars_from_target:
             if k not in env:
                 env[k] = cmake_vars_from_target[k]
 
         # check cmake path and add it to env if needed
-        cmake_bin = ctx_tasks['global']['cmake']['qpath_bin']
+        cmake_bin = _global['cmake']['qpath_bin']
 
         aenv = _aggregated.get('env',{})
         apath = aenv.get('+PATH', [])
@@ -92,13 +111,13 @@ class CTask(InitCTask):
                 _path.insert(0, cmake_bin)
 
         if 'OPENSSL_ROOT_DIR' not in env: 
-            env['OPENSSL_ROOT_DIR'] = ctx_tasks['global']['lib-openssl']['features']['paths']['root']
+            env['OPENSSL_ROOT_DIR'] = _global['lib-openssl']['features']['paths']['root']
 
         if 'CMAKE_C_COMPILER' not in env:
-            env['CMAKE_C_COMPILER'] = ctx_tasks['global']['host_c_compiler']['path']
+            env['CMAKE_C_COMPILER'] = _global['host_c_compiler_for_pytorch_build']['path']
 
         if 'CMAKE_CXX_COMPILER' not in env:
-            env['CMAKE_CXX_COMPILER'] = ctx_tasks['global']['host_cpp_compiler']['path']
+            env['CMAKE_CXX_COMPILER'] = _global['host_cpp_compiler_for_pytorch_build']['path']
 
         # ROCm
         #If you're compiling for AMD ROCm then first run this command:
@@ -106,13 +125,13 @@ class CTask(InitCTask):
         ## Only run this if you're compiling for ROCm
         #python tools/amd_build/build_amd.py
 
-        cpu_count = int(ctx_tasks['global']['host']['os']['python_os_cpu_count']) - 2
-        if cpu_count < 1 :
-            cpu_count = 1
+#        cpu_count = int(_global['host']['os']['python_os_cpu_count']) - 2
+#        if cpu_count < 1 :
+#            cpu_count = 1
+#
+#        if 'MAX_JOBS' not in env: env['MAX_JOBS'] = str(cpu_count)
 
-        if 'MAX_JOBS' not in env: env['MAX_JOBS'] = str(cpu_count)
-
-        cmd = ctx_tasks['global']['python']['qpath'] + f' -m pip install --no-build-isolation -v -e .'
+        cmd = _global['python']['qpath'] + f' -m pip install --no-build-isolation -v -e .'
 
         ii = {'category': self.category_alias + ',' + self.category_uid,
               'command': 'run',

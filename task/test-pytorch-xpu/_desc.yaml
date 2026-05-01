@@ -4,6 +4,10 @@
   - task: target,94decb2ddd28441f
     compute: xpu
 
+  # ICX and OneAPI if Intel XPU
+  - task: setup,a2f9b61079ce4333
+    name: icx,15789d59a5534055
+
   - task: setup,a2f9b61079ce4333
     name: python
 
@@ -18,6 +22,7 @@
       package: torch
 
   - task: cmd,c9ba0a88df394d7f
+    storage_key: run
     env:
       CMETA_COMPUTE: '{{global.target.compute}}'
     cmd: '{{global.python.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}app.py'

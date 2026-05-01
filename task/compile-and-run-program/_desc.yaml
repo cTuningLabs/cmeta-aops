@@ -1,0 +1,13 @@
+﻿store_global: False
+storage_key: compile-and-run-program
+cache: False
+
+params_map:
+  arg2: name
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: compile-program,dcbfbd88702e4717
+
+  - task: run-program,3c5f8958006c4f13

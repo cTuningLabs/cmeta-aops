@@ -59,7 +59,7 @@ class CTask(InitCTask):
         cudnn = ctx['tasks']['global']['cudnn']
 
         exe_file = 'RNN_v8.0' + host['vars']['file_ext_exe']
-        target_exe_file = os.path.join('tmp', exe_file)
+        target_exe_file = os.path.join(task_path, 'tmp', exe_file)
 
         src_dir = os.path.join(task_path, 'RNN_v8.0')
         src_file = os.path.join(src_dir, 'RNN_example.cu')
@@ -72,9 +72,12 @@ class CTask(InitCTask):
         ]
 
         # Check libs
+        nvcc_path_lib = nvcc['features']['paths']['lib']
+
         libs = [
           src_dir,
           cudnn['features']['paths']['lib'],
+          nvcc_path_lib,
         ]
 
         # Assemble flags
@@ -101,19 +104,27 @@ class CTask(InitCTask):
         cmd_build = nvcc['qpath'] + f' {qsrc_file} {flags} -lcublas -lcudnn -lcudart -o {target_exe_file}'
 
         # Check DYNAMIC LIBS/BINS
-        cudnn_path_bin = cudnn['features']['paths']['bin']
 
         if env is None: env = {}
-        env_path = env.setdefault('+PATH',[])
-        env_path.insert(0, cudnn_path_bin)
+        if uname == 'windows':
+            cudnn_path_bin = cudnn['features']['paths']['bin']
+            env_path = env.setdefault('+PATH',[])
+            if cudnn_path_bin not in env_path:
+                env_path.insert(0, cudnn_path_bin)
+        elif uname == 'linux':
+            env_ld_library_path = env.setdefault('+LD_LIBRARY_PATH',[])
+            if nvcc_path_lib not in env_ld_library_path:
+                env_ld_library_path.insert(0, nvcc_path_lib)
 
         cmds = [
           cmd_build,
-          os.path.join('tmp', exe_file)
+          target_exe_file,
         ]
 
         for icmd in range(0, len(cmds)):
             cmd = cmds[icmd]
+
+            save_script_path = os.path.join(task_path, 'tmp', f'save-script-{icmd}' + host['vars']['file_ext_bat'])
 
             ii = {'category': self.category_alias + ',' + self.category_uid,
                   'command': 'run',
@@ -127,7 +138,7 @@ class CTask(InitCTask):
                   'text_cmd': 'RUN:',
 #                  'print_env_keys': ['PATH'],
                   'print_extra_line': True,
-                  'save_script': f'tmp/save-script-{icmd}' + '{{file_ext_bat}}',
+                  'save_script': save_script_path,
                   'storage_key': f'{self.artifact_alias}-cmd-{icmd}',
             }
 
