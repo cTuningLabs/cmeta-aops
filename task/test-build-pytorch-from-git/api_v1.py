@@ -154,9 +154,6 @@ class CTask(InitCTask):
 
         cmd = _global['python']['qpath'] + f' -m pip install --no-build-isolation -v -e .'
 
-        print (env)
-        input('xyz')
-
         ii = {'category': self.category_alias + ',' + self.category_uid,
               'command': 'run',
               'ctx': ctx,
