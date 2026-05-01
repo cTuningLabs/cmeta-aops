@@ -90,14 +90,14 @@
     name: pip,c4987bc3955347f2
     with:
       package: mkl
-    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" and "{{aggregated.env.CMETA_TARGET_XPU}}" != "1"'
+    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" and "{{aggregated.env.CMETA_TARGET_XPU}}" != "1" and "{{aggregated.env.CMETA_TARGET_METAL}}" != "1"'
 
   # MKL if CPU and not Intel XPU
   - task: setup,a2f9b61079ce4333
     name: pip,c4987bc3955347f2
     with:
       package: mkl-static
-    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" and "{{aggregated.env.CMETA_TARGET_XPU}}" != "1"'
+    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" and "{{aggregated.env.CMETA_TARGET_XPU}}" != "1" and "{{aggregated.env.CMETA_TARGET_METAL}}" != "1"'
 
 #  # MKL if CPU and not Intel XPU
 #  - task: setup,a2f9b61079ce4333
@@ -111,7 +111,7 @@
     name: pip,c4987bc3955347f2
     with:
       package: mkl-include
-    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" and "{{aggregated.env.CMETA_TARGET_XPU}}" != "1"'
+    if: '"{{aggregated.env.CMETA_TARGET_CPU}}" == "1" and "{{aggregated.env.CMETA_TARGET_XPU}}" != "1" and "{{aggregated.env.CMETA_TARGET_METAL}}" != "1"'
 
 
 
