@@ -114,6 +114,9 @@ class CTask(InitCTask):
             env['CUDNN_LIB_DIR'] = cudnn_lib
             env['CUDNN_INCLUDE_DIR'] = cudnn_include
 
+            env['CMAKE_CUDA_FLAGS']='-Xcompiler=/Zc:preprocessor'
+            env['CMAKE_CXX_FLAGS']='/Zc:preprocessor'
+
 
         cmake_vars_from_target = _global['target']['cmake_vars'].copy()
         for k in cmake_vars_from_target:
@@ -146,11 +149,16 @@ class CTask(InitCTask):
         ## Only run this if you're compiling for ROCm
         #python tools/amd_build/build_amd.py
 
-        cpu_count = int(_global['host']['os']['python_os_cpu_count']) - 2
-        if cpu_count < 1 :
-            cpu_count = 1
-
-        if 'MAX_JOBS' not in env: env['MAX_JOBS'] = str(cpu_count)
+# FGG: this is too naive: on many machines we have fast and slow cores
+# while basic python cpu count doesn't differentiate them
+# I have more sophisticated stats about CPU in cMeta task "target-cpu" - need to check
+# how to reuse ...
+#
+#        cpu_count = int(_global['host']['os']['python_os_cpu_count']) - 2
+#        if cpu_count < 1 :
+#            cpu_count = 1
+#
+#        if 'MAX_JOBS' not in env: env['MAX_JOBS'] = str(cpu_count)
 
         cmd = _global['python']['qpath'] + f' -m pip install --no-build-isolation -v -e .'
 
