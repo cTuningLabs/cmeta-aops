@@ -60,15 +60,27 @@ class CTask(InitCTask):
 
         output_file = ctx_tasks['local']['generate-temp-file-target-metal']['temp_file']
 
-        r = self.cm.utils.files.read_file(output_file)
+        r = self.cm.utils.files.read_file(output_file, remove_after_read = True)
         if self.cm.catch_error(r): return r
 
+        metal_present = False
 
-        print (r)
-        input('xyz')
+        devices = []
+        for d in r['data'].get('SPDisplaysDataType', []):
+            metal = d.get('spdisplays_mtlgpufamilysupport')
+            if metal:
+                j = metal.find('_metal')
+                if j>0:
+                    metal_present = True
+                    metal_version = metal[j+6:]
+                    d['metal_version'] = metal_version
+                    devices.append(d)
 
-        features = r['data']
+        if not metal_present:
+            return self.cm.error(f'Apple Metal accelerator is not detected in "{__file__}"')
 
-        result['features'] = r['data']
+        features = {'devices': devices}
+
+        result['features'] = features
 
         return result
