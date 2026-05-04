@@ -4,5 +4,5 @@
   - task: setup,a2f9b61079ce4333
     name: google.android-ndk.clang,0f9584af13b0402c
 
-  - task: target-android-cpu,eb4790d97cf74df9
+  - task: target--android-cpu,eb4790d97cf74df9
 

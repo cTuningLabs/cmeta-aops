@@ -1,0 +1,8 @@
+store_global: True
+storage_key: target--cpu
+cache: True
+
+env_if_not_used:
+  CMETA_TARGET_CPU: 0
+env:
+  CMETA_TARGET_CPU: 1

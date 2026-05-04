@@ -61,7 +61,7 @@ class CTask(InitCTask):
         if not os.path.isdir('tmp'):
             os.makedirs('tmp')
 
-        target_android = ctx['tasks']['global']['target-android-cpu']
+        target_android = ctx['tasks']['global']['target--android-cpu']
         target_adb_device_serial_number = target_android['features']['adb_device_serial_number']
 
 

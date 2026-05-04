@@ -1,7 +1,7 @@
 ﻿uses:
   - task: runner,1e48cc0c5f6041a5
 
-  - task: target-metal-swift,c5921232a5dd46c4
+  - task: target--metal,c5921232a5dd46c4
 
   - task: setup,a2f9b61079ce4333
     name: clang-cpp,c0f077b9c14d4ba1

@@ -38,7 +38,7 @@ class CTask(InitCTask):
 
 #        self.cm.utils.files.write_file('tmp-ctx.json', ctx)
 
-        self.logger.debug("RUNNING TASK test-nvcc run")
+        self.logger.debug("RUNNING TASK test-build-pytorch-from-git run")
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)

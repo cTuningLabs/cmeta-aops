@@ -1,0 +1,20 @@
+names:
+  - windirstat.exe
+
+match_version: 
+  - regex: '.+'
+    group: 0
+
+cmd_get_version: 'echo none'
+
+cache_meta_const:
+  skip_cache_version_check: True
+
+win_only: True
+
+install_help_text:
+  Please install "windirstat" tool from https://windirstat.net/ !
+
+extra_paths:
+  windows:
+    - "C:\\Program Files**\\WinDirStat\\**"

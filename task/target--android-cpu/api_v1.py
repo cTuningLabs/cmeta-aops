@@ -22,11 +22,145 @@ class CTask(InitCTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
+    ############################################################
+    def init(self,
+             ctx: dict,
+             params: dict,
+    ):
+        """
+        """
+        if self.cm.debug:
+            self.logger.debug("RUNNING TASK target--android-cpu customize_cache_artifact")
+
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        ctx_tasks = ctx['tasks']
+
+        space = '  ' * ctx_tasks['nested_call'] if verbose else ''
+
+        adb_path = ctx_tasks['global']['adb']['qpath']
+
+        env = params.get('env')
+        serial = params.get('serial')
+
+        ###########################################################################################
+        # Get connected devices
+        cmd = f'{adb_path} devices'
+
+        ii = {
+            'category': self.category_alias + ',' + self.category_uid,
+            'command': 'run',
+            'ctx': ctx,
+            'arg1': 'cmd,c9ba0a88df394d7f',
+            'cmd': cmd,
+            'env': env,
+            'con': con,
+            'quiet': quiet,
+            'verbose': verbose,
+            'text_cmd': 'RUN:',
+            'print_extra_line': False,
+            'fail_if_nonzero_return_code': False,
+            'capture_output': True,
+        }
+
+        rx = self.cm.access(ii)
+        if self.cm.catch_error(rx):
+            return rx
+
+        returncode = rx['returncode']
+        if returncode > 0:
+            err = f'CMD "{cmd}" failed with return code {returncode} in "{__file__}"'
+            return self.cm.error(err, 99)
+
+        stdout = rx['stdout']
+
+        devices = []
+        for line in stdout.splitlines():
+            line = line.strip()
+            # Skip the header line and empty lines
+            if not line or line.startswith('List of devices'):
+                continue
+            parts = line.split('\t', 1)
+            if len(parts) == 2:
+                _serial = parts[0]
+
+                if not serial or serial.strip().lower() == _serial.strip().lower():
+                    devices.append({'serial': _serial, 'state': parts[1]})
+
+        if not devices:
+            x = f' with s/n "{serial}"' if serial else ''
+            return self.cm.error(f'no attached adb devices found{x} in "{__file__}"')
+
+        device = 0
+        if len(devices)>1:
+            print ('')
+            print (f'{space}More than 1 adb device found:')
+            print ('')
+
+            for idev in range(0, len(devices)):
+                dev = devices[idev]
+                print(f'{space}{idev}) {dev["serial"]}  ({dev["state"]})')
+
+            print ('')
+
+            if quiet:
+                print (f'{space}Quiely selected 0')     
+            else:
+                x = input(f'{space}Please select your device or press Enter for 0: ').strip().lower()
+                if x != '':
+                    device = int(x)
+                    if device <0 or device>=len(devices):
+                        return self.cm.error(f'wrong device number selected in "{__file__}"')
+                    
+        # Check selected device
+        _device = devices[device]
+
+        # You need to get and update local here because it may be changed by above task
+        ctx['tasks']['local']['adb_serial'] = _device['serial']
+        ctx['tasks']['local']['adb_state'] = _device['state']
+
+        return {'return':0}
+
+    ############################################################
+    def customize_cache_artifact(self,
+                                 ctx,
+                                 cache_alias_template,
+                                 cache_extra_alias,
+                                 cache_meta,
+                                 cache_tags,
+                                 cache_params,
+                                 params,
+                                 **extra,
+        ):
+
+        if self.cm.debug:
+            self.logger.debug("RUNNING TASK target--android-cpu customize_cache_artifact")
+
+        serial = ctx['tasks']['local']['adb_serial']
+
+        result = {'return':0}
+
+#        if cache_extra_alias is None: 
+#            cache_extra_alias = ''
+#
+#        if cache_extra_alias !='':
+#            cache_extra_alias += self.cache_sep
+#
+#        cache_extra_alias += f'{serial}'
+#
+#        result['cache_extra_alias'] = cache_extra_alias
+# 
+#        result['cache_extra_params'] = {'serial':serial}
+
+
+        return result
 
     ############################################################
     def run(self,
-            ctx: dict,        # cMeta context
-            env: dict = {},
+            ctx: dict,
+            env: dict = None,
     ):
 
         """
@@ -50,6 +184,9 @@ class CTask(InitCTask):
         space = '  ' * ctx_tasks['nested_call'] if verbose else ''
 
         adb_path = ctx_tasks['global']['adb']['qpath']
+
+        serial = ctx['tasks']['local']['adb_serial']
+        state = ctx['tasks']['local']['adb_state']
 
         def _run_cmd(cmd: str):
             ii = {
@@ -201,54 +338,6 @@ class CTask(InitCTask):
             }
 
         ###########################################################################################
-        # Get connected devices
-        cmd = f'{adb_path} devices'
-
-        rx = _run_cmd(cmd)
-        if self.cm.catch_error(rx):
-            return rx
-
-        stdout = rx['stdout']
-
-        devices = []
-        for line in stdout.splitlines():
-            line = line.strip()
-            # Skip the header line and empty lines
-            if not line or line.startswith('List of devices'):
-                continue
-            parts = line.split('\t', 1)
-            if len(parts) == 2:
-                devices.append({'serial': parts[0], 'state': parts[1]})
-
-        if not devices:
-            return self.cm.error(f'no attached adb devices found in "{__file__}"')
-
-        device = 0
-        if len(devices)>1:
-            print ('')
-            print (f'{space}More than 1 adb device found:')
-            print ('')
-
-            for idev in range(0, len(devices)):
-                dev = devices[idev]
-                print(f'{space}{idev}) {dev["serial"]}  ({dev["state"]})')
-
-            print ('')
-
-            if quiet:
-                print (f'{space}Quiely selected 0')     
-            else:
-                x = input(f'{space}Please select your device or press Enter for 0: ').strip().lower()
-                if x != '':
-                    device = int(x)
-                    if device <0 or device>=len(devices):
-                        return self.cm.error(f'wrong device number selected in "{__file__}"')
-                    
-        ###########################################################################################
-        # Check selected device
-        _device = devices[device]
-
-        sno = _device['serial']
 
         props = {}
         prop_keys = [
@@ -266,28 +355,28 @@ class CTask(InitCTask):
         ]
 
         for key in prop_keys:
-            rx = _adb_getprop(sno, key)
+            rx = _adb_getprop(serial, key)
             if self.cm.catch_error(rx):
                 return rx
             props[key] = rx['value']
 
-        rx = _run_adb_shell(sno, 'uname -m')
+        rx = _run_adb_shell(serial, 'uname -m')
         if self.cm.catch_error(rx):
             return rx
         uname_m = rx['stdout'].strip()
 
-        rx = _run_adb_shell(sno, 'cat /proc/cpuinfo')
+        rx = _run_adb_shell(serial, 'cat /proc/cpuinfo')
         if self.cm.catch_error(rx):
             return rx
         cpuinfo_raw = rx['stdout']
         cpuinfo = _parse_cpuinfo(cpuinfo_raw)
 
-        rx = _run_adb_shell(sno, 'cat /sys/devices/system/cpu/online')
+        rx = _run_adb_shell(serial, 'cat /sys/devices/system/cpu/online')
         if self.cm.catch_error(rx):
             return rx
         online_cpu_range = rx['stdout'].strip()
 
-        rx = _run_adb_shell(sno, 'cat /sys/devices/system/cpu/possible')
+        rx = _run_adb_shell(serial, 'cat /sys/devices/system/cpu/possible')
         if self.cm.catch_error(rx):
             return rx
         possible_cpu_range = rx['stdout'].strip()
@@ -359,8 +448,8 @@ class CTask(InitCTask):
         }
 
         features = {
-            'adb_device_serial_number': sno,
-            'adb_device_state': _device['state'],
+            'adb_device_serial_number': serial,
+            'adb_device_state': state,
             'platform': 'android',
             'arch_bits': arch.get('arch_bits', 0),
             'arch_family': arch.get('arch_family', 'unknown'),
@@ -403,15 +492,16 @@ class CTask(InitCTask):
 
         ###########################################################################################
 
-        if con:
-            print ('')
-            for key in sorted(features):
-                ft = features[key]
-                print (f'* {key} = {ft}')
+#        if con:
+#            print ('')
+#            for key in sorted(features):
+#                ft = features[key]
+#                print (f'* {key} = {ft}')
 
         result = {
           'return': 0,
-          'devices': devices,
+          'serial': serial,
+          'state': state,
           'features': features,
         }
 

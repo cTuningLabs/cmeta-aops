@@ -3,9 +3,9 @@
 uses:
   - task: runner,1e48cc0c5f6041a5
 
-  - task: force-fail,fbc834fe54894aec
-    if: '"{{global.host.os.uname}}" == "windows"'
-    text: 'task "{{task_artifact_alias}}" does not work on Windows'
+#  - task: force-fail,fbc834fe54894aec
+#    if: '"{{global.host.os.uname}}" == "windows"'
+#    text: 'task "{{task_artifact_alias}}" does not work on Windows'
 
   - task: install-sys-tool,38596f32da974d46
     os: linux
@@ -16,5 +16,14 @@ uses:
     os: darwin
     package: ncdu
 
+  - task: setup,a2f9b61079ce4333
+    if_os: windows
+    name: windirstat,8b813656bbf646d5
+
   - task: cmd,c9ba0a88df394d7f
+    if_os: linux,darwin
     cmd: '{{global.host.os_extra.sudo_cmd}} ncdu --exclude "/mnt/*" /'
+
+  - task: cmd,c9ba0a88df394d7f
+    if_os: windows
+    cmd: '{{global.windirstat.qpath}}'

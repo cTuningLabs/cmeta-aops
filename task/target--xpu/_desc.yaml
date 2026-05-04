@@ -1,6 +1,6 @@
-store_global: True       # force
-storage_key: target-xpu  # force storage key to avoid mixing up in the future
-cache: False             # force
+store_global: True
+storage_key: target--xpu
+cache: True
 
 uses:
   - task: generate-temp-file,2e96e68cd41046d1
@@ -25,9 +25,4 @@ env_if_not_used:
   CMETA_TARGET_XPU: 0
 env:
   CMETA_TARGET_XPU: 1
-
-cmake_vars_if_not_used:
-  USE_XPU: 'OFF'
-cmake_vars:
-  USE_XPU: 'ON'
     

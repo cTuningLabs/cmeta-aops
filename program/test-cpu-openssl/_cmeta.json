@@ -1,0 +1,13 @@
+{
+  "artifact": "1a166910f14f4594",
+  "authors": "Grigori Fursin",
+  "category": "program,22788f3c30d04e6d",
+  "constraints": {
+    "supported_compute": [
+      "cpu"
+    ]
+  },
+  "copyright": "Copyright (C) 2026 Grigori Fursin. All rights reserved.",
+  "creation_timestamp": "2026-04-30T09:12:17.910826+00:00",
+  "last_update_timestamp": "2026-05-04T09:29:03.138547+00:00"
+}

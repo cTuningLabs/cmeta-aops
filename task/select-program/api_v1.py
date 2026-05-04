@@ -42,11 +42,16 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
+        _global = ctx_tasks['global']
+        selected_compute = _global['target']['compute']
+
         p = {'category': self.cmeta['uses_categories']['utils'],
              'command': 'select_artifact',
              'select_category': self.cmeta['uses_categories']['program'],
              'select_artifact': name,
              'select_tags': program_tags,
+#             'select_match':{'constraints':{'target':[]}},
+             'select_match':{'constraints':{}},
              'con': con,
              'quiet': quiet,
              'load_files': ['_desc', '_desc_compile', '_desc_run'],
@@ -54,20 +59,24 @@ class CTask(InitCTask):
              'load_api': True,
              'load_api_ver': program_api_ver,
              'load_api_class': 'CProgram',
+             'print_extra_line': True,
         }
+
+        if selected_compute:
+            # AND match, i.e. cpu + cuda should match both (for hybrid compute)
+            p['select_match'] = {'constraints':{'supported_compute':selected_compute}}
 
         r = self.cm.access(p)
         if self.cm.catch_error(r, fail16=True): return r
 
         artifact = r['artifact']
+        artifact_au = r['artifact_au']
         loaded_files = r['loaded_files']
         program_api_code = r['api_code']
 
-        # Check common filters (OS, targets, etc)
-        target = ctx['tasks']['global']['target']
-
-        self.cm.j(target)
-
+        if con and verbose:
+            print ('')
+            print (f'{space}INFO: SELECTED PROGRAM "{artifact_au}"')
 
         selected_program = {
             'artifact': artifact, 

@@ -1,0 +1,12 @@
+store_global: True
+storage_key: target--cuda
+cache: True
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: cuda,805716c4f32d42cf
+
+env_if_not_used:
+  CMETA_TARGET_CUDA: 0
+env:
+  CMETA_TARGET_CUDA: 1

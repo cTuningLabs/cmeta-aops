@@ -19,7 +19,7 @@ class CTask(InitCTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
-        self.target_artifact_alias_prefix = 'target-'
+        self.target_artifact_alias_prefix = 'target--'
 
 
     ############################################################
@@ -96,33 +96,33 @@ class CTask(InitCTask):
                     xcompute.append(x)
             compute = xcompute
 
-        # Prepare dependencies
-        uses = []
-        _local = {}
-
-        for c in compute:
-            compute_use = {
-              'task': self.target_artifact_alias_prefix + c,
-            }
-
-            uses.append(compute_use)
-
-        # Resolve as standard dependency
-        ii = {'category': self.category_alias + ',' + self.category_uid,
-              'command': 'use',
-              'con': con,
-              'quiet': quiet,
-              'verbose': verbose,
-              'ctx': ctx,
-              'desc': uses,
-              'local': _local,
-              'task_artifact_alias': self.artifact_alias,
-              'task_artifact_uid': self.artifact_uid,
-              'task_artifact_path': self.artifact_path,
-             }
-
-        r = self.cm.access(ii)
-        if self.cm.catch_error(r, fail16=True): return r
+#        # Prepare dependencies
+#        uses = []
+#        _local = {}
+#
+#        for c in compute:
+#            compute_use = {
+#              'task': self.target_artifact_alias_prefix + c,
+#            }
+#
+#            uses.append(compute_use)
+#
+#        # Resolve as standard dependency
+#        ii = {'category': self.category_alias + ',' + self.category_uid,
+#              'command': 'use',
+#              'con': con,
+#              'quiet': quiet,
+#              'verbose': verbose,
+#              'ctx': ctx,
+#              'desc': uses,
+#              'local': _local,
+#              'task_artifact_alias': self.artifact_alias,
+#              'task_artifact_uid': self.artifact_uid,
+#              'task_artifact_path': self.artifact_path,
+#             }
+#
+#        r = self.cm.access(ii)
+#        if self.cm.catch_error(r, fail16=True): return r
 
         # Prepare result
         result = {
@@ -200,7 +200,6 @@ class CTask(InitCTask):
         result['cmake_vars'] = cmake_vars
 
         env.update(env_vars)
-
 
         if add_env:
             _aggregate = result.setdefault('_aggregate', {})

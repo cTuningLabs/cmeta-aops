@@ -1,0 +1,13 @@
+store_global: True
+storage_key: target--android-cpu
+cache: True
+
+uses_before_init:
+  - task: setup,a2f9b61079ce4333
+    name: adb,c80f2c9d7d5a4b93
+
+params_map:
+  arg2: serial
+
+cache_extra_params:
+  serial: '{{local.adb_serial}}'
