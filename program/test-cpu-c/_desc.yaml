@@ -1,0 +1,85 @@
+﻿local_vars:
+  src_file_name: 'program.c'
+  target_file_name: 'program'
+
+compile:
+  uses:
+    - task: target-sdk,bb795b1444564935
+
+    - task: compiler,f3925b201c704bde
+      lang: c
+      compute: '{{global.target.compute}}'
+
+    - task: set-local-vars,7638025960534c70
+      vars:
+        target_exe: '{{local.target_file_name}}{{global.compiler-c.features.vars.file_ext_exe}}'
+
+    - task: set-local-vars,7638025960534c70
+      vars:
+        target_path_exe: '{{local.target_path}}{{os_sep}}{{local.target_exe}}'
+
+    - task: delete-files,fdc81a1bf27d4ae2
+      files:
+        - '{{local.target_path}}/{{local.target_file_name}}'
+        - '{{local.target_path}}/{{local.target_file_name}}.exe'
+
+    - task: cmd,c9ba0a88df394d7f
+      storage_key: compile-program
+      chdir: '{{local.target_path}}'
+      cmd: >-
+        {{global.compiler-c.qpath}} 
+        {{global.compiler-c.features.target_arch.flags|}}
+        {{params.compile.flags|}}
+        {{global.compiler-c.features.flags.catch_errors|}}
+        {{local.selected-program.path}}{{os_sep}}src{{os_sep}}{{local.src_file_name}}
+        {{global.compiler-c.features.flags.exe_file}}{{local.target_path_exe}}
+         
+run: 
+  uses:
+    # Clean files
+    - task: delete-files,fdc81a1bf27d4ae2
+      files:
+        - '{{local.target_path}}/tmp-cmeta-program-stats.json'
+
+    # Android
+    - task: set-local-vars,7638025960534c70
+      if: '"android-cpu" in "{{global.target.compute}}"'
+      vars:
+        adb_with_serial: '{{global.adb.qpath}} -s {{global.target--android-cpu.serial}}'
+
+    - task: cmd,c9ba0a88df394d7f
+      storage_key: prepare-android-program
+      if: '"android-cpu" in "{{global.target.compute}}"'
+      chdir: '{{local.target_path}}'
+      cmd: '{{local.adb_with_serial}} push {{local.target_exe}} /data/local/tmp/{{local.target_exe}}'
+
+    - task: cmd,c9ba0a88df394d7f
+      storage_key: prepare-android-program
+      if: '"android-cpu" in "{{global.target.compute}}"'
+      chdir: '{{local.target_path}}'
+      cmd: '{{local.adb_with_serial}} shell rm -rf /data/local/tmp/tmp-cmeta-program-stats.json'
+
+    - task: cmd,c9ba0a88df394d7f
+      storage_key: prepare-android-program
+      if: '"android-cpu" in "{{global.target.compute}}"'
+      chdir: '{{local.target_path}}'
+      cmd: '{{local.adb_with_serial}} shell chmod 755 /data/local/tmp/{{local.target_exe}}'
+
+    - task: cmd,c9ba0a88df394d7f
+      storage_key: prepare-android-program
+      if: '"android-cpu" in "{{global.target.compute}}"'
+      chdir: '{{local.target_path}}'
+      cmd: '{{local.adb_with_serial}} shell "cd /data/local/tmp && ./{{local.target_exe}} {{params.run.flags|}} {{local.unparsed|}}"'
+
+    - task: cmd,c9ba0a88df394d7f
+      storage_key: prepare-android-program
+      if: '"android-cpu" in "{{global.target.compute}}"'
+      chdir: '{{local.target_path}}'
+      cmd: '{{local.adb_with_serial}} pull /data/local/tmp/tmp-cmeta-program-stats.json tmp-cmeta-program-stats.json'
+
+    # Generic
+    - task: cmd,c9ba0a88df394d7f
+      if: '"android-cpu" not in "{{global.target.compute}}"'
+      storage_key: run-program
+      chdir: '{{local.target_path}}'
+      cmd: '{{global.host.vars.start_exe_prefix}}{{local.target_exe}} {{params.run.flags|}} {{local.unparsed|}}'
