@@ -5,6 +5,9 @@ cache_params_use:
     llvm:
       version: "{{global.llvm.version}}"
       path: "{{global.llvm.path}}"
+    clang:
+      version: "{{global.clang.version}}"
+      path: "{{global.clang.path}}"
 
 only_paths:
   all:
@@ -25,9 +28,12 @@ cmd_get_versions_uses:
 cmd_get_versions_regex: 'refs/tags/(?:.+?-)?([^^\s]+)(?:\^\{\})?$'
 
 uses:
-- task: setup,a2f9b61079ce4333
-  name: llvm,532bab2de2e94c7d
-  version: "{{params.version|$None}}"
+  - task: setup,a2f9b61079ce4333
+    name: llvm,532bab2de2e94c7d
+    version: "{{params.version|$None}}"
+  - task: setup,a2f9b61079ce4333
+    name: clang,51754c984f184e96
+    version: "{{params.version|$None}}"
 
 uses_os:
   linux:
@@ -53,6 +59,8 @@ features:
       exe_file: '-o '
       lib_path: '-Wl,/LIBPATH:'
       lib_prefix: '-Wl,'
+    vars:
+      file_ext_exe: .exe
   linux:
     flags:
       include_path: '-I'
@@ -63,6 +71,8 @@ features:
       exe_file: '-o '
       lib_path: '-L'
       lib_prefix: '-l'
+    vars:
+      file_ext_exe: 
   darwin:
     flags:
       include_path: '-I'
@@ -73,3 +83,5 @@ features:
       exe_file: '-o '
       lib_path: '-L'
       lib_prefix: '-l'
+    vars:
+      file_ext_exe:

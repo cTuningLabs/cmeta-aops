@@ -1,12 +1,13 @@
-﻿store_global: True
-storage_key: select-program
+﻿store_global: False
 cache: False
 
 params_map:
   arg2: name
+  arg3: compute
 
 uses:
   - task: runner,1e48cc0c5f6041a5
 
   - task: target,94decb2ddd28441f
-    ask: True
+    ask: '{{params.ask|$False}}'
+    compute: '{{params.compute|$None}}'

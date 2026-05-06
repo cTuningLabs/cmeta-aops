@@ -35,3 +35,5 @@ features:
       exe_file: '-o '
       lib_path: '-L'
       lib_prefix: '-l'
+    vars:
+      file_ext_exe:

@@ -14,6 +14,14 @@ cache_params_use:
     oneapi:
       version: "{{global.oneapi.version}}" # This version must be already resolved here, therefore not fuzzy
       path: "{{global.oneapi.path}}" 
+    icx:
+      version: "{{global.icx.version}}"
+      path: "{{global.icx.path}}"
+  linux:
+    icx:
+      version: "{{global.icx.version}}"
+      path: "{{global.icx.path}}"
+
 
 match_version: 
   - regex: 'oneAPI.*?Compiler\s+\d+\.\d+\.\d+\s*\(\s*(\d+\.\d+\.\d+\.\d+)\s*\)'
@@ -29,23 +37,27 @@ uses:
   - task: setup,a2f9b61079ce4333
     name: oneapi,3d44b79b6a2b476c
 
+  - task: setup,a2f9b61079ce4333
+    name: icx,15789d59a5534055
+    version: "{{params.version|$None}}"
+
+
 install_help_text:
   Please install intel compilers from https://www.intel.com/content/www/us/en/developer/tools/oneapi/overview.html !
 
 features:
   windows:
     flags:
-      catch_errors: '/EHsc'
-      include_path: '/I '
-      dynamic_build: '/MD'
-      static_build: '/MT'
-      dynamic_build_debug: '/MDd'
-      static_build_debug: '/MTd'
-      obj_file: '/Fo:'
-      exe_file: '/Fe:'
-      link_sep: '/link'
-      lib_path: '/LIBPATH:'
-      lib_prefix: ''
+      include_path: '-I'
+      dynamic_build: ''
+      static_build: '-fms-runtime-lib=static'
+      dynamic_build_debug: ''
+      static_build_debug: '-fms-runtime-lib=static'
+      exe_file: '-o '
+      lib_path: '-Wl,/LIBPATH:'
+      lib_prefix: '-Wl,'
+    vars:
+      file_ext_exe: .exe
   linux:
     flags:
       include_path: '-I'
@@ -56,3 +68,5 @@ features:
       exe_file: '-o '
       lib_path: '-L'
       lib_prefix: '-l'
+    vars:
+      file_ext_exe:

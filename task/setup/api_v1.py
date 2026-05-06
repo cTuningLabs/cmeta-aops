@@ -525,6 +525,7 @@ class CTask(InitCTask):
           'new': new,
         }
 
+        cmeta = r['meta']
         desc = r['desc']
         artifact_au = r['artifact_au']
         artifact_print_name = r['artifact_print_name']
@@ -754,6 +755,10 @@ class CTask(InitCTask):
         if skip_cache_version_check:
             result['skip_cache_version_check'] = True
 
+        constraints = cmeta.get('constraints')
+        if constraints:
+            result['constraints'] = constraints
+
         return result
 
 
@@ -811,6 +816,8 @@ class CTask(InitCTask):
                     _aggregate_env_path.insert(0, path_bin)
 
                 _result['result'] = result
+
+
 
         return _result
 

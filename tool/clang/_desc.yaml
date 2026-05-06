@@ -49,6 +49,8 @@ features:
       exe_file: '-o '
       lib_path: '-Wl,/LIBPATH:'
       lib_prefix: '-Wl,'
+    vars:
+      file_ext_exe: .exe
   linux:
     flags:
       include_path: '-I'
@@ -59,6 +61,8 @@ features:
       exe_file: '-o '
       lib_path: '-L'
       lib_prefix: '-l'
+    vars:
+      file_ext_exe: 
   darwin:
     flags:
       include_path: '-I'
@@ -69,3 +73,5 @@ features:
       exe_file: '-o '
       lib_path: '-L'
       lib_prefix: '-l'
+    vars:
+      file_ext_exe: 

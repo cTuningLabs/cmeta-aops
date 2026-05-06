@@ -6,3 +6,8 @@ category: category,dd9ea50e7f76467f
 copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
 creation_timestamp: '2026-04-02T09:57:21.604315+00:00'
 last_api_version: 1
+last_update_timestamp: '2026-05-04T15:28:44.701068+00:00'
+uses_artifacts:
+  task::compile-and-run-program: compile-and-run-program,05437a1aae224270
+uses_categories:
+  task: task,c36be4b9314a45e0

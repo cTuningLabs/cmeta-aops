@@ -2,13 +2,7 @@
 storage_key: compile-program
 cache: False
 
-params_map:
-  arg2: name
-
 uses:
-  - task: runner,1e48cc0c5f6041a5
-
-  - task: select-program,beea611608bb459c
-    name: '{{params.name|$None}}'
-    program_tags: '{{params.program_tags|$None}}'
-    program_api_ver: '{{params.program_api_ver|$None}}'
+  - task: compile-and-run-program,05437a1aae224270
+    reuse_all_params: True
+    skip_run: True

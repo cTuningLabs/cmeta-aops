@@ -100,9 +100,6 @@ class CTask(InitCTask):
             for k in sorted(cmake_vars_from_target):
                 cmd += ' -D' + k + '=' + cmake_vars_from_target[k]
 
-            print (cmd)
-            input('xyz1')
-
             ii = {'category': self.category_alias + ',' + self.category_uid,
                   'command': 'run',
                   'ctx': ctx,

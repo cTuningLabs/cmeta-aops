@@ -93,6 +93,8 @@ class Category(InitCategory):
         store_global = params.get('store_global')
         storage_key = params.get('storage_key')
 
+        saved_ctx_control = ctx['control'].copy()
+
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
@@ -340,6 +342,7 @@ class Category(InitCategory):
                         aggregate = False, 
                         saved_uparams = saved_uparams, 
                         saved_local = saved_local,
+                        saved_ctx_control = saved_ctx_control,
                 )
                 if self.cm.catch_error(r): return r
     
@@ -404,6 +407,7 @@ class Category(InitCategory):
                     aggregate = False, 
                     saved_uparams = saved_uparams, 
                     saved_local = saved_local,
+                    saved_ctx_control = saved_ctx_control,
             )
             if self.cm.catch_error(r): return r
             
@@ -445,6 +449,7 @@ class Category(InitCategory):
                         aggregate = False, 
                         saved_uparams = saved_uparams, 
                         saved_local = saved_local,
+                        saved_ctx_control = saved_ctx_control,
                 )
                 if self.cm.catch_error(r): return r
 
@@ -990,6 +995,7 @@ class Category(InitCategory):
 
                         # Dynamic update to result (even if cached)
                         if task_api_code is not None and hasattr(task_api_code, 'finish_dynamic_result') and callable(getattr(task_api_code, 'finish_dynamic_result')):
+                            ctx['control'] = saved_ctx_control.copy()
                             r = task_api_code.finish_dynamic_result(ctx, result, _params)
                             if self.cm.catch_error(r): return r
                             if 'result' in r: result = r['result']
@@ -1000,10 +1006,12 @@ class Category(InitCategory):
                             else:
                                 ctx_tasks['local'][storage_key] = result
 
-                        r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
-                                             call_repro, aggregate = True,
-                                             saved_uparams = saved_uparams, 
-                                             saved_local = saved_local,
+                        r = self._finish_run(
+                                ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
+                                call_repro, aggregate = True,
+                                saved_uparams = saved_uparams, 
+                                saved_local = saved_local,
+                                saved_ctx_control = saved_ctx_control,
                         )
                         if self.cm.catch_error(r): return r
 
@@ -1157,10 +1165,12 @@ class Category(InitCategory):
                     if self.cm.catch_error(r): return r
 
                 if save or save_here:
-                    r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
-                                         call_repro, aggregate = True,
-                                         saved_uparams = saved_uparams, 
-                                         saved_local = saved_local,
+                    r = self._finish_run(
+                            ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
+                            call_repro, aggregate = True,
+                            saved_uparams = saved_uparams, 
+                            saved_local = saved_local,
+                            saved_ctx_control = saved_ctx_control,
                     )
                     if self.cm.catch_error(r): return r
 
@@ -1225,10 +1235,12 @@ class Category(InitCategory):
             else:
                 ctx_tasks['local'][storage_key] = result
 
-        r = self._finish_run(ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
-                             call_repro, aggregate = True,
-                             saved_uparams = saved_uparams, 
-                             saved_local = saved_local,
+        r = self._finish_run(
+                ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
+                call_repro, aggregate = True,
+                saved_uparams = saved_uparams, 
+                saved_local = saved_local,
+                saved_ctx_control = saved_ctx_control,
         )
         if self.cm.catch_error(r): return r
 
@@ -1262,6 +1274,8 @@ class Category(InitCategory):
                    saved_uparams = None,
                    saved_local = None,
                    skip_if_exist_in_list = True,
+                   saved_ctx_control = None,
+
     ):
 
         # Save output for reproducibility
@@ -1306,13 +1320,14 @@ class Category(InitCategory):
                 print ('')
                 print (f'SAVE: in path "{cur_dir}"')
 
-            r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_RESULTS, result)
+            r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_RESULTS, result, safe_dump = True)
             if self.cm.catch_error(r): return r
-            r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_CTX, ctx)
+            r = self.cm.utils.files.write_file(self.SAVE_FILE_WITH_CTX, ctx, safe_dump = True)
             if self.cm.catch_error(r): return r
 
         ctx['tasks']['params'] = saved_uparams if saved_uparams else {}
         ctx['tasks']['local'] = saved_local if saved_local else {}
+        ctx['control'] = saved_ctx_control if saved_ctx_control else {}
 
         return {'return':0}
 
@@ -1446,9 +1461,11 @@ class Category(InitCategory):
             r = self.cm.utils.common.expand_strings_in_dict(ii, ctx_tasks_with_extra_values)
             if self.cm.catch_error(r): return r
 
-
             func = ii.pop('internal_func', None)
             task = ii.pop('task', None)
+
+            if ii.pop('reuse_all_params', False) and uparams:
+                self.cm.utils.common.deep_merge(ii, uparams, append_lists=True)
 
             if not task and not func:
                 return self.cm.error(f'the requirement in task "{task_artifact_alias}" misses "task" or "internal_func" in "{__file__}" ({sub_task_desc})')

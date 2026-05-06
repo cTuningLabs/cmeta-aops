@@ -5,9 +5,13 @@ copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
 last_update_timestamp: '2026-04-30T14:48:27.349331+00:00'
 sort: 4000
-supports_os:
-- linux
-- windows
+constraints:
+  supports_compute:
+  - cpu
+  - xpu
+  supports_os:
+  - linux
+  - windows
 tags:
 - lang-cpp
 - icx-cpp

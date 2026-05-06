@@ -29,6 +29,7 @@ cmd_get_versions_regex: 'refs/tags/releases/gcc-([^^\s]+)(?:\^\{\})?$'
 uses:
 - task: setup,a2f9b61079ce4333
   name: gcc,222c51b9e9eb4887
+  version: "{{params.version|$None}}"
 
 package_name: 'g++'
 
@@ -49,3 +50,5 @@ features:
       exe_file: '-o '
       lib_path: '-L'
       lib_prefix: '-l'
+    vars:
+      file_ext_exe:

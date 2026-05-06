@@ -15,3 +15,14 @@ uses:
 
   - task: cmd,c9ba0a88df394d7f
     cmd: 'system_profiler SPDisplaysDataType -json > {{local.generate-temp-file-target-metal.temp_file}}'
+
+sdk:
+  uses:
+    - task: runner,1e48cc0c5f6041a5
+
+    - task: force-fail,fbc834fe54894aec
+      if: '"{{global.host.os.uname}}" != "darwin"'
+      text: '"{{task_artifact_alias}}" can run only on MacOS'
+
+    - task: setup,a2f9b61079ce4333
+      name: swiftlang,043d6514109e495d

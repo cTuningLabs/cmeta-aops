@@ -1,0 +1,26 @@
+﻿compile:
+  skip: True
+
+run: 
+  uses:
+    - task: setup,a2f9b61079ce4333
+      name: python
+
+    - task: cmd,c9ba0a88df394d7f
+      if_os: linux
+      cmds: 
+        - 'echo "PYTHON PATH: {{global.python.qpath}}"'
+        - 'echo "PYTHON VERSION:"'
+        - '{{global.python.qpath}} --version'
+        - 'echo "SELECTED PROGRAM PATH: {{local.selected-program.path}}"'
+
+    - task: cmd,c9ba0a88df394d7f
+      if_os: windows
+      cmds: 
+        - 'echo PYTHON PATH: {{global.python.qpath}}'
+        - 'echo PYTHON VERSION:'
+        - '{{global.python.qpath}} --version'
+        - 'echo SELECTED PROGRAM PATH: {{local.selected-program.path}}'
+
+    - task: cmd,c9ba0a88df394d7f
+      cmd: '{{global.python.qpath}} {{local.selected-program.path}}/src/program.py {{params.run.flags|}} {{local.unparsed|}}'

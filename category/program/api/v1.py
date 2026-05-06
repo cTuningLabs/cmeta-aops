@@ -8,6 +8,7 @@ without explicit permission from the copyright holder.
 """
 
 import os
+import shutil
 
 from cmeta.category import InitCategory
 
@@ -46,14 +47,10 @@ class Category(InitCategory):
         if self.cm.debug:
             self.logger.debug("RUNNING program api v1 compile")
 
-        input('xyz')
-
         p = self._prepare_input_from_params(params, base = False)
 
-        p['category'] = self.cmeta['uses_categories']['task']
         p['command'] = 'run'
-        p['name'] = params.get('arg1')
-        p['arg1'] = self.cmeta['uses_artifacts']['tool::setup']
+        p['skip_run'] = True
 
         return self.cm.access(p)
 
@@ -65,51 +62,70 @@ class Category(InitCategory):
         if self.cm.debug:
             self.logger.debug("RUNNING program api v1 run")
 
-        input('xyz')
-
         ctx = params['ctx']
 
         p = self._prepare_input_from_params(params)
 
-        unparsed = p.pop('unparsed', [])
+        arg1 = p.pop('arg1', None)
+        arg2 = p.pop('arg2', None)
 
         # Setup tool
-        p.update({'category': self.cmeta['uses_categories']['task'],
-                  'command': 'run',
-                  'ctx': ctx,
+        p.update({
+            'category': self.cmeta['uses_categories']['task'],
+            'command': 'run',
+            'ctx': ctx,
+            'arg1': self.cmeta['uses_artifacts']['task::compile-and-run-program'],
         })
 
-        pp = copy.deepcopy(p)
-
-        p['arg1'] = self.cmeta['uses_artifacts']['tool::setup']
-        p['name'] = params.get('arg1')
+        if arg1: p['name'] = arg1
+        if arg2: p['compute'] = arg2
 
         r = self.cm.access(p)
         if self.cm.catch_error(r): return r
 
-        cmd = r['cmd']
+        return r
 
-        for param in unparsed:
-            param = param.strip()
-            if ' ' in param and not param.startswith('"'):
-                param = '"' + param + '"'
+    ############################################################
+    def clean(self, params):
+        """
+        Clean all tmp directories in all programs
+        """
 
-            cmd += ' ' + param
-        
-        # Clean some params (needed for "setup tool" task but not for "cmd" task)
+        if self.cm.debug:
+            self.logger.debug("RUNNING program api v1 clean")
 
-        for k in ['detect','install', 'build', 'skip_install', 'skip_detect', 'skip_build',
-                  'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 'with',
-                  'version']:
-            if k in pp:
-                del(pp[k])
+        ctx = params['ctx']
 
-        pp['arg1'] = self.cmeta['uses_artifacts']['tool::cmd']
-        pp['cmd'] = cmd
-        pp['ctx'] = ctx
-        pp['print_extra_line'] = True
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
 
-        r = self.cm.access(pp)
-        self.cm.catch_error(r)
+        ctx_tasks = ctx.setdefault('tasks', {})
+        nested_call = ctx_tasks.setdefault('nested_call', 0)
+        space = '  ' * nested_call if verbose else ''
+
+        # p will be deep copied from params
+        p = self._prepare_input_from_params(params, base = True)
+
+        p['command'] = 'find'
+        p['con'] = False
+
+        r = self.cm.access(p)
+        if self.cm.catch_error(r): return r
+
+        for a in r['artifacts']:
+            path = a['path']
+
+            path_tmp = os.path.join(path, 'tmp')
+            if os.path.isdir(path_tmp):
+                if con:
+                    print (f'{space}Removing "{path_tmp}" ...')
+
+                try:
+                    shutil.rmtree(path_tmp)
+                except Exception as e:
+                    if con and verbose:
+                        print (f'{space}  Problem removing directory: {e}')
+ 
 
         return r

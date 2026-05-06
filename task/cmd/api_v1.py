@@ -24,6 +24,7 @@ class CTask(InitCTask):
     def run(self,
             ctx: dict,        # cMeta context
             cmd: str = "",
+            cmds: list = None,
             chdir: str = None,
             chdir_and_stay: str = None,
             mkdir: str = None,
@@ -124,33 +125,42 @@ class CTask(InitCTask):
         if con and verbose and print_line_in_verbose:
             print ('='*80)
 
-        result = self.cm.utils.sys.run(
-            cmd, 
-            env = env, 
-            envs = envs, 
-            genv = genv, 
-            os_env = os_env,
-            hide_in_cmd = hide_in_cmd,
-            hide_in_env = hide_in_env,
-            timeout = timeout, 
-            capture_output = capture_output,
-            capture_env = capture_env,
-            con = con, 
-            verbose = verbose, 
-            text_cmd = text_cmd, 
-            space = space,
-            print_env_keys = print_env_keys,
-            print_extra_line = print_extra_line,
-            print_cur_dir = print_cur_dir,
-            save_script = save_script,
-            open_shell = open_shell,
-            skip_print_env = skip_print_env,
-        )
+        if cmds is None: 
+            cmds = []
+            cmds.append(cmd)
+
+        for _cmd in cmds:
+
+            result = self.cm.utils.sys.run(
+                _cmd, 
+                env = env, 
+                envs = envs, 
+                genv = genv, 
+                os_env = os_env,
+                hide_in_cmd = hide_in_cmd,
+                hide_in_env = hide_in_env,
+                timeout = timeout, 
+                capture_output = capture_output,
+                capture_env = capture_env,
+                con = con, 
+                verbose = verbose, 
+                text_cmd = text_cmd, 
+                space = space,
+                print_env_keys = print_env_keys,
+                print_extra_line = print_extra_line,
+                print_cur_dir = print_cur_dir,
+                save_script = save_script,
+                open_shell = open_shell,
+                skip_print_env = skip_print_env,
+            )
+
+            if self.cm.catch_error(result, fail16=True): 
+                break
 
         if chdir:
-            if con and verbose:
-                print ('')
-                print (f'{space}INFO: cd "{cur_dir}"')
+#            if con and verbose:
+#                print ('')
+#                print (f'{space}INFO: cd "{cur_dir}"')
             os.chdir(cur_dir)
 
         if self.cm.catch_error(result, fail16=True): return result

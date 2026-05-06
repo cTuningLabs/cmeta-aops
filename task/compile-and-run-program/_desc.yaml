@@ -4,10 +4,12 @@ cache: False
 
 params_map:
   arg2: name
+  arg3: compute
 
-uses:
-  - task: runner,1e48cc0c5f6041a5
-
-  - task: compile-program,dcbfbd88702e4717
-
-  - task: run-program,3c5f8958006c4f13
+uses_before_init:
+  - task: select-program,beea611608bb459c
+    name: '{{params.name|$None}}'
+    program_tags: '{{params.program_tags|$None}}'
+    program_api_ver: '{{params.program_api_ver|$None}}'
+    ask: '{{params.ask|$False}}'
+    compute: '{{params.compute|$None}}'

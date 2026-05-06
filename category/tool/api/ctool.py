@@ -51,4 +51,3 @@ class InitCTool:
             caller_frame = stack[1]
 
             self.logger.debug(f"Initializing CTool class from: {caller_frame.filename}:{caller_frame.lineno}")
-

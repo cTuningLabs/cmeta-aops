@@ -36,3 +36,5 @@ features:
       link_sep: '/link'
       lib_path: '/LIBPATH:'
       lib_prefix: ''
+    vars:
+      file_ext_exe: .exe

@@ -43,7 +43,8 @@ class CTool(InitCTool):
             compiler_extra_match = {}
 
         # Add host compiler such as GCC, LLVM, MSVC if needed ...
-        supports_nvcc_os = compiler_extra_match.setdefault('supports_nvcc_os', []) 
+        compiler_constraints = compiler_extra_match.setdefault('constraints', {})
+        supports_nvcc_os = compiler_constraints.setdefault('supports_nvcc_os', []) 
         if uname not in supports_nvcc_os:
             supports_nvcc_os.append(uname)
 

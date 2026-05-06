@@ -1,0 +1,26 @@
+﻿
+
+compile:
+  uses:
+    - task: target-sdk,bb795b1444564935
+
+    - task: compiler,f3925b201c704bde
+      lang: cuda
+      compute: '{{global.target.compute|$None}}'
+
+    - task: cmd,c9ba0a88df394d7f
+      storage_key: compile-program
+      chdir: '{{local.target_path}}'
+      cmd: >-
+        {{global.compiler.qpath}} 
+        {{params.compile.flags|}}
+        {{global.compiler.features.flags.catch_errors|}}
+        {{local.selected-program.path}}{{os_sep}}src{{os_sep}}program.c
+        {{global.compiler.features.flags.exe_file}}{{local.target_path}}{{os_sep}}test{{global.compiler.features.vars.file_ext_exe}}
+         
+run: 
+  uses:
+    - task: cmd,c9ba0a88df394d7f
+      storage_key: run-program
+      chdir: '{{local.target_path}}'
+      cmd: '{{global.host.vars.start_exe_prefix}}test{{global.compiler.features.vars.file_ext_exe}} {{params.run.flags|}} {{local.unparsed|}}'

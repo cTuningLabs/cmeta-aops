@@ -53,6 +53,11 @@ class CTask(InitCTask):
         ctx_tasks['global']['#target'] = {}
 
         # Check target compute
+        # Simplify CLI
+        if compute is True:
+            compute = None
+            ask = True
+
         if not compute:
             if ask:
                 p = {
@@ -96,33 +101,51 @@ class CTask(InitCTask):
                     xcompute.append(x)
             compute = xcompute
 
-#        # Prepare dependencies
-#        uses = []
-#        _local = {}
-#
-#        for c in compute:
-#            compute_use = {
-#              'task': self.target_artifact_alias_prefix + c,
-#            }
-#
-#            uses.append(compute_use)
-#
-#        # Resolve as standard dependency
-#        ii = {'category': self.category_alias + ',' + self.category_uid,
-#              'command': 'use',
-#              'con': con,
-#              'quiet': quiet,
-#              'verbose': verbose,
-#              'ctx': ctx,
-#              'desc': uses,
-#              'local': _local,
-#              'task_artifact_alias': self.artifact_alias,
-#              'task_artifact_uid': self.artifact_uid,
-#              'task_artifact_path': self.artifact_path,
-#             }
-#
-#        r = self.cm.access(ii)
-#        if self.cm.catch_error(r, fail16=True): return r
+        # Prepare dependencies
+        uses = []
+        _local = {}
+        features = {}
+
+        for c in compute:
+            task = self.target_artifact_alias_prefix + c
+
+            # Try to load desc
+            r = self.cm.access({
+              'category': self.category_alias + ',' + self.category_uid,
+              'command': 'read',
+              'arg1': task,
+              'base': True,
+              'load_files':['_desc'],
+            })
+            if self.cm.catch_error(r, fail16=True): return r
+ 
+            cdesc = r['loaded_files']['_desc'].get('data', {})
+
+            features[c] = {'desc': cdesc}
+
+            compute_use = {
+              'task': task,
+            }
+
+            uses.append(compute_use)
+
+
+        # Resolve as standard dependency
+        ii = {'category': self.category_alias + ',' + self.category_uid,
+              'command': 'use',
+              'con': con,
+              'quiet': quiet,
+              'verbose': verbose,
+              'ctx': ctx,
+              'desc': uses,
+              'local': _local,
+              'task_artifact_alias': self.artifact_alias,
+              'task_artifact_uid': self.artifact_uid,
+              'task_artifact_path': self.artifact_path,
+             }
+
+        r = self.cm.access(ii)
+        if self.cm.catch_error(r, fail16=True): return r
 
         # Prepare result
         result = {
@@ -130,14 +153,12 @@ class CTask(InitCTask):
           'compute': compute,
         }
 
-        features = {}
-
         for c in compute:
             key = self.target_artifact_alias_prefix + c
 
             ft = ctx['tasks']['global'][key].get('features', {})
 
-            features[c] = ft
+            features[c].update(ft)
 
         result['features'] = features
 

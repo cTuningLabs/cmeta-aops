@@ -10,3 +10,8 @@ env_if_not_used:
   CMETA_TARGET_CUDA: 0
 env:
   CMETA_TARGET_CUDA: 1
+
+sdk:
+  uses:
+    - task: setup,a2f9b61079ce4333
+      name: nvcc,7f0e9193fef74919

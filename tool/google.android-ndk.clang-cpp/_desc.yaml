@@ -10,6 +10,9 @@ cache_params_use:
     android-ndk:
       version: "{{global.google-android-ndk.version}}"
       path: "{{global.google-android-ndk.path_home}}"
+    android-ndk-clang:
+      version: "{{global.android-ndk-clang.version}}"
+      path: "{{global.android-ndk-clang.path}}"
 
 only_paths:
   windows:
@@ -24,3 +27,44 @@ match_version:
 uses:
   - task: setup,a2f9b61079ce4333
     name: google.android-ndk,ce4e80d6d26240c0
+  - task: setup,a2f9b61079ce4333
+    name: google.android-ndk.clang,0f9584af13b0402c
+    version: "{{params.version|$None}}"
+
+features:
+  windows:
+    flags:
+      include_path: '-I'
+      dynamic_build: ''
+      static_build: '-fms-runtime-lib=static'
+      dynamic_build_debug: ''
+      static_build_debug: '-fms-runtime-lib=static'
+      exe_file: '-o '
+      lib_path: '-Wl,/LIBPATH:'
+      lib_prefix: '-Wl,'
+    vars:
+      file_ext_exe:
+  linux:
+    flags:
+      include_path: '-I'
+      dynamic_build: ''
+      static_build: '-static'
+      dynamic_build_debug: ''
+      static_build_debug: '-static'
+      exe_file: '-o '
+      lib_path: '-L'
+      lib_prefix: '-l'
+    vars:
+      file_ext_exe:
+  darwin:
+    flags:
+      include_path: '-I'
+      dynamic_build: ''
+      static_build: ''
+      dynamic_build_debug: ''
+      static_build_debug: ''
+      exe_file: '-o '
+      lib_path: '-L'
+      lib_prefix: '-l'
+    vars:
+      file_ext_exe:

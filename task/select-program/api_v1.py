@@ -25,6 +25,8 @@ class CTask(InitCTask):
             name: str = None,
             program_tags: str = None,
             program_api_ver: str = None,
+            ask: bool = False,
+            compute: str = None,
     ):
         """
         """
@@ -43,6 +45,7 @@ class CTask(InitCTask):
         result = {'return':0}
 
         _global = ctx_tasks['global']
+
         selected_compute = _global['target']['compute']
 
         p = {'category': self.cmeta['uses_categories']['utils'],
@@ -54,7 +57,7 @@ class CTask(InitCTask):
              'select_match':{'constraints':{}},
              'con': con,
              'quiet': quiet,
-             'load_files': ['_desc', '_desc_compile', '_desc_run'],
+             'load_files': ['_desc'], #'_desc_compile', '_desc_run'],
              'space': space,
              'load_api': True,
              'load_api_ver': program_api_ver,
@@ -62,12 +65,21 @@ class CTask(InitCTask):
              'print_extra_line': True,
         }
 
+        constraints = {}
+
         if selected_compute:
             # AND match, i.e. cpu + cuda should match both (for hybrid compute)
-            p['select_match'] = {'constraints':{'supported_compute':selected_compute}}
+            constraints['supported_compute'] = selected_compute
+
+        if constraints:
+            p['select_match'] = {'constraints': constraints}
 
         r = self.cm.access(p)
-        if self.cm.catch_error(r, fail16=True): return r
+        if self.cm.catch_error(r, fail16=True): 
+            if r['return'] == 16 and constraints:
+                r['error'] += f' with constraints "{constraints}"'
+            r['return'] = 1 # Fail above
+            return r
 
         artifact = r['artifact']
         artifact_au = r['artifact_au']
@@ -76,12 +88,16 @@ class CTask(InitCTask):
 
         if con and verbose:
             print ('')
-            print (f'{space}INFO: SELECTED PROGRAM "{artifact_au}"')
+            print (f'{space}INFO: Selected program "{artifact_au}"')
 
         selected_program = {
+            'path': artifact['path'],
             'artifact': artifact, 
+            'artifact_au': artifact_au, 
             'loaded_files': loaded_files, 
             'api_code':program_api_code,
         }
+
+        result['add_to_local'] = {'selected-program': selected_program}
 
         return result

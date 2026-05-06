@@ -5,9 +5,12 @@ copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
 last_update_timestamp: '2026-04-30T14:56:15.552002+00:00'
 sort: 3000
-supports_os:
-- windows
-- linux
-- darwin
+constraints:
+  supports_compute:
+  - cpu
+  supports_os:
+  - windows
+  - linux
+  - darwin
 tags:
 - lang-java

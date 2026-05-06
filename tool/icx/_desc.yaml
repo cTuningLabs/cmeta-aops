@@ -35,17 +35,16 @@ install_help_text:
 features:
   windows:
     flags:
-      catch_errors: '/EHsc'
-      include_path: '/I '
-      dynamic_build: '/MD'
-      static_build: '/MT'
-      dynamic_build_debug: '/MDd'
-      static_build_debug: '/MTd'
-      obj_file: '/Fo:'
-      exe_file: '/Fe:'
-      link_sep: '/link'
-      lib_path: '/LIBPATH:'
-      lib_prefix: ''
+      include_path: '-I'
+      dynamic_build: ''
+      static_build: '-fms-runtime-lib=static'
+      dynamic_build_debug: ''
+      static_build_debug: '-fms-runtime-lib=static'
+      exe_file: '-o '
+      lib_path: '-Wl,/LIBPATH:'
+      lib_prefix: '-Wl,'
+    vars:
+      file_ext_exe: .exe
   linux:
     flags:
       include_path: '-I'
@@ -56,3 +55,5 @@ features:
       exe_file: '-o '
       lib_path: '-L'
       lib_prefix: '-l'
+    vars:
+      file_ext_exe:

@@ -1,10 +1,22 @@
-store_global: True     # force
-storage_key: compiler  # force storage key to avoid mixing up in the future
-cache: False           # force
+store_global: True
+storage_key: 'compiler-{{params.lang}}'
+cache: True
 
 params_map:
   arg2: lang
   arg3: extra_tags
 
+cache_params:
+  - lang
+  - "@version" # Treat @keys as fuzzy versions or versions with conditions during cMeta search!
+cache_extra_params:
+  compute: '{{global.target.compute|$None}}'
+
+cache_extra_alias: '{{params.lang}}'
+
 uses_before_init:
   - task: runner,1e48cc0c5f6041a5
+
+  - task: target,94decb2ddd28441f
+    ask: '{{params.ask|$False}}'
+    compute: '{{params.compute|$None}}'

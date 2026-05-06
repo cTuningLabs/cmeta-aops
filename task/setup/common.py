@@ -58,6 +58,7 @@ def read_tool(self,
 
     artifact = r['artifact']
 
+    cmeta = artifact['cmeta']
     cdesc = r['loaded_files']['_desc'].get('data', {})
 
     _error = cdesc.get('_error')
@@ -149,6 +150,7 @@ def read_tool(self,
         'space': space,
         'local': _local,
         'desc': cdesc,
+        'meta': cmeta,
         'tool_api_code': tool_api_code,
         'tool_api_code2': tool_api_code2,
         'artifact_au': artifact_au,
