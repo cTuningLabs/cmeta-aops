@@ -132,6 +132,10 @@ class CTask(InitCTask):
                     output_files.append('perf.data')
                     output_files.append('perf_report.txt')
 
+                elif uname == 'darwin':
+                    prefix_cmd += f'xcrun xctrace record --template "Time Profiler" --output tmp-cmeta-xcrun --launch -- '
+#                    prefix_cmd += f'sample '
+
         # Setup Android
         if _android_cpu:
             start_exe_prefix = './'

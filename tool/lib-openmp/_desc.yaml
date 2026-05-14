@@ -10,9 +10,11 @@ match_version:
 extra_paths:
   linux:
     - "{{global.llvm.features.paths.home|/home/linuxbrew/.linuxbrew}}/**"
+    - "/home/linuxbrew/.linuxbrew/**"
 
   darwin:
     - "{{global.llvm.features.paths.home|/opt/homebrew/opt}}/**"
+    - "/opt/homebrew/opt/**"
 
 package_name: 'libomp-dev'
 

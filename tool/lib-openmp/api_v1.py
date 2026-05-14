@@ -36,8 +36,11 @@ class CTool(InitCTool):
 
         found_paths_with_versions =  {}
 
+        uname = ctx['tasks']['global']['host']['os']['uname']
+
         for path in paths:
              path_lib = os.path.dirname(path)
+             path_home = os.path.dirname(path_lib)
 
              paths = {}
 
@@ -49,9 +52,30 @@ class CTool(InitCTool):
              paths['qlib'] = self.cm.q(path_lib)
              paths['libs'] = [path_lib]
 
+             paths['home'] = path_home
+             paths['qhome'] = self.cm.q(path_home)
+
+             lib_names = []
+
+             if uname == 'darwin':
+                 path_include = os.path.join(path_home, 'include')
+
+                 if os.path.isdir(path_include):
+                     paths['include'] = path_include
+                     paths['qinclude'] = self.cm.q(path_include)
+
+                     paths['includes'] = [path_include]
+
+                 lib_names = [
+                   'omp', 
+                 ]
+
              features = {
                'paths': paths,
              }
+
+             if lib_names:
+                 features['lib_names'] = lib_names
 
              version = 'default'
 
