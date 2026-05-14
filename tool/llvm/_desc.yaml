@@ -1,5 +1,7 @@
 storage_key: llvm
 
+default_version: 22.1.5
+
 names:
   - clang{{global.host.vars.file_ext_exe}}
 

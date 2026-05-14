@@ -58,7 +58,7 @@ class CTool(InitCTool):
         We need to check package before further key expansions from desc
         """
         if self.cm.debug:
-            self.logger.debug("RUNNING TOOL python api_v1 init")
+            self.logger.debug("RUNNING TOOL pip api_v1 init")
 
         result = {'return':0}
 

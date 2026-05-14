@@ -1,0 +1,1 @@
+﻿cx program run test-cpu-cpp --compute=android-cpu --target_tmp=tmp-android-cpu --compile.fastest --compile.profile -v

@@ -1,0 +1,9 @@
+artifact: 148f6c1fdb4247df
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+creation_timestamp: '2026-02-01T15:29:13.399124+00:00'
+last_update_timestamp: '2026-05-08T09:53:35.132769+00:00'
+uses_categories:
+  tool: tool,c393ba5c6fa14f66
+  utils: utils,234ce5e3262e4d52

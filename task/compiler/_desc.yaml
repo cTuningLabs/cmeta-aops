@@ -4,7 +4,7 @@ cache: True
 
 params_map:
   arg2: lang
-  arg3: extra_tags
+  arg3: compute
 
 cache_params:
   - lang

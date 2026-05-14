@@ -26,6 +26,8 @@ class CTask(InitCTask):
     ):
         """
         """
+
+        # Checking even for cached entries!
         r = self.cm.check_params(params, [
                 'lang',
                 'extra_tags',
@@ -33,27 +35,28 @@ class CTask(InitCTask):
                 'name',
                 'text',
                 'compute',
-                'version',
+                'with',
             ], __name__)
         if self.cm.catch_error(r): return r
-
-# ADD compute check !!!
 
         return {'return':0}
 
     ############################################################
     def run(self, 
             ctx, 
-            lang: str = None,   # string or list of compute (task::target-{name})
-            extra_tags = None,  # extra tags to force specific compiler, etc (clang, gcc-cpp, msvc, etc)
-            extra_match = None, # extra match dict
-            name: str = None,   # force tool name directly without tags or extra tags
-            text: str = None,   # Add text before selection to describe what is it used for
-            compute: list = None, # List of supported target compute
-            version: str = None, # select specific version for compiler
+            **params,
     ):
         """
         """
+
+        lang = params.get('lang')
+        extra_tags = params.get('extra_tags')
+        extra_match = params.get('extra_match')
+        name = params.get('name')
+        text = params.get('text')
+        compute = params.get('compute')
+        version = params.get('version')
+        _with = params.get('with', {})
 
         if not lang:
             return self.cm.error(f'"lang" is not specified in "{__file__}"')
@@ -198,10 +201,41 @@ class CTask(InitCTask):
         if version: p['version'] = version
 
         r = self.cm.access(p)
-        if self.cm.catch_error(r, fail16=True): return r
+        if self.cm.catch_error(r, fail16=True): 
+            r['return'] = 99
+            return r
 
         result.update(r)
 
-        _result['result'] = result
+        _with = params.get('with', {})
 
+        _fast = _with.get('fast', False)
+        _static = _with.get('static', False)
+        _debug = _with.get('debug', False)
+        _openmp = _with.get('openmp', False)
+        _profile = _with.get('profile', False)
+
+        compiler_flags = []
+
+        flags = result.get('features', {}).get('flags','')
+
+        if _static:
+            x = flags.get('static_build_debug') if _debug else flags.get('static_build')
+        else:
+            x = flags.get('dynamic_build_debug') if _debug else flags.get('dynamic_build')
+
+        if x and x not in compiler_flags:
+            compiler_flags.append(x)
+
+        if _openmp:
+            openmp_flag = flags.get('openmp')
+            if not openmp_flag:
+                return self.cm.error(f'openmp requested but flag is not defined in compiler meta in "{__file__}" ({__name__})')
+        
+            if openmp_flag not in compiler_flags:
+                compiler_flags.append(openmp_flag)
+
+        result['compiler_flags'] = compiler_flags
+
+        _result['result'] = result
         return _result

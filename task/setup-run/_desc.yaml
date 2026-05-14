@@ -1,0 +1,12 @@
+storage_key: 'setup-run'
+cache: False
+
+params_map:
+  arg2: compute
+
+uses_before_init:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: target,94decb2ddd28441f
+    ask: '{{params.ask|$False}}'
+    compute: '{{params.compute|$None}}'

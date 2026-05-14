@@ -20,20 +20,12 @@ class CTask(InitCTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
+
+
     ############################################################
     def run(self,
             ctx: dict,
-            name: str = None,
-            program_tags: str = None,
-            program_api_ver: str = None,
-            compute: str = None,
-            skip_compile: bool = False,
-            recompile: bool = False,
-            skip_run: bool = False,
-            target_path: str = None,
-            compile: dict = None,
-            run: dict = None,
-            unparsed: str = None,
+            **params,
     ):
         """
         """
@@ -41,13 +33,26 @@ class CTask(InitCTask):
         if self.cm.debug:
             self.logger.debug("RUNNING TASK compile-and-run-program run")
 
+        name = params.get('name')
+        program_tags = params.get('program_tags')
+        program_api_ver = params.get('program_api_ver')
+        compute = params.get('compute')
+        skip_compile = params.get('skip_compile')
+        recompile = params.get('recompile')
+        skip_run = params.get('skip_run')
+        target_path = params.get('target_path')
+        _compile = params.get('_compile')
+        run = params.get('run')
+        env = params.get('env', {})
+        unparsed = params.get('unparsed')
+
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
 
         ctx_tasks = ctx['tasks']
         _global = ctx_tasks['global']
-
+        
         ctx_tasks_control = ctx['tasks']['run_control']
         clean = ctx_tasks_control.get('clean', False)
 
@@ -70,15 +75,6 @@ class CTask(InitCTask):
         desc = copy.deepcopy(selected_program['loaded_files']['_desc'].get('data', {})) # May change during context merge
 
         ###########################################################################################
-        if not target_path:
-            target_path = os.path.join(path, 'tmp')
-
-        ctx['tasks']['local']['target_path'] = target_path
-
-        path_repro_compile = os.path.join(target_path, '_repro_ctx_compile.json')
-        path_repro_run = os.path.join(target_path, '_repro_ctx_run.json')
-
-        ###########################################################################################
         # Init vars
         result = {'return':0}
 
@@ -88,6 +84,29 @@ class CTask(InitCTask):
             if self.cm.catch_error(r): return r
 
             self.cm.utils.common.deep_merge(ctx['tasks']['local'], local_vars, append_lists=False)
+
+        selected_compute = _global.get('target',{}).get('compute', [])
+
+        ###########################################################################################
+        if not target_path:
+            target_path = ctx_tasks['local'].get('target_path')
+            if not target_path:
+                x = 'tmp' if not params.get('target_tmp') else params['target_tmp']
+                target_path = os.path.join(path, x)
+        ctx_tasks['local']['target_path'] = target_path
+
+        if 'run_time_env' not in ctx_tasks['local']:
+            ctx_tasks['local']['run_time_env'] = env 
+        else:
+            self.cm.utils.common.deep_merge(ctx['tasks']['local']['run_time_env'], env, append_lists=True)
+
+        if 'params' not in ctx_tasks['local']:
+            ctx_tasks['local']['params'] = params
+        else:
+            self.cm.utils.common.deep_merge(ctx['tasks']['local']['params'], params, append_lists=True)
+
+        path_repro_compile = os.path.join(target_path, '_repro_ctx_compile.json')
+        path_repro_run = os.path.join(target_path, '_repro_ctx_run.json')
 
         ###########################################################################################
         # Clean (restart) (clean flag is used by "task" category)
@@ -102,10 +121,36 @@ class CTask(InitCTask):
         if not os.path.isdir(target_path):
             os.makedirs(target_path)
 
+
         ###########################################################################################
         # Compile
 
         compile_desc = desc.get('compile', {})
+
+        _compiled_state = {}
+        _compile_params = None
+
+        compile_target_compute = None
+
+        ctx_setup_compile = None
+
+        r = self.cm.utils.files.read_file(path_repro_compile)
+        if r['return']>0:
+            recompile = True
+        else:
+            _compiled_state = r['data']
+
+            if _compiled_state.get('result', {}).get('return') != 0:
+                recompile = True
+
+            _compiled_state_global = _compiled_state.get('ctx', {}).get('tasks', {}).get('global')
+            _compiled_state_local = _compiled_state.get('ctx', {}).get('tasks', {}).get('local')
+
+            if _compiled_state_global:
+                compile_target_compute = _compiled_state_global.get('target',{}).get('compute', [])
+
+            if _compiled_state_local:
+                ctx_setup_compile = _compiled_state_local.get('setup-compile')
 
         if not compile_desc.get('skip', False) and not skip_compile:
             if con and verbose:
@@ -116,69 +161,55 @@ class CTask(InitCTask):
                 os.remove(path_repro_run)
 
             _compiled = False
-            _compiled_state = {}
-            _compile_params = None
 
-            if not recompile and os.path.isfile(path_repro_compile):
-                r = self.cm.utils.files.read_file(path_repro_compile)
-                if r['return'] >0:
-                    recompile = True
-                else:
-                    _compiled_state = r['data']
+            if not recompile:
+                # Check if compute didn't change:
+                if _compiled_state_global:
+                    compile_target_compute = _compiled_state_global.get('target',{}).get('compute', [])
+                    if compile_target_compute:
+                        for sc in selected_compute:
+                            if sc not in compile_target_compute:
+                                recompile = True
+                                break
 
-                    if _compiled_state.get('result', {}).get('return') != 0:
-                        recompile = True
+                    if not recompile and 'android-cpu' in compile_target_compute:
+                        compile_target_adb_serial = _compiled_state_global.get('target--android-cpu',{}).get('serial')
+                        target_adb_serial = ctx_tasks['global'].get('target--android-cpu',{}).get('serial')
+                        if compile_target_adb_serial != target_adb_serial:
+                            recompile = True
 
-                    # Check if compute didn't change:
-                    _compiled_state_global = _compiled_state.get('ctx', {}).get('tasks', {}).get('global')
+                if not recompile:
                     if _compiled_state_global:
-                        compile_target_compute = _compiled_state_global.get('target',{}).get('compute', [])
-                        if compile_target_compute:
-                            if compute:
-                                if compute not in compile_target_compute:
-                                    recompile = True
-                            elif 'cpu' not in compile_target_compute:
-                                recompile = True
+                        if con and verbose:
+                            print ('')
+                            print (f'{space}REUSING EXISTING GLOBAL COMPILE CONTEXT ...')
 
-                        if not recompile and 'android-cpu' in compile_target_compute:
-                            compile_target_adb_serial = _compiled_state_global.get('target--android-cpu',{}).get('serial')
-                            target_adb_serial = ctx_tasks['global'].get('target--android-cpu',{}).get('serial')
-                            if compile_target_adb_serial != target_adb_serial:
-                                recompile = True
+                        self.cm.utils.common.deep_merge(ctx['tasks']['global'], _compiled_state_global, append_lists=False)
 
-                    if not recompile:
-                        if _compiled_state_global:
-                            if con and verbose:
-                                print ('')
-                                print (f'{space}REUSING EXISTING GLOBAL COMPILE CONTEXT ...')
+                    _compiled_state_local = _compiled_state.get('ctx', {}).get('tasks', {}).get('local')
+                    if _compiled_state_local:
+                        if con and verbose:
+                            print (f'{space}REUSING EXISTING LOCAL COMPILE CONTEXT ...')
 
-                            self.cm.utils.common.deep_merge(ctx['tasks']['global'], _compiled_state_global, append_lists=False)
+                        self.cm.utils.common.deep_merge(ctx['tasks']['local'], _compiled_state_local, append_lists=False)
 
-                        _compiled_state_local = _compiled_state.get('ctx', {}).get('tasks', {}).get('local')
-                        if _compiled_state_local:
-                            if con and verbose:
-                                print (f'{space}REUSING EXISTING LOCAL COMPILE CONTEXT ...')
+                    _compiled_state_aggregated = _compiled_state.get('ctx', {}).get('tasks', {}).get('aggregated')
+                    if _compiled_state_aggregated:
+                        if con and verbose:
+                            print (f'{space}REUSING EXISTING AGGREGATED COMPILE CONTEXT ...')
 
-                            self.cm.utils.common.deep_merge(ctx['tasks']['local'], _compiled_state_local, append_lists=False)
+                        self.cm.utils.common.deep_merge(ctx['tasks']['aggregated'], _compiled_state_aggregated, append_lists=False)
 
-                        _compiled_state_aggregated = _compiled_state.get('ctx', {}).get('tasks', {}).get('aggregated')
-                        if _compiled_state_aggregated:
-                            if con and verbose:
-                                print (f'{space}REUSING EXISTING AGGREGATED COMPILE CONTEXT ...')
+                    _compile_params = _compiled_state.get('ctx', {}).get('origin', {}).get('params', {}).get('compile', {})
+                    if _compile_params:
+                        if con and verbose:
+                            print (f'{space}REUSING EXISTING COMPILE PARAMS ...')
 
-                            self.cm.utils.common.deep_merge(ctx['tasks']['aggregated'], _compiled_state_aggregated, append_lists=False)
+                        self.cm.utils.common.deep_merge(ctx['origin']['params'], {'compile':_compile_params}, append_lists=True)
+                        self.cm.utils.common.deep_merge(ctx['tasks']['params'], {'compile':_compile_params}, append_lists=False)
 
-                        _compile_params = _compiled_state.get('ctx', {}).get('origin', {}).get('params', {}).get('compile', {})
-                        if _compile_params:
-                            if con and verbose:
-                                print (f'{space}REUSING EXISTING COMPILE PARAMS ...')
-
-                            self.cm.utils.common.deep_merge(ctx['origin']['params'], {'compile':_compile_params}, append_lists=True)
-                            self.cm.utils.common.deep_merge(ctx['tasks']['params'], {'compile':_compile_params}, append_lists=False)
-
-
-                        if _compiled_state.get('result', {}).get('return') == 0:
-                            _compiled = True
+                    if _compiled_state.get('result', {}).get('return') == 0:
+                        _compiled = True
 
             if recompile or not _compiled:
                 if os.path.isfile(path_repro_compile):
@@ -209,10 +240,22 @@ class CTask(InitCTask):
 
                     if self.cm.catch_error(r): return r
 
+                ctx_setup_compile = ctx['tasks']['local']['setup-compile']
 
         ###########################################################################################
         # Run
         run_desc = desc.get('run', {})
+
+        if ctx_setup_compile:
+            ctx['tasks']['local']['setup-compile'] = ctx_setup_compile
+
+            for k in ['target_path_exe', 'target_exe']:
+                if k in ctx_setup_compile and k not in ctx_tasks['local']:
+                    ctx['tasks']['local'][k] = ctx_setup_compile[k]
+
+            dynamic_lib_paths = ctx_setup_compile.get('dynamic_lib_paths')
+            if dynamic_lib_paths:
+                ctx['tasks']['local']['run_time_env']['+PATH'] = dynamic_lib_paths
 
         if not run_desc.get('skip', False) and not skip_run:
             if con and verbose:
@@ -249,6 +292,12 @@ class CTask(InitCTask):
                 if self.cm.catch_error(rx): return rx
 
                 if self.cm.catch_error(r): return r
+
+            # Check result files
+            result_files_data = ctx['tasks']['local'].get('result_files_data')
+
+            if result_files_data:
+                result.update(result_files_data)
 
         return result
 

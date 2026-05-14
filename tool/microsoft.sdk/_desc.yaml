@@ -2,9 +2,11 @@ names:
   - Windows.h
 
 only_paths:
-  windows:
+  all:
     - "C:\\Program Files (x86)\\Windows Kits\\**\\Include\\**\\um"
 
 match_version: 
   - regex: '^.*$'
     group: 0
+
+win_only: True

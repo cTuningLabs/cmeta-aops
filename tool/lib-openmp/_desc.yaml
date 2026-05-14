@@ -1,0 +1,21 @@
+# Only for Clang !
+
+names:
+  - libomp{{global.host.vars.file_ext_dlib}}
+
+match_version: 
+  - regex: '^.*$'
+    group: 0
+
+extra_paths:
+  linux:
+    - "{{global.llvm.features.paths.home|/home/linuxbrew/.linuxbrew}}/**"
+
+  darwin:
+    - "{{global.llvm.features.paths.home|/opt/homebrew/opt}}/**"
+
+package_name: 'libomp-dev'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+  darwin: '{{global.brew.qpath}} install libomp'

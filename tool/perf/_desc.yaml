@@ -1,0 +1,12 @@
+names:
+  - perf
+
+cmd_get_version: '{{tool_path}} --version'
+
+match_version: 
+  - regex: '^.*perf version (\S+)$'
+    group: 1
+
+extra_paths:
+  linux:
+    - "/usr/lib/linux-tools**"

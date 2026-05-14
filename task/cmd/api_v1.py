@@ -73,19 +73,16 @@ class CTask(InitCTask):
 #        print ('os_env_PATH=', os_env.get('PATH'))
 #        print ('===')
 #        print ('os_env_+PATH=', os_env.get('+PATH'))
-#        input('xyz1')
 
 #        print ('===')
 #        print ('envs_PATH=', envs.get('PATH'))
 #        print ('===')
 #        print ('envs_+PATH=', envs.get('+PATH'))
-#        input('xyz2')
 #
 #        print ('===')
 #        print ('env_PATH=', env.get('PATH'))
 #        print ('===')
 #        print ('env_+PATH=', env.get('+PATH'))
-#        input('xyz3')
 
         cur_dir = os.getcwd()
 
@@ -125,37 +122,37 @@ class CTask(InitCTask):
         if con and verbose and print_line_in_verbose:
             print ('='*80)
 
-        if cmds is None: 
-            cmds = []
-            cmds.append(cmd)
+        result = self.cm.utils.sys.run(
+            cmd, 
+            cmds = cmds,
+            env = env, 
+            envs = envs, 
+            genv = genv, 
+            os_env = os_env,
+            hide_in_cmd = hide_in_cmd,
+            hide_in_env = hide_in_env,
+            timeout = timeout, 
+            capture_output = capture_output,
+            capture_env = capture_env,
+            con = con, 
+            verbose = verbose, 
+            text_cmd = text_cmd, 
+            space = space,
+            print_env_keys = print_env_keys,
+            print_extra_line = print_extra_line,
+            print_cur_dir = print_cur_dir,
+            save_script = save_script,
+            open_shell = open_shell,
+            skip_print_env = skip_print_env,
+        )
 
-        for _cmd in cmds:
+        if self.cm.catch_error(result, fail16=True): return result
 
-            result = self.cm.utils.sys.run(
-                _cmd, 
-                env = env, 
-                envs = envs, 
-                genv = genv, 
-                os_env = os_env,
-                hide_in_cmd = hide_in_cmd,
-                hide_in_env = hide_in_env,
-                timeout = timeout, 
-                capture_output = capture_output,
-                capture_env = capture_env,
-                con = con, 
-                verbose = verbose, 
-                text_cmd = text_cmd, 
-                space = space,
-                print_env_keys = print_env_keys,
-                print_extra_line = print_extra_line,
-                print_cur_dir = print_cur_dir,
-                save_script = save_script,
-                open_shell = open_shell,
-                skip_print_env = skip_print_env,
-            )
+        returncode = result['returncode']
 
-            if self.cm.catch_error(result, fail16=True): 
-                break
+        if fail_if_nonzero_return_code and returncode>0:
+            cmd = result['cmd']
+            return self.cm.error(f'CMD "{cmd}" failed with return code {returncode}', 99)
 
         if chdir:
 #            if con and verbose:
@@ -163,7 +160,8 @@ class CTask(InitCTask):
 #                print (f'{space}INFO: cd "{cur_dir}"')
             os.chdir(cur_dir)
 
-        if self.cm.catch_error(result, fail16=True): return result
+        if self.cm.catch_error(result, fail16=True): 
+            return result
 
         returncode = result['returncode']
 

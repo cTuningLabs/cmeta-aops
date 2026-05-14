@@ -30,12 +30,18 @@ features:
     flags:
       include_path: '-I'
       dynamic_build: ''
-      static_build: '-fms-runtime-lib=static'
-      dynamic_build_debug: ''
-      static_build_debug: '-fms-runtime-lib=static'
+      static_build: '-static'
+      dynamic_build_debug: '-g'
+      static_build_debug: '-static -g'
       exe_file: '-o '
-      lib_path: '-Wl,/LIBPATH:'
-      lib_prefix: '-Wl,'
+      lib_path: '-L'
+      lib_prefix: '-l'
+      lib_prefix2: ''
+      lib_postfix: ''
+      openmp: '-fopenmp'
+      fast: '-O3'
+      fastest: '-O3 -ffast-math'
+      profile: '-fno-omit-frame-pointer'
     vars:
       file_ext_exe:
   linux:
@@ -43,22 +49,34 @@ features:
       include_path: '-I'
       dynamic_build: ''
       static_build: '-static'
-      dynamic_build_debug: ''
-      static_build_debug: '-static'
+      dynamic_build_debug: '-g'
+      static_build_debug: '-static -g'
       exe_file: '-o '
       lib_path: '-L'
       lib_prefix: '-l'
+      lib_prefix2: ''
+      lib_postfix: ''
+      openmp: '-fopenmp'
+      fast: '-O3'
+      fastest: '-O3 -ffast-math'
+      profile: '-fno-omit-frame-pointer'
     vars:
       file_ext_exe:
   darwin:
     flags:
       include_path: '-I'
       dynamic_build: ''
-      static_build: ''
-      dynamic_build_debug: ''
-      static_build_debug: ''
+      static_build: '-static'
+      dynamic_build_debug: '-g'
+      static_build_debug: '-static -g'
       exe_file: '-o '
       lib_path: '-L'
       lib_prefix: '-l'
+      lib_prefix2: ''
+      lib_postfix: ''
+      openmp: '-fopenmp'
+      fast: '-O3'
+      fastest: '-O3 -ffast-math'
+      profile: '-fno-omit-frame-pointer'
     vars:
       file_ext_exe:

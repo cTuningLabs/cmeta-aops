@@ -18,3 +18,21 @@ class CTool(InitCTool):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
+    ############################################################
+    def find_paths(self,
+                   ctx: dict,
+                   params: dict = {},
+    ):
+        """
+        """
+        path_to_tool = ctx['tasks']['global']['icx']['path']
+
+        found_paths = []
+
+        j = path_to_tool.rfind('icx')
+        if j>0:
+            path_to_tool2 = path_to_tool[:j] + 'icpx' + path_to_tool[j+3:]
+
+            found_paths.append(path_to_tool2)
+
+        return {'return':0, 'found_paths':found_paths}

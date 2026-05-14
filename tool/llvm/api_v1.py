@@ -18,6 +18,44 @@ class CTool(InitCTool):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
+    ############################################################
+    def check_features(self,
+                       ctx: dict,
+                       paths: list,
+                       params: dict,
+    ):
+        """
+        """
+
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        _with = params.get('with', {})
+        env = _with.get('env', {})
+        timeout = _with.get('timeout')
+
+        new_paths = []
+
+        for p in paths:
+            features = p.setdefault('features', {})
+            paths = features.setdefault('paths', {})
+
+            path = p['path']
+
+            path_bin = os.path.dirname(path)
+            path_home = os.path.dirname(path_bin)
+
+            paths['bin'] = path_bin
+            paths['qbin'] = self.cm.q(path_bin)
+
+            paths['home'] = path_home
+            paths['qhome'] = self.cm.q(path_home)
+
+            new_paths.append(p)
+
+        return {'return':0, 'paths':new_paths}
+
 
     ############################################################
     def install(self,
@@ -44,9 +82,9 @@ class CTool(InitCTool):
         version_major = params.get('version_major')
 
         if not version:
-            version = '22.1.2'
-            version_simple = '22.1.2'
-            version_major = '22'
+            version = self.cdesc['default_version']
+            version_simple = version
+            version_major = version_simple[:2]
 
         if not version_simple:
             return {

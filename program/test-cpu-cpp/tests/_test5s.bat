@@ -1,0 +1,1 @@
+﻿cx program run test-cpu-cpp --compute=android-cpu --clean --compile.flags="" --compile.lflags="-ldl" --use.setup-compile.static --use.setup-compile.openmp --use.setup-compile.fastest -v -- float32 300 300 300 2 1

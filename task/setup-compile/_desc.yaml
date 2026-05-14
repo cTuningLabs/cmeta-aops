@@ -1,0 +1,17 @@
+storage_key: 'setup-compile'
+cache: False
+
+params_map:
+  arg2: lang
+  arg3: compute
+
+uses_before_init:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: target,94decb2ddd28441f
+    ask: '{{params.ask|$False}}'
+    compute: '{{params.compute|$None}}'
+
+  - task: compiler,f3925b201c704bde
+    lang: '{{params.lang|$None}}'
+    compute: '{{params.compute|$None}}'

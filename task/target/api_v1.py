@@ -75,7 +75,9 @@ class CTask(InitCTask):
                 }
 
                 r = self.cm.access(p)
-                if self.cm.catch_error(r, fail16=True): return r
+                if self.cm.catch_error(r, fail16=True): 
+                    r['return'] = 99
+                    return r
 
                 artifacts = r['artifacts']
                 indexes = r['indexes']
@@ -117,7 +119,9 @@ class CTask(InitCTask):
               'base': True,
               'load_files':['_desc'],
             })
-            if self.cm.catch_error(r, fail16=True): return r
+            if self.cm.catch_error(r, fail16=True): 
+                r['return'] = 99
+                return r
  
             cdesc = r['loaded_files']['_desc'].get('data', {})
 
@@ -145,7 +149,9 @@ class CTask(InitCTask):
              }
 
         r = self.cm.access(ii)
-        if self.cm.catch_error(r, fail16=True): return r
+        if self.cm.catch_error(r, fail16=True): 
+            r['return'] = 99
+            return r
 
         # Prepare result
         result = {
@@ -171,7 +177,9 @@ class CTask(InitCTask):
         }
 
         r = self.cm.access(p)
-        if self.cm.catch_error(r, fail16=True): return r
+        if self.cm.catch_error(r, fail16=True): 
+            r['return'] = 99
+            return r
         
         env = {'CMETA_TARGETS': ','.join(compute)}
 

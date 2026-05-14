@@ -40,6 +40,7 @@ class Category(InitCategory):
             'rem',
             'check_versions',
             'cv',
+            'skip_clean_local',
         ]
 
         # Passed further to customization APIs ...
@@ -92,6 +93,8 @@ class Category(InitCategory):
    
         store_global = params.get('store_global')
         storage_key = params.get('storage_key')
+
+        skip_clean_local = params.get('skip_clean_local')
 
         saved_ctx_control = ctx['control'].copy()
 
@@ -298,7 +301,8 @@ class Category(InitCategory):
 
         # Local is only within a given task and sub functions but deps can't update it
         saved_local = ctx_tasks.get('local')
-        ctx_tasks['local'] = {}
+        if not skip_clean_local:
+            ctx_tasks['local'] = {}
 
         # Useful to aggregate various info for the whole pipeline (such as env for complex run/compilation)
         _aggregated = ctx_tasks.setdefault('aggregated', {})
@@ -465,7 +469,17 @@ class Category(InitCategory):
             print (f'{space}PARAMS for task "{artifact_au}":')
             for k in _params:
                 v = _params[k]
-                print(f'{space}  * {k} = {v}')
+                if type(v) == list:
+                    print(f'{space}  * {k}:')
+                    for kk in v:
+                        print(f'{space}    - {kk}')
+                elif type(v) == dict:
+                    print(f'{space}  * {k}:')
+                    for kk in v:
+                        vv = v[kk]
+                        print(f'{space}    * {kk} = {vv}')
+                else:
+                    print(f'{space}  * {k} = {v}')
 
 
         ###########################################################################################
@@ -872,14 +886,16 @@ class Category(InitCategory):
                                    x_cref.get('category_uid') in ['c36be4b9314a45e0']:
 
                                     _con = con
-                                    ii = {'ctx': ctx,
+                                    ii = {
                                           'category': self_category,      # task
                                           'command': 'run',
                                           'arg1': x_cref['artifact_uid'], # setup
                                           'name': x_name,
                                           'cache': False,
+                                          'skip_detect': False, # Needed for libs and tools that force skip detect
                                           'skip_install': True,
                                           'skip_build': True,
+                                          'version_check': True,
                                           'tool_path': ca_tool_path,
                                           'timeout': 200,
                                           'quiet': quiet,
@@ -894,6 +910,8 @@ class Category(InitCategory):
                                     x_use = cache_artifact['cmeta'].get('params',{}).get('use',{})
                                     if x_use:
                                         ii['use'] = x_use
+
+                                    ii['ctx'] = ctx
 
                                     r = self.cm.access(ii)
                                     # FGG: Note that if something goes wrong with detection of the version,

@@ -57,7 +57,7 @@ run:
       storage_key: prepare-android-program
       if: '"android-cpu" in "{{global.target.compute}}"'
       chdir: '{{local.target_path}}'
-      cmd: '{{local.adb_with_serial}} shell rm -rf /data/local/tmp/tmp-cmeta-program-stats.json'
+      cmd: '{{local.adb_with_serial}} shell "rm -rf /data/local/tmp/tmp-cmeta-program-stats.json"'
 
     - task: cmd,c9ba0a88df394d7f
       storage_key: prepare-android-program

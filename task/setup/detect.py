@@ -84,96 +84,105 @@ def detect_existing_tool(self,
             parsed_paths_with_versions = r['parsed_paths_with_versions']
 
     else:
-        if desc.get('force_tool_path') and not (path or paths):
-            path = desc['force_tool_path']
-
-            r = self.cm.utils.common.expand_string(path, ctx_tasks)
+        if hasattr(tool_api_code, 'find_paths') and callable(getattr(tool_api_code, 'find_paths')):
+            r = tool_api_code.find_paths(ctx, params)
             if self.cm.catch_error(r): return r
-            path = r['string']
 
-        force_path = True if path or paths else False
+            force_path = True
 
-        if path:
-            if path == '{{sys.executable}}':
-                import sys
-                path = sys.executable
-            elif os.path.isdir(path):
-                paths = [path]
-                path = None
-            elif not os.path.isfile(path):
-                return {'return':1, 'error':f'tool "{path}" not found'}
+        else:
+            if desc.get('force_tool_path') and not (path or paths):
+                path = desc['force_tool_path']
 
-        elif not paths:
-            paths = []
+                r = self.cm.utils.common.expand_string(path, ctx_tasks)
+                if self.cm.catch_error(r): return r
+                path = r['string']
 
-            if 'only_paths' in desc:
-                all_only_paths = desc['only_paths']
+            force_path = True if path or paths else False
 
-                if 'all' in all_only_paths:
-                    paths = all_only_paths['all']
-                elif uname in all_only_paths:
-                    paths = all_only_paths[uname]
-                elif 'linux' in all_only_paths:
-                    paths = all_only_paths['linux']
+            if path:
+                if path == '{{sys.executable}}':
+                    import sys
+                    path = sys.executable
+                elif os.path.isdir(path):
+                    paths = [path]
+                    path = None
+                elif not os.path.isfile(path):
+                    return {'return':1, 'error':f'tool "{path}" not found'}
 
-            else:
+            elif not paths:
+                paths = []
 
-                x = envs.get('PATH', '').strip()
-                if x != '':
-                    paths = x.split(os.pathsep)
+                if 'only_paths' in desc:
+                    all_only_paths = desc['only_paths']
+
+                    if 'all' in all_only_paths:
+                        paths = all_only_paths['all']
+                    elif uname in all_only_paths:
+                        paths = all_only_paths[uname]
+                    elif 'linux' in all_only_paths:
+                        paths = all_only_paths['linux']
+
                 else:
-                    x = envs.get('+PATH', [])
-                    if type(x) == list and len(x)>0:
-                        paths = x.copy()
+
+                    x = envs.get('PATH', '').strip()
+                    if x != '':
+                        paths = x.split(os.pathsep)
                     else:
-                        x = str(x).strip()
-                        if x != '':
-                            paths = x.split(os.pathsep)
+                        x = envs.get('+PATH', [])
+                        if type(x) == list and len(x)>0:
+                            paths = x.copy()
+                        else:
+                            x = str(x).strip()
+                            if x != '':
+                                paths = x.split(os.pathsep)
 
-                x = os_env.get('PATH', '').strip()
-                if x != '':
-                    paths += x.split(os.pathsep)
+                    x = os_env.get('PATH', '').strip()
+                    if x != '':
+                        paths += x.split(os.pathsep)
 
-                x = os.environ.get('CMETA_TOOL_EXTRA_PATHS', '').strip()
-                if x != '':
-                    paths += x.split(os.pathsep)
+                    x = os.environ.get('CMETA_TOOL_EXTRA_PATHS', '').strip()
+                    if x != '':
+                        paths += x.split(os.pathsep)
 
-                if 'extra_paths' in desc:
-                    all_extra_paths = desc['extra_paths']
+                    if 'extra_paths' in desc:
+                        all_extra_paths = desc['extra_paths']
 
-                    if uname in all_extra_paths:
-                        key = uname
-                    elif 'linux' in all_extra_paths:
-                        key = 'linux'
-                    else:
-                        key = 'all'
+                        if uname in all_extra_paths:
+                            key = uname
+                        elif 'linux' in all_extra_paths:
+                            key = 'linux'
+                        else:
+                            key = 'all'
 
-                    extra_paths = all_extra_paths.get(key)
+                        extra_paths = all_extra_paths.get(key)
 
-                    if extra_paths:
-                        for p in extra_paths:
-                            p = p.replace('{{user_home}}', os.path.expanduser("~"))
-                            paths.append(p)
+                        if extra_paths:
+                            for p in extra_paths:
+                                p = p.replace('{{user_home}}', os.path.expanduser("~"))
+                                paths.append(p)
 
-            r = self.cm.utils.common.expand_strings_in_dict(paths, ctx_tasks)
+                r = self.cm.utils.common.expand_strings_in_dict(paths, ctx_tasks)
+                if self.cm.catch_error(r): return r
+
+            ############################################################################
+            # Call base find function to find tools
+            p = {'category':self.cmeta['uses_categories']['tool'],
+                 'command':'find_path',
+                 'desc':desc,
+                 'con':con,
+                 'verbose':verbose,
+                 'quiet':quiet,
+                 'space':space,
+                 'path':path,
+                 'paths':paths,
+                 'context':ctx_tasks,
+            }
+
+            r = self.cm.access(p)
             if self.cm.catch_error(r): return r
 
-        ############################################################################
-        # Call base find function to find tools
-        p = {'category':self.cmeta['uses_categories']['tool'],
-             'command':'find_path',
-             'desc':desc,
-             'con':con,
-             'verbose':verbose,
-             'quiet':quiet,
-             'space':space,
-             'path':path,
-             'paths':paths,
-             'context':ctx_tasks,
-        }
-
-        r = self.cm.access(p)
-        if self.cm.catch_error(r): return r
+        # Continue with found paths
 
         found_paths = r['found_paths']
 
@@ -297,7 +306,7 @@ def detect_existing_tool(self,
                     if returncode == 0:
                         found_paths_with_versions[xpath] = {'output': output, 'cmd_call': cmd_call, 'cmd': cmd}
                     else:
-                        warning += f'\nProblem extracting version from {path}:\n{output}\n'
+                        warning += f'\nProblem extracting version from {path} with returncode={returncode}:\n{output}\n'
 
                     if cmd_call_script and 'env_added' in rx:
                         found_paths_with_versions[xpath]['env_added'] = rx['env_added']

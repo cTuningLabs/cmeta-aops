@@ -82,6 +82,10 @@ class CTool(InitCTool):
         result['path_home'] = path_home
         result['qpath_home'] = qpath_home
 
+        path_root = os.path.dirname(path_home)
+        result['path_root'] = path_root
+        result['qpath_root'] = self.cm.q(path_root)
+
         r = init_arch(ctx, result, params)
         if self.cm.catch_error(r): return r
 

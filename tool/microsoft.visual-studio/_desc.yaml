@@ -24,3 +24,5 @@ extra_paths:
   windows:
     - "C:\\Program Files\\Microsoft Visual Studio\\**"
     - "D:\\Program Files\\Microsoft Visual Studio\\**"
+
+win_only: True

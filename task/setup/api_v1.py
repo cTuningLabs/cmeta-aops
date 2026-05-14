@@ -8,6 +8,7 @@ without explicit permission from the copyright holder.
 """
 
 import os
+import copy 
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
@@ -50,6 +51,7 @@ class CTask(InitCTask):
                 'skip_cache_version_check',
                 'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 
                 'version', 'env', 'timeout', 'with', 'arg3', 
+                'version_check',
                 'ignore_install_errors', 'ignore_build_errors',
                 'custom_install', 'custom_build',
                 'add_tool_path_to_env', 'force_add_tool_path_to_env',
@@ -392,11 +394,17 @@ class CTask(InitCTask):
 
         desc_cache_features_const = desc.get('cache_features_const')
         if desc_cache_features_const:
-            cache_features = self.cm.utils.common.deep_merge(cache_features, desc_cache_features_const, append_lists=True)
+            desc_cache_features_const_copy = copy.deepcopy(desc_cache_features_const)
+            r = self.cm.utils.common.expand_strings_in_dict(desc_cache_features_const_copy, ctx['tasks'])
+            if self.cm.catch_error(r): return r
+            cache_features = self.cm.utils.common.deep_merge(cache_features, desc_cache_features_const_copy, append_lists=True)
 
         desc_cache_meta_const = desc.get('cache_meta_const')
         if desc_cache_meta_const:
-            cache_meta = self.cm.utils.common.deep_merge(cache_meta, desc_cache_meta_const, append_lists=True)
+            desc_cache_meta_const_copy = copy.deepcopy(desc_cache_meta_const)
+            r = self.cm.utils.common.expand_strings_in_dict(desc_cache_meta_const_copy, ctx['tasks'])
+            if self.cm.catch_error(r): return r
+            cache_meta = self.cm.utils.common.deep_merge(cache_meta, desc_cache_meta_const_copy, append_lists=True)
 
         if desc.get('cache_params_with', False):
             if 'with' in params:
@@ -466,10 +474,10 @@ class CTask(InitCTask):
             kwargs_copy['paths'] = [os.path.join(ctx['origin']['pwd'], '**', '.*', '**')]
 
         detect = kwargs_copy.pop('detect', None)
-        skip_detect = kwargs_copy.pop('skip_detect', False)
-        skip_install = kwargs_copy.pop('skip_install', False)
+        skip_detect = kwargs_copy.pop('skip_detect', None)
+        skip_install = kwargs_copy.pop('skip_install', None)
         skip_install_uses = kwargs_copy.get('skip_install_uses', False)
-        skip_build = kwargs_copy.pop('skip_build', False)
+        skip_build = kwargs_copy.pop('skip_build', None)
         skip_build_uses = kwargs_copy.get('skip_build_uses', False)
         skip_cache_version_check = kwargs_copy.get('skip_cache_version_check')
 
@@ -534,6 +542,9 @@ class CTask(InitCTask):
 
         if skip_cache_version_check is None:
             skip_cache_version_check = desc.get('skip_cache_version_check', False)
+
+        if skip_detect is None and 'skip_detect' in desc:
+            skip_detect = desc['skip_detect']
 
         # Checking various conditions
         if detect is None and install is None and build is None:
@@ -726,7 +737,7 @@ class CTask(InitCTask):
                 extra['warning'] = warning
 
             # Normally, should not be 16 here and not 16 since setup task failed at this stage
-            return self.cm.error(f'failed to find tool "{artifact_print_name}"{x} in "{__file__}"', 32, extra = extra)
+            return self.cm.error(f'failed to setup tool "{artifact_print_name}"{x} in "{__file__}"', 32, extra = extra)
 
         ##############################################################################
         # Add cache path if in cache
@@ -816,8 +827,6 @@ class CTask(InitCTask):
                     _aggregate_env_path.insert(0, path_bin)
 
                 _result['result'] = result
-
-
 
         return _result
 

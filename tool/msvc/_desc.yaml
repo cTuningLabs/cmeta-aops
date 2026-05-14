@@ -36,5 +36,12 @@ features:
       link_sep: '/link'
       lib_path: '/LIBPATH:'
       lib_prefix: ''
+      lib_prefix2: 'lib'
+      lib_postfix: '.lib'
+      openmp: '/openmp'
+      fast: '/O2 /Ob2 /Oi /Ot /GL'
+      fastest: '/O2 /Ob2 /Oi /Ot /GL'
+      profile: '/Zi'
+      link_profile: '/PROFILE'
     vars:
       file_ext_exe: .exe

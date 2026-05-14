@@ -1,0 +1,30 @@
+cache_params_with: False # Otherwise add various flags that mix up cache detection
+
+cache_meta_const:
+  params:
+    target_abi: '{{local.target_abi}}'
+
+names:
+  - libomp.a
+
+match_version: 
+  - regex: '^.*$'
+    group: 0
+
+only_paths:
+  windows:
+    - "{{global.android-ndk-clang.path_root}}\\**"
+  linux:
+    - "{{global.android-ndk-clang.path_root}}/**"
+
+cache_params_use: 
+  all:
+    android-ndk-clang:
+      version: "{{global.android-ndk-clang.version}}"
+      path: "{{global.android-ndk-clang.path}}"
+
+uses:
+  - task: target,94decb2ddd28441f
+
+  - task: setup,a2f9b61079ce4333
+    name: google.android-ndk.clang,0f9584af13b0402c
