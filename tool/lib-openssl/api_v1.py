@@ -145,7 +145,7 @@ class CTool(InitCTool):
                     'z',
                     'm',
                     'zstd',
-                    'jitterentropy',
+#                    'jitterentropy',
                  ]
 
              paths = {

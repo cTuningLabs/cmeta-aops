@@ -82,6 +82,8 @@ class CTool(InitCTool):
 #        compute_cap_int_max = ctx['tasks']['global']['cuda']['features']['compute_cap_int_max']
 
         for p in paths:
+            detected_version = p['detected_version']
+
             # Parsing standard output
             features = p.setdefault('features', {})
 
@@ -228,6 +230,13 @@ class CTool(InitCTool):
                 features_versions = features.setdefault('versions', {})
                 features_versions.update(r['data'])
 
+            # Check major version and some flags
+            detected_version_major = None
+            j = detected_version.find('.')
+            if j>0:
+                detected_version_major = int(detected_version[:j])
+                features['version_major'] = detected_version_major
+
             new_paths.append(p)
 
         return {'return':0, 'paths':new_paths}
@@ -291,6 +300,13 @@ class CTool(InitCTool):
 
             target_arch['compute_cap'] = cuda_compute_arch
             target_arch['flags'] = target_arch_flags + f'-gencode arch=compute_{cuda_compute_arch},code=sm_{cuda_compute_arch}'
+
+        # Update dynamic_build depending on the major version
+        version_major = nvcc_features.get('version_major')
+        dynamic_build_flag = nvcc_features['flags']['dynamic_build']
+
+        x = 'shared' if version_major is None or version_major<13 else 'hybrid'
+        nvcc_features['flags']['dynamic_build'] = dynamic_build_flag.replace('{cudart_shared}', x)
 
         if update_result:
             _result['result'] = result

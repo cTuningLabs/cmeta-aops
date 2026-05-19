@@ -36,7 +36,7 @@ features:
   windows:
     flags:
       include_path: '-I'
-      dynamic_build: '-cudart=hybrid -Xcompiler /MD'
+      dynamic_build: '-cudart={cudart_shared} -Xcompiler /MD'
       static_build: '-cudart=static -Xcompiler /MT'
       dynamic_build_debug: '-g -cudart=hybrid -Xcompiler /MDd'
       static_build_debug: '-g -cudart=static -Xcompiler /MTd'
@@ -56,7 +56,7 @@ features:
   linux:
     flags:
       include_path: '-I'
-      dynamic_build: '-cudart=hybrid'
+      dynamic_build: '-cudart={cudart_shared}'
       static_build: '-cudart=static'
       dynamic_build_debug: '-cudart=hybrid -g'
       static_build_debug: '-cudart=static -g'
@@ -65,10 +65,10 @@ features:
       lib_prefix: '-l'
       lib_prefix2: ''
       lib_postfix: ''
-      openmp: '-fopenmp'
+      openmp: '-Xcompiler -fopenmp'
       link_openmp: 
       fast: '-O3'
-      fastest: '-O3 -ffast-math -march=native'
+      fastest: '-O3'
       profile: ''
       profile_cuda: '-lineinfo'
     vars:
