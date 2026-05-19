@@ -19,3 +19,4 @@ extra_paths:
     - "D:\\Program Files\\NVIDIA Corporation\\Nsight Systems*\\**\\"
   linux:
     - "/usr/**/cuda/bin/"
+    - "/opt/nvidia/**"

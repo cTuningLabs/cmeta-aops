@@ -70,3 +70,25 @@ extra_paths:
     - "/opt/homebrew/opt/swift*/**"
   windows:
     - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
+    - "{{global.host.os_env.LOCALAPPDATA}}\\Programs\\**"
+
+features:
+  windows:
+    flags:
+      force_build: 'build'
+      exe_file: '-o '
+    vars:
+      file_ext_exe: .exe
+  linux:
+    flags:
+      force_build: 'build'
+      exe_file: '-o '
+    vars:
+      file_ext_exe: 
+  darwin:
+    flags:
+      force_build: 'build'
+      exe_file: '-o '
+    vars:
+      file_ext_exe: 
+

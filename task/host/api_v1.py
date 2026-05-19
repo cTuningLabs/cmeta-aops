@@ -321,6 +321,7 @@ def detect_linux_env():
             "apt-get": shutil.which("apt-get") is not None,
             "dnf": shutil.which("dnf") is not None,
             "microdnf": shutil.which("microdnf") is not None,
+            "tdnf": shutil.which("tdnf") is not None,
             "yum": shutil.which("yum") is not None,
             "apk": shutil.which("apk") is not None,
             "pacman": shutil.which("pacman") is not None,
@@ -347,6 +348,9 @@ def detect_linux_env():
 
         if distro_id == "amzn":
             return first_present(["dnf", "yum", "microdnf"])
+
+        if distro_id == "azurelinux":
+            return first_present(["tdnf", "dnf"])
 
         if distro_id == "fedora":
             return first_present(["dnf", "microdnf", "yum"])
@@ -392,6 +396,7 @@ def detect_linux_env():
             "apt": "apt install -y {{name}}",
             "apt-get": "apt-get install -y {{name}}",
             "dnf": "dnf install -y {{name}}",
+            "tdnf": "tdnf install -y {{name}}",
             "microdnf": "microdnf install -y {{name}}",
             "yum": "yum install -y {{name}}",
             "apk": "apk add {{name}}",
@@ -409,6 +414,7 @@ def detect_linux_env():
             "apt": "apt install -y {{name}}={{version}}",
             "apt-get": "apt-get install -y {{name}}={{version}}",
             "dnf": "dnf install -y {{name}}-{{version}}",
+            "tdnf": "tdnf install -y {{name}}-{{version}}",
             "microdnf": "microdnf install -y {{name}}-{{version}}",
             "yum": "yum install -y {{name}}-{{version}}",
             "apk": "apk add {{name}}={{version}}",
@@ -449,6 +455,12 @@ def detect_linux_env():
         os_info = parse_os_release()
         distro_id = os_info.get("ID")
         id_like = os_info.get("ID_LIKE")
+
+    if distro_id == 'azurelinux' and id_like is None:
+        id_like = 'azurelinux'
+
+    if distro_id == 'debian' and id_like is None:
+        id_like = 'debian'
 
     package_manager = choose_best_package_manager(distro_id, id_like)
     cmd = install_command_for(package_manager)

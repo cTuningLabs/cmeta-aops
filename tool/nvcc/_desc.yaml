@@ -30,3 +30,46 @@ extra_paths:
     - "D:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\**"
   linux:
     - "/usr/local/**"
+    - "/opt/nvidia/**"
+
+features:
+  windows:
+    flags:
+      include_path: '-I'
+      dynamic_build: '-cudart=hybrid -Xcompiler /MD'
+      static_build: '-cudart=static -Xcompiler /MT'
+      dynamic_build_debug: '-g -cudart=hybrid -Xcompiler /MDd'
+      static_build_debug: '-g -cudart=static -Xcompiler /MTd'
+      exe_file: '-o '
+      lib_path: '-L'
+      lib_prefix: '-l'
+      lib_prefix2: 'lib'
+      lib_postfix: ''
+      openmp: '-Xcompiler /openmp'
+      link_openmp: 
+      fast: '-O3'
+      fastest: '-O3'
+      profile: ''
+      profile_cuda: '-lineinfo'
+    vars:
+      file_ext_exe: .exe
+  linux:
+    flags:
+      include_path: '-I'
+      dynamic_build: '-cudart=hybrid'
+      static_build: '-cudart=static'
+      dynamic_build_debug: '-cudart=hybrid -g'
+      static_build_debug: '-cudart=static -g'
+      exe_file: '-o '
+      lib_path: '-L'
+      lib_prefix: '-l'
+      lib_prefix2: ''
+      lib_postfix: ''
+      openmp: '-fopenmp'
+      link_openmp: 
+      fast: '-O3'
+      fastest: '-O3 -ffast-math -march=native'
+      profile: ''
+      profile_cuda: '-lineinfo'
+    vars:
+      file_ext_exe: 

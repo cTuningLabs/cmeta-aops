@@ -34,6 +34,7 @@ class CTool(InitCTool):
         if j>0:
             path_to_tool2 = path_to_tool[:j] + 'clang++' + path_to_tool[j+5:]
 
-            found_paths.append(path_to_tool2)
+            if os.path.isfile(path_to_tool2):
+                found_paths.append(path_to_tool2)
 
         return {'return':0, 'found_paths':found_paths}

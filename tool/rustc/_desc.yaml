@@ -33,3 +33,23 @@ extra_paths:
     - "{{global.rustup.path_home}}\\**"
   linux:
     - "{{global.rustup.path_home}}/**"
+
+features:
+  windows:
+    flags:
+      fast: '-C opt-level=1'
+      fastest: '-C opt-level=3'
+    vars:
+      file_ext_exe: .exe
+  linux:
+    flags:
+      fast: '-C opt-level=1'
+      fastest: '-C opt-level=3'
+    vars:
+      file_ext_exe: 
+  darwin:
+    flags:
+      fast: '-C opt-level=1'
+      fastest: '-C opt-level=3'
+    vars:
+      file_ext_exe: 

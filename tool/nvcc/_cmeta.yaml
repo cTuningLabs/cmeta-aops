@@ -1,5 +1,16 @@
 artifact: 7f0e9193fef74919
 authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
+constraints:
+  supports_compute:
+  - cpu
+  - cuda
+  supports_os:
+  - windows
+  - linux
 copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+last_update_timestamp: '2026-05-16T15:21:50.948530+00:00'
+tags:
+- lang-cuda
+- cuda

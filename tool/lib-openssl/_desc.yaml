@@ -19,6 +19,10 @@ extra_paths:
     - "/opt/homebrew/opt/*ssl*/**"
 
 package_name: 'libssl-dev'
+package_name_os_id: 
+  azurelinux: 'openssl-devel'
+  amzn: 'openssl-devel'
+  rocky: 'openssl-devel'
 
 install_cmd:
   linux: '{{global.host.os_extra.install_cmd_sudo}}'

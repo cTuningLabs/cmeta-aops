@@ -72,11 +72,26 @@ class CTool(InitCTool):
              path_bin = os.path.join(path_home, 'bin')
 
              path_lib = os.path.join(path_home, 'lib')
+
              if uname == 'windows':
                  path_lib = os.path.join(path_lib, 'VC', uarch)
              else:
-                 matches = list(Path(path_lib).rglob("libssl.a"))
-                 if not matches or len(matches)>1:
+                 found_lib = False
+
+                 for x in ['lib64', 'lib']:
+                     path_lib = os.path.join(path_home, x)
+                     if os.path.isdir(path_lib):
+                         matches = list(Path(path_lib).rglob("libssl.a"))
+                         if matches:
+                             found_lib = True
+                             break
+
+                         matches = list(Path(path_lib).rglob("libssl.so"))
+                         if matches:
+                             found_lib = True
+                             break
+
+                 if not found_lib:
                      continue
 
                  path_lib = os.path.dirname(matches[0])
@@ -118,10 +133,19 @@ class CTool(InitCTool):
                  lib_names_static = [
                     'ssl_static', 
                     'crypto_static',
-                    '$ws2_32.lib',
-                    '$crypt32.lib',
-                    '$advapi32.lib',
-                    '$user32.lib',
+                    '$ws2_32',
+                    '$crypt32',
+                    '$advapi32',
+                    '$user32',
+                 ]
+             elif uname == 'linux':
+                 lib_names_static = [
+                    'ssl', 
+                    'crypto',
+                    'z',
+                    'm',
+                    'zstd',
+                    'jitterentropy',
                  ]
 
              paths = {
@@ -175,7 +199,7 @@ class CTool(InitCTool):
 
         if not params.get('version_check', False):
             _with = params.get('with', {})
-
+            
             if not _with.get('static', False):
 
                 uname = ctx['tasks']['global']['host']['os']['uname']

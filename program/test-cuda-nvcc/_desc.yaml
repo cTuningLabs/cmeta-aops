@@ -1,26 +1,68 @@
-﻿
+﻿inherits:
+  - template-cpu-c,649899ef3f004e4a
 
-compile:
-  uses:
-    - task: target-sdk,bb795b1444564935
+local_vars:
+  src_file_names: 
+    - 'program.cu'
+    - 'matmul.cu'
 
-    - task: compiler,f3925b201c704bde
-      lang: cuda
-      compute: '{{global.target.compute|$None}}'
+  output_files:
+    - tmp-cmeta-program-stats.json
 
-    - task: cmd,c9ba0a88df394d7f
-      storage_key: compile-program
-      chdir: '{{local.target_path}}'
-      cmd: >-
-        {{global.compiler.qpath}} 
-        {{params.compile.flags|}}
-        {{global.compiler.features.flags.catch_errors|}}
-        {{local.selected-program.path}}{{os_sep}}src{{os_sep}}program.c
-        {{global.compiler.features.flags.exe_file}}{{local.target_path}}{{os_sep}}test{{global.compiler.features.vars.file_ext_exe}}
-         
-run: 
-  uses:
-    - task: cmd,c9ba0a88df394d7f
-      storage_key: run-program
-      chdir: '{{local.target_path}}'
-      cmd: '{{global.host.vars.start_exe_prefix}}test{{global.compiler.features.vars.file_ext_exe}} {{params.run.flags|}} {{local.unparsed|}}'
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+
+params:
+  compute: cuda
+  compile:
+    openmp: True
+
+use:
+  nvcc:
+    with:
+      arch_flags: True
+      add_env: True # Just for a test ...
+
+updates:
+  compile:
+    uses_pre:
+      - match:
+          task: compiler,f3925b201c704bde
+        update:
+          lang: cuda
+
+    uses_prep:
+      - match:
+          task: setup-compile,10f1dfd3f6f04c35
+        update:
+          lang: cuda
+
+    uses_libs:
+      - append:
+         ######################################################################################
+         # Prepare Libs for Host CPU
+         - task: setup,a2f9b61079ce4333
+#           if: '"cuda" in {{global.target.compute|$[]}}'
+           name: lib-openssl,903191f1fab74064
+
+#         # Only for Clang on Linux and MacOS
+#         - task: setup,a2f9b61079ce4333
+#           if_os: linux
+#           if: '{{global.target.compute|$[]}} == ["cuda"] and "{{global.llvm.path|None}}" != "None" '
+#           name: lib-openmp,7958b973fc0d42a9
+
+
+  run:
+    uses_prep:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         update:
+           cmd_main: >-
+             {{params.precision|float32}} 
+             {{params.dim_m|10000}} 
+             {{params.dim_n|10000}} 
+             {{params.dim_k|10000}}
+             {{params.repeat|3}}
+             {{params.clean|1}}
+             {{params.seed|12345}}
+

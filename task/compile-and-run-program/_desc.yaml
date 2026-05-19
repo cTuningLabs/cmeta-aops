@@ -12,4 +12,4 @@ uses_before_init:
     program_tags: '{{params.program_tags|$None}}'
     program_api_ver: '{{params.program_api_ver|$None}}'
     ask: '{{params.ask|$False}}'
-    compute: '{{params.compute|$None}}'
+    compute: '{{params.compute|$[]}}'

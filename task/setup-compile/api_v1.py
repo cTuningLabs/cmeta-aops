@@ -47,15 +47,20 @@ class CTask(InitCTask):
         ctx_tasks = ctx['tasks']
         _global = ctx_tasks['global']
 
-        _with = params.get('with', {})
+        _with = params.get('with')
+        if _with is None:
+            _with = {}
 
         _fast = _with.get('fast', False)
         _fastest = _with.get('fastest', False)
         _static = _with.get('static', False)
         _debug = _with.get('add_debug', False)
         _openmp = _with.get('openmp', False)
-        _profile = _with.get('profile', False)
         _env = _with.get('env', {})
+
+        _profile = params.get('profile', False)
+        _profile_cuda = params.get('profile_cuda', False)
+        _profile_cuda_kernels = params.get('profile_cuda_kernels', False)
 
         clean_files = params.get('clean_files')
         if clean_files is None:
@@ -78,7 +83,7 @@ class CTask(InitCTask):
 
         global_compiler_key = 'compiler-'+lang
 
-        flags = ctx['tasks']['global'][global_compiler_key].get('features', {}).get('flags','')
+        flags = ctx['tasks']['global'][global_compiler_key].get('features', {}).get('flags',{})
 
         # Check profile
         if _profile:
@@ -96,6 +101,9 @@ class CTask(InitCTask):
         if _profile and 'profile' in flags:
             compiler_flags.append(flags['profile'])
 
+        if (_profile_cuda or _profile_cuda_kernels) and 'profile_cuda' in flags:
+            compiler_flags.append(flags['profile_cuda'])
+
         # Check fast/fastest
         if _fast and 'fast' in flags:
            compiler_flags.append(flags['fast'])
@@ -105,11 +113,15 @@ class CTask(InitCTask):
         # Check openmp
         if _openmp:
             openmp_flag = flags.get('openmp')
-            if not openmp_flag:
+            link_openmp_flag = flags.get('link_openmp')
+            if not openmp_flag and not link_openmp_flag:
                 return self.cm.error(f'openmp requested but flag is not defined in compiler meta in "{__file__}" ({__name__})')
         
-            if openmp_flag not in compiler_flags:
+            if openmp_flag and openmp_flag not in compiler_flags:
                 compiler_flags.append(openmp_flag)
+
+            if link_openmp_flag and link_openmp_flag not in compiler_link_flags:
+                compiler_link_flags.append(link_openmp_flag)
 
         found_dynamic_libs = []
         found_dynamic_lib_paths = []
@@ -169,7 +181,8 @@ class CTask(InitCTask):
 
         # Process includes paths
         for include_path in include_paths:
-            compiler_flags.append(flags['include_path'] + self.cm.q(include_path))
+            if 'include_path' in flags:
+                compiler_flags.append(flags['include_path'] + self.cm.q(include_path))
 
         # Process libs 
         if flags.get('link_sep') and flags['link_sep'] not in compiler_link_flags:
@@ -184,7 +197,10 @@ class CTask(InitCTask):
         # Process libs names
         if lib_names:
             for lib in lib_names:
-                _lib = flags.get('lib_prefix2','') + lib + flags.get('lib_postfix','') if not lib.startswith('$') else lib[1:]
+                if lib.startswith('$'):
+                    _lib = lib[1:] + flags.get('lib_postfix','')
+                else:
+                    _lib = flags.get('lib_prefix2','') + lib + flags.get('lib_postfix','')
                 compiler_link_flags.append(flags['lib_prefix'] + self.cm.q(_lib))
 
         if _profile:
@@ -226,7 +242,7 @@ class CTask(InitCTask):
         target_file_name = params.get('target_file_name')
         target_exe = params.get('target_exe')
 
-        target_ext = _global[global_compiler_key]['features']['vars']['file_ext_exe']
+        target_ext = _global[global_compiler_key].get('features', {}).get('vars', {}).get('file_ext_exe')
         target_ext2 = '' if target_ext is None else target_ext
 
         if target_file_name and not target_exe:
@@ -245,6 +261,12 @@ class CTask(InitCTask):
 
         add_to_local['target_path_exe'] = target_path_exe
         result['target_path_exe'] = target_path_exe
+
+        exe_file_flag = flags.get('exe_file')
+        if exe_file_flag and target_path_exe:
+            k = 'pre_target_exe_flag' if _with.get('pre_target_exe_flag', False) else 'target_exe_flag'
+
+            result[k] = exe_file_flag + self.cm.q(target_path_exe)
 
         result['compile_env'] = _env
 

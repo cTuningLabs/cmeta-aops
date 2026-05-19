@@ -33,7 +33,7 @@ class CTool(InitCTool):
         j = path_to_gcc.rfind('gcc')
         if j>0:
             path_to_gcc_cpp = path_to_gcc[:j] + 'g++' + path_to_gcc[j+3:]
-
-            found_paths.append(path_to_gcc_cpp)
+            if os.path.isfile(path_to_gcc_cpp):
+                found_paths.append(path_to_gcc_cpp)
 
         return {'return':0, 'found_paths':found_paths}

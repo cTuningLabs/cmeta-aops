@@ -8,6 +8,7 @@ without explicit permission from the copyright holder.
 """
 
 import os
+import copy
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
@@ -46,8 +47,6 @@ class CTask(InitCTask):
 
         _global = ctx_tasks['global']
 
-        selected_compute = _global['target']['compute']
-
         p = {'category': self.cmeta['uses_categories']['utils'],
              'command': 'select_artifact',
              'select_category': self.cmeta['uses_categories']['program'],
@@ -57,7 +56,7 @@ class CTask(InitCTask):
              'select_match':{'constraints':{}},
              'con': con,
              'quiet': quiet,
-             'load_files': ['_desc'], #'_desc_compile', '_desc_run'],
+             'load_files': ['_desc'],
              'space': space,
              'load_api': True,
              'load_api_ver': program_api_ver,
@@ -65,10 +64,18 @@ class CTask(InitCTask):
              'print_extra_line': True,
         }
 
+        # Check constraints
         constraints = {}
+
+        if compute:
+            selected_compute = compute
+        else:
+            selected_compute = _global.get('target', {}).get('compute')
 
         if selected_compute:
             # AND match, i.e. cpu + cuda should match both (for hybrid compute)
+            if type(selected_compute) == str:
+                selected_compute = selected_compute.split(',')
             constraints['supported_compute'] = selected_compute
 
         if constraints:
@@ -82,6 +89,7 @@ class CTask(InitCTask):
             return r
 
         artifact = r['artifact']
+        artifact_path = artifact['path']
         artifact_au = r['artifact_au']
         loaded_files = r['loaded_files']
         program_api_code = r['api_code']
@@ -89,6 +97,79 @@ class CTask(InitCTask):
         if con and verbose:
             print ('')
             print (f'{space}INFO: Selected program "{artifact_au}"')
+
+        # Check inheritance in loaded_files (descriptions)
+        for key in loaded_files:
+            meta = loaded_files[key]
+            data = meta.get('data')
+            if data:
+                inherits = data.get('inherits')
+                if inherits:
+                    _data = {}
+
+                    for a in inherits:
+                        if a:
+                            pp = {
+                               'category': self.cmeta['uses_categories']['program'],
+                               'command': 'load',
+                               'arg1': a,
+                               'load_files': [key],
+                            }
+                            r = self.cm.access(pp)
+                            if self.cm.catch_error(r, fail16=True): 
+                                if r['return'] == 16 and constraints:
+                                    r['error'] += f' when inheriting from {artifact_path} description file'
+                                    r['return'] = 1 # Fail above
+                                return r
+
+                            _loaded_data = r['loaded_files'][key].get('data',{})
+
+                            self.cm.utils.common.deep_merge(_data, _loaded_data, append_lists=False)
+
+                    self.cm.utils.common.deep_merge(_data, data, append_lists=False)
+
+                    updates = _data.get('updates')
+                    if updates:
+                        for key2 in updates:
+                            _update = _data.setdefault(key2, {})
+                            for key3 in updates[key2]:
+
+                                if key3.startswith('uses'):
+                                    _uses = _update.setdefault(key3, [])
+                                    for _use in updates[key2][key3]:
+                                        match = _use.get('match')
+                                        update = _use.get('update')
+                                        append = _use.get('append')
+                                        prepend = _use.get('prepend')
+                                        substitute = _use.get('substitute')
+
+                                        if match and update:
+                                            for x in _uses:
+                                                matched = True
+                                                for y in match:
+                                                    if y not in x:
+                                                        matched = False
+                                                        break
+
+                                                    v = match[y]
+                                                    if v != x[y]:
+                                                        matched = False
+                                                        break
+
+                                                if matched:
+                                                    self.cm.utils.common.deep_merge(x, update, append_lists=False)
+                                        elif append:
+                                            _uses += append 
+                                        elif prepend:
+                                            _update[key3] = _uses + prepend
+                                        elif substitute:
+                                            _update[key3] = substitute
+
+                                else:
+                                    _update[key3] = updates[key2][key3]
+
+                    loaded_files[key]['data'] = _data        
+
 
         selected_program = {
             'path': artifact['path'],

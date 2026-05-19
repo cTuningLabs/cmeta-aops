@@ -8,6 +8,7 @@ params_map:
 uses:
   - task: runner,1e48cc0c5f6041a5
 
-  - task: target,94decb2ddd28441f
-    ask: '{{params.ask|$False}}'
-    compute: '{{params.compute|$None}}'
+#  FGG: removed since we may want to select program that may specify compute
+#  - task: target,94decb2ddd28441f
+#    ask: '{{params.ask|$False}}'
+#    compute: '{{params.compute|$None}}'

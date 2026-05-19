@@ -78,8 +78,8 @@ class CTool(InitCTool):
 
         new_paths = []
 
-        compute_cap_int_min = ctx['tasks']['global']['cuda']['features']['compute_cap_int_min']
-        compute_cap_int_max = ctx['tasks']['global']['cuda']['features']['compute_cap_int_max']
+#        compute_cap_int_min = ctx['tasks']['global']['cuda']['features']['compute_cap_int_min']
+#        compute_cap_int_max = ctx['tasks']['global']['cuda']['features']['compute_cap_int_max']
 
         for p in paths:
             # Parsing standard output
@@ -139,11 +139,12 @@ class CTool(InitCTool):
                 features['supported_code_min'] = min(fcode)
                 features['supported_code_max'] = max(fcode)
 
-                # Prepare common gencode flags based on my device capabilities and NVCC capabilities
-                xarch = compute_cap_int_min if compute_cap_int_min < features['supported_arch_max'] else features['supported_arch_max']
-                xcode = compute_cap_int_min if compute_cap_int_min < features['supported_code_max'] else features['supported_code_max']
-
-                features['flags'] = {'gencode_auto': f'-gencode arch=compute_{xarch},code=sm_{xcode}'}
+# Moved to dynamic since depends on the devices ...
+#                # Prepare common gencode flags based on my device capabilities and NVCC capabilities
+#                xarch = compute_cap_int_min if compute_cap_int_min < features['supported_arch_max'] else features['supported_arch_max']
+#                xcode = compute_cap_int_min if compute_cap_int_min < features['supported_code_max'] else features['supported_code_max']
+#
+#                features['flags'] = {'gencode_auto': f'-gencode arch=compute_{xarch},code=sm_{xcode}'}
 
             # Finish checking various features
 
@@ -244,8 +245,14 @@ class CTool(InitCTool):
 
         _result = {'return':0}
 
+        update_result = False
+
+        nvcc_features = result['features']
+
         if _with.get('add_env', False):
-            features_paths = result['features']['paths']
+            update_result = True
+
+            features_paths = nvcc_features['paths']
 
             cuda_home = features_paths['home']
             cuda_bin = features_paths['bin']
@@ -260,6 +267,32 @@ class CTool(InitCTool):
             if cuda_bin not in _path:
                 _path.insert(0, cuda_bin)
 
+        if _with.get('arch_flags', False):
+            update_result = True
+
+            supported_arch_min = nvcc_features['supported_arch_min']
+            supported_arch_max = nvcc_features['supported_arch_max']
+
+            gpu_compute_cap = ctx['tasks']['global']['cuda']['features']['compute_cap_int_min']
+
+            cuda_compute_arch = supported_arch_max
+
+            if supported_arch_min <= gpu_compute_cap <= supported_arch_max:
+                cuda_compute_arch = gpu_compute_cap
+
+            if gpu_compute_cap < supported_arch_min:
+                cuda_compute_arch = supported_arch_min
+
+            target_arch = nvcc_features.setdefault('target_arch', {})
+            target_arch_flags = target_arch.get('flags', '')
+
+            if target_arch_flags != '':
+                target_arch_flags += ' '
+
+            target_arch['compute_cap'] = cuda_compute_arch
+            target_arch['flags'] = target_arch_flags + f'-gencode arch=compute_{cuda_compute_arch},code=sm_{cuda_compute_arch}'
+
+        if update_result:
             _result['result'] = result
 
         return _result

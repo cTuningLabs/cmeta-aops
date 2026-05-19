@@ -69,10 +69,8 @@ class CTask(InitCTask):
             target_path = os.getcwd()
 
         target_exe = params.get('target_exe')
-        if not target_exe:
-            return self.cm.error(f'target_exe is not defined in "{__file__}"')
-
-        target_path_exe = os.path.join(target_path, target_exe)
+        if target_exe:
+            target_path_exe = os.path.join(target_path, target_exe)
 
         prefix_cmd = params.get('prefix_cmd')
         if prefix_cmd is None:
@@ -86,10 +84,17 @@ class CTask(InitCTask):
         if cmd is None:
             cmd = ''
 
+        cmd_main = params.get('cmd_main')
+        if cmd_main is not None and cmd_main != '':
+            if cmd != '':
+                cmd += ' '
+            cmd += cmd_main
+
         run_time_env = ctx['tasks']['local'].get('run_time_env', {})
 
         ###########################################################################################
         _android_cpu = True if 'android-cpu' in target_compute else False
+        _cuda = True if 'cuda' in target_compute else False
 
         add_to_local = {}
 
@@ -101,13 +106,59 @@ class CTask(InitCTask):
 
         start_exe_prefix = _global['host']['vars']['start_exe_prefix']
 
-        _profile = ctx['tasks']['local']['setup-compile'].get('params',{}).get('profile', False)
+        # May not exist if only run (python)
+        setup_compile = ctx['tasks']['local'].get('setup-compile',{})
+
+        _profile = params.get('profile')
+        if _profile is None:
+            _profile = False
+
+        _profile_python = params.get('profile_python')
+        if _profile_python is None:
+            _profile_python = False
+
+        if _profile_python and 'python' not in ctx['tasks']['global']:
+            return self.cm.error(f'profile_python is requested but python is not found in the global context in "{__file__}"')
+
+        _profile_cuda = params.get('profile_cuda')
+        if _profile_cuda is None:
+            _profile_cuda = False
+
+        if _profile_cuda:
+            if 'cuda' not in ctx['tasks']['global']:
+                return self.cm.error(f'profile_cuda is requested but cuda is not found in the global context in "{__file__}"')
+            if 'nsys' not in ctx['tasks']['global']:
+                return self.cm.error(f'profile_cuda is requested but nsys is not found in the global context in "{__file__}"')
+
+        _profile_cuda_kernels = params.get('profile_cuda_kernels')
+        if _profile_cuda_kernels is None:
+            _profile_cuda_kernels = False
+
+        if _profile_cuda_kernels:
+            if 'cuda' not in ctx['tasks']['global']:
+                return self.cm.error(f'profile_cuda_kernels is requested but cuda is not found in the global context in "{__file__}"')
+            if 'ncu' not in ctx['tasks']['global']:
+                return self.cm.error(f'profile_cuda_kernels is requested but ncu is not found in the global context in "{__file__}"')
+
+
+        run_flags_after_exe = params.get('run_flags_after_exe')
+        if run_flags_after_exe is None:
+            run_flags_after_exe = ''
 
         cmds = []
+        run_time_cmds = []
 
         # Setup CPU
-        if _cpu:
-            fdlp = ctx['tasks']['local']['setup-compile'].get('found_dynamic_lib_paths')
+        if _profile_python:
+            if run_flags_after_exe != '':
+                run_flags_after_exe += ' '
+            run_flags_after_exe += '-m cProfile -s cumulative -o tmp-cmeta-python-profile.out'
+
+            output_files.append('tmp-cmeta-python-profile.out')
+            output_files.append('tmp-cmeta-python-profile.txt')
+
+        if _cpu or _cuda:
+            fdlp = setup_compile.get('found_dynamic_lib_paths')
 
             if fdlp:
                 if uname == 'windows':
@@ -123,7 +174,7 @@ class CTask(InitCTask):
                 if uname == 'windows':
                     x = _global['microsoft-windows-adk']['qpath_bin']
                     wpr = self.cm.q(os.path.join(x, 'wpr'))
-                    cmds.append(f'{wpr} -start CPU -filemode')
+                    run_time_cmds.append(f'{wpr} -start CPU -filemode')
                     output_files.append('tmp-cmeta-wpr.etl')
 
                 elif uname == 'linux':
@@ -135,6 +186,18 @@ class CTask(InitCTask):
                 elif uname == 'darwin':
                     prefix_cmd += f'xcrun xctrace record --template "Time Profiler" --output tmp-cmeta-xcrun --launch -- '
 #                    prefix_cmd += f'sample '
+
+        if _cuda:
+            if _profile_cuda:
+                nsys = _global['nsys']['qpath']
+                prefix_cmd += f'{nsys} profile --trace=cuda,nvtx --stats=true -o cuda_profile '
+                output_files.append('cuda_profile.nsys-rep')
+                output_files.append('cuda_profile.sqlite')
+            elif _profile_cuda_kernels:
+                ncu = _global['ncu']['qpath']
+                prefix_cmd += f'{ncu} --set basic --target-processes all -o cuda_profile_kernel '
+                output_files.append('cuda_profile_kernel.ncu-rep')
+                output_files.append('cuda_profile_kernel.ncu-rep.txt')
 
         # Setup Android
         if _android_cpu:
@@ -150,6 +213,7 @@ class CTask(InitCTask):
             add_to_local['adb_tmp_path_lib'] = adb_tmp_path_lib
 
         if _android_cpu:
+
             cmds.append(adb_with_serial + f' shell "rm -rf {adb_tmp_path_lib}"')
             cmds.append(adb_with_serial + f' shell "mkdir {adb_tmp_path_lib}"')
             cmds.append(adb_with_serial + f' shell "rm -rf {adb_tmp_path}/{target_exe}"')
@@ -157,7 +221,7 @@ class CTask(InitCTask):
             cmds.append(adb_with_serial + f' shell chmod 755 {adb_tmp_path}/{target_exe}')
 
             # Check libs
-            fdl = ctx['tasks']['local']['setup-compile'].get('found_dynamic_libs')
+            fdl = setup_compile.get('found_dynamic_libs')
             if fdl:
                 for l in fdl:
                     if os.path.isfile(l):
@@ -183,15 +247,18 @@ class CTask(InitCTask):
 
             postfix_cmd = '"'
 
-
-        run_time_cmd = prefix_cmd + start_exe_prefix + cmd + postfix_cmd
-        run_time_cmds = [run_time_cmd]
+        x = start_exe_prefix if target_exe else ''
+        cmd = cmd.replace('{run_flags_after_exe}', run_flags_after_exe)
+        run_time_cmd = prefix_cmd + x + cmd + postfix_cmd
+        run_time_cmds.append(run_time_cmd)
 
         for f in output_files:
             # First clean on the host (remote device will upload to host)
             output_file = os.path.join(target_path, f) if target_path else os.path.join(os.getcwd(), f)
 
             if os.path.isfile(output_file):
+                if con and verbose:
+                    print (f'{space}INFO: Removing "{output_file}"')
                 os.remove(output_file)
 
             if _android_cpu:
@@ -204,7 +271,7 @@ class CTask(InitCTask):
                 x = os.path.join(_global['simpleperf-android']['qpath'] + ' report -i perf.data --sort symbol --children')
                 run_time_cmds.append(x)
 
-            if _cpu:
+            if _cpu or _cuda:
                 if uname == 'windows':
                     run_time_cmds.append(f'{wpr} -stop tmp-cmeta-wpr.etl')
 
@@ -214,6 +281,19 @@ class CTask(InitCTask):
 
                 elif uname == 'linux':
                     run_time_cmds.append(f'{perf} report -i perf.data --sort symbol --children --stdio > perf_report.txt')
+
+        if _profile_cuda:
+            x = f'{nsys} stats --report cuda_gpu_kern_sum cuda_profile.nsys-rep'
+            run_time_cmds.append(x)
+
+        if _profile_cuda_kernels:
+            x = f'{ncu} --import cuda_profile_kernel.ncu-rep --page details > cuda_profile_kernel.ncu-rep.txt'
+            run_time_cmds.append(x)
+
+        if _profile_python:
+            python_path = ctx['tasks']['global']['python']['qpath']
+            run_time_cmds.append(f'{python_path} -c "import pstats; p=pstats.Stats(\'tmp-cmeta-python-profile.out\'); p.sort_stats(\'cumulative\').print_stats(30)" > tmp-cmeta-python-profile.txt')
+
         if cmds:
             if con and verbose:
                 print ('')

@@ -1,0 +1,25 @@
+names:
+  - wpa{{global.host.vars.file_ext_exe}}
+
+cache_params_use: 
+  all:
+    microsoft-windows-adk:
+      version: "{{global.microsoft-windows-adk.version}}" # This version must be already resolved here, therefore not fuzzy
+      path: "{{global.microsoft-windows-adk.path}}" 
+
+match_version: 
+  - regex: '^.*$'
+    group: 0
+
+cmd_get_version: >-
+  powershell -NoProfile -Command "(Get-Item '{{tool_path}}').VersionInfo.FileVersion"
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: microsoft.windows.adk,45d476330b034ca1
+
+extra_paths:
+  windows:
+    - "{{global.microsoft-windows-adk.path_bin}}"
+
+win_only: True

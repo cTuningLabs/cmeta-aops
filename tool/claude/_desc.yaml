@@ -1,0 +1,30 @@
+names:
+  - claude{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: '([\d.]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+install_help_text:
+  Please install "claude" tool as described at 
+    https://code.claude.com/docs/en/quickstart !
+
+install_cmd:
+  windows: '{{global.curl.qpath}} -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd'
+  linux: '{{global.curl.qpath}} -fsSL https://claude.ai/install.sh | bash'
+  darwin: '{{global.curl.qpath}} -fsSL https://claude.ai/install.sh | bash'
+
+extra_paths:
+  linux:
+    - "{{user_home}}/.local/bin"
+  darwin:
+    - "{{user_home}}/.local/bin"
+  windows:
+    - "{{global.host.os_env.USERPROFILE}}\\.local\\bin"
+
+install_uses:
+  all:
+    - task: setup,a2f9b61079ce4333
+      name: curl,bfbb8526694d4f21

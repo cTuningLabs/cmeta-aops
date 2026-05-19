@@ -1,0 +1,22 @@
+names:
+  - ncu{{global.host.vars.file_ext_exe}}
+
+match_version: 
+  - regex: "version\\s*([\\d.]+)"
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: setup,a2f9b61079ce4333
+    name: cuda,805716c4f32d42cf
+
+extra_paths:
+  windows:
+    - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute*\\**\\"
+    - "D:\\Program Files\\NVIDIA Corporation\\Nsight Compute*\\**\\"
+  linux:
+    - "/usr/**/cuda/bin/"
+    - "/opt/nvidia/**"

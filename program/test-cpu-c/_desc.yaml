@@ -1,85 +1,78 @@
-﻿local_vars:
-  src_file_name: 'program.c'
-  target_file_name: 'program'
+﻿inherits:
+  - template-cpu-c,649899ef3f004e4a
 
-compile:
-  uses:
-    - task: target-sdk,bb795b1444564935
+local_vars:
+  src_file_names: 
+    - 'program.c'
+    - 'matmul.c'
 
-    - task: compiler,f3925b201c704bde
-      lang: c
-      compute: '{{global.target.compute}}'
+  output_files:
+    - tmp-cmeta-program-stats.json
 
-    - task: set-local-vars,7638025960534c70
-      vars:
-        target_exe: '{{local.target_file_name}}{{global.compiler-c.features.vars.file_ext_exe}}'
+  result_files:
+    stats: tmp-cmeta-program-stats.json
 
-    - task: set-local-vars,7638025960534c70
-      vars:
-        target_path_exe: '{{local.target_path}}{{os_sep}}{{local.target_exe}}'
+params:
+  compile:
+    openmp: True
 
-    - task: delete-files,fdc81a1bf27d4ae2
-      files:
-        - '{{local.target_path}}/{{local.target_file_name}}'
-        - '{{local.target_path}}/{{local.target_file_name}}.exe'
+updates:
+  compile:
+    uses_pre:
+      - match:
+          task: compiler,f3925b201c704bde
+        update:
+          lang: c
 
-    - task: cmd,c9ba0a88df394d7f
-      storage_key: compile-program
-      chdir: '{{local.target_path}}'
-      cmd: >-
-        {{global.compiler-c.qpath}} 
-        {{global.compiler-c.features.target_arch.flags|}}
-        {{params.compile.flags|}}
-        {{global.compiler-c.features.flags.catch_errors|}}
-        {{local.selected-program.path}}{{os_sep}}src{{os_sep}}{{local.src_file_name}}
-        {{global.compiler-c.features.flags.exe_file}}{{local.target_path_exe}}
-         
-run: 
-  uses:
-    # Clean files
-    - task: delete-files,fdc81a1bf27d4ae2
-      files:
-        - '{{local.target_path}}/tmp-cmeta-program-stats.json'
+    uses_libs:
+      - append:
+         ######################################################################################
+         # Prepare Libs for Host CPU
+         - task: setup,a2f9b61079ce4333
+           if: '{{global.target.compute|$[]}} == ["cpu"]'
+           name: lib-openssl,903191f1fab74064
 
-    # Android
-    - task: set-local-vars,7638025960534c70
-      if: '"android-cpu" in "{{global.target.compute}}"'
-      vars:
-        adb_with_serial: '{{global.adb.qpath}} -s {{global.target--android-cpu.serial}}'
+         # Only for Clang on Linux and MacOS
+         - task: setup,a2f9b61079ce4333
+           if_os: linux,darwin
+           if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.llvm.path|None}}" != "None" '
+           name: lib-openmp,7958b973fc0d42a9
 
-    - task: cmd,c9ba0a88df394d7f
-      storage_key: prepare-android-program
-      if: '"android-cpu" in "{{global.target.compute}}"'
-      chdir: '{{local.target_path}}'
-      cmd: '{{local.adb_with_serial}} push {{local.target_exe}} /data/local/tmp/{{local.target_exe}}'
 
-    - task: cmd,c9ba0a88df394d7f
-      storage_key: prepare-android-program
-      if: '"android-cpu" in "{{global.target.compute}}"'
-      chdir: '{{local.target_path}}'
-      cmd: '{{local.adb_with_serial}} shell "rm -rf /data/local/tmp/tmp-cmeta-program-stats.json"'
+         ######################################################################################
+         # Prepare Libs for Android CPU
+         - task: setup,a2f9b61079ce4333
+           if: '"android-cpu" in {{global.target.compute|$[]}}'
+           name: lib-sysroot-android,cdc22b7617f54f2c
+           with:
+             static: '{{local.params.compile.static|$None}}'
+             lib_names:
+               - dl
+               - m
+               - z
+             dynamic_libs: 
+               - c++_shared
 
-    - task: cmd,c9ba0a88df394d7f
-      storage_key: prepare-android-program
-      if: '"android-cpu" in "{{global.target.compute}}"'
-      chdir: '{{local.target_path}}'
-      cmd: '{{local.adb_with_serial}} shell chmod 755 /data/local/tmp/{{local.target_exe}}'
+         - task: setup,a2f9b61079ce4333
+           if: '"android-cpu" in {{global.target.compute|$[]}}'
+           name: lib-openmp-android,4631aca5f3d241b4
 
-    - task: cmd,c9ba0a88df394d7f
-      storage_key: prepare-android-program
-      if: '"android-cpu" in "{{global.target.compute}}"'
-      chdir: '{{local.target_path}}'
-      cmd: '{{local.adb_with_serial}} shell "cd /data/local/tmp && ./{{local.target_exe}} {{params.run.flags|}} {{local.unparsed|}}"'
+         - task: setup,a2f9b61079ce4333
+           if: '"android-cpu" in {{global.target.compute|$[]}}'
+           name: lib-openssl-android,c6cd8622939a4f66
 
-    - task: cmd,c9ba0a88df394d7f
-      storage_key: prepare-android-program
-      if: '"android-cpu" in "{{global.target.compute}}"'
-      chdir: '{{local.target_path}}'
-      cmd: '{{local.adb_with_serial}} pull /data/local/tmp/tmp-cmeta-program-stats.json tmp-cmeta-program-stats.json'
 
-    # Generic
-    - task: cmd,c9ba0a88df394d7f
-      if: '"android-cpu" not in "{{global.target.compute}}"'
-      storage_key: run-program
-      chdir: '{{local.target_path}}'
-      cmd: '{{global.host.vars.start_exe_prefix}}{{local.target_exe}} {{params.run.flags|}} {{local.unparsed|}}'
+  run:
+    uses_prep:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         update:
+           cmd_main: >-
+             {{params.precision|float32}} 
+             {{params.dim_m|1500}} 
+             {{params.dim_n|1500}} 
+             {{params.dim_k|1500}}
+             {{params.repeat|3}}
+             {{params.clean|1}}
+             {{params.seed|12345}}
+

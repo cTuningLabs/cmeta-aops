@@ -1,10 +1,6 @@
 artifact: 6c8d509f22c841e8
 authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
-creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
-last_update_timestamp: '2026-04-30T14:56:15.552002+00:00'
-sort: 3000
 constraints:
   supports_compute:
   - cpu
@@ -12,5 +8,10 @@ constraints:
   - windows
   - linux
   - darwin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+last_update_timestamp: '2026-05-16T15:46:23.849440+00:00'
+sort: 3000
 tags:
 - lang-java
+- java

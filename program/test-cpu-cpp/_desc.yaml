@@ -1,10 +1,10 @@
-﻿###################################################################################################
+﻿inherits:
+  - template-cpu-c,649899ef3f004e4a
+
 local_vars:
   src_file_names: 
     - 'program.cpp'
     - 'matmul.cpp'
-
-  target_file_name: 'program'
 
   output_files:
     - tmp-cmeta-program-stats.json
@@ -12,140 +12,74 @@ local_vars:
   result_files:
     stats: tmp-cmeta-program-stats.json
 
-#  run_time_env:
-#    KEY: value
+params:
+  compile:
+    openmp: True
 
-  params:
-    compile:
-      openmp: True
+updates:
+  compile:
+    uses_pre:
+      - match:
+          task: compiler,f3925b201c704bde
+        update:
+          lang: cpp
 
+    uses_prep:
+      - match:
+          task: setup-compile,10f1dfd3f6f04c35
+        update:
+          lang: cpp
 
-###################################################################################################
-compile:
-  uses:
-    - task: target-sdk,bb795b1444564935
+    uses_libs:
+      - append:
+         ######################################################################################
+         # Prepare Libs for Host CPU
+         - task: setup,a2f9b61079ce4333
+           if: '{{global.target.compute|$[]}} == ["cpu"]'
+           name: lib-openssl,903191f1fab74064
 
-    - task: compiler,f3925b201c704bde
-      lang: cpp
-      compute: '{{global.target.compute}}'
-
-
-    ######################################################################################
-    # Prepare Libs for Host CPU
-    - task: setup,a2f9b61079ce4333
-      if: '{{global.target.compute}} == ["cpu"]'
-      name: lib-openssl,903191f1fab74064
-
-    # Only for Clang on Linux and MacOS
-    - task: setup,a2f9b61079ce4333
-      if_os: linux,darwin
-      if: '{{global.target.compute}} == ["cpu"] and "{{global.llvm.path|None}}" != "None" '
-      name: lib-openmp,7958b973fc0d42a9
-
-
-    ######################################################################################
-    # Prepare Libs for Android CPU
-    - task: setup,a2f9b61079ce4333
-      if: '"android-cpu" in "{{global.target.compute}}"'
-      name: lib-sysroot-android,cdc22b7617f54f2c
-      with:
-        static: '{{local.params.compile.static|$None}}'
-        lib_names:
-          - dl
-          - m
-          - z
-        dynamic_libs: 
-          - c++_shared
-
-    - task: setup,a2f9b61079ce4333
-      if: '"android-cpu" in "{{global.target.compute}}"'
-      name: lib-openmp-android,4631aca5f3d241b4
-
-    - task: setup,a2f9b61079ce4333
-      if: '"android-cpu" in "{{global.target.compute}}"'
-      name: lib-openssl-android,c6cd8622939a4f66
-
-    ######################################################################################
-    # Finish compiling pipeline
-    - task: setup-compile,10f1dfd3f6f04c35
-      lang: cpp
-      compute: '{{global.target.compute}}'
-      target_file_name: '{{local.target_file_name}}'
-      target_path: '{{local.target_path|$None}}'
-      clean_files: '{{local.output_files|$None}}'
-      src_path: '{{local.selected-program.path}}{{os_sep}}src'
-      src_file_names: '{{local.src_file_names}}'
-      include_paths:
-        - '{{local.selected-program.path}}{{os_sep}}src'
-      with: '{{local.params.compile|$None}}'
-
-    - task: cmd,c9ba0a88df394d7f
-      storage_key: compile-program
-      save_script: '{{local.target_path}}/tmp-cmeta-compile-program{{global.host.vars.file_ext_bat}}'
-      chdir: '{{local.target_path}}'
-      env: '{{local.setup-compile.compile_env}}'
-      cmd: >-
-        {{global.compiler-cpp.qpath}} 
-        {{global.compiler-cpp.features.target_arch.flags|}}
-        {{params.compile.flags|}}
-        {{local.setup-compile.flags_str|}}
-        {{params.compile.flags2|}}
-        {{global.compiler-cpp.features.flags.catch_errors|}}
-        {{params.compile.flags3|}}
-        {{local.setup-compile.src_file_names_str}}
-        {{params.compile.flags4|}}
-        {{local.setup-compile.link_flags_str}}
-        {{params.compile.lflags|}}
-        {{global.compiler-cpp.features.flags.exe_file}}{{local.target_path_exe}}
-        {{params.compile.lflags2|}}
-         
+         # Only for Clang on Linux and MacOS
+         - task: setup,a2f9b61079ce4333
+           if_os: linux,darwin
+           if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.llvm.path|None}}" != "None" '
+           name: lib-openmp,7958b973fc0d42a9
 
 
-###################################################################################################
-run: 
-  uses:
-    # Android (profile)
-    - task: setup,a2f9b61079ce4333
-      name: simpleperf-android,50a747d76c024428
-      if: '"android-cpu" in "{{global.target.compute}}" and "{{params.compile.profile|False}}" == "True"'
+         ######################################################################################
+         # Prepare Libs for Android CPU
+         - task: setup,a2f9b61079ce4333
+           if: '"android-cpu" in {{global.target.compute|$[]}}'
+           name: lib-sysroot-android,cdc22b7617f54f2c
+           with:
+             static: '{{local.params.compile.static|$None}}'
+             lib_names:
+               - dl
+               - m
+               - z
+             dynamic_libs: 
+               - c++_shared
 
-    # CPU: linux (profile)
-    - task: setup,a2f9b61079ce4333
-      name: perf,70caec51baf449aa
-      if_os: linux
-      if: '{{global.target.compute}} == ["cpu"] and "{{params.compile.profile|False}}" == "True"'
+         - task: setup,a2f9b61079ce4333
+           if: '"android-cpu" in {{global.target.compute|$[]}}'
+           name: lib-openmp-android,4631aca5f3d241b4
 
-    # CPU: windows (microsoft profile)
-    - task: setup,a2f9b61079ce4333
-      name: microsoft.windows.adk,45d476330b034ca1
-      if_os: windows
-      if: '{{global.target.compute}} == ["cpu"] and "{{params.compile.profile|False}}" == "True"'
+         - task: setup,a2f9b61079ce4333
+           if: '"android-cpu" in {{global.target.compute|$[]}}'
+           name: lib-openssl-android,c6cd8622939a4f66
 
-    - task: setup-run,148f6c1fdb4247df
-      skip_clean_local: True
-      chdir: '{{local.target_path}}'
-      target_path: '{{local.target_path|$None}}'
-      target_exe: '{{local.target_exe|$None}}'
-      output_files: '{{local.output_files|$None}}'
-#      cmd: '{{local.target_exe}} {{params.run.flags|}} {{local.unparsed|}}'
-      cmd: >-
-        {{local.target_exe}} 
-        {{params.precision|float32}} 
-        {{params.dim_m|1500}} 
-        {{params.dim_n|1500}} 
-        {{params.dim_k|1500}}
-        {{params.repeat|3}}
-        {{params.clean|1}}
-        {{params.seed|12345}}
 
-    - task: cmd,c9ba0a88df394d7f
-      storage_key: run-program
-      save_script: '{{local.target_path}}/tmp-cmeta-run-program{{global.host.vars.file_ext_bat}}'
-      chdir: '{{local.target_path}}'
-      env: '{{local.run_time_env|$None}}'
-      cmds: '{{local.run_time_cmds}}'
 
-    - task: finish-run,5e14d7eca4f64440
-      chdir: '{{local.target_path}}'
-      target_path: '{{local.target_path|$None}}'
-      result_files: '{{local.result_files|$None}}'
+  run:
+    uses_prep:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         update:
+           cmd_main: >-
+             {{params.precision|float32}} 
+             {{params.dim_m|1500}} 
+             {{params.dim_n|1500}} 
+             {{params.dim_k|1500}}
+             {{params.repeat|3}}
+             {{params.clean|1}}
+             {{params.seed|12345}}
+

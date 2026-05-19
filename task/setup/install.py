@@ -53,6 +53,8 @@ def install_tool(self,
 
     uname = host['os']['uname']
 
+    os_id = host['os_extra']['id']
+
     with_version = '' if not version else f' with version "{version}"'
     _with = params.get('with', {})
     if _with:
@@ -264,7 +266,13 @@ def install_tool(self,
                     install_cmd = install_cmd_ver.replace('{{simple_version}}', xversion)
                     install_cmd = install_cmd.replace('{{major_version}}', major_version)
 
-        package_name = desc['package_name'] if 'package_name' in desc else artifact_au
+        package_name = artifact_au
+        if 'package_name_os_id' in desc and os_id in desc['package_name_os_id']:
+            package_name = desc['package_name_os_id'][os_id]
+        elif 'package_name' in desc:
+            package_name = desc['package_name']
+
+#        package_name = desc['package_name'] if 'package_name' in desc else artifact_au
 
         # Start from possible sub-tool to customize install cmd and params
         if tool_api_code2 and hasattr(tool_api_code2, 'customize_install_cmd2') and callable(getattr(tool_api_code2, 'customize_install_cmd2')):

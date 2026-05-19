@@ -1,0 +1,9 @@
+[package]
+name = "test-cpu-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rand = "0.8"
+num_cpus = "1.16"
+sha2 = "0.10"

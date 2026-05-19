@@ -9,6 +9,7 @@ without explicit permission from the copyright holder.
 
 import os
 import platform
+import copy
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
@@ -35,6 +36,7 @@ class CTask(InitCTask):
                 'name',
                 'text',
                 'compute',
+                'copy_to_storage_key',
                 'with',
             ], __name__)
         if self.cm.catch_error(r): return r
@@ -217,7 +219,7 @@ class CTask(InitCTask):
 
         compiler_flags = []
 
-        flags = result.get('features', {}).get('flags','')
+        flags = result.get('features', {}).get('flags',{})
 
         if _static:
             x = flags.get('static_build_debug') if _debug else flags.get('static_build')
@@ -236,6 +238,13 @@ class CTask(InitCTask):
                 compiler_flags.append(openmp_flag)
 
         result['compiler_flags'] = compiler_flags
+
+        copy_to_storage_key = params.get('copy_to_storage_key')
+        if copy_to_storage_key:
+            if copy_to_storage_key is True:
+                copy_to_storage_key = 'compiler'
+
+            ctx['tasks']['global'][copy_to_storage_key] = copy.deepcopy(result)
 
         _result['result'] = result
         return _result

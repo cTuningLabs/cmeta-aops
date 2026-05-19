@@ -1,0 +1,43 @@
+﻿inherits:
+  - template-cpu-c,649899ef3f004e4a
+
+local_vars:
+  src_file_names: 
+    - 'program.py'
+
+  output_files:
+    - tmp-cmeta-program-stats.json
+
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+
+
+updates:
+  compile:
+    skip: True
+
+  run:
+    uses_pre:
+       - prepend:
+         - task: setup,a2f9b61079ce4333
+           name: python,c00fb574d8ca4463
+          
+    uses_prep:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         update:
+           target_exe:
+           profile_python: '{{params.profile_python|$None}}'
+           cmd: >-
+             {{global.python.qpath}}
+             {run_flags_after_exe}
+             {{params.run_flags|}} 
+             {{local.src_file_names_str_with_path}}
+           cmd_main: >-
+             {{params.precision|float32}} 
+             {{params.dim_m|200}} 
+             {{params.dim_n|200}} 
+             {{params.dim_k|200}}
+             {{params.repeat|3}}
+             {{params.clean|1}}
+             {{params.seed|12345}}

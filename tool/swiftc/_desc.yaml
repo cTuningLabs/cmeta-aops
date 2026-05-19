@@ -1,0 +1,45 @@
+names:
+  - swiftc{{global.host.vars.file_ext_exe}}
+
+cache_params_use: 
+  all:
+    swiftlang:
+      version: "{{global.swiftlang.version}}"
+      path: "{{global.swiftlang.path}}"
+
+force_tool_path: "{{global.swiftlang.path_bin}}{{global.host.vars.os_sep}}swiftc{{global.host.vars.file_ext_exe}}"
+
+match_version: 
+  - regex: 'Swift version (\d+(?:\.\d+)*)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: swiftlang,043d6514109e495d
+    version: "{{params.version|$None}}"
+
+features:
+  windows:
+    flags:
+      fast: '-O'
+      fastest: '-O'
+      exe_file: '-o '
+    vars:
+      file_ext_exe: .exe
+  linux:
+    flags:
+      fast: '-O'
+      fastest: '-O'
+      exe_file: '-o '
+    vars:
+      file_ext_exe: 
+  darwin:
+    flags:
+      fast: '-O'
+      fastest: '-O'
+      exe_file: '-o '
+    vars:
+      file_ext_exe: 
+
