@@ -11,11 +11,11 @@ local_vars:
 all:
   uses:
 #    - task: print-text,23e0ac84f583466f
-#      text: '{{local.params.compute}}'
+#      text: '{{local.params.compute|cpu}}'
 
     - task: target,94decb2ddd28441f
       ask: '{{params.ask|$False}}'
-      compute: '{{local.params.compute}}'
+      compute: '{{local.params.compute|cpu}}'
 
 compile:
   uses_pre:
