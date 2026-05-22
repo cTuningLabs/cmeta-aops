@@ -289,9 +289,12 @@ class CTask(InitCTask):
         result['target_exe'] = target_exe
 
         target_path = params.get('target_path')
-        target_path_exe = None
+        if not target_path:
+            target_path = os.getcwd()
 
-        target_path_exe = os.path.join(target_path, target_exe) if target_path else os.path.join(os.getcwd(), target_exe)
+        os.makedirs(target_path, exist_ok=True)
+
+        target_path_exe = os.path.join(target_path, target_exe)
 
         add_to_local['target_path_exe'] = target_path_exe
         result['target_path_exe'] = target_path_exe
@@ -349,7 +352,8 @@ class CTask(InitCTask):
 
         # Check include if install
         if _install:
-            target_path_include = os.path.join(target_path, 'include')
+            target_path_home = os.path.dirname(target_path)
+            target_path_include = os.path.join(target_path_home, 'include')
 
             # Recursively copy *.h from src_path to target_path/include
             for root, _, files in os.walk(src_path):
@@ -358,9 +362,9 @@ class CTask(InitCTask):
                         os.makedirs(target_path_include, exist_ok=True)
                         shutil.copy2(os.path.join(root, fname), os.path.join(target_path_include, fname))
 
-            x = 'lib' if _lib else 'bin'
-            target_path_exe_install = os.path.join(target_path, x)
-            os.makedirs(target_path_exe_install, exist_ok=True)
+#            x = 'lib' if _lib else 'bin'
+#            target_path_exe_install = os.path.join(target_path, x)
+#            os.makedirs(target_path_exe_install, exist_ok=True)
 
             x = '_cmeta_info.json'
             cmeta_info_file = os.path.join(src_path, x)
@@ -461,16 +465,16 @@ class CTask(InitCTask):
         if lib_cmd:
             cmds.append(lib_cmd)
 
-        if _install:
-            src = self.cm.q(os.path.normpath(os.path.join(target_path, target_file_name + '*')))
-            dst = self.cm.q(os.path.normpath(target_path_exe_install))
-
-            if platform.system() == 'Windows':
-                install_cmd = f'move /Y {src} {dst}'
-            else:
-                install_cmd = f'mv -f {src} {dst}'
-
-            cmds.append(install_cmd)
+#        if _install:
+#            src = self.cm.q(os.path.normpath(os.path.join(target_path, target_file_name + '*')))
+#            dst = self.cm.q(os.path.normpath(target_path_exe_install))
+#
+#            if platform.system() == 'Windows':
+#                install_cmd = f'move /Y {src} {dst}'
+#            else:
+#                install_cmd = f'mv -f {src} {dst}'
+#
+#            cmds.append(install_cmd)
 
         add_to_local['compile_cmds'] = cmds
 

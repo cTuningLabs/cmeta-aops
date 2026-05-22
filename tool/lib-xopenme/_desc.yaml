@@ -32,7 +32,7 @@ build_uses:
       compile:
         static: True
         add_debug: '{{params.with.add_debug|$None}}'
-      target_path: '{{local.target_path}}'
+      target_path: '{{local.target_path}}/lib'
 
     - task: compile-and-run-program,05437a1aae224270
       name: lib-xopenme,5298772417f54247
@@ -41,5 +41,5 @@ build_uses:
       compile:
         static: False
         add_debug: '{{params.with.add_debug|$None}}'
-      target_path: '{{local.target_path}}'
+      target_path: '{{local.target_path}}/lib'
     
