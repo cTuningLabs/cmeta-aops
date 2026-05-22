@@ -1,3 +1,6 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
 cache_params_with: False # Otherwise add various flags that mix up cache detection
 
 cache_meta_const:

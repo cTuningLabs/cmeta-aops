@@ -1,0 +1,114 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+###################################################################################################
+local_vars:
+  src_file_names: 
+    - 'program.c'
+
+  src_dir: src
+
+  target_file_name: 'program'
+
+###################################################################################################
+all:
+  uses:
+#    - task: print-text,23e0ac84f583466f
+#      text: '{{local.params.compute|cpu}}'
+
+    - task: target,94decb2ddd28441f
+      ask: '{{params.ask|$False}}'
+      compute: '{{local.params.compute|cpu}}'
+
+compile:
+  uses_pre:
+    - task: target-sdk,bb795b1444564935
+
+    - task: compiler,f3925b201c704bde
+      lang: c
+      compute: '{{global.target.compute}}'
+      copy_to_storage_key: compiler
+
+  uses_prep:
+    - task: setup-compile,10f1dfd3f6f04c35
+      lang: c
+      compute: '{{global.target.compute}}'
+      profile: '{{params.profile|$None}}'
+      profile_cuda: '{{params.profile_cuda|$None}}'
+      profile_cuda_kernels: '{{params.profile_cuda_kernels|$None}}'
+      target_file_name: '{{local.target_file_name}}'
+      target_path: '{{local.target_path|$None}}'
+      clean_files: '{{local.output_files|$None}}'
+      src_path: '{{local.src_path}}'
+      src_file_names: '{{local.src_file_names}}'
+      include_paths:
+        - '{{local.selected-program.path}}{{os_sep}}src'
+      with: '{{local.params.compile|$None}}'
+
+  uses:
+    - task: cmd,c9ba0a88df394d7f
+      storage_key: compile-program
+      save_script: '{{local.target_path}}{{os_sep}}tmp-cmeta-compile-program{{global.host.vars.file_ext_bat}}'
+      chdir: '{{local.target_path}}'
+      env: '{{local.setup-compile.compile_env}}'
+      cmds: '{{local.compile_cmds}}'
+         
+
+
+###################################################################################################
+run: 
+  uses_pre:
+    # CPU, android, profile
+    - task: setup,a2f9b61079ce4333
+      name: simpleperf-android,50a747d76c024428
+      if: '"android-cpu" in {{global.target.compute|$[]}} and "{{params.profile|False}}" == "True"'
+
+    # CPU, linux, profile
+    - task: setup,a2f9b61079ce4333
+      name: perf,70caec51baf449aa
+      if_os: linux
+      if: '{{global.target.compute|$[]}} == ["cpu"] and "{{params.profile|False}}" == "True"'
+
+    # CPU, windows, microsoft profile
+    - task: setup,a2f9b61079ce4333
+      name: microsoft.windows.adk,45d476330b034ca1
+      if_os: windows
+      if: '{{global.target.compute|$[]}} == ["cpu"] and "{{params.profile|False}}" == "True"'
+
+    # CUDA, nsys profile
+    - task: setup,a2f9b61079ce4333
+      name: nsys,08982359a2c14316
+      if: '"cuda" in {{global.target.compute|$[]}} and "{{params.profile_cuda|False}}" == "True"'
+
+    # CUDA kernels, ncu profile
+    - task: setup,a2f9b61079ce4333
+      name: ncu,01f8f885a9224281
+      if: '"cuda" in {{global.target.compute|$[]}} and "{{params.profile_cuda_kernels|False}}" == "True"'
+
+  uses_prep:
+    - task: setup-run,148f6c1fdb4247df
+      skip_clean_local: True
+      chdir: '{{local.target_path}}'
+      target_path: '{{local.target_path|$None}}'
+      target_exe: '{{local.target_exe|$None}}'
+      profile: '{{params.profile|$None}}'
+      profile_cuda: '{{params.profile_cuda|$None}}'
+      profile_cuda_kernels: '{{params.profile_cuda_kernels|$None}}'
+      output_files: '{{local.output_files|$None}}'
+#      cmd: '{{local.target_exe}} {{params.run.flags|}} {{local.unparsed|}}'
+      cmd: >-
+        {{local.target_exe}} 
+        {run_flags_after_exe}
+
+  uses:
+    - task: cmd,c9ba0a88df394d7f
+      storage_key: run-program
+      save_script: '{{local.target_path}}{{os_sep}}tmp-cmeta-run-program{{global.host.vars.file_ext_bat}}'
+      chdir: '{{local.target_path}}'
+      env: '{{local.run_time_env|$None}}'
+      cmds: '{{local.run_time_cmds}}'
+
+    - task: finish-run,5e14d7eca4f64440
+      chdir: '{{local.target_path}}'
+      target_path: '{{local.target_path|$None}}'
+      result_files: '{{local.result_files|$None}}'

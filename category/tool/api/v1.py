@@ -45,7 +45,16 @@ class Category(InitCategory):
         return {'return':0}
 
     ############################################################
-    def find_path_(self, ctx, path = None, paths = None, space = None, context={}, desc={}):
+    def find_path_(
+            self, 
+            ctx, 
+            path = None, 
+            paths = None, 
+            space = None, 
+            context={}, 
+            desc={}, 
+            tool_name=None,
+        ):
         """
         """
 
@@ -97,7 +106,14 @@ class Category(InitCategory):
                 if env_paths != '':
                     search_paths += env_paths.split(os.pathsep)
 
-            names = desc.get('names', [])
+            if tool_name:
+                names = [tool_name]
+            else:
+                names = desc.get('names', [])
+                if not names:
+                    name = desc.get('name')
+                    if name:
+                        names = [name]
 
             for name in names:
 

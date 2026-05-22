@@ -1,4 +1,7 @@
-﻿store_global: True               # force by default
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+store_global: True               # force by default
 storage_key: "{{$params.name}}"  # force ($ - use alias from cname, $$ - use UID from cname)
 cache: True                      # force by default
 

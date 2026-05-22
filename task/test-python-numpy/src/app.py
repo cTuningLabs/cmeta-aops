@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import numpy as np
 
 sys.stdout.flush()

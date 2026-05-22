@@ -1,0 +1,95 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  src_file_names: 
+    - 'program.cpp'
+    - 'matmul.cpp'
+
+  output_files:
+    - tmp-cmeta-program-stats.json
+    - tmp-ck-timer.json
+
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+    stats-xopenme: tmp-ck-timer.json
+
+params:
+  compile:
+    openmp: True
+    d:
+      XOPENME:
+
+updates:
+  compile:
+    uses_pre:
+      - match:
+          task: compiler,f3925b201c704bde
+        update:
+          lang: cpp
+
+    uses_prep:
+      - match:
+          task: setup-compile,10f1dfd3f6f04c35
+        update:
+          lang: cpp
+
+    uses_libs:
+      - append:
+         ######################################################################################
+         # Prepare Libs for Host CPU
+         - task: setup,a2f9b61079ce4333
+           if: '{{global.target.compute|$[]}} == ["cpu"]'
+           name: lib-openssl,903191f1fab74064
+
+         - task: setup,a2f9b61079ce4333
+           name: lib-xopenme,c7b96678a7734510
+
+         # Only for Clang on Linux and MacOS
+         - task: setup,a2f9b61079ce4333
+           if_os: linux,darwin
+           if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.llvm.path|None}}" != "None" '
+           name: lib-openmp,7958b973fc0d42a9
+
+
+         ######################################################################################
+         # Prepare Libs for Android CPU
+         - task: setup,a2f9b61079ce4333
+           if: '"android-cpu" in {{global.target.compute|$[]}}'
+           name: lib-sysroot-android,cdc22b7617f54f2c
+           with:
+             static: '{{local.params.compile.static|$None}}'
+             lib_names:
+               - dl
+               - m
+               - z
+             dynamic_libs: 
+               - c++_shared
+
+         - task: setup,a2f9b61079ce4333
+           if: '"android-cpu" in {{global.target.compute|$[]}}'
+           name: lib-openmp-android,4631aca5f3d241b4
+
+         - task: setup,a2f9b61079ce4333
+           if: '"android-cpu" in {{global.target.compute|$[]}}'
+           name: lib-openssl-android,c6cd8622939a4f66
+
+
+
+  run:
+    uses_prep:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         update:
+           cmd_main: >-
+             {{params.precision|float32}} 
+             {{params.dim_m|1500}} 
+             {{params.dim_n|1500}} 
+             {{params.dim_k|1500}}
+             {{params.repeat|3}}
+             {{params.clean|1}}
+             {{params.seed|12345}}
+

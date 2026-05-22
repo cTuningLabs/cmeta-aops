@@ -1,3 +1,6 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
 names:
   - nsys-ui{{global.host.vars.file_ext_exe}}
 
@@ -6,6 +9,10 @@ cache_params_use:
     nsys:
       version: "{{global.nsys.version}}"
       path: "{{global.nsys.path}}"
+
+only_paths:
+  all:
+    - "{{global.nvcc.path_bin}}/**"
 
 # Reuse version from nsys !
 match_version: 

@@ -1,4 +1,4 @@
-﻿20260414:
+20260414:
  FGG uses it to keep WiFi connection with Samsung Watch.
 
  Watch setup:

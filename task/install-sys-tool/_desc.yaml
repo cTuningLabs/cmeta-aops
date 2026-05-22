@@ -1,4 +1,7 @@
-﻿store_global: True
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+store_global: True
 storage_key: 'sys-tool-{{params.package}}'
 cache: True
 

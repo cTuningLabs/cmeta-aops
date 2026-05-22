@@ -1,4 +1,4 @@
-﻿"""
+"""
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
 All rights reserved.
 
@@ -75,6 +75,8 @@ def detect_existing_tool(self,
     parsed_paths_with_versions = []
 
     warning = ''
+
+    tool_name = ctx['tasks']['local'].get('tool_name')
 
     if hasattr(tool_api_code, 'detect') and callable(getattr(tool_api_code, 'detect')):
         r = tool_api_code.detect(ctx, params)
@@ -170,6 +172,7 @@ def detect_existing_tool(self,
             p = {'category':self.cmeta['uses_categories']['tool'],
                  'command':'find_path',
                  'desc':desc,
+                 'tool_name': tool_name,
                  'con':con,
                  'verbose':verbose,
                  'quiet':quiet,

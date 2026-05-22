@@ -1,0 +1,14 @@
+{
+  "artifact": "fe8dc9c4d752488d",
+  "authors": "Grigori Fursin",
+  "note": "test native matmul with openmp, ssl and math libs",
+  "category": "program,22788f3c30d04e6d",
+  "constraints": {
+    "supported_compute": [
+      "cpu"
+    ]
+  },
+  "copyright": "Copyright (C) 2026 Grigori Fursin. All rights reserved.",
+  "creation_timestamp": "2026-04-30T09:12:17.910826+00:00",
+  "last_update_timestamp": "2026-05-16T10:49:19.220168+00:00"
+}

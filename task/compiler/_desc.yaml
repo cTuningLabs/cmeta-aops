@@ -1,3 +1,6 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
 store_global: True
 storage_key: 'compiler-{{params.lang}}'
 cache: True
@@ -9,6 +12,8 @@ params_map:
 cache_params:
   - lang
   - "@version" # Treat @keys as fuzzy versions or versions with conditions during cMeta search!
+  - name
+
 cache_extra_params:
   compute: '{{global.target.compute|$None}}'
 

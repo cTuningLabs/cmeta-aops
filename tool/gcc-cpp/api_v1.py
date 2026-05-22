@@ -1,4 +1,4 @@
-﻿"""
+"""
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
 All rights reserved.
 
@@ -37,3 +37,39 @@ class CTool(InitCTool):
                 found_paths.append(path_to_gcc_cpp)
 
         return {'return':0, 'found_paths':found_paths}
+
+
+    ############################################################
+    def check_features(self,
+                       ctx: dict,
+                       paths: list,
+                       params: dict,
+    ):
+        """
+        """
+
+        new_paths = []
+
+        for p in paths:
+            # Parsing standard output
+            features = p.setdefault('features', {})
+
+            path_tool = p['path']
+            path_bin = os.path.dirname(path_tool)
+
+            path_tool_lib = os.path.join(path_bin, 'ar')
+            if not os.path.isfile(path_tool_lib):
+                return self.cm.error(f'library sub-tool not found in "{path_tool_lib}"')
+
+            _paths = {
+               'bin': path_bin,
+               'tool_lib': path_tool_lib,
+               'qtool_lib': self.cm.q(path_tool_lib),
+            }
+
+            features_paths = features.setdefault('paths',{})
+            features_paths.update(_paths)
+
+            new_paths.append(p)
+
+        return {'return':0, 'paths':new_paths}

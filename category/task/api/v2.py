@@ -10,6 +10,7 @@ without explicit permission from the copyright holder.
 import os
 import time
 import copy
+import fnmatch
 
 from cmeta.category import InitCategory
 
@@ -226,6 +227,7 @@ class Category(InitCategory):
             print (f'{space}TASK: {artifact_alias} ({task_path})')
 
 
+
         ###########################################################################################
         # Unify params to customize task, map for convenience and leave control params
         cparams = {}
@@ -308,6 +310,27 @@ class Category(InitCategory):
         _aggregated = ctx_tasks.setdefault('aggregated', {})
 
         ###########################################################################################
+        # Save global if needed
+        preserve_global = {}
+        
+        for k in cdesc.get('preserve_global_keys', []):
+            if any(c in k for c in ('*', '?', '[')):
+                for gk in list(ctx_tasks['global'].keys()):
+                    if fnmatch.fnmatch(gk, k):
+                        v = ctx_tasks['global'][gk]
+                        if v is not None:
+                            v = copy.deepcopy(v)
+                            preserve_global[gk] = copy.deepcopy(v)
+                        del (ctx_tasks['global'][gk])
+            else:
+                if k in ctx_tasks['global']:
+                   v = ctx_tasks['global'][k]
+                   if v is not None:
+                       v = copy.deepcopy(v)
+                       preserve_global[k] = v
+                   del (ctx_tasks['global'][k])
+
+        ###########################################################################################
         # CHECK DEPENDENCIES BEFORE INIT CALL TO TASK API (IF EXISTS)
         # Can update global/local deps
 
@@ -347,6 +370,7 @@ class Category(InitCategory):
                         saved_uparams = saved_uparams, 
                         saved_local = saved_local,
                         saved_ctx_control = saved_ctx_control,
+                        preserve_global = preserve_global,
                 )
                 if self.cm.catch_error(r): return r
     
@@ -394,32 +418,6 @@ class Category(InitCategory):
 
 
         ###########################################################################################
-        # If not local and result already exists in global, reuse result
-
-        if store_global and storage_key and storage_key in ctx_tasks['global']:
-
-            # REUSE DEPENDENCY RESULT FROM GLOBAL CONTEXT!!!
-            if con and verbose:
-                print ('')
-                print (f'{space}REUSE: load task result from ctx["tasks"]["global"]["{storage_key}"]')
-
-            result = copy.deepcopy(ctx_tasks['global'][storage_key])
-
-            # Do not aggregate - already done!
-            r = self._finish_run(
-                    ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro, 
-                    aggregate = False, 
-                    saved_uparams = saved_uparams, 
-                    saved_local = saved_local,
-                    saved_ctx_control = saved_ctx_control,
-            )
-            if self.cm.catch_error(r): return r
-            
-            # !!! Exit from this function
-            return result
-
-
-        ###########################################################################################
         # UPDATE PARAMS FROM USE BASED ON STORAGE KEY ...
 
         if ctx_use:
@@ -447,13 +445,16 @@ class Category(InitCategory):
             if self.cm.catch_error(r): return r
 
             if r.get('stop', False):
-                # Do not aggregate - already done!
+                # It's usually done when code should not continue - for example to print versions, help, etc
+
+                # Do not aggregate further - already done!
                 r = self._finish_run(
                         ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro, 
                         aggregate = False, 
                         saved_uparams = saved_uparams, 
                         saved_local = saved_local,
                         saved_ctx_control = saved_ctx_control,
+                        preserve_global = preserve_global,
                 )
                 if self.cm.catch_error(r): return r
 
@@ -481,6 +482,39 @@ class Category(InitCategory):
                 else:
                     print(f'{space}  * {k} = {v}')
 
+
+        ###########################################################################################
+        # If not local and result already exists in global, reuse result
+
+        if store_global and storage_key and storage_key in ctx_tasks['global']:
+
+            # REUSE DEPENDENCY RESULT FROM GLOBAL CONTEXT!!!
+            if con and verbose:
+                print ('')
+                print (f'{space}REUSE: load task result from ctx["tasks"]["global"]["{storage_key}"]')
+
+            result = copy.deepcopy(ctx_tasks['global'][storage_key])
+
+            # Dynamic update to result (even if cached)
+            if task_api_code is not None and hasattr(task_api_code, 'finish_dynamic_result') and callable(getattr(task_api_code, 'finish_dynamic_result')):
+                ctx['control'] = saved_ctx_control.copy()
+                r = task_api_code.finish_dynamic_result(ctx, result, _params)
+                if self.cm.catch_error(r): return r
+                if 'result' in r: result = r['result']
+
+            # Do not aggregate - already done!
+            r = self._finish_run(
+                    ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro, 
+                    aggregate = False, 
+                    saved_uparams = saved_uparams, 
+                    saved_local = saved_local,
+                    saved_ctx_control = saved_ctx_control,
+                    preserve_global = preserve_global,
+            )
+            if self.cm.catch_error(r): return r
+            
+            # !!! Exit from this function
+            return result
 
         ###########################################################################################
         # EXPAND ALL CONTROL PARAMS
@@ -878,12 +912,16 @@ class Category(InitCategory):
                         if (os.path.isfile(ca_tool_path) or os.path.isdir(ca_tool_path)):
                             x_version = cache_artifact['cmeta'].get('params', {}).get('version')
                             x_name = cache_artifact['cmeta'].get('params', {}).get('name')
-                            skip_cache_version_check = cache_artifact['cmeta'].get('skip_cache_version_check', False)
+                            skip_cache_version_check = cache_artifact['cmeta'].get('skip_cache_version_check', True)
                             if not skip_cache_version_check and x_version and x_name:
                                 x_cref = cache_artifact['cmeta'].get('cref')
 
                                 if x_cref.get('artifact_uid') in ['a2f9b61079ce4333'] and \
                                    x_cref.get('category_uid') in ['c36be4b9314a45e0']:
+
+                                    if con and verbose:
+                                        print ('')
+                                        print (f'{space}CHECK: checking version for {x_name} ...')
 
                                     _con = con
                                     ii = {
@@ -997,7 +1035,7 @@ class Category(InitCategory):
 
                     if con and verbose:
                         print ('')
-                        print (f'{space}REUSE: load task result from {cache_path}')
+                        print (f'{space}REUSE: load task result from cache entry "{cache_path}"')
 
                     if not path:
                         path = cache_path
@@ -1030,6 +1068,7 @@ class Category(InitCategory):
                                 saved_uparams = saved_uparams, 
                                 saved_local = saved_local,
                                 saved_ctx_control = saved_ctx_control,
+                                preserve_global = preserve_global,
                         )
                         if self.cm.catch_error(r): return r
 
@@ -1189,6 +1228,7 @@ class Category(InitCategory):
                             saved_uparams = saved_uparams, 
                             saved_local = saved_local,
                             saved_ctx_control = saved_ctx_control,
+                            preserve_global = preserve_global,
                     )
                     if self.cm.catch_error(r): return r
 
@@ -1237,7 +1277,7 @@ class Category(InitCategory):
         if cache:
             r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_RESULTS, result)
             if self.cm.catch_error(r): return r
-            r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_CTX, ctx)
+            r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_CTX, ctx, safe_dump = True)
             if self.cm.catch_error(r): return r
 
         # Dynamic update to result (even if cached)
@@ -1259,6 +1299,7 @@ class Category(InitCategory):
                 saved_uparams = saved_uparams, 
                 saved_local = saved_local,
                 saved_ctx_control = saved_ctx_control,
+                preserve_global = preserve_global,
         )
         if self.cm.catch_error(r): return r
 
@@ -1293,7 +1334,7 @@ class Category(InitCategory):
                    saved_local = None,
                    skip_if_exist_in_list = True,
                    saved_ctx_control = None,
-
+                   preserve_global = {},
     ):
 
         # Save output for reproducibility
@@ -1347,6 +1388,16 @@ class Category(InitCategory):
         ctx['tasks']['local'] = saved_local if saved_local else {}
         ctx['control'] = saved_ctx_control if saved_ctx_control else {}
 
+        # Restore global
+        if preserve_global:
+            for k in preserve_global:
+                v = preserve_global[k]
+                if v is None:
+                    if k in ctx['tasks']['global']:
+                        del(ctx['tasks']['global'][k])
+                else:
+                    ctx['tasks']['global'][k] = v
+
         return {'return':0}
 
 
@@ -1389,7 +1440,7 @@ class Category(InitCategory):
             saved_local = ctx_tasks.get('local')
             ctx_tasks['local'] = local
 
-        for sub_task_desc in desc:
+        for sub_task_desc in copy.deepcopy(desc):
             if type(sub_task_desc) != dict:
                 return self.cm.error(f'sub-task is not "dict" in task "{task_artifact_alias}" in "{__file__}" ({sub_task_desc})')
 

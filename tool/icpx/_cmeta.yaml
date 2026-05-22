@@ -5,6 +5,7 @@ constraints:
   supports_compute:
   - cpu
   - xpu
+  - cuda
   supports_os:
   - linux
   - windows

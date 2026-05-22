@@ -1,4 +1,4 @@
-﻿import copy
+import copy
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 

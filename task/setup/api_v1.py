@@ -1,4 +1,4 @@
-﻿"""
+"""
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
 All rights reserved.
 
@@ -28,6 +28,8 @@ class CTask(InitCTask):
     build_tool = build.build_tool
     read_tool = common.read_tool
     detect_existing_tool = detect.detect_existing_tool
+
+    x = None
 
     ############################################################
     def init(self,
@@ -170,6 +172,7 @@ class CTask(InitCTask):
 
         ###########################################################################################
         # SELECT TOOL ARTIFACT
+
         r = self.read_tool(
             ctx=ctx,
             name=name,
@@ -413,7 +416,6 @@ class CTask(InitCTask):
         desc_cache_params_use = desc.get('cache_params_use')
         if desc_cache_params_use:
             v = None
-
             if 'all' in desc_cache_params_use:
                 v = desc_cache_params_use['all']
             elif uname in desc_cache_params_use:

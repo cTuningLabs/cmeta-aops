@@ -1,1 +1,4 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
 _error: "Don't use 'setup pip-torchaudio' directly - use 'setup pip torchaudio' instead"

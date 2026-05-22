@@ -1,3 +1,6 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
 names:
   - winget{{global.host.vars.file_ext_exe}}
 

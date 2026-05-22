@@ -145,8 +145,6 @@ def install_tool(self,
             print ('')
 
     ###############################################################################################
-    requires_sudo = desc.get('requires_sudo', {})
-
     if install_uses_all and not skip_install_uses:
         ii = {'category': self.category_alias + ',' + self.category_uid,
               'command': 'use',
@@ -164,8 +162,9 @@ def install_tool(self,
         r = self.cm.access(ii)
         if self.cm.catch_error(r): return r
 
-
+    ###############################################################################################
     requires_sudo = desc.get('requires_sudo', {})
+
     os_key = uname if (uname == 'windows' or uname in requires_sudo) else 'linux'
     x = requires_sudo.get('all') if 'all' in requires_sudo else requires_sudo.get(os_key)
     if x:
@@ -185,7 +184,7 @@ def install_tool(self,
                 print ('')
                 print (f'{space}WARNING: passwordless SUDO detected ...')
 
-
+    ###############################################################################################
     install_params = params.copy()
 
     _control = {

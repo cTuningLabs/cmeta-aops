@@ -1,4 +1,4 @@
-﻿from cmeta import CMeta
+from cmeta import CMeta
 
 #cm = CMeta(fail_on_error=True)
 cm = CMeta()

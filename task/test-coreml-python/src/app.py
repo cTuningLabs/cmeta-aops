@@ -1,4 +1,4 @@
-﻿import coremltools as ct
+import coremltools as ct
 import numpy as np
 
 # Create a simple linear model: y = 2x

@@ -4,6 +4,7 @@ category: tool,c393ba5c6fa14f66
 constraints:
   supports_compute:
   - cpu
+  - cuda
   supports_os:
   - windows
   - linux

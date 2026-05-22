@@ -53,8 +53,11 @@ def read_tool(self,
 
     pp = p.copy()
 
-    r = self.cm.access(p)
-    if self.cm.catch_error(r, fail16=True): return r
+    r = ctx['tasks']['local'].get('selected_tool')
+    if not r:
+        r = self.cm.access(p)
+        if self.cm.catch_error(r, fail16=True): return r
+        ctx['tasks']['local']['selected_tool'] = r
 
     artifact = r['artifact']
 
@@ -118,31 +121,36 @@ def read_tool(self,
     ###########################################################################################
     # CHECK DEPENDENCIES
     if not skip_uses:
-        uses = cdesc.get('uses', []).copy()
+        x = ctx['tasks']['local'].get('selected_tool_uses_resolved')
+        if not x:
+            uses = cdesc.get('uses', []).copy()
 
-        uses_os_desc = cdesc.get('uses_os', {})
-        if uses_os_desc:
-            os_key = uname if (uname == 'windows' or uname in uses_os_desc) else 'linux'
-            uses_os = uses_os_desc['all'] if 'all' in uses_os_desc else uses_os_desc.get(os_key)
+            uses_os_desc = cdesc.get('uses_os', {})
+            if uses_os_desc:
+                os_key = uname if (uname == 'windows' or uname in uses_os_desc) else 'linux'
+                uses_os = uses_os_desc['all'] if 'all' in uses_os_desc else uses_os_desc.get(os_key)
 
-            if uses_os:
-                uses += uses_os
+                if uses_os:
+                    uses += uses_os
 
-        if uses:
-            ii = {'category': self.category_alias + ',' + self.category_uid,
-                  'command': 'use',
-                  'con': con,
-                  'quiet': quiet,
-                  'verbose': verbose,
-                  'ctx': ctx,
-                  'desc': uses,
-                  'task_artifact_alias': self.artifact_alias,
-                  'task_artifact_uid': self.artifact_uid,
-                  'task_artifact_path': self.artifact_path,
-                 }
+            if uses:
+                ii = {'category': self.category_alias + ',' + self.category_uid,
+                      'command': 'use',
+                      'con': con,
+                      'quiet': quiet,
+                      'verbose': verbose,
+                      'ctx': ctx,
+                      'desc': uses,
+                      'task_artifact_alias': self.artifact_alias,
+                      'task_artifact_uid': self.artifact_uid,
+                      'task_artifact_path': self.artifact_path,
+                     }
 
-            r = self.cm.access(ii)
-            if self.cm.catch_error(r): return r
+                r = self.cm.access(ii)
+                if self.cm.catch_error(r): return r
+
+            ctx['tasks']['local']['selected_tool_uses_resolved'] = True
+
 
     return {
         'return': 0,

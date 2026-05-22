@@ -1,6 +1,12 @@
-﻿store_global: False
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+store_global: False
 storage_key: compile-and-run-program
 cache: False
+preserve_global_keys:
+  - compiler
+  - lib-*
 
 params_map:
   arg2: name

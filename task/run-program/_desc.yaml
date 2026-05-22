@@ -1,4 +1,7 @@
-﻿store_global: False
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+store_global: False
 storage_key: run-program
 cache: False
 

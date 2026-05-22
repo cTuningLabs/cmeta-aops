@@ -1,3 +1,6 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
 storage_key: msvc
 
 names:
@@ -33,6 +36,8 @@ features:
       static_build_debug: '/MTd'
       obj_file: '/Fo:'
       exe_file: '/Fe:'
+      lib_file: '/OUT:'
+      lib_file2: '/IMPLIB:'
       link_sep: '/link'
       lib_path: '/LIBPATH:'
       lib_prefix: ''
@@ -43,5 +48,17 @@ features:
       fastest: '/O2 /Ob2 /Oi /Ot /GL'
       profile: '/Zi'
       link_profile: '/PROFILE'
+      compile_to_obj: '/c'
+      d: '/D'
+      lib_dynamic_build: '/LD'
+      lib_static_build: '/c'
+      lib_dynamic_build_debug: '/LDd'
+      lib_static_build_debug: '/c /Zi'
+      static_lib1: ''
+      static_lib2: '/OUT:'
     vars:
       file_ext_exe: .exe
+      file_ext_lib: .lib
+      file_ext_lib2: .lib
+      file_ext_dlib: .dll
+      file_ext_obj: .obj

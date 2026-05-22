@@ -1,4 +1,4 @@
-﻿"""
+"""
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
 All rights reserved.
 
@@ -206,6 +206,10 @@ class CTask(InitCTask):
             'file_ext_obj': '.obj',
             'file_ext_exe_search': '.exe',
             'file_ext_bat': '.bat',
+            'file_ext_bat2': '.bat',
+            'file_ext_cmd': '.cmd',
+            'file_ext_cmd2': '.cmd',
+            'file_ext_lib': '.lib',
             'file_ext_dlib': '.dll',
             'call_script': 'call',
             'start_exe_prefix': '',
@@ -220,6 +224,10 @@ class CTask(InitCTask):
             'file_ext_obj': '.o',
             'file_ext_exe_search': '.',
             'file_ext_bat': '.sh',
+            'file_ext_bat2': '',
+            'file_ext_cmd': '.cmd',
+            'file_ext_cmd2': '',
+            'file_ext_lib': '.a',
             'file_ext_dlib': '.so',
             'call_script': '.',
             'start_exe_prefix': './',
@@ -234,6 +242,10 @@ class CTask(InitCTask):
             'file_ext_obj': '.o',
             'file_ext_exe_search': '.',
             'file_ext_bat': '.sh',
+            'file_ext_bat2': '',
+            'file_ext_cmd': '.cmd',
+            'file_ext_cmd2': '',
+            'file_ext_lib': '.a',
             'file_ext_dlib': '.dylib',
             'call_script': '.',
             'start_exe_prefix': './',

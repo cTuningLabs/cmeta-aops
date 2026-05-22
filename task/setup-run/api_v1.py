@@ -1,4 +1,4 @@
-﻿"""
+"""
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
 All rights reserved.
 
@@ -262,8 +262,12 @@ class CTask(InitCTask):
                 os.remove(output_file)
 
             if _android_cpu:
-                cmds.append(adb_with_serial + f' shell "rm -rf {adb_tmp_path}/{f}"')
-                run_time_cmds.append(adb_with_serial + f' pull {adb_tmp_path}/{f} {f}"')
+                x1 = f'{adb_tmp_path}/{f}'
+                xx1 = self.cm.qq(x1)
+                x2 = f'{f}'
+                xx2 = self.cm.qq(x2)
+                cmds.append(adb_with_serial + f' shell "rm -rf {xx1}"')
+                run_time_cmds.append(adb_with_serial + f' pull {xx1} {xx2}')
 
 
         if _profile:

@@ -1,4 +1,7 @@
-﻿params_map:
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+params_map:
   arg2: ip
   arg3: period
 

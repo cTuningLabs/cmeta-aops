@@ -1,4 +1,4 @@
-﻿"""
+"""
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
 All rights reserved.
 
@@ -258,6 +258,8 @@ class CTool(InitCTool):
 
         nvcc_features = result['features']
 
+        uname = ctx['tasks']['global']['host']['os']['uname']
+
         if _with.get('add_env', False):
             update_result = True
 
@@ -305,7 +307,9 @@ class CTool(InitCTool):
         version_major = nvcc_features.get('version_major')
         dynamic_build_flag = nvcc_features['flags']['dynamic_build']
 
-        x = 'shared' if version_major is None or version_major<13 else 'hybrid'
+        x = 'shared'
+        if uname == 'windows' and version_major >=13:
+            x = 'hybrid'
         nvcc_features['flags']['dynamic_build'] = dynamic_build_flag.replace('{cudart_shared}', x)
 
         if update_result:

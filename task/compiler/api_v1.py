@@ -1,4 +1,4 @@
-﻿"""
+"""
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
 All rights reserved.
 
@@ -81,7 +81,8 @@ class CTask(InitCTask):
         tool_constraints = tool_match.setdefault('constraints', {})
         supports_os = tool_constraints.setdefault('supports_os', [])
 
-        if uname not in supports_os: supports_os.append(uname)
+        if uname not in supports_os: 
+            supports_os.append(uname)
 
         if not compute:
             compute = ['cpu']
@@ -247,4 +248,5 @@ class CTask(InitCTask):
             ctx['tasks']['global'][copy_to_storage_key] = copy.deepcopy(result)
 
         _result['result'] = result
+
         return _result

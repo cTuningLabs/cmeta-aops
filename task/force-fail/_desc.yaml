@@ -1,3 +1,6 @@
-﻿store_global: False   # force
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+store_global: False   # force
 storage_key: fail     # force storage key to avoid mixing up in the future
 cache: False          # don't cache

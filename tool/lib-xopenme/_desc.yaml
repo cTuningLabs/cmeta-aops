@@ -1,0 +1,45 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+skip_detect: True
+
+name: libxopenme
+
+match_version: 
+  - regex: '^.*$'
+    group: 0
+
+build_local:
+  target_sub_dir: 'build'
+
+cache_meta_const:
+  params:
+    with_compute: '{{params.with.compute|$None}}'
+    with_add_debug: '{{params.with.add_debug|$None}}'
+    target_abi: '{{local.target_abi|$None}}'
+    compute: '{{global.target.compute|$None}}'
+#    Can't pick up compiler (too early or picks up the wrong one from the higher pipeline 
+#      that is nothing to do with the lower one)
+#    compiler_path: '{{global.compiler.path|$None}}'
+#    compiler_version: '{{global.compiler.version|$None}}'
+
+build_uses:
+  all:
+    - task: compile-and-run-program,05437a1aae224270
+      name: lib-xopenme,5298772417f54247
+      compute: '{{params.with.compute|$[]}}'
+      clean: True
+      compile:
+        static: True
+        add_debug: '{{params.with.add_debug|$None}}'
+      target_path: '{{local.target_path}}'
+
+    - task: compile-and-run-program,05437a1aae224270
+      name: lib-xopenme,5298772417f54247
+      compute: '{{params.with.compute|$[]}}'
+      recompile: True
+      compile:
+        static: False
+        add_debug: '{{params.with.add_debug|$None}}'
+      target_path: '{{local.target_path}}'
+    

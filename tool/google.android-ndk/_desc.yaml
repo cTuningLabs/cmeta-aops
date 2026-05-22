@@ -1,5 +1,8 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
 names:
-  - ndk-which.cmd
+  - ndk-which{{global.host.vars.file_ext_cmd2}}
 
 match_version: 
   - regex: '^Pkg\.Revision\s*=\s*([^\n]+)'
@@ -22,8 +25,11 @@ extra_paths:
     - "C:\\Program Files (x86)\\Android*\\**"
     - "D:\\Program Files\\Android\\**"
     - "D:\\Program Files (x86)\\Android*\\**"
+  linux:
+    - "/home/linuxbrew/.linuxbrew/**"
+  darwin:
+    - "/opt/homebrew/opt/**"
 
 uses:
   - task: setup,a2f9b61079ce4333
     name: google.android-sdk.command-line-tools,2ee8eb31da764eef
-  

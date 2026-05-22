@@ -1,0 +1,27 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+names:
+  - ncu-ui{{global.host.vars.file_ext_exe}}
+
+cache_params_use: 
+  all:
+    ncu:
+      version: "{{global.ncu.version}}"
+      path: "{{global.ncu.path}}"
+
+only_paths:
+  all:
+    - "{{global.ncu.features.paths.home}}/**"
+
+# Reuse version from ncu !
+match_version: 
+  - regex: "version\\s*([\\d.]+)"
+    group: 1
+
+cmd_get_version: '{{global.ncu.qpath}} --version'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: ncu,01f8f885a9224281
+    version: "{{params.version|$None}}"

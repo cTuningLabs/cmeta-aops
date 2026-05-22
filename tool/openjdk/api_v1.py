@@ -1,4 +1,4 @@
-﻿"""
+"""
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
 All rights reserved.
 
@@ -138,3 +138,35 @@ class CTool(InitCTool):
           'found_path': path_to_tool,
         }
 
+    ############################################################
+    def finish_dynamic_result(self,
+                              ctx: dict,
+                              result: dict = {},
+                              params: dict = {},
+    ):
+        """
+        """
+
+        _with = params.get('with',{})
+
+        _result = {'return':0}
+
+        if _with.get('add_env', False):
+            path = result['path']
+
+            path_bin = os.path.dirname(path)
+            path_home = os.path.dirname(path_bin)
+
+            _aggregate = result.setdefault('_aggregate', {})
+            _aggregate_env = _aggregate.setdefault('env',{})
+
+            _aggregate_env['JAVA_HOME'] = path_home
+            _aggregate_env['JAVA_PATH'] = path_home
+
+            _path = _aggregate_env.setdefault('+PATH', [])
+            if path_bin not in _path:
+                _path.insert(0, path_bin)
+
+            _result['result'] = result
+
+        return _result

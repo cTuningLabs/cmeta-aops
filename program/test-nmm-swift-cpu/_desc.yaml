@@ -1,0 +1,44 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  src_file_names: 
+    - 'program.swift'
+
+  output_files:
+    - tmp-cmeta-program-stats.json
+
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+
+updates:
+  compile:
+    uses_pre:
+      - match:
+          task: compiler,f3925b201c704bde
+        update:
+          lang: swiftc
+
+    uses_prep:
+      - match:
+          task: setup-compile,10f1dfd3f6f04c35
+        update:
+          lang: swiftc
+
+  run:
+    uses_prep:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         update:
+           cmd_main: >-
+             {{params.precision|float32}} 
+             {{params.dim_m|1500}} 
+             {{params.dim_n|1500}} 
+             {{params.dim_k|1500}}
+             {{params.repeat|3}}
+             {{params.clean|1}}
+             {{params.seed|12345}}
+

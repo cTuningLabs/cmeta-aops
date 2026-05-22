@@ -1,4 +1,7 @@
-﻿fail_if_not_win: True
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+fail_if_not_win: True
 
 cache: False                     # force by default
 

@@ -1,5 +1,8 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
 names:
-  - sdkmanager{{global.host.vars.file_ext_bat}}
+  - sdkmanager{{global.host.vars.file_ext_bat2}}
 
 match_version: 
   - regex: '^\S+'
@@ -10,9 +13,36 @@ cmd_get_version: '{{tool_path}} --version'
 cache_meta_const:
   skip_cache_version_check: True
 
+
+install_cmd:
+  windows: "{{global.winget.qpath}} install --id=Google.AndroidSDKCommandLineTools -e --no-upgrade {{global.init.winget_install_flags|}}"
+  linux: '{{global.brew.qpath}} install --cask android-commandlinetools'
+  darwin: '{{global.brew.qpath}} install --cask android-commandlinetools'
+
+install_cmd_version:
+  windows: "{{global.winget.qpath}} install --id=Google.AndroidSDKCommandLineTools -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"
+  linux: '{{global.brew.qpath}} install --cask android-commandlinetools@{{major_version}}'
+  darwin: '{{global.brew.qpath}} install --cask android-commandlinetools@{{major_version}}'
+
 extra_paths:
   windows:
     - "C:\\Program Files\\Android\\**"
     - "C:\\Program Files (x86)\\Android*\\**"
     - "D:\\Program Files\\Android\\**"
     - "D:\\Program Files (x86)\\Android*\\**"
+    - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
+  linux:
+    - "/home/linuxbrew/.linuxbrew/**"
+  darwin:
+    - "/opt/homebrew/opt/**"
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: openjdk,5bc3b6e965174534
+    with:
+      add_env: True
+
+install_uses:
+  linux:
+    - task: setup,a2f9b61079ce4333
+      name: brew,27859c999bdd4085

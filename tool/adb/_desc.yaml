@@ -1,3 +1,6 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
 names:
   - adb{{global.host.vars.file_ext_exe}}
 
@@ -17,6 +20,6 @@ uses:
   - task: setup,a2f9b61079ce4333
     name: Google.PlatformTools,27ca12e6f43449fc
 
-extra_paths:
-  windows:
+only_paths:
+  all:
     - "{{global.google-platform-tools.path_bin}}"

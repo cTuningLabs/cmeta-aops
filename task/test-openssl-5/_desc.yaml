@@ -1,4 +1,7 @@
-﻿uses:
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+uses:
   - task: print-text,23e0ac84f583466f
     text: >
       VAR src_file: {{local.src_file|}}

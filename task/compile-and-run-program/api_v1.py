@@ -1,4 +1,4 @@
-﻿"""
+"""
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
 All rights reserved.
 
@@ -41,6 +41,8 @@ class CTask(InitCTask):
         path = artifact['path']
 
         desc = copy.deepcopy(selected_program['loaded_files']['_desc'].get('data', {})) # May change during context merge
+
+        program_api_code = selected_program.get('api_code')
 
         ###########################################################################################
         if 'params' in desc:
@@ -143,6 +145,15 @@ class CTask(InitCTask):
         else:
             self.cm.utils.common.deep_merge(ctx['tasks']['local']['params'], params, append_lists=True)
 
+        ###########################################################################################
+        # Check if customization
+        if hasattr(program_api_code, 'customize') and callable(getattr(program_api_code, 'customize')):
+            r = program_api_code.customize(ctx, params)
+            if self.cm.catch_error(r): return r
+
+        ###########################################################################################
+        # Prepare some paths
+
         path_repro_all = os.path.join(target_path, '_repro_ctx_all.json')
         path_repro_compile = os.path.join(target_path, '_repro_ctx_compile.json')
         path_repro_run = os.path.join(target_path, '_repro_ctx_run.json')
@@ -208,23 +219,24 @@ class CTask(InitCTask):
 
         ctx_setup_compile = None
 
-        r = self.cm.utils.files.read_file(path_repro_compile)
-        if r['return']>0:
-            recompile = True
-        else:
-            _compiled_state = r['data']
-
-            if _compiled_state.get('result', {}).get('return') != 0:
+        if not recompile:
+            r = self.cm.utils.files.read_file(path_repro_compile)
+            if r['return']>0:
                 recompile = True
+            else:
+                _compiled_state = r['data']
 
-            _compiled_state_global = _compiled_state.get('ctx', {}).get('tasks', {}).get('global')
-            _compiled_state_local = _compiled_state.get('ctx', {}).get('tasks', {}).get('local')
+                if _compiled_state.get('result', {}).get('return') != 0:
+                    recompile = True
 
-            if _compiled_state_global:
-                compile_target_compute = _compiled_state_global.get('target',{}).get('compute', [])
+                _compiled_state_global = _compiled_state.get('ctx', {}).get('tasks', {}).get('global')
+                _compiled_state_local = _compiled_state.get('ctx', {}).get('tasks', {}).get('local')
 
-            if _compiled_state_local:
-                ctx_setup_compile = _compiled_state_local.get('setup-compile')
+                if _compiled_state_global:
+                    compile_target_compute = _compiled_state_global.get('target',{}).get('compute', [])
+
+                if _compiled_state_local:
+                    ctx_setup_compile = _compiled_state_local.get('setup-compile')
 
         if not compile_desc.get('skip', False) and not skip_compile:
             if con and verbose:
@@ -289,10 +301,45 @@ class CTask(InitCTask):
                 if os.path.isfile(path_repro_compile):
                     os.remove(path_repro_compile)
 
-                # Assemble uses
+                ###########################################################################################
+                # First do uses_pre
+                compile_uses_pre = compile_desc.get('uses_pre')
+
+                if compile_uses_pre:
+                    p = {'category': self.category_alias + ',' + self.category_uid,
+                         'command': 'use',
+                         'con': con,
+                         'quiet': quiet,
+                         'verbose': verbose,
+                         'ctx': ctx,
+                         'desc': compile_uses_pre,
+                         'local': ctx['tasks']['local'], # Reuse local from this task (selected-program)
+                         'task_artifact_alias': self.artifact_alias,
+                         'task_artifact_uid': self.artifact_uid,
+                         'task_artifact_path': self.artifact_path,
+                        }
+
+#                    if _compile_params:
+#                        p['uparams'] = {'compile':_compile_params}
+
+                    r = self.cm.access(p)
+
+                    rx = self.cm.utils.files.write_file(path_repro_compile, {'ctx':ctx, 'result':r}, safe_dump = True)
+                    if self.cm.catch_error(rx): return rx
+
+                    if self.cm.catch_error(r): return r
+
+                ###########################################################################################
+                # Check if customization2 after uses_pre (compute, etc)
+                if hasattr(program_api_code, 'customize2') and callable(getattr(program_api_code, 'customize2')):
+                    r = program_api_code.customize2(ctx, params)
+                    if self.cm.catch_error(r): return r
+
+                ###########################################################################################
+                # Assemble other uses
                 compile_uses = []
 
-                for k in ['uses_pre', 'uses_libs', 'uses_prep', 'uses']:
+                for k in ['uses_libs', 'uses_prep', 'uses']:
                     x = compile_desc.get(k)
                     if x:
                         compile_uses += x
@@ -321,7 +368,7 @@ class CTask(InitCTask):
 
                     if self.cm.catch_error(r): return r
 
-                ctx_setup_compile = ctx['tasks']['local']['setup-compile']
+                ctx_setup_compile = ctx['tasks']['local'].get('setup-compile')
 
         ###########################################################################################
         # Run

@@ -1,4 +1,4 @@
-﻿import gradio as gr
+import gradio as gr
 import argparse
 
 def greet(name):

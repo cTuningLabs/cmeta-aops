@@ -1,3 +1,6 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
 storage_key: nvcc
 
 names:
@@ -35,41 +38,77 @@ extra_paths:
 features:
   windows:
     flags:
+      catch_errors: ''
       include_path: '-I'
       dynamic_build: '-cudart={cudart_shared} -Xcompiler /MD'
       static_build: '-cudart=static -Xcompiler /MT'
       dynamic_build_debug: '-g -cudart=hybrid -Xcompiler /MDd'
       static_build_debug: '-g -cudart=static -Xcompiler /MTd'
+      obj_file: '-o '
       exe_file: '-o '
+      lib_file: '-o '
+      lib_file2: ''
+      link_sep: ''
       lib_path: '-L'
       lib_prefix: '-l'
       lib_prefix2: 'lib'
       lib_postfix: ''
       openmp: '-Xcompiler /openmp'
-      link_openmp: 
+      link_openmp:
       fast: '-O3'
       fastest: '-O3'
       profile: ''
       profile_cuda: '-lineinfo'
+      link_profile: ''
+      compile_to_obj: '-c'
+      d: '-D'
+      lib_dynamic_build: '-shared'
+      lib_static_build: '-c'
+      lib_dynamic_build_debug: '-shared -g'
+      lib_static_build_debug: '-c -g'
+      static_lib1: 'rcs'
+      static_lib2: ''
     vars:
       file_ext_exe: .exe
+      file_ext_lib: .lib
+      file_ext_lib2: .lib
+      file_ext_dlib: .dll
+      file_ext_obj: .obj
   linux:
     flags:
+      catch_errors: ''
       include_path: '-I'
       dynamic_build: '-cudart={cudart_shared}'
       static_build: '-cudart=static'
-      dynamic_build_debug: '-cudart=hybrid -g'
+      dynamic_build_debug: '-cudart=shared -g'
       static_build_debug: '-cudart=static -g'
+      obj_file: '-o '
       exe_file: '-o '
+      lib_file: '-o '
+      lib_file2: ''
+      link_sep: ''
       lib_path: '-L'
       lib_prefix: '-l'
       lib_prefix2: ''
       lib_postfix: ''
       openmp: '-Xcompiler -fopenmp'
-      link_openmp: 
+      link_openmp:
       fast: '-O3'
       fastest: '-O3'
       profile: ''
       profile_cuda: '-lineinfo'
+      link_profile: ''
+      compile_to_obj: '-c'
+      d: '-D'
+      lib_dynamic_build: '-shared'
+      lib_static_build: '-c'
+      lib_dynamic_build_debug: '-shared -g'
+      lib_static_build_debug: '-c -g'
+      static_lib1: 'rcs'
+      static_lib2: ''
     vars:
-      file_ext_exe: 
+      file_ext_exe:
+      file_ext_lib: .a
+      file_ext_lib2: .a
+      file_ext_dlib: .so
+      file_ext_obj: .o

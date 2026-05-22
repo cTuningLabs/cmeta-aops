@@ -1,0 +1,24 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+names:
+  - libcudart{{global.host.vars.file_ext_dlib}}
+  - cudart{{global.host.vars.file_ext_lib}}
+
+match_version: 
+  - regex: '^.*$'
+    group: 0
+
+cache_params_use: 
+  all:
+    nvcc:
+      version: "{{global.nvcc.version}}"
+      path: "{{global.nvcc.path}}"
+
+only_paths:
+  all:
+    - "{{global.nvcc.features.paths.home}}/**"
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: nvcc,7f0e9193fef74919

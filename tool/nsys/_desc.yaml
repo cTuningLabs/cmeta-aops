@@ -1,3 +1,6 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
 names:
   - nsys{{global.host.vars.file_ext_exe}}
 
@@ -18,5 +21,6 @@ extra_paths:
     - "C:\\Program Files\\NVIDIA Corporation\\Nsight Systems*\\**\\"
     - "D:\\Program Files\\NVIDIA Corporation\\Nsight Systems*\\**\\"
   linux:
-    - "/usr/**/cuda/bin/"
+    - "/usr/local/cuda/**"
+    - "/usr//cuda/**"
     - "/opt/nvidia/**"

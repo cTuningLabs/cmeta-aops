@@ -1,0 +1,82 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  src_file_names: 
+    - 'program.cu'
+    - 'matmul.cu'
+
+  output_files:
+    - tmp-cmeta-program-stats.json
+    - tmp-ck-timer.json
+
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+    stats-xopenme: tmp-ck-timer.json
+
+params:
+  compute: cuda
+  compile:
+    openmp: True
+    d:
+      XOPENME:
+
+use:
+  nvcc:
+    with:
+      arch_flags: True
+      add_env: True # Just for a test ...
+
+updates:
+  compile:
+    uses_pre:
+      - match:
+          task: compiler,f3925b201c704bde
+        update:
+          lang: cuda
+
+    uses_prep:
+      - match:
+          task: setup-compile,10f1dfd3f6f04c35
+        update:
+          lang: cuda
+
+    uses_libs:
+      - append:
+         ######################################################################################
+         # Prepare Libs for Host CPU
+         - task: setup,a2f9b61079ce4333
+           name: lib-openssl,903191f1fab74064
+
+         - task: setup,a2f9b61079ce4333
+           name: lib-xopenme,c7b96678a7734510
+
+         # Only for Clang on Linux and MacOS
+         - task: setup,a2f9b61079ce4333
+           if_os: linux
+           if: '{{global.target.compute|$[]}} == ["cuda"] and "{{global.llvm.path|None}}" != "None" '
+           name: lib-openmp,7958b973fc0d42a9
+
+         # Prepare Libs for CUDA
+         - task: setup,a2f9b61079ce4333
+           if: '"{{params.compile.static|False}}" != "True"'
+           name: lib-cuda,ac9daedec465409e
+
+
+  run:
+    uses_prep:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         update:
+           cmd_main: >-
+             {{params.precision|float32}} 
+             {{params.dim_m|10000}} 
+             {{params.dim_n|10000}} 
+             {{params.dim_k|10000}}
+             {{params.repeat|3}}
+             {{params.clean|1}}
+             {{params.seed|12345}}
+
