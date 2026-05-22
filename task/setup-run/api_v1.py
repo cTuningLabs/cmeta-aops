@@ -163,6 +163,8 @@ class CTask(InitCTask):
             if fdlp:
                 if uname == 'windows':
                     env_dlib = run_time_env.setdefault('+PATH', [])
+                elif uname == 'darwin':
+                    env_dlib = run_time_env.setdefault('+DYLD_LIBRARY_PATH', [])
                 else:
                     env_dlib = run_time_env.setdefault('+LD_LIBRARY_PATH', [])
 

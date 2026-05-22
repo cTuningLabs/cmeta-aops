@@ -63,7 +63,9 @@ class CTool(InitCTool):
 
             path_tool_lib = os.path.join(path_bin, f'llvm-ar{file_ext_exe}')
             if not os.path.isfile(path_tool_lib):
-                return self.cm.error(f'library sub-tool not found in "{path_tool_lib}"')
+                path_tool_lib = os.path.join(path_bin, f'ar{file_ext_exe}')
+                if not os.path.isfile(path_tool_lib):
+                    return self.cm.error(f'library sub-tool not found in "{path_tool_lib}"')
 
             _paths = {
                'bin': path_bin,
