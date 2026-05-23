@@ -32,14 +32,14 @@ build_uses:
       compile:
         static: True
         add_debug: '{{params.with.add_debug|$None}}'
-      target_path: '{{local.target_path}}//lib'
+      target_path: '{{local.target_path}}//lib//static'
 
     - task: compile-and-run-program,05437a1aae224270
       name: lib-milepost,f197e3fc760f49f4
       compute: '{{params.with.compute|$[]}}'
-      recompile: True
+      clean: True
       compile:
         static: False
         add_debug: '{{params.with.add_debug|$None}}'
-      target_path: '{{local.target_path}}//lib'
+      target_path: '{{local.target_path}}//lib//dynamic'
     

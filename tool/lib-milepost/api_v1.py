@@ -72,20 +72,20 @@ class CTool(InitCTool):
         uname = ctx['tasks']['global']['host']['os']['uname']
 
         _with = params.get('with', {})
-        _static = _with.get('static', False)
         _add_debug = _with.get('add_debug', False)
-
 
         for path in paths:
              filename_without_ext = os.path.splitext(os.path.basename(path))[0]
              libname = filename_without_ext[3:] if filename_without_ext.startswith('lib') else filename_without_ext
 
-             path_lib = os.path.dirname(path)
-             path_home = os.path.dirname(path_lib)
+             path_dynamic_lib = os.path.dirname(path)
+             path_home = os.path.dirname(path_dynamic_lib)
+
+             path_lib = os.path.join(path_home, 'static')
 
              path_include = os.path.join(path_home, 'include')
-             path_includes = [path_include]
              
+             # Check versions
              path_cmeta_info = os.path.join(path_home, '_cmeta_info.json')
 
              version = None
@@ -101,56 +101,36 @@ class CTool(InitCTool):
              if not version:
                  version = 'default'
 
-             _path_lib = path_lib
-
-             _libs = {}
-
-             if _static:
-                 if _add_debug:
-                     _libs['libs_static_debug'] = [path_lib]
-                 else:
-                     _libs['libs_static'] = [path_lib]
-             else:
-                 if _add_debug:
-                     _libs['libs_debug'] = [path_lib]
-
-             # Default libs
-             path_libs = [path_lib]
-             qpath_libs = [self.cm.q(path_lib)]
-
-             lib_names = [libname]
-
-             lib_names_static = []
-             if _static:
-                 lib_names_static = [libname]
-
+             # Prepare paths
              paths = {
                  'root': path_home,
                  'qroot': self.cm.q(path_home),
              }
 
-             # FGG: bin is only needed on Windows for DLLs ...
-             if not _static:
-                 paths['dynamic_lib'] = path_lib
-                 paths['qdynamic_lib'] = self.cm.q(path_lib)
-                 paths['dynamic_libs'] = [path_lib]
-
              if os.path.isdir(path_include):
                  paths['include'] = path_include
                  paths['qinclude'] = self.cm.q(path_include)
+                 paths['includes'] = [path_include]
 
-             if path_includes:
-                 paths['includes'] = path_includes
+             paths['dynamic_lib'] = path_dynamic_lib
+             paths['qdynamic_lib'] = self.cm.q(path_dynamic_lib)
+             paths['dynamic_libs'] = [path_dynamic_lib]
 
              if os.path.isdir(path_lib):
                  paths['lib'] = path_lib
                  paths['qlib'] = self.cm.q(path_lib)
+                 paths['libs'] = [path_lib]
+                 paths['qlibs'] = [self.cm.q(path_lib)]
 
-             if path_libs:
-                 paths['libs'] = path_libs
+                 paths['libs_static'] = [path_lib]
 
-             if _libs:
-                 paths.update(_libs)
+             if _add_debug:
+                 _libs['libs_debug'] = [path_dynamic_lib]
+                 _libs['libs_static_debug'] = [path_lib]
+
+             # Lib names
+             lib_names = [libname]
+             lib_names_static = [libname]
 
              features = {
                'paths': paths,

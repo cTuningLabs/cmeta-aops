@@ -6,7 +6,8 @@ inherits:
 
 local_vars:
   src_file_names: 
-    - 'susan.c'
+    - 'susan.codelet__10.c'
+    - 'susan.codelet__10.wrapper.c'
 
   output_files:
     - tmp-ck-timer.json
@@ -14,11 +15,8 @@ local_vars:
   result_files:
     stats-xopenme: tmp-ck-timer.json
 
-params:
-  compile:
-    openmp: True
-    d:
-      XOPENME:
+  run_time_env:
+    CT_REPEAT_MAIN: '{{params.repeat|100000}}'
 
 updates:
   compile:
@@ -38,6 +36,9 @@ updates:
       - append:
          ######################################################################################
          # Prepare Libs for Host CPU
+         - task: setup,a2f9b61079ce4333
+           name: lib-milepost,e54621e3059d4590
+
          - task: setup,a2f9b61079ce4333
            name: lib-xopenme,c7b96678a7734510
 
@@ -66,4 +67,4 @@ updates:
        - match:
            task: setup-run,148f6c1fdb4247df
          update:
-           cmd_main: --help
+           cmd_main: ../data/codelet.data
