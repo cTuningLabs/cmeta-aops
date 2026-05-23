@@ -29,6 +29,7 @@ extra_paths:
     - "/home/linuxbrew/.linuxbrew/**"
   darwin:
     - "/opt/homebrew/opt/**"
+    - "/opt/homebrew/share/**"
 
 uses:
   - task: setup,a2f9b61079ce4333
