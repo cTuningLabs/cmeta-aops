@@ -1,19 +1,23 @@
 artifact: c0f077b9c14d4ba1
 authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
-creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
-sort: 3000
 constraints:
   supports_compute:
   - cpu
   - cuda
+  - metal
   supports_nvcc_os:
   - linux
   supports_os:
   - windows
   - linux
   - darwin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+last_update_timestamp: '2026-05-23T15:03:48.598855+00:00'
+sort: 3000
 tags:
 - lang-cpp
 - clang-cpp
+- lang-objc
+- objc

@@ -17,6 +17,8 @@ local_vars:
 
 params:
   compute: metal
+  compile:
+    flags4: '-framework CoreML -framework Foundation -framework Metal -framework MetalPerformanceShaders'
 
 updates:
   compile:
