@@ -35,7 +35,7 @@ features:
       dynamic_build_debug: '/MDd'
       static_build_debug: '/MTd'
       obj_file: '/Fo:'
-      exe_file: '/Fe:'
+      exe_file: '/out:'
       lib_file: '/OUT:'
       lib_file2: '/IMPLIB:'
       link_sep: '/link'

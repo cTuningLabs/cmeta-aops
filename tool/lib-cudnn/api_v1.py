@@ -32,14 +32,16 @@ class CTool(InitCTool):
         if self.cm.debug:
             self.logger.debug("RUNNING TOOL cudnn api_v1 detect_versions")
 
-        found_paths_with_versions =  {}
+        found_paths_with_versions = {}
+
+        uname = ctx['tasks']['global']['host']['os']['uname']
 
         uarch = ctx['tasks']['global']['host']['os']['uarch']
         if uarch == 'amd64':
             uarch = 'x64'
 
         nvcc = ctx['tasks']['global']['nvcc']
-        cuda_version = nvcc['features']['versions']['cuda']['version']
+        cuda_version = nvcc['version']
 
         for path in paths:
              path_include = os.path.dirname(path)
@@ -103,27 +105,71 @@ class CTool(InitCTool):
 
                  features = {}
 
-                 paths = {
-                     'home': path_home,
-                     'qhome': self.cm.q(path_home),
-                 }
+                 paths = {}
 
-                 if os.path.isdir(path_bin):
-                     paths['bin'] = path_bin
-                     paths['qbin'] = self.cm.q(path_bin)
+                 if uname == 'windows':
+                     paths['dynamic_lib'] = path_bin
+                     paths['qdynamic_lib'] = self.cm.q(path_bin)
+                     paths['dynamic_libs'] = [path_bin]
+
+                 else:
+                     paths['dynamic_lib'] = path_lib
+                     paths['qdynamic_lib'] = self.cm.q(path_lib)
+                     paths['dynamic_libs'] = [path_lib]
+
+                 paths['lib'] = path_lib
+                 paths['qlib'] = self.cm.q(path_lib)
+                 paths['libs'] = [path_lib]
+
+                 paths['home'] = path_home
+                 paths['qhome'] = self.cm.q(path_home)
+
+                 lib_names = []
 
                  if os.path.isdir(path_include):
                      paths['include'] = path_include
                      paths['qinclude'] = self.cm.q(path_include)
 
-                 if os.path.isdir(path_lib):
-                     paths['lib'] = path_lib
-                     paths['qlib'] = self.cm.q(path_lib)
+                     paths['includes'] = [path_include]
 
-                 features['paths'] = paths
-                 if cuda_ver:
-                     features['cuda_version'] = cuda_ver
+                 lib_names = [
+                    '$cudnn' # $ means that do not add lib prefix ...
+                 ]
+
+                 features = {
+                   'paths': paths,
+                 }
+
+                 if lib_names:
+                     features['lib_names'] = lib_names
+
+                 if cuda_version:
+                     features['cuda_version'] = cuda_version
+
 
                  found_paths_with_versions[path] = {'output':version, 'features':features}
 
         return {'return':0, 'found_paths_with_versions':found_paths_with_versions}
+
+    ############################################################
+    def finish_dynamic_result(self,
+                              ctx: dict,
+                              result: dict = {},
+                              params: dict = {},
+    ):
+        """
+        """
+
+        if not params.get('version_check', False):
+            _with = params.get('with', {})
+
+#            if not _with.get('static', False):
+
+            features = result['features']
+
+            path_dyn_lib = features['paths']['dynamic_lib']
+
+            if os.path.isdir(path_dyn_lib):
+                features['paths']['found_dynamic_lib_paths'] = [path_dyn_lib]
+
+        return {'return':0}

@@ -1,4 +1,4 @@
-﻿cx program run test-nmm-nvcc-cuda --clean --compile.fastest  -v --profile_cuda  
+cx program run test-nmm-nvcc-cuda --clean --compile.fastest  -v --profile_cuda  
 :: --use.run-program.open_shell_after
 :: --compile.static
 ::--compute=cuda

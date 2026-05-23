@@ -22,5 +22,5 @@ extra_paths:
     - "D:\\Program Files\\NVIDIA Corporation\\Nsight Compute*\\**\\"
   linux:
     - "/usr/local/cuda/**"
-    - "/usr//cuda/**"
+    - "/usr/cuda/**"
     - "/opt/nvidia/**"

@@ -1,8 +1,6 @@
 authors: Grigori Fursin
 copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
 
-storage_key: cudnn
-
 names:
   - cudnn.h
 
@@ -22,6 +20,7 @@ extra_paths:
   linux:
     - "/usr/local/cuda**/include/**"
     - "/usr/cuda**/include/**"
+    - "/usr/include/**"
     - "/opt/cuda**/include/**"
 
 uses:

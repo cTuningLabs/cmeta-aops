@@ -1,1 +1,1 @@
-cx program run test-nmm-cpp-cpu --clean --compile.fastest -v -j -q
+cx program run test-nmm-cpp-cpu --clean --compile.fastest -v -j

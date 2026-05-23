@@ -28,6 +28,12 @@ extra_paths:
   darwin:
     - "/opt/homebrew/opt/**"
 
+uses_os:
+  linux:
+    - task: setup,a2f9b61079ce4333
+      name: unzip,864d2608e3fc4d47
+  darwin:
+
 install_uses:
   linux:
     - task: setup,a2f9b61079ce4333

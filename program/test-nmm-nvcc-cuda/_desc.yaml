@@ -28,7 +28,7 @@ use:
   nvcc:
     with:
       arch_flags: True
-      add_env: True # Just for a test ...
+#      add_env: True # Just for a test ...
 
 updates:
   compile:
@@ -62,7 +62,7 @@ updates:
 
          # Prepare Libs for CUDA
          - task: setup,a2f9b61079ce4333
-           if: '"{{params.compile.static|False}}" != "True"'
+#           if: '"{{params.compile.static|False}}" != "True"'
            name: lib-cuda,ac9daedec465409e
 
 

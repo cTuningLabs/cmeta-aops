@@ -330,6 +330,7 @@ class CTask(InitCTask):
 
         src_path = params.get('src_path')
         for s in params.get('src_file_names', []):
+            s = s.replace('//', os.sep)
             x = os.path.join(src_path, s)
 
             if src_file_names_str != '':

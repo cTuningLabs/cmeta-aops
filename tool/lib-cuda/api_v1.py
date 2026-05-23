@@ -42,36 +42,43 @@ class CTool(InitCTool):
 
         for path in paths:
              path_lib = os.path.dirname(path)
+
              if uname == 'windows':
                  # Searching dynamic path
-                 path_lib = os.path.dirname(path_lib)
-                 path_lib = os.path.dirname(path_lib)
-                 path_lib = os.path.join(path_lib, 'bin')
-
-             path_home = os.path.dirname(path_lib)
+                 arch = os.path.basename(path_lib)
+                 path_home = os.path.dirname(os.path.dirname(path_lib))
+                 path_bin = os.path.join(path_home, 'bin', arch)
+             else:
+                 path_home = os.path.dirname(path_lib)
+                 path_bin = os.path.join(path_home, 'bin')
 
              # Check versions
-             file_versions = os.path.join(path_home, 'version.json')
-             if not os.path.isfile(file_versions):
-                 continue
-
              version = None
 
-             r = self.cm.utils.files.read_file(file_versions)
-             if self.cm.catch_error(r): return r
+             file_versions = os.path.join(path_home, 'version.json')
+             if os.path.isfile(file_versions):
+                 # FGG: it may happen in Docker containers with CUDA - they don't ship version.json ...
 
-             d = r['data']
+                 r = self.cm.utils.files.read_file(file_versions)
+                 if self.cm.catch_error(r): return r
 
-             version = d.get('cuda',{}).get('version')
+                 d = r['data']
+
+                 version = d.get('cuda',{}).get('version')
 
              if not version:
                  version = 'default'
 
              paths = {}
 
-             paths['dynamic_lib'] = path_lib
-             paths['qdynamic_lib'] = self.cm.q(path_lib)
-             paths['dynamic_libs'] = [path_lib]
+             if uname == 'windows':
+                 paths['dynamic_lib'] = path_bin
+                 paths['qdynamic_lib'] = self.cm.q(path_bin)
+                 paths['dynamic_libs'] = [path_bin]
+             else:
+                 paths['dynamic_lib'] = path_lib
+                 paths['qdynamic_lib'] = self.cm.q(path_lib)
+                 paths['dynamic_libs'] = [path_lib]
 
              paths['lib'] = path_lib
              paths['qlib'] = self.cm.q(path_lib)
@@ -79,8 +86,6 @@ class CTool(InitCTool):
 
              paths['home'] = path_home
              paths['qhome'] = self.cm.q(path_home)
-
-             lib_names = []
 
              path_include = os.path.join(path_home, 'include')
 
@@ -90,15 +95,9 @@ class CTool(InitCTool):
 
                  paths['includes'] = [path_include]
 
-             lib_names = [
-             ]
-
              features = {
                'paths': paths,
              }
-
-             if lib_names:
-                 features['lib_names'] = lib_names
 
              found_paths_with_versions[path] = {'output':version, 'features':features}
 
@@ -116,13 +115,19 @@ class CTool(InitCTool):
         if not params.get('version_check', False):
             _with = params.get('with', {})
 
-            if not _with.get('static', False):
+#            if not _with.get('static', False):
+# FGG: we need it both for static and dynamic libs
 
-                features = result['features']
+            features = result['features']
 
-                path_dyn_lib = features['paths']['dynamic_lib']
+            path_dyn_lib = features['paths']['dynamic_lib']
 
-                if os.path.isdir(path_dyn_lib):
-                    features['paths']['found_dynamic_lib_paths'] = [path_dyn_lib]
+            if os.path.isdir(path_dyn_lib):
+                features['paths']['found_dynamic_lib_paths'] = [path_dyn_lib]
+
+            lib_names = _with.get('lib_names')
+
+            if lib_names:
+                 features['lib_names'] = lib_names
 
         return {'return':0}

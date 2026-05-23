@@ -113,17 +113,21 @@ class CTask(InitCTask):
 
         src_file_names = local_vars.get('src_file_names')
         if src_file_names:
-            src_file_names_str = ' '.join(src_file_names)
-
-            ctx['tasks']['local']['src_file_names_str'] = src_file_names_str
-
+            src_file_names_str = ''
             src_file_names_str_with_path = ''
             for sfn in src_file_names:
+                sfn = sfn.replace('//', os.sep)
+
+                if src_file_names_str != '':
+                    src_file_names_str += ' '
+                src_file_names_str += sfn
+
                 sfnp = os.path.join(src_path, sfn)
                 if src_file_names_str_with_path != '':
                     src_file_names_str_with_path += ' '
                 src_file_names_str_with_path += sfnp
 
+            ctx['tasks']['local']['src_file_names_str'] = src_file_names_str
             ctx['tasks']['local']['src_file_names_str_with_path'] = src_file_names_str_with_path
 
 
