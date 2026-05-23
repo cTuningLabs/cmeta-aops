@@ -1,0 +1,62 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  src_file_names: 
+    - 'RNN_v8.0//RNN_example.cu'
+
+  output_files:
+    - result.txt
+
+#  result_files:
+#    stats: tmp-cmeta-program-stats.json
+#    stats-xopenme: tmp-ck-timer.json
+
+params:
+  compute: cuda
+
+use:
+  nvcc:
+    with:
+      arch_flags: True
+
+updates:
+  compile:
+    uses_pre:
+      - match:
+          task: compiler,f3925b201c704bde
+        update:
+          lang: cuda
+
+    uses_prep:
+      - match:
+          task: setup-compile,10f1dfd3f6f04c35
+        update:
+          lang: cuda
+
+    uses_libs:
+      - append:
+         # Prepare Libs for CUDA
+         - task: setup,a2f9b61079ce4333
+#           if: '"{{params.compile.static|False}}" != "True"'
+           name: lib-cuda,ac9daedec465409e
+           with:
+              lib_names:
+                - $cublas
+                - $cudart
+
+         - task: setup,a2f9b61079ce4333
+           name: lib-cudnn,440a30eb25b64853
+
+  run:
+    uses_prep:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         update:
+           cmd: >-
+             {{local.target_exe}} 
+             {run_flags_after_exe}
+             {{local.unparsed|}}

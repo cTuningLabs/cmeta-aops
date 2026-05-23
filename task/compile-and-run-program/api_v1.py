@@ -137,7 +137,8 @@ class CTask(InitCTask):
             if not target_path:
                 x = 'tmp' if not params.get('target_tmp') else params['target_tmp']
                 target_path = os.path.join(path, x)
-        ctx_tasks['local']['target_path'] = target_path
+
+        ctx_tasks['local']['target_path'] = target_path.replace('//', os.sep)
 
         if 'run_time_env' not in ctx_tasks['local']:
             ctx_tasks['local']['run_time_env'] = env 

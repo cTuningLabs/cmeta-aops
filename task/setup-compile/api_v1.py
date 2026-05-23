@@ -291,6 +291,7 @@ class CTask(InitCTask):
         target_path = params.get('target_path')
         if not target_path:
             target_path = os.getcwd()
+        target_path = target_path.replace('//', os.sep)
 
         os.makedirs(target_path, exist_ok=True)
 

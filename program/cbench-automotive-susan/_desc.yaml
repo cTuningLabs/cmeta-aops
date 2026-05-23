@@ -1,0 +1,71 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  src_file_names: 
+    - 'susan.c'
+
+  output_files:
+    - tmp-cmeta-program-stats.json
+    - tmp-ck-timer.json
+
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+    stats-xopenme: tmp-ck-timer.json
+
+params:
+  compile:
+    openmp: True
+    d:
+      XOPENME:
+
+updates:
+  compile:
+    uses_pre:
+      - match:
+          task: compiler,f3925b201c704bde
+        update:
+          lang: c
+
+    uses_prep:
+      - match:
+          task: setup-compile,10f1dfd3f6f04c35
+        update:
+          lang: c
+
+    uses_libs:
+      - append:
+         ######################################################################################
+         # Prepare Libs for Host CPU
+         - task: setup,a2f9b61079ce4333
+           name: lib-xopenme,c7b96678a7734510
+
+         ######################################################################################
+         # Prepare Libs for Android CPU
+         - task: setup,a2f9b61079ce4333
+           if: '"android-cpu" in {{global.target.compute|$[]}}'
+           name: lib-sysroot-android,cdc22b7617f54f2c
+           with:
+             static: '{{local.params.compile.static|$None}}'
+             lib_names:
+               - dl
+               - m
+               - z
+             dynamic_libs: 
+               - c++_shared
+
+         - task: setup,a2f9b61079ce4333
+           if: '"android-cpu" in {{global.target.compute|$[]}}'
+           name: lib-openmp-android,4631aca5f3d241b4
+
+
+
+  run:
+    uses_prep:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         update:
+           cmd_main: --help

@@ -67,6 +67,7 @@ class CTask(InitCTask):
         target_path = params.get('target_path')
         if target_path is None:
             target_path = os.getcwd()
+        target_path = target_path.replace('//', os.sep)
 
         target_exe = params.get('target_exe')
         if target_exe:

@@ -1,0 +1,44 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  src_file_names: 
+    - 'ctuning_milepost_codelet_lib.c'
+
+  target_file_name: 'libmilepost'
+
+params:
+  compile:
+    lib: True
+#    static: True
+#    d:
+#      WINDOWS:
+    install: True
+  skip_run: True
+
+updates:
+  compile:
+    uses_pre:
+      - match:
+          task: compiler,f3925b201c704bde
+        update:
+          lang: c
+
+#    uses_libs:
+#      - append:
+#         ######################################################################################
+#         # Prepare Libs for Android CPU
+#         - task: setup,a2f9b61079ce4333
+#           if: '"android-cpu" in {{global.target.compute|$[]}}'
+#           name: lib-sysroot-android,cdc22b7617f54f2c
+#           with:
+#             static: '{{local.params.compile.static|$None}}'
+#             lib_names:
+#               - dl
+#               - m
+#               - z
+#             dynamic_libs: 
+#               - c++_shared

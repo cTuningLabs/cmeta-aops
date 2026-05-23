@@ -3,7 +3,7 @@ copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
 
 skip_detect: True
 
-name: libxopenme
+name: libmilepost
 
 match_version: 
   - regex: '^.*$'
@@ -26,20 +26,20 @@ cache_meta_const:
 build_uses:
   all:
     - task: compile-and-run-program,05437a1aae224270
-      name: lib-xopenme,5298772417f54247
+      name: lib-milepost,f197e3fc760f49f4
       compute: '{{params.with.compute|$[]}}'
       clean: True
       compile:
         static: True
         add_debug: '{{params.with.add_debug|$None}}'
-      target_path: '{{local.target_path}}//lib//static'
+      target_path: '{{local.target_path}}//lib'
 
     - task: compile-and-run-program,05437a1aae224270
-      name: lib-xopenme,5298772417f54247
+      name: lib-milepost,f197e3fc760f49f4
       compute: '{{params.with.compute|$[]}}'
-      clean: True
+      recompile: True
       compile:
         static: False
         add_debug: '{{params.with.add_debug|$None}}'
-      target_path: '{{local.target_path}}//lib//dynamic'
+      target_path: '{{local.target_path}}//lib'
     

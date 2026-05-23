@@ -72,9 +72,7 @@ class CTool(InitCTool):
         uname = ctx['tasks']['global']['host']['os']['uname']
 
         _with = params.get('with', {})
-        _static = _with.get('static', False)
         _add_debug = _with.get('add_debug', False)
-
 
         for path in paths:
              filename_without_ext = os.path.splitext(os.path.basename(path))[0]

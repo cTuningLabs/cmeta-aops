@@ -3,7 +3,7 @@ copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
 
 skip_detect: True
 
-name: libxopenme
+name: libpolybench
 
 match_version: 
   - regex: '^.*$'
@@ -26,7 +26,7 @@ cache_meta_const:
 build_uses:
   all:
     - task: compile-and-run-program,05437a1aae224270
-      name: lib-xopenme,5298772417f54247
+      name: lib-polybench,07280f7d9fa14e3c
       compute: '{{params.with.compute|$[]}}'
       clean: True
       compile:
@@ -35,7 +35,7 @@ build_uses:
       target_path: '{{local.target_path}}//lib//static'
 
     - task: compile-and-run-program,05437a1aae224270
-      name: lib-xopenme,5298772417f54247
+      name: lib-polybench,07280f7d9fa14e3c
       compute: '{{params.with.compute|$[]}}'
       clean: True
       compile:
