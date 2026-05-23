@@ -10,9 +10,13 @@
 */
 
 #ifdef __MINGW32__
-#include <sys/time.h>
+# include <sys/time.h>
 #else
-#include <time.h>
+# ifdef WINDOWS
+#  include <time.h>
+# else
+#  include <sys/time.h>
+# endif
 #endif
 
 #include <stdio.h>
