@@ -128,6 +128,7 @@ class CProgram(InitCProgram):
         for x in [
                 ('cpu', 'GGML_CPU'), 
                 ('cuda', 'GGML_CUDA')
+                ('metal', 'GGML_METAL')
             ]:
             if x[0] in compute:
                 if x[1] not in d:
