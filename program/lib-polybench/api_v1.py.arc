@@ -21,20 +21,15 @@ class CProgram(InitCProgram):
 
     ############################################################
     def customize2(self,
-                   ctx: dict,
-                   **misc
+                  ctx: dict,
+                  params: dict = {},
     ):
         """
         """
 
-        desc = misc.get('desc', {})
-        params = misc.get('params', {})
-        sub_params = misc.get('sub_params', {})
-
         compute = ctx['tasks']['global']['target']['compute']
         uname = ctx['tasks']['global']['host']['os']['uname']
 
-        # Should be on Windows for CPU + CUDA but not for Android, etc ...
         if uname == 'windows' and any(c in compute for c in ('cpu', 'cuda')):
             _compile = ctx['tasks']['local']['params']['compile']
             flags_d = _compile.setdefault('d', {})
