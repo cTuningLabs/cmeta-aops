@@ -38,3 +38,4 @@ class CTool(InitCTool):
         params['tool_path'] = streamlit_path
 
         return result
+

@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 skip_detect: True
 
@@ -26,3 +26,4 @@ cmd_get_versions_regex: 'refs/tags/(?:[A-Za-z0-9_.-]*[-v])?([^^\s]+)(?:\^\{\})?$
 
 uses:
   - task: target,94decb2ddd28441f
+

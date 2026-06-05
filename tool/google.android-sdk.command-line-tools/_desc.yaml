@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 names:
   - sdkmanager{{global.host.vars.file_ext_bat2}}
@@ -46,3 +46,4 @@ install_uses:
   linux:
     - task: setup,a2f9b61079ce4333
       name: brew,27859c999bdd4085
+

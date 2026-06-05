@@ -22,6 +22,7 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             ctx: dict,        # cMeta context
+            **kwargs
     ):
 
         """
@@ -49,3 +50,25 @@ class CTask(InitCTask):
         }
 
         return result
+
+    ############################################################
+    def finish_dynamic_result(self,
+                              ctx: dict,
+                              result: dict = {},
+                              params: dict = {},
+    ):
+        """
+        """
+
+        _result = {'return':0}
+
+        _with = params.get('with', {})
+
+        ver = _with.get('ver')
+
+        if ver:
+            result['features']['ver'] = ver
+
+        _result['result'] = result
+
+        return _result

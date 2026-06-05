@@ -117,6 +117,7 @@ class CTask(InitCTask):
                    os.remove(cf)
 
         if save_script and con and verbose:
+            save_script = save_script.replace('//', os.sep)
             print ('')
             print (f'{space}INFO: saving script to "{save_script}"')
 
@@ -174,3 +175,4 @@ class CTask(InitCTask):
             return self.cm.error(f'CMD "{cmd}" failed with return code {returncode}', 99)
 
         return result
+

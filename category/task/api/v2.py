@@ -300,6 +300,8 @@ class Category(InitCategory):
 
         saved_uparams = ctx_tasks.get('params')
         ctx_tasks['params'] = uparams
+        saved_cparams = ctx_tasks.get('cparams')
+        ctx_tasks['cparams'] = cparams
 
         # Local is only within a given task and sub functions but deps can't update it
         saved_local = ctx_tasks.get('local')
@@ -330,6 +332,7 @@ class Category(InitCategory):
                        preserve_global[k] = v
                    del (ctx_tasks['global'][k])
 
+
         ###########################################################################################
         # CHECK DEPENDENCIES BEFORE INIT CALL TO TASK API (IF EXISTS)
         # Can update global/local deps
@@ -346,6 +349,7 @@ class Category(InitCategory):
                   task_artifact_path = task_path,
                   task_api_code = task_api_code,
                   uparams = uparams,
+                  self_desc = cdesc,
             )
             if self.cm.catch_error(r): return r
 
@@ -368,6 +372,7 @@ class Category(InitCategory):
                         ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro = None, 
                         aggregate = False, 
                         saved_uparams = saved_uparams, 
+                        saved_cparams = saved_cparams, 
                         saved_local = saved_local,
                         saved_ctx_control = saved_ctx_control,
                         preserve_global = preserve_global,
@@ -451,7 +456,8 @@ class Category(InitCategory):
                 r = self._finish_run(
                         ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro, 
                         aggregate = False, 
-                        saved_uparams = saved_uparams, 
+                        saved_uparams = saved_uparams,
+                        saved_cparams = saved_cparams,
                         saved_local = saved_local,
                         saved_ctx_control = saved_ctx_control,
                         preserve_global = preserve_global,
@@ -467,20 +473,50 @@ class Category(InitCategory):
         _params = copy.deepcopy(ctx_tasks['params'])
         if _params and con and verbose:
             print ('')
-            print (f'{space}PARAMS for task "{artifact_au}":')
-            for k in _params:
-                v = _params[k]
-                if type(v) == list:
-                    print(f'{space}  * {k}:')
-                    for kk in v:
-                        print(f'{space}    - {kk}')
-                elif type(v) == dict:
-                    print(f'{space}  * {k}:')
-                    for kk in v:
-                        vv = v[kk]
-                        print(f'{space}    * {kk} = {vv}')
+            print (f'{space}Parameters for task "{artifact_au}":')
+
+            def print_recursive(obj, indent=0):
+                space = '  ' * indent + '  '
+
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if isinstance(v, (dict, list, tuple, set)):
+                            print(f"{space}* {k}:")
+                            print_recursive(v, indent + 1)
+                        else:
+                            print(f"{space}* {k} = {v}")
+
+                elif isinstance(obj, (list, tuple, set)):
+                    for item in obj:
+                        if isinstance(item, (dict, list, tuple, set)):
+                            print(f"{space}-")
+                            print_recursive(item, indent + 1)
+                        else:
+                            print(f"{space}- {item}")
+
                 else:
-                    print(f'{space}  * {k} = {v}')
+                    print(f"{space}{obj}")
+
+            print_recursive(_params, nested_call)
+
+#            for k in _params:
+#                v = _params[k]
+#                if type(v) == list:
+#                    print(f'{space}  * {k}:')
+#                    for kk in v:
+#                        print(f'{space}      - {kk}')
+#                elif type(v) == dict:
+#                    print(f'{space}  * {k}:')
+#                    for kk in v:
+#                        vv = v[kk]
+#                        if type(vv) == list:
+#                            print(f'{space}  * {kk}:')
+#                            for kkk in vv:
+#                                print(f'{space}      - {kkk}')
+#                        else:
+#                            print(f'{space}    * {kk} = {vv}')
+#                else:
+#                    print(f'{space}  * {k} = {v}')
 
 
         ###########################################################################################
@@ -507,6 +543,7 @@ class Category(InitCategory):
                     ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro, 
                     aggregate = False, 
                     saved_uparams = saved_uparams, 
+                    saved_cparams = saved_cparams,
                     saved_local = saved_local,
                     saved_ctx_control = saved_ctx_control,
                     preserve_global = preserve_global,
@@ -586,6 +623,7 @@ class Category(InitCategory):
                     task_artifact_path = task_path,
                     task_api_code = task_api_code,
                     uparams = uparams,
+                    self_desc = cdesc,
             )
             if self.cm.catch_error(r): return r
 
@@ -899,139 +937,153 @@ class Category(InitCategory):
                     ###########################################################################################
                     # RETURN CACHED RESULT IF ENTRY IS VALID!!!!!!
 
-                    # Check if tool path and version is correct
-                    ca_tool_path = cache_artifact['cmeta'].get('params',{}).get('tool_path')
+                    cache_artifact_params = cache_artifact['cmeta'].get('params',{})
+                    invalidate = False
+                    delete = False
+                    problem = False
 
-                    if check_versions and ca_tool_path:
-                        delete = False
-                        problem = False
+                    x_cache_artifact_alias = cache_artifact['cmeta_ref_parts'].get('artifact_alias')
+                    x_cache_artifact_uid = cache_artifact['cmeta_ref_parts']['artifact_uid']
 
-                        x_cache_artifact_alias = cache_artifact['cmeta_ref_parts'].get('artifact_alias')
-                        x_cache_artifact_uid = cache_artifact['cmeta_ref_parts']['artifact_uid']
+                    # Check if check_cache_path (for example from git that may be deleted)
+                    ca_check_path = cache_artifact_params.get('git_path')
 
-                        if (os.path.isfile(ca_tool_path) or os.path.isdir(ca_tool_path)):
-                            x_version = cache_artifact['cmeta'].get('params', {}).get('version')
-                            x_name = cache_artifact['cmeta'].get('params', {}).get('name')
-                            skip_cache_version_check = cache_artifact['cmeta'].get('skip_cache_version_check', True)
-                            if not skip_cache_version_check and x_version and x_name:
-                                x_cref = cache_artifact['cmeta'].get('cref')
+                    if ca_check_path and not os.path.isdir(ca_check_path):
+                        invalidate = True
 
-                                if x_cref.get('artifact_uid') in ['a2f9b61079ce4333'] and \
-                                   x_cref.get('category_uid') in ['c36be4b9314a45e0']:
+                    if not invalidate:
+                        # Check if tool path and version is correct
+                        ca_check_path = cache_artifact_params.get('tool_path')
 
-                                    if con and verbose:
-                                        print ('')
-                                        print (f'{space}CHECK: checking version for {x_name} ...')
+                        if check_versions and ca_check_path:
+                            if (os.path.isfile(ca_check_path) or os.path.isdir(ca_check_path)):
+                                x_version = cache_artifact['cmeta'].get('params', {}).get('version')
+                                x_name = cache_artifact['cmeta'].get('params', {}).get('name')
+                                skip_cache_version_check = cache_artifact['cmeta'].get('skip_cache_version_check', True)
+                                if not skip_cache_version_check and x_version and x_name:
+                                    x_cref = cache_artifact['cmeta'].get('cref')
 
-                                    _con = con
-                                    ii = {
-                                          'category': self_category,      # task
-                                          'command': 'run',
-                                          'arg1': x_cref['artifact_uid'], # setup
-                                          'name': x_name,
-                                          'cache': False,
-                                          'skip_detect': False, # Needed for libs and tools that force skip detect
-                                          'skip_install': True,
-                                          'skip_build': True,
-                                          'version_check': True,
-                                          'tool_path': ca_tool_path,
-                                          'timeout': 200,
-                                          'quiet': quiet,
-                                          'con': False,
-                                          'verbose': False,
-                                    }
+                                    if x_cref.get('artifact_uid') in ['a2f9b61079ce4333'] and \
+                                       x_cref.get('category_uid') in ['c36be4b9314a45e0']:
 
-                                    x_with = cache_artifact['cmeta'].get('params',{}).get('with',{})
-                                    if x_with:
-                                        ii['with'] = x_with
-
-                                    x_use = cache_artifact['cmeta'].get('params',{}).get('use',{})
-                                    if x_use:
-                                        ii['use'] = x_use
-
-                                    ii['ctx'] = ctx
-
-                                    r = self.cm.access(ii)
-                                    # FGG: Note that if something goes wrong with detection of the version,
-                                    # the command will fail, but we should not fail and quit here but continue working ...
-                                    # I also added error 32 if we didn't detect tool or there was some fail.
-                                    # We may want to improve this functionality based on convenience...
-
-                                    ctx['control']['con'] = _con
-
-                                    ret = r['return']
-
-#                                    if self.cm.catch_error(r): return r
-
-                                    if ret >0 :
-                                        if con:
+                                        if con and verbose:
                                             print ('')
-                                            print (f'{space}WARNING: There is a problem running the tool in cache entry {x_cache_artifact_alias} to check version:')
-                                            print ('')
-                                            err = r['error']
-                                            print (f'{space}  {err}')
-                                            print ('')
-                                            x = input(f'{space}Would you like to delete this potentially oudated cache entry (y/N): ')
-                                            print ('')
+                                            print (f'{space}CHECK: checking version for {x_name} ...')
 
-                                            if x.strip().lower() in ['y', 'yes']:
-                                                delete = True
+                                        _con = con
+                                        ii = {
+                                              'category': self_category,      # task
+                                              'command': 'run',
+                                              'arg1': x_cref['artifact_uid'], # setup
+                                              'name': x_name,
+                                              'cache': False,
+                                              'skip_detect': False, # Needed for libs and tools that force skip detect
+                                              'skip_install': True,
+                                              'skip_build': True,
+                                              'version_check': True,
+                                              'tool_path': ca_check_path,
+                                              'timeout': 200,
+                                              'quiet': quiet,
+                                              'con': False,
+                                              'verbose': False,
+                                        }
 
-                                        # If console, we ask to delete, otherwise we keep running ...
+                                        x_with = cache_artifact['cmeta'].get('params',{}).get('with',{})
+                                        if x_with:
+                                            ii['with'] = x_with
 
-                                    else:
-                                        x_detected_version = r['version']
+                                        x_use = cache_artifact['cmeta'].get('params',{}).get('use',{})
+                                        if x_use:
+                                            ii['use'] = x_use
 
-                                        if x_detected_version != x_version:
-                                            problem = True
+                                        ii['ctx'] = ctx
 
+                                        r = self.cm.access(ii)
+                                        # FGG: Note that if something goes wrong with detection of the version,
+                                        # the command will fail, but we should not fail and quit here but continue working ...
+                                        # I also added error 32 if we didn't detect tool or there was some fail.
+                                        # We may want to improve this functionality based on convenience...
+
+                                        ctx['control']['con'] = _con
+
+                                        ret = r['return']
+
+    #                                    if self.cm.catch_error(r): return r
+
+                                        if ret >0 :
                                             if con:
                                                 print ('')
-                                                print (f'WARNING: The version in cache entry {x_cache_artifact_alias} has changed:')
+                                                print (f'{space}WARNING: There is a problem running the tool in cache entry {x_cache_artifact_alias} to check version:')
                                                 print ('')
-                                                print (f'  Cache version: {x_version}')
-                                                print (f'  Detected real version: {x_detected_version}')
+                                                err = r['error']
+                                                print (f'{space}  {err}')
                                                 print ('')
-                                                x = input('Would you like to delete this potentially oudated cache entry (Y/n): ')
+                                                x = input(f'{space}Would you like to delete this potentially oudated cache entry (y/N): ')
                                                 print ('')
 
-                                                if x.strip().lower() in ['', 'y', 'yes']:
+                                                if x.strip().lower() in ['y', 'yes']:
                                                     delete = True
 
-                        elif not (os.path.isfile(ca_tool_path) or os.path.isdir(ca_tool_path)):
-                            problem = True
+                                            # If console, we ask to delete, otherwise we keep running ...
 
-                            if con:
+                                        else:
+                                            x_detected_version = r['version']
+
+                                            if x_detected_version != x_version:
+                                                problem = True
+
+                                                if con:
+                                                    print ('')
+                                                    print (f'WARNING: The version in cache entry {x_cache_artifact_alias} has changed:')
+                                                    print ('')
+                                                    print (f'  Cache version: {x_version}')
+                                                    print (f'  Detected real version: {x_detected_version}')
+                                                    print ('')
+                                                    x = input('Would you like to delete this potentially oudated cache entry (Y/n): ')
+                                                    print ('')
+
+                                                    if x.strip().lower() in ['', 'y', 'yes']:
+                                                        delete = True
+
+                            elif not (os.path.isfile(ca_check_path) or os.path.isdir(ca_check_path)):
+                                invalidate = True
+
+                    if invalidate:
+                        if con:
+                            print ('')
+                            print (f'WARNING: Cache entry "{x_cache_artifact_alias}" exists but related path is missing:')
+                            print ('')
+                            print (f'  {ca_check_path}')
+                            print ('')
+                            if quiet:
+                                print ('Quietly deleting this potentially outdated cache entry ...')
                                 print ('')
-                                print (f'WARNING: Cache entry exists {x_cache_artifact_alias} but tool path is missing:')
-                                print ('')
-                                print (f'  {ca_tool_path}')
-                                print ('')
-                                x = input('Would you like to delete this potentially oudated cache entry (Y/n): ')
+                                x = 'Y'
+                            else:
+                                x = input('Would you like to delete this potentially outdated cache entry (Y/n): ')
                                 print ('')
 
-                                if x.strip().lower() in ['', 'y', 'yes']:
-                                    delete = True
+                            if x.strip().lower() in ['', 'y', 'yes']:
+                                delete = True
 
-                        if delete:
-                            ii = {'category': uses_categories['cache'],
-                                  'command': 'delete',
-                                  # default cache rm is only in local while we need to allow any repo here
-                                  'arg1': '*:' + x_cache_artifact_uid,
-                                  'force': True
-                            }
+                    if delete:
+                        ii = {'category': uses_categories['cache'],
+                              'command': 'delete',
+                              # default cache rm is only in local while we need to allow any repo here
+                              'arg1': '*:' + x_cache_artifact_uid,
+                              'force': True
+                        }
 
-                            if con: 
-                                ii['con'] = True
+                        if con: 
+                            ii['con'] = True
 
-                            r = self.cm.access(ii)
-                            if self.cm.catch_error(r, fail16=True): 
-                                r['return'] = 1
-                                return r
+                        r = self.cm.access(ii)
+                        if self.cm.catch_error(r, fail16=True): 
+                            r['return'] = 1
+                            return r
 
-                        if problem:
-                            return self.cm.error('selected outdated cache entry was deleted - please restart the task')
-
+                    if problem:
+                        return self.cm.error('selected outdated cache entry was deleted - please restart the task')
 
                     if con and verbose:
                         print ('')
@@ -1066,6 +1118,7 @@ class Category(InitCategory):
                                 ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
                                 call_repro, aggregate = True,
                                 saved_uparams = saved_uparams, 
+                                saved_cparams = saved_cparams,
                                 saved_local = saved_local,
                                 saved_ctx_control = saved_ctx_control,
                                 preserve_global = preserve_global,
@@ -1177,6 +1230,28 @@ class Category(InitCategory):
 
 
         ###########################################################################################
+        # CHECK DEPENDENCIES AFTER CACHE INIT AND BEFORE POSSIBLE PYTHON RUN
+
+        uses2 = cdesc.get('uses2', []).copy()
+        if uses2:
+            r = self.use_(
+                  ctx, 
+                  desc = uses2, 
+# Careful: reusing local - no complex sub-tasks ...
+# Usually just for cmd ...
+                  local = ctx_tasks['local'],
+#                  local = None,
+                  task_artifact_alias = artifact_alias, 
+                  task_artifact_uid = artifact_uid,
+                  task_artifact_path = task_path,
+                  task_api_code = task_api_code,
+                  uparams = uparams,
+                  self_desc = cdesc,
+            )
+            if self.cm.catch_error(r): return r
+
+
+        ###########################################################################################
         # RUN TASK CODE IF EXISTS
 
         time_start2 = time.perf_counter()
@@ -1226,6 +1301,7 @@ class Category(InitCategory):
                             ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
                             call_repro, aggregate = True,
                             saved_uparams = saved_uparams, 
+                            saved_cparams = saved_cparams,
                             saved_local = saved_local,
                             saved_ctx_control = saved_ctx_control,
                             preserve_global = preserve_global,
@@ -1297,6 +1373,7 @@ class Category(InitCategory):
                 ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
                 call_repro, aggregate = True,
                 saved_uparams = saved_uparams, 
+                saved_cparams = saved_cparams,
                 saved_local = saved_local,
                 saved_ctx_control = saved_ctx_control,
                 preserve_global = preserve_global,
@@ -1331,6 +1408,7 @@ class Category(InitCategory):
                    call_repro = None,
                    aggregate = True,
                    saved_uparams = None,
+                   saved_cparams = None,
                    saved_local = None,
                    skip_if_exist_in_list = True,
                    saved_ctx_control = None,
@@ -1385,6 +1463,7 @@ class Category(InitCategory):
             if self.cm.catch_error(r): return r
 
         ctx['tasks']['params'] = saved_uparams if saved_uparams else {}
+        ctx['tasks']['cparams'] = saved_cparams if saved_cparams else {}
         ctx['tasks']['local'] = saved_local if saved_local else {}
         ctx['control'] = saved_ctx_control if saved_ctx_control else {}
 
@@ -1411,7 +1490,8 @@ class Category(InitCategory):
             task_artifact_uid = None,
             task_artifact_path = None,
             task_api_code = None,
-            uparams = None,
+            uparams = {},
+            self_desc = {},
     ):
 
         """
@@ -1570,19 +1650,35 @@ class Category(InitCategory):
                 ctx_tasks['nested_call'] -= 1
             else:
                 if verbose:
-                    print ('')
-                    print (f'{sub_space}RUN INTERNAL FUNC: {func} from task "{task_artifact_alias}"')
+                    print (f'{sub_space}' + '=' * (100-len(sub_space)))
+                    print (f'{sub_space}INTERNAL FUNC: {func} from task "{task_artifact_alias}"')
 
-                if not task_api_code:
-                    return self.cm.error(f'internal func "{func}" misses code in task "{task_artifact_alias}"')
+                internal_func_from_local_key = ii.pop('internal_func_from_local_key', None)
+                internal_func_from_global_key = ii.pop('internal_func_from_global_key', None)
+                internal_func_safe = ii.pop('internal_func_safe', False)
 
-                task_func = getattr(task_api_code, func, None)
+                if internal_func_from_local_key or internal_func_from_global_key:
+                    if internal_func_from_local_key:
+                        api_code = ctx_tasks['local'][internal_func_from_local_key].get('api_code')
+                        where = f'local context key "{internal_func_from_local_key}"'
+                    else:
+                        api_code = ctx_tasks['global'][internal_func_from_global_key].get('api_code')
+                        where = f'global context key "{internal_func_from_global_key}"'
+                else:
+                    api_code = task_api_code
+                    where = f'task "{task_artifact_alias}"'
 
-                if not callable(task_func):
-                    return self.cm.error(f'internal func "{func}" is missing in task "{task_artifact_alias}"')
+                if api_code:
+                    task_func = getattr(api_code, func, None)
 
-                r = task_func(ctx, ii, control = {'con':con, 'verbose': verbose, 'quiet': quiet}, uparams = uparams)
-                if self.cm.catch_error(r): return r
+                    if callable(task_func):
+                        r = task_func(ctx, desc = self_desc, params = uparams, sub_params = ii)
+                        if self.cm.catch_error(r): return r
+                    elif not internal_func_safe:
+                        return self.cm.error(f'internal func "{func}" is missing in API code in {where}')
+
+                elif not internal_func_safe:
+                    return self.cm.error(f'internal func "{func}" misses api_code in {where}')
 
 
         # Restore local if direct call from external source and not from a given task
@@ -1590,3 +1686,4 @@ class Category(InitCategory):
             ctx_tasks['local'] = saved_local
 
         return {'return':0, 'local': local}
+

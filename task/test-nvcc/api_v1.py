@@ -70,7 +70,7 @@ class CTask(InitCTask):
         else:
             ext = ''
 
-        cpp_compiler_qpath = ctx_tasks['global']['compiler']['qpath']
+        cpp_compiler_qpath = ctx_tasks['global']['compiler-cpp']['qpath']
 
 
         if flags: 
@@ -79,9 +79,9 @@ class CTask(InitCTask):
         flags += f'-v -ccbin={cpp_compiler_qpath} --allow-unsupported-compiler'
 
         # Check gencode
-        flag1 = ctx_tasks['global']['nvcc']['features']['flags']['gencode_auto']
-        if flag1:
-            flags += ' ' + flag1
+#        flag1 = ctx_tasks['global']['compiler-cpp']['features']['flags']['gencode_auto']
+#        if flag1:
+#            flags += ' ' + flag1
 
         cmds = [
           nvcc['qpath'] + f' {qsrc_file} {flags} -v -o tmp' + os.sep + exe_file, 
@@ -116,3 +116,4 @@ class CTask(InitCTask):
 
 
         return result
+

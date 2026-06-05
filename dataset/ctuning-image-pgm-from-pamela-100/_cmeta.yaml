@@ -1,0 +1,13 @@
+artifact: 5b8fd9d7e0134185
+authors: Grigori Fursin
+category: dataset,fdd7c5ded7464161
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+creation_timestamp: '2026-05-29T10:13:29.157420+00:00'
+last_update_timestamp: '2026-05-29T10:16:47.503739+00:00'
+tags:
+- ctuning
+- image
+- pgm
+- small
+- gray
+- pamela

@@ -1,0 +1,24 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+
+names:
+  - huggingface-cli{{global.host.vars.file_ext_exe}}
+
+cache_params_use: 
+  all:
+    pip-huggingface:
+      version: "{{global.pip-huggingface_hub.version}}"
+      path: "{{global.pip.path}}"
+
+match_version: 
+  - regex: 'version: (.+)'
+    group: 1
+
+cmd_get_version: '{{global.pip.cmd}} show huggingface_hub'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: pip,c4987bc3955347f2
+    version: "{{params.version|$None}}"
+    with:
+      package: huggingface_hub

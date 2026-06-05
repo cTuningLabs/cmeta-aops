@@ -108,3 +108,4 @@ class CTask(InitCTask):
             enabled = bool(ntdll.RtlAreLongPathsEnabled())
 
         return enabled
+

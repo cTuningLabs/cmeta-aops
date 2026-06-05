@@ -88,3 +88,4 @@ class CTask(InitCTask):
             print (f'{md5sum} *{filename}')
 
         return result
+

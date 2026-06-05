@@ -1,0 +1,164 @@
+"""
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
+All rights reserved.
+
+Proprietary and confidential.
+This software may not be copied, modified, distributed, or used
+without explicit permission from the copyright holder.
+"""
+
+import os
+import re
+from pathlib import Path
+
+from tool_c393ba5c6fa14f66.api.ctool import InitCTool
+
+class CTool(InitCTool):
+    """
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, module_file_path = __file__, **kwargs)
+
+
+    ############################################################
+    def check_params(self,
+                     ctx: dict,
+                     params: dict = {},
+                     cparams: dict = {},
+    ):
+        """
+        """
+
+        name = self.cdesc['name']
+
+        # FGG: extension depends on target / compiler and not just on host
+        # For example Android on Windows will have .so and not .dll ...
+
+        _with = params.setdefault('with', {})
+
+#        if 'static' not in _with:
+#            _with['static'] = False
+#
+#        if 'debug_info' not in _with:
+#            _with['debug_info'] = False
+
+        compute = _with.get('compute')
+        if not compute:
+            compute = ctx['tasks']['global'].get('target',{}).get('compute')
+        if not compute:
+            compute = ['cpu']
+
+        if type(compute) == str:
+            compute = compute.split(',')
+
+        _with['compute'] = compute
+        ctx['tasks']['local']['compute'] = compute
+
+        if 'android-cpu' in compute:
+            name += ''
+        else:
+            if 'compiler-c' in ctx['tasks']['global']:
+                name += ctx['tasks']['global']['compiler-c']['features']['vars']['file_ext_exe']
+            else:
+                name += ctx['tasks']['global']['host']['vars']['file_ext_exe']
+
+        ctx['tasks']['local']['tool_name'] = name
+
+        # Check if Android
+        k = 'target--android-cpu'
+        target_abi = _with.get('android_abi')
+        if not target_abi:
+            if k in ctx['tasks']['global']:
+                target_abi = ctx['tasks']['global'][k]['features']['ro.product.cpu.abi']
+
+        ctx['tasks']['local']['target_abi'] = target_abi
+
+        return {'return': 0}
+
+    ############################################################
+    def customize_build(self,
+                        ctx,
+                        misc
+    ):
+        """
+        """
+
+        result = {'return':0}
+
+        version = misc.get('version')
+
+        if version:
+            checkout = f'b{version}'
+
+            result['add_to_local'] = {'checkout': checkout}
+
+        return result
+
+
+    ############################################################
+    def detect_versions(self,
+                        ctx: dict,
+                        paths: dict,
+                        params: dict = {},
+    ):
+        """
+        """
+        # We need to update paths and dynamic libs here from compilation context
+        # before llama-cpp is called to detect version since it may miss dynamic libs
+
+        _static = params.get('with',{}).get('static', False)
+
+        con = params.get('control', {}).get('con', False)
+        quiet = params.get('control', {}).get('quiet', False)
+        verbose = params.get('control', {}).get('verbose', False)
+
+        found_paths_with_versions =  {}
+
+        uname = ctx['tasks']['global']['host']['os']['uname']
+
+        _with = params.get('with', {})
+        _static = _with.get('static', False)
+        _debug_info = _with.get('debug_info', False)
+
+        target_compute = ctx['tasks']['local']['compute']
+
+        _android_cpu = True if 'android-cpu' in target_compute else False
+        _cuda = True if 'cuda' in target_compute else False
+
+        _cpu = False
+        if 'cpu' in target_compute:
+            _cpu = True
+        if _android_cpu: 
+            _cpu = False
+
+        found_paths_info = {}
+
+        result = {'return':0}
+
+        for path in paths:
+#            Actually, even if compiled as static, it may pick up and link dynamically compiled libs from cMeta!
+#            if not _static:
+            # Attempt to load cMeta compilation context
+            # (if was compiled via cMeta)
+
+            path_bin = os.path.dirname(path)
+            path_root = os.path.dirname(path_bin)
+            path_repro_compile = os.path.join(path_root, '_repro_ctx_compile.json')
+
+            if os.path.isfile(path_repro_compile):
+                r = self.cm.utils.files.read_file(path_repro_compile)
+                if r['return'] == 0:
+                    _compiled_state = r['data']
+                    if _compiled_state.get('result', {}).get('return') == 0:
+                        _compiled_state_local = _compiled_state.get('ctx', {}).get('tasks', {}).get('local', {})
+                        if _compiled_state_local:
+                            sdl = _compiled_state_local.get('setup-dynamic-libs', {})
+                            fdlp = sdl.get('found_dynamic_lib_paths')
+                            if fdlp:
+                                found_paths_info[path] = {'features': {'paths':{'found_dynamic_lib_paths': fdlp}, 'with': _with}}
+
+        if found_paths_info:
+            result['found_paths_info'] = found_paths_info
+
+        return result

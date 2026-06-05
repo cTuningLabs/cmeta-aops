@@ -1,0 +1,13 @@
+artifact: 26832ee1e9884ec1
+authors: Grigori Fursin
+category: model,f8ef4c0af87a4a9e
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+creation_timestamp: '2026-06-01T18:01:36.138160+00:00'
+features:
+  library: pytorch
+last_update_timestamp: '2026-06-02T08:26:44.401964+00:00'
+tags:
+- hf
+- pytorch
+- gemma
+- gemma3

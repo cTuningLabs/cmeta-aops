@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 store_global: False
 storage_key: compile-and-run-program
@@ -11,6 +11,7 @@ preserve_global_keys:
 params_map:
   arg2: name
   arg3: compute
+  arg4: cmd
 
 uses_before_init:
   - task: select-program,beea611608bb459c
@@ -19,3 +20,4 @@ uses_before_init:
     program_api_ver: '{{params.program_api_ver|$None}}'
     ask: '{{params.ask|$False}}'
     compute: '{{params.compute|$[]}}'
+    cmd: '{{params.cmd|$[]}}'

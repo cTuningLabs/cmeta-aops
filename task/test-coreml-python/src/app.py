@@ -32,3 +32,4 @@ model = MLModel(builder.spec)
 result = model.predict({"input": np.array([3.0])})
 
 print(result)
+

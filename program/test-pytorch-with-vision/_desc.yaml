@@ -1,0 +1,58 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  run_src_file_names: 
+    - 'program.py'
+
+  output_files:
+    - tmp-cmeta-program-stats.json
+
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+
+#params:
+#  compute: cuda
+
+updates:
+  compile:
+    skip: True
+
+  run:
+    uses:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+
+         prepend:
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             with:
+               package: numpy
+
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             with:
+               package: torch
+
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             with:
+               package: torchvision
+
+
+         update:
+           target_exe:
+           profile_python: '{{params.profile_python|$None}}'
+           run_src_file_names: '{{local.run_src_file_names}}'
+           cmd: >-
+             {{global.python.qpath}}
+             {run_flags_after_exe}
+             {{params.run_flags|}} 
+             {run_src_file_names_str_with_path}
+ 

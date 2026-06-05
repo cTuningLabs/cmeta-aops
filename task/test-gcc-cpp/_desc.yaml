@@ -1,8 +1,13 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 uses:
   - task: runner,1e48cc0c5f6041a5
 
+  - task: force-fail,fbc834fe54894aec
+    if: '"{{global.host.os.uname}}" == "windows"'
+    text: 'task "{{task_artifact_alias}}" can''t run on Windows'
+
   - task: setup,a2f9b61079ce4333
     name: gcc-cpp,b444b09b95b84696
+

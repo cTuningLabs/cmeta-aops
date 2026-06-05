@@ -98,3 +98,4 @@ class CTask(InitCTask):
         result['host_os_id'] = os_id
 
         return result
+

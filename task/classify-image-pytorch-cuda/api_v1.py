@@ -41,3 +41,4 @@ class CTask(InitCTask):
         result = {'return':0}
 
         return result
+

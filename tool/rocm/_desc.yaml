@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 storage_key: rocm
 
@@ -14,3 +14,4 @@ cmd_get_version: '{{tool_path}} --version'
 
 install_help_text:
   Please install ROCm from https://rocm.docs.amd.com/en/latest !
+

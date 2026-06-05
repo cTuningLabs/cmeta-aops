@@ -189,7 +189,7 @@
           "CHOCOLATEYLASTPATHUPDATE": "133917805810214276",
           "CLASSPATH": "D:\\!FGG\\Progs\\!fu",
           "CMETA_AUTHORS": "Grigori Fursin",
-          "CMETA_COPYRIGHT": "Copyright (C) 2026 Grigori Fursin. All rights reserved.",
+          "CMETA_COPYRIGHT": "Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.",
           "CMETA_HOME2": "D:\\!FGG_Repos",
           "CMETA_INTERNAL_REPO_PATH": "D:\\!FGG_Repos\\fgg\\fgg.project\\cMeta\\cmeta\\cmeta\\internal-repo",
           "CMETA_TOOL_EXTRA_PATHS": "C:\\!Progs\\**",
@@ -754,3 +754,4 @@
     "use": {}
   }
 }
+

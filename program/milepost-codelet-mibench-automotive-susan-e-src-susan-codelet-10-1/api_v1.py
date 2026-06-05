@@ -20,19 +20,28 @@ class CProgram(InitCProgram):
 
 
     ############################################################
-    def customize2(self,
-                  ctx: dict,
-                  params: dict = {},
+    def customize1(self,
+                   ctx: dict,
+                   **misc
     ):
         """
         """
 
+        desc = misc.get('desc', {})
+
         compute = ctx['tasks']['global']['target']['compute']
         uname = ctx['tasks']['global']['host']['os']['uname']
 
-        if uname == 'windows' and any(c in compute for c in ('cpu', 'cuda')):
-            _compile = ctx['tasks']['local']['params']['compile']
-            flags_d = _compile.setdefault('d', {})
-            flags_d['WINDOWS'] = None
+        if 'cuda' in compute:
+            ctx['tasks']['local']['src_dir'] = 'src-cuda'
+            ctx['tasks']['local']['src_file_names'] = ['gemm.cu']
+            ctx['tasks']['local']['lang'] = 'cuda'
+
+#            r = self.cm.access({'category': 'program,22788f3c30d04e6d',
+#                                'command': 'update_desc',
+#                                'desc': desc,
+#                                'updates': desc['updates_cuda']})
+#            if self.cm.catch_error(r): return r
 
         return {'return':0}
+

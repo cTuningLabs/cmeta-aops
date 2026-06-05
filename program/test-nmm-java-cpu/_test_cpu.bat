@@ -1,1 +1,2 @@
-﻿cx program run test-nmm-java-cpu --clean --compile.flags="-d ." --compile.fastest -v --fail
+﻿cx program run test-nmm-java-cpu --compile.fastest -v --fail --clean
+:: --clean

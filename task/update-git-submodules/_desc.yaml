@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 params_map:
   arg2: directory
@@ -17,3 +17,4 @@ uses:
   - task: cmd,c9ba0a88df394d7f
     chdir: '{{params.directory|$None}}'
     cmd: '{{global.git.qpath}} submodule update --init --recursive'
+

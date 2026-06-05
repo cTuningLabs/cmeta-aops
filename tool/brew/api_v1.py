@@ -44,3 +44,4 @@ class CTool(InitCTool):
         result['timeout'] = None
 
         return result
+

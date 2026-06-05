@@ -124,3 +124,4 @@ if __name__ == '__main__':
     #print get_results_from_file('results.txt')
     #print get_results_from_file('golden.txt', golden=True)
     sys.exit(compare_results(sys.argv[1], sys.argv[2]))
+

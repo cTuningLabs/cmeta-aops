@@ -372,3 +372,4 @@ def install_tool(self,
         if self.cm.catch_error(r): return r
 
     return result
+

@@ -95,7 +95,7 @@ class CTask(InitCTask):
                 - **error** (str): Error message if `return > 0`.
         """
 
-        self.logger.debug("RUNNING TASK clone-git-repo run")
+        self.logger.debug("RUNNING TASK clone-git run")
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
@@ -106,6 +106,8 @@ class CTask(InitCTask):
         space = '  ' * ctx_tasks['nested_call'] if verbose else ''
         clean = ctx_tasks['run_control'].get('clean', False)
         update = ctx_tasks['run_control'].get('update', False)
+
+        print_extra_line = True if con and verbose else False
 
         _params = {}
 
@@ -132,8 +134,13 @@ class CTask(InitCTask):
             branch = new_branch
             new = True
 
+
         ###################################################################
         workdir = os.getcwd()
+
+        if con and verbose:
+            print ('')
+            print (f'{space}INFO: current directory "{workdir}"')
 
         path_to_git_repo = os.path.join(workdir, directory)
 
@@ -158,7 +165,16 @@ class CTask(InitCTask):
         if not os.path.isdir(path_to_git_repo):
             cmd = f'{path_to_git_bin} clone {url} {directory}{xdepth}'
 
-            r = self.cm.utils.sys.run(cmd, env = env, timeout = timeout, con = con, verbose = verbose, text_cmd = 'RUN', space = space)
+            r = self.cm.utils.sys.run(
+                    cmd, 
+                    env = env, 
+                    timeout = timeout, 
+                    con = con, 
+                    verbose = verbose, 
+                    text_cmd = 'RUN', 
+                    space = space, 
+                    print_extra_line = print_extra_line,
+            )
             if self.cm.catch_error(r): return r
 
             ###################################################################
@@ -179,6 +195,8 @@ class CTask(InitCTask):
                     cmd += f' && {path_to_git_bin} fetch --all --tags --prune'
                     if fetch:
                         cmd += ' ' + fetch
+                    if branch or checkout:
+                        cmd += f' && {path_to_git_bin} pull'
                 elif fetch:
                     cmd += f' && {path_to_git_bin} fetch ' + fetch
 
@@ -229,7 +247,16 @@ class CTask(InitCTask):
 
             if len(cmds)>0:
                 for cmd in cmds:
-                    rx = self.cm.utils.sys.run(cmd, env = env, timeout = timeout, con = con, verbose = verbose, text_cmd = 'RUN', space = space)
+                    rx = self.cm.utils.sys.run(
+                           cmd, 
+                           env = env, 
+                           timeout = timeout, 
+                           con = con, 
+                           verbose = verbose, 
+                           text_cmd = 'RUN', 
+                           space = space, 
+                           print_extra_line = print_extra_line,
+                    )
                     if rx['return']>0: 
                         fail = True
                         break
@@ -277,6 +304,8 @@ class CTask(InitCTask):
                   'branch': branch,
                   'checkout': checkout}
 
+        _params['git_path'] = path_to_git_repo
+
         ###################################################################
         # Check size and time ...
         r = self.cm.utils.sys.get_dir_size(path_to_git_repo, unit='MB', skip_datetime=True)
@@ -293,3 +322,4 @@ class CTask(InitCTask):
             result['_update_params'] = _params    
 
         return result
+

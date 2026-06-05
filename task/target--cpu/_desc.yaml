@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 store_global: True
 storage_key: target--cpu
@@ -9,3 +9,4 @@ env_if_not_used:
   CMETA_TARGET_CPU: 0
 env:
   CMETA_TARGET_CPU: 1
+

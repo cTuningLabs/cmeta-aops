@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 uses:
   - task: runner,1e48cc0c5f6041a5
@@ -15,3 +15,4 @@ uses:
 
   - task: cmd,c9ba0a88df394d7f
     cmd: '{{global.python.qpath}} {{task_artifact_path}}{{os_sep}}src{{os_sep}}app.py --extra_line={{params.extra_line|$False}}'
+

@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 uses:
   - task: runner,1e48cc0c5f6041a5
@@ -8,3 +8,4 @@ uses:
     name: nvcc
     with:
       add_env: true
+

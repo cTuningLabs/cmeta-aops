@@ -28,6 +28,7 @@ class CTask(InitCTask):
             program_api_ver: str = None,
             ask: bool = False,
             compute: str = None,
+            cmd: str = None,
     ):
         """
         """
@@ -128,46 +129,56 @@ class CTask(InitCTask):
 
                     self.cm.utils.common.deep_merge(_data, data, append_lists=False)
 
+                    # Check all updates
                     updates = _data.get('updates')
-                    if updates:
-                        for key2 in updates:
-                            _update = _data.setdefault(key2, {})
-                            for key3 in updates[key2]:
 
-                                if key3.startswith('uses'):
-                                    _uses = _update.setdefault(key3, [])
-                                    for _use in updates[key2][key3]:
-                                        match = _use.get('match')
-                                        update = _use.get('update')
-                                        append = _use.get('append')
-                                        prepend = _use.get('prepend')
-                                        substitute = _use.get('substitute')
+                    r = self.cm.access({'category': 'program,22788f3c30d04e6d',
+                                        'command': 'update_desc',
+                                        'desc': _data,
+                                        'updates': updates})
+                    if self.cm.catch_error(r): return r
 
-                                        if match and update:
-                                            for x in _uses:
-                                                matched = True
-                                                for y in match:
-                                                    if y not in x:
-                                                        matched = False
-                                                        break
+                    # Check updates per cmd
+                    updates_cmd = _data.get('updates_cmd')
 
-                                                    v = match[y]
-                                                    if v != x[y]:
-                                                        matched = False
-                                                        break
+                    if updates_cmd:
+                        if not cmd:
+                            cmds = sorted(list(updates_cmd.keys()))
+                            icmd = 0
 
-                                                if matched:
-                                                    self.cm.utils.common.deep_merge(x, update, append_lists=False)
-                                        elif append:
-                                            _uses += append 
-                                        elif prepend:
-                                            _update[key3] = _uses + prepend
-                                        elif substitute:
-                                            _update[key3] = substitute
+                            if len(cmds) > 1 and con and not quiet:
+                                print ('')
+                                print (f'{space}Available command lines:')
 
-                                else:
-                                    _update[key3] = updates[key2][key3]
+                                print ('')
+                                for n in range(0, len(cmds)):
+                                    cmd = cmds[n]
+                                    print (f'{space}{n}) {cmd}')
+                                print ('')
 
+                                while True:
+                                    x = input('Please select a command line or press Enter for 0: ').strip()
+
+                                    if x == "":
+                                        icmd = 0
+                                        break
+
+                                    if x.isdigit() and int(x)>=0 and int(x)<len(cmds):
+                                        icmd = int(x)
+                                        break
+
+                                print ('')
+
+                            cmd = cmds[icmd]
+
+                        r = self.cm.access({'category': 'program,22788f3c30d04e6d',
+                                            'command': 'update_desc',
+                                            'desc': _data,
+                                            'updates': updates_cmd[cmd]})
+                        if self.cm.catch_error(r): return r
+
+
+                    # Finish desc
                     loaded_files[key]['data'] = _data        
 
 
@@ -182,3 +193,4 @@ class CTask(InitCTask):
         result['add_to_local'] = {'selected-program': selected_program}
 
         return result
+

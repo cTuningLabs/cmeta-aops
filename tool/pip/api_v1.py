@@ -57,6 +57,7 @@ class CTool(InitCTool):
         Mostly used to update storage_key
         We need to check package before further key expansions from desc
         """
+
         if self.cm.debug:
             self.logger.debug("RUNNING TOOL pip api_v1 init")
 
@@ -249,6 +250,11 @@ class CTool(InitCTool):
             ctx: dict,
             params: dict,
             skip_extras: bool = False,
+            cuda_url_prefix: str = 'https://download.pytorch.org/whl/{url_extra}cu',
+            cuda_vers: list = ['13.2', '13.0', '12.9', '12.8', '12.6', '12.4', '12.1', '11.8'],
+            rocm_url_prefix: str = 'https://download.pytorch.org/whl/{url_extra}rocm',
+            rocm_vers: list = ['7.2', '7.1', '7.0', '6.4', '6.3'],
+            xpu_url_prefix: str = 'https://download.pytorch.org/whl/{url_extra}xpu',
     ):
         """
         """
@@ -257,6 +263,9 @@ class CTool(InitCTool):
 
         flags = _with.get('flags')
         if not flags: flags = ''
+
+        url_extra = _with.get('url_extra')
+        if not url_extra: url_extra = ''
 
         post_flags = _with.get('post_flags')
         if not post_flags: post_flags = ''
@@ -278,30 +287,40 @@ class CTool(InitCTool):
         # Set CUDA if in compute
 
         if 'cuda' in compute:
+
             if not skip_extras and 'cuda' not in extras:
                 extras.append('cuda')
 
             if 'cuda' not in variations_compute:
                 variations_compute.append('cuda')
-                
+
             # Check CUDA wheel
             if '--index-url ' not in post_flags:
                 compute_features = target['features']['cuda']
-                cuda_version = compute_features['versions']['cuda version']
 
-                found = False
-                ver_lists = ['13.0', '12.9', '12.8', '12.6', '12.4', '12.1', '11.8']
+                ver = compute_features.get('ver')
+                if ver:
+                    found = True
+                else:
+                    cuda_version = compute_features['versions']['cuda version']
 
-                for ver in ver_lists:
-                    r = self.cm.utils.common.compare_versions(cuda_version, ver)
-                    if r['return'] == 0 and (r['comparison'] == '>' or r['comparison'] == '='):
-                        found = True
-                        break
+                    found = False
+                    ver_lists = cuda_vers
+
+                    for ver in ver_lists:
+                        r = self.cm.utils.common.compare_versions(cuda_version, ver)
+                        if r['return'] == 0 and (r['comparison'] == '>' or r['comparison'] == '='):
+                            found = True
+                            break
 
                 if found:
                     if post_flags != '': post_flags += ' '
                     ver = ver.replace('.','')
-                    post_flags = f'--index-url https://download.pytorch.org/whl/cu{ver}'
+
+                    variations_compute.append(f'cu{ver}')
+
+                    post_flags = f'--index-url {cuda_url_prefix}{ver}'.replace('{url_extra}', url_extra)
+
 
         elif 'rocm' in compute:
             if not skip_extras and 'rocm' not in extras:
@@ -313,20 +332,26 @@ class CTool(InitCTool):
             # Check ROCm wheel
             if '--index-url ' not in post_flags:
                 compute_features = target['features']['rocm']
-                rocm_version = compute_features['versions']['rocm-smi-lib version']
 
-                found = False
-                ver_lists = ['7.2']
+                ver = compute_features.get('ver')
+                if ver:
+                    found = True
+                else:
+                    rocm_version = compute_features['versions']['rocm-smi-lib version']
 
-                for ver in ver_lists:
-                    r = self.cm.utils.common.compare_versions(rocm_version, ver)
-                    if r['return'] == 0 and (r['comparison'] == '>' or r['comparison'] == '='):
-                        found = True
-                        break
+                    found = False
+                    ver_lists = rocm_vers
+
+                    for ver in ver_lists:
+                        r = self.cm.utils.common.compare_versions(rocm_version, ver)
+                        if r['return'] == 0 and (r['comparison'] == '>' or r['comparison'] == '='):
+                            found = True
+                            break
 
                 if found:
                     if post_flags != '': post_flags += ' '
-                    post_flags = f'--index-url https://download.pytorch.org/whl/rocm{ver}'
+                    variations_compute.append(f'rocm{ver}')
+                    post_flags = f'--index-url {rocm_url_prefix}{ver}'.replace('{url_extra}', url_extra)
 
         elif 'xpu' in compute:
             if not skip_extras and 'xpu' not in extras:
@@ -338,7 +363,7 @@ class CTool(InitCTool):
             # Check XPU wheel
             if '--index-url ' not in post_flags:
                 if post_flags != '': post_flags += ' '
-                post_flags = f'--index-url https://download.pytorch.org/whl/xpu'
+                post_flags = f'--index-url {xpu_url_prefix}'.replace('{url_extra}', url_extra)
 
         ###########################################################################################
         # Add CPU as default base
@@ -352,4 +377,5 @@ class CTool(InitCTool):
             _with['post_flags'] = post_flags
 
         return result
+
 

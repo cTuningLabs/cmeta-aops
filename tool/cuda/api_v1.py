@@ -154,3 +154,4 @@ def clean_devices(devices):
         cleaned_devices.append(cleaned)
 
     return cleaned_devices
+

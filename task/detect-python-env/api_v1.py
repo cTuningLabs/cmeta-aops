@@ -83,3 +83,4 @@ class CTask(InitCTask):
             result['script_path'] = script_path
 
         return result
+

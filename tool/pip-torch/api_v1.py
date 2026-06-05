@@ -20,12 +20,19 @@ class CTool(InitCTool):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
     ############################################################
-    def init2(self,
-              ctx: dict,
-              params: dict,
+    def check_params2(self,
+                      ctx: dict,
+                      params: dict,
+                      cparams: dict,
     ):
         """
         """
 
-        # Call function in tool::pip
-        return self.task_setup_tool_code._common_compute_init(ctx, params, skip_extras = True)
+        # Call function in tool::pip / api_v1.py
+        return self.task_setup_tool_code._common_compute_init(
+            ctx, 
+            params, 
+            skip_extras = True,
+            cuda_vers = ['13.0', '12.9', '12.8', '12.6', '12.4', '12.1', '11.8'],
+        )
+

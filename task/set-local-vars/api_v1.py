@@ -36,3 +36,4 @@ class CTask(InitCTask):
             result['add_to_local'] = vars
 
         return result
+

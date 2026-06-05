@@ -240,6 +240,25 @@ class Category(InitCategory):
             if k in pp:
                 del(pp[k])
 
+        env = pp.setdefault('env', {})
+
+        fdlp = r.get('features',{}).get('paths',{}).get('found_dynamic_lib_paths')
+
+        uname = ctx['tasks']['global']['host']['os']['uname']
+
+        if fdlp:
+            if uname == 'windows':
+                env_dlib = env.setdefault('+PATH', [])
+            elif uname == 'darwin':
+                env_dlib = env.setdefault('+DYLD_LIBRARY_PATH', [])
+            else:
+                env_dlib = env.setdefault('+LD_LIBRARY_PATH', [])
+
+            for f in reversed(fdlp):
+                if f not in env_dlib:
+                    env_dlib.insert(0, f)
+
+
         pp['arg1'] = self.cmeta['uses_artifacts']['tool::cmd']
         pp['cmd'] = cmd
         pp['ctx'] = ctx
@@ -249,3 +268,4 @@ class Category(InitCategory):
         self.cm.catch_error(r)
 
         return r
+

@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 storage_key: cuda
 
@@ -19,3 +19,4 @@ extra_paths:
   windows:
     - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\**"
     - "D:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\**"
+

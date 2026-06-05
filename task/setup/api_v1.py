@@ -186,6 +186,7 @@ class CTask(InitCTask):
 
         desc = r['desc']
         tool_api_code = r['tool_api_code']
+        tool_api_code2 = r.get('tool_api_code2')
         artifact_au = r['artifact_au']
         artifact_print_name = r['artifact_print_name']
 
@@ -194,6 +195,10 @@ class CTask(InitCTask):
         # Check if extra init from a tool
         if hasattr(tool_api_code, 'check_params') and callable(getattr(tool_api_code, 'check_params')):
             r = tool_api_code.check_params(ctx, params, cparams)
+            if self.cm.catch_error(r): return r
+
+        if tool_api_code2 and hasattr(tool_api_code2, 'check_params2') and callable(getattr(tool_api_code2, 'check_params2')):
+            r = tool_api_code2.check_params2(ctx, params, cparams)
             if self.cm.catch_error(r): return r
 
         # Check tool path
@@ -407,7 +412,7 @@ class CTask(InitCTask):
             desc_cache_meta_const_copy = copy.deepcopy(desc_cache_meta_const)
             r = self.cm.utils.common.expand_strings_in_dict(desc_cache_meta_const_copy, ctx['tasks'])
             if self.cm.catch_error(r): return r
-            cache_meta = self.cm.utils.common.deep_merge(cache_meta, desc_cache_meta_const_copy, append_lists=True)
+            cache_meta = self.cm.utils.common.deep_merge(cache_meta, desc_cache_meta_const_copy, append_lists = True, remove_if_none = True)
 
         if desc.get('cache_params_with', False):
             if 'with' in params:
@@ -420,7 +425,7 @@ class CTask(InitCTask):
                 v = desc_cache_params_use['all']
             elif uname in desc_cache_params_use:
                 v = desc_cache_params_use[uname]
-            elif 'linux' in desc_cache_params_use:
+            elif uname !='windows' and 'linux' in desc_cache_params_use:
                 v = desc_cache_params_use['linux']
 
             if v:
@@ -499,6 +504,11 @@ class CTask(InitCTask):
         clean = ctx_tasks['run_control'].get('clean', False)
         update = ctx_tasks['run_control'].get('update', False)
         new = ctx_tasks['run_control'].get('new', False)
+
+        if name == 'pip' and update:
+            # Usually update happens for new pip features while package can be only one
+            # so force install/build ...
+            skip_detect = True
 
         # TBD: add better support for clean, update and new in tools
         #  for now:
@@ -831,4 +841,5 @@ class CTask(InitCTask):
                 _result['result'] = result
 
         return _result
+
 

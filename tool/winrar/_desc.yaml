@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 names:
   - winrar{{global.host.vars.file_ext_exe}}
@@ -9,3 +9,4 @@ match_version:
     group: 0
 
 cmd_get_version: '{{root_tool_path}}{{os_sep}}rar -iver'
+

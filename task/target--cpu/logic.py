@@ -951,3 +951,4 @@ def get_cpu_inventory() -> Dict[str, Any]:
 
 if __name__ == "__main__":
     print(json.dumps(get_cpu_inventory(), indent=2, sort_keys=True))
+

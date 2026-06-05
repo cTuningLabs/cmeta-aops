@@ -1,0 +1,64 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+
+###################################################################################################
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  work_path: '{pwd}'
+
+  input_files:
+    data: '{{local.dataset.path}}'
+
+  output_files:
+    - output.txt
+
+  result_files:
+    response: output.txt
+
+  print_files:
+    - output.txt
+
+###################################################################################################
+updates:
+  compile:
+    skip: True
+
+
+  run:
+    uses:
+       - match:
+           internal_func: customize_run
+         append:
+           - task: setup,a2f9b61079ce4333
+             name: llama-cpp,daa99512448647b7
+             # Note that next I add space after ${} otherwise will mix up }}} ...
+             with: '{{ params.setup_llama_cpp|${} }}'
+
+           - task: model,86f0effd07ad454d
+             model_tags: gguf
+
+           - task: dataset,30e20c7489f14f84
+             dataset_tags: prompt,txt,llm
+
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         update:
+           global_keys_with_dynamic_libs:
+             - llama-cpp
+           cmd: >-
+             {{global.llama-cpp.qpath}}
+             {run_flags_after_exe}
+             {{params.run_flags|}} 
+           cmd_main: >-
+               -m {{local.model.qpath}}
+               -f {qinput_files.data}
+               -n {{params.n|500}}
+               --temp {{params.temp|0.7}}
+               -c {{params.с|4096}}
+               --seed {{params.seed|12345}}
+               --no-display-prompt 
+               --log-disable 
+               --single-turn
+               > output.txt

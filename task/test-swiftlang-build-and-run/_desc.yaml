@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 uses:
   - task: runner,1e48cc0c5f6041a5
@@ -9,7 +9,8 @@ uses:
 
   - task: cmd,c9ba0a88df394d7f
     mkdir: '{{task_artifact_path}}{{os_sep}}tmp'
-    cmd: '{{global.swiftlang.qpath_bin}}{{os_sep}}swiftc {{task_artifact_path}}{{os_sep}}src{{os_sep}}hello.swift -o {{task_artifact_path}}{{os_sep}}tmp{{os_sep}}hello{{global.host.vars.file_ext_exe}}'
+    cmd: '"{{global.swiftlang.path_bin}}{{os_sep}}swiftc" {{task_artifact_path}}{{os_sep}}src{{os_sep}}hello.swift -o {{task_artifact_path}}{{os_sep}}tmp{{os_sep}}hello{{global.host.vars.file_ext_exe}}'
 
   - task: cmd,c9ba0a88df394d7f
     cmd: '{{task_artifact_path}}{{os_sep}}tmp{{os_sep}}hello{{global.host.vars.file_ext_exe}}'
+

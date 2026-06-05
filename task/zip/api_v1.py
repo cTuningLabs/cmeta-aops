@@ -100,3 +100,4 @@ class CTask(InitCTask):
         filesize = os.path.getsize(zip_path)
 
         return {'return':0, 'path':zip_path, 'qpath':qpath, 'zip_file_size':filesize}
+

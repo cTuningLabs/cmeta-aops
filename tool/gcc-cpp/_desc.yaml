@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 storage_key: gcc-cpp
 
@@ -67,9 +67,9 @@ features:
       link_profile: ''
       compile_to_obj: '-c'
       d: '-D'
-      lib_dynamic_build: '-shared'
+      lib_dynamic_build: '-shared -fPIC'
       lib_static_build: '-c'
-      lib_dynamic_build_debug: '-shared -g'
+      lib_dynamic_build_debug: '-shared -fPIC -g'
       lib_static_build_debug: '-c -g'
       static_lib1: 'rcs'
       static_lib2: ''
@@ -79,3 +79,4 @@ features:
       file_ext_lib2: .a
       file_ext_dlib: .so
       file_ext_obj: .o
+

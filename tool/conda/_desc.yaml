@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 names:
   - conda{{global.host.vars.file_ext_bat}}
@@ -20,3 +20,4 @@ extra_paths:
     - "/opt/homebrew/opt/**"
   windows:
     - "{{user_home}}\\*conda*\\**"
+

@@ -160,7 +160,7 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             ctx: dict,
-            env: dict = None,
+            **kwargs
     ):
 
         """
@@ -174,6 +174,8 @@ class CTask(InitCTask):
 
                   os: ['Windows', 'Linux', 'macOS']
         """
+
+        env = kwargs.get('env')
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
@@ -506,3 +508,4 @@ class CTask(InitCTask):
         }
 
         return result
+

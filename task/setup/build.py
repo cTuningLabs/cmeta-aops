@@ -136,6 +136,39 @@ def build_tool(self,
         print ('')
         print (f'{space}INFO: Building in "{target_path}" ...') 
 
+
+    ###############################################################################################
+    build_params = params.copy()
+
+    _control = {
+      'con': con,
+      'quiet': quiet,
+      'verbose': verbose,
+      'space': space,
+      'clean': task_extra_control['clean'],
+      'update': task_extra_control['update'],
+      'new': task_extra_control['new'],
+    }
+
+    build_params.update({
+       'control': _control,
+       'result': result,
+       'version': version,
+       'version_pip': version_pip,
+       'version_simple': version_simple,
+       'version_major': version_major,
+       'env': env,
+       'timeout': timeout,
+    })
+
+    if hasattr(tool_api_code, 'customize_build') and callable(getattr(tool_api_code, 'customize_build')):
+        r = tool_api_code.customize_build(ctx, build_params)
+        if self.cm.catch_error(r): return r
+
+        if 'add_to_local' in r:
+            self.cm.utils.common.deep_merge(_local, r['add_to_local'], append_lists=False)
+
+
     ###############################################################################################
     build_note = desc.get('build_note')
 
@@ -191,28 +224,6 @@ def build_tool(self,
                 print (f'{space}WARNING: passwordless SUDO detected ...')
 
     ###############################################################################################
-    build_params = params.copy()
-
-    _control = {
-      'con': con,
-      'quiet': quiet,
-      'verbose': verbose,
-      'space': space,
-      'clean': task_extra_control['clean'],
-      'update': task_extra_control['update'],
-      'new': task_extra_control['new'],
-    }
-
-    build_params.update({
-       'control': _control,
-       'result': result,
-       'version': version,
-       'version_pip': version_pip,
-       'version_simple': version_simple,
-       'version_major': version_major,
-       'env': env,
-       'timeout': timeout,
-    })
 
     if has_custom_build:
         r = tool_api_code.build(ctx, build_params)
@@ -230,3 +241,4 @@ def build_tool(self,
         result['found_paths'] = [target_path + os.sep + '**']
 
     return result
+

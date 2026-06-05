@@ -56,22 +56,65 @@ class CTask(InitCTask):
 
         env = params.get('env', {})
 
-        output_files = params.get('output_files')
-        if output_files is None:
-            output_files = []
-        else:
-            output_files = output_files.copy()
-
+        ################################################################################
         target_compute = _global['target']['compute']
 
-        target_path = params.get('target_path')
+        _android_cpu = True if 'android-cpu' in target_compute else False
+        _cuda = True if 'cuda' in target_compute else False
+
+        _cpu = False
+        if 'cpu' in target_compute:
+            _cpu = True
+        if _android_cpu: 
+            _cpu = False
+
+        ################################################################################
+        # Duplicated in setup-run if we need to update names without compilation
+        # (such as python)
+        src_file_names = params.get('run_src_file_names')
+        if src_file_names:
+            src_file_names_str = ''
+            src_file_names_str_with_path = ''
+            src_path = ctx['tasks']['local']['src_path']
+
+            for sfn in src_file_names:
+                sfn = sfn.replace('//', os.sep)
+
+                if src_file_names_str != '':
+                    src_file_names_str += ' '
+                src_file_names_str += sfn
+
+                sfnp = os.path.join(src_path, sfn)
+                if src_file_names_str_with_path != '':
+                    src_file_names_str_with_path += ' '
+                src_file_names_str_with_path += sfnp
+
+            ctx['tasks']['local']['run_src_file_names_str'] = src_file_names_str
+            ctx['tasks']['local']['run_src_file_names_str_with_path'] = src_file_names_str_with_path
+
+        ################################################################################
+        target_path = params.get('target_path_bin')
         if target_path is None:
-            target_path = os.getcwd()
+            target_path = params.get('target_path')
+            if target_path is None:
+                target_path = os.getcwd()
+
         target_path = target_path.replace('//', os.sep)
+
+        ctx['tasks']['local']['target_path'] = target_path
 
         target_exe = params.get('target_exe')
         if target_exe:
             target_path_exe = os.path.join(target_path, target_exe)
+
+            ctx['tasks']['local']['target_path_exe'] = target_path_exe
+
+        if _android_cpu:
+           target_xpath_exe = f'./{target_exe}' 
+        elif not target_exe:
+           target_xpath_exe = ''
+        else:
+           target_xpath_exe = target_path_exe
 
         prefix_cmd = params.get('prefix_cmd')
         if prefix_cmd is None:
@@ -91,19 +134,48 @@ class CTask(InitCTask):
                 cmd += ' '
             cmd += cmd_main
 
+
+        ################################################################################
+        input_files = params.get('input_files')
+        if input_files is None:
+            input_files = {}
+        else:
+            input_files = {k: v.replace("//", os.sep) for k, v in input_files.items()}
+
+        r = self.cm.utils.common.expand_strings_in_dict(input_files, ctx_tasks)
+        if self.cm.catch_error(r): return r
+
+        ################################################################################
+        output_files = params.get('output_files')
+        if output_files is None:
+            output_files = []
+        else:
+            output_files = output_files.copy()
+
+        r = self.cm.utils.common.expand_strings_in_dict(output_files, ctx_tasks)
+        if self.cm.catch_error(r): return r
+
+        # Update input files
+        for k in input_files:
+            v = input_files[k]
+
+            if _android_cpu:
+                v = os.path.basename(v)
+
+            kk = f'input_files.{k}'
+            cmd = cmd.replace('{'+kk+'}', v)
+
+            kk = f'qinput_files.{k}'
+            cmd = cmd.replace('{'+kk+'}', self.cm.q(v))
+
         run_time_env = ctx['tasks']['local'].get('run_time_env', {})
 
+        r = self.cm.utils.common.expand_strings_in_dict(run_time_env, ctx_tasks)
+        if self.cm.catch_error(r): return r
+
         ###########################################################################################
-        _android_cpu = True if 'android-cpu' in target_compute else False
-        _cuda = True if 'cuda' in target_compute else False
 
         add_to_local = {}
-
-        _cpu = False
-        if 'cpu' in target_compute:
-            _cpu = True
-        if _android_cpu: 
-            _cpu = False
 
         start_exe_prefix = _global['host']['vars']['start_exe_prefix']
 
@@ -160,6 +232,14 @@ class CTask(InitCTask):
 
         if _cpu or _cuda:
             fdlp = setup_compile.get('found_dynamic_lib_paths')
+            if not fdlp:
+                fdlp = []
+
+            global_keys_with_dynamic_libs = params.get('global_keys_with_dynamic_libs', [])
+            for k in global_keys_with_dynamic_libs:
+                fdlp2 = _global[k].get('features',{}).get('paths',{}).get('found_dynamic_lib_paths', [])
+                if fdlp2:
+                    fdlp += fdlp2
 
             if fdlp:
                 if uname == 'windows':
@@ -223,6 +303,15 @@ class CTask(InitCTask):
             cmds.append(adb_with_serial + f' push "{target_path_exe}" {adb_tmp_path}/{target_exe}')
             cmds.append(adb_with_serial + f' shell chmod 755 {adb_tmp_path}/{target_exe}')
 
+            # Process input files
+            for k in input_files:
+                f = input_files[k]
+                ff = os.path.basename(f)
+
+                cmds.append(adb_with_serial + f' push "{f}" {adb_tmp_path}/{ff}')
+
+                input_files[k] = ff
+
             # Check libs
             fdl = setup_compile.get('found_dynamic_libs')
             if fdl:
@@ -251,8 +340,20 @@ class CTask(InitCTask):
             postfix_cmd = '"'
 
         x = start_exe_prefix if target_exe else ''
+
+        y = x + target_exe if target_exe else ''
+        cmd = cmd.replace('{target_exe}', y)
+
+        y = target_xpath_exe if target_xpath_exe else ''
+        cmd = cmd.replace('{target_xpath_exe}', y)
+
         cmd = cmd.replace('{run_flags_after_exe}', run_flags_after_exe)
-        run_time_cmd = prefix_cmd + x + cmd + postfix_cmd
+
+        if src_file_names:
+            cmd = cmd.replace('{run_src_file_names_str_with_path}', src_file_names_str_with_path)
+
+        run_time_cmd = prefix_cmd + cmd + postfix_cmd
+
         run_time_cmds.append(run_time_cmd)
 
         for f in output_files:
@@ -301,6 +402,11 @@ class CTask(InitCTask):
             python_path = ctx['tasks']['global']['python']['qpath']
             run_time_cmds.append(f'{python_path} -c "import pstats; p=pstats.Stats(\'tmp-cmeta-python-profile.out\'); p.sort_stats(\'cumulative\').print_stats(30)" > tmp-cmeta-python-profile.txt')
 
+        if 'setup-dynamic-libs' in ctx['tasks']['local']:
+            dynamic_lib_paths = ctx['tasks']['local']['setup-dynamic-libs'].get('found_dynamic_lib_paths')
+            if dynamic_lib_paths:
+                ctx['tasks']['local']['run_time_env']['+PATH'] = dynamic_lib_paths
+
         if cmds:
             if con and verbose:
                 print ('')
@@ -345,3 +451,4 @@ class CTask(InitCTask):
             result['add_to_local'] = add_to_local
 
         return result
+

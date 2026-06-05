@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 store_global: False
 cache: False
@@ -15,3 +15,4 @@ uses:
 #  - task: target,94decb2ddd28441f
 #    ask: '{{params.ask|$False}}'
 #    compute: '{{params.compute|$None}}'
+

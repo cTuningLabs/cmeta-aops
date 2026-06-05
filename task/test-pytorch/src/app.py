@@ -26,3 +26,4 @@ if torch.cuda.is_available():
     print ("System CUDA driver version:", driver)
 
 print ('='*80)
+

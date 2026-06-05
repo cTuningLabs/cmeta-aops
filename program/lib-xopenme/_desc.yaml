@@ -1,10 +1,12 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 inherits:
   - template-c-cpu,649899ef3f004e4a
 
 local_vars:
+  lang: c
+
   src_file_names: 
     - 'xopenme.c'
 
@@ -19,13 +21,19 @@ params:
     install: True
   skip_run: True
 
-updates:
-  compile:
-    uses_pre:
-      - match:
-          task: compiler,f3925b201c704bde
-        update:
-          lang: c
+#params_os:
+#  windows:
+#    compile:
+#      d:
+#        WINDOWS:
+
+#updates:
+#  compile:
+#    uses:
+#      - match:
+#          task: compiler,f3925b201c704bde
+#        update:
+#          lang: c
 
 #    uses_libs:
 #      - append:
@@ -42,3 +50,4 @@ updates:
 #               - z
 #             dynamic_libs: 
 #               - c++_shared
+

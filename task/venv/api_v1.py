@@ -284,3 +284,4 @@ def resolve_with_uv(stdout: str, spec: str) -> str:
 
     # Fallback to prereleases (pip-like behavior)
     return str(max(matching))
+

@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 names:
   - javac{{global.host.vars.file_ext_exe}}
@@ -23,3 +23,4 @@ uses:
   - task: setup,a2f9b61079ce4333
     name: openjdk,5bc3b6e965174534
     version: "{{params.version|$None}}"
+

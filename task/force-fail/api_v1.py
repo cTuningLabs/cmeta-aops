@@ -31,3 +31,4 @@ class CTask(InitCTask):
             text = f'forced fail via "{__file__}"'
 
         return self.cm.error(text)
+

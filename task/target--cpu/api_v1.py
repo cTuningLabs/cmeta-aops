@@ -15,6 +15,7 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             ctx: dict,        # cMeta context
+            **kwargs
     ):
 
         """
@@ -39,3 +40,4 @@ class CTask(InitCTask):
         }
 
         return result
+

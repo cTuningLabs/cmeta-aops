@@ -568,3 +568,4 @@ def get_hostname_info():
     result["ipv6"] = finalize(ipv6_set)
 
     return result
+

@@ -30,3 +30,4 @@ demo = gr.Interface(fn=greet, inputs="text", outputs="text")
 if __name__ == "__main__":
     cli_args = parse_cli_args()
     demo.launch(server_name=cli_args.server_name, server_port=cli_args.server_port)
+

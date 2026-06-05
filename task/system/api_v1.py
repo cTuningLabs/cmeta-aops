@@ -1379,3 +1379,4 @@ def _fill_macos_power(base: Dict[str, Any]) -> Dict[str, Any]:
                     base["adapter_model"] = _clean_value(vendor) or base["adapter_model"]
 
     return base
+

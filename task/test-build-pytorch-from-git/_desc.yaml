@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 uses:
   - task: runner,1e48cc0c5f6041a5
@@ -158,3 +158,4 @@ uses:
     mkdir: '{{global.clone-git-pytorch.path_to_git_repo}}{{os_sep}}build' # create to avoid failing on windows when cleaning it 
     chdir: '{{global.clone-git-pytorch.path_to_git_repo}}'
     cmd: '{{global.host.vars.clean_dir_quiet}} build'
+

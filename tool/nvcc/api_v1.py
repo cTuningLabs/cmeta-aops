@@ -316,3 +316,4 @@ class CTool(InitCTool):
             _result['result'] = result
 
         return _result
+

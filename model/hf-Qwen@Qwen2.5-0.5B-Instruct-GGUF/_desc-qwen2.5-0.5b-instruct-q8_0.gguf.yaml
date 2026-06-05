@@ -1,0 +1,8 @@
+﻿uses:
+  - task: get-hf-model,b3392bae07d14e7e
+    repo: Qwen/Qwen2.5-0.5B-Instruct-GGUF
+    filename: qwen2.5-0.5b-instruct-q8_0.gguf
+    features:
+      library: gguf
+
+result_from_ctx: '{{global.get-hf-model}}'

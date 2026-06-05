@@ -1,10 +1,12 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 inherits:
   - template-c-cpu,649899ef3f004e4a
 
 local_vars:
+  lang: rust
+
   src_file_names:
     - 'program.rs'
 
@@ -15,20 +17,8 @@ local_vars:
     stats: tmp-cmeta-program-stats.json
 
 updates:
-  compile:
-    uses_pre:
-      - match:
-          task: compiler,f3925b201c704bde
-        update:
-          lang: rust
-    uses_prep:
-      - match:
-          task: setup-compile,10f1dfd3f6f04c35
-        update:
-          lang: rust
-
   run:
-    uses_prep:
+    uses:
        - match:
            task: setup-run,148f6c1fdb4247df
          update:
@@ -40,4 +30,5 @@ updates:
              {{params.repeat|3}}
              {{params.clean|1}}
              {{params.seed|12345}}
+
 

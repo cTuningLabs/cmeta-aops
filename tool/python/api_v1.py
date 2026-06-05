@@ -396,3 +396,4 @@ class CTool(InitCTool):
         result['qpath_home'] = qpath_home
 
         return _result
+

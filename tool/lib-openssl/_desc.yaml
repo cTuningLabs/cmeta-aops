@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 names:
   - opensslv.h
@@ -31,3 +31,4 @@ install_cmd:
   linux: '{{global.host.os_extra.install_cmd_sudo}}'
   darwin: '{{global.brew.qpath}} install openssl'
   windows: "{{global.winget.qpath}} install OpenSSL -e --no-upgrade {{global.init.winget_install_flags|}}"
+

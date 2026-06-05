@@ -291,7 +291,10 @@ typedef int        TOTAL_TYPE; /* this is faster for "int" but should be "float"
 typedef float      TOTAL_TYPE; /* for my PowerPC accelerator only */
 #endif
 
-/*#define FOPENB*/           /* uncomment if using djgpp gnu C for DOS or certain Win95 compilers */
+#ifdef WINDOWS
+ #define FOPENB           /* uncomment if using djgpp gnu C for DOS or certain Win95 compilers */
+#endif
+
 #define SEVEN_SUPP           /* size for non-max corner suppression; SEVEN_SUPP or FIVE_SUPP */
 #define MAX_CORNERS   15000  /* max corners per frame */
 

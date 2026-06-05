@@ -135,3 +135,4 @@ class CTask(InitCTask):
            if self.cm.catch_error(r): return r
 
         return result
+

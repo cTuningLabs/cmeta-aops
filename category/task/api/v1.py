@@ -1056,3 +1056,4 @@ class Category(InitCategory):
             ctx_tasks['local'] = saved_local
 
         return {'return':0, 'local': local}
+

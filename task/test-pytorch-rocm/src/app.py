@@ -31,3 +31,4 @@ else:
     print ("GPU not available")
 
 print ('='*80)
+

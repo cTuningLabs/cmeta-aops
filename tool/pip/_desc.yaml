@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 storage_key: 'pip-{{params.with.package}}'
 
@@ -43,3 +43,4 @@ install_cmd_version:
 uses:
   - task: setup,a2f9b61079ce4333
     name: python-pip,28399f0bb52c4148
+

@@ -126,7 +126,7 @@ class CTool(InitCTool):
         """
         """
 
-        if not params.get('version_check', False):
+        if result['return'] == 0 and not params.get('version_check', False):
             _with = params.get('with', {})
             _static = _with.get('static', False)
 
@@ -172,3 +172,4 @@ class CTool(InitCTool):
                 features['paths']['found_dynamic_libs'] = found_dynamic_libs
 
         return {'return':0}
+

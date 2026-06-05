@@ -55,3 +55,4 @@ class CTask(InitCTask):
         result['temp_file'] = temp_file
 
         return result
+

@@ -35,11 +35,25 @@ class CTool(InitCTool):
         # FGG: extension depends on target / compiler and not just on host
         # For example Android on Windows will have .so and not .dll ...
 
-        if 'android-cpu' in params.get('with', {}).get('compute',[]):
+        _with = params.setdefault('with', {})
+
+        compute = _with.get('compute')
+        if not compute:
+            compute = ctx['tasks']['global'].get('target',{}).get('compute')
+        if not compute:
+            compute = ['cpu']
+
+        if type(compute) == str:
+            compute = compute.split(',')
+
+        _with['compute'] = compute
+        ctx['tasks']['local']['compute'] = compute
+
+        if 'android-cpu' in compute:
             name += '.so'
         else:
-            if 'compiler' in ctx['tasks']['global']:
-                name += ctx['tasks']['global']['compiler']['features']['vars']['file_ext_dlib']
+            if 'compiler-c' in ctx['tasks']['global']:
+                name += ctx['tasks']['global']['compiler-c']['features']['vars']['file_ext_dlib']
             else:
                 name += ctx['tasks']['global']['host']['vars']['file_ext_dlib']
 
@@ -47,8 +61,12 @@ class CTool(InitCTool):
 
         # Check if Android
         k = 'target--android-cpu'
-        if k in ctx['tasks']['global']:
-            ctx['tasks']['local']['target_abi'] = ctx['tasks']['global'][k]['features']['ro.product.cpu.abi']
+        target_abi = _with.get('android_abi')
+        if not target_abi:
+            if k in ctx['tasks']['global']:
+                target_abi = ctx['tasks']['global'][k]['features']['ro.product.cpu.abi']
+
+        ctx['tasks']['local']['target_abi'] = target_abi
 
         return {'return': 0}
 
@@ -72,7 +90,7 @@ class CTool(InitCTool):
         uname = ctx['tasks']['global']['host']['os']['uname']
 
         _with = params.get('with', {})
-        _add_debug = _with.get('add_debug', False)
+        _debug_info = _with.get('debug_info', False)
 
         for path in paths:
              filename_without_ext = os.path.splitext(os.path.basename(path))[0]
@@ -124,9 +142,9 @@ class CTool(InitCTool):
 
                  paths['libs_static'] = [path_lib]
 
-             if _add_debug:
-                 _libs['libs_debug'] = [path_dynamic_lib]
-                 _libs['libs_static_debug'] = [path_lib]
+             if _debug_info:
+                 paths['libs_debug'] = [path_dynamic_lib]
+                 paths['libs_static_debug'] = [path_lib]
 
              # Lib names
              lib_names = [libname]
@@ -153,14 +171,17 @@ class CTool(InitCTool):
         """
         """
 
-        if not params.get('version_check', False):
+        if result['return'] == 0 and not params.get('version_check', False):
             _with = params.get('with', {})
+
+            # High-level program compilation flag that also passed here
+            _static = _with.get('static', False)
 
             features = result['features']
 
             path_dyn_lib = features['paths'].get('dynamic_lib')
 
-            if path_dyn_lib and os.path.isdir(path_dyn_lib):
+            if not _static and path_dyn_lib and os.path.isdir(path_dyn_lib):
                 features['paths']['found_dynamic_lib_paths'] = [path_dyn_lib]
 
                 found_dynamic_libs = []
@@ -180,3 +201,4 @@ class CTool(InitCTool):
                     features['paths']['found_dynamic_libs'] = found_dynamic_libs
 
         return {'return':0}
+

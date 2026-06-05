@@ -46,3 +46,4 @@ class CTool(InitCTool):
             result['package_name'] = package_name
 
         return result
+

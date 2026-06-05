@@ -1,13 +1,17 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 inherits:
   - template-c-cpu,649899ef3f004e4a
 
 local_vars:
+  lang: javac
+
   src_file_names: 
     - 'Program.java'
     - 'Matmul.java'
+
+  target_file_name: 'Program'
 
   output_files:
     - tmp-cmeta-program-stats.json
@@ -15,29 +19,19 @@ local_vars:
   result_files:
     stats: tmp-cmeta-program-stats.json
 
-updates:
+params:
   compile:
-    uses_pre:
-      - match:
-          task: compiler,f3925b201c704bde
-        update:
-          lang: javac
+    target_ext: '.class'
+    flags: '-d .'
 
-    uses_prep:
-      - match:
-          task: setup-compile,10f1dfd3f6f04c35
-        update:
-          lang: javac
-
+updates:
   run:
-    uses_pre:
-       - prepend:
-         - task: setup,a2f9b61079ce4333
-           name: java,6c8d509f22c841e8
-
-    uses_prep:
+    uses:
        - match:
            task: setup-run,148f6c1fdb4247df
+         prepend:
+           - task: setup,a2f9b61079ce4333
+             name: java,6c8d509f22c841e8
          update:
            target_exe: None
            cmd: >-
@@ -53,3 +47,4 @@ updates:
              {{params.repeat|3}}
              {{params.clean|1}}
              {{params.seed|12345}}
+

@@ -1,7 +1,7 @@
 artifact: beea611608bb459c
 authors: Grigori Fursin
 category: task,c36be4b9314a45e0
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 creation_timestamp: '2026-01-19T15:40:51.387488+00:00'
 last_update_timestamp: '2026-04-30T09:38:23.926468+00:00'
 min_cmeta_version_api: 0.21.2
@@ -11,3 +11,4 @@ tags:
 uses_categories:
   program: program,22788f3c30d04e6d
   utils: utils,234ce5e3262e4d52
+

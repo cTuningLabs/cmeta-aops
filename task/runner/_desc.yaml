@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 store_global: True     # force
 storage_key: runner    # force storage key to avoid mixing up in the future
@@ -12,3 +12,4 @@ uses:
   #  skip_if_not_win: True
 
   #- task: target,94decb2ddd28441f
+

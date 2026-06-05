@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 storage_key: icx
 
@@ -37,6 +37,7 @@ install_help_text:
 
 features:
   windows:
+    id: Intel
     flags:
       catch_errors: ''
       include_path: '-I'
@@ -74,6 +75,7 @@ features:
       file_ext_dlib: .dll
       file_ext_obj: .obj
   linux:
+    id: Intel
     flags:
       catch_errors: ''
       include_path: '-I'
@@ -109,3 +111,4 @@ features:
       file_ext_lib2: .a
       file_ext_dlib: .so
       file_ext_obj: .o
+

@@ -122,7 +122,7 @@ def detect_existing_tool(self,
                         paths = all_only_paths['all']
                     elif uname in all_only_paths:
                         paths = all_only_paths[uname]
-                    elif 'linux' in all_only_paths:
+                    elif uname !='windows' and 'linux' in all_only_paths:
                         paths = all_only_paths['linux']
 
                 else:
@@ -152,7 +152,7 @@ def detect_existing_tool(self,
 
                         if uname in all_extra_paths:
                             key = uname
-                        elif 'linux' in all_extra_paths:
+                        elif uname !='windows' and 'linux' in all_extra_paths:
                             key = 'linux'
                         else:
                             key = 'all'
@@ -204,6 +204,8 @@ def detect_existing_tool(self,
         # Check/update paths via tool code 
         # (for example remove ones that doesn't have some capabilities)
 
+        found_paths_info = {}
+
         if not force_path and hasattr(tool_api_code, 'update_paths') and callable(getattr(tool_api_code, 'update_paths')):
             r = tool_api_code.update_paths(ctx, found_paths, params)
             if self.cm.catch_error(r): return r
@@ -220,6 +222,12 @@ def detect_existing_tool(self,
 
             if 'found_paths_with_versions' in r:
                 found_paths_with_versions = r['found_paths_with_versions']
+
+            # Usually we can use it instead of found_paths_with_version
+            # to update dynamic libs from cMeta compilation
+            # before running version detection
+            if 'found_paths_info' in r:
+                found_paths_info = r['found_paths_info']
 
         ############################################################################
         # Get versions if not forced by TOOL API CODE in the previous step
@@ -265,6 +273,21 @@ def detect_existing_tool(self,
 
                     _con = _verbose = True if self.cm.debug else False
 
+                    # Check dynamic libs
+                    fdlp = found_paths_info.get(xpath, {}).get('features',{}).get('paths',{}).get('found_dynamic_lib_paths')
+
+                    if fdlp:
+                        if uname == 'windows':
+                            env_dlib = env.setdefault('+PATH', [])
+                        elif uname == 'darwin':
+                            env_dlib = env.setdefault('+DYLD_LIBRARY_PATH', [])
+                        else:
+                            env_dlib = env.setdefault('+LD_LIBRARY_PATH', [])
+
+                        for f in reversed(fdlp):
+                            if f not in env_dlib:
+                                env_dlib.insert(0, f)
+
                     ii = {'category': self.category_alias + ',' + self.category_uid,
                           'command': 'run',
                           'ctx': ctx,
@@ -277,6 +300,8 @@ def detect_existing_tool(self,
                           'text_cmd': 'RUN:', 
                           'fail_if_nonzero_return_code': False,
                           'capture_output': True,
+#                          'con': True,
+#                          'verbose': True,
                     }
 
                     # We can capture ENV difference for scripts that initalize tools
@@ -308,11 +333,13 @@ def detect_existing_tool(self,
 
                     if returncode == 0:
                         found_paths_with_versions[xpath] = {'output': output, 'cmd_call': cmd_call, 'cmd': cmd}
+                        if xpath in found_paths_info:
+                            found_paths_with_versions[xpath].update(found_paths_info[xpath])
+
+                        if cmd_call_script and 'env_added' in rx:
+                            found_paths_with_versions[xpath]['env_added'] = rx['env_added']
                     else:
                         warning += f'\nProblem extracting version from {path} with returncode={returncode}:\n{output}\n'
-
-                    if cmd_call_script and 'env_added' in rx:
-                        found_paths_with_versions[xpath]['env_added'] = rx['env_added']
 
         if not found_paths_with_versions:
     #        x = '' if not params else f' with params "{params}"'
@@ -593,3 +620,4 @@ def detect_existing_tool(self,
         print (f'{space}Selected tool "{path}" with version "{detected_version}"')
      
     return result
+

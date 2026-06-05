@@ -36,6 +36,7 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             ctx: dict,        # cMeta context
+            **kwargs
     ):
 
         """
@@ -84,3 +85,4 @@ class CTask(InitCTask):
         result['features'] = features
 
         return result
+

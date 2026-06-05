@@ -69,3 +69,4 @@ class CTask(InitCTask):
         result['_aggregate'] = {'env':env}
         
         return result
+

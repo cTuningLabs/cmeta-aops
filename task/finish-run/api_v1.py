@@ -37,6 +37,12 @@ class CTask(InitCTask):
         """
         """
 
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
+
         result = {'return':0}
 
         chdir = params.get('chdir')
@@ -63,4 +69,27 @@ class CTask(InitCTask):
         if result_files_data:
             result['add_to_local'] = {'result_files_data': result_files_data}
 
+        print_files = params.get('print_files', [])
+        print_line = params.get('print_line', False)
+
+        if print_files:
+            for f in print_files:
+                path = os.path.join(work_dir, f)
+
+                print ('')
+                x = f'{space}' if verbose else ''
+                print (f'{x}INFO: print file "{f}":')
+                print ('')
+                r = self.cm.utils.files.read_file(path)
+                if self.cm.catch_error(r, fail16=True): return r
+
+                if print_line:
+                    print ('*'*80)
+                print (r['data'])
+                if print_line:
+                    print ('*'*80)
+                else:
+                    print ('')
+
         return result
+

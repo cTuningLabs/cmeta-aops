@@ -76,3 +76,4 @@ class CTool(InitCTool):
             return self.cm.error(f'nsys-ui not found in "{cur_dir}"')
 
         return result
+

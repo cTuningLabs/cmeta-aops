@@ -62,3 +62,4 @@ class CTask(InitCTask):
 
         return {'return': 0, 'text': text}
 
+

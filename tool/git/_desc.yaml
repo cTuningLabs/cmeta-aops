@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 names:
   - git{{global.host.vars.file_ext_exe}}
@@ -33,3 +33,4 @@ extra_paths:
     - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
     - "C:\\Program Files\\Git\\**\\"
     - "D:\\Program Files\\Git\\**\\"
+

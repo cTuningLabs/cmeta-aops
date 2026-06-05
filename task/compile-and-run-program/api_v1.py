@@ -10,6 +10,7 @@ without explicit permission from the copyright holder.
 import os
 import shutil
 import copy
+import time
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
@@ -36,6 +37,7 @@ class CTask(InitCTask):
         ###########################################################################################
         # Get program and desc (uses compute as constraints)
         selected_program = ctx['tasks']['local']['selected-program']
+        selected_program_api_code = selected_program.get('api_code')
 
         artifact = selected_program['artifact']
         path = artifact['path']
@@ -44,15 +46,43 @@ class CTask(InitCTask):
 
         program_api_code = selected_program.get('api_code')
 
+        ctx_tasks = ctx['tasks']
+        _global = ctx_tasks['global']
+
+        host = _global['host']
+        uname = host['os']['uname']
+
         ###########################################################################################
+        params = copy.deepcopy(params)
+
         if 'params' in desc:
-            params = copy.deepcopy(params)
             self.cm.utils.common.deep_merge(params, desc['params'], append_lists=False)
+
+        params_os = desc.get('params_os')
+        if params_os:
+            v = None
+            if 'all' in params_os:
+                v = params_os['all']
+            elif uname in params_os:
+                v = params_os[uname]
+            elif uname != 'windows' and 'linux' in params_os:
+                v = params_os['linux']
+            if v:
+                self.cm.utils.common.deep_merge(params, v, append_lists=False)
+
+        r = self.cm.utils.common.expand_strings_in_dict(params, ctx_tasks)
+        if self.cm.catch_error(r): return r
 
         _use = desc.get('use')
         if _use:
             ctx_use = ctx['tasks'].setdefault('use', {})
             self.cm.utils.common.deep_merge(ctx_use, copy.deepcopy(_use), append_lists=True)
+
+        ###########################################################################################
+        # Check if customization
+        if hasattr(program_api_code, 'customize_pre') and callable(getattr(program_api_code, 'customize_pre')):
+            r = program_api_code.customize_pre(ctx, params)
+            if self.cm.catch_error(r): return r
 
         ###########################################################################################
         name = params.get('name')
@@ -62,6 +92,8 @@ class CTask(InitCTask):
         recompile = params.get('recompile')
         skip_run = params.get('skip_run')
         target_path = params.get('target_path')
+        work_path = params.get('work_path')
+        here = params.get('here')
         run = params.get('run')
         env = params.get('env', {})
         unparsed = params.get('unparsed')
@@ -71,9 +103,6 @@ class CTask(InitCTask):
         quiet = ctx['control'].get('quiet', False)
         verbose = ctx['control'].get('verbose', False)
 
-        ctx_tasks = ctx['tasks']
-        _global = ctx_tasks['global']
-        
         ctx_tasks_control = ctx['tasks']['run_control']
         clean = ctx_tasks_control.get('clean', False)
 
@@ -85,51 +114,16 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
-        host = _global['host']
-        uname = host['os']['uname']
-
         ###########################################################################################
         # Init vars
-        result = {'return':0}
-
         local_vars = desc.get('local_vars')
         if local_vars:
-            r = self.cm.utils.common.expand_strings_in_dict(local_vars, ctx_tasks)
-            if self.cm.catch_error(r): return r
+#            r = self.cm.utils.common.expand_strings_in_dict(local_vars, ctx_tasks)
+#            if self.cm.catch_error(r): return r
 
             self.cm.utils.common.deep_merge(ctx['tasks']['local'], local_vars, append_lists=False)
 
         selected_compute = _global.get('target',{}).get('compute', [])
-
-        src_path = params.get('src_path')
-        if not src_path:
-            src_dir = local_vars.get('src_dir')
-            if src_dir:
-                src_path = os.path.join(path, src_dir)
-            else:
-                src_path = path
-
-            ctx['tasks']['local']['src_path'] = src_path
-
-        src_file_names = local_vars.get('src_file_names')
-        if src_file_names:
-            src_file_names_str = ''
-            src_file_names_str_with_path = ''
-            for sfn in src_file_names:
-                sfn = sfn.replace('//', os.sep)
-
-                if src_file_names_str != '':
-                    src_file_names_str += ' '
-                src_file_names_str += sfn
-
-                sfnp = os.path.join(src_path, sfn)
-                if src_file_names_str_with_path != '':
-                    src_file_names_str_with_path += ' '
-                src_file_names_str_with_path += sfnp
-
-            ctx['tasks']['local']['src_file_names_str'] = src_file_names_str
-            ctx['tasks']['local']['src_file_names_str_with_path'] = src_file_names_str_with_path
-
 
         ###########################################################################################
         if not target_path:
@@ -138,8 +132,31 @@ class CTask(InitCTask):
                 x = 'tmp' if not params.get('target_tmp') else params['target_tmp']
                 target_path = os.path.join(path, x)
 
-        ctx_tasks['local']['target_path'] = target_path.replace('//', os.sep)
+        target_path = target_path.replace('//', os.sep)
 
+        ctx_tasks['local']['target_path'] = target_path
+
+        if here:
+            work_path = os.getcwd()
+
+        if not work_path:
+            work_path = ctx_tasks['local'].get('work_path')
+            if not work_path:
+                work_path = target_path
+
+        if work_path.strip().lower() == '{pwd}':
+            work_path = cur_dir
+
+            x = 'tmp' if not params.get('target_tmp') else params['target_tmp']
+            work_path = os.path.join(work_path, x)
+
+            work_path = work_path.replace('//', os.sep)
+
+        ctx_tasks['local']['work_path'] = work_path
+
+        os.makedirs(work_path, exist_ok=True)
+
+        ###########################################################################################
         if 'run_time_env' not in ctx_tasks['local']:
             ctx_tasks['local']['run_time_env'] = env 
         else:
@@ -151,10 +168,15 @@ class CTask(InitCTask):
             self.cm.utils.common.deep_merge(ctx['tasks']['local']['params'], params, append_lists=True)
 
         ###########################################################################################
-        # Check if customization
-        if hasattr(program_api_code, 'customize') and callable(getattr(program_api_code, 'customize')):
-            r = program_api_code.customize(ctx, params)
-            if self.cm.catch_error(r): return r
+        # Extra possible update dependig on run cmd
+        
+
+
+#        ###########################################################################################
+#        # Check if customization
+#        if hasattr(program_api_code, 'customize') and callable(getattr(program_api_code, 'customize')):
+#            r = program_api_code.customize(ctx, params)
+#            if self.cm.catch_error(r): return r
 
         ###########################################################################################
         # Prepare some paths
@@ -202,6 +224,8 @@ class CTask(InitCTask):
                  'task_artifact_alias': self.artifact_alias,
                  'task_artifact_uid': self.artifact_uid,
                  'task_artifact_path': self.artifact_path,
+                 'self_desc': desc,
+                 'uparams': params,
                 }
 
             r = self.cm.access(p)
@@ -211,6 +235,44 @@ class CTask(InitCTask):
 
             if self.cm.catch_error(r): return r
 
+
+#        ###########################################################################################
+#        # Prepare src path
+#        # Check if customization2 after uses_pre (compute, etc)
+#        if hasattr(program_api_code, 'customize1') and callable(getattr(program_api_code, 'customize1')):
+#            r = program_api_code.customize1(ctx, params=params, desc=desc)
+#            if self.cm.catch_error(r): return r
+
+        src_path = params.get('src_path')
+        if not src_path:
+            src_dir = ctx['tasks']['local'].get('src_dir')
+            if src_dir:
+                src_path = os.path.join(path, src_dir)
+            else:
+                src_path = path
+
+        ctx['tasks']['local']['src_path'] = src_path
+
+        # Duplicated in setup-run if we need to update names without compilation
+        # (such as python)
+        src_file_names = local_vars.get('src_file_names')
+        if src_file_names:
+            src_file_names_str = ''
+            src_file_names_str_with_path = ''
+            for sfn in src_file_names:
+                sfn = sfn.replace('//', os.sep)
+
+                if src_file_names_str != '':
+                    src_file_names_str += ' '
+                src_file_names_str += sfn
+
+                sfnp = os.path.join(src_path, sfn)
+                if src_file_names_str_with_path != '':
+                    src_file_names_str_with_path += ' '
+                src_file_names_str_with_path += sfnp
+
+            ctx['tasks']['local']['src_file_names_str'] = src_file_names_str
+            ctx['tasks']['local']['src_file_names_str_with_path'] = src_file_names_str_with_path
 
         ###########################################################################################
         # Compile
@@ -269,6 +331,17 @@ class CTask(InitCTask):
                         if compile_target_adb_serial != target_adb_serial:
                             recompile = True
 
+                    if not recompile:
+                        compile_uname = _compiled_state_global['host']['os']['uname']
+                        # Can happen in Docker or WSL with shared host disk
+                        if compile_uname != uname:
+                            recompile = True
+
+                    if not recompile:
+                        target_path_exe = _compiled_state_local.get('target_path_exe')
+                        if target_path_exe and not os.path.isfile(target_path_exe):
+                            recompile = True
+
                 if not recompile:
                     if _compiled_state_global:
                         if con and verbose:
@@ -283,6 +356,10 @@ class CTask(InitCTask):
                             print (f'{space}REUSING EXISTING LOCAL COMPILE CONTEXT ...')
 
                         self.cm.utils.common.deep_merge(ctx['tasks']['local'], _compiled_state_local, append_lists=False)
+
+                        # However, take original selected-program from the beginning of this task
+                        # since it has initialized code that is not serializable!
+                        ctx['tasks']['local']['selected-program']['api_code'] = selected_program_api_code
 
                     _compiled_state_aggregated = _compiled_state.get('ctx', {}).get('tasks', {}).get('aggregated')
                     if _compiled_state_aggregated:
@@ -307,49 +384,10 @@ class CTask(InitCTask):
                     os.remove(path_repro_compile)
 
                 ###########################################################################################
-                # First do uses_pre
-                compile_uses_pre = compile_desc.get('uses_pre')
-
-                if compile_uses_pre:
-                    p = {'category': self.category_alias + ',' + self.category_uid,
-                         'command': 'use',
-                         'con': con,
-                         'quiet': quiet,
-                         'verbose': verbose,
-                         'ctx': ctx,
-                         'desc': compile_uses_pre,
-                         'local': ctx['tasks']['local'], # Reuse local from this task (selected-program)
-                         'task_artifact_alias': self.artifact_alias,
-                         'task_artifact_uid': self.artifact_uid,
-                         'task_artifact_path': self.artifact_path,
-                        }
-
-#                    if _compile_params:
-#                        p['uparams'] = {'compile':_compile_params}
-
-                    r = self.cm.access(p)
-
-                    rx = self.cm.utils.files.write_file(path_repro_compile, {'ctx':ctx, 'result':r}, safe_dump = True)
-                    if self.cm.catch_error(rx): return rx
-
-                    if self.cm.catch_error(r): return r
-
-                ###########################################################################################
-                # Check if customization2 after uses_pre (compute, etc)
-                if hasattr(program_api_code, 'customize2') and callable(getattr(program_api_code, 'customize2')):
-                    r = program_api_code.customize2(ctx, params)
-                    if self.cm.catch_error(r): return r
-
-                ###########################################################################################
-                # Assemble other uses
-                compile_uses = []
-
-                for k in ['uses_libs', 'uses_prep', 'uses']:
-                    x = compile_desc.get(k)
-                    if x:
-                        compile_uses += x
-
+                compile_uses = compile_desc.get('uses')
                 if compile_uses:
+                    self_time_compile_with_cmeta = time.time()
+
                     p = {'category': self.category_alias + ',' + self.category_uid,
                          'command': 'use',
                          'con': con,
@@ -361,6 +399,8 @@ class CTask(InitCTask):
                          'task_artifact_alias': self.artifact_alias,
                          'task_artifact_uid': self.artifact_uid,
                          'task_artifact_path': self.artifact_path,
+                         'self_desc': desc,
+                         'uparams': params,
                         }
 
 #                    if _compile_params:
@@ -368,28 +408,47 @@ class CTask(InitCTask):
 
                     r = self.cm.access(p)
 
+                    _impact = r.setdefault('_impact', {})
+                    _impact['self_time_compile'] = ctx['tasks']['local'].get('compile-program', {}).get('_impact',{}).get('self_time')
+                    _impact['self_time_compile_with_cmeta'] = time.time() - self_time_compile_with_cmeta
+
                     rx = self.cm.utils.files.write_file(path_repro_compile, {'ctx':ctx, 'result':r}, safe_dump = True)
                     if self.cm.catch_error(rx): return rx
 
                     if self.cm.catch_error(r): return r
 
+#                ###########################################################################################
+#                # Check if customization2 after uses_pre (compute, etc)
+#                if hasattr(program_api_code, 'customize2') and callable(getattr(program_api_code, 'customize2')):
+#                    r = program_api_code.customize2(ctx, params)
+#                    if self.cm.catch_error(r): return r
+
                 ctx_setup_compile = ctx['tasks']['local'].get('setup-compile')
+
+                # Check target program
+                target_path_exe = ctx['tasks']['local'].get('target_path_exe')
+                if target_path_exe and not os.path.isfile(target_path_exe):
+                    return self.cm.error(f'Target file "{target_path_exe}" was not created in "{__file__}"')
 
         ###########################################################################################
         # Run
+
         run_desc = desc.get('run', {})
 
-        if ctx_setup_compile:
-            ctx['tasks']['local']['setup-compile'] = ctx_setup_compile
+#        if ctx_setup_compile:
+#            ctx['tasks']['local']['setup-compile'] = ctx_setup_compile
+#
+#            for k in ['target_path_exe', 'target_exe']:
+#                if k in ctx_setup_compile and k not in ctx_tasks['local']:
+#                    ctx['tasks']['local'][k] = ctx_setup_compile[k]
+#
+#        if 'setup-dynamic-libs' in ctx['tasks']['local']:
+#            dynamic_lib_paths = ctx['tasks']['local']['setup-dynamic-libs'].get('found_dynamic_lib_paths')
+#            if dynamic_lib_paths:
+#                ctx['tasks']['local']['run_time_env']['+PATH'] = dynamic_lib_paths
 
-            for k in ['target_path_exe', 'target_exe']:
-                if k in ctx_setup_compile and k not in ctx_tasks['local']:
-                    ctx['tasks']['local'][k] = ctx_setup_compile[k]
 
-            dynamic_lib_paths = ctx_setup_compile.get('dynamic_lib_paths')
-            if dynamic_lib_paths:
-                ctx['tasks']['local']['run_time_env']['+PATH'] = dynamic_lib_paths
-
+        self_time_run_with_cmeta = time.time()
         if not run_desc.get('skip', False) and not skip_run:
             if con and verbose:
                 print ('')
@@ -404,13 +463,7 @@ class CTask(InitCTask):
                     x += ' ' + self.cm.q(u)
                 ctx['tasks']['local']['unparsed'] = x.strip()
 
-            run_uses = []
-
-            for k in ['uses_pre', 'uses_prep', 'uses', 'uses_post']:
-                x = run_desc.get(k)
-                if x:
-                    run_uses += x
-
+            run_uses = run_desc.get('uses')
             if run_uses:
                 p = {'category': self.category_alias + ',' + self.category_uid,
                      'command': 'use',
@@ -423,6 +476,8 @@ class CTask(InitCTask):
                      'task_artifact_alias': self.artifact_alias,
                      'task_artifact_uid': self.artifact_uid,
                      'task_artifact_path': self.artifact_path,
+                     'self_desc': desc,
+                     'uparams': params,
                     }
 
                 r = self.cm.access(p)
@@ -438,5 +493,11 @@ class CTask(InitCTask):
             if result_files_data:
                 result.update(result_files_data)
 
+        self_time_compile = ctx_tasks['local'].get('compile-program', {}).get('_impact', {}).get('self_time')
+
+        result['_impact'] = {'self_time_compile_with_cmeta': self_time_compile,
+                             'self_time_run_with_cmeta': time.time() - self_time_run_with_cmeta}
+
         return result
+
 

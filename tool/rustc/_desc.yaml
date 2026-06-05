@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 names:
   - rustc{{global.host.vars.file_ext_exe}}
@@ -56,3 +56,4 @@ features:
       fastest: '-C opt-level=3'
     vars:
       file_ext_exe: 
+

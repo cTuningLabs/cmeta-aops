@@ -195,3 +195,4 @@ class CTask(InitCTask):
 #        'INTEL_OMP_DIR':'"{{global.python.path_home}}\\Library"',
 
         return result
+

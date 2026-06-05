@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 inherits:
   - template-c-cpu,649899ef3f004e4a
@@ -32,42 +32,42 @@ use:
 
 updates:
   compile:
-    uses_pre:
+    uses:
       - match:
           task: compiler,f3925b201c704bde
         update:
           lang: cuda
 
-    uses_prep:
       - match:
           task: setup-compile,10f1dfd3f6f04c35
         update:
           lang: cuda
 
-    uses_libs:
-      - append:
-         ######################################################################################
-         # Prepare Libs for Host CPU
-         - task: setup,a2f9b61079ce4333
-           name: lib-openssl,903191f1fab74064
+      - match:
+          internal_func: customize2
+        append:
+          ######################################################################################
+          # Prepare Libs for Host CPU
+          - task: setup,a2f9b61079ce4333
+            name: lib-openssl,903191f1fab74064
 
-         - task: setup,a2f9b61079ce4333
-           name: lib-xopenme,c7b96678a7734510
+          - task: setup,a2f9b61079ce4333
+            name: lib-xopenme,c7b96678a7734510
 
-         # Only for Clang on Linux and MacOS
-         - task: setup,a2f9b61079ce4333
-           if_os: linux
-           if: '{{global.target.compute|$[]}} == ["cuda"] and "{{global.llvm.path|None}}" != "None" '
-           name: lib-openmp,7958b973fc0d42a9
+          # Only for Clang on Linux and MacOS
+          - task: setup,a2f9b61079ce4333
+            if_os: linux
+            if: '{{global.target.compute|$[]}} == ["cuda"] and "{{global.llvm.path|None}}" != "None" '
+            name: lib-openmp,7958b973fc0d42a9
 
-         # Prepare Libs for CUDA
-         - task: setup,a2f9b61079ce4333
-#           if: '"{{params.compile.static|False}}" != "True"'
-           name: lib-cuda,ac9daedec465409e
+          # Prepare Libs for CUDA
+          - task: setup,a2f9b61079ce4333
+ #           if: '"{{params.compile.static|False}}" != "True"'
+            name: lib-cuda,ac9daedec465409e
 
 
   run:
-    uses_prep:
+    uses:
        - match:
            task: setup-run,148f6c1fdb4247df
          update:
@@ -79,4 +79,5 @@ updates:
              {{params.repeat|3}}
              {{params.clean|1}}
              {{params.seed|12345}}
+
 

@@ -48,6 +48,8 @@ class CTool(InitCTool):
                  arch = os.path.basename(path_lib)
                  path_home = os.path.dirname(os.path.dirname(path_lib))
                  path_bin = os.path.join(path_home, 'bin', arch)
+                 if not os.path.isdir(path_bin):
+                     path_bin = os.path.join(path_home, 'bin')
              else:
                  path_home = os.path.dirname(path_lib)
                  path_bin = os.path.join(path_home, 'bin')
@@ -112,7 +114,7 @@ class CTool(InitCTool):
         """
         """
 
-        if not params.get('version_check', False):
+        if result['return'] == 0 and not params.get('version_check', False):
             _with = params.get('with', {})
 
 #            if not _with.get('static', False):
@@ -131,3 +133,4 @@ class CTool(InitCTool):
                  features['lib_names'] = lib_names
 
         return {'return':0}
+

@@ -1,0 +1,1 @@
+﻿cxt test-clang-cpp -v -q --use.llvm.version=22.1.2 --use.llvm.custom_install --use.llvm.skip_install_uses -j

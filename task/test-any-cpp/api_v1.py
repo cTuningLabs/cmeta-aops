@@ -40,3 +40,4 @@ class CTask(InitCTask):
         ctx['tasks']['local']['flags'] = flags
 
         return {'return':0}
+

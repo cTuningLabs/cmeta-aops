@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 store_global: True
 storage_key: target--metal
@@ -29,3 +29,4 @@ sdk:
 
     - task: setup,a2f9b61079ce4333
       name: swiftlang,043d6514109e495d
+

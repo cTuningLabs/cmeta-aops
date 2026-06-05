@@ -240,13 +240,7 @@ class CTask(InitCTask):
 
         result['compiler_flags'] = compiler_flags
 
-        copy_to_storage_key = params.get('copy_to_storage_key')
-        if copy_to_storage_key:
-            if copy_to_storage_key is True:
-                copy_to_storage_key = 'compiler'
-
-            ctx['tasks']['global'][copy_to_storage_key] = copy.deepcopy(result)
-
         _result['result'] = result
 
         return _result
+

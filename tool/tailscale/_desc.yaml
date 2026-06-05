@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 names:
   - tailscale{{global.host.vars.file_ext_exe}}
@@ -34,3 +34,4 @@ extra_paths:
     - "C:\\Program Files\\Tailscale\\**"
     - "D:\\Program Files\\Tailscale\\**"
     - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
+

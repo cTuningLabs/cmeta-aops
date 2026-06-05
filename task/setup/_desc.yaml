@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 store_global: True               # force by default
 storage_key: "{{$params.name}}"  # force ($ - use alias from cname, $$ - use UID from cname)
@@ -51,3 +51,4 @@ add_env_path_keys:
   - LIB
   - LIBPATH
   - WindowsLibPath
+

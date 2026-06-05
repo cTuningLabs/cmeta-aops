@@ -1,12 +1,17 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 inherits:
   - template-c-cpu,649899ef3f004e4a
 
 local_vars:
+  lang: c
+
   src_file_names: 
     - 'susan.c'
+
+  input_files:
+    data: '{{local.dataset.path}}'
 
   output_files:
     - tmp-ck-timer.json
@@ -16,54 +21,82 @@ local_vars:
 
 params:
   compile:
-    openmp: True
     d:
       XOPENME:
 
+params_os:
+  linux:
+    compile:
+      lib_names:
+        - m
+
 updates:
   compile:
-    uses_pre:
+    uses:
       - match:
-          task: compiler,f3925b201c704bde
-        update:
-          lang: c
+          internal_func: customize2
+        append:
+          ######################################################################################
+          # Prepare Libs for Host CPU
+          - task: setup,a2f9b61079ce4333
+            name: lib-xopenme,c7b96678a7734510
 
-    uses_prep:
-      - match:
-          task: setup-compile,10f1dfd3f6f04c35
-        update:
-          lang: c
+          ######################################################################################
+          # Prepare Libs for Android CPU
+          - task: setup,a2f9b61079ce4333
+            if: '"android-cpu" in {{global.target.compute|$[]}}'
+            name: lib-sysroot-android,cdc22b7617f54f2c
+            with:
+              static: '{{local.params.compile.static|$None}}'
+              lib_names:
+                - dl
+                - m
+                - z
+              dynamic_libs: 
+                - c++_shared
 
-    uses_libs:
-      - append:
-         ######################################################################################
-         # Prepare Libs for Host CPU
-         - task: setup,a2f9b61079ce4333
-           name: lib-xopenme,c7b96678a7734510
-
-         ######################################################################################
-         # Prepare Libs for Android CPU
-         - task: setup,a2f9b61079ce4333
-           if: '"android-cpu" in {{global.target.compute|$[]}}'
-           name: lib-sysroot-android,cdc22b7617f54f2c
-           with:
-             static: '{{local.params.compile.static|$None}}'
-             lib_names:
-               - dl
-               - m
-               - z
-             dynamic_libs: 
-               - c++_shared
-
-         - task: setup,a2f9b61079ce4333
-           if: '"android-cpu" in {{global.target.compute|$[]}}'
-           name: lib-openmp-android,4631aca5f3d241b4
-
+          - task: setup,a2f9b61079ce4333
+            if: '"android-cpu" in {{global.target.compute|$[]}}'
+            name: lib-openmp-android,4631aca5f3d241b4
 
 
   run:
-    uses_prep:
-       - match:
-           task: setup-run,148f6c1fdb4247df
-         update:
-           cmd_main: --help
+    uses:
+      - match:
+          internal_func: customize_run
+        append:
+          - task: dataset,30e20c7489f14f84
+            dataset_tags: image,pgm
+
+updates_cmd:
+  corners:
+    run:
+      uses:
+        - match:
+            task: setup-run,148f6c1fdb4247df
+          update:
+            cmd_main: '{qinput_files.data} tmp-output.pgm -c'
+    local_vars:
+      +output_files:
+        - 'tmp-output.pgm'
+  edges:
+    run:
+      uses:
+        - match:
+            task: setup-run,148f6c1fdb4247df
+          update:
+            cmd_main: '{qinput_files.data} tmp-output.pgm -e'
+    local_vars:
+      +output_files:
+        - 'tmp-output.pgm'
+
+  smoothing:
+    run:
+      uses:
+        - match:
+            task: setup-run,148f6c1fdb4247df
+          update:
+            cmd_main: '{qinput_files.data} tmp-output.pgm -s'
+    local_vars:
+      +output_files:
+        - 'tmp-output.pgm'

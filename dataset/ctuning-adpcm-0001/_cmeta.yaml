@@ -1,0 +1,11 @@
+artifact: 05b16e890b2e4d00
+authors: Grigori Fursin
+category: dataset,fdd7c5ded7464161
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+creation_timestamp: '2026-05-29T10:07:49.215188+00:00'
+last_update_timestamp: '2026-05-29T10:08:15.183112+00:00'
+tags:
+- ctuning
+- audio
+- adpcm
+- small

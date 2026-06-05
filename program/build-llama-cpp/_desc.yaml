@@ -1,0 +1,138 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+
+###################################################################################################
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  lang: cpp
+
+  target_file_name: 'llama-cli'
+
+  input_files:
+    data: '{{local.dataset.path}}'
+
+  output_files:
+    - output.txt
+
+  result_files:
+    response: output.txt
+
+  print_files:
+    - output.txt
+
+params:
+  compile:
+    d:
+      XOPENME:
+
+###################################################################################################
+updates:
+  compile:
+    uses:
+      - match:
+          internal_func: customize2
+        append:
+          ######################################################################################
+          # Common for HOST CPU
+          # Extra C compiler required
+          - task: compiler,f3925b201c704bde
+            lang: c
+            compute: '{{global.target.compute}}'
+
+          - task: setup,a2f9b61079ce4333
+            name: cmake,e26c11ebb3dd40ca
+
+          - task: setup,a2f9b61079ce4333
+            name: ninja,a3df3c45e9b04830
+
+          ######################################################################################
+          # Prepare Libs for Target CPU
+          - task: setup,a2f9b61079ce4333
+            if: '"android-cpu" not in {{global.target.compute|$[]}}'
+            name: lib-openssl,903191f1fab74064
+
+          # Only for Clang on Linux and MacOS
+          - task: setup,a2f9b61079ce4333
+            if_os: linux,darwin
+            if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.llvm.path|None}}" != "None" '
+            name: lib-openmp,7958b973fc0d42a9
+
+          ######################################################################################
+          # Prepare Libs for Target CUDA
+
+          - task: setup,a2f9b61079ce4333
+            if: '"cuda" in {{global.target.compute|$[]}}'
+            name: lib-cuda,ac9daedec465409e
+            with:
+               lib_names:
+                 - $cublas
+                 - $cudart
+
+          ######################################################################################
+          # Prepare Libs for Target Android CPU
+          - task: setup,a2f9b61079ce4333
+            if: '"android-cpu" in {{global.target.compute|$[]}}'
+            name: lib-sysroot-android,cdc22b7617f54f2c
+            with:
+              static: '{{local.params.compile.static|$None}}'
+              lib_names:
+                - dl
+                - m
+                - z
+              dynamic_libs: 
+                - c++_shared
+
+          - task: setup,a2f9b61079ce4333
+            if: '"android-cpu" in {{global.target.compute|$[]}}'
+            name: lib-openmp-android,4631aca5f3d241b4
+
+          - task: setup,a2f9b61079ce4333
+            if: '"android-cpu" in {{global.target.compute|$[]}}'
+            name: lib-openssl-android,c6cd8622939a4f66
+
+          - task: clone-git-to-cache,86919b3cfdd443d2
+            name: src-llama-cpp
+            url: 'https://github.com/ggml-org/llama.cpp'
+            checkout: '{{params.checkout|$None}}'
+
+          - internal_func: customize_llama_cpp
+            internal_func_from_local_key: selected-program
+            internal_func_safe: True
+            compile: '{{params.compile|$None}}'
+
+          - task: cmd,c9ba0a88df394d7f
+            storage_key: compile-program
+            save_script: '{{local.target_path}}//tmp-cmeta-compile-program{{global.host.vars.file_ext_bat}}'
+            chdir: '{{local.target_path}}'
+            cmds: 
+              - '{{global.cmake.qpath}} "{{global.clone-git-to-cache-src-llama-cpp.path_to_git_repo}}" -G Ninja {{local.cmake_d_vars}}'
+              - '{{global.cmake.qpath}} --build . --config {{local.build_type}}'
+
+
+  run:
+    uses:
+       - match:
+           internal_func: customize_run
+         append:
+           - task: model,86f0effd07ad454d
+             model_tags: gguf
+
+           - task: dataset,30e20c7489f14f84
+             dataset_tags: prompt,txt,llm
+
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         update:
+           cmd_main: >-
+               -m {{local.model.qpath}}
+               -f {qinput_files.data}
+               -n {{params.n|500}}
+               --temp {{params.temp|0.7}}
+               -c {{params.с|4096}}
+               --seed {{params.seed|12345}}
+               --no-display-prompt 
+               --log-disable 
+               --single-turn 
+               > output.txt

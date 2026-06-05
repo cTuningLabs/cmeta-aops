@@ -22,6 +22,7 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             ctx: dict,        # cMeta context
+            **kwargs
     ):
 
         """
@@ -40,9 +41,33 @@ class CTask(InitCTask):
 
         space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
 
+        features = ctx['tasks']['global']['cuda']['features']
+
         result = {
           'return':0,
-          'features': ctx['tasks']['global']['cuda']['features'],
+          'features': features,
         }
 
         return result
+
+    ############################################################
+    def finish_dynamic_result(self,
+                              ctx: dict,
+                              result: dict = {},
+                              params: dict = {},
+    ):
+        """
+        """
+
+        _result = {'return':0}
+
+        _with = params.get('with', {})
+
+        ver = _with.get('ver')
+
+        if ver:
+            result['features']['ver'] = ver
+
+        _result['result'] = result
+
+        return _result

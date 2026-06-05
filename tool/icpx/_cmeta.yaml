@@ -9,10 +9,11 @@ constraints:
   supports_os:
   - linux
   - windows
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
 last_update_timestamp: '2026-05-07T15:26:39.737792+00:00'
 sort: 4000
 tags:
 - lang-cpp
 - icx-cpp
+

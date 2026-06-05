@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 names:
   - claude{{global.host.vars.file_ext_exe}}
@@ -31,3 +31,4 @@ install_uses:
   all:
     - task: setup,a2f9b61079ce4333
       name: curl,bfbb8526694d4f21
+

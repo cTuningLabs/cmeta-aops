@@ -68,3 +68,4 @@ class CTask(InitCTask):
         del (ctx_tasks['global']['#runner'])
 
         return result
+

@@ -113,3 +113,4 @@ class CTask(InitCTask):
         ###################################################################
         # Prepare result
         return result
+

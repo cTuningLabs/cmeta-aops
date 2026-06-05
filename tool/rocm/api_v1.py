@@ -245,3 +245,4 @@ def parse_rocm_smi_devices(rocm_json):
         cleaned_devices.append(cleaned)
 
     return cleaned_devices
+

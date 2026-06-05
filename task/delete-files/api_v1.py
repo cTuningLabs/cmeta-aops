@@ -87,3 +87,4 @@ class CTask(InitCTask):
         result['files'] = files
 
         return result
+

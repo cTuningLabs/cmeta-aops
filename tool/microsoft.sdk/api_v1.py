@@ -41,3 +41,4 @@ class CTool(InitCTool):
             found_paths_with_versions[path] = {'output':version}
 
         return {'return':0, 'found_paths_with_versions':found_paths_with_versions}
+

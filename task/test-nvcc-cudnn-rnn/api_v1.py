@@ -56,7 +56,7 @@ class CTask(InitCTask):
         uname = host['os']['uname']
 
         nvcc = ctx['tasks']['global']['nvcc']
-        cudnn = ctx['tasks']['global']['cudnn']
+        cudnn = ctx['tasks']['global']['lib-cudnn']
 
         exe_file = 'RNN_v8.0' + host['vars']['file_ext_exe']
         target_exe_file = os.path.join(task_path, 'tmp', exe_file)
@@ -86,13 +86,13 @@ class CTask(InitCTask):
         if flags: 
             flags += ' '
 
-        cpp_compiler_qpath = ctx_tasks['global']['compiler']['qpath']
+        cpp_compiler_qpath = ctx_tasks['global']['compiler-cpp']['qpath']
         flags += f'-ccbin={cpp_compiler_qpath} --allow-unsupported-compiler'
 
-        # Check gencode
-        flag1 = ctx_tasks['global']['nvcc']['features']['flags']['gencode_auto']
-        if flag1:
-            flags += ' ' + flag1
+#        # Check gencode
+#        flag1 = ctx_tasks['global']['nvcc']['features']['flags']['gencode_auto']
+#        if flag1:
+#            flags += ' ' + flag1
 
         # Check includes and libs
         for include in includes:
@@ -107,7 +107,7 @@ class CTask(InitCTask):
 
         if env is None: env = {}
         if uname == 'windows':
-            cudnn_path_bin = cudnn['features']['paths']['bin']
+            cudnn_path_bin = cudnn['features']['paths']['dynamic_lib']
             env_path = env.setdefault('+PATH',[])
             if cudnn_path_bin not in env_path:
                 env_path.insert(0, cudnn_path_bin)
@@ -151,3 +151,4 @@ class CTask(InitCTask):
 
 
         return result
+

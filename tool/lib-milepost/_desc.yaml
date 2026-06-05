@@ -1,5 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 skip_detect: True
 
@@ -14,10 +14,12 @@ build_local:
 
 cache_meta_const:
   params:
-    with_compute: '{{params.with.compute|$None}}'
-    with_add_debug: '{{params.with.add_debug|$None}}'
-    target_abi: '{{local.target_abi|$None}}'
-    compute: '{{global.target.compute|$None}}'
+    with:
+      compute: '{{local.compute}}'
+      static: '{{params.with.static|$False}}'
+      debug_info: '{{params.with.debug_info|$False}}'
+    target_abi: '{{local.target_abi}}'
+#    compute: '{{global.target.compute|$None}}'
 #    Can't pick up compiler (too early or picks up the wrong one from the higher pipeline 
 #      that is nothing to do with the lower one)
 #    compiler_path: '{{global.compiler.path|$None}}'
@@ -31,7 +33,7 @@ build_uses:
       clean: True
       compile:
         static: True
-        add_debug: '{{params.with.add_debug|$None}}'
+        debug_info: '{{params.with.debug_info|$None}}'
       target_path: '{{local.target_path}}//lib//static'
 
     - task: compile-and-run-program,05437a1aae224270
@@ -40,6 +42,6 @@ build_uses:
       clean: True
       compile:
         static: False
-        add_debug: '{{params.with.add_debug|$None}}'
+        debug_info: '{{params.with.debug_info|$None}}'
       target_path: '{{local.target_path}}//lib//dynamic'
     

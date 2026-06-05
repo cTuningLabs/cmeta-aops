@@ -25,9 +25,7 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             ctx: dict,            # cMeta context
-            compute: list = None, # string or list of compute (task::target-{name})
-            ask: bool = False,    # ask for compute if not specified
-            add_env: bool = True, # add global ENV
+            **kwargs
     ):
 
         """
@@ -36,6 +34,12 @@ class CTask(InitCTask):
                 - **return** (int): 0 if success, >0 if error.
                 - **error** (str): Error message if `return > 0`.
         """
+
+        compute = kwargs.get('compute')       # string or list of compute (task::target-{name})
+        ask = kwargs.get('ask', False)        # ask for compute if not specified
+        add_env = kwargs.get('add_env', True) # add global ENV
+        ver = kwargs.get('ver')               # Force sub-version (for example for pip or build)
+        _with = kwargs.get('with', {})        
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
@@ -131,6 +135,9 @@ class CTask(InitCTask):
               'task': task,
             }
 
+            if _with:
+                compute_use['with'] = _with
+
             uses.append(compute_use)
 
 
@@ -181,7 +188,9 @@ class CTask(InitCTask):
             r['return'] = 99
             return r
         
-        env = {'CMETA_TARGETS': ','.join(compute)}
+        cmeta_targets = ','.join(compute)
+        env = {'CMETA_TARGETS': cmeta_targets}
+        result['cmeta_targets'] = cmeta_targets
 
         cmake_vars = {}
         env_vars = {}
@@ -240,3 +249,4 @@ class CTask(InitCTask):
         del (ctx_tasks['global']['#target'])
 
         return result
+

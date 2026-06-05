@@ -64,3 +64,4 @@ def matmul_i8(a: List[int], b: List[int], c: List[int], m: int, n: int, k: int) 
             for p in range(n):
                 sum_val += int(a[i * n + p]) * int(b[p * k + j])
             c[i * k + j] = _wrap_signed(sum_val, 8)
+

@@ -53,10 +53,11 @@ class CTask(InitCTask):
             _with = {}
 
         _lib = _with.get('lib', False)
+        _target_ext = _with.get('target_ext', False)
         _fast = _with.get('fast', False)
         _fastest = _with.get('fastest', False)
         _static = _with.get('static', False)
-        _debug = _with.get('add_debug', False)
+        _debug = _with.get('debug_info', False)
         _openmp = _with.get('openmp', False)
         _env = _with.get('env', {})
         _d = _with.get('d', {})
@@ -69,28 +70,36 @@ class CTask(InitCTask):
         cmds = params.get('cmds', [])
         lib_cmd = ''
 
-        clean_files = params.get('clean_files')
+        clean_files = _with.get('clean_files')
         if clean_files is None:
             clean_files = []
         else:
             clean_files = clean_files.copy()
 
-        compiler_flags = params.get('flags', [])
+        compiler_flags = _with.get('flags', [])
         if type(compiler_flags) == str:
-            compiler_flags = compiler_flags.split(' ')
+            compiler_flags = [compiler_flags]
 
-        compiler_link_flags = params.get('link_flags', [])
+        compiler_link_flags = _with.get('link_flags', [])
         if type(compiler_link_flags) == str:
             compiler_link_flags = compiler_link_flags.split(' ')
 
-        include_paths = params.get('include_paths', [])
-        lib_paths = params.get('lib_paths', [])
-        dynamic_lib_paths = params.get('dynamic_lib_paths', []) # For run-time
-        lib_names = params.get('lib_names', [])
+        include_paths = _with.get('include_paths', [])
+        lib_paths = _with.get('lib_paths', [])
+        dynamic_lib_paths = _with.get('dynamic_lib_paths', []) # For run-time
+
+        lib_names = _with.get('lib_names', [])
+        lib_names2 = params.get('lib_names', [])
+        lib_names3 = params.get('extra_lib_names', [])
+        if lib_names2:
+            lib_names += lib_names2
+        if lib_names3:
+            lib_names += lib_names3
 
         global_compiler_key = 'compiler-'+lang
 
-        flags = ctx['tasks']['global'][global_compiler_key].get('features', {}).get('flags',{})
+        compiler_features = _global[global_compiler_key].get('features', {})
+        flags = compiler_features.get('flags',{})
 
         # Check profile
         if _profile:
@@ -269,18 +278,21 @@ class CTask(InitCTask):
         target_file_name = params.get('target_file_name')
         target_exe = params.get('target_exe')
 
-        if _lib:
-            if _static:
-                target_ext = _global[global_compiler_key].get('features', {}).get('vars', {}).get('file_ext_lib')
-            else:
-                target_ext = _global[global_compiler_key].get('features', {}).get('vars', {}).get('file_ext_dlib')
-            target_ext2 = '' if target_ext is None else target_ext
+        if _target_ext:
+            target_ext2 = _target_ext
         else:
-            target_ext = _global[global_compiler_key].get('features', {}).get('vars', {}).get('file_ext_exe')
-            target_ext2 = '' if target_ext is None else target_ext
+            if _lib:
+                if _static:
+                    target_ext = compiler_features.get('vars', {}).get('file_ext_lib')
+                else:
+                    target_ext = compiler_features.get('vars', {}).get('file_ext_dlib')
+                target_ext2 = '' if target_ext is None else target_ext
+            else:
+                target_ext = compiler_features.get('vars', {}).get('file_ext_exe')
+                target_ext2 = '' if target_ext is None else target_ext
 
-        if target_file_name and not target_exe:
-            target_exe = target_file_name + target_ext2
+            if target_file_name and not target_exe:
+                target_exe = target_file_name + target_ext2
 
         if not target_exe:
             target_exe = 'program' + target_ext2
@@ -305,7 +317,7 @@ class CTask(InitCTask):
             x = exe_file_flag + self.cm.q(target_path_exe)
 
             if not _static and flags.get('lib_file2'):
-                target_exe2 = target_file_name + _global[global_compiler_key].get('features', {}).get('vars', {}).get('file_ext_lib2')
+                target_exe2 = target_file_name + compiler_features.get('vars', {}).get('file_ext_lib2')
                 target_path_exe2 = os.path.join(target_path, target_exe2) if target_path else os.path.join(os.getcwd(), target_exe2)
 
                 x += ' ' + flags['lib_file2'] + target_path_exe2
@@ -342,7 +354,7 @@ class CTask(InitCTask):
             if _lib and _static:
                 x = os.path.join(target_path, s)
 
-                x = os.path.splitext(x)[0] + _global[global_compiler_key].get('features', {}).get('vars', {}).get('file_ext_obj', '.o')
+                x = os.path.splitext(x)[0] + compiler_features.get('vars', {}).get('file_ext_obj', '.o')
 
                 if obj_file_names_str != '':
                     obj_file_names_str += ' '
@@ -387,9 +399,9 @@ class CTask(InitCTask):
                  os.remove(clean_file)
 
         # Assemble main cmd
-        cmd = _global['compiler']['qpath']
+        cmd = _global[global_compiler_key]['qpath']
 
-        x = _global['compiler']['features'].get('flags', {}).get('force_build')
+        x = compiler_features.get('flags', {}).get('force_build')
         if x:
             cmd += ' ' + x
 
@@ -397,11 +409,7 @@ class CTask(InitCTask):
         if x:
             cmd += ' ' + x
 
-        x = _global['compiler']['features'].get('target_arch', {}).get('flags')
-        if x:
-            cmd += ' ' + x
-
-        x = _with.get('flags')
+        x = compiler_features.get('target_arch', {}).get('flags')
         if x:
             cmd += ' ' + x
 
@@ -413,7 +421,7 @@ class CTask(InitCTask):
         if x:
             cmd += ' ' + x
 
-        x = _global['compiler']['features'].get('flags', {}).get('catch_errors')
+        x = compiler_features.get('flags', {}).get('catch_errors')
         if x:
             cmd += ' ' + x
 
@@ -431,7 +439,7 @@ class CTask(InitCTask):
 
 
         if _lib and _static:
-            path_tool_lib = _global['compiler']['features'].get('paths', {}).get('tool_lib')
+            path_tool_lib = compiler_features.get('paths', {}).get('tool_lib')
             if not path_tool_lib:
                 return self.cm.error(f'"tool_lib" is not specified in compiler.features.paths in "{__file__}"')
 
@@ -483,3 +491,4 @@ class CTask(InitCTask):
         result['add_to_local'] = add_to_local
  
         return result
+

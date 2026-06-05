@@ -1,10 +1,12 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
 inherits:
   - template-c-cpu,649899ef3f004e4a
 
 local_vars:
+  lang: c
+
   src_file_names: 
     - 'gemm.c'
 
@@ -27,53 +29,55 @@ params:
       POLYBENCH_PADDING_FACTOR: 0
       XOPENME:
 
+#params_os:
+#  windows:
+#    compile:
+#      d:
+#        WINDOWS:
+
 updates:
   compile:
-    uses_pre:
+    uses:
       - match:
-          task: compiler,f3925b201c704bde
-        update:
-          lang: c
+          internal_func: customize2
+        append:
+          ######################################################################################
+          # Prepare Libs for Host CPU
+          - task: setup,a2f9b61079ce4333
+            name: lib-polybench,70349e61a532455d
 
-    uses_prep:
-      - match:
-          task: setup-compile,10f1dfd3f6f04c35
-        update:
-          lang: c
+          - task: setup,a2f9b61079ce4333
+            name: lib-xopenme,c7b96678a7734510
 
-    uses_libs:
-      - append:
-         ######################################################################################
-         # Prepare Libs for Host CPU
-         - task: setup,a2f9b61079ce4333
-           name: lib-polybench,70349e61a532455d
+          # Only for Clang on Linux and MacOS
+          - task: setup,a2f9b61079ce4333
+            if_os: linux,darwin
+            if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.llvm.path|None}}" != "None" '
+            name: lib-openmp,7958b973fc0d42a9
 
-         - task: setup,a2f9b61079ce4333
-           name: lib-xopenme,c7b96678a7734510
+          ######################################################################################
+          # Prepare Libs for Android CPU
+          - task: setup,a2f9b61079ce4333
+            if: '"android-cpu" in {{global.target.compute|$[]}}'
+            name: lib-sysroot-android,cdc22b7617f54f2c
+            with:
+              static: '{{local.params.compile.static|$None}}'
+              lib_names:
+                - dl
+                - m
+                - z
+              dynamic_libs: 
+                - c++_shared
 
-         ######################################################################################
-         # Prepare Libs for Android CPU
-         - task: setup,a2f9b61079ce4333
-           if: '"android-cpu" in {{global.target.compute|$[]}}'
-           name: lib-sysroot-android,cdc22b7617f54f2c
-           with:
-             static: '{{local.params.compile.static|$None}}'
-             lib_names:
-               - dl
-               - m
-               - z
-             dynamic_libs: 
-               - c++_shared
-
-         - task: setup,a2f9b61079ce4333
-           if: '"android-cpu" in {{global.target.compute|$[]}}'
-           name: lib-openmp-android,4631aca5f3d241b4
-
+          - task: setup,a2f9b61079ce4333
+            if: '"android-cpu" in {{global.target.compute|$[]}}'
+            name: lib-openmp-android,4631aca5f3d241b4
 
 
   run:
-    uses_prep:
+    uses:
        - match:
            task: setup-run,148f6c1fdb4247df
          update:
            cmd_main:
+

@@ -116,16 +116,83 @@ class Category(InitCategory):
         for a in r['artifacts']:
             path = a['path']
 
-            path_tmp = os.path.join(path, 'tmp')
-            if os.path.isdir(path_tmp):
-                if con:
-                    print (f'{space}Removing "{path_tmp}" ...')
+            for entry in os.listdir(path):
+                if entry.startswith('tmp'):
+                    path_tmp = os.path.join(path, entry)
+                    if os.path.isdir(path_tmp):
+                        if con:
+                            print (f'{space}Removing "{path_tmp}" ...')
 
-                try:
-                    shutil.rmtree(path_tmp)
-                except Exception as e:
-                    if con and verbose:
-                        print (f'{space}  Problem removing directory: {e}')
+                        try:
+                            shutil.rmtree(path_tmp)
+                        except Exception as e:
+                            if con and verbose:
+                                print (f'{space}  Problem removing directory: {e}')
  
 
         return r
+
+    ############################################################
+    def update_desc_(
+                    self, 
+                    ctx, 
+                    desc: dict = None,
+                    updates: dict = None,
+    ):
+        """
+        """
+
+        if desc and updates:
+            for key2 in updates:
+
+                _update = desc.setdefault(key2, {})
+
+                for key3 in updates[key2]:
+                    if key3 == 'uses':
+                        # [target to update]
+                        target_uses = _update.setdefault(key3, [])
+
+                        # [what to update]
+                        for _use in updates[key2][key3]:
+                            match = _use.get('match')
+                            update = _use.get('update')
+                            append = _use.get('append')
+                            prepend = _use.get('prepend')
+                            substitute = _use.get('substitute')
+                            append_lists = _use.get('append_lists', False)
+
+                            for index in range(0, len(target_uses)):
+                                target = target_uses[index]
+                                matched = True
+
+                                for match_key in match:
+                                    if match_key not in target:
+                                        matched = False
+                                        break
+
+                                    match_value = match[match_key]
+                                    if match_value != target[match_key]:
+                                        matched = False
+                                        break
+
+                                if matched:
+                                    if update:
+                                        self.cm.utils.common.deep_merge(target_uses[index], update, append_lists=append_lists)
+                                    if append:
+                                        target_uses[index+1:index+1] = append
+                                    if prepend:
+                                        target_uses[index:index] = prepend
+                                    if substitute:
+                                        target_uses[index] = substitute
+
+                    else:
+                        if key3.startswith('+'):
+                            value3 = updates[key2][key3]
+                            key3 = key3[1:]
+                            x = _update.setdefault(key3, [])
+                            x += value3
+                        else:
+                            _update[key3] = updates[key2][key3]
+
+        return {'return': 0}
+
