@@ -38,6 +38,7 @@ cache_meta_const:
       compute: '{{local.compute}}'
       static: '{{params.with.static|$False}}'
       debug_info: '{{params.with.debug_info|$False}}'
+      strict_compute: '{{params.with.strict_compute|$None}}'
     target_abi: '{{local.target_abi}}'
 
 build_uses:
@@ -51,6 +52,7 @@ build_uses:
       compile:
         static: '{{params.with.static|$False}}'
         debug_info: '{{params.with.debug_info|$None}}'
+        strict_compute: '{{params.with.strict_compute|$None}}'
       skip_run: True
       target_path: '{{local.target_path}}'
       checkout: '{{local.checkout|$None}}'

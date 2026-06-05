@@ -127,15 +127,15 @@ class CProgram(InitCProgram):
             d['OpenMP_CXX_LIB_NAMES'] = 'omp'
 
         for x in [
-                ('cpu', 'GGML_CPU'), 
-                ('cuda', 'GGML_CUDA'),
-                ('metal', 'GGML_METAL'),
+                ('cpu', 'GGML_CPU', 'OFF'),
+                ('cuda', 'GGML_CUDA', 'OFF'),
+                ('metal', 'GGML_METAL', 'OFF'),
             ]:
             if x[0] in compute:
                 if x[1] not in d:
                     d[x[1]] = 'ON'
             elif strict_compute and x[1] not in d:
-                d[x[1]] = 'OFF'
+                d[x[1]] = x[2]
 
         _local['target_path_bin'] = target_path_bin
         _local['target_exe'] = target_file_name_with_ext
