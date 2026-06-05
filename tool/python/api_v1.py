@@ -115,30 +115,6 @@ class CTool(InitCTool):
         return result
 
     ############################################################
-    def customize_tool_cache_artifact(self,
-                                      ctx,
-                                      result,
-                                      params,
-                                      cache_tags,
-                                      cache_params,
-                                      cache_features,
-                                      cache_meta,
-        ):
-
-        if self.cm.debug:
-            self.logger.debug("RUNNING TASK tool python customize_tool_cache_artifact")
-
-#        _with = params.get('with', {})
-#
-#        if _with:
-#            cache_params_with = cache_params.setdefault('with',{})
-#            cache_params_with.update(_with)
-
-
-
-        return {'return':0, 'result': result}
-
-    ############################################################
     def update_paths(self,
                      ctx: dict,
                      paths: dict,

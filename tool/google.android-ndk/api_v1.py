@@ -19,22 +19,6 @@ class CTool(InitCTool):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
     ############################################################
-    def customize_tool_cache_artifact(self,
-                                      ctx,
-                                      result,
-                                      params,
-                                      cache_tags,
-                                      cache_params,
-                                      cache_features,
-                                      cache_meta,
-        ):
-
-        result = {'return':0}
-
-        return result
-
-
-    ############################################################
     def finish_dynamic_result(self,
                               ctx: dict,
                               result: dict = {},

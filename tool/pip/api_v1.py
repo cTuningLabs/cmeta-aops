@@ -283,6 +283,8 @@ class CTool(InitCTool):
 
         compute = target['compute']
 
+        ver = _with.get('ver')
+
         ###########################################################################################
         # Set CUDA if in compute
 
@@ -298,7 +300,8 @@ class CTool(InitCTool):
             if '--index-url ' not in post_flags:
                 compute_features = target['features']['cuda']
 
-                ver = compute_features.get('ver')
+                if not ver:
+                    ver = compute_features.get('ver')
                 if ver:
                     found = True
                 else:
@@ -333,7 +336,8 @@ class CTool(InitCTool):
             if '--index-url ' not in post_flags:
                 compute_features = target['features']['rocm']
 
-                ver = compute_features.get('ver')
+                if not ver:
+                    ver = compute_features.get('ver')
                 if ver:
                     found = True
                 else:

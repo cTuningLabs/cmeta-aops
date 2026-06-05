@@ -174,21 +174,7 @@ class CTool(InitCTool):
         """
 
         if self.cm.debug:
-            self.logger.debug("RUNNING TOOL llvm api_v1 install")
-
-        _with = params.setdefault('with', {})
-
-        compute = _with.get('compute')
-        if not compute:
-            compute = ctx['tasks']['global'].get('target',{}).get('compute')
-        if not compute:
-            compute = ['cpu']
-
-        if type(compute) == str:
-            compute = compute.split(',')
-
-        print (compute)
-        input('xyz0')
+            self.logger.debug("RUNNING TOOL llama-cpp api_v1 install")
 
         ctx_tasks = ctx['tasks']
 
@@ -197,21 +183,46 @@ class CTool(InitCTool):
         uname = _global['host']['os']['uname']
         uarch = _global['host']['os']['uarch']
 
+        _with = params.setdefault('with', {})
+
+        target = ctx['tasks']['global'].get('target', {})
+
+        compute = _with.get('compute')
+        if not compute:
+            compute = target.get('compute')
+        if not compute:
+            compute = ['cpu']
+        if type(compute) == str:
+            compute = compute.split(',')
+
+        _cuda = 'cuda' in compute
+        _metal = 'metal' in compute
+        _rocm = 'rocm' in compute
+
+        # Forces sub-version for CUDA, ROCm, etc 
+        ver = _with.get('ver')
+
         version = params.get('version')
         version_simple = params.get('version_simple')
-        version_major = params.get('version_major')
 
         if not version:
             version = self.cdesc['default_version']
             version_simple = version
-            version_major = version_simple[:2]
 
         if not version_simple:
             return {
-                'return': 16, 
-                'error': f'custom install for LLVM can use only exact/simple versions in "{__file__}"',
-                'install_cmd': cmd, # this is needed to proceed with the main installation routine !
+                'return': 16,
+                'error': f'custom install for llama.cpp can use only exact/simple versions in "{__file__}"',
+                'install_cmd': cmd,
             }
+
+        # Prepare some vars depending on versions
+        if version_simple > 9367:
+           cuda_vers = ['13.3', '12.4']
+        elif version_simple > 9000:
+           cuda_vers = ['13.2', '12.4']
+        else:
+           cuda_vers = ['12.4']
 
         con = params.get('control', {}).get('con', False)
         quiet = params.get('control', {}).get('quiet', False)
@@ -221,43 +232,77 @@ class CTool(InitCTool):
         env = params.get('env')
         timeout = params.get('timeout')
 
+        # CUDA version used when selecting CUDA-enabled binaries
         url = None
         filename = None
-
-
-        input('xyz')
+        filename2 = None
 
         if uname == 'windows':
-            if uarch == 'amd64':
-                uarch2 = 'x86_64'
-                filename = f'clang+llvm-{version_simple}-{uarch2}-pc-windows-msvc.tar.xz'
+            if uarch == 'arm64':
+                filename = f'llama-b{version_simple}-bin-win-cpu-arm64.zip'
+            elif uarch == 'amd64':
+                if _cuda:
+                    compute_features = target.get('features', {}).get('cuda', {})
+                    if not ver:
+                        ver = compute_features.get('ver')
+                    if ver:
+                        found = True
+                    else:
+                        cuda_version = compute_features.get('versions', {}).get('cuda version')
+
+                        found = False
+
+                        if cuda_version:
+                            for ver in cuda_vers:
+                                r = self.cm.utils.common.compare_versions(cuda_version, ver)
+                                if r['return'] == 0 and (r['comparison'] == '>' or r['comparison'] == '='):
+                                    found = True
+                                    break
+
+                    if found:
+                        filename = f'llama-b{version_simple}-bin-win-cuda-{ver}-x64.zip'
+                        filename2 = f'cudart-llama-bin-win-cuda-{ver}-x64.zip'
+                else:
+                    filename = f'llama-b{version_simple}-bin-win-cpu-x64.zip'
         elif uname == 'linux':
             if uarch == 'amd64':
-                uarch2 = 'X64'
-                filename = f'LLVM-{version_simple}-Linux-{uarch2}.tar.xz'
+#                if _cuda:
+#                    filename = f'llama-b{version_simple}-bin-ubuntu-cuda-cu{cuda_version}-x64.tar.gz'
+#                elif _rocm:
+#                    filename = f'llama-b{version_simple}-bin-ubuntu-rocm-x64.tar.gz'
+#                else:
+                filename = f'llama-b{version_simple}-bin-ubuntu-x64.tar.gz'
+            elif uarch == 'arm64':
+                filename = f'llama-b{version_simple}-bin-linux-arm64.tar.gz'
         elif uname == 'darwin':
             if uarch == 'arm64':
-                uarch2 = 'ARM64'
-                filename = f'LLVM-{version_simple}-macOS-{uarch2}.tar.xz'
+                # Metal is the default backend on Apple Silicon
+                filename = f'llama-b{version_simple}-bin-macos-arm64.tar.gz'
+            elif uarch == 'amd64':
+                filename = f'llama-b{version_simple}-bin-macos-x64.tar.gz'
 
         if not filename:
             return {
-                'return': 16, 
-                'error': f'custom install for LLVM could not create download URL',
-                'install_cmd': cmd, # this is needed to proceed with the main installation routine !
+                'return': 16,
+                'error': f'custom install for llama.cpp could not create download URL for compute={compute}, uname={uname}, uarch={uarch}',
+                'install_cmd': cmd,
             }
 
-        url = f'https://github.com/llvm/llvm-project/releases/download/llvmorg-{version_simple}/{filename}'
+        url = f'https://github.com/ggml-org/llama.cpp/releases/download/b{version_simple}/{filename}'
 
         directory = 'content'
-        path_to_clang = os.path.join(os.getcwd(), directory, 'bin', 'clang' + _global['host']['vars']['file_ext_exe'])
+        name = self.cdesc.get('name', 'llama-cli')
+        path_to_llama = os.path.join(os.getcwd(), directory, name + _global['host']['vars']['file_ext_exe'])
+
+        if filename2:
+            url2 = f'https://github.com/ggml-org/llama.cpp/releases/download/b{version_simple}/{filename2}'
 
         if con:
             cur_dir = os.getcwd()
             print ('')
             print (f'{space}INFO: Current path: {cur_dir}')
-            print (f'{space}INFO: LLVM download URL: {url}')
-            print (f'{space}INFO: Check file: {path_to_clang}')
+            print (f'{space}INFO: llama.cpp download URL: {url}')
+            print (f'{space}INFO: Check file: {path_to_llama}')
 
         ###########################################################################################
         # Attempt to download file
@@ -270,23 +315,37 @@ class CTool(InitCTool):
               'directory': directory,
               'env': env,
               'timeout': timeout,
-              'con': con, 
-              'quiet': quiet, 
-              'verbose': verbose, 
+              'con': con,
+              'quiet': quiet,
+              'verbose': verbose,
               'unzip': True,
               'clean': True,
               'clean_after_unzip': True,
-              'strip_folders': 1,
-              'check_file': path_to_clang,
+              'check_file': path_to_llama,
+              'make_check_file_executable': True,
         }
 
         rx = self.cm.access(ii)
         if self.cm.catch_error(rx): return rx
 
+        ###########################################################################################
+        # Attempt to download extra file
+
+        if filename2:
+
+            ii['url'] = url2
+            del(ii['clean'])
+            del(ii['check_file'])
+            del(ii['make_check_file_executable'])
+
+            rx = self.cm.access(ii)
+            if self.cm.catch_error(rx): return rx
+
+
         return {
-          'return': 0, 
-          'install_cmd': None, 
-          'found_path': path_to_clang, 
+          'return': 0,
+          'install_cmd': None,
+          'found_path': path_to_llama,
           'version': version,
         }
 

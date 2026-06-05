@@ -1526,6 +1526,16 @@ class Category(InitCategory):
 
             ii = copy.deepcopy(sub_task_desc)
 
+            # Check if _update
+            _update = ii.pop('_update', None)
+            if _update:
+                r = self.cm.utils.common.expand_string(_update, ctx_tasks)
+                if self.cm.catch_error(r): return r
+
+                _update = r['value']
+
+                self.cm.utils.common.deep_merge(ii, _update, append_lists=False)
+
             if ii.pop('skip_if_not_win', False) and os.name != 'nt':
                 continue
 

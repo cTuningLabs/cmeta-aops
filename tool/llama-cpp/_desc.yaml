@@ -5,6 +5,8 @@ storage_key: llama-cpp
 
 name: llama-cli
 
+default_version: 9524
+
 match_version: 
   - regex: '^version:\s*(\d+)\b'
     group: 1
@@ -39,6 +41,7 @@ cache_meta_const:
       static: '{{params.with.static|$False}}'
       debug_info: '{{params.with.debug_info|$False}}'
       strict_compute: '{{params.with.strict_compute|$None}}'
+      ver: '{{params.with.ver|$None}}'
     target_abi: '{{local.target_abi}}'
 
 build_uses:
