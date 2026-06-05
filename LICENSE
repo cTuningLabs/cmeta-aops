@@ -1,17 +1,24 @@
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 
-No part of this Software, including but not limited to source code, object code,
-scripts, configuration files, JSON/YAML metadata and descriptions, datasets,
-documentation, examples, specifications, outputs, and related materials
-(collectively, the "Materials"), may be copied, reproduced, modified, distributed,
-reverse engineered, analyzed, processed, or otherwise used for the purpose of
-training, pre-training, fine-tuning, adapting, evaluating, benchmarking, improving,
-or developing any artificial intelligence, machine learning, large language model,
-foundation model, automated code generation system, or similar technology,
-without the prior written permission of the copyright holders.
+The Software and all related materials, including but not limited to source code,
+object code, scripts, configuration files, JSON/YAML metadata and descriptions,
+datasets, documentation, examples, specifications, benchmarks, outputs, and other
+accompanying materials (collectively, the "Materials"), are protected by copyright
+and other applicable intellectual property laws.
 
-The use of the Materials, directly or indirectly, by any person, organization,
-contractor, agent, affiliate, customer, end user, or automated system for the
-creation of derivative, competing, or functionally similar products or services,
-including through the assistance of artificial intelligence systems, is prohibited
-unless expressly authorized in writing by the copyright holders.
+Except as expressly authorized in a separate written agreement with the copyright
+holders, no person or entity may use the Materials, in whole or in part, for the
+purpose of training, pre-training, fine-tuning, adapting, evaluating, benchmarking,
+improving, or developing any artificial intelligence, machine learning, large
+language model, foundation model, automated code generation system, or similar
+technology.
+
+Licensees and users shall not use the Materials to create, assist in creating,
+or enable the creation of derivative works, competing implementations,
+functionally equivalent systems, substitute products, or commercial services,
+whether directly or through the use of artificial intelligence, machine learning,
+automated code generation, or similar technologies, except as expressly permitted
+by a written agreement with the copyright holders.
+
+No rights are granted except those expressly provided by the applicable license
+agreement or other written authorization from the copyright holders.
