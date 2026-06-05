@@ -64,6 +64,7 @@ class CProgram(InitCProgram):
         debug_info = _compile.get('debug_info')
         static = _compile.get('static')
         fastest = _compile.get('fastest')
+        strict_compute = _compile.get('strict_compute')
 
         d = _compile.get('d')
         if not d: d = {}
@@ -133,6 +134,8 @@ class CProgram(InitCProgram):
             if x[0] in compute:
                 if x[1] not in d:
                     d[x[1]] = 'ON'
+            elif strict_compute and x[1] not in d:
+                d[x[1]] = 'OFF'
 
         _local['target_path_bin'] = target_path_bin
         _local['target_exe'] = target_file_name_with_ext
