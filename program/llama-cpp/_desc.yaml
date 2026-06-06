@@ -35,7 +35,7 @@ updates:
              name: llama-cpp,daa99512448647b7
              # Note that next I add space after ${} otherwise will mix up }}} ...
              with: '{{ params.setup_llama_cpp|${} }}'
-             _update: '{{ params.update_llama_cpp_task|${} }}'
+             _update: '{{ params.setup_llama_cpp_task|${} }}'
 
            - task: model,86f0effd07ad454d
              model_tags: gguf

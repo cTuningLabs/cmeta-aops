@@ -217,10 +217,11 @@ class CTool(InitCTool):
             }
 
         # Prepare some vars depending on versions
-        if version_simple > 9367:
+        iversion_simple = int(version_simple) # can be done for llama.cpp sice it's version is int but not necessarily for others that have x.y.z string structure
+        if iversion_simple >= 9365:
            cuda_vers = ['13.3', '12.4']
-        elif version_simple > 9000:
-           cuda_vers = ['13.2', '12.4']
+        elif iversion_simple >= 7313:
+           cuda_vers = ['13.1', '12.4']
         else:
            cuda_vers = ['12.4']
 
