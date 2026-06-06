@@ -236,6 +236,7 @@ class CTool(InitCTool):
         url = None
         filename = None
         filename2 = None
+        strip_folders = None
 
         if uname == 'windows':
             if uarch == 'arm64':
@@ -265,6 +266,7 @@ class CTool(InitCTool):
                 else:
                     filename = f'llama-b{version_simple}-bin-win-cpu-x64.zip'
         elif uname == 'linux':
+            strip_folders = 1
             if uarch == 'amd64':
 #                if _cuda:
 #                    filename = f'llama-b{version_simple}-bin-ubuntu-cuda-cu{cuda_version}-x64.tar.gz'
@@ -275,6 +277,7 @@ class CTool(InitCTool):
             elif uarch == 'arm64':
                 filename = f'llama-b{version_simple}-bin-linux-arm64.tar.gz'
         elif uname == 'darwin':
+            strip_folders = 1
             if uarch == 'arm64':
                 # Metal is the default backend on Apple Silicon
                 filename = f'llama-b{version_simple}-bin-macos-arm64.tar.gz'
@@ -324,6 +327,9 @@ class CTool(InitCTool):
               'check_file': path_to_llama,
               'make_check_file_executable': True,
         }
+
+        if strip_folders:
+            ii['strip_folders'] = strip_folders
 
         rx = self.cm.access(ii)
         if self.cm.catch_error(rx): return rx
