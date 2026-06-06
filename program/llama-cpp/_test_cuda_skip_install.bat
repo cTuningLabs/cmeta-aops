@@ -1,1 +1,0 @@
-cx program run llama-cpp,bdba58813ce5484f --compute=cuda -v -j --seed=12345 --update_llama_cpp_task.skip_install --fail
