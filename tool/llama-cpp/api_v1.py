@@ -268,15 +268,12 @@ class CTool(InitCTool):
                     filename = f'llama-b{version_simple}-bin-win-cpu-x64.zip'
         elif uname == 'linux':
             strip_folders = 1
-            if uarch == 'amd64':
-#                if _cuda:
-#                    filename = f'llama-b{version_simple}-bin-ubuntu-cuda-cu{cuda_version}-x64.tar.gz'
-#                elif _rocm:
-#                    filename = f'llama-b{version_simple}-bin-ubuntu-rocm-x64.tar.gz'
-#                else:
-                filename = f'llama-b{version_simple}-bin-ubuntu-x64.tar.gz'
-            elif uarch == 'arm64':
-                filename = f'llama-b{version_simple}-bin-linux-arm64.tar.gz'
+            # Cuda is currently not shipped on Linux via binaries ...
+            if not _cuda:
+                if uarch == 'amd64':
+                    filename = f'llama-b{version_simple}-bin-ubuntu-x64.tar.gz'
+                elif uarch == 'arm64':
+                    filename = f'llama-b{version_simple}-bin-linux-arm64.tar.gz'
         elif uname == 'darwin':
             strip_folders = 1
             if uarch == 'arm64':

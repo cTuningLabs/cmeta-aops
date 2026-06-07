@@ -1,0 +1,57 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+
+###################################################################################################
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  run_src_file_names:
+    - 'program.py'
+
+  output_files:
+    - output.txt
+
+  result_files:
+    output: output.txt
+
+  print_files:
+    - output.txt
+
+###################################################################################################
+updates:
+  compile:
+    skip: True
+
+
+  run:
+    uses:
+       - match:
+           internal_func: customize_run
+         append:
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+
+           # Set up PyTorch — builds from source via program/build-pytorch if not cached
+           - task: setup,a2f9b61079ce4333
+             name: pytorch,c7e5f1a8b3d02649
+             # Note that next I add space after ${} otherwise will mix up }}} ...
+             with: '{{ params.setup_pytorch|${} }}'
+             _update: '{{ params.setup_pytorch_task|${} }}'
+
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         update:
+           target_exe:
+           profile_python: '{{params.profile_python|$None}}'
+           run_src_file_names: '{{local.run_src_file_names}}'
+           # Expose torch site-packages on PYTHONPATH so `import torch` works
+           # when PyTorch was built from source via program/build-pytorch.
+           # When torch is pip-installed in the active venv this is a no-op.
+           global_keys_with_python_path:
+             - pytorch
+           cmd: >-
+             {{global.python.qpath}}
+             {run_flags_after_exe}
+             {{params.run_flags|}}
+             {run_src_file_names_str_with_path}
