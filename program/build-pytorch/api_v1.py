@@ -101,6 +101,7 @@ class CProgram(InitCProgram):
         env.setdefault('DEBUG', '1' if debug_info else '0')
         env.setdefault('CMAKE_BUILD_TYPE', 'Debug' if debug_info else 'Release')
         env.setdefault('BUILD_TEST', '0')
+        env.setdefault('BUILD_DIR', os.path.join(_local['target_path'], 'cmake-build'))
         env.setdefault('MAX_JOBS', str(os.cpu_count() or 8))
         env.setdefault('PYTHONUNBUFFERED', '1')
 
