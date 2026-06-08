@@ -1682,7 +1682,7 @@ class Category(InitCategory):
                     task_func = getattr(api_code, func, None)
 
                     if callable(task_func):
-                        r = task_func(ctx, desc = self_desc, params = uparams, sub_params = ii)
+                        r = task_func(ctx, desc = self_desc, params = uparams, extra_desc_params = ii)
                         if self.cm.catch_error(r): return r
                     elif not internal_func_safe:
                         return self.cm.error(f'internal func "{func}" is missing in API code in {where}')

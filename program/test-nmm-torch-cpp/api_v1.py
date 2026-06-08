@@ -30,8 +30,11 @@ class CProgram(InitCProgram):
 
         uname = _global['host']['os']['uname']
 
-        sub_params  = params.get('sub_params', {})
-        _compile    = sub_params.get('compile') or {}
+        params = misc.get('params', {})
+        _compile = params.get('compile')
+        if not _compile:
+            _compile = {}
+
         debug_info  = _compile.get('debug_info', False)
         build_type  = 'Debug' if debug_info else 'Release'
         _local['build_type'] = build_type

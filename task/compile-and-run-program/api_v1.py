@@ -56,7 +56,9 @@ class CTask(InitCTask):
         params = copy.deepcopy(params)
 
         if 'params' in desc:
-            self.cm.utils.common.deep_merge(params, desc['params'], append_lists=False)
+            params_desc = copy.deepcopy(desc['params'])
+            self.cm.utils.common.deep_merge(params_desc, params, append_lists=False)
+            params = params_desc
 
         params_os = desc.get('params_os')
         if params_os:
@@ -68,7 +70,9 @@ class CTask(InitCTask):
             elif uname != 'windows' and 'linux' in params_os:
                 v = params_os['linux']
             if v:
-                self.cm.utils.common.deep_merge(params, v, append_lists=False)
+                params_os_desc = copy.deepcopy(v)
+                self.cm.utils.common.deep_merge(params_os_desc, params, append_lists=False)
+                params = params_os_desc
 
         r = self.cm.utils.common.expand_strings_in_dict(params, ctx_tasks)
         if self.cm.catch_error(r): return r

@@ -41,7 +41,7 @@ class CProgram(InitCProgram):
     def customize_llama_cpp(self,
                             ctx: dict,        # cMeta context
                             desc: dict = {},
-                            **params,
+                            **misc,
     ):
 
         """
@@ -57,9 +57,10 @@ class CProgram(InitCProgram):
         compute = _global['target']['compute']
         uname = _global['host']['os']['uname']
 
-        sub_params = params.get('sub_params', {})
-        _compile = sub_params.get('compile')
-        if not _compile: _compile = {}
+        params = misc.get('params', {})
+        _compile = params.get('compile')
+        if not _compile:
+            _compile = {}
 
         debug_info = _compile.get('debug_info')
         static = _compile.get('static')

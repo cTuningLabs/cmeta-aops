@@ -46,7 +46,7 @@ class CProgram(InitCProgram):
     def customize_pytorch(self,
                           ctx: dict,
                           desc: dict = {},
-                          **params,
+                          **misc,
     ):
         """
         Assembles CMake -D flags and local paths for a PyTorch from-source build.
@@ -61,8 +61,8 @@ class CProgram(InitCProgram):
         compute = _global['target']['compute']
         uname = _global['host']['os']['uname']
 
-        sub_params = params.get('sub_params', {})
-        _compile = sub_params.get('compile')
+        params = misc.get('params', {})
+        _compile = params.get('compile')
         if not _compile:
             _compile = {}
 

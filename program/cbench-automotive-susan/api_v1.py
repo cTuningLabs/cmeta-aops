@@ -29,7 +29,6 @@ class CProgram(InitCProgram):
 
         desc = misc.get('desc', {})
         params = misc.get('params', {})
-        sub_params = misc.get('sub_params', {})
 
         compute = ctx['tasks']['global']['target']['compute']
         uname = ctx['tasks']['global']['host']['os']['uname']

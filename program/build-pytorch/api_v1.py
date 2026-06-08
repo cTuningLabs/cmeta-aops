@@ -40,7 +40,7 @@ class CProgram(InitCProgram):
     def customize_pytorch(self,
                           ctx: dict,
                           desc: dict = {},
-                          **params,
+                          **misc,
     ):
         _local = ctx['tasks']['local']
         _global = ctx['tasks']['global']
@@ -48,8 +48,10 @@ class CProgram(InitCProgram):
         compute = _global['target']['compute']
         uname = _global['host']['os']['uname']
 
-        sub_params = params.get('sub_params', {})
-        _compile = sub_params.get('compile') or {}
+        params = misc.get('params', {})
+        _compile = params.get('compile')
+        if not _compile:
+            _compile = {}
 
         debug_info = _compile.get('debug_info', False)
         strict_compute = _compile.get('strict_compute')
@@ -112,7 +114,7 @@ class CProgram(InitCProgram):
         # prepend those dirs explicitly.
         cmake_path = _global['cmake'].get('path') or _global['cmake']['qpath'].strip('"').strip("'")
         extra_dirs = [os.path.dirname(p) for p in (cmake_path, ninja_path) if p]
-        extra_dirs = list(dict.fromkeys(d for d in extra_dirs if d))  # dedupe, preserve order
+        extra_dirs = list(dict.fromkeys(p for p in extra_dirs if p))  # dedupe, preserve order
         existing_path = os.environ.get('PATH', '')
         env['PATH'] = os.pathsep.join(extra_dirs + ([existing_path] if existing_path else []))
 

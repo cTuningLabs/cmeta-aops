@@ -140,7 +140,7 @@ updates:
           - internal_func: customize_pytorch
             internal_func_from_local_key: selected-program
             internal_func_safe: True
-            compile: '{{params.compile|$None}}'
+#            compile: '{{params.compile|$None}}'
 
           ######################################################################################
           # Configure, build, and install
