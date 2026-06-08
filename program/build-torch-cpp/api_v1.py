@@ -199,6 +199,23 @@ class CProgram(InitCProgram):
             d['OpenMP_CXX_LIB_NAMES'] = 'omp'
 
         # -----------------------------------------------------------------------
+        # macOS + custom LLVM: LLVM 22+ libc++ headers emit per-function ABI-tagged
+        # inline wrappers (e.g. [abi:nqe220105]) that reference std:: symbols without
+        # the std::__1 inline namespace (ABI v2 style). Apple's system libc++.1.dylib
+        # only exports std::__1:: versions, so those symbols are absent at link time.
+        # Prepend LLVM's own lib dir so libc++.dylib / libc++abi.dylib from LLVM are
+        # found before Apple's versions.
+        if uname == 'darwin' and ('compiler-c' in _global or 'compiler-cpp' in _global):
+            _cr = _global.get('compiler-cpp') or _global.get('compiler-c')
+            _cp = _cr.get('path') or _cr['qpath'].strip('"').strip("'")
+            _llvm_lib = os.path.join(os.path.dirname(os.path.dirname(_cp)), 'lib')
+            if os.path.isdir(_llvm_lib):
+                _lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib}'
+                d.setdefault('CMAKE_SHARED_LINKER_FLAGS', _lf)
+                d.setdefault('CMAKE_EXE_LINKER_FLAGS', _lf)
+                d.setdefault('CMAKE_MODULE_LINKER_FLAGS', _lf)
+
+        # -----------------------------------------------------------------------
         # Check file: main shared library produced by cmake --install
         if uname == 'linux':
             libtorch_name = 'libtorch.so'
