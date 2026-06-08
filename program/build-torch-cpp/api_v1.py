@@ -214,6 +214,14 @@ class CProgram(InitCProgram):
                 d.setdefault('CMAKE_SHARED_LINKER_FLAGS', _lf)
                 d.setdefault('CMAKE_EXE_LINKER_FLAGS', _lf)
                 d.setdefault('CMAKE_MODULE_LINKER_FLAGS', _lf)
+                # LLVM 22 TMO (typed operator new/delete) requires libc++abi to be
+                # initialized before the first operator new call. With static libc++abi
+                # this causes an abort when a static initializer calls operator new first.
+                # Disable TMO so operator new has no libc++abi init-order dependency.
+                _existing_cxx = d.get('CMAKE_CXX_FLAGS', '')
+                _tmo = '-fno-typed-cxx-new-delete'
+                if _tmo not in _existing_cxx:
+                    d['CMAKE_CXX_FLAGS'] = f'{_existing_cxx} {_tmo}'.strip()
 
         # -----------------------------------------------------------------------
         # Check file: main shared library produced by cmake --install

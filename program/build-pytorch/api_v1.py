@@ -159,6 +159,14 @@ class CProgram(InitCProgram):
                 _ldf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
                 _existing_ldf = os.environ.get('LDFLAGS', '')
                 env.setdefault('LDFLAGS', (f'{_ldf} {_existing_ldf}' if _existing_ldf else _ldf))
+                # LLVM 22 TMO (typed operator new/delete) requires libc++abi to be
+                # initialized before the first operator new call. With static libc++abi
+                # this causes an abort when a static initializer calls operator new first.
+                # Disable TMO so operator new has no libc++abi init-order dependency.
+                _tmo = '-fno-typed-cxx-new-delete'
+                _existing_cxx = os.environ.get('CXXFLAGS', '')
+                if _tmo not in _existing_cxx:
+                    env.setdefault('CXXFLAGS', f'{_existing_cxx} {_tmo}'.strip() if _existing_cxx else _tmo)
 
         # MKL: pip-installed mkl-devel puts headers/libs inside site-packages/mkl/
         if uname in ('windows', 'linux') and any(c in compute for c in ('cpu', 'xpu')):
