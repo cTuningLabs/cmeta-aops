@@ -14,6 +14,9 @@ Prints version info, device availability, and runs a small matmul.
 #include <iostream>
 
 #include <torch/torch.h>
+#ifdef USE_MPS
+#include <torch/mps.h>
+#endif
 
 int main()
 {
@@ -28,17 +31,40 @@ int main()
               << TORCH_VERSION_PATCH << "\n";
 
     // ------------------------------------------------------------------
-    // Device selection
+    // Device detection (priority: CUDA/ROCm > Metal/MPS > CPU)
     torch::DeviceType device_type = torch::kCPU;
     std::string device_name = "cpu";
 
+    // CUDA or ROCm — PyTorch's ROCm/HIP build exposes itself through the CUDA interface
     if (torch::cuda::is_available()) {
         device_type = torch::kCUDA;
+#ifdef USE_ROCM
+        device_name = "cuda(rocm)";
+        std::cout << "ROCm             : available (" << torch::cuda::device_count() << " device(s))\n";
+#else
         device_name = "cuda";
         std::cout << "CUDA             : available (" << torch::cuda::device_count() << " device(s))\n";
+#endif
     } else {
+#ifdef USE_ROCM
+        std::cout << "ROCm             : not available\n";
+#else
         std::cout << "CUDA             : not available\n";
+#endif
     }
+
+    // Metal / MPS (Apple Silicon) — only selected if no CUDA/ROCm device was found
+#ifdef USE_MPS
+    if (torch::mps::is_available()) {
+        if (device_type == torch::kCPU) {
+            device_type = torch::kMPS;
+            device_name = "mps";
+        }
+        std::cout << "Metal/MPS        : available\n";
+    } else {
+        std::cout << "Metal/MPS        : not available\n";
+    }
+#endif
 
     std::cout << "Selected device  : " << device_name << "\n\n";
 
