@@ -252,15 +252,25 @@ class CProgram(InitCProgram):
                     os.path.realpath(_libc_dylib).startswith(os.path.realpath(_llvm_lib))
                 )
                 if _is_llvm_dylib:
-                    # LLVM ships a real shared ABI v2 libc++: use it for everything so the
-                    # whole process (executable + all dylibs) shares one runtime instance.
-                    # -lc++abi is resolved at link time from the same LLVM lib dir (or falls
-                    # back to Apple's system libc++abi.dylib); either way the shared version
-                    # is used, which has no TMO static-init-order issue.
+                    # LLVM ships a real shared ABI v2 libc++: link everything against it for
+                    # ONE runtime instance (no multiple-copies malloc crash).
                     _lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
                     d.setdefault('CMAKE_EXE_LINKER_FLAGS', _lf)
                     d.setdefault('CMAKE_SHARED_LINKER_FLAGS', _lf)
                     d.setdefault('CMAKE_MODULE_LINKER_FLAGS', _lf)
+                    # LLVM 22+'s libc++abi.dylib includes a TMO (typed-memory-operations)
+                    # guard in operator new that aborts if called before libc++abi's own
+                    # static initializer has run.  protobuf's static initializers in protoc
+                    # (which is compiled during the PyTorch build) call operator new early
+                    # enough to trip this. -fno-typed-cxx-new-delete makes the compiler emit
+                    # plain operator new calls instead of the typed entry point, bypassing
+                    # the check entirely without affecting runtime correctness.
+                    _cxxf = d.get('CMAKE_CXX_FLAGS', '')
+                    if '-fno-typed-cxx-new-delete' not in _cxxf:
+                        d['CMAKE_CXX_FLAGS'] = (
+                            f'{_cxxf} -fno-typed-cxx-new-delete' if _cxxf
+                            else '-fno-typed-cxx-new-delete'
+                        )
                 elif os.path.isfile(_libc_pp):
                     # Only static libc++.a available.  Embed it in the executable (single
                     # runtime provider); shared libs use -undefined dynamic_lookup so their
