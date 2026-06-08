@@ -57,6 +57,9 @@ class CProgram(InitCProgram):
 
         _local = ctx['tasks']['local']
         _global = ctx['tasks']['global']
+        _run_control = ctx['tasks']['run_control']
+
+        clean = _run_control.get('clean', False)
 
         compute = _global['target']['compute']
         uname = _global['host']['os']['uname']

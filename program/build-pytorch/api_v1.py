@@ -8,6 +8,7 @@ without explicit permission from the copyright holder.
 """
 
 import os
+import shutil
 import sys
 
 from program_22788f3c30d04e6d.api.cprogram import InitCProgram
@@ -44,6 +45,18 @@ class CProgram(InitCProgram):
     ):
         _local = ctx['tasks']['local']
         _global = ctx['tasks']['global']
+        _run_control = ctx['tasks']['run_control']
+
+        clean = _run_control.get('clean', False)
+
+        # pip install always writes cmake intermediates to {git_src}/build/ and ignores BUILD_DIR.
+        # Delete that directory when --clean is requested so the next build starts from scratch.
+        if clean:
+            git_repo = _global.get('clone-git-to-cache-src-pytorch', {}).get('path_to_git_repo', '')
+            if git_repo:
+                cmake_build = os.path.join(git_repo, 'build')
+                if os.path.isdir(cmake_build):
+                    shutil.rmtree(cmake_build)
 
         compute = _global['target']['compute']
         uname = _global['host']['os']['uname']
@@ -101,7 +114,6 @@ class CProgram(InitCProgram):
         env.setdefault('DEBUG', '1' if debug_info else '0')
         env.setdefault('CMAKE_BUILD_TYPE', 'Debug' if debug_info else 'Release')
         env.setdefault('BUILD_TEST', '0')
-        env.setdefault('BUILD_DIR', os.path.join(_local['target_path'], 'cmake-build'))
         env.setdefault('MAX_JOBS', str(os.cpu_count() or 8))
         env.setdefault('PYTHONUNBUFFERED', '1')
 
