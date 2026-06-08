@@ -156,7 +156,7 @@ class CProgram(InitCProgram):
             _cp = _cr.get('path') or _cr['qpath'].strip('"').strip("'")
             _llvm_lib = os.path.join(os.path.dirname(os.path.dirname(_cp)), 'lib')
             if os.path.isdir(_llvm_lib):
-                _ldf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib}'
+                _ldf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++'
                 _existing_ldf = os.environ.get('LDFLAGS', '')
                 env.setdefault('LDFLAGS', (f'{_ldf} {_existing_ldf}' if _existing_ldf else _ldf))
 
