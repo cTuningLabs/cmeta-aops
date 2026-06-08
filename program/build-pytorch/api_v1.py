@@ -107,6 +107,15 @@ class CProgram(InitCProgram):
         ninja_path = _global['ninja'].get('path') or _global['ninja']['qpath'].strip('"').strip("'")
         env.setdefault('CMAKE_MAKE_PROGRAM', ninja_path)
 
+        # cmake and ninja live in cMeta tool cache dirs, not on system PATH.
+        # PyTorch's setup.py searches PATH for "cmake" by name, so we must
+        # prepend those dirs explicitly.
+        cmake_path = _global['cmake'].get('path') or _global['cmake']['qpath'].strip('"').strip("'")
+        extra_dirs = [os.path.dirname(p) for p in (cmake_path, ninja_path) if p]
+        extra_dirs = list(dict.fromkeys(d for d in extra_dirs if d))  # dedupe, preserve order
+        existing_path = os.environ.get('PATH', '')
+        env['PATH'] = os.pathsep.join(extra_dirs + ([existing_path] if existing_path else []))
+
         # C/C++ compilers — passed to cmake via env vars that setup.py forwards
         if 'compiler-c' in _global:
             cc_path = _global['compiler-c'].get('path') or _global['compiler-c']['qpath'].strip('"').strip("'")
