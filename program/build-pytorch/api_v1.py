@@ -145,6 +145,21 @@ class CProgram(InitCProgram):
             env.setdefault('CXX', cxx_path)
             env.setdefault('CMAKE_CXX_COMPILER', cxx_path)
 
+        # macOS + custom LLVM: LLVM 22+ libc++ headers emit per-function ABI-tagged
+        # inline wrappers (e.g. [abi:nqe220105]) that reference std:: symbols
+        # WITHOUT the std::__1 inline namespace (ABI v2 style). Apple's system
+        # libc++.1.dylib only exports the std::__1:: versions (ABI v1), so those
+        # symbols are genuinely absent. Fix: prepend LLVM's own lib dir so the
+        # linker finds LLVM's libc++.dylib / libc++abi.dylib before Apple's.
+        if uname == 'darwin' and ('compiler-c' in _global or 'compiler-cpp' in _global):
+            _cr = _global.get('compiler-cpp') or _global.get('compiler-c')
+            _cp = _cr.get('path') or _cr['qpath'].strip('"').strip("'")
+            _llvm_lib = os.path.join(os.path.dirname(os.path.dirname(_cp)), 'lib')
+            if os.path.isdir(_llvm_lib):
+                _ldf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib}'
+                _existing_ldf = os.environ.get('LDFLAGS', '')
+                env.setdefault('LDFLAGS', (f'{_ldf} {_existing_ldf}' if _existing_ldf else _ldf))
+
         # MKL: pip-installed mkl-devel puts headers/libs inside site-packages/mkl/
         if uname in ('windows', 'linux') and any(c in compute for c in ('cpu', 'xpu')):
             _mkl_dir = os.path.join(venv_site, 'mkl')
