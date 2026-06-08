@@ -167,16 +167,13 @@ class CProgram(InitCProgram):
                 )
                 if _is_llvm_dylib:
                     # LLVM ships a real shared ABI v2 libc++: use it for a single runtime instance.
-                    _ldf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
-                    # LLVM 22+'s libc++abi.dylib has a TMO guard in operator new that aborts if
-                    # called before libc++abi's static initializer runs.  Disable the typed entry
-                    # point at compile time so user code calls plain operator new (no TMO check).
-                    _existing_cxxf = os.environ.get('CXXFLAGS', '')
-                    if '-fno-typed-cxx-new-delete' not in _existing_cxxf:
-                        env.setdefault('CXXFLAGS', (
-                            f'{_existing_cxxf} -fno-typed-cxx-new-delete' if _existing_cxxf
-                            else '-fno-typed-cxx-new-delete'
-                        ))
+                    # Do NOT add -lc++abi explicitly: LLVM's libc++.dylib on macOS is typically
+                    # built against Apple's system /usr/lib/libc++abi.1.dylib, so libc++abi is
+                    # already a transitive dependency. Adding -L{llvm_lib} -lc++abi would instead
+                    # pick up LLVM's own libc++abi.dylib which has a TMO guard (typed operator new
+                    # aborts when called from a static initializer before libc++abi inits), causing
+                    # protoc to crash during the build.
+                    _ldf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++'
                 elif os.path.isfile(_libc_pp):
                     # Static libc++.a only. Pass by full path; omit -L so -lc++abi resolves to
                     # Apple's system libc++abi.dylib (LLVM's static libc++abi.a has a TMO operator

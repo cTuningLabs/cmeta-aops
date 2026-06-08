@@ -49,7 +49,7 @@ updates:
             compute: '{{global.target.compute}}'
             use:
               llvm:
-                version: '{{params.use.llvm.version|None}}'
+                version: '{{params.use.llvm.version|$None}}'
 
           - task: setup,a2f9b61079ce4333
             name: cmake,e26c11ebb3dd40ca
@@ -113,7 +113,7 @@ updates:
           # OpenMP via Clang on Linux / macOS
           - task: setup,a2f9b61079ce4333
             if_os: linux,darwin
-            if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.llvm.path|None}}" != "None"'
+            if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.llvm.path|$None}}" != "None"'
             name: lib-openmp,7958b973fc0d42a9
 
           ######################################################################################

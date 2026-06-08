@@ -254,23 +254,16 @@ class CProgram(InitCProgram):
                 if _is_llvm_dylib:
                     # LLVM ships a real shared ABI v2 libc++: link everything against it for
                     # ONE runtime instance (no multiple-copies malloc crash).
-                    _lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
+                    # Do NOT add -lc++abi explicitly: LLVM's libc++.dylib on macOS is
+                    # typically built against Apple's system /usr/lib/libc++abi.1.dylib, so
+                    # libc++abi is already a transitive dependency of libc++.dylib. Adding
+                    # -L{llvm_lib} -lc++abi would instead pick up LLVM's own libc++abi.dylib,
+                    # which has a TMO guard (typed operator new aborts if called before
+                    # libc++abi's init), causing protoc to crash during the build.
+                    _lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++'
                     d.setdefault('CMAKE_EXE_LINKER_FLAGS', _lf)
                     d.setdefault('CMAKE_SHARED_LINKER_FLAGS', _lf)
                     d.setdefault('CMAKE_MODULE_LINKER_FLAGS', _lf)
-                    # LLVM 22+'s libc++abi.dylib includes a TMO (typed-memory-operations)
-                    # guard in operator new that aborts if called before libc++abi's own
-                    # static initializer has run.  protobuf's static initializers in protoc
-                    # (which is compiled during the PyTorch build) call operator new early
-                    # enough to trip this. -fno-typed-cxx-new-delete makes the compiler emit
-                    # plain operator new calls instead of the typed entry point, bypassing
-                    # the check entirely without affecting runtime correctness.
-                    _cxxf = d.get('CMAKE_CXX_FLAGS', '')
-                    if '-fno-typed-cxx-new-delete' not in _cxxf:
-                        d['CMAKE_CXX_FLAGS'] = (
-                            f'{_cxxf} -fno-typed-cxx-new-delete' if _cxxf
-                            else '-fno-typed-cxx-new-delete'
-                        )
                 elif os.path.isfile(_libc_pp):
                     # Only static libc++.a available.  Embed it in the executable (single
                     # runtime provider); shared libs use -undefined dynamic_lookup so their
@@ -389,7 +382,9 @@ class CProgram(InitCProgram):
                     os.path.realpath(_libc_dylib).startswith(os.path.realpath(_llvm_lib))
                 )
                 if _is_llvm_dylib:
-                    d['CMAKE_EXE_LINKER_FLAGS'] = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
+                    # No explicit -lc++abi: it comes in as a transitive dep of libc++.dylib
+                    # (Apple's system libc++abi if LLVM's libc++.dylib was built that way).
+                    d['CMAKE_EXE_LINKER_FLAGS'] = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++'
                 elif os.path.isfile(_libc_pp):
                     d['CMAKE_EXE_LINKER_FLAGS'] = f'-Wl,-rpath,{_llvm_lib} {_libc_pp} -lc++abi'
                 else:
