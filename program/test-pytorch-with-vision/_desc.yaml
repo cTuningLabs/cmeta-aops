@@ -38,6 +38,11 @@ updates:
            - task: setup,a2f9b61079ce4333
              name: pip
              with:
+               package: pillow
+
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             with:
                package: torch
 
            - task: setup,a2f9b61079ce4333

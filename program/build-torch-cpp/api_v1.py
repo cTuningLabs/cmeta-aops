@@ -12,6 +12,12 @@ import sys
 
 from program_22788f3c30d04e6d.api.cprogram import InitCProgram
 
+_SEP = {
+    'windows': ';',
+    'linux':   ':',
+    'darwin':  ':',
+}
+
 class CProgram(InitCProgram):
     """
     """
@@ -222,5 +228,82 @@ class CProgram(InitCProgram):
             f"-D{k}={self.cm.q(str(v))}" for k, v in d.items()
         )
         _local['skip_template_compile'] = True
+
+        return {'return': 0}
+
+    ############################################################
+    def customize_test(self,
+                       ctx: dict,
+                       desc: dict = {},
+                       **params,
+    ):
+        """
+        Called during the run phase to compile and run a small C++ sanity-check
+        that exercises the LibTorch C++ API against the cmake-installed libtorch.
+        """
+        _local  = ctx['tasks']['local']
+        _global = ctx['tasks']['global']
+
+        uname = _global['host']['os']['uname']
+
+        # target_path is the cmake --install prefix set during the compile phase
+        target_path = _local['target_path']
+
+        # -----------------------------------------------------------------------
+        # Test build directory (inside the install tree, ignored by libtorch cmake)
+        test_build_path = os.path.join(target_path, 'test-build')
+        os.makedirs(test_build_path, exist_ok=True)
+        _local['test_build_path'] = test_build_path
+
+        # -----------------------------------------------------------------------
+        # Source directory (src/CMakeLists.txt + src/program.cpp)
+        src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+        _local['test_cmake_src_path'] = self.cm.q(src_dir)
+
+        # -----------------------------------------------------------------------
+        # cmake -D flags for the test binary
+        d = {}
+        d['CMAKE_BUILD_TYPE'] = 'Release'
+
+        ninja_path = _global['ninja'].get('path') or _global['ninja']['qpath'].strip('"').strip("'")
+        d['CMAKE_MAKE_PROGRAM'] = ninja_path
+
+        if 'compiler-c' in _global:
+            cc = _global['compiler-c'].get('path') or _global['compiler-c']['qpath'].strip('"').strip("'")
+            d['CMAKE_C_COMPILER'] = cc
+        if 'compiler-cpp' in _global:
+            cxx = _global['compiler-cpp'].get('path') or _global['compiler-cpp']['qpath'].strip('"').strip("'")
+            if uname == 'windows' and _global['compiler-cpp'].get('features', {}).get('id') == 'Intel':
+                cxx = d.get('CMAKE_C_COMPILER', cxx)
+            d['CMAKE_CXX_COMPILER'] = cxx
+
+        # CMAKE_PREFIX_PATH tells find_package(Torch) where TorchConfig.cmake lives
+        d['CMAKE_PREFIX_PATH'] = target_path
+
+        _local['test_cmake_d_vars'] = ' '.join(
+            f'-D{k}={self.cm.q(str(v))}' for k, v in d.items()
+        )
+
+        # -----------------------------------------------------------------------
+        # Test binary produced by Ninja directly in test_build_path
+        exe_name = 'program.exe' if uname == 'windows' else 'program'
+        _local['target_path_exe'] = os.path.join(test_build_path, exe_name)
+
+        # -----------------------------------------------------------------------
+        # Add libtorch lib dir to PATH / LD_LIBRARY_PATH / DYLD_LIBRARY_PATH
+        # so the test binary can load shared libraries at runtime.
+        lib_dir = os.path.join(target_path, 'lib')
+        sep = _SEP.get(uname, ':')
+        rte = _local.setdefault('run_time_env', {})
+
+        existing_path = os.environ.get('PATH', '')
+        rte['PATH'] = f"{lib_dir}{sep}{existing_path}" if existing_path else lib_dir
+
+        if uname == 'linux':
+            existing = os.environ.get('LD_LIBRARY_PATH', '')
+            rte['LD_LIBRARY_PATH'] = f"{lib_dir}{sep}{existing}" if existing else lib_dir
+        elif uname == 'darwin':
+            existing = os.environ.get('DYLD_LIBRARY_PATH', '')
+            rte['DYLD_LIBRARY_PATH'] = f"{lib_dir}{sep}{existing}" if existing else lib_dir
 
         return {'return': 0}

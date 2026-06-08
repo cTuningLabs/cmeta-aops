@@ -10,9 +10,6 @@ local_vars:
 
   target_file_name: 'libtorch'
 
-  run_src_file_names:
-    - 'program.py'
-
   output_files:
     - output.txt
 
@@ -159,18 +156,35 @@ updates:
 
   run:
     uses:
-       - match:
-           task: setup-run,148f6c1fdb4247df
-         prepend:
-           - task: setup,a2f9b61079ce4333
-             name: python,c00fb574d8ca4463
+      - match:
+          internal_func: customize_run
+        prepend:
+          # Tools needed to compile the test binary against installed libtorch
+          - task: setup,a2f9b61079ce4333
+            name: cmake,e26c11ebb3dd40ca
+          - task: setup,a2f9b61079ce4333
+            name: ninja,a3df3c45e9b04830
+          - task: compiler,f3925b201c704bde
+            lang: c
+            compute: '{{global.target.compute}}'
+        append:
+          # Compute cmake flags, source path, and test binary location
+          - internal_func: customize_test
+            internal_func_from_local_key: selected-program
+            internal_func_safe: True
+          # cmake configure + build of the test binary against the installed libtorch
+          - task: cmd,c9ba0a88df394d7f
+            storage_key: test-build
+            chdir: '{{local.test_build_path}}'
+            cmds:
+              - '{{global.cmake.qpath}} {{local.test_cmake_src_path}} -G Ninja {{local.test_cmake_d_vars}}'
+              - '{{global.cmake.qpath}} --build . --config Release'
 
-         update:
-           target_exe:
-           profile_python: '{{params.profile_python|$None}}'
-           run_src_file_names: '{{local.run_src_file_names}}'
-           cmd: >-
-             {{global.python.qpath}}
-             {run_flags_after_exe}
-             {{params.run_flags|}}
-             {run_src_file_names_str_with_path}
+      - match:
+          task: setup-run,148f6c1fdb4247df
+        update:
+          target_exe: '{{local.target_path_exe}}'
+          profile_python:
+          run_src_file_names:
+          cmd:
+          cmd_main: ''

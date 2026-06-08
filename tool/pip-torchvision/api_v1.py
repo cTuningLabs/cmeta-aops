@@ -9,6 +9,7 @@ without explicit permission from the copyright holder.
 
 import os
 import platform
+import re
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 
@@ -33,7 +34,8 @@ class CTool(InitCTool):
 
             torch = ctx['tasks']['global'].get('pip-torch')
             if torch:
-                version = torch['version'].split('.')
+                torch_version = torch['version']
+                version = torch_version.split('.')
 
                 version1 = int(version[0])
                 version2 = int(version[1])
@@ -49,13 +51,21 @@ class CTool(InitCTool):
 
                     if len(version)>2:
                         version3 = version[2]
-                        j = version3.find('+')
-                        if j>0:
-                            version3 = version3[:j]
-                        version3 = int(version3)
+
+                        m = re.match(r'(\d+)', version3)
+                        version3 = int(m.group(1))
                         xversion += '.' + str(version3)
 
                     params['version'] = xversion
+
+                # Complex version (alpha/dev/local build, e.g. "2.12.0a0+git0d62256"):
+                # pip would try to reinstall a stable torch to satisfy torchvision's dep.
+                # --no-deps prevents that so our source-built torch is left untouched.
+                if re.search(r'\+|a\d|b\d|rc\d|\.dev\d|\.post\d', torch_version):
+                    _with = params.setdefault('with', {})
+                    pf = _with.get('post_flags', '')
+                    if '--no-deps' not in pf:
+                        _with['post_flags'] = ('--no-deps ' + pf).strip()
 
         # Call function in tool::pip / api_v1.py
         return self.task_setup_tool_code._common_compute_init(
