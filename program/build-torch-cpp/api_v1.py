@@ -210,7 +210,7 @@ class CProgram(InitCProgram):
             _cp = _cr.get('path') or _cr['qpath'].strip('"').strip("'")
             _llvm_lib = os.path.join(os.path.dirname(os.path.dirname(_cp)), 'lib')
             if os.path.isdir(_llvm_lib):
-                _lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++'
+                _lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
                 d.setdefault('CMAKE_SHARED_LINKER_FLAGS', _lf)
                 d.setdefault('CMAKE_EXE_LINKER_FLAGS', _lf)
                 d.setdefault('CMAKE_MODULE_LINKER_FLAGS', _lf)
