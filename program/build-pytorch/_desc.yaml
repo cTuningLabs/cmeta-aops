@@ -96,11 +96,6 @@ updates:
             with:
               package: packaging
 
-          - task: setup,a2f9b61079ce4333
-            name: pip
-            with:
-              package: six
-
 #          - task: setup,a2f9b61079ce4333
 #            name: pip,c4987bc3955347f2
 #            with:
