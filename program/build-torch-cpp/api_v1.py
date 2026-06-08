@@ -219,12 +219,17 @@ class CProgram(InitCProgram):
                 # -lc++abi falls back to Apple's system libc++abi.dylib which has no TMO check.
                 _libc_pp = os.path.join(_llvm_lib, 'libc++.a')
                 if os.path.isfile(_libc_pp):
-                    _lf = f'-Wl,-rpath,{_llvm_lib} {_libc_pp} -lc++abi'
+                    _exe_lf = f'-Wl,-rpath,{_llvm_lib} {_libc_pp} -lc++abi'
                 else:
-                    _lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
-                d.setdefault('CMAKE_SHARED_LINKER_FLAGS', _lf)
-                d.setdefault('CMAKE_EXE_LINKER_FLAGS', _lf)
-                d.setdefault('CMAKE_MODULE_LINKER_FLAGS', _lf)
+                    _exe_lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
+                # Only executables get static libc++.a — they become the single C++ runtime
+                # provider for the whole process.  Shared libraries use -undefined dynamic_lookup
+                # so their C++ runtime symbols resolve from the executable at load time, avoiding
+                # multiple conflicting copies of std::ios_base, locale tables, and global ctors
+                # that corrupt std::cout and cause the malloc "pointer not allocated" crash.
+                d.setdefault('CMAKE_EXE_LINKER_FLAGS', _exe_lf)
+                d.setdefault('CMAKE_SHARED_LINKER_FLAGS', f'-Wl,-rpath,{_llvm_lib} -undefined dynamic_lookup')
+                d.setdefault('CMAKE_MODULE_LINKER_FLAGS', f'-Wl,-rpath,{_llvm_lib} -undefined dynamic_lookup')
 
         # -----------------------------------------------------------------------
         # Check file: main shared library produced by cmake --install
@@ -308,6 +313,17 @@ class CProgram(InitCProgram):
             if uname == 'windows' and _global['compiler-cpp'].get('features', {}).get('id') == 'Intel':
                 cxx = d.get('CMAKE_C_COMPILER', cxx)
             d['CMAKE_CXX_COMPILER'] = cxx
+
+        if uname == 'darwin' and ('compiler-c' in _global or 'compiler-cpp' in _global):
+            _cr = _global.get('compiler-cpp') or _global.get('compiler-c')
+            _cp = _cr.get('path') or _cr['qpath'].strip('"').strip("'")
+            _llvm_lib = os.path.join(os.path.dirname(os.path.dirname(_cp)), 'lib')
+            if os.path.isdir(_llvm_lib):
+                _libc_pp = os.path.join(_llvm_lib, 'libc++.a')
+                if os.path.isfile(_libc_pp):
+                    d['CMAKE_EXE_LINKER_FLAGS'] = f'-Wl,-rpath,{_llvm_lib} {_libc_pp} -lc++abi'
+                else:
+                    d['CMAKE_EXE_LINKER_FLAGS'] = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
 
         # Prefer the *installed* TorchConfig.cmake (share/cmake/Torch/ or lib/cmake/Torch/)
         # over the build-tree TorchConfig.cmake at the prefix root.  cmake's prefix search
