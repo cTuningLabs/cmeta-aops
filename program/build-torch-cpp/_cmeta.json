@@ -1,0 +1,17 @@
+{
+  "artifact": "8cf1e453fef742d3",
+  "authors": "Grigori Fursin",
+  "category": "program,22788f3c30d04e6d",
+  "constraints": {
+    "supported_compute": [
+      "cpu",
+      "cuda",
+      "rocm",
+      "metal",
+      "xpu"
+    ]
+  },
+  "copyright": "Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.",
+  "creation_timestamp": "2026-06-06T00:00:00.000000+00:00",
+  "last_update_timestamp": "2026-06-07T21:25:05.805500+00:00"
+}

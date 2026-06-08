@@ -69,24 +69,27 @@ class CTool(InitCTool):
             path_features = features.setdefault('paths', {})
             path = p['path']
 
-            # libtorch is in <build-root>/lib/torch.dll (or libtorch.so/.dylib)
-            # so the build root is two levels up from the library file
-            path_lib = os.path.dirname(path)
-            path_root = os.path.dirname(path_lib)
+            if os.path.basename(path) == '__init__.py':
+                # pip-installed: {venv_site}/torch/__init__.py
+                path_site = os.path.dirname(os.path.dirname(path))  # {venv_site}/
+            else:
+                # cmake-based (legacy): {build_root}/lib/torch.dll
+                path_lib = os.path.dirname(path)
+                path_site = os.path.dirname(path_lib)  # {build_root}/
+                # Try to read PYTHONPATH from repro ctx saved during the build
+                repro_path = os.path.join(path_site, '_repro_ctx_compile.json')
+                if os.path.isfile(repro_path):
+                    r = self.cm.utils.files.read_file(repro_path)
+                    if r['return'] == 0:
+                        compiled_local = r['data'].get('ctx', {}).get('tasks', {}).get('local', {})
+                        pythonpath = compiled_local.get('run_time_env', {}).get('PYTHONPATH', '')
+                        if pythonpath and os.path.isdir(pythonpath):
+                            path_site = pythonpath
 
-            path_features['home'] = path_root
-            path_features['qhome'] = self.cm.q(path_root)
-
-            # Extract PYTHONPATH recorded by program/build-pytorch in its compile ctx
-            repro_path = os.path.join(path_root, '_repro_ctx_compile.json')
-            if os.path.isfile(repro_path):
-                r = self.cm.utils.files.read_file(repro_path)
-                if r['return'] == 0:
-                    compiled_local = r['data'].get('ctx', {}).get('tasks', {}).get('local', {})
-                    pythonpath = compiled_local.get('run_time_env', {}).get('PYTHONPATH', '')
-                    if pythonpath and os.path.isdir(pythonpath):
-                        path_features['site_packages'] = pythonpath
-                        path_features['qsite_packages'] = self.cm.q(pythonpath)
+            path_features['home'] = path_site
+            path_features['qhome'] = self.cm.q(path_site)
+            path_features['site_packages'] = path_site
+            path_features['qsite_packages'] = self.cm.q(path_site)
 
             new_paths.append(p)
 
@@ -103,26 +106,34 @@ class CTool(InitCTool):
         _with = params.get('with', {})
 
         for path in paths:
-            path_lib = os.path.dirname(path)
-            path_root = os.path.dirname(path_lib)
-
-            repro_path = os.path.join(path_root, '_repro_ctx_compile.json')
-            if not os.path.isfile(repro_path):
+            if not os.path.isfile(path):
                 continue
 
-            r = self.cm.utils.files.read_file(repro_path)
-            if r['return'] != 0:
-                continue
+            if os.path.basename(path) == '__init__.py':
+                # pip-installed: {venv_site}/torch/__init__.py
+                path_site = os.path.dirname(os.path.dirname(path))
+            else:
+                # cmake-based (legacy): {build_root}/lib/torch.dll
+                path_lib = os.path.dirname(path)
+                path_site = os.path.dirname(path_lib)
+                repro_path = os.path.join(path_site, '_repro_ctx_compile.json')
+                if not os.path.isfile(repro_path):
+                    continue
+                r = self.cm.utils.files.read_file(repro_path)
+                if r['return'] != 0:
+                    continue
+                compiled_local = r['data'].get('ctx', {}).get('tasks', {}).get('local', {})
+                pythonpath = compiled_local.get('run_time_env', {}).get('PYTHONPATH', '')
+                if not pythonpath:
+                    continue
+                path_site = pythonpath
 
-            compiled_local = r['data'].get('ctx', {}).get('tasks', {}).get('local', {})
-            pythonpath = compiled_local.get('run_time_env', {}).get('PYTHONPATH', '')
-            if pythonpath:
-                found_paths_info[path] = {
-                    'features': {
-                        'paths': {'site_packages': pythonpath},
-                        'with': _with,
-                    },
-                }
+            found_paths_info[path] = {
+                'features': {
+                    'paths': {'site_packages': path_site},
+                    'with': _with,
+                },
+            }
 
         result = {'return': 0}
         if found_paths_info:

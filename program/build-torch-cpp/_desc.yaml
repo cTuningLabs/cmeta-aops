@@ -139,24 +139,22 @@ updates:
               - '{{global.git.qpath}} submodule update --init --recursive'
 
           ######################################################################################
-          # Compute pip_install_env and check-file paths
+          # Compute cmake -D flags and set local paths
           - internal_func: customize_pytorch
             internal_func_from_local_key: selected-program
             internal_func_safe: True
             compile: '{{params.compile|$None}}'
 
           ######################################################################################
-          # Build and install PyTorch Python package into the active venv.
-          # pip install --no-build-isolation uses the current venv (not an isolated env),
-          # so the build-time requirements installed above are available to setup.py.
-          # cmake + ninja are invoked internally by setup.py; BUILD_DIR is {source}/build/.
+          # Configure, build, and install
           - task: cmd,c9ba0a88df394d7f
             storage_key: compile-program
             save_script: '{{local.target_path}}//tmp-cmeta-compile-program{{global.host.vars.file_ext_bat}}'
-            chdir: '{{global.clone-git-to-cache-src-pytorch.path_to_git_repo}}'
-            env: '{{local.pip_install_env}}'
+            chdir: '{{local.target_path}}'
             cmds:
-              - '{{global.python.qpath}} -m pip install --no-build-isolation -v .'
+              - '{{global.cmake.qpath}} "{{global.clone-git-to-cache-src-pytorch.path_to_git_repo}}" -G Ninja {{local.cmake_d_vars}}'
+              - '{{global.cmake.qpath}} --build . --config {{local.build_type}}'
+              - '{{global.cmake.qpath}} --install . --config {{local.build_type}}'
 
 
   run:
