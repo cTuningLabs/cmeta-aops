@@ -73,8 +73,7 @@ updates:
           # Ensure torch-cpp is available (triggers build if not cached)
           - task: setup,a2f9b61079ce4333
             name: torch-cpp,d4f7a2e8c3b01956
-            with: '{{ params.setup_torch_cpp|${} }}'
-            _update: '{{ params.setup_torch_cpp_task|${} }}'
+            _update: '{{ params.setup_torch_cpp|${} }}'
 
         update:
           # Add libtorch lib dir to PATH / LD_LIBRARY_PATH / DYLD_LIBRARY_PATH

@@ -292,6 +292,12 @@ class CProgram(InitCProgram):
         os.makedirs(test_build_path, exist_ok=True)
         _local['test_build_path'] = test_build_path
 
+        # Remove the stale binary so ninja always relinks with the current linker flags.
+        # cmake's ninja backend does not re-link when only cached cmake variables change.
+        _stale = os.path.join(test_build_path, 'program.exe' if uname == 'windows' else 'program')
+        if os.path.isfile(_stale):
+            os.remove(_stale)
+
         # -----------------------------------------------------------------------
         # Source directory (src/CMakeLists.txt + src/program.cpp)
         src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
