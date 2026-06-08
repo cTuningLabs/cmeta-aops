@@ -131,16 +131,19 @@ class CProgram(InitCProgram):
         existing_path = os.environ.get('PATH', '')
         env['PATH'] = os.pathsep.join(extra_dirs + ([existing_path] if existing_path else []))
 
-        # C/C++ compilers — passed to cmake via env vars that setup.py forwards
+        # C/C++ compilers.
+        # cmake reads CC/CXX from env during initial configuration (before cache).
+        # CMAKE_C/CXX_COMPILER are also set for older PyTorch versions that forward them as -D flags.
         if 'compiler-c' in _global:
             cc_path = _global['compiler-c'].get('path') or _global['compiler-c']['qpath'].strip('"').strip("'")
+            env.setdefault('CC', cc_path)
             env.setdefault('CMAKE_C_COMPILER', cc_path)
         if 'compiler-cpp' in _global:
             cxx_path = _global['compiler-cpp'].get('path') or _global['compiler-cpp']['qpath'].strip('"').strip("'")
             if uname == 'windows' and _global['compiler-cpp'].get('features', {}).get('id') == 'Intel':
-                env.setdefault('CMAKE_CXX_COMPILER', env.get('CMAKE_C_COMPILER', cxx_path))
-            else:
-                env.setdefault('CMAKE_CXX_COMPILER', cxx_path)
+                cxx_path = env.get('CC', cxx_path)
+            env.setdefault('CXX', cxx_path)
+            env.setdefault('CMAKE_CXX_COMPILER', cxx_path)
 
         # MKL: pip-installed mkl-devel puts headers/libs inside site-packages/mkl/
         if uname in ('windows', 'linux') and any(c in compute for c in ('cpu', 'xpu')):
