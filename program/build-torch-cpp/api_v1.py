@@ -275,7 +275,8 @@ class CProgram(InitCProgram):
         _local  = ctx['tasks']['local']
         _global = ctx['tasks']['global']
 
-        uname = _global['host']['os']['uname']
+        uname   = _global['host']['os']['uname']
+        compute = _global['target']['compute']
 
         # target_path is the cmake --install prefix set during the compile phase
         target_path = _local['target_path']
