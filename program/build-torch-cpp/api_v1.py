@@ -308,8 +308,18 @@ class CProgram(InitCProgram):
                 cxx = d.get('CMAKE_C_COMPILER', cxx)
             d['CMAKE_CXX_COMPILER'] = cxx
 
-        # CMAKE_PREFIX_PATH tells find_package(Torch) where TorchConfig.cmake lives
-        d['CMAKE_PREFIX_PATH'] = target_path
+        # Prefer the *installed* TorchConfig.cmake (share/cmake/Torch/ or lib/cmake/Torch/)
+        # over the build-tree TorchConfig.cmake at the prefix root.  cmake's prefix search
+        # includes <prefix>/ so it would otherwise pick up the build-tree version first;
+        # that file has hardcoded build paths (Caffe2Targets.cmake, public/utils.cmake) that
+        # are absent after install.  Setting Torch_DIR bypasses the ambiguous root search.
+        _torch_cmake = os.path.join(target_path, 'share', 'cmake', 'Torch')
+        if not os.path.isdir(_torch_cmake):
+            _torch_cmake = os.path.join(target_path, 'lib', 'cmake', 'Torch')
+        if os.path.isdir(_torch_cmake):
+            d['Torch_DIR'] = _torch_cmake
+        else:
+            d['CMAKE_PREFIX_PATH'] = target_path
 
         _local['test_cmake_d_vars'] = ' '.join(
             f'-D{k}={self.cm.q(str(v))}' for k, v in d.items()
