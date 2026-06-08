@@ -156,14 +156,22 @@ class CProgram(InitCProgram):
             _cp = _cr.get('path') or _cr['qpath'].strip('"').strip("'")
             _llvm_lib = os.path.join(os.path.dirname(os.path.dirname(_cp)), 'lib')
             if os.path.isdir(_llvm_lib):
-                # LLVM 22 only ships static libc++.a / libc++abi.a on macOS (no dynamic dylibs).
-                # Static libc++abi.a has a TMO-aware operator new that aborts when a static
-                # initializer calls operator new before libc++abi's own init (protobuf triggers this).
-                # Fix: pass LLVM's libc++.a by full path (provides ABI v2 exception class symbols
-                # not in Apple's libc++) but omit -L so -lc++abi uses Apple's system libc++abi.dylib
-                # which has no TMO check.
-                _libc_pp = os.path.join(_llvm_lib, 'libc++.a')
-                if os.path.isfile(_libc_pp):
+                # LLVM 22 ABI v2: use LLVM's own shared libc++/libc++abi if they resolve to
+                # files inside the LLVM lib dir (e.g. libc++.dylib -> libc++.1.0.dylib within
+                # the same dir).  A symlink chain that escapes to /usr/lib/ means Apple's ABI v1.
+                _libc_dylib = os.path.join(_llvm_lib, 'libc++.dylib')
+                _libc_pp    = os.path.join(_llvm_lib, 'libc++.a')
+                _is_llvm_dylib = (
+                    os.path.isfile(_libc_dylib) and
+                    os.path.realpath(_libc_dylib).startswith(os.path.realpath(_llvm_lib))
+                )
+                if _is_llvm_dylib:
+                    # LLVM ships a real shared ABI v2 libc++: use it for a single runtime instance.
+                    _ldf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
+                elif os.path.isfile(_libc_pp):
+                    # Static libc++.a only. Pass by full path; omit -L so -lc++abi resolves to
+                    # Apple's system libc++abi.dylib (LLVM's static libc++abi.a has a TMO operator
+                    # new that aborts when called from a static initializer before libc++abi inits).
                     _ldf = f'-Wl,-rpath,{_llvm_lib} {_libc_pp} -lc++abi'
                 else:
                     _ldf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'

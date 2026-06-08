@@ -90,6 +90,32 @@ class CProgram(InitCProgram):
             d['CMAKE_MAKE_PROGRAM'] = _global['ninja']['qpath']
 
         # -----------------------------------------------------------------------
+        # Windows + LLVM clang: cmake's Windows platform module can reset
+        # CMAKE_SYSTEM_PROCESSOR to "AMD64" (from PROCESSOR_ARCHITECTURE) via a
+        # regular variable that shadows the -D cache value we set.  PyTorch's
+        # internal QNNPACK cmake only accepts "x86_64"; MSVC builds avoid it because
+        # PyTorch's if(MSVC) guard disables USE_PYTORCH_QNNPACK, but that guard does
+        # not fire for GNU-frontend Clang.  Both normalization and an explicit OFF are
+        # needed as a belt-and-braces fix.
+        if uname == 'windows':
+            if 'CMAKE_SYSTEM_PROCESSOR' not in d:
+                _proc_map = {'AMD64': 'x86_64', 'ARM64': 'aarch64'}
+                _proc = os.environ.get('PROCESSOR_ARCHITECTURE', '').upper()
+                if _proc in _proc_map:
+                    d['CMAKE_SYSTEM_PROCESSOR'] = _proc_map[_proc]
+            # Detect Clang (GNU-frontend) by compiler path and disable PYTORCH_QNNPACK.
+            _win_cpath = ''
+            for _ckey in ('compiler-cpp', 'compiler-c'):
+                if _ckey in _global:
+                    _win_cpath = (
+                        _global[_ckey].get('path') or
+                        _global[_ckey]['qpath'].strip('"').strip("'")
+                    ).lower()
+                    break
+            if 'clang' in _win_cpath:
+                d.setdefault('USE_PYTORCH_QNNPACK', 'OFF')
+
+        # -----------------------------------------------------------------------
         # C / C++ compilers
         if 'cpu' in compute or 'cuda' in compute or 'xpu' in compute:
             cmake_c_compiler = _global['compiler-c']['qpath']
@@ -199,37 +225,58 @@ class CProgram(InitCProgram):
             d['OpenMP_CXX_LIB_NAMES'] = 'omp'
 
         # -----------------------------------------------------------------------
-        # macOS + custom LLVM: LLVM 22+ libc++ headers emit per-function ABI-tagged
-        # inline wrappers (e.g. [abi:nqe220105]) that reference std:: symbols without
-        # the std::__1 inline namespace (ABI v2 style). Apple's system libc++.1.dylib
-        # only exports std::__1:: versions, so those symbols are absent at link time.
-        # Prepend LLVM's own lib dir so libc++.dylib / libc++abi.dylib from LLVM are
-        # found before Apple's versions.
+        # macOS + custom LLVM: LLVM 22+ uses ABI v2 (std:: namespace, no std::__1::).
+        # Apple's system libc++.1.dylib only exports ABI v1 (std::__1::) symbols, so
+        # we must use LLVM's own runtime.
+        #
+        # Strategy: if LLVM ships a real shared libc++.dylib (resolves inside the LLVM
+        # lib dir rather than pointing at Apple's /usr/lib/libc++.1.dylib), link
+        # everything — both shared libs and executables — against it via -lc++/-lc++abi.
+        # That gives ONE shared C++ runtime instance with no multiple-copies issue.
+        #
+        # Fallback: only a static libc++.a is available.  Embed it in executables only
+        # and use -undefined dynamic_lookup for shared libs so their ABI v2 symbols
+        # resolve from the executable at load time (single runtime provider).
         if uname == 'darwin' and ('compiler-c' in _global or 'compiler-cpp' in _global):
             _cr = _global.get('compiler-cpp') or _global.get('compiler-c')
             _cp = _cr.get('path') or _cr['qpath'].strip('"').strip("'")
             _llvm_lib = os.path.join(os.path.dirname(os.path.dirname(_cp)), 'lib')
             if os.path.isdir(_llvm_lib):
-                # LLVM 22 only ships static libc++.a / libc++abi.a on macOS (no dynamic dylibs).
-                # If we use -L{llvm_lib} -lc++abi, the linker picks LLVM's static libc++abi.a,
-                # whose TMO-aware operator new aborts when a static initializer calls operator new
-                # before libc++abi's own initializer has run (init-order fiasco with protobuf et al).
-                # Fix: pass LLVM's libc++.a by full path (provides ABI v2 exception class symbols
-                # like std::length_error::~length_error() not in Apple's libc++) but omit -L so
-                # -lc++abi falls back to Apple's system libc++abi.dylib which has no TMO check.
-                _libc_pp = os.path.join(_llvm_lib, 'libc++.a')
-                if os.path.isfile(_libc_pp):
+                _libc_pp    = os.path.join(_llvm_lib, 'libc++.a')
+                _libc_dylib = os.path.join(_llvm_lib, 'libc++.dylib')
+                # Follow all symlinks: if the resolved path is inside _llvm_lib it's
+                # LLVM's own ABI v2 shared libc++ (e.g. libc++.dylib -> libc++.1.dylib
+                # within the same dir).  If it escapes to /usr/lib/ it's Apple's ABI v1.
+                _is_llvm_dylib = (
+                    os.path.isfile(_libc_dylib) and
+                    os.path.realpath(_libc_dylib).startswith(os.path.realpath(_llvm_lib))
+                )
+                if _is_llvm_dylib:
+                    # LLVM ships a real shared ABI v2 libc++: use it for everything so the
+                    # whole process (executable + all dylibs) shares one runtime instance.
+                    # -lc++abi is resolved at link time from the same LLVM lib dir (or falls
+                    # back to Apple's system libc++abi.dylib); either way the shared version
+                    # is used, which has no TMO static-init-order issue.
+                    _lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
+                    d.setdefault('CMAKE_EXE_LINKER_FLAGS', _lf)
+                    d.setdefault('CMAKE_SHARED_LINKER_FLAGS', _lf)
+                    d.setdefault('CMAKE_MODULE_LINKER_FLAGS', _lf)
+                elif os.path.isfile(_libc_pp):
+                    # Only static libc++.a available.  Embed it in the executable (single
+                    # runtime provider); shared libs use -undefined dynamic_lookup so their
+                    # ABI v2 symbols resolve from the executable at load time.
+                    # Omit -L so -lc++abi falls back to Apple's system libc++abi.dylib
+                    # (avoids LLVM's static libc++abi.a whose TMO operator new aborts on
+                    # protobuf-style static initializers that call operator new early).
                     _exe_lf = f'-Wl,-rpath,{_llvm_lib} {_libc_pp} -lc++abi'
+                    d.setdefault('CMAKE_EXE_LINKER_FLAGS', _exe_lf)
+                    d.setdefault('CMAKE_SHARED_LINKER_FLAGS', f'-Wl,-rpath,{_llvm_lib} -undefined dynamic_lookup')
+                    d.setdefault('CMAKE_MODULE_LINKER_FLAGS', f'-Wl,-rpath,{_llvm_lib} -undefined dynamic_lookup')
                 else:
-                    _exe_lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
-                # Only executables get static libc++.a — they become the single C++ runtime
-                # provider for the whole process.  Shared libraries use -undefined dynamic_lookup
-                # so their C++ runtime symbols resolve from the executable at load time, avoiding
-                # multiple conflicting copies of std::ios_base, locale tables, and global ctors
-                # that corrupt std::cout and cause the malloc "pointer not allocated" crash.
-                d.setdefault('CMAKE_EXE_LINKER_FLAGS', _exe_lf)
-                d.setdefault('CMAKE_SHARED_LINKER_FLAGS', f'-Wl,-rpath,{_llvm_lib} -undefined dynamic_lookup')
-                d.setdefault('CMAKE_MODULE_LINKER_FLAGS', f'-Wl,-rpath,{_llvm_lib} -undefined dynamic_lookup')
+                    _lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
+                    d.setdefault('CMAKE_EXE_LINKER_FLAGS', _lf)
+                    d.setdefault('CMAKE_SHARED_LINKER_FLAGS', _lf)
+                    d.setdefault('CMAKE_MODULE_LINKER_FLAGS', _lf)
 
         # -----------------------------------------------------------------------
         # Check file: main shared library produced by cmake --install
@@ -325,8 +372,15 @@ class CProgram(InitCProgram):
             _cp = _cr.get('path') or _cr['qpath'].strip('"').strip("'")
             _llvm_lib = os.path.join(os.path.dirname(os.path.dirname(_cp)), 'lib')
             if os.path.isdir(_llvm_lib):
-                _libc_pp = os.path.join(_llvm_lib, 'libc++.a')
-                if os.path.isfile(_libc_pp):
+                _libc_dylib = os.path.join(_llvm_lib, 'libc++.dylib')
+                _libc_pp    = os.path.join(_llvm_lib, 'libc++.a')
+                _is_llvm_dylib = (
+                    os.path.isfile(_libc_dylib) and
+                    os.path.realpath(_libc_dylib).startswith(os.path.realpath(_llvm_lib))
+                )
+                if _is_llvm_dylib:
+                    d['CMAKE_EXE_LINKER_FLAGS'] = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
+                elif os.path.isfile(_libc_pp):
                     d['CMAKE_EXE_LINKER_FLAGS'] = f'-Wl,-rpath,{_llvm_lib} {_libc_pp} -lc++abi'
                 else:
                     d['CMAKE_EXE_LINKER_FLAGS'] = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
