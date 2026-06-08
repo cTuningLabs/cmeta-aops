@@ -63,9 +63,6 @@ class CTask(InitCTask):
         _d = _with.get('d', {})
         _install = _with.get('install', False)
 
-        self.cm.j(_with)
-        input('xyz999')
-
         _profile = params.get('profile', False)
         _profile_cuda = params.get('profile_cuda', False)
         _profile_cuda_kernels = params.get('profile_cuda_kernels', False)

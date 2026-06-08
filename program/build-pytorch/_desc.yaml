@@ -143,6 +143,7 @@ updates:
           - internal_func: customize_pytorch
             internal_func_from_local_key: selected-program
             internal_func_safe: True
+            _update: '{{ params.customize_pytorch|${} }}'
 #            compile: '{{params.compile|$None}}'
 
           ######################################################################################
