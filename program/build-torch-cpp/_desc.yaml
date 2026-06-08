@@ -27,6 +27,9 @@ params:
       USE_QNNPACK: 'OFF'
       USE_NNPACK: 'OFF'
       USE_FBGEMM: 'OFF'
+      # third_party/benchmark uses -pedantic-errors, which Clang 22 turns into a
+      # hard error for __COUNTER__ in #if expressions (-Wc2y-extensions).
+      BUILD_TEST: 'OFF'
 
 ###################################################################################################
 updates:
@@ -93,15 +96,15 @@ updates:
             with:
               package: packaging
 
-          - task: setup,a2f9b61079ce4333
-            name: pip,c4987bc3955347f2
-            with:
-              package: mkl-devel
-            if_os: windows,linux
-            if: >-
-              "cpu" in {{global.target.compute|$[]}}
-              or
-              "xpu" in {{global.target.compute|$[]}}
+ #         - task: setup,a2f9b61079ce4333
+ #           name: pip,c4987bc3955347f2
+ #           with:
+ #             package: mkl-devel
+ #           if_os: windows,linux
+ #           if: >-
+ #             "cpu" in {{global.target.compute|$[]}}
+ #             or
+ #             "xpu" in {{global.target.compute|$[]}}
 
           ######################################################################################
           # OpenMP via Clang on Linux / macOS
