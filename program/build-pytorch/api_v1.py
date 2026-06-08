@@ -156,17 +156,19 @@ class CProgram(InitCProgram):
             _cp = _cr.get('path') or _cr['qpath'].strip('"').strip("'")
             _llvm_lib = os.path.join(os.path.dirname(os.path.dirname(_cp)), 'lib')
             if os.path.isdir(_llvm_lib):
-                _ldf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
+                # LLVM 22 only ships static libc++.a / libc++abi.a on macOS (no dynamic dylibs).
+                # Static libc++abi.a has a TMO-aware operator new that aborts when a static
+                # initializer calls operator new before libc++abi's own init (protobuf triggers this).
+                # Fix: pass LLVM's libc++.a by full path (provides ABI v2 exception class symbols
+                # not in Apple's libc++) but omit -L so -lc++abi uses Apple's system libc++abi.dylib
+                # which has no TMO check.
+                _libc_pp = os.path.join(_llvm_lib, 'libc++.a')
+                if os.path.isfile(_libc_pp):
+                    _ldf = f'-Wl,-rpath,{_llvm_lib} {_libc_pp} -lc++abi'
+                else:
+                    _ldf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
                 _existing_ldf = os.environ.get('LDFLAGS', '')
                 env.setdefault('LDFLAGS', (f'{_ldf} {_existing_ldf}' if _existing_ldf else _ldf))
-                # LLVM 22 TMO (typed operator new/delete) requires libc++abi to be
-                # initialized before the first operator new call. With static libc++abi
-                # this causes an abort when a static initializer calls operator new first.
-                # Disable TMO so operator new has no libc++abi init-order dependency.
-                _tmo = '-fno-typed-cxx-new-delete'
-                _existing_cxx = os.environ.get('CXXFLAGS', '')
-                if _tmo not in _existing_cxx:
-                    env.setdefault('CXXFLAGS', f'{_existing_cxx} {_tmo}'.strip() if _existing_cxx else _tmo)
 
         # MKL: pip-installed mkl-devel puts headers/libs inside site-packages/mkl/
         if uname in ('windows', 'linux') and any(c in compute for c in ('cpu', 'xpu')):

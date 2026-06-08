@@ -210,18 +210,21 @@ class CProgram(InitCProgram):
             _cp = _cr.get('path') or _cr['qpath'].strip('"').strip("'")
             _llvm_lib = os.path.join(os.path.dirname(os.path.dirname(_cp)), 'lib')
             if os.path.isdir(_llvm_lib):
-                _lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
+                # LLVM 22 only ships static libc++.a / libc++abi.a on macOS (no dynamic dylibs).
+                # If we use -L{llvm_lib} -lc++abi, the linker picks LLVM's static libc++abi.a,
+                # whose TMO-aware operator new aborts when a static initializer calls operator new
+                # before libc++abi's own initializer has run (init-order fiasco with protobuf et al).
+                # Fix: pass LLVM's libc++.a by full path (provides ABI v2 exception class symbols
+                # like std::length_error::~length_error() not in Apple's libc++) but omit -L so
+                # -lc++abi falls back to Apple's system libc++abi.dylib which has no TMO check.
+                _libc_pp = os.path.join(_llvm_lib, 'libc++.a')
+                if os.path.isfile(_libc_pp):
+                    _lf = f'-Wl,-rpath,{_llvm_lib} {_libc_pp} -lc++abi'
+                else:
+                    _lf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
                 d.setdefault('CMAKE_SHARED_LINKER_FLAGS', _lf)
                 d.setdefault('CMAKE_EXE_LINKER_FLAGS', _lf)
                 d.setdefault('CMAKE_MODULE_LINKER_FLAGS', _lf)
-                # LLVM 22 TMO (typed operator new/delete) requires libc++abi to be
-                # initialized before the first operator new call. With static libc++abi
-                # this causes an abort when a static initializer calls operator new first.
-                # Disable TMO so operator new has no libc++abi init-order dependency.
-                _existing_cxx = d.get('CMAKE_CXX_FLAGS', '')
-                _tmo = '-fno-typed-cxx-new-delete'
-                if _tmo not in _existing_cxx:
-                    d['CMAKE_CXX_FLAGS'] = f'{_existing_cxx} {_tmo}'.strip()
 
         # -----------------------------------------------------------------------
         # Check file: main shared library produced by cmake --install
