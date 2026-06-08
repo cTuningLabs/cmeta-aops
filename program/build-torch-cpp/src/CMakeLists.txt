@@ -8,6 +8,14 @@ add_executable(program program.cpp)
 target_link_libraries(program "${TORCH_LIBRARIES}")
 set_property(TARGET program PROPERTY CXX_STANDARD 17)
 
+# Honor compute-backend flags passed by cMeta (-DUSE_MPS=ON, -DUSE_CUDA=ON, etc.)
+# and convert them into compile definitions so #ifdef guards in program.cpp work.
+foreach(_flag USE_CUDA USE_ROCM USE_MPS USE_XPU)
+  if(${_flag})
+    target_compile_definitions(program PRIVATE ${_flag}=1)
+  endif()
+endforeach()
+
 # On Windows copy all libtorch DLLs next to the binary so it can run without PATH changes.
 if(WIN32)
   file(GLOB TORCH_DLLS "${TORCH_INSTALL_PREFIX}/lib/*.dll")

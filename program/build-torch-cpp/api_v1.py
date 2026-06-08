@@ -321,6 +321,18 @@ class CProgram(InitCProgram):
         else:
             d['CMAKE_PREFIX_PATH'] = target_path
 
+        # Propagate compute backend flags so #ifdef USE_MPS / USE_ROCM / USE_CUDA
+        # guards in program.cpp compile the right detection code.
+        _compute_map = {
+            'cuda':  'USE_CUDA',
+            'rocm':  'USE_ROCM',
+            'metal': 'USE_MPS',
+            'xpu':   'USE_XPU',
+        }
+        for _key, _define in _compute_map.items():
+            if _key in compute:
+                d[_define] = 'ON'
+
         _local['test_cmake_d_vars'] = ' '.join(
             f'-D{k}={self.cm.q(str(v))}' for k, v in d.items()
         )
