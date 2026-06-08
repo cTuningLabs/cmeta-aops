@@ -1,1 +1,1 @@
-﻿cx program run test-pytorch-with-vision -v -j --clean --compute=metal
+cx program run test-pytorch-with-vision -v -j --clean --compute=metal

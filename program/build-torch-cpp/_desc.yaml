@@ -187,7 +187,9 @@ updates:
           task: setup-run,148f6c1fdb4247df
         update:
           target_exe: '{{local.target_path_exe}}'
-          profile_python:
-          run_src_file_names:
-          cmd:
-          cmd_main: ''
+          cmd: >-
+             {{local.target_path_exe}}
+             {run_flags_after_exe}
+             {{params.run_flags|}}
+
+#          cmd_main: ''
