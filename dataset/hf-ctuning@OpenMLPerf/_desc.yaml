@@ -1,0 +1,5 @@
+﻿uses:
+  - task: get-hf-dataset,9865f4ce243f4984
+    repo: ctuning/OpenMLPerf
+
+result_from_ctx: '{{global.get-hf-dataset}}'

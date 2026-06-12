@@ -30,6 +30,15 @@ updates:
            - task: setup,a2f9b61079ce4333
              name: python,c00fb574d8ca4463
 
+
+           # Extra C compiler required by PyTorch's CMake
+           - task: compiler,f3925b201c704bde
+             lang: c
+             compute: '{{global.target.compute}}'
+
+
+
+
            - task: setup,a2f9b61079ce4333
              name: pip
              with:

@@ -47,6 +47,14 @@ class CProgram(InitCProgram):
         _global = ctx['tasks']['global']
         _run_control = ctx['tasks']['run_control']
 
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        ctx_tasks = ctx['tasks']
+        nested_call = ctx_tasks.setdefault('nested_call', 0)
+        space = '  ' * nested_call if verbose else ''
+
         clean = _run_control.get('clean', False)
 
         # pip install always writes cmake intermediates to {git_src}/build/ and ignores BUILD_DIR.
@@ -56,7 +64,12 @@ class CProgram(InitCProgram):
             if git_repo:
                 cmake_build = os.path.join(git_repo, 'build')
                 if os.path.isdir(cmake_build):
-                    shutil.rmtree(cmake_build)
+                    if con and verbose:
+                        print ('')
+                        print (f'{space}INFO: rmtree {cmake_build}')
+
+                    r = self.cm.utils.files.remove_files_and_dirs_in_path(cmake_build)
+                    if self.cm.catch_error(r): return r
 
         compute = _global['target']['compute']
         uname = _global['host']['os']['uname']
@@ -74,9 +87,8 @@ class CProgram(InitCProgram):
 
         # -----------------------------------------------------------------------
         # Venv site-packages: where pip will install torch
-        python_qpath = _global['python']['qpath']
-        python_path = _global['python'].get('path') or python_qpath.strip('"').strip("'")
-        python_root = os.path.dirname(os.path.dirname(python_path))
+        python_path = _global['python']['path']
+        python_root = _global['python']['path_home']
 
         if uname == 'windows':
             venv_site = os.path.join(python_root, 'Lib', 'site-packages')
@@ -90,7 +102,7 @@ class CProgram(InitCProgram):
         env = {}
 
         def _to_01(v):
-            return '1' if str(v).upper() in ('ON', '1', 'TRUE', 'YES') else '0'
+            return '1' if v else '0'
 
         for k, v in d.items():
             v_str = str(v)
@@ -101,11 +113,16 @@ class CProgram(InitCProgram):
                 env[k] = v_str
 
         # Compute backends (override whatever came from d)
+        env['USE_CPU']  = _to_01('cpu'  in compute)
         env['USE_CUDA']  = _to_01('cuda'  in compute)
         env['USE_ROCM']  = _to_01('rocm'  in compute)
         env['USE_MPS']   = _to_01('metal' in compute)
         env['USE_XPU']   = _to_01('xpu'   in compute)
-        if 'cuda' in compute:
+
+
+        # Minimalistic build for tests (can be extended later)!
+        use_cudnn = params.get('use_cudnn')
+        if 'cuda' in compute and use_cudnn:
             env.setdefault('USE_CUDNN', '1')
         elif strict_compute:
             env.setdefault('USE_CUDNN', '0')
@@ -113,79 +130,95 @@ class CProgram(InitCProgram):
         # Build type / misc
         env.setdefault('DEBUG', '1' if debug_info else '0')
         env.setdefault('CMAKE_BUILD_TYPE', 'Debug' if debug_info else 'Release')
-        env.setdefault('BUILD_TEST', '0')
-        env.setdefault('MAX_JOBS', str(os.cpu_count() or 8))
+        env.setdefault('BUILD_TEST', '1')
+        max_jobs = params.get('max_jobs')
+        if max_jobs:
+            env.setdefault('MAX_JOBS', str(max_jobs))
         env.setdefault('PYTHONUNBUFFERED', '1')
 
         # Ninja: setup.py reads CMAKE_GENERATOR to pick the cmake generator
         env.setdefault('CMAKE_GENERATOR', 'Ninja')
-        ninja_path = _global['ninja'].get('path') or _global['ninja']['qpath'].strip('"').strip("'")
+        ninja_path = _global['ninja']['path']
         env.setdefault('CMAKE_MAKE_PROGRAM', ninja_path)
 
         # cmake and ninja live in cMeta tool cache dirs, not on system PATH.
         # PyTorch's setup.py searches PATH for "cmake" by name, so we must
         # prepend those dirs explicitly.
-        cmake_path = _global['cmake'].get('path') or _global['cmake']['qpath'].strip('"').strip("'")
+        cmake_path = _global['cmake']['path'] #.get('path') or _global['cmake']['qpath'].strip('"').strip("'")
+
         extra_dirs = [os.path.dirname(p) for p in (cmake_path, ninja_path) if p]
         extra_dirs = list(dict.fromkeys(p for p in extra_dirs if p))  # dedupe, preserve order
-        existing_path = os.environ.get('PATH', '')
-        env['PATH'] = os.pathsep.join(extra_dirs + ([existing_path] if existing_path else []))
+
+        existing_path = env.setdefault('+PATH', [])
+        env['+PATH'] = extra_dirs + existing_path
+
+
 
         # C/C++ compilers.
         # cmake reads CC/CXX from env during initial configuration (before cache).
         # CMAKE_C/CXX_COMPILER are also set for older PyTorch versions that forward them as -D flags.
-        if 'compiler-c' in _global:
-            cc_path = _global['compiler-c'].get('path') or _global['compiler-c']['qpath'].strip('"').strip("'")
-            env.setdefault('CC', cc_path)
-            env.setdefault('CMAKE_C_COMPILER', cc_path)
-        if 'compiler-cpp' in _global:
-            cxx_path = _global['compiler-cpp'].get('path') or _global['compiler-cpp']['qpath'].strip('"').strip("'")
-            if uname == 'windows' and _global['compiler-cpp'].get('features', {}).get('id') == 'Intel':
-                cxx_path = env.get('CC', cxx_path)
-            env.setdefault('CXX', cxx_path)
-            env.setdefault('CMAKE_CXX_COMPILER', cxx_path)
 
-        # macOS + custom LLVM: LLVM 22+ libc++ headers emit per-function ABI-tagged
-        # inline wrappers (e.g. [abi:nqe220105]) that reference std:: symbols
-        # WITHOUT the std::__1 inline namespace (ABI v2 style). Apple's system
-        # libc++.1.dylib only exports the std::__1:: versions (ABI v1), so those
-        # symbols are genuinely absent. Fix: prepend LLVM's own lib dir so the
-        # linker finds LLVM's libc++.dylib / libc++abi.dylib before Apple's.
-        if uname == 'darwin' and ('compiler-c' in _global or 'compiler-cpp' in _global):
-            _cr = _global.get('compiler-cpp') or _global.get('compiler-c')
-            _cp = _cr.get('path') or _cr['qpath'].strip('"').strip("'")
-            _llvm_lib = os.path.join(os.path.dirname(os.path.dirname(_cp)), 'lib')
-            if os.path.isdir(_llvm_lib):
-                # LLVM 22 ABI v2: use LLVM's own shared libc++/libc++abi if they resolve to
-                # files inside the LLVM lib dir (e.g. libc++.dylib -> libc++.1.0.dylib within
-                # the same dir).  A symlink chain that escapes to /usr/lib/ means Apple's ABI v1.
-                _libc_dylib = os.path.join(_llvm_lib, 'libc++.dylib')
-                _libc_pp    = os.path.join(_llvm_lib, 'libc++.a')
-                _is_llvm_dylib = (
-                    os.path.isfile(_libc_dylib) and
-                    os.path.realpath(_libc_dylib).startswith(os.path.realpath(_llvm_lib))
-                )
-                if _is_llvm_dylib:
-                    # LLVM ships a real shared ABI v2 libc++: use it for a single runtime instance.
-                    # Do NOT add -lc++abi explicitly: LLVM's libc++.dylib on macOS is typically
-                    # built against Apple's system /usr/lib/libc++abi.1.dylib, so libc++abi is
-                    # already a transitive dependency. Adding -L{llvm_lib} -lc++abi would instead
-                    # pick up LLVM's own libc++abi.dylib which has a TMO guard (typed operator new
-                    # aborts when called from a static initializer before libc++abi inits), causing
-                    # protoc to crash during the build.
-                    _ldf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++'
-                elif os.path.isfile(_libc_pp):
-                    # Static libc++.a only. Pass by full path; omit -L so -lc++abi resolves to
-                    # Apple's system libc++abi.dylib (LLVM's static libc++abi.a has a TMO operator
-                    # new that aborts when called from a static initializer before libc++abi inits).
-                    _ldf = f'-Wl,-rpath,{_llvm_lib} {_libc_pp} -lc++abi'
-                else:
-                    _ldf = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
-                _existing_ldf = os.environ.get('LDFLAGS', '')
-                env.setdefault('LDFLAGS', (f'{_ldf} {_existing_ldf}' if _existing_ldf else _ldf))
+        # HOST SHOULD ALWAYS BE CL on Windows, gcc/clang on Linux and clang on MacOS
+        if uname == 'windows':
+            if 'xpu' in compute:
+                # FGG: I had problems installing KINETO on Windows
+                if 'USE_KINETO' not in env: 
+                    env['USE_KINETO'] = 'OFF' # various issues
+                if 'TORCH_XPU_ARCH_LIST' not in env: 
+                    env['TORCH_XPU_ARCH_LIST'] = 'bmg' # reducing compilation time for a test
+#                if 'USE_SYSTEM_XNNPACK' not in env:
+#                    env['USE_SYSTEM_XNNPACK'] = 'OFF'
+#                if 'USE_XNNPACK' not in env:
+#                    env['USE_XNNPACK'] = 'OFF'
+#                if 'USE_MKLDNN' not in env:
+#                    env['USE_MKLDNN'] = 'OFF' # various issues
+
+#                cflags = env.setdefault('CFLAGS', '')
+#                cflags += ' -DSLEEF_ENABLE_FLOAT128=OFF -DENABLEFLOAT128=OFF'
+#                cflags = cflags.strip()
+#                env['CFLAGS'] = cflags
+
+            if params.get('use_mkl'):
+                env.setdefault('USE_MKL', '1')
+            else:
+                env.setdefault('USE_MKL', '0')
+
+            if 'USE_XNNPACK' not in env:
+                env['USE_XNNPACK'] = 'OFF' # various issues - though may need for XPU ???
+            if 'USE_MKLDNN' not in env:
+                env['USE_MKLDNN'] = 'OFF' # various issues - though may need for XPU !!!
+            if 'USE_KINETO' not in env: 
+                env['USE_KINETO'] = 'OFF' # various issues
+
+            msvc_compiler_path = _global['msvc']['path']
+
+            env.setdefault('CC', msvc_compiler_path)
+            env.setdefault('CXX', msvc_compiler_path)
+            env.setdefault('CMAKE_C_COMPILER', msvc_compiler_path)
+            env.setdefault('CMAKE_CXX_COMPILER', msvc_compiler_path)
+            env.setdefault('CL', '/D_CRT_SECURE_NO_WARNINGS')
+
+            if 'compiler-cpp' in _global:
+                if _global['compiler-cpp'].get('features', {}).get('id') == 'Intel':
+                    cxx_path = _global['compiler-cpp']['path']
+#                    cxx_path = os.path.join(_global['compiler-cpp']['path_bin'], 'icx-cl.exe')
+                    env.setdefault('CMAKE_CXX_SYCL_COMPILER', cxx_path)
+        else:
+            # To be improved!
+            if 'compiler-c' in _global:
+                cc_path = _global['compiler-c']['path']
+                env.setdefault('CC', cc_path)
+                env.setdefault('CMAKE_C_COMPILER', cc_path)
+            if 'compiler-cpp' in _global:
+                cxx_path = _global['compiler-cpp']['path']
+                if uname == 'windows' and _global['compiler-cpp'].get('features', {}).get('id') == 'Intel':
+                    cxx_path = env.get('CC', cxx_path)
+                env.setdefault('CXX', cxx_path)
+                env.setdefault('CMAKE_CXX_COMPILER', cxx_path)
+
 
         # MKL: pip-installed mkl-devel puts headers/libs inside site-packages/mkl/
-        if uname in ('windows', 'linux') and any(c in compute for c in ('cpu', 'xpu')):
+        if uname in ('windows', 'linux') and any(c in compute for c in ('cpu', 'xpu')) and params.get('use_mkl'):
             _mkl_dir = os.path.join(venv_site, 'mkl')
             if os.path.isdir(_mkl_dir):
                 env.setdefault('INTEL_MKL_DIR', _mkl_dir)
@@ -194,14 +227,33 @@ class CProgram(InitCProgram):
 
         # CUDA compiler path
         if 'cuda' in compute and 'nvcc' in _global:
-            nvcc_path = _global['nvcc'].get('path') or _global['nvcc']['qpath'].strip('"').strip("'")
+            nvcc_path = _global['nvcc']['path'] #.get('path') or _global['nvcc']['qpath'].strip('"').strip("'")
             cuda_home = os.path.dirname(os.path.dirname(nvcc_path))
+
             env.setdefault('CUDA_HOME', cuda_home)
+            env.setdefault('CUDA_PATH', cuda_home)
+
+            if use_cudnn:
+                cudnn_paths = _global['lib-cudnn']['features']['paths']
+
+                cudnn_home = cudnn_paths['home']
+
+                cudnn_include = cudnn_paths['include']
+                cudnn_static_lib = cudnn_paths['lib']
+                cudnn_dynamic_lib = cudnn_paths['dynamic_lib']
+
+                env.setdefault('CUDNN_INCLUDE_DIR', cudnn_include)
+                env.setdefault('CUDNN_LIBRARY', cudnn_static_lib)
 
         # OpenMP (Clang-provided, Linux / macOS)
         if 'lib-openmp' in _global:
-            omp_path = _global['lib-openmp'].get('path') or _global['lib-openmp']['qpath'].strip('"').strip("'")
+            omp_path = _global['lib-openmp']['path'] #.get('path') or _global['lib-openmp']['qpath'].strip('"').strip("'")
             env.setdefault('OpenMP_omp_LIBRARY', omp_path)
+
+        # XPU: Kineto enables XPUPTI (GPU profiling) which requires Intel PTI SDK.
+        # PTI is a separate optional oneAPI component and may not be installed.
+        # Search for its cmake config under the oneAPI root; if absent, disable
+        # xpupti via LIBKINETO_NOXPUPTI so the build succeeds without profiling.
 
         _local['pip_install_env'] = env
 

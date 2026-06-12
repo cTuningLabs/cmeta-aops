@@ -1,0 +1,181 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+
+###################################################################################################
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  lang: cpp
+
+  target_file_name: 'libtorchvision'
+
+  run_src_file_names:
+    - 'program.py'
+
+  output_files:
+    - output.txt
+
+  result_files:
+    output: output.txt
+
+  print_files:
+    - output.txt
+
+params:
+  compile:
+    d:
+      # Disable optional components to speed up the build; re-enable as needed
+      USE_DISTRIBUTED: 'OFF'
+      USE_QNNPACK: 'OFF'
+      USE_NNPACK: 'OFF'
+      USE_FBGEMM: 'OFF'
+
+###################################################################################################
+updates:
+  compile:
+    uses:
+      - match:
+          internal_func: customize2
+        append:
+          ######################################################################################
+          # Python is required both for the build system and the resulting Python bindings
+          - task: setup,a2f9b61079ce4333
+            name: python,c00fb574d8ca4463
+
+          # Host compiler
+          - task: setup,a2f9b61079ce4333
+            name: msvc,e823256bbbe54b4e
+            if_os: windows
+
+          # Extra C compiler required by PyTorch's CMake
+          - task: compiler,f3925b201c704bde
+            lang: c
+            compute: '{{global.target.compute}}'
+
+          - task: setup,a2f9b61079ce4333
+            name: cmake,e26c11ebb3dd40ca
+
+          - task: setup,a2f9b61079ce4333
+            name: ninja,a3df3c45e9b04830
+
+          ######################################################################################
+          # Build-time pip requirements
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            with:
+              package: pyyaml
+
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            with:
+              package: typing_extensions
+
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            with:
+              package: sympy
+
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            with:
+              package: filelock
+
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            with:
+              package: networkx
+
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            with:
+              package: numpy
+
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            with:
+              package: setuptools
+
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            with:
+              package: packaging
+
+          - task: setup,a2f9b61079ce4333
+            name: pip,c4987bc3955347f2
+            with:
+              package: mkl-devel
+            if_os: windows,linux
+            if: >-
+              {{params.use_mkl|$False}} and (
+              "cpu" in {{global.target.compute|$[]}}
+              or
+              "xpu" in {{global.target.compute|$[]}}
+              )
+
+          ######################################################################################
+          # OpenMP via Clang on Linux / macOS
+          - task: setup,a2f9b61079ce4333
+            if_os: linux,darwin
+            if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.llvm.path|None}}" != "None"'
+            name: lib-openmp,7958b973fc0d42a9
+
+          ######################################################################################
+          # CUDA libs
+          - task: setup,a2f9b61079ce4333
+            if: '{{params.use_cudnn|$False}}'
+            name: lib-cudnn,440a30eb25b64853
+
+          ######################################################################################
+          # Clone PyTorch source
+          - task: clone-git-to-cache,86919b3cfdd443d2
+            name: src-pytorchvision
+            url: 'https://github.com/pytorch/vision'
+            checkout: '{{params.checkout|$None}}'
+
+          # PyTorch depends heavily on submodules (e.g. pybind11, sleef, XNNPACK)
+          - task: cmd,c9ba0a88df394d7f
+            storage_key: init-pytorchvision-submodules
+            chdir: '{{global.clone-git-to-cache-src-pytorchvision.path_to_git_repo}}'
+            cmds:
+              - '{{global.git.qpath}} submodule update --init --recursive'
+
+          ######################################################################################
+          # Compute pip_install_env and check-file paths
+          - internal_func: customize_pytorchvision
+            internal_func_from_local_key: selected-program
+            internal_func_safe: True
+            _update: '{{ params.customize_pytorchvision|${} }}'
+#            compile: '{{params.compile|$None}}'
+
+          ######################################################################################
+          # Build and install PyTorch Python package into the active venv.
+          # pip install --no-build-isolation uses the current venv (not an isolated env),
+          # so the build-time requirements installed above are available to setup.py.
+          # cmake + ninja are invoked internally by setup.py; BUILD_DIR is {source}/build/.
+          - task: cmd,c9ba0a88df394d7f
+            storage_key: compile-program
+            save_script: '{{local.target_path}}//tmp-cmeta-compile-program{{global.host.vars.file_ext_bat}}'
+            chdir: '{{global.clone-git-to-cache-src-pytorchvision.path_to_git_repo}}'
+            env: '{{local.pip_install_env}}'
+            cmds:
+              - '{{global.python.qpath}} -m pip install --no-build-isolation -v .'
+
+
+  run:
+    uses:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         prepend:
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+
+         update:
+           target_exe:
+           profile_python: '{{params.profile_python|$None}}'
+           run_src_file_names: '{{local.run_src_file_names}}'
+           cmd: >-
+             {{global.python.qpath}}
+             {run_flags_after_exe}
+             {{params.run_flags|}}
+             {run_src_file_names_str_with_path}

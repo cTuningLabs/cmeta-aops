@@ -322,7 +322,7 @@ class CTool(InitCTool):
 
                     variations_compute.append(f'cu{ver}')
 
-                    post_flags = f'--index-url {cuda_url_prefix}{ver}'.replace('{url_extra}', url_extra)
+                    post_flags += f'--index-url {cuda_url_prefix}{ver}'.replace('{url_extra}', url_extra)
 
 
         elif 'rocm' in compute:
@@ -355,7 +355,7 @@ class CTool(InitCTool):
                 if found:
                     if post_flags != '': post_flags += ' '
                     variations_compute.append(f'rocm{ver}')
-                    post_flags = f'--index-url {rocm_url_prefix}{ver}'.replace('{url_extra}', url_extra)
+                    post_flags += f'--index-url {rocm_url_prefix}{ver}'.replace('{url_extra}', url_extra)
 
         elif 'xpu' in compute:
             if not skip_extras and 'xpu' not in extras:
@@ -367,7 +367,7 @@ class CTool(InitCTool):
             # Check XPU wheel
             if '--index-url ' not in post_flags:
                 if post_flags != '': post_flags += ' '
-                post_flags = f'--index-url {xpu_url_prefix}'.replace('{url_extra}', url_extra)
+                post_flags += f'--index-url {xpu_url_prefix}'.replace('{url_extra}', url_extra)
 
         ###########################################################################################
         # Add CPU as default base

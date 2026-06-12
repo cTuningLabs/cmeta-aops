@@ -1,0 +1,13 @@
+﻿uses:
+  - task: get-hf-model,b3392bae07d14e7e
+    repo: microsoft/swin-tiny-patch4-window7-224
+    auth: False
+    filenames:
+      model: pytorch_model.bin
+      config: config.json
+      preprocessor_config: preprocessor_config.json
+      readme: README.md
+    features:
+      library: pytorch
+
+result_from_ctx: '{{global.get-hf-model}}'

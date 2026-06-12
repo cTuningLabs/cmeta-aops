@@ -1,0 +1,20 @@
+artifact: 2b4e6ba087af4f77
+authors: Grigori Fursin
+category: model,f8ef4c0af87a4a9e
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+creation_timestamp: '2026-06-01T17:55:08.148100+00:00'
+features:
+  library: pytorch
+last_update_timestamp: '2026-06-09T08:35:00.979199+00:00'
+sort: 1000
+tags:
+- hf
+- pytorch
+- google
+- efficientnet-b4
+- image-classification
+- transformers
+- imagenet-1k
+- efficientnet
+- vision
+- apache-2.0

@@ -54,12 +54,9 @@ def get_device_name(device_type):
 
 def main():
 
+    # Check top device from cMeta
     cmeta_targets = os.environ.get('CMETA_TARGETS').split(',')
 
-    print ('='*80)
-    print ("CMETA_TARGETS:", cmeta_targets)
-
-    # Check top device
     device = 'cpu'
     if 'xpu' in cmeta_targets:
         device = 'xpu'
@@ -72,6 +69,8 @@ def main():
     elif 'xpu' in cmeta_targets:
         device = 'xpu'
 
+    print ('='*80)
+    print ("CMETA_TARGETS:", cmeta_targets)
 
     print ('')
     print (f'PyTorch target device: {device}')
@@ -100,6 +99,12 @@ def main():
 
     print ('')
     print ("Device Name:", get_device_name(device_type))
+
+    if torch.cuda.is_available():
+        print( "cuDNN enabled :", torch.backends.cudnn.enabled)
+        if torch.backends.cudnn.enabled:
+            print("cuDNN version  :", torch.backends.cudnn.version())
+
 
     try:
         # Create a dummy RGB image batch:

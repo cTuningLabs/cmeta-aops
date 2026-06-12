@@ -1,0 +1,10 @@
+﻿uses:
+  - task: get-hf-dataset,9865f4ce243f4984
+    repo: ylecun/mnist
+    filename: mnist//train-00000-of-00001.parquet
+    filenames:
+      train: mnist//train-00000-of-00001.parquet
+      test: mnist//test-00000-of-00001.parquet
+      readme: README.md
+
+result_from_ctx: '{{global.get-hf-dataset}}'

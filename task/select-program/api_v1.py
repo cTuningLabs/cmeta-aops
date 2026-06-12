@@ -143,7 +143,10 @@ class CTask(InitCTask):
 
                     if updates_cmd:
                         if not cmd:
-                            cmds = sorted(list(updates_cmd.keys()))
+                            cmds = _data.get('updates_cmd_keys')
+                            if not cmds:
+                                cmds = sorted(list(updates_cmd.keys()))
+
                             icmd = 0
 
                             if len(cmds) > 1 and con and not quiet:
@@ -180,7 +183,6 @@ class CTask(InitCTask):
 
                     # Finish desc
                     loaded_files[key]['data'] = _data        
-
 
         selected_program = {
             'path': artifact['path'],

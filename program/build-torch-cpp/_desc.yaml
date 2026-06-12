@@ -47,9 +47,10 @@ updates:
           - task: compiler,f3925b201c704bde
             lang: c
             compute: '{{global.target.compute}}'
-            use:
-              llvm:
-                version: '{{params.use.llvm.version|$None}}'
+# It's not useful and not needed
+#            use:
+#              llvm:
+#                version: '{{params.use.llvm.version|$None}}'
 
           - task: setup,a2f9b61079ce4333
             name: cmake,e26c11ebb3dd40ca

@@ -31,45 +31,82 @@ class CTask(InitCTask):
 
 
         repo = params.get('repo')
+        directory = params.get('directory')
         filename = params.get('filename')
+        filenames = params.get('filenames')
+        features = params.setdefault('features', {})
 
         skip_cmd = False
-        if not repo and not filename: 
-            return self.cm.error(f'HF repo and filename are not defined for "{__file__}"')
-        elif filename and not repo:
-            if not os.path.isfile(filename):
-                return self.cm.error(f'HF repo is not defined but file "{filename}" is not found in "{__file__}"')
+        if not (repo or directory or filename or filenames):
+            return self.cm.error(f'HF repo, directory, filename and/or filenames are not defined for "{__file__}"')
 
-            skip_cmd = True
-
+        skip_cmd = True if not repo else False
         ctx['tasks']['local']['skip_cmd'] = skip_cmd
 
-        if filename:
-            features = params.setdefault('features', {})
-            if 'library' not in features:
-                name, ext = os.path.splitext(filename)
-                if ext == '.gguf':
-                    features['library'] = 'gguf'
-                elif ext == '.pt':
-                    features['library'] = 'pytorch'
-                elif ext == '.onnx':
-                    features['library'] = 'onnx'
+        if not filenames: 
+            filenames = {}
 
-        if not skip_cmd:
+        if not repo:
+            if directory and not os.path.isdir(directory):
+                return self.cm.error(f'Local HF model is used but directory "{directory}" is not found ("{__file__}")')
+
+            if filename:
+                _filename = os.path.join(directory, filename) if directory else filename
+                if not os.path.isfile(_filename):
+                    return self.cm.error(f'Local HF model is used but file "{filename}" is not found ("{__file__}")')
+
+
+        if filename and 'model' not in filenames:
+            filenames['model'] = filename
+        elif not filename and 'model' in filenames:
+            filename = filenames['model']
+
+        if filenames:
+            ctx['tasks']['local']['filenames'] = filenames
+
+        xlibrary = features.get('library')
+        if filename and not xlibrary:
+            name, ext = os.path.splitext(filename)
+            exts = {'.gguf': 'gguf', '.pt': 'pytorch', '.onnx': 'onnx'}
+
+            xlibrary = exts.get(ext)
+            if xlibrary:
+                features['library'] = xlibrary
+
+        if features:
+            ctx['tasks']['local']['features'] = features
+
+        if skip_cmd:
+            if filename:
+                if not directory:
+                    directory = os.path.dirname(filename)
+                    filename = os.path.basename(filename)
+
+        else:
             ctx['tasks']['local']['repo'] = repo
 
-            xrepo = repo.replace('/', '--')
+            xrepo = repo.replace('/', '@')
+            if xlibrary:
+                xrepo += f'--{xlibrary}'
+
             ctx['tasks']['local']['xrepo'] = xrepo
 
+            files = filename.split(';') if filename else []
+            if filenames:
+                for k in filenames:
+                    f = filenames[k]
+                    if f not in files:
+                        files.append(f) 
+
+            ctx['tasks']['local']['files'] = files
 
             includes = ''
 
-            if filename:
-                for f in filename.split(';'):
-                    includes += f'--include {f}'
+            if files:
+                for f in files:
+                    includes += f' --include {f}'
 
             ctx['tasks']['local']['includes'] = includes
-
 
             path_file_cache_list = ctx['tasks'].get('global', {}).get('init', {}).get('file_cache')
             if path_file_cache_list:
@@ -88,22 +125,11 @@ class CTask(InitCTask):
                            pass
 
                 if path_file_cache:
-                    sub_directory = f'get-hf-model--{xrepo}'
-
-# FGG remarked because we can reuse multiple files in the same dir ...
-#                    if filename:
-#                        sub_directory += f'--{filename}'
-
+                    sub_directory = os.path.join('get-hf-model', xrepo)
                     directory = os.path.join(path_file_cache, sub_directory)
             else:
-                directory = params.get('directory')
                 if not directory:
                     directory = 'content'
-
-
-        else:
-            directory = os.path.dirname(filename)
-            filename = os.path.basename(filename)
 
         ctx['tasks']['local']['directory'] = directory
         ctx['tasks']['local']['filename'] = filename
@@ -141,30 +167,57 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
-        directory = ctx['tasks']['local'].get('directory')
-        filename = ctx['tasks']['local']['filename']
+        _local = ctx['tasks']['local']
 
-        if directory:
-            path = os.path.abspath(directory)
-            path_root = path
-            if filename:
-                path = os.path.join(path, filename)
-        else:
-            path = filename
-            path_root = os.path.dirname(path)
+        directory = _local.get('directory')
+        filename = _local['filename']
+        filenames = _local.get('filenames')
+        files = _local.get('files', {})
+        skip_cmd = _local['skip_cmd']
+        features = _local.get('features')
 
-        if filename and not os.path.isfile(path):
-            return self.cm.error(f'Model file "{path}" not found in "{__file__}"')
+        path_root = os.path.abspath(directory)
+        path = os.path.join(path_root, filename) if filename else path_root
 
-        if not filename and not os.path.isdir(path):
-            return self.cm.error(f'Model path "{path}" not found in "{__file__}"')
+        paths = {}
+        qpaths = {}
 
+        if filenames:
+            for k in filenames:
+                f = filenames[k]
+                p = os.path.join(path_root, f)
+                if not os.path.isfile(p):
+                    return self.cm.error(f'Model sub-file "{p}" not found in "{path_root}" ("{__file__})"')
+                paths[k] = p
+                qpaths[k] = self.cm.q(p)
 
         result['path'] = path
         result['qpath'] = self.cm.q(path)
 
         result['path_root'] = path_root
         result['qpath_root'] = self.cm.q(path_root)
- 
-        return result
 
+        result['skip_cmd'] = skip_cmd
+
+        if features:
+            result['features'] = features
+
+        _features = result.setdefault('features', {})
+
+        if paths:
+            _features['paths'] = paths
+            _features['qpaths'] = qpaths
+
+        _misc = result.setdefault('misc', {})
+        if directory:
+            _misc['directory'] = directory
+        if filename:
+            _misc['filename'] = filename
+        if filenames:
+            _misc['filenames'] = filenames
+        if files:
+            _misc['files'] = files
+
+        _misc['files'] = files
+
+        return result

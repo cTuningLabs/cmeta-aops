@@ -1,0 +1,171 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  run_src_file_names: 
+    - 'program.py'
+
+  output_files:
+    - tmp-cmeta-program-stats.json
+
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+
+  library: pytorch
+
+#params:
+#  compute: cuda
+
+updates:
+  compile:
+    skip: True
+
+  run:
+    uses:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+
+         prepend:
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+
+#           # Measuring memory usage on CPU
+#           - task: setup,a2f9b61079ce4333
+#             if_os: windows
+#             name: pip
+#             with:
+#               package: psutil 
+
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             with:
+               package: numpy
+
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             with:
+               package: torch
+
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             with:
+               package: torchvision
+
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             with:
+               package: datasets
+
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             with:
+               package: pillow
+
+updates_cmd_keys:
+  - train
+  - test
+  - run
+  - run_local_image
+
+updates_cmd:
+  train:
+    run:
+      uses:
+         - match:
+             task: setup-run,148f6c1fdb4247df
+
+           prepend:
+             - task: dataset,30e20c7489f14f84
+               dataset_tags: hf,ylecun,mnist
+
+           update:
+             target_exe:
+             profile_python: '{{params.profile_python|$None}}'
+             run_src_file_names: '{{local.run_src_file_names}}'
+             cmd: >-
+               {{global.python.qpath}}
+               {run_flags_after_exe}
+               {{params.run_flags|}} 
+               {run_src_file_names_str_with_path}
+               --mode=train
+               --train-dataset-path={{local.dataset.features.qpaths.train}}
+               --test-dataset-path={{local.dataset.features.qpaths.test}}
+               --train-batch={{params.train-batch|64}}
+               --test-batch={{params.test-batch|256}}
+               --epochs={{params.epochs|3}}
+               --output-model={{params.output-model|mnist_cnn.pt}}
+    local_vars:
+      +output_files:
+        - '{{params.output-model|mnist_cnn.pt}}'
+
+  test:
+    run:
+      uses:
+         - match:
+             task: setup-run,148f6c1fdb4247df
+
+           prepend:
+             - task: dataset,30e20c7489f14f84
+               dataset_tags: hf,ylecun,mnist
+
+           update:
+             target_exe:
+             profile_python: '{{params.profile_python|$None}}'
+             run_src_file_names: '{{local.run_src_file_names}}'
+             cmd: >-
+               {{global.python.qpath}}
+               {run_flags_after_exe}
+               {{params.run_flags|}} 
+               {run_src_file_names_str_with_path}
+               --mode=test
+               --test-dataset-path={{local.dataset.features.qpaths.test}}
+               --test-batch={{params.test-batch|256}}
+               --output-model={{params.output-model|mnist_cnn.pt}}
+
+  run:
+    run:
+      uses:
+         - match:
+             task: setup-run,148f6c1fdb4247df
+
+           prepend:
+             - task: dataset,30e20c7489f14f84
+               dataset_tags: image,png,digits
+
+           update:
+             target_exe:
+             profile_python: '{{params.profile_python|$None}}'
+             run_src_file_names: '{{local.run_src_file_names}}'
+             cmd: >-
+               {{global.python.qpath}}
+               {run_flags_after_exe}
+               {{params.run_flags|}} 
+               {run_src_file_names_str_with_path}
+               --mode=run
+               --output-model={{params.output-model|mnist_cnn.pt}}
+               --image={qinput_files.data}
+    local_vars:
+      input_files:
+        data: '{{local.dataset.path}}'
+
+  run_local_image:
+    run:
+      uses:
+         - match:
+             task: setup-run,148f6c1fdb4247df
+
+           update:
+             target_exe:
+             profile_python: '{{params.profile_python|$None}}'
+             run_src_file_names: '{{local.run_src_file_names}}'
+             cmd: >-
+               {{global.python.qpath}}
+               {run_flags_after_exe}
+               {{params.run_flags|}} 
+               {run_src_file_names_str_with_path}
+               --mode=run
+               --output-model={{params.output-model|mnist_cnn.pt}}
+               --image={{params.image}}

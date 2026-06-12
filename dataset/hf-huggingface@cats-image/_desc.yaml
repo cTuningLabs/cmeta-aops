@@ -1,0 +1,8 @@
+﻿uses:
+  - task: get-hf-dataset,9865f4ce243f4984
+    repo: huggingface/cats-image
+    filenames:
+      dataset: cats_image.jpeg
+      readme: README.md
+
+result_from_ctx: '{{global.get-hf-dataset}}'

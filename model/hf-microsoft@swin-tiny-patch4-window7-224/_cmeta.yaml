@@ -1,0 +1,18 @@
+artifact: 311be271aec04b94
+authors: Grigori Fursin
+category: model,f8ef4c0af87a4a9e
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+creation_timestamp: '2026-06-01T17:55:08.148100+00:00'
+features:
+  library: pytorch
+last_update_timestamp: '2026-06-10T09:17:57.304687+00:00'
+tags:
+- hf
+- pytorch
+- microsoft
+- image-classification
+- transformers
+- imagenet-1k
+- swing
+- vision
+- apache-2.0

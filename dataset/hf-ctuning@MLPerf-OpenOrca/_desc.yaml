@@ -1,0 +1,6 @@
+﻿uses:
+uses:
+  - task: get-hf-dataset,9865f4ce243f4984
+    repo: ctuning/MLPerf-OpenOrca
+
+result_from_ctx: '{{global.get-hf-dataset}}'

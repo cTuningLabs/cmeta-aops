@@ -1,0 +1,29 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+
+store_global: True
+storage_key: "get-hf-dataset"
+cache: True
+
+params_map:
+  arg2: repo
+  arg3: filename
+
+cache_params:
+  - repo
+
+uses_before_init:
+  - task: host,96ac7118439c4490
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: hf
+
+uses2:
+  - task: cmd,c9ba0a88df394d7f
+    if: "'{{params.auth|False}}' == 'True'"
+    cmd: '{{global.hf.qpath}} auth login'
+
+  - task: cmd,c9ba0a88df394d7f
+    if: "not {{local.skip_cmd}}"
+    cmd: '{{global.hf.qpath}} download {{local.repo}} {{local.includes}} --local-dir {{local.directory}}'

@@ -185,6 +185,8 @@ class Category(InitCategory):
                                     if substitute:
                                         target_uses[index] = substitute
 
+                                    break
+
                     else:
                         if key3.startswith('+'):
                             value3 = updates[key2][key3]

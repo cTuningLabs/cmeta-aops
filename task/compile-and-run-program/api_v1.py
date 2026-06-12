@@ -42,6 +42,11 @@ class CTask(InitCTask):
         artifact = selected_program['artifact']
         path = artifact['path']
 
+        cmeta_ref_parts = artifact['cmeta_ref_parts']
+
+        artifact_alias = cmeta_ref_parts.get('artifact_alias')
+        artifact_uid = cmeta_ref_parts['artifact_uid']
+
         desc = copy.deepcopy(selected_program['loaded_files']['_desc'].get('data', {})) # May change during context merge
 
         program_api_code = selected_program.get('api_code')
@@ -134,7 +139,38 @@ class CTask(InitCTask):
             target_path = ctx_tasks['local'].get('target_path')
             if not target_path:
                 x = 'tmp' if not params.get('target_tmp') else params['target_tmp']
-                target_path = os.path.join(path, x)
+
+                # Check if in current path or cache
+                r = self.cm.access({
+                  'category':self.cmeta['uses_categories']['config'],
+                  'command':'get', 
+                  'arg1':'task',
+                })
+                if self.cm.catch_error(r): return r
+
+                cfg = r['config_cmeta']
+
+                skip_cache = cfg.get('compile_and_run_program',{}).get('skip_cache', False)
+
+                if skip_cache:
+                    target_path = os.path.join(path, x)
+                else:
+                    # Check if in current path or cache
+                    artifact_au = artifact_alias if artifact_alias else artifact_uid
+                    r = self.cm.access({
+                      'category':self.cmeta['uses_categories']['cache'],
+                      'command':'get', 
+                      'arg1':f'task--program--{artifact_au}',
+                      'tags': [
+                         "task",
+                         "c36be4b9314a45e0",
+                         "compile-and-run-program",
+                         "05437a1aae224270",
+                      ]
+                    })
+                    if self.cm.catch_error(r): return r
+
+                    target_path = os.path.join(r['artifact']['path'], x)
 
         target_path = target_path.replace('//', os.sep)
 

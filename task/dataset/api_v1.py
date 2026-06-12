@@ -21,11 +21,12 @@ class CTask(InitCTask):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
     ############################################################
-    def run(self, 
-            ctx, 
+    def run(self,
+            ctx,
             name: str = None,
             dataset_tags: str = None,
             filename: str = None,
+            filedesc: str = None,
     ):
         """
         """
@@ -45,9 +46,21 @@ class CTask(InitCTask):
 
         _global = ctx_tasks['global']
 
+        result = {'return':0}
 
         if filename and os.path.isfile(filename):
+            # Here local file is forced to bypass all the logic of downloading, etc
             path = filename
+
+            result['path'] = path
+            result['qpath'] = self.cm.q(path)
+
+            path_root = path
+            if os.path.isfile(path):
+                path_root = os.path.dirname(path)
+
+            result['path_root'] = path
+            result['qpath_root'] = self.cm.q(path)
 
         else:
             p = {'category': self.cmeta['uses_categories']['utils'],
@@ -63,7 +76,7 @@ class CTask(InitCTask):
             }
 
             r = self.cm.access(p)
-            if self.cm.catch_error(r, fail16=True): 
+            if self.cm.catch_error(r, fail16=True):
                 r['return'] = 1 # Force fail if dataset not found
                 return r
 
@@ -76,54 +89,140 @@ class CTask(InitCTask):
                 print ('')
                 print (f'{space}INFO: Selected dataset "{artifact_au}"')
 
-            # Check files
+            # Backward compatibility: datasets that ship their data inside a "files" subdirectory
             path_to_files = os.path.join(artifact_path, 'files')
-            files = []
 
-            if not os.path.isdir(path_to_files):
-                return self.cm.error(f'dataset files not found in "{path_to_files}" ("{__file__}")')
+            if os.path.isdir(path_to_files):
+                # Check files
+                fs = os.listdir(path_to_files)
+                if len(fs) == 0:
+                    return self.cm.error(f'dataset files not found in "{path_to_files}" ("{__file__}")')
 
-            fs = os.listdir(path_to_files)
-            if len(fs) == 0:
-                return self.cm.error(f'dataset files not found in "{path_to_files}" ("{__file__}")')
+                if filename:
+                    if filename not in fs:
+                        return self.cm.error(f'dataset file "{filename}" not found in "{path_to_files}" ("{__file__}")')
 
-            if filename:
-                if filename not in fs:
-                    return self.cm.error(f'dataset file "{filename}" not found in "{path_to_files}" ("{__file__}")')
-    
-                path = os.path.join(path_to_files, filename)
+                    path = os.path.join(path_to_files, filename)
+                else:
+                    fs = sorted(fs)
+                    ifs = 0
+
+                    if len(fs) > 1 and con and not quiet:
+                        print ('')
+                        print (f'{space}Available dataset files:')
+
+                        print ('')
+                        for n in range(0, len(fs)):
+                            x = fs[n]
+                            print (f'{space}{n}) {x}')
+                        print ('')
+
+                        while True:
+                            x = input('Please select a dataset file or press Enter for 0: ').strip()
+
+                            if x == "":
+                                ifs = 0
+                                break
+
+                            if x.isdigit() and int(x)>=0 and int(x)<len(fs):
+                                ifs = int(x)
+                                break
+
+                        print ('')
+
+                    path = os.path.join(path_to_files, fs[ifs])
+
+                result['path'] = path
+                result['qpath'] = self.cm.q(path)
+
             else:
-                fs = sorted(fs)
-                ifs = 0
+                # Select among _desc* descriptions and prepare the dataset via "uses" (same as model)
+                files = [
+                    f for f in os.listdir(artifact_path)
+                    if f.startswith("_desc")
+                ]
 
-                if len(fs) > 1 and con and not quiet:
-                    print ('')
-                    print (f'{space}Available dataset files:')
+                if len(files) == 0:
+                    return self.cm.error(f'dataset descriptions not found in "{artifact_path}" ("{__file__}")')
 
-                    print ('')
-                    for n in range(0, len(fs)):
-                        x = fs[n]
-                        print (f'{space}{n}) {x}')
-                    print ('')
+                if filedesc:
+                    filedesc = '_desc-' + filedesc
+                    if filedesc not in files:
+                        return self.cm.error(f'dataset file "{filedesc}" not found in "{artifact_path}" ("{__file__}")')
 
-                    while True:
-                        x = input('Please select a dataset file or press Enter for 0: ').strip()
+                    path_desc = os.path.join(artifact_path, filedesc)
+                else:
+                    fs = sorted(files)
+                    ifs = 0
 
-                        if x == "":
-                            ifs = 0
-                            break
+                    if len(fs) > 1 and con and not quiet:
+                        print ('')
+                        print (f'{space}Available dataset files:')
 
-                        if x.isdigit() and int(x)>=0 and int(x)<len(fs):
-                            ifs = int(x)
-                            break
+                        print ('')
+                        for n in range(0, len(fs)):
+                            x = fs[n][6:]
+                            print (f'{space}{n}) {x}')
+                        print ('')
 
-                    print ('')
+                        while True:
+                            x = input('Please select a dataset file or press Enter for 0: ').strip()
 
-                path = os.path.join(path_to_files, fs[ifs])
+                            if x == "":
+                                ifs = 0
+                                break
 
-        result = {'return':0}
+                            if x.isdigit() and int(x)>=0 and int(x)<len(fs):
+                                ifs = int(x)
+                                break
 
-        result['path'] = path
-        result['qpath'] = self.cm.q(path)
- 
+                        print ('')
+
+                    path_desc = os.path.join(artifact_path, fs[ifs])
+
+                # Load file
+                r = self.cm.utils.files.read_file(path_desc)
+                if self.cm.catch_error(r, fail16=True):
+                    r['return'] = 1 # Force fail if file not found
+                    return r
+
+                _desc = r['data']
+
+                _uses = _desc.get('uses')
+                result_from_ctx = _desc.get('result_from_ctx')
+
+                if _uses:
+                    if con and verbose:
+                        print ('')
+                        print (f'{space}Preparing dataset ...')
+
+                    p = {'category': self.category_alias + ',' + self.category_uid,
+                         'command': 'use',
+                         'con': con,
+                         'quiet': quiet,
+                         'verbose': verbose,
+                         'ctx': ctx,
+                         'desc': _uses,
+                         'local': None, #ctx['tasks']['local'],
+                         'task_artifact_alias': self.artifact_alias,
+                         'task_artifact_uid': self.artifact_uid,
+                         'task_artifact_path': self.artifact_path,
+#                         'self_desc': _desc,
+                        }
+
+                    r = self.cm.access(p)
+
+#                    rx = self.cm.utils.files.write_file('d:\\xyz.json', {'ctx':ctx, 'result':r}, safe_dump = True)
+#                    if self.cm.catch_error(rx): return rx
+
+                    if self.cm.catch_error(r): return r
+
+                    if result_from_ctx:
+                        r = self.cm.utils.common.expand_string(result_from_ctx, ctx['tasks'])
+                        if self.cm.catch_error(r): return r
+
+                        result = r['value']
+
+                        result['return'] = 0
+
         return result

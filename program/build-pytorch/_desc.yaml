@@ -43,6 +43,11 @@ updates:
           - task: setup,a2f9b61079ce4333
             name: python,c00fb574d8ca4463
 
+          # Host compiler
+          - task: setup,a2f9b61079ce4333
+            name: msvc,e823256bbbe54b4e
+            if_os: windows
+
           # Extra C compiler required by PyTorch's CMake
           - task: compiler,f3925b201c704bde
             lang: c
@@ -96,15 +101,17 @@ updates:
             with:
               package: packaging
 
-#          - task: setup,a2f9b61079ce4333
-#            name: pip,c4987bc3955347f2
-#            with:
-#              package: mkl-devel
-#            if_os: windows,linux
-#            if: >-
-#              "cpu" in {{global.target.compute|$[]}}
-#              or
-#              "xpu" in {{global.target.compute|$[]}}
+          - task: setup,a2f9b61079ce4333
+            name: pip,c4987bc3955347f2
+            with:
+              package: mkl-devel
+            if_os: windows,linux
+            if: >-
+              {{params.use_mkl|$False}} and (
+              "cpu" in {{global.target.compute|$[]}}
+              or
+              "xpu" in {{global.target.compute|$[]}}
+              )
 
           ######################################################################################
           # OpenMP via Clang on Linux / macOS
@@ -116,13 +123,8 @@ updates:
           ######################################################################################
           # CUDA libs
           - task: setup,a2f9b61079ce4333
-            if: '"cuda" in {{global.target.compute|$[]}}'
-            name: lib-cuda,ac9daedec465409e
-            with:
-               lib_names:
-                 - $cublas
-                 - $cudart
-                 - $cudnn
+            if: '{{params.use_cudnn|$False}}'
+            name: lib-cudnn,440a30eb25b64853
 
           ######################################################################################
           # Clone PyTorch source

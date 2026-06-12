@@ -1,0 +1,8 @@
+﻿uses:
+  - task: get-hf-model,b3392bae07d14e7e
+    repo: bartowski/google_gemma-3-1b-it-qat-GGUF
+    filename: google_gemma-3-1b-it-qat-Q4_K_M.gguf
+    features:
+      library: gguf
+
+result_from_ctx: '{{global.get-hf-model}}'

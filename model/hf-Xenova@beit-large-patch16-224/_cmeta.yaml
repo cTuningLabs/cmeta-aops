@@ -1,0 +1,18 @@
+artifact: d184069c1dea44e9
+authors: Grigori Fursin
+category: model,f8ef4c0af87a4a9e
+copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+creation_timestamp: '2026-06-11T00:00:00.000000+00:00'
+features:
+  library: onnx
+last_update_timestamp: '2026-06-11T15:20:01.964018+00:00'
+tags:
+- hf
+- onnx
+- microsoft
+- beit
+- image-classification
+- transformers
+- imagenet-1k
+- vision
+- apache-2.0

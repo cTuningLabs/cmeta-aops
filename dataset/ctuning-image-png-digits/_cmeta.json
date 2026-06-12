@@ -1,0 +1,15 @@
+{
+  "artifact": "fc576c252bc9431c",
+  "authors": "Grigori Fursin",
+  "category": "dataset,fdd7c5ded7464161",
+  "copyright": "Copyright (C) 2026 Grigori Fursin. All rights reserved.",
+  "creation_timestamp": "2026-06-09T08:57:01.179819+00:00",
+  "last_update_timestamp": "2026-06-11T13:19:57.137609+00:00",
+  "tags": [
+    "ctuning",
+    "image",
+    "png",
+    "small",
+    "digits"
+  ]
+}

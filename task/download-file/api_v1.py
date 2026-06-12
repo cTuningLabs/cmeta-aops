@@ -134,6 +134,9 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             ctx: dict,        # cMeta context
+            chdir: str = None,
+            chdir_and_stay: str = None,
+            mkdir: str = None,
             url: str = None,    
             env: dict = {},
             skip_ssl_certificate: bool = False,
@@ -192,7 +195,29 @@ class CTask(InitCTask):
                     md5sums = [md5sum]
 
         ###################################################################
-        workdir = os.getcwd()
+        cur_dir = os.getcwd()
+
+        workdir = cur_dir
+
+        if mkdir:
+            if con and verbose:
+                print ('')
+                print (f'{space}INFO: mkdir -p "{chdir}"')
+            os.makedirs(mkdir, exist_ok=True)
+
+        if chdir:
+            if con and verbose:
+                print ('')
+                print (f'{space}INFO: cd "{chdir}"')
+            os.chdir(chdir)
+            workdir = chdir
+
+        elif chdir_and_stay:
+            if con and verbose:
+                print ('')
+                print (f'{space}INFO: cd "{chdir_and_stay}"')
+            os.chdir(chdir_and_stay)
+            workdir = chdir_and_stay
 
         if not directory:
             path_to_files = workdir
@@ -284,23 +309,24 @@ class CTask(InitCTask):
                         f1 = os.path.join(directory, f1)
                         f2 = os.path.join(directory, f2)
 
-                    os.replace(f1, f2)
+                    if os.path.isfile(f1):
+                        os.replace(f1, f2)
 
-                    if len(md5sums)>0:
-                        md5sum = md5sums[u]
+                        if len(md5sums)>0:
+                            md5sum = md5sums[u]
 
-                        if verbose:
-                            print ('')
-                            print (f'{space}RUN: Checking md5sum for {filename}: {md5sum}')
+                            if verbose:
+                                print ('')
+                                print (f'{space}RUN: Checking md5sum for {filename}: {md5sum}')
 
-                        r = self.cm.utils.files.md5sum(path = filename_with_path)
-                        if self.cm.catch_error(r): return r
+                            r = self.cm.utils.files.md5sum(path = filename_with_path)
+                            if self.cm.catch_error(r): return r
 
-                        md5sum_calculated = r['md5sum']
+                            md5sum_calculated = r['md5sum']
 
-                        if md5sum_calculated != md5sum:
-                            error = f'md5sum failed: {md5sum_calculated}'
-                            success = False
+                            if md5sum_calculated != md5sum:
+                                error = f'md5sum failed: {md5sum_calculated}'
+                                success = False
 
                 if success:
                     break    
@@ -378,9 +404,11 @@ class CTask(InitCTask):
             os.chmod(check_file, st.st_mode | stat.S_IXUSR)
 
         result['path_to_files'] = path_to_files
+        result['qpath_to_files'] = self.cm.q(path_to_files)
 
         if filename_with_path:
             result['path_to_file'] = filename_with_path
+            result['qpath_to_file'] = self.cm.q(filename_with_path)
 
         if filesize:
             result['file_size'] = filesize
@@ -396,6 +424,12 @@ class CTask(InitCTask):
                     print (f'{space}Downloaded file: {filename_with_path}')
                 else:
                     print (f'{space}Path to files: {path_to_files}')
+
+        if chdir:
+#            if con and verbose:
+#                print ('')
+#                print (f'{space}INFO: cd "{cur_dir}"')
+            os.chdir(cur_dir)
 
         return result
 

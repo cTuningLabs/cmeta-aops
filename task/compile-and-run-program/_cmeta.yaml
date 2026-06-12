@@ -3,12 +3,11 @@ authors: Grigori Fursin
 category: task,c36be4b9314a45e0
 copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
 creation_timestamp: '2026-01-19T15:40:51.387488+00:00'
-last_update_timestamp: '2026-05-04T15:28:45.541646+00:00'
+last_update_timestamp: '2026-06-09T08:08:43.220197+00:00'
 min_cmeta_version_api: 0.27.5
 tags:
 - compile-and-run
 - program
 uses_categories:
-  tool: tool,c393ba5c6fa14f66
-  utils: utils,234ce5e3262e4d52
-
+  cache: cache,1ebdcc1cc30c4022
+  config: config,cc6bfe174be847ed
