@@ -166,12 +166,12 @@ class CProgram(InitCProgram):
                     env['USE_KINETO'] = 'OFF' # various issues
                 if 'TORCH_XPU_ARCH_LIST' not in env: 
                     env['TORCH_XPU_ARCH_LIST'] = 'bmg' # reducing compilation time for a test
-#                if 'USE_SYSTEM_XNNPACK' not in env:
-#                    env['USE_SYSTEM_XNNPACK'] = 'OFF'
-#                if 'USE_XNNPACK' not in env:
-#                    env['USE_XNNPACK'] = 'OFF'
-#                if 'USE_MKLDNN' not in env:
-#                    env['USE_MKLDNN'] = 'OFF' # various issues
+                if 'USE_SYSTEM_XNNPACK' not in env:
+                    env['USE_SYSTEM_XNNPACK'] = 'OFF'
+                if 'USE_XNNPACK' not in env:
+                    env['USE_XNNPACK'] = 'OFF'
+                if 'USE_MKLDNN' not in env:
+                    env['USE_MKLDNN'] = 'OFF' # various issues
 
 #                cflags = env.setdefault('CFLAGS', '')
 #                cflags += ' -DSLEEF_ENABLE_FLOAT128=OFF -DENABLEFLOAT128=OFF'

@@ -27,9 +27,9 @@ params:
     d:
       # Disable optional components to speed up the build; re-enable as needed
       USE_DISTRIBUTED: 'OFF'
-      USE_QNNPACK: 'OFF'
-      USE_NNPACK: 'OFF'
-      USE_FBGEMM: 'OFF'
+#      USE_QNNPACK: 'OFF'
+#      USE_NNPACK: 'OFF'
+#      USE_FBGEMM: 'OFF'
 
 ###################################################################################################
 updates:
