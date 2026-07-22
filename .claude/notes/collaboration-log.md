@@ -108,10 +108,23 @@ docs/cmeta-aops/. Keep it factual and current.
   (`setup`/`cmd` delegation, detect/install/build). Captured in `docs/cmeta-aops/
   {task-engine,tool-abstraction}.md`.
 
+## Git checkpoint
+- Session work committed on branch **`session-cmeta-docs-skills`** (commit `7c2dcf1`),
+  branched off `main` (`1327ba4`). 21 files: `README.md`, `docs/cmeta-aops/*`,
+  `.claude/{skills/*,notes/*}`, `task/run-claude/*`, `tool/{claude,codex}/_desc.yaml`,
+  `tool/openclaw/*`, `program/test-hello-c-cpu/*`.
+- **`main` is unchanged**; to promote: `git switch main && git merge session-cmeta-docs-skills`.
+- The author's own pre-staged files (`AGENTS.md`, `CLAUDE.md`, `pyproject.toml`,
+  `tests/basic_tests/*`) were deliberately **left staged and uncommitted** — not ours.
+- Nothing pushed. Personal memory (outside the repo) also updated:
+  `~/.claude/projects/.../memory/` (docs-and-resume-points, user-working-style).
+
 ## Open threads / TODO (not yet done)
 - Optionally fold the YAML `key:`-colon and npm-shim gotchas into the `add-tool` skill's
-  gotchas section.
+  gotchas section (the `--reindex`-after-`_cmeta`-edit and `--quiet` gotchas are already
+  in `add-program`).
 - Optionally add an `openclaw` `test.bat` mirroring sibling tools.
-- Nothing has been committed to git this collaboration — stage/commit on request.
 - A real versioned install (to prove the `install_cmd_version` branch end-to-end) was
   deliberately NOT run (would overwrite a global CLI); do it only on explicit go-ahead.
+- `program/test-hello-c-cpu` is kept as a minimal worked example; remove if unwanted
+  (`cx program rm ctuninglabs@cmeta-aops:test-hello-c-cpu --force`).
