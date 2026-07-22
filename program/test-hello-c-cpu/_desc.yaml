@@ -1,0 +1,27 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  lang: c
+  src_dir: src
+  src_file_names:
+    - program.c
+  target_file_name: hello
+  output_files:
+    - tmp-cmeta-program-stats.json
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+
+params:
+  compile:
+    fast: True          # -O3
+
+updates:
+  run:
+    uses:
+      - match: { task: setup-run,148f6c1fdb4247df }
+        update:
+          cmd_main: '{{params.name|world}}'

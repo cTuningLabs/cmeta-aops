@@ -1,0 +1,19 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+
+uses:
+  # Bootstrap host (OS detection, env, vars) - normally already resolved from global
+  - task: runner,1e48cc0c5f6041a5
+
+  # Detect / install the "claude" tool and expose {{global.claude.qpath}}
+  - task: setup,a2f9b61079ce4333
+    name: claude,383841b240c74e88
+
+  # Launch claude interactively (no -p / --print => interactive TUI).
+  # cmd runs with capture_output=False and no timeout, so stdin/stdout stay
+  # attached to the current terminal.
+  # Anything after "--" on the cx command line arrives as "unparsed" and is
+  # quoted and appended straight to the claude CLI (specific flags via api_v1 later).
+  - task: cmd,c9ba0a88df394d7f
+    cmd: '{{global.claude.qpath}}'
+    unparsed: '{{params.unparsed|$None}}'

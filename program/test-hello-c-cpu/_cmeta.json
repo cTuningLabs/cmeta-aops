@@ -1,0 +1,13 @@
+{
+  "artifact": "161812983a0c424a",
+  "authors": "Grigori Fursin",
+  "category": "program,22788f3c30d04e6d",
+  "constraints": {
+    "supported_compute": [
+      "cpu"
+    ]
+  },
+  "copyright": "Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.",
+  "creation_timestamp": "2026-07-22T16:04:27.959379+00:00",
+  "note": "minimal hello-world C program with a stats output file"
+}

@@ -1,0 +1,59 @@
+authors: Grigori Fursin
+copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+
+# openclaw is an npm-distributed AI chat CLI (https://openclaw.ai).
+# The executable is an npm bin shim: "openclaw" on Linux/macOS, "openclaw.cmd" on Windows.
+names:
+  - openclaw{{global.host.vars.file_ext_exe}}   # openclaw (nix) — .exe won't exist but is harmless
+  - openclaw.cmd                                 # npm bin shim on Windows
+
+# CalVer, e.g. "2026.7.1" or "2026.6.5-beta.1"
+match_version:
+  - regex: '([0-9]{4}\.[0-9]+\.[0-9]+[0-9A-Za-z.\-]*)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+# Versions come from the npm registry (the GitHub tags are release-publish hashes,
+# not semver). `npm view ... --json` prints one quoted version per line.
+cmd_get_versions: 'npm view openclaw versions --json'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: node-js,238f15e1d6184359
+    with:
+      add_tool_path_to_env: True   # put node/npm bin on PATH for the command below
+cmd_get_versions_regex: '"([0-9][^"]*)"'
+cmd_get_versions_regex_group: 1
+
+install_help_text: |
+  Please install "openclaw" as described at https://openclaw.ai/
+  (or run "npm install -g openclaw")
+
+# Install cross-platform via npm (identical command on every OS, version-pinnable).
+install_cmd:
+  all: 'npm install -g openclaw'
+
+install_cmd_version:
+  all: 'npm install -g openclaw@{{simple_version}}'
+
+# openclaw needs Node.js (>=22); set it up first and expose npm on PATH.
+install_uses:
+  all:
+    - task: setup,a2f9b61079ce4333
+      name: node-js,238f15e1d6184359
+      with:
+        add_tool_path_to_env: True
+
+# npm global bin locations, to detect openclaw after a global install.
+extra_paths:
+  linux:
+    - "{{user_home}}/.npm-global/bin"
+    - "{{user_home}}/.local/bin"
+    - "/usr/local/bin"
+    - "/home/linuxbrew/.linuxbrew/bin"
+  darwin:
+    - "{{user_home}}/.npm-global/bin"
+    - "/usr/local/bin"
+    - "/opt/homebrew/bin"
+  windows:
+    - "{{global.host.os_env.APPDATA}}\\npm"
