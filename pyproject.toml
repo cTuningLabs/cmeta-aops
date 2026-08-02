@@ -1,0 +1,32 @@
+# Test harness config for the cmeta-aops content repository.
+#
+# This repo is NOT a Python package (its content is cMeta artifacts). This file
+# exists only so that `uv run python -m pytest tests` resolves an environment with
+# `pytest` and the `cmeta` engine available.
+#
+# `cmeta` is published on PyPI (Apache-2.0), but this harness deliberately pulls it
+# from the local framework checkout via the `__symlinks/cmeta` path source, so tests
+# run against the engine you are developing rather than the last release (create the
+# symlink first with `_create_symlinks_for_ai_context_min.bat` on Windows). If you
+# already have `cmeta` + `pytest` importable, plain `python -m pytest tests` works too.
+
+[project]
+name = "cmeta-aops-tests"
+version = "0.0.0"
+description = "Test harness for the cmeta-aops content/plugin repository"
+requires-python = ">=3.9"
+dependencies = [
+    "pytest>=7",
+    "cmeta",
+]
+
+[tool.uv]
+# Do not try to build/install this repo itself as a package.
+package = false
+
+[tool.uv.sources]
+cmeta = { path = "__symlinks/cmeta", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

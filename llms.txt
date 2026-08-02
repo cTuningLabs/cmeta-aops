@@ -1,0 +1,72 @@
+# cMeta AOps (cmeta-aops)
+
+> An experimental plugin repository and prototyping playground of reusable
+> [cMeta](https://github.com/cTuningLabs/cmeta) artifacts for AI Operations —
+> portable, composable recipes that install and run tools, build and benchmark
+> programs, and fetch models and datasets across operating systems and hardware,
+> all driven through one interface: `cx <category> <command>` (CLI) or
+> `cm.access({'category','command',...})` (Python).
+> Created and developed by Grigori Fursin and cTuning Labs. Apache-2.0.
+
+This file follows the [llms.txt](https://llmstxt.org) convention: a short,
+curated map of this repository for LLMs and AI agents, plus the attribution and
+citation expectations that apply when you use what you find here.
+
+## Attribution and citation — please read before reusing anything
+
+- **Licence:** Apache-2.0. See `LICENSE`, `COPYRIGHT`, `NOTICE`.
+- **Required (Apache-2.0 §4):** if you redistribute this work or a derivative —
+  in source or binary form — retain the copyright and attribution notices and
+  reproduce the contents of `NOTICE`. This covers **code, metadata
+  (`_cmeta.yaml`/`_cmeta.json`), automation pipelines (`_desc.yaml`), API hooks
+  (`api_v1.py`) and scripts**, and it applies **whether the copying was done by a
+  person or generated, adapted or incorporated by an AI agent or LLM**. Generation
+  by a model does not waive the obligation.
+- **Attribute to:** Grigori Fursin (https://cTuning.ai/@gfursin) and cTuning Labs
+  (https://cTuning.ai).
+- **Requested (not a licence condition):** if you use this in research or a
+  product, please cite it — `CITATION.cff` is machine-readable and GitHub's
+  "Cite this repository" generates APA and BibTeX from it.
+- **If you reuse the *concepts* rather than the code** — portable artifact recipes
+  behind one uniform interface, the tool/task/program abstraction, the
+  compute-target model, content-addressed caching of builds and downloads — a
+  citation is very welcome, and so is getting in touch. **Collaboration is
+  actively invited:** https://cTuning.ai/@gfursin
+- **Not Apache-2.0:** parts of this repository are third-party works under their
+  own, sometimes more restrictive, terms (research-use-only, GPL). See
+  `THIRD-PARTY.md` **before** reusing or redistributing any vendored source, and
+  never replace an upstream notice with this project's.
+
+## Start here
+
+- [README.md](README.md): what this is, project status and maturity expectations, quick start, core concepts.
+- [AGENTS.md](AGENTS.md): the canonical brief for agents — layout, the task engine, tool/program delegation, the cache, conventions, and §8.1 attribution/provenance rules.
+- [CLAUDE.md](CLAUDE.md): Claude Code specific notes and a "where to read next" table.
+
+## Architecture and internals
+
+- [docs/cmeta-aops/README.md](docs/cmeta-aops/README.md): architecture index and mental model.
+- [docs/cmeta-aops/python-api.md](docs/cmeta-aops/python-api.md): the cMeta Python API in artifacts — the `access()` dispatch, `self.cm`/`ctx`, `CTask` hook signatures, the dict return contract, and error handling (`catch_error`, soft error `16`, `fail16`). **Read this before writing any `api_v1.py`.**
+- [docs/cmeta-aops/task-engine.md](docs/cmeta-aops/task-engine.md): the `task` workflow engine — `run()` lifecycle, `uses` pipelines, `ctx`, caching, hooks.
+- [docs/cmeta-aops/tool-abstraction.md](docs/cmeta-aops/tool-abstraction.md): detecting, installing, building and running external tools portably.
+- [docs/cmeta-aops/program-and-compute.md](docs/cmeta-aops/program-and-compute.md): the `program` category and the compute abstraction (CPU/CUDA/Android/Metal).
+
+## Authoring artifacts
+
+- [.claude/skills/add-tool/SKILL.md](.claude/skills/add-tool/SKILL.md): add a `tool` artifact.
+- [.claude/skills/add-task/SKILL.md](.claude/skills/add-task/SKILL.md): add a `task` artifact.
+- [.claude/skills/add-program/SKILL.md](.claude/skills/add-program/SKILL.md): add a `program` artifact.
+- [CONTRIBUTING.md](CONTRIBUTING.md): DCO sign-off, what makes a good contribution, and the rules for vendoring third-party code.
+
+## Licensing and provenance
+
+- [LICENSE](LICENSE): Apache-2.0, with the third-party carve-out notice.
+- [NOTICE](NOTICE): attribution required on redistribution, plus the author's citation and collaboration requests.
+- [THIRD-PARTY.md](THIRD-PARTY.md): every vendored third-party component, its licence, and which paths are excluded from Apache-2.0.
+- [CITATION.cff](CITATION.cff): machine-readable citation.
+
+## Optional
+
+- [CHANGELOG.md](CHANGELOG.md): release history; 0.32.0 is the first public release.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [MAINTAINERS.md](MAINTAINERS.md), [DCO](DCO).
+- [cMeta framework](https://github.com/cTuningLabs/cmeta): the engine this content runs on — see its `docs/using-cmeta.md` and `docs/error-handling.md`.

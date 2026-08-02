@@ -203,4 +203,4 @@ Valid architectures: sm_35, sm_50, sm_60, sm_70, sm_80, sm_90
 
 ## License
 
-Copyright (C) 2026 Grigori Fursin and cTuning Labs. All rights reserved.
+Copyright (C) 2026 Grigori Fursin and cTuning Labs. Licensed under Apache-2.0 (see LICENSE).

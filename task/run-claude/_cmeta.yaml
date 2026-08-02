@@ -1,0 +1,13 @@
+artifact: e5d500ebc094460f
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-07-20T00:00:00.000000+00:00'
+last_update_timestamp: '2026-07-20T15:07:58.799700+00:00'
+note: Set up the "claude" tool and run it interactively via CLI.
+tags:
+- run
+- claude
+- ai
+- cli
+- interactive

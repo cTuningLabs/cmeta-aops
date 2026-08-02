@@ -1,7 +1,7 @@
 artifact: aa153aec64024537
 authors: Grigori Fursin
 category: model,f8ef4c0af87a4a9e
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: 2026 Grigori Fursin. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-06-01T17:55:08.148100+00:00'
 features:
   library: pytorch

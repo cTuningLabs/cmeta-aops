@@ -1,0 +1,76 @@
+cff-version: 1.2.0
+message: "If you use cMeta AOps in your research, please cite it as below."
+title: "cMeta AOps (cmeta-aops)"
+abstract: >-
+  cmeta-aops is an experimental plugin repository and prototyping playground of
+  reusable cMeta artifacts for AI Operations: portable, composable recipes that
+  install and run tools, build and benchmark programs, and fetch models and
+  datasets across operating systems and hardware targets through a single uniform
+  interface. It supports open science, collaborative research, experimentation and
+  portable AI-agent workflows, encoding accumulated R&D practice as executable,
+  machine-readable automations that humans and AI agents can discover, compose and
+  extend. Components are exploratory and vary in maturity.
+type: software
+authors:
+  - family-names: Fursin
+    given-names: Grigori
+    website: "https://cTuning.ai/@gfursin"
+    affiliation: "cTuning Labs"
+    orcid: "https://orcid.org/0000-0001-7719-1624"
+version: "0.32.0"
+date-released: "2026-08-02"
+license: Apache-2.0
+repository-code: "https://github.com/cTuningLabs/cmeta-aops"
+url: "https://cTuning.ai"
+keywords:
+  - reproducible research
+  - benchmarking
+  - AI operations
+  - workflow automation
+  - portable workflows
+  - co-design
+  - machine learning systems
+
+# This repository is content for the cMeta framework; please also cite the
+# framework itself when citing this collection.
+references:
+  - type: software
+    title: "cMeta (Common Meta Framework)"
+    authors:
+      - family-names: Fursin
+        given-names: Grigori
+        orcid: "https://orcid.org/0000-0001-7719-1624"
+    license: Apache-2.0
+    repository-code: "https://github.com/cTuningLabs/cmeta"
+    url: "https://cTuning.ai"
+  - type: article
+    title: "Collective knowledge: organizing research projects as a database of reusable components and portable workflows with common interfaces"
+    authors:
+      - family-names: Fursin
+        given-names: Grigori
+        orcid: "https://orcid.org/0000-0001-7719-1624"
+    year: 2021
+    journal: "Philosophical Transactions of the Royal Society A: Mathematical, Physical and Engineering Sciences"
+    volume: 379
+    issue: 2197
+    doi: 10.1098/rsta.2020.0211
+  - type: article
+    title: "Enabling more efficient and cost-effective AI/ML systems with Collective Mind, virtualized MLOps, MLPerf, Collective Knowledge Playground and reproducible optimization tournaments"
+    authors:
+      - family-names: Fursin
+        given-names: Grigori
+    year: 2024
+    doi: 10.48550/arXiv.2406.16791
+    url: "https://arxiv.org/abs/2406.16791"
+    notes: "arXiv preprint 2406.16791"
+  - type: article
+    title: "Framing AI System Benchmarking as a Learning Task: FlexBench and the Open MLPerf Dataset"
+    authors:
+      - family-names: Fursin
+        given-names: Grigori
+      - family-names: Altunay
+        given-names: Daniel
+    year: 2025
+    doi: 10.48550/arXiv.2509.11413
+    url: "https://arxiv.org/abs/2509.11413"
+    notes: "arXiv preprint 2509.11413"

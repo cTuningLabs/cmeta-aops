@@ -1,6 +1,5 @@
 """
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
-All rights reserved.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. Licensed under Apache-2.0 (see LICENSE).
 
 Minimal verification script run after build-pytorch compiles and installs PyTorch.
 Prints version and available compute backends so the build can be confirmed.

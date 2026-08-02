@@ -1,6 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 store_global: True
 storage_key: "clone-git-to-cache-{{$params.name}}"  # force ($ - use alias from cname, $$ - use UID from cname)
 cache: True
@@ -20,25 +19,14 @@ cache_params:
   - update_submodules
 
 cache_extra_params:
-#  tag: '{{params.git_tag|$None}}'
   version: '{{params.version|$None}}'
   src: True
-#  name: llama-cpp
 
 cache_extra_alias: '{{params.name}}--{{params.checkout}}'
 
 cache_extra_tags: 
   - '{{params.name}}'
   - github
-
-#uses:
-#  - task: clone-git,af9422df6ea241ec
-#    url: '{{params.url|$None}}'
-#    directory: '{{params.directory|$None}}'
-#    tag: '{{params.tag|$None}}'
-#    checkout: '{{params.checkout|$None}}'
-#    path: '{{cparams.path|$None}}'
-#    update: '{{cparams.update|$None}}'
 
 sort_keys:
   - 'cmeta.params.name'
