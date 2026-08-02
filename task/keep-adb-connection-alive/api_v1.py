@@ -1,10 +1,8 @@
 """
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
-All rights reserved.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
 
-Proprietary and confidential.
-This software may not be copied, modified, distributed, or used
-without explicit permission from the copyright holder.
+Licensed under the Apache License, Version 2.0.
+See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import time

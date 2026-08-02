@@ -1,6 +1,5 @@
 <!--
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-Proprietary and confidential.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. Licensed under Apache-2.0 (see LICENSE).
 
 Working log for AI agents / collaborators on cmeta-aops. Append newest entries at the
 top. This is a resume-point, not user-facing docs — the polished findings live in
@@ -23,9 +22,12 @@ docs/cmeta-aops/. Keep it factual and current.
 
 ## Established facts / conventions (verified in-session)
 
-- **Copyright header** for new files: `Copyright (C) 2025-2026 Grigori Fursin and
-  cTuning Labs. All rights reserved.` + proprietary block. `cx <cat> add` scaffolds a
-  *different* auto-copyright — fix it to match siblings.
+- **Copyright header** for new files (since the 2026-08-02 Apache-2.0 relicensing):
+  `Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.` + the Apache-2.0 block.
+  In `_cmeta.*` meta the field reads `2025-2026 Grigori Fursin and cTuning Labs. See
+  the COPYRIGHT and LICENSE files in the project root for details.` `cx <cat> add`
+  scaffolds a *different* auto-copyright — fix it to match siblings. Vendored
+  third-party sources keep their upstream notices verbatim (see `THIRD-PARTY.md`).
 - **`cx <cat> add`** on an existing folder says "already exists" and does NOT index;
   use **`cx <cat> index <ref>`** to register a hand-authored folder.
 - **Reindex after editing a MATCHED `_cmeta.json` field** (verified with add-program):

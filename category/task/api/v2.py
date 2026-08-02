@@ -1,10 +1,8 @@
 """
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
-All rights reserved.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
 
-Proprietary and confidential.
-This software may not be copied, modified, distributed, or used
-without explicit permission from the copyright holder.
+Licensed under the Apache License, Version 2.0.
+See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
@@ -583,19 +581,28 @@ class Category(InitCategory):
                 if self.cm.catch_error(r): return r
                 cache_extra_alias = r['string']
 
-        cache_extra_params = cparams.get('cache_extra_params')
-        if not cache_extra_params:
-            cache_extra_params = cdesc.get('cache_extra_params')
-            if cache_extra_params:
-                r = self.cm.utils.common.expand_strings_in_dict(cache_extra_params, ctx_tasks)
-                if self.cm.catch_error(r): return r
 
-        cache_extra_tags = cparams.get('cache_extra_tags')
-        if not cache_extra_tags:
-            cache_extra_tags = cdesc.get('cache_extra_tags')
-            if cache_extra_tags:
-                r = self.cm.utils.common.expand_strings_in_list(cache_extra_tags, ctx_tasks)
-                if self.cm.catch_error(r): return r
+        cache_extra_params = copy.deepcopy(cdesc.get('cache_extra_params', {}))
+        if cache_extra_params:
+            r = self.cm.utils.common.expand_strings_in_dict(cache_extra_params, ctx_tasks)
+            if self.cm.catch_error(r): return r
+        _cache_extra_params = cparams.get('cache_extra_params')
+        if _cache_extra_params:
+            self.cm.utils.common.deep_merge(cache_extra_params, _cache_extra_params, append_lists=True)
+
+
+        cache_extra_tags = copy.deepcopy(cdesc.get('cache_extra_tags', []))
+        if cache_extra_tags:
+            r = self.cm.utils.common.expand_strings_in_list(cache_extra_tags, ctx_tasks)
+            if self.cm.catch_error(r): return r
+        _cache_extra_tags = cparams.get('cache_extra_tags')
+        if _cache_extra_tags:
+            if type(_cache_extra_tags)==str:
+                _cache_extra_tags = _cache_extra_tags.split(',')
+            for x in _cache_extra_tags:
+                if x not in cache_extra_tags:
+                    cache_extra_tags.append(x)
+
 
         update = cparams.get('update', False)
         clean = cparams.get('clean', False)

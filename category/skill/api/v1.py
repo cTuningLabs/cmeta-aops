@@ -1,3 +1,10 @@
+"""
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
+
+Licensed under the Apache License, Version 2.0.
+See the COPYRIGHT and LICENSE files in the project root for details.
+"""
+
 import os
 
 from cmeta.category import InitCategory

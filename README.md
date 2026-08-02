@@ -3,9 +3,9 @@
 [![Test cMeta core AOps](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core.yml/badge.svg)](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core.yml)
 [![Test cMeta core AOps via cTuning](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core-via-ctuning.yml/badge.svg)](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core-via-ctuning.yml)
 
-**`cmeta-aops`** is a curated collection of ready-to-use *artifacts* for AI Operations
-(AIOps) — recipes that **install and run tools, build and benchmark programs, and fetch
-models and datasets** in a portable, unified way across operating systems and hardware
+**`cmeta-aops`** is a collection of *artifacts* for AI Operations (AIOps) — recipes
+that **install and run tools, build and benchmark programs, and fetch models and
+datasets** in a portable, unified way across operating systems and hardware
 (Linux, Windows, macOS, Android; CPU, CUDA, and more).
 
 Instead of a pile of one-off scripts, every capability here is a small, composable
@@ -14,6 +14,53 @@ artifact you drive through **one command**:
 ```bash
 cx <category> <command> [args] [--flags]
 ```
+
+## Project status
+
+**An experimental plugin repository and prototyping playground for reusable cMeta
+automations and artifacts — supporting open science, collaborative research,
+experimentation and portable AI-agent workflows.**
+
+This repository is where I encode my own R&D as **executable, composable workflows**
+rather than as prose, scripts and half-remembered command lines. Each artifact is a
+small piece of accumulated practice — how to detect and install a toolchain, how to
+build and benchmark a program on a given target, how to fetch a model — written once
+in a portable form and then reused, composed and driven by humans or AI agents through
+the same `cx` / `access()` interface.
+
+The longer-term intent is personal and deliberately ambitious: to grow this into the
+substrate for **my own AI-driven research assistant** — an "open scientist" in a
+modest, literal sense. Not a system that invents science, but a growing body of
+machine-readable, self-describing automations that an agent can discover, compose and
+extend on its own, so that experiments, builds and benchmarks can be set up, varied
+and repeated without re-deriving the same work each time. The artifacts are the
+memory; the agent is the operator.
+
+That direction is the continuation of a long line of work on making code, data, models
+and knowledge reusable, portable and reproducible — the cTuning framework, Collective
+Knowledge (CK), and MLCommons Collective Mind (CM/CMX). The vision behind it is set
+out in the author's publications, listed in [`CITATION.cff`](CITATION.cff) and in the
+framework's
+[history and publications](https://github.com/cTuningLabs/cmeta/blob/main/docs/history.md);
+see also [How to cite](#how-to-cite) below.
+
+**What that means in practice — please read before relying on anything here:**
+
+- **Maturity varies a lot.** A few paths have CI coverage across
+  `{Linux, Windows, macOS} × Python {3.9, 3.14}` — the core, and a handful of
+  clang/C++, NumPy and PyTorch task recipes. Note these workflows are
+  **manually triggered** (`workflow_dispatch`), not run on every push, so a green
+  badge reflects the last deliberate run rather than the current commit. Everything
+  outside [`.github/workflows/`](.github/workflows/) is unverified by CI, and some
+  artifacts are exploratory probes kept because they encode something worth not
+  losing.
+- **Expect to adapt things.** Recipes reach out to real toolchains, package managers,
+  compilers and hardware. A recipe that works on one machine may need a version pin, a
+  flag or a path adjusted on another. That is the normal case, not a defect.
+- **Interfaces here are less stable than the engine's.** The cMeta framework aims for
+  a small, stable core; this repository is deliberately freer to move.
+- **Contributions and issue reports are welcome** — see [Contributing](#contributing) —
+  but this is a research and prototyping project, not a supported product.
 
 ## Goals
 
@@ -110,22 +157,50 @@ cx config set default --meta.default_git=git@github.com:
 ```
 
 
+# Contributing
+
+Contributions are welcome — new tools, tasks and programs, portability fixes, and
+documentation. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow.
+
+This project uses the **Developer Certificate of Origin (DCO)** rather than a CLA:
+sign your commits with `git commit -s`. Please read the third-party section of
+`CONTRIBUTING.md` before vendoring any source you did not write.
+
+See also [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) and
+[`MAINTAINERS.md`](MAINTAINERS.md).
+
 # Copyright and license
 
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
 
-No part of this Software, including but not limited to source code, object code,
-scripts, configuration files, JSON/YAML metadata and descriptions, datasets,
-documentation, examples, specifications, outputs, and related materials
-(collectively, the "Materials"), may be copied, reproduced, modified, distributed,
-reverse engineered, analyzed, processed, or otherwise used for the purpose of
-training, pre-training, fine-tuning, adapting, evaluating, benchmarking, improving,
-or developing any artificial intelligence, machine learning, large language model,
-foundation model, automated code generation system, or similar technology,
-without the prior written permission of the copyright holders.
+Licensed under the **Apache License, Version 2.0** — see [`LICENSE`](LICENSE),
+[`COPYRIGHT`](COPYRIGHT) and [`NOTICE`](NOTICE). This is the same license as the
+[cMeta framework](https://github.com/cTuningLabs/cmeta).
 
-The use of the Materials, directly or indirectly, by any person, organization,
-contractor, agent, affiliate, customer, end user, or automated system for the
-creation of derivative, competing, or functionally similar products or services,
-including through the assistance of artificial intelligence systems, is prohibited
-unless expressly authorized in writing by the copyright holders.
+**Attribution when you reuse this.** Apache-2.0 §4 requires anyone redistributing
+this work, or a derivative of it, to retain its attribution notices and reproduce
+the contents of [`NOTICE`](NOTICE). That covers **metadata (`_cmeta.*`), automation
+pipelines (`_desc.yaml`) and scripts as much as code**, and it applies whether the
+copying was done by a person or generated, adapted or incorporated by an **AI agent
+or LLM** — generation by a model does not waive the obligation. AI agents working in
+this repository should also read [`llms.txt`](llms.txt) and
+[`AGENTS.md` §8.1](AGENTS.md).
+
+**Using the ideas rather than the code?** Concepts aren't covered by copyright, so
+this is an invitation rather than a requirement: if this project's approach is
+useful to yours, a citation is very welcome — and I would rather collaborate than
+be copied quietly. Get in touch: [cTuning.ai/@gfursin](https://cTuning.ai/@gfursin).
+
+> **Third-party components.** Parts of this repository are third-party works that
+> are **not** covered by the Apache-2.0 license and are redistributed under their
+> own terms — some of which are more restrictive (research-use-only, or GPL).
+> See [`THIRD-PARTY.md`](THIRD-PARTY.md) for the full list of affected paths,
+> their copyright holders and their licenses, and review it before redistributing
+> this repository or building a product on it.
+
+## How to cite
+
+If you use cMeta AOps in your research, see [`CITATION.cff`](CITATION.cff) (GitHub
+renders it as "Cite this repository"). Please also consider citing the
+[cMeta framework](https://github.com/cTuningLabs/cmeta) and the author's earlier
+work on Collective Knowledge and Collective Mind that this project builds upon.

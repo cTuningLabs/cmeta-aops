@@ -76,11 +76,14 @@ Fastest correct route: **clone the nearest existing tool** and edit.
 - Strategy A → copy `tool/git/_desc.yaml`.
 - Strategy B → copy `tool/ninja/_desc.yaml` + `tool/ninja/api_v1.py`.
 
-After any hand-edit or file move: **`cx --reindex`**.
+After a hand-edit to `_cmeta.*` meta: **`cx <cat> update <ref>`** (or
+`cx <cat> index <ref>` to register a hand-made folder). `cx --reindex` rebuilds
+every category and is slow — keep it for moves/renames and bulk `git pull`.
 
-**Copyright headers are load-bearing.** Copy the verbatim proprietary block
-from a sibling `.py`; keep the `authors:`/`copyright:` lines at the top of
-`_desc.yaml`. Do not relicense.
+**Copyright headers are load-bearing.** Copy the Apache-2.0 block from a sibling
+`.py`; keep the `authors:`/`copyright:` lines at the top of `_desc.yaml`. The one
+exception is vendored third-party source — keep its upstream notice verbatim and
+list it in `THIRD-PARTY.md`.
 
 ---
 
@@ -91,8 +94,7 @@ command, and regex-matches the version.
 
 ```yaml
 authors: Grigori Fursin
-copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 names:
   - bazel{{global.host.vars.file_ext_exe}}   # {{...file_ext_exe}} = ".exe" on Windows, "" elsewhere
 
@@ -182,6 +184,10 @@ Subclass `CTool` and implement `install()`. Contract (from
     re-detects at `found_path`.
   - `{'return':16, 'install_cmd': cmd}` — "I can't handle this case; fall back to
     the declarative `install_cmd`." (Return 16 = soft/"not handled".)
+
+> Soft errors in full — why `catch_error` lets `16` through, when to escalate with
+> `fail16=True`, and when to *return* a `16` yourself:
+> [`docs/cmeta-aops/python-api.md`](../../../docs/cmeta-aops/python-api.md).
 - Other optional `CTool` hooks: `init(ctx,params)` (resolve/inject params, set
   `storage_key`), `check_params`, `customize_install_cmd(ctx, install_cmd, params, env, timeout, uninstall_cmd)` (tweak the shell command), `post_install`, `finish_dynamic_result`.
 
@@ -206,8 +212,7 @@ chmod +x.
 
 ```yaml
 authors: Grigori Fursin
-copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 names:
   - bazel{{global.host.vars.file_ext_exe}}
 
@@ -243,11 +248,9 @@ install_help_text: |
 ```python
 """
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
-All rights reserved.
 
-Proprietary and confidential.
-This software may not be copied, modified, distributed, or used
-without explicit permission from the copyright holder.
+Licensed under the Apache License, Version 2.0.
+See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
@@ -408,8 +411,8 @@ rebuild with `--update`, wipe with `--clean`.
       (bazel's own tool UID stays out of code — this is the **category** UID, same in every tool's `api_v1.py`).
 - [ ] Strategy B: pass `filename` to `download-file` so the binary is stored under the plain tool name.
 - [ ] Strategy B: return `install_cmd: None` on success, or `{'return':16,'install_cmd':cmd}` to fall back.
-- [ ] Ran `cx --reindex` after editing YAML.
+- [ ] Refreshed the index with the narrowest command (`cx <cat> update|index <ref>`) after editing `_cmeta.*` meta; a `_desc.yaml`-only edit needs none.
 - [ ] Verified with `cx tool run <name> -- --version` (real run, not just `--info`); used `--install` for unattended install.
-- [ ] Verbatim proprietary copyright headers preserved; referenced sub-tasks by `alias,UID`.
+- [ ] Apache-2.0 copyright header copied from a sibling (upstream notices on vendored third-party source left verbatim); referenced sub-tasks by `alias,UID`.
 - [ ] Don't touch author scratch siblings (`*.yaml2`, `*.py2`, `*.arc1`, `tmp*/`).
 ```

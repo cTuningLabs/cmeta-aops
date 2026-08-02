@@ -1,0 +1,11 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+params_map:
+  arg2: checkout
+
+uses:
+  - task: clone-git-to-cache,86919b3cfdd443d2
+    name: src-mlperf-inference
+    url: https://github.com/mlcommons/inference
+    checkout: '{{params.checkout|$None}}'
+    cache_extra_tags: '{{params.extra_tags|$None}}'

@@ -1,6 +1,6 @@
 /*
 Converted from C++ to plain C by GitHub Copilot (GPT-4.1)
-Copyright (C) 2026 Grigori Fursin and cTuning Labs. All rights reserved.
+Copyright (C) 2026 Grigori Fursin and cTuning Labs. Licensed under Apache-2.0 (see LICENSE).
 */
 
 #include <stdint.h>

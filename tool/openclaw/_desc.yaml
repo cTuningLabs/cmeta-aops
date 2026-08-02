@@ -1,6 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 # openclaw is an npm-distributed AI chat CLI (https://openclaw.ai).
 # The executable is an npm bin shim: "openclaw" on Linux/macOS, "openclaw.cmd" on Windows.
 names:

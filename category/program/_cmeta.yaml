@@ -3,7 +3,7 @@ authors: Grigori Fursin
 base_category_default_api_versions:
   '1': 1
 category: category,dd9ea50e7f76467f
-copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-04-02T09:57:21.604315+00:00'
 last_api_version: 1
 last_update_timestamp: '2026-05-04T15:28:44.701068+00:00'

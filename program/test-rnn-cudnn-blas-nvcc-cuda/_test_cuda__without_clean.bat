@@ -1,2 +1,0 @@
-cx program run test-rnn-cudnn-blas-nvcc-cuda --compile.fastest  -v -j --save_here -q -- -seqLength130 -numLayers8 -inputSize2048 -hiddenSize2048 -projSize2048 -miniBatch128 -dataType1 -mathPrecision1
-:: --clean

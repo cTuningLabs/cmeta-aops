@@ -1,7 +1,7 @@
 artifact: d184069c1dea44e9
 authors: Grigori Fursin
 category: model,f8ef4c0af87a4a9e
-copyright: Copyright (C) 2026 Grigori Fursin. All rights reserved.
+copyright: 2026 Grigori Fursin. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-06-11T00:00:00.000000+00:00'
 features:
   library: onnx

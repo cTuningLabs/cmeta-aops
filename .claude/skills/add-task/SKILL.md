@@ -60,7 +60,8 @@ cx task add ctuninglabs@cmeta-aops:run-claude --yaml   # writes task/run-claude/
 
 `--yaml` matches the siblings (which use `_cmeta.yaml`); omit for `_cmeta.json`.
 The generated `copyright:` may differ from siblings — fix it to
-`Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.`
+`2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in
+the project root for details.`
 
 Fastest correct route: **clone the nearest existing task** and edit. Copy a
 `_desc.yaml` whose shape matches your intent (e.g. `task/test-claude/` for
@@ -82,7 +83,9 @@ ways to register it:
 > `_cmeta.*`, moving/creating folders, or adding tags.
 
 **Copyright headers are load-bearing.** Keep the `authors:`/`copyright:` lines
-atop `_desc.yaml`; copy the verbatim proprietary block into any `.py`. Don't relicense.
+atop `_desc.yaml`; copy the Apache-2.0 block from a sibling into any `.py`. The one
+exception is vendored third-party source — keep its upstream notice verbatim and
+list it in `THIRD-PARTY.md`.
 
 ---
 
@@ -92,8 +95,7 @@ Minimal shape (a task that sets up `python` then reports it — like `test-pytho
 
 ```yaml
 authors: Grigori Fursin
-copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 uses:
   - task: runner,1e48cc0c5f6041a5      # bootstrap host (OS/env/vars) — usually already in global
   - task: setup,a2f9b61079ce4333       # detect/install a tool
@@ -190,11 +192,9 @@ cache → `uses2` → **`run`** → cache write → **`finish_dynamic_result`**.
 ```python
 """
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
-All rights reserved.
 
-Proprietary and confidential.
-This software may not be copied, modified, distributed, or used
-without explicit permission from the copyright holder.
+Licensed under the Apache License, Version 2.0.
+See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
@@ -243,6 +243,10 @@ fail; `{'return':16}` = soft "not found/not handled". Check peer calls with
 `self.cm.catch_error(r)` (`fail16=True` to also treat 16 as error). Cross-category
 calls go through `self.cmeta['uses_categories']['<name>']`, never a hard-coded alias.
 
+> Full treatment — dispatch, `self.cm`/`ctx`, hook signatures, the return contract,
+> soft errors and the `fail16` escalation idiom (with the real `task/compiler`
+> example): [`docs/cmeta-aops/python-api.md`](../../../docs/cmeta-aops/python-api.md).
+
 **Command-function naming** (engine convention): `run(self, ctx, foo="")` → typed
 kwargs + `ctx`; a single-`params`-dict form (`foo`/`foo__`, trailing `__` stripped
 from the CLI name) is used where the signature is dynamic.
@@ -283,7 +287,7 @@ Key facts this relies on:
 artifact: e5d500ebc094460f      # fresh 16-hex UID (python -c "import uuid;print(uuid.uuid4().hex[:16])")
 authors: Grigori Fursin
 category: task,c36be4b9314a45e0
-copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 tags:
   - run
   - claude
@@ -296,8 +300,7 @@ note: Set up the "claude" tool and run it interactively via CLI.
 ### `task/run-claude/_desc.yaml`
 ```yaml
 authors: Grigori Fursin
-copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 uses:
   # Bootstrap host (OS detection, env, vars) - normally already resolved from global
   - task: runner,1e48cc0c5f6041a5
@@ -358,4 +361,4 @@ Add a `test.bat` mirroring siblings if the task warrants a CLI recipe.
 - [ ] Strategy B: honored the return contract (`{'return':0}` / `>0` / `16`); did PATH/env reuse in `finish_dynamic_result` so it survives caching.
 - [ ] Ran `cx task index <ref>` (or `cx --reindex`) after adding the folder / changing `_cmeta.*`; a `_desc.yaml`-only edit needs neither.
 - [ ] Verified with a real run (safe passthrough, not `--info` for pipeline-only tasks); used `-j` to read the trace.
-- [ ] Verbatim proprietary copyright headers preserved; didn't touch author scratch siblings (`*.yaml2`, `*.py2`, `*.arc1`, `tmp*/`, `cmeta-task-saved-*.json`).
+- [ ] Apache-2.0 copyright header copied from a sibling; upstream notices on any vendored third-party source left verbatim (and added to `THIRD-PARTY.md`); didn't touch author scratch siblings (`*.yaml2`, `*.py2`, `*.arc1`, `tmp*/`, `cmeta-task-saved-*.json`).

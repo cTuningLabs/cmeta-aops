@@ -1,6 +1,5 @@
 <!--
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-Proprietary and confidential.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. Licensed under Apache-2.0 (see LICENSE).
 -->
 
 # The `task` category — the workflow engine
@@ -114,6 +113,10 @@ Per-entry modifiers (all optional, all values templated against `ctx['tasks']`):
     (and `cmeta-task-saved-*.json` with `--save`).
 
 ## `CTask` hooks (`api_v1.py`)
+
+> For the calling convention, the dict **return contract** and **error handling**
+> (`self.cm.catch_error`, soft error `16`, `fail16=True`), see
+> [python-api.md](python-api.md).
 
 `InitCTask` (`category/task/api/ctask.py`) is the tiny base. Concrete tasks override,
 all optional; the engine calls each if present, in order:

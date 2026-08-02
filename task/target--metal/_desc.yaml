@@ -1,6 +1,5 @@
 authors: Grigori Fursin
-copyright: Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 store_global: True
 storage_key: target--metal
 cache: True

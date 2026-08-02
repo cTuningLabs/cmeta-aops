@@ -1,4 +1,17 @@
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
 
-Use of this software and related materials is governed by the accompanying
-license agreement. No permission is granted except as expressly provided therein.
+This repository contains content artifacts for the cMeta framework
+(https://github.com/cTuningLabs/cmeta), developed by the same author and
+licensed under the same Apache 2.0 license.
+
+Portions of this repository are third-party works redistributed under their own
+separate terms and are NOT covered by the Apache 2.0 license. See THIRD-PARTY.md
+for the full list of those components, their copyright holders, their licenses
+and the paths they occupy.
+
+Redistribution requires retaining the attribution notices and reproducing the
+contents of the NOTICE file (Apache-2.0 section 4). This applies to code,
+metadata, automation pipelines and scripts alike, and whether the copying was
+done by a person or by an AI agent.
+
+See the LICENSE, NOTICE and THIRD-PARTY.md files in the project root for details.

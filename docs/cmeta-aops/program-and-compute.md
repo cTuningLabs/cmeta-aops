@@ -1,6 +1,5 @@
 <!--
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-Proprietary and confidential.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. Licensed under Apache-2.0 (see LICENSE).
 -->
 
 # The `program` category & the `compute` abstraction
@@ -135,8 +134,9 @@ and OS/compute libs `lib-openssl`, `lib-openmp`, `lib-cuda`, `lib-cudnn`,
   the canonical demonstration of the compute×language matrix over one template.
 - **`lib-*`:** `lib-xopenme`, `lib-polybench`, `lib-milepost`.
 - **Classic benchmarks:** `polybench-cpu-gemm`, `polybench-gemm-cpu-cuda`,
-  `cbench-automotive-susan`, `milepost-codelet-…-susan-codelet-10-1`,
-  `test-rnn-cudnn-blas-nvcc-cuda`.
+  `cbench-automotive-susan`, `milepost-codelet-…-susan-codelet-10-1`.
+  Several of these vendor third-party sources under terms that are **not**
+  Apache-2.0 — see [`THIRD-PARTY.md`](../../THIRD-PARTY.md) before reusing them.
 - **`build-*`** (real source builds via compile-cmd override): `build-pytorch`,
   `build-pytorchvision`, `build-torch-cpp`, `build-llama-cpp`.
 - **Inference / run apps:** `llama-cpp`, `image-classification-pytorch`,

@@ -1,3 +1,8 @@
+# Agents
+.claude/settings.local.json
+CLAUDE.local.md
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -98,7 +103,9 @@ ipython_config.py
 #   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
-#uv.lock
+#   NOTE: our uv.lock pins `cmeta` via a machine-local path source (__symlinks/cmeta),
+#   so it is not portable and is intentionally ignored here.
+uv.lock
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
@@ -205,3 +212,75 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ---------------------------------------------------------------------------
+# Un-ignore cMeta artifacts whose alias collides with a generic template rule
+# above. `target/` (Rust build dir) and `venv/` (Python env) would otherwise
+# shadow the real task artifacts `task/target/` and `task/venv/`, silently
+# refusing any new file added inside them.
+# ---------------------------------------------------------------------------
+!task/target/
+!task/target/**
+!task/venv/
+!task/venv/**
+
+# ---------------------------------------------------------------------------
+# cMeta AOps: generated run artifacts (kept locally, never published).
+# These are produced by `cx <category> run` and capture the FULL environment of
+# the machine that ran them — %PATH%, installed toolchains, absolute local
+# paths and user names. Do not commit.
+# ---------------------------------------------------------------------------
+tmp/
+tmp-*/
+*tmp-cmeta-*
+*cmeta-task-saved-*
+*_repro_ctx_*
+save-script-*.bat
+save-script-*.sh
+
+# Compiled build outputs left beside sources by program/task runs
+*.class
+*.obj
+*.exe
+*.o
+*.a
+*.lib
+
+# Author's scratch/backup siblings (kept locally).
+# Convention: a trailing digit (optionally + letters) on the extension marks a
+# manual backup, e.g. _desc.yaml2, program.mojo6, api_v1.py.arc99b.
+*.arc*
+*.yaml[0-9]*
+*.yml[0-9]*
+*.json[0-9]*
+*.py[0-9]*
+*.mojo[0-9]*
+*.rs[0-9]*
+*.toml[0-9]*
+*.js[0-9]*
+*.ts[0-9]*
+*.swift[0-9]*
+*.java[0-9]*
+*.go[0-9]*
+*.c[0-9]*
+*.h[0-9]*
+*.cpp[0-9]*
+*.bat[0-9]*
+*.sh[0-9]*
+*.md[0-9]*
+*.txt[0-9]*
+*.old
+*.bak
+*.orig
+*.save
+*-OLD
+*-NEW
+
+# Author's local Windows workflow scripts and AI-context symlinks
+# (encode local paths and agent prompts).
+/_run_claude*
+/_run_tests.bat
+/_create_symlinks*
+/__symlinks/
+/CLAUDE_local_sessions.md
+.vscode/

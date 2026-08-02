@@ -1,10 +1,8 @@
 """
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. 
-All rights reserved.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
 
-Proprietary and confidential.
-This software may not be copied, modified, distributed, or used
-without explicit permission from the copyright holder.
+Licensed under the Apache License, Version 2.0.
+See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
@@ -57,10 +55,31 @@ class CTask(InitCTask):
 
             if path_file_cache:
                 path = os.path.join(path_file_cache, 'git-' + params['name'])
-                checkout = params.get('checkout')
-                if not checkout:
-                    checkout = 'current'
-                path = os.path.join(path, checkout)
+                version_to_dir = params.get('version_to_dir', False)
+                skip_checkout_dir = params.get('skip_checkout_dir', False)
+
+                root_dir = ''
+
+                if params.get('root_dir'):
+                    root_dir = params['root_dir']
+                else:
+                    if version_to_dir:
+                        if not params.get('version'):
+                            return self.cm.error(f'version_to_dir is True but version is not defined in "{__file__}" ')
+
+                        root_dir += params['version']
+
+                    if not skip_checkout_dir:
+                        checkout = params.get('checkout')
+                        if not checkout:
+                            checkout = 'current'
+
+                        if root_dir != '':
+                            root_dir += '-'
+
+                        root_dir += checkout
+
+                path = os.path.join(path, root_dir)
                 os.makedirs(path, exist_ok=True)
 
         run_control = ctx_tasks['run_control']

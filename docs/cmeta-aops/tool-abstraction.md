@@ -1,6 +1,5 @@
 <!--
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights reserved.
-Proprietary and confidential.
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. Licensed under Apache-2.0 (see LICENSE).
 -->
 
 # The `tool` category — portable detect / install / build / run
