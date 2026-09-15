@@ -4,6 +4,7 @@
   "category": "task,c36be4b9314a45e0",
   "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",
   "creation_timestamp": "2026-01-19T15:40:39.448037+00:00",
+  "desc": "Enable long file paths in the Windows registry so deep artifact trees do not break tools (Windows only).",
   "tags": [
     "enable",
     "long",
@@ -11,4 +12,3 @@
     "win"
   ]
 }
-

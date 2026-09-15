@@ -10,6 +10,7 @@ constraints:
   - linux
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+desc: "NVIDIA CUDA compiler (nvcc), detected inside the CUDA toolkit together with a host compiler, for compile-and-run CUDA programs."
 last_update_timestamp: '2026-05-16T15:21:50.948530+00:00'
 tags:
 - lang-cuda

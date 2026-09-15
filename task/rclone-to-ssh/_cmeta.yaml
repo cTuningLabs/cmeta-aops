@@ -1,0 +1,20 @@
+artifact: b7242e8b049b4533
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-09-08T10:19:54.199610+00:00'
+desc: "Sync, copy or bisync a local directory to a plain SSH host with rclone through an on-the-fly sftp remote: no rclone.conf entry, no stored credentials."
+last_update_timestamp: '2026-09-08T13:20:26.904344+00:00'
+note: Push a local directory to a plain SSH host with rclone, with no rclone.conf
+  entry - the remote is built on the fly as ":sftp:" driven by the system ssh binary,
+  so hosts, keys, ports and jump hosts all come from ~/.ssh/config.
+tags:
+- run
+- rclone
+- sync
+- copy
+- bisync
+- backup
+- ssh
+- sftp
+- remote

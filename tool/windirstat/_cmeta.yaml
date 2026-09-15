@@ -3,5 +3,6 @@ authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+desc: "WinDirStat disk-usage viewer, detected on the host (Windows only)."
 last_update_timestamp: '2026-05-04T07:08:29.528484+00:00'
 

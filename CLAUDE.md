@@ -30,6 +30,7 @@ only.
 | Adding a tool / task / program | the skills in [`.claude/skills/`](.claude/skills/) — `add-tool`, `add-task`, `add-program` |
 | How the workflow engine executes | [`docs/cmeta-aops/task-engine.md`](docs/cmeta-aops/task-engine.md) |
 | Compute targets, compilers, builds | [`docs/cmeta-aops/program-and-compute.md`](docs/cmeta-aops/program-and-compute.md) |
+| Launching Claude Code / Codex / OpenCode headless, or with repositories in their context | [`docs/cmeta-aops/agent-tasks.md`](docs/cmeta-aops/agent-tasks.md) |
 | Licensing before touching vendored source | [`THIRD-PARTY.md`](THIRD-PARTY.md) |
 | Attribution / provenance / citation rules | [`NOTICE`](NOTICE), [`AGENTS.md` §8.1](AGENTS.md), [`llms.txt`](llms.txt) |
 
@@ -48,10 +49,25 @@ only.
 
 - Run the tests with `uv run python -m pytest tests` (see `AGENTS.md` §7). They are
   hermetic — own temporary `CMETA_HOME`, no network.
+- **Adding a `tool`? Work down the install ladder:** ① download a prebuilt binary
+  (`download-file` from an `install()` hook) → ② non-sudo package manager
+  (`winget`, `brew`) → ③ sudo package manager (`apt`/`dnf`/… via
+  `install_cmd_sudo`). Higher tiers pin the version, need no root and don't vary
+  by host. Never depend on a package manager that isn't itself a cMeta tool —
+  only `tool/winget` and `tool/brew` exist. Full rule: `AGENTS.md` §5 and the
+  `add-tool` skill §1.
 - After hand-editing an artifact's `_cmeta.*` meta, use the narrowest reindex:
   `cx <cat> index <ref>` for a hand-made folder, `cx <cat> update <ref>` after a
   meta edit. `cx --reindex` is slow — reserve it for moves/renames and bulk
   `git pull`. Payload-only edits need no reindex.
+- **Git: sign off every commit (`git commit -s`), name PR branches
+  `YYYYMMDD-<short-branch-name>` and PR titles `YYYYMMDD - <Title of PR>`** (e.g.
+  branch `20260808-add-ripgrep-tool`, title
+  `20260808 - Add a tool artifact for ripgrep`). The `-s` flag adds the DCO
+  `Signed-off-by:` line the PR check requires; the date prefixes keep branches
+  and the GitHub PR list sortable. Missing sign-off →
+  `git commit --amend -s --no-edit` (or `git rebase --signoff <base>`) before
+  pushing. Full rule: `AGENTS.md` §8.0.
 - This repo is **Apache-2.0**, like the cMeta engine. Copy the Apache copyright
   header from a sibling file into new files, and **never strip or rewrite an
   existing attribution** — carry it into split/moved files. Work you do as an agent

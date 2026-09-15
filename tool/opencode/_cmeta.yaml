@@ -1,0 +1,14 @@
+artifact: 7777071804e84fb5
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-08-21T14:26:45.883240+00:00'
+desc: "OpenCode.AI terminal coding agent: detected, or installed with the official install script (Linux/macOS) or winget (Windows); pins a release, lists the published versions."
+last_update_timestamp: '2026-09-15T16:03:30.731543+00:00'
+note: OpenCode.AI terminal coding agent (https://opencode.ai) - the third sibling of the
+  "claude" and "codex" tools.
+tags:
+- opencode
+- opencode.ai
+- ai
+- agent
+- cli

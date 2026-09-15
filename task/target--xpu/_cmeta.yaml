@@ -3,6 +3,7 @@ authors: Grigori Fursin
 category: task,c36be4b9314a45e0
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-02-01T15:29:13.399124+00:00'
+desc: "Compute target: Intel GPU (XPU) through oneAPI; records the graphics adapter."
 last_update_timestamp: '2026-04-20T09:12:38.091196+00:00'
 name: XPU
 sort: 0

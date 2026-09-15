@@ -3,5 +3,6 @@ authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+desc: "xOpenME instrumentation library, built locally from source and cached, for benchmarks that record run-time statistics."
 last_update_timestamp: '2026-05-20T09:13:59.869891+00:00'
 

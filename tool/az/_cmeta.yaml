@@ -1,0 +1,17 @@
+artifact: c2f91d4214ab46c5
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-08-26T08:51:26.958782+00:00'
+desc: "Azure CLI (az): detected, or installed from the official prebuilt download where one exists (Windows ZIP, macOS tarball), else winget / brew / the system package manager; pins a release."
+last_update_timestamp: '2026-09-15T16:03:30.731543+00:00'
+note: Azure CLI ("az") - Microsoft's cross-platform command line interface for Azure.
+  Prefers the official prebuilt download where upstream publishes one (the self-contained
+  x64 ZIP on Windows, the macos tarball on macOS) and steps down to winget / brew
+  / the system package manager otherwise (Linux has no portable download at all).
+tags:
+- az
+- azure
+- azure-cli
+- microsoft
+- cloud
+- cli

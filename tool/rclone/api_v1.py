@@ -41,7 +41,8 @@ class CTool(InitCTool):
         version_simple = params.get('version_simple')
 
         if not version:
-            version = '1.73.3'
+            # Pinned in _desc.yaml so that bumping it needs no code change
+            version = self.cdesc['default_version']
             version_simple = version
 
         if not version_simple:
@@ -60,40 +61,26 @@ class CTool(InitCTool):
         env = params.get('env')
         timeout = params.get('timeout')
 
-        url = None
-        filename = None
+        # Map cMeta uname/uarch onto rclone's release asset naming.
+        # Kept as plain lookups so that an unknown OS or architecture falls
+        # through to the soft 16 below instead of leaving names unbound.
+        uext = '.zip'
+        uos = {'windows': 'windows', 'linux': 'linux', 'darwin': 'osx'}.get(uname)
+        uarch2 = {'amd64': 'amd64', 'arm64': 'arm64'}.get(uarch)
 
-        if uname == 'windows':
-            uos = 'windows'
-            uext = '.zip'
-            if uarch == 'amd64':
-                uarch2 = 'amd64'
-            elif uarch == 'arm64':
-                uarch2 = 'arm64'
-        elif uname == 'linux':
-            uos = 'linux'
-            uext = '.zip'
-            if uarch == 'amd64':
-                uarch2 = 'amd64'
-            elif uarch == 'arm64':
-                uarch2 = 'arm64'
-        elif uname == 'darwin':
-            uos = 'osx'
-            uext = '.zip'
-            if uarch == 'amd64':
-                uarch2 = 'amd64'
-            elif uarch == 'arm64':
-                uarch2 = 'arm64'
-
-        if not uarch2:
+        if not uos or not uarch2:
             return {
-                'return': 16, 
-                'error': f'custom install for rclone could not create download URL',
+                'return': 16,
+                'error': f'custom install for rclone could not create a download URL for {uname}/{uarch}',
+                'install_cmd': cmd, # this is needed to proceed with the main installation routine !
             }
 
         filename = f'rclone-v{version_simple}-{uos}-{uarch2}{uext}'
 
-        url = f'https://github.com/rclone/rclone/releases/download/v{version_simple}/{filename}'
+        # Both mirrors are passed to task/download-file, which walks them in
+        # order and stops at the first success (templates live in _desc.yaml).
+        urls = [t.format(version = version_simple, filename = filename)
+                for t in self.cdesc['download_url_templates']]
 
         directory = 'content'
 
@@ -103,7 +90,8 @@ class CTool(InitCTool):
             cur_dir = os.getcwd()
             print ('')
             print (f'{space}INFO: Current path: {cur_dir}')
-            print (f'{space}INFO: Download URL: {url}')
+            for url in urls:
+                print (f'{space}INFO: Download URL: {url}')
             print (f'{space}INFO: Check file: {path_to_tool}')
 
         ###########################################################################################
@@ -114,7 +102,7 @@ class CTool(InitCTool):
               'arg1': 'download-file,03fed13e2e0447cf',
               'ctx': ctx,
               'directory': directory,
-              'url': url,
+              'url': urls,
               'env': env,
               'timeout': timeout,
               'con': con, 

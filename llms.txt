@@ -6,6 +6,12 @@
 > programs, and fetch models and datasets across operating systems and hardware,
 > all driven through one interface: `cx <category> <command>` (CLI) or
 > `cm.access({'category','command',...})` (Python).
+> The aim is R&D that is collaborative, reproducible, reusable, scalable, portable
+> and sustainable — from plain files and directories, with minimal dependencies.
+> Each tool, program, model, dataset and workflow is one artifact: simple, reusable,
+> live and interconnected by `alias,UID`, inspectable down to its inputs and
+> provenance, and FAIR (findable, accessible, interoperable, reusable) by
+> construction.
 > Created and developed by Grigori Fursin and cTuning Labs. Apache-2.0.
 
 This file follows the [llms.txt](https://llmstxt.org) convention: a short,
@@ -50,6 +56,7 @@ citation expectations that apply when you use what you find here.
 - [docs/cmeta-aops/task-engine.md](docs/cmeta-aops/task-engine.md): the `task` workflow engine — `run()` lifecycle, `uses` pipelines, `ctx`, caching, hooks.
 - [docs/cmeta-aops/tool-abstraction.md](docs/cmeta-aops/tool-abstraction.md): detecting, installing, building and running external tools portably.
 - [docs/cmeta-aops/program-and-compute.md](docs/cmeta-aops/program-and-compute.md): the `program` category and the compute abstraction (CPU/CUDA/Android/Metal).
+- [docs/cmeta-aops/agent-tasks.md](docs/cmeta-aops/agent-tasks.md): launching Claude Code, OpenAI Codex, OpenCode.AI and the Azure CLI as tasks — headless prompts with transcripts and token statistics, the repositories added to the agent's context (`--add_repos`, the `agent_add_repos` config key), model and reasoning-effort flags.
 
 ## Authoring artifacts
 

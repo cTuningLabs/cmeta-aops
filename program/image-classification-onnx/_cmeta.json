@@ -13,6 +13,7 @@
   },
   "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",
   "creation_timestamp": "2026-06-11T00:00:00.000000+00:00",
+  "desc": "Image classification with ONNX Runtime in Python on CPU, CUDA or XPU, with optional profiling.",
   "last_update_timestamp": "2026-06-11T14:59:03.705960+00:00",
   "note": "image classification using ONNX Runtime"
 }

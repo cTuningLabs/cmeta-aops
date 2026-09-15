@@ -19,13 +19,13 @@ install_help_text:
     https://code.claude.com/docs/en/quickstart !
 
 install_cmd:
-  windows: '{{global.curl.qpath}} -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd'
+  windows: '{{global.curl.qpath}} -fsSL https://claude.ai/install.cmd -o install.cmd && .\install.cmd && del install.cmd'
   linux: '{{global.curl.qpath}} -fsSL https://claude.ai/install.sh | bash'
   darwin: '{{global.curl.qpath}} -fsSL https://claude.ai/install.sh | bash'
 
 # Specific version via --version=X.Y.Z (the claude installer accepts a version arg).
 install_cmd_version:
-  windows: '{{global.curl.qpath}} -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd {{simple_version}} && del install.cmd'
+  windows: '{{global.curl.qpath}} -fsSL https://claude.ai/install.cmd -o install.cmd && .\install.cmd {{simple_version}} && del install.cmd'
   linux: '{{global.curl.qpath}} -fsSL https://claude.ai/install.sh | bash -s -- {{simple_version}}'
   darwin: '{{global.curl.qpath}} -fsSL https://claude.ai/install.sh | bash -s -- {{simple_version}}'
 

@@ -3,6 +3,7 @@ authors: Grigori Fursin
 category: task,c36be4b9314a45e0
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-01-19T15:40:51.387488+00:00'
+desc: "Print the size of a directory (used to watch how source trees grow)."
 last_update_timestamp: '2026-04-17T14:22:43.827810+00:00'
 min_cmeta_version_api: 0.26.3
 tags:

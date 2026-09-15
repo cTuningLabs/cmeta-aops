@@ -21,7 +21,7 @@ regression.
 It is **not** the engine. The engine is the **cMeta framework** (`cmeta` Python
 package, CLI `cx` / `cmeta` / `cxt` / `cserver`), already pip-installed. Its
 source, agent docs and skills are symlinked at **`__symlinks/cmeta/`** →
-`D:\!FGG_Repos\fgg\fgg.project\cMeta\cmeta` (created by
+the `cmeta` package of your local cMeta checkout (created by
 `_create_symlinks_for_ai_context_min.bat`). **Read `__symlinks/cmeta/AGENTS.md`
 first** for engine internals (`access()` dispatch, `ctx`, resolution, reindex,
 repos, command naming, return contract).
@@ -142,6 +142,24 @@ error handling, with the repo's real idioms.
   detection/install: `names:`, `match_version:`/`cmd_get_version:`,
   `install_cmd:`/`install_cmd_version:` (per OS, templated with `{{global....}}`),
   `extra_paths:`, `requires_sudo:`.
+- **Install strategy — always work down this ladder** (details and worked
+  examples in the `add-tool` skill, §1):
+  1. **Download a prebuilt binary** (`curl`-style, via task
+     `download-file,03fed13e2e0447cf` from an `install()` hook). Preferred: pins
+     an exact version, checksum-verifiable, **no privileges**, works in a bare
+     container, identical on every host.
+  2. **Non-sudo system package manager** — `winget` (Windows, present by
+     default) or `brew` (macOS/Linux), via declarative `install_cmd:`.
+  3. **Sudo/system package manager** — apt/dnf/apk/pacman/zypper/… via
+     `{{global.host.os_extra.install_cmd_sudo}}` + `requires_sudo:`. Last
+     resort: needs root and gives whatever version the distro ships.
+
+  Combine them: Tier 1 primary, returning `{'return':16, 'install_cmd': cmd}`
+  when it can't apply so `setup` falls through to the declarative command.
+  **Never depend on a package manager that is not itself a cMeta `tool`** — only
+  `tool/winget` and `tool/brew` exist, so anything else (chocolatey, scoop, …)
+  would be an undetectable host dependency. Fetch such a mirror's artifact over
+  plain HTTPS as a Tier-1 download instead of depending on its client.
 - **`program` (`category/program/api/v1.py`)**: `run` → task
   `compile-and-run-program,05437a1aae224270`; `compile` = run with `skip_run`;
   `clean` removes all `tmp*` dirs across programs. A **program artifact's `_desc.yaml`**
@@ -211,6 +229,31 @@ Two layers:
   pull`, or a wiped `CMETA_HOME`. Payload-only edits (`api/`, `src/`,
   `_desc.yaml`) need no reindex at all.
 - Python 3.9–3.14; keep engine runtime deps out of artifact code.
+
+### 8.0 Git workflow — sign-off, branch naming, PR titles
+
+These rules hold for **every** commit, branch and pull request here, including
+those an AI agent creates on the author's behalf:
+
+- **Sign off every commit: `git commit -s -m "…"`.** The `-s`/`--signoff` flag
+  appends the DCO `Signed-off-by:` line certifying the Developer Certificate of
+  Origin 1.1 (see [`CONTRIBUTING.md`](CONTRIBUTING.md) and the [`DCO`](DCO)
+  file). A DCO check runs on every pull request and an unsigned commit blocks the
+  merge. If one slipped through, repair it *before* pushing:
+  `git commit --amend -s --no-edit` for the last commit, or
+  `git rebase --signoff <base>` for a range.
+- **Name PR branches `YYYYMMDD-<short-branch-name>`.** Creation date first, then
+  a short kebab-case topic — e.g. `20260808-add-ripgrep-tool`,
+  `20260808-fix-task-cache-key`. The date prefix keeps branches chronologically
+  sortable and makes a pile of open PRs analyzable. Always branch before
+  committing; don't push work directly to the default branch.
+- **Prefix the PR title the same way: `YYYYMMDD - <Title of PR>`.** The date, a
+  spaced hyphen, then the normal human-readable title — e.g.
+  `20260808 - Add a tool artifact for ripgrep`. This is the subject line visible
+  on GitHub, so the same date ordering that helps on branches also helps when
+  scanning or scripting over the PR list (`gh pr create --title "20260808 - …"`,
+  `gh pr list`). Use the same date as the branch prefix — the day the work was
+  branched, not the day it merges.
 
 ### 8.1 Attribution, provenance and citation
 

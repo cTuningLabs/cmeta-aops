@@ -264,7 +264,12 @@ class CTask(InitCTask):
             for u in range(0, len(urls)):
                 url = urls[u]
 
-                if len(files)>0:
+                # Names are matched to URLs by position. There may be fewer of
+                # them than URLs - init() always resolves a single filename, so
+                # with several URLs (mirrors) every entry after the first has to
+                # fall back to deriving its own name, otherwise the mirrors are
+                # unreachable behind an IndexError.
+                if len(files)>u:
                     filename = files[u]
                 else:
                     filename = self._extract_filename_from_url(url)
@@ -310,7 +315,10 @@ class CTask(InitCTask):
                     if os.path.isfile(f1):
                         os.replace(f1, f2)
 
-                        if len(md5sums)>0:
+                        # Same positional matching as the filenames above: skip
+                        # the check for a mirror that has no checksum of its own
+                        # rather than failing on an out-of-range index.
+                        if len(md5sums)>u:
                             md5sum = md5sums[u]
 
                             if verbose:

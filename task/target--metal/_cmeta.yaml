@@ -3,6 +3,7 @@ authors: Grigori Fursin
 category: task,c36be4b9314a45e0
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-02-01T15:29:13.399124+00:00'
+desc: "Compute target: Apple GPU through Metal (macOS only; records the GPU from system_profiler)."
 last_update_timestamp: '2026-04-20T09:12:19.407303+00:00'
 name: Apple Metal with Swift
 sort: -500

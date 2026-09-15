@@ -1,0 +1,1 @@
+﻿cx . run --target-path=D:\!FGG_Obsidian\cMeta -f

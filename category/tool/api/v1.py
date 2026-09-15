@@ -221,6 +221,11 @@ class Category(InitCategory):
         r = self.cm.access(p)
         if self.cm.catch_error(r): return r
 
+        # Setup may stop early without producing a CMD - for example
+        # "--versions" only prints the available versions of a tool
+        if 'cmd' not in r:
+            return r
+
         cmd = r['cmd']
 
         for param in unparsed:

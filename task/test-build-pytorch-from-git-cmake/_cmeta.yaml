@@ -3,5 +3,6 @@ authors: Grigori Fursin
 category: task,c36be4b9314a45e0
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-02-01T15:29:13.399124+00:00'
+desc: "Build PyTorch from its git source through a direct CMake configuration for the selected target."
 last_update_timestamp: '2026-04-30T12:01:34.424490+00:00'
 
