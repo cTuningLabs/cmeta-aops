@@ -1,0 +1,183 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# Push a local directory to a plain SSH host with rclone - no rclone.conf entry
+# to create first, no credentials stored anywhere:
+#
+#   cxt rclone-to-ssh sync D:\photos me@nas:/mnt/backup/photos
+#   cxt rclone-to-ssh copy . me@nas:/mnt/backup/scratch
+#   cxt rclone-to-ssh resync D:\notes me@nas:/mnt/notes             # first bisync run: bisync --resync
+#   cxt rclone-to-ssh bisync D:\notes me@nas:/mnt/notes             # every run after that
+#   cxt rclone-to-ssh bisync D:\notes me@nas:/mnt/notes --unlock    # after a cancelled run
+#   cxt rclone-to-ssh sync D:\photos me@nas:/mnt/backup --no-progress
+#   cxt rclone-to-ssh sync D:\photos me@nas:/mnt/backup -- --dry-run --exclude "*.tmp"
+#   cxt rclone-to-ssh sync . me@nas:/backup --whitelist=/src/,/docs/,/README.md
+#   cxt rclone-to-ssh sync . me@nas:/backup --blacklist=.venv/,.git/,__pycache__/
+#   cxt rclone-to-ssh sync . me@nas:/backup --whitelist_from=whitelist.txt
+#   cxt rclone-to-ssh sync D:\photos nas:/mnt/backup --ssh_options="-p 2222 -i ~/.ssh/nas"
+#   cxt rclone-to-ssh --info                                        # every param and flag, with defaults
+#   cxt rclone-to-ssh sync D:\photos me@nas:/mnt/backup -j          # verbose trace (shows the exact CMD)
+#
+# ("cxt X" is short for "cx task run X".)
+#
+# Positional arguments (api_v1.py::run documents all of them):
+#
+#   arg2  rclone command - sync, copy, move, bisync, check, ... (always local -> remote)
+#         plus one spelling of its own: "resync" is turned into
+#         "bisync --resync". rclone has no resync command (it answers
+#         'unknown command "resync"'); --resync is the flag that seeds a
+#         bisync pair on its first run, so mapping the two means the word
+#         you type is the thing you are doing. An explicit --no-resync
+#         still wins.
+#   arg3  local directory or file (defaults to the current directory)
+#   arg4  <ssh-target>:<remote path>, e.g. me@nas:/mnt/backup - split on the FIRST ":"
+#
+# api_v1.py::run assembles the command and hands it to task/cmd:
+#
+#   rclone <command> "<local dir>" :sftp:<remote path> --sftp-ssh "ssh <ssh-target>" --progress
+#
+# Why ":sftp:" + --sftp-ssh instead of a configured rclone remote:
+#   ":sftp:" is rclone's on-the-fly remote syntax, so nothing needs to exist in
+#   rclone.conf, and --sftp-ssh makes rclone shell out to the system ssh binary
+#   instead of using its own SSH library. Everything ssh already knows - Host
+#   aliases, User, Port, IdentityFile, ProxyJump, the running agent - then comes
+#   from ~/.ssh/config for free, and no host or key ever gets written into an
+#   rclone config file. The flip side: the host must be reachable by
+#   "ssh <ssh-target>" without an interactive password (key or agent).
+#
+# Choosing what gets transferred:
+#   --whitelist=<a,b,c> keeps ONLY the listed directories and files;
+#   --blacklist=<a,b,c> drops them and keeps everything else. Each has a
+#   --whitelist_from=<file> / --blacklist_from=<file> twin reading the same
+#   entries from a file, one per line, with blank lines and "#" comments
+#   skipped. "--whitelist,=a,b,c" (the cMeta list spelling) works identically to
+#   the comma form.
+#
+#   rclone filters match FILES, never directories, so a bare directory name
+#   selects nothing - the recursive form is "<dir>/**". api_v1.py::run expands a
+#   trailing "/" into it (in the inline form and in a *_from file alike), so
+#
+#       --whitelist=cmeta/,pyproject.toml --blacklist=__pycache__/
+#
+#   becomes
+#
+#       --filter "- __pycache__/**" --filter "+ cmeta/**"
+#       --filter "+ pyproject.toml"  --filter "- **"
+#
+#   Anything not ending in "/" is handed to rclone verbatim, so its full pattern
+#   syntax stays available - a leading "/" anchors to the top of the transfer
+#   ("/src/**" is the top-level src only), an unanchored pattern matches at any
+#   depth. That is what makes a bare "__pycache__/" catch every __pycache__ in
+#   the tree instead of only one at the top.
+#
+#   Why --filter and not --include/--exclude:
+#     rclone builds ONE rule list and adds every --include BEFORE every
+#     --exclude, whatever order they were given in on the command line, so an
+#     --exclude can never carve anything out of an --include. Measured on the
+#     cmeta checkout: --include "cmeta/**" with --exclude "__pycache__/**" still
+#     copied all 168 __pycache__ files, in either order. --filter rules keep the
+#     order given and the first match wins, so the blacklist is emitted first
+#     and the pair reads as "everything in the whitelist except the blacklist".
+#     The closing "- **" is what --include would have added implicitly; a "+"
+#     --filter rule does not, and without it nothing would be excluded at all
+#     (7705 files instead of 159).
+#
+#   ANCHOR A WHITELIST unless you really do mean "at any depth". A bare
+#   "cmeta/" matches every directory called cmeta anywhere in the tree: on the
+#   cmeta checkout --whitelist=cmeta/,pyproject.toml copied 159 files, 78 of
+#   them a stale second copy of the package from build/lib/. Writing
+#   --whitelist=/cmeta/,/pyproject.toml pins both to the top of the transfer and
+#   copies the 81 that were actually meant. A blacklist is the opposite case:
+#   there the unanchored form is the useful one, since "__pycache__/" should
+#   match at every depth.
+#
+#   Filters make the run FASTER, not just smaller: rclone prunes whole
+#   directories out of the walk rather than listing them and rejecting the
+#   contents. On that checkout a whitelisted run listed 339 objects where an
+#   unfiltered one listed 10389 - it never opened .venv/ at all.
+#
+#   A filter is usually what makes this task usable on a source tree at all:
+#   dropping .venv/, .git/, build/ and __pycache__/ from the cmeta checkout is
+#   the difference between 8664 files and 248, and over sftp every single file
+#   costs a round trip (measured ~3 files/s, so ~45 min against ~1 min).
+#
+#   One limit of the inline form: it is split on commas, so a brace pattern like
+#   "*.{jpg,png}" belongs in a *_from file, whose lines are never comma-split.
+#
+#   Filters also narrow what "sync" deletes: filtered-out paths are invisible to
+#   rclone on BOTH sides, so remote files it cannot see are left alone rather
+#   than deleted. That makes a filtered "sync" safe to point at a directory
+#   holding more than what is being pushed - but it also means a blacklisted
+#   .venv/ already on the remote is never cleaned up.
+
+# Notes:
+#   - --sftp-disable-hashcheck is always passed, and has to be. rclone looks for
+#     a usable hash command on an sftp remote by running "ssh <target> md5sum" -
+#     with no file argument, so md5sum reads its stdin and blocks forever. That
+#     is normally invisible because rclone caches the answer in rclone.conf, but
+#     ":sftp:" is an on-the-fly remote it cannot write to (the "Can't save config
+#     md5sum_command" notice), so EVERY run re-probes and can hang. Seen sitting
+#     at "Transferred: 0 B / 0 B" for 7+ minutes with an idle "ssh ... md5sum"
+#     child, where the same 81-file transfer takes 16s with the flag. rclone
+#     falls back to size+modtime, the normal sftp default. To verify hashes
+#     anyway: -- --sftp-disable-hashcheck=false
+#   - Direction is always local -> remote (hence the name). Pulling would need
+#     the two arguments swapped - run rclone directly, or add a sibling task.
+#   - Cancel a bisync (Ctrl-C, a dropped link, a killed shell) and its lock
+#     file survives, so the next run refuses to start with "prior lock file
+#     found: <workdir>/<session>.lck" and tells you to delete it by hand.
+#     --unlock does exactly that, for THIS pair only: bisync names its
+#     session "<path1>..<path2>", so only the remote half is matched - that
+#     half is the literal ":sftp:<remote path>" this task builds, whereas the
+#     local half is whatever rclone made of the path it was handed. Other
+#     pairs' locks and the ".lst" listings are left alone (deleting a listing
+#     would force a resync). The lock lives in rclone's own
+#     <cache dir>/bisync unless --workdir says otherwise; --workdir is then
+#     passed to rclone too, so both look in the same place.
+#
+#     It is opt-in on purpose: the lock also stops two bisyncs of the same
+#     pair running at once, and only you know the other run is dead rather
+#     than busy. rclone's own non-destructive options are reachable through
+#     "--": "-- --max-lock 2m" expires locks older than a duration (minimum
+#     2m) instead of removing them, and "-- --recover" resumes an interrupted
+#     run without a full resync.
+#   - "bisync" (and so "resync") requires BOTH sides to exist already - unlike
+#     "sync"/"copy" it never creates the far side, and says so unhelpfully:
+#     "error reading source root directory: directory not found", then
+#     "Bisync aborted. Must run --resync to recover." even when --resync was
+#     exactly what ran. Seeding a pair is the one moment the remote does not
+#     exist yet, so "resync" runs "rclone mkdir <remote>" first. rclone mkdir
+#     creates missing parents and returns 0 on a directory already there, so
+#     it is a no-op on an established pair. Skip it with --no-mkdir.
+#   - "sync" makes the remote match the local side, so it DELETES remote files
+#     that no longer exist locally. Rehearse with "-- --dry-run" first.
+#   - task/cmd runs with the terminal attached, so --progress renders live and an
+#     ssh key passphrase prompt still works.
+#   - Anything after "--" is quoted and appended to the rclone command by
+#     task/cmd, so every rclone flag stays reachable without touching this task.
+#     task/cmd quotes those arguments only when they contain a space, a comma or
+#     a plus, so a glob survives on Windows but a POSIX shell would expand
+#     "-- --exclude *.tmp" against the current directory before rclone sees it -
+#     write it as "-- --exclude=*.tmp" there, or quote it twice.
+
+# Transfers (and with "sync" deletes) files - a side effect that must never be
+# memoized on disk
+cache: False
+
+params_map:
+  arg2: rclone_command
+  arg3: local_dir
+  arg4: remote
+
+uses:
+  # Bootstrap host (OS detection, env, vars) - normally already resolved from global
+  - task: runner,1e48cc0c5f6041a5
+
+  # Detect / install rclone -> {{global.rclone.qpath}}, which api_v1.py::run reads.
+  # "install" is threaded through so the tool can come up unattended: when rclone
+  # is missing, task/setup asks "install rclone (Y/n)?" on the terminal, which
+  # raises EOFError under a pipe or from an agent; "--install" answers it up front.
+  - task: setup,a2f9b61079ce4333
+    name: rclone,e8cb2f6227de4121
+    version: '{{params.rclone_version|$None}}'
+    install: '{{params.install|$None}}'
