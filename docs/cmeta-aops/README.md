@@ -27,6 +27,7 @@ targets together across OSes (Linux / Windows / macOS / Android; CPU / CUDA / �
 | [task-engine.md](task-engine.md) | The `task` category — the workflow engine: `run()` lifecycle, `uses` pipelines, `ctx`, `store_global`/cache, `CTask` hooks. |
 | [tool-abstraction.md](tool-abstraction.md) | The `tool` category — detect / install / build / run an external CLI portably; version listing; `install_cmd_version`. |
 | [program-and-compute.md](program-and-compute.md) | The `program` category — template inheritance, the **compute** abstraction, the compile/run task machinery, libraries, and 4 deep dives (repro-cache recompile, Android remote exec, `updates_cmd`, `build-*` vs template). |
+| [agent-tasks.md](agent-tasks.md) | **Coding agents and cloud CLIs as tasks** — `run-claude2` / `run-codex2` / `run-opencode2` (headless or interactive, transcript + token statistics), the repositories they add to the agent's context (`--add_repos`, the `agent_add_repos` config key), `tool/az` + `run-az`, and which model / reasoning effort to pass to each agent. |
 
 ## One-paragraph mental model
 
