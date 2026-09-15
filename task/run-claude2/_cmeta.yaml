@@ -1,0 +1,19 @@
+artifact: 38be73ffceaa4f67
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-08-16T12:23:27.295041+00:00'
+desc: "Run Claude Code on a prompt from --prompt/--prompt_file, headless (claude -p) or interactive; records the output and token stats; adds cMeta repositories to its context with --add-dir."
+last_update_timestamp: '2026-09-15T16:03:30.731543+00:00'
+note: Set up the "claude" tool, assemble a prompt from --prompt_file and --prompt,
+  run it non-interactively (claude -p) and record the output next to the prompt file,
+  or preload the same prompt into an interactive session with --interactive/--i (the
+  default when no prompt is given).
+tags:
+- run
+- claude
+- ai
+- cli
+- prompt
+- non-interactive
+- headless
+- interactive

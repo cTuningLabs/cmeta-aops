@@ -1,0 +1,20 @@
+artifact: 7f1b96c011fb436f
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-08-21T14:26:50.146011+00:00'
+desc: "Run OpenCode.AI on a prompt from --prompt/--prompt_file, headless (opencode run) or interactive; records the output and token stats."
+last_update_timestamp: '2026-09-15T16:03:30.731543+00:00'
+note: Set up the "opencode" tool (OpenCode.AI), assemble a prompt from --prompt_file and
+  --prompt, run it non-interactively (opencode run) and record the output next to the
+  prompt file, or preload the same prompt into an interactive session with
+  --interactive/--i (the default when no prompt is given).
+tags:
+- run
+- opencode
+- opencode.ai
+- ai
+- cli
+- prompt
+- non-interactive
+- headless
+- interactive

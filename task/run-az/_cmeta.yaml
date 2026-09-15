@@ -1,0 +1,18 @@
+artifact: 2ea94ef4ae334c8e
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-08-26T08:51:34.488886+00:00'
+desc: "Set up the Azure CLI and run it: everything after -- goes to az, with the terminal attached so that az login works."
+last_update_timestamp: '2026-09-15T16:03:30.731543+00:00'
+note: Set up the "az" tool (Azure CLI - detecting it or installing it from the official
+  prebuilt download / package manager) and run it, passing everything after "--" straight
+  through to the az command line (e.g. "cx task run run-az -- account show"). The
+  terminal stays attached, so interactive commands such as "az login" work.
+tags:
+- run
+- az
+- azure
+- azure-cli
+- microsoft
+- cloud
+- cli

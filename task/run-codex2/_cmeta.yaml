@@ -1,0 +1,20 @@
+artifact: ad2fd6be195a4e36
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-08-16T13:17:14.649647+00:00'
+desc: "Run OpenAI Codex on a prompt from --prompt/--prompt_file, headless (codex exec) or interactive; records the output and token stats."
+last_update_timestamp: '2026-09-15T16:03:30.731543+00:00'
+note: Set up the "codex" tool, assemble a prompt from --prompt_file and --prompt,
+  run it non-interactively (codex exec) and record the output next to the prompt file,
+  or preload the same prompt into an interactive session with --interactive/--i (the
+  default when no prompt is given).
+tags:
+- run
+- codex
+- openai
+- ai
+- cli
+- prompt
+- non-interactive
+- headless
+- interactive

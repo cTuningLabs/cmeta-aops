@@ -1,0 +1,73 @@
+authors: Grigori Fursin
+
+# Run the "claude" CLI non-interactively on an assembled prompt and exit:
+#
+#   cx task run run-claude2 --prompt="{prompt text}"
+#   cx task run run-claude2 --prompt_file={file}
+#   cx task run run-claude2 --prompt_file={file} --prompt="{extra text}" --output_file={file}
+#   cx task run run-claude2 --prompt_file={file} --yes --stats
+#
+# With no prompt at all, this task opens an interactive claude session instead of
+# failing:
+#
+#   cx task run run-claude2                         # just open a claude session
+#
+# --interactive (short: --i or -i) asks for that session explicitly: the assembled
+# prompt is preloaded as the first message and claude keeps the terminal afterwards,
+# so a preset prompt can be followed up on by hand:
+#
+#   cx task run run-claude2 --prompt_file=review.txt --interactive
+#   cx task run run-claude2 --i --prompt="look at the failing tests"
+#
+# Since the session owns the terminal, nothing
+# can be captured: --stats, --stats_file and --output_file are switched off, and a
+# non-zero exit code is reported but does not fail the task (quitting is normal).
+#
+# --yes runs claude fully unattended: all questions (file edits, Bash, ...) are
+# answered "yes" via "--permission-mode bypassPermissions". The workspace trust
+# question is skipped by claude itself in non-interactive mode ("-p").
+#
+# --reproducible cuts the run-to-run variation of claude (per-machine sections are
+# removed from the system prompt, ambient MCP servers are ignored). It cannot make
+# the output deterministic - claude has no temperature or seed flag. Pin the model
+# too: "-- --model claude-haiku-4-5-20251001".
+#
+# --stats prints the tokens sent/received and the cost of this prompt at the end
+# (claude is then asked for its JSON event stream, which is turned back into text).
+# --stats_file={file} records the same statistics ("*.json" = JSON, otherwise text)
+# and turns --stats on by itself.
+#
+# The prompt sent to claude is the text of --prompt_file (when given), then "\n",
+# then the text of --prompt. The full output is streamed to the console and
+# recorded into "{prompt_file without extension}-output.txt" unless --output_file
+# overrides it. Anything after "--" is appended to the claude command line, e.g.
+#
+#   cx task run run-claude2 --prompt_file=p.txt -- --allowedTools "Read,Edit,Write,Bash" --permission-mode acceptEdits
+#
+# --add_repos={alias,alias} adds cMeta repositories to the claude context - one
+# "--add-dir <path>" each, the path resolved on this machine by "cx repo find", so the
+# same command works everywhere (never write --add-dir "$(...)" by hand). By default the
+# repository this task lives in is added (its AGENTS.md, CLAUDE.md and skills), plus the
+# repositories listed in the "agent_add_repos" key of the local cMeta config - set it once
+# per machine and your own repositories are in context without any flag:
+#
+#   cx config set default --meta.agent_add_repos=myorg@my-knowledge-repo
+#
+# --add_repos=none adds nothing (not even the defaults):
+#
+#   cx task run run-claude2                              # defaults, interactive
+#   cx task run run-claude2 --add_repos=myorg@other-repo # + one more repository
+#   cx task run run-claude2 --add_repos=none --prompt="..."
+#
+# See api_v1.py for the full list of flags.
+
+# This task launches claude and changes files - never memoize it on disk
+cache: False
+
+uses:
+  # Bootstrap host (OS detection, env, vars) - normally already resolved from global
+  - task: runner,1e48cc0c5f6041a5
+
+  # Detect / install the "claude" tool and expose {{global.claude.path}}
+  - task: setup,a2f9b61079ce4333
+    name: claude,383841b240c74e88

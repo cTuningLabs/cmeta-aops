@@ -1,0 +1,65 @@
+authors: Grigori Fursin
+
+# Run the "codex" CLI (OpenAI) non-interactively on an assembled prompt and exit.
+# Same flags as the sister task "run-claude2":
+#
+#   cx task run run-codex2 --prompt="{prompt text}"
+#   cx task run run-codex2 --prompt_file={file}
+#   cx task run run-codex2 --prompt_file={file} --prompt="{extra text}" --output_file={file}
+#   cx task run run-codex2 --prompt_file={file} --yes --stats
+#
+# The prompt sent to codex is the text of --prompt_file (when given), then "\n",
+# then the text of --prompt. The full output is streamed to the console and
+# recorded into "{prompt_file without extension}-output.txt" unless --output_file
+# overrides it.
+#
+# With no prompt at all, this task opens an interactive codex session instead of
+# failing:
+#
+#   cx task run run-codex2                         # just open a codex session
+#
+# --interactive (short: --i or -i) asks for that session explicitly: the assembled
+# prompt is preloaded as the first message and codex keeps the terminal afterwards,
+# so a preset prompt can be followed up on by hand:
+#
+#   cx task run run-codex2 --prompt_file=review.txt --interactive
+#   cx task run run-codex2 --i --prompt="look at the failing tests"
+#
+# Since the session owns the terminal, nothing
+# can be captured: --stats, --stats_file and --output_file are switched off, and a
+# non-zero exit code is reported but does not fail the task (quitting is normal).
+# codex also accepts --json, --ignore-user-config, --ignore-rules and
+# --skip-git-repo-check only on "codex exec", so they are dropped from an
+# interactive session: --reproducible has no effect there, and --yes is reduced to
+# skipping the approvals and the sandbox (codex asks about the directory in its TUI).
+#
+# --yes runs codex fully unattended: all approvals are skipped and the sandbox is
+# switched off (--dangerously-bypass-approvals-and-sandbox) and the directory is
+# trusted without a git repository check (--skip-git-repo-check).
+#
+# --reproducible cuts the run-to-run variation of codex (the user config in
+# $CODEX_HOME/config.toml and the user/project ".rules" files are ignored). It
+# cannot make the output deterministic. Pin the model too: "-- -m gpt-5.6-sol".
+#
+# --stats prints the tokens sent/received of this prompt at the end (codex is then
+# asked for its JSONL event stream, which is turned back into text). Unlike claude,
+# codex reports no cost.
+# --stats_file={file} records the same statistics ("*.json" = JSON, otherwise text)
+# and turns --stats on by itself.
+#
+# Anything after "--" is appended to the codex command line, e.g.
+#
+#   cx task run run-codex2 --prompt_file=p.txt -- -m gpt-5.6-sol -s workspace-write
+#
+# See api_v1.py for the full list of flags.
+
+# This task launches codex and changes files - never memoize it on disk
+cache: False
+
+uses:
+  # Bootstrap host (OS detection, env, vars) - normally already resolved from global
+  - task: runner,1e48cc0c5f6041a5
+
+  # Detect / install the "codex" tool and expose {{global.codex.path}}
+  - task: setup,a2f9b61079ce4333
+    name: codex,cdbf5f6e6882460f

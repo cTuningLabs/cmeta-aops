@@ -1,0 +1,51 @@
+authors: Grigori Fursin
+
+# Set up the Azure CLI (detecting it, or installing it via tool/az) and run it.
+# Everything after "--" is passed straight through to the "az" command line:
+#
+#   cx task run run-az -- --version
+#   cx task run run-az -- login
+#   cx task run run-az -- account show
+#   cx task run run-az -- group list --output table
+#   cx task run run-az -- vm list --resource-group my-rg --output table
+#
+# With nothing after "--" this prints the Azure CLI's own welcome/help screen -
+# the same as typing "az" by hand.
+#
+# The tool is pinned to tool/az's default_version unless a version is requested:
+#
+#   cx task run run-az --version=2.88.0 -- --version
+#
+# task/cmd runs with capture_output=False and no timeout, so stdin/stdout stay
+# attached to the current terminal. That matters for the interactive commands -
+# "az login" opens a browser and then waits, and "az account set" style prompts
+# need a live terminal to answer on.
+#
+# See ../../tool/az/_desc.yaml for how the CLI is installed on each OS (a
+# prebuilt download on Windows and macOS, a package manager on Linux).
+
+# This task launches the Azure CLI, which talks to live cloud resources and
+# writes credentials into ~/.azure - never memoize it on disk
+cache: False
+
+uses:
+  # Bootstrap host (OS detection, env, vars) - normally already resolved from global
+  - task: runner,1e48cc0c5f6041a5
+
+  # Detect / install the "az" tool and expose {{global.az.qpath}}
+  #
+  # "install" is threaded through so the CLI can be brought up unattended. When
+  # the tool is missing, task/setup asks "install az (Y/n)?" on the terminal -
+  # which is what you want by hand, but raises EOFError under a pipe, in CI or
+  # from an agent. "--install" answers it up front:
+  #   cx task run run-az --install -- --version
+  - task: setup,a2f9b61079ce4333
+    name: az,c2f91d4214ab46c5
+    version: "{{params.version|$None}}"
+    install: "{{params.install|$None}}"
+
+  # Run the Azure CLI. Anything after "--" on the cx command line arrives as
+  # "unparsed" and is quoted and appended straight to the az command line.
+  - task: cmd,c9ba0a88df394d7f
+    cmd: '{{global.az.qpath}}'
+    unparsed: '{{params.unparsed|$None}}'
