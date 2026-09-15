@@ -284,3 +284,28 @@ save-script-*.sh
 /__symlinks/
 /CLAUDE_local_sessions.md
 .vscode/
+
+# AI coding-session provenance - resume scripts and conversation summaries
+# written into whatever directory the tool was launched from.
+# Claude Code: the SessionStart / Stop / SessionEnd hooks in
+# ~/.claude/hooks/provenance.py.
+claude-resume-*.bat
+claude-resume-*.sh
+claude-summary-*.md
+codex-resume-*.bat
+codex-resume-*.sh
+codex-summary-*.md
+
+# Runtime state of a CMETA_HOME accidentally created inside this repo (cx run from here
+# without CMETA_HOME set) and partial downloads left by task/download-file.
+/index/
+/repos/
+/repos.json
+*.partial
+
+# The un-ignore rules for task/target/** and task/venv/** above also re-include their bytecode caches.
+task/target/__pycache__/
+task/venv/__pycache__/
+
+# results written by test runs of a task (e.g. task/target--metal/result-metal.json)
+task/*/result-*.json

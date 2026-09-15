@@ -15,7 +15,7 @@
 
 
   * Write down IP address and port
-  * Run this task with "IP:PORT" and optional period (in sec): `cxt keep-adb-connection-alive 10.66.251.140:43291 10`
+  * Run this task with "IP:PORT" and optional period (in sec): `cxt keep-adb-connection-alive 192.0.2.10:43291 10`
 
  Troubles:
   * Sometimes need to do
