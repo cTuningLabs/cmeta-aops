@@ -6,8 +6,15 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
+import re
+import shutil
+import urllib.error
+import urllib.request
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
+
+LLVM_RELEASES = 'https://github.com/llvm/llvm-project/releases/download/llvmorg-{version}/{filename}'
+LLVM_TAGS_REPO = 'https://github.com/llvm/llvm-project'
 
 class CTool(InitCTool):
     """
@@ -54,6 +61,99 @@ class CTool(InitCTool):
 
         return {'return':0, 'paths':new_paths}
 
+
+    ############################################################
+    def _resolve_release(self,
+                         ctx: dict,
+                         prefix: str,
+                         filename_template: str,
+    ):
+        """
+        Newest published LLVM release whose version starts with `prefix` ("22" -> "22.1.8", "22.1" -> "22.1.8").
+
+        The versions come from the upstream tags (git ls-remote, the same source as cmd_get_versions);
+        release candidates (22.1.0-rc1) and "22-init" tags are skipped. Newest first, the release whose
+        prebuilt asset for this platform answers on GitHub is taken - a release tagged minutes ago may have
+        no assets yet, and then the previous one is the right answer.
+
+        Args:
+            ctx (dict): The cMeta context (the git tool set up earlier is reused when present).
+            prefix (str): Partial version, "22" or "22.1".
+            filename_template (str): Asset file name with "{version}" in place of the version.
+
+        Returns:
+            dict: A cMeta dictionary with the following keys:
+                - **return** (int): 0 if success, >0 if error.
+                - **error** (str): Error message if `return > 0`.
+                - **version** (str): The resolved release, e.g. "22.1.8".
+                - **filename** (str): The asset file name for that release.
+                - **prefix** (str): The prefix that was resolved.
+                - **candidates** (list): All matching releases, newest first.
+        """
+
+        _global = ctx['tasks']['global']
+
+        git = (_global.get('git') or {}).get('qpath')
+        if not git:
+            git_path = shutil.which('git')
+            git = self.cm.q(git_path) if git_path else None
+        if not git:
+            return {'return': 1,
+                    'error': f'git is needed to list the LLVM releases for the partial version "{prefix}"; '
+                             f'install git or pass an exact version (cx tool setup llvm --versions lists them)'}
+
+        r = self.cm.utils.sys.run(f'{git} ls-remote --tags {LLVM_TAGS_REPO}', capture_output=True)
+        if r['return'] > 0: return r
+        if r['returncode'] != 0:
+            return {'return': 1, 'error': f'listing the LLVM releases failed: {r.get("stderr", "").strip()}'}
+
+        releases = set()
+        for line in r['stdout'].splitlines():
+            match = re.search(r'refs/tags/llvmorg-(\d+\.\d+\.\d+)$', line.strip())
+            if match:
+                releases.add(match.group(1))
+
+        candidates = sorted((v for v in releases if v.startswith(prefix + '.')),
+                            key=lambda v: [int(x) for x in v.split('.')], reverse=True)
+        if not candidates:
+            return {'return': 1,
+                    'error': f'no published LLVM release matches version "{prefix}" '
+                             f'(cx tool setup llvm --versions lists the available ones)'}
+
+        for v in candidates[:5]:
+            filename = filename_template.format(version=v)
+            if self._asset_exists(LLVM_RELEASES.format(version=v, filename=filename)):
+                return {'return': 0, 'version': v, 'filename': filename, 'prefix': prefix, 'candidates': candidates}
+
+        return {'return': 1,
+                'error': f'the newest LLVM releases matching "{prefix}" ({", ".join(candidates[:5])}) publish no '
+                         f'prebuilt "{filename_template}" asset; pass an exact version'}
+
+    ############################################################
+    def _asset_exists(self,
+                      url: str,
+    ):
+        """
+        True when GitHub answers the release asset URL with a redirect (the asset exists) or any 2xx/3xx;
+        False on HTTP 404. A network problem counts as True so that an offline check never hides a release
+        that does exist - the download step reports the real error then.
+        """
+
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+
+        opener = urllib.request.build_opener(_NoRedirect)
+        request = urllib.request.Request(url, method='HEAD')
+        try:
+            with opener.open(request, timeout=20) as response:
+                return 200 <= response.status < 400
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return False
+            return 200 <= e.code < 400 or e.code >= 500
+        except Exception:
+            return True
 
     ############################################################
     def install(self,
@@ -122,7 +222,20 @@ class CTool(InitCTool):
                 'install_cmd': cmd, # this is needed to proceed with the main installation routine !
             }
 
-        url = f'https://github.com/llvm/llvm-project/releases/download/llvmorg-{version_simple}/{filename}'
+        # A partial version ("22", "22.1") is not a release tag: llvmorg-22/LLVM-22-Linux-X64.tar.xz does
+        # not exist (HTTP 404). Resolve it to the newest published release that starts with it and whose
+        # prebuilt asset for this platform is there (a freshly tagged release may not have assets yet).
+        if version_simple.count('.') < 2:
+            r = self._resolve_release(ctx, version_simple, filename_template=filename.replace(version_simple, '{version}'))
+            if self.cm.catch_error(r): return r
+            if con:
+                print ('')
+                print (f'{space}INFO: LLVM version "{version_simple}" resolved to the newest published release {r["version"]}')
+            version_simple = r['version']
+            version = version_simple
+            filename = r['filename']
+
+        url = LLVM_RELEASES.format(version=version_simple, filename=filename)
 
         directory = 'content'
         path_to_clang = os.path.join(os.getcwd(), directory, 'bin', 'clang' + _global['host']['vars']['file_ext_exe'])

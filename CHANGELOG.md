@@ -2,6 +2,13 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION
+- **Fix: `tool/llvm` with a partial version (`--use.llvm.version=22`, `--version=22.1`).** The
+  install hook pasted the partial version into the release URL (`llvmorg-22/LLVM-22-Linux-X64.tar.xz`,
+  HTTP 404), which failed the *clang++ 22* workflow on every OS. It now resolves a partial version to
+  the newest published release that starts with it (from the upstream tags, like `cmd_get_versions`),
+  skipping release candidates and a release whose prebuilt asset is not there yet.
+
 ## 0.32.1
 - **Six generic artifacts moved in from a downstream repository** (same UIDs, so any
   existing `alias,UID` reference keeps resolving): `tool/az` + `task/run-az` (Azure CLI:

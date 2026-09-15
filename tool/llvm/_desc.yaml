@@ -2,6 +2,9 @@ authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 storage_key: llvm
 
+# Install (api_v1.py) downloads the official prebuilt release for the requested version. An exact
+# version (22.1.7) is used as is; a partial one (--version=22, 22.1) is resolved to the newest
+# published release that starts with it, read from the upstream tags like cmd_get_versions.
 default_version: 22.1.7
 
 names:

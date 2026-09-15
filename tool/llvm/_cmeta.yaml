@@ -3,4 +3,4 @@ authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
-desc: "LLVM toolchain with a pinned default version; clang and clang++ resolve through it."
+desc: "LLVM toolchain installed from the official prebuilt release (Windows, Linux, macOS) with a pinned default version; a partial --version such as 22 resolves to the newest 22.x release; clang and clang++ resolve through it."
