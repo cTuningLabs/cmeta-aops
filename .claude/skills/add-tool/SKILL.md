@@ -23,29 +23,74 @@ So authoring a tool = writing two files under `tool/<name>/`:
 
 (`_cmeta.yaml` is written for you by `cx tool add`.)
 
-> **Read first:** `AGENTS.md` (§5 tool/program) and `tool/git/_desc.yaml`
-> (simplest declarative install), `tool/ninja/` + `tool/go/` (download-a-binary
-> via `api_v1.py`). The `cx <cat> <cmd> --help` output is the source of truth if
-> anything here disagrees.
+> **Read first:** `AGENTS.md` (§5 tool/program), then `tool/ninja/` + `tool/go/`
+> (download-a-binary via `api_v1.py` — the preferred Tier 1, see §1) and
+> `tool/git/_desc.yaml` (simplest declarative package-manager install). The
+> `cx <cat> <cmd> --help` output is the source of truth if anything here
+> disagrees.
 
 ---
 
-## 1. Decide the install strategy first
+## 1. Decide the install strategy first — work down this ladder
 
-This choice determines whether you need `api_v1.py` at all.
+**Always try the tiers in this order.** Use the highest one that can actually
+deliver the tool, and drop to the next only when it genuinely cannot. The order
+is about *reproducibility*: the higher the tier, the less it depends on what a
+particular host happens to have installed, and the more exactly the version is
+pinned. This choice also determines whether you need `api_v1.py` at all.
 
-- **A. Package manager / official installer** (declarative, `_desc.yaml` only):
-  the tool is available via winget (Windows), apt/dnf/etc. via
-  `install_cmd_sudo` (Linux), or brew/`xcode-select` (macOS), or a one-line
-  `curl … | sh` script. → Use `install_cmd:` / `install_cmd_version:`.
-  Examples: `tool/git`, `tool/codex`.
-- **B. Download a prebuilt release binary/archive** (needs `api_v1.py`): no
-  clean package exists, or you want an exact pinned version placed in the
-  category cache. → Implement the `install()` hook that calls task
-  `download-file,03fed13e2e0447cf`. Examples: `tool/ninja`, `tool/go`,
-  `tool/cmake`. **This is the right path for bazel.**
+### Tier 1 — download a prebuilt binary (**preferred**)
 
-Both strategies still need the **detection** block in `_desc.yaml`.
+`curl`-style direct download via task `download-file,03fed13e2e0447cf`, driven
+from an `install()` hook in `api_v1.py`.
+
+Pins an exact version, is checksum-verifiable, needs **no privileges**, works in
+a bare container or CI, and is identical on every host. Reach for this whenever
+upstream publishes a binary or archive.
+Examples: `tool/ninja`, `tool/go`, `tool/cmake`, `tool/rclone`.
+
+### Tier 2 — non-sudo system package manager
+
+Declarative `install_cmd:` in `_desc.yaml`, no `api_v1.py` needed.
+
+**winget** on Windows (present by default — `task/setup/_desc.yaml` sets it up
+with `skip_install: True # Available on Windows by default!`) and **brew** on
+macOS/Linux. User-scope, no root, but the available version is whatever the
+repository carries. Use when upstream publishes no usable binary.
+Examples: `tool/kubectl` (winget/brew), `tool/rclone` fallback.
+
+### Tier 3 — sudo / system package manager (**last resort**)
+
+Declarative `install_cmd:` + `requires_sudo:`, via
+`{{global.host.os_extra.install_cmd_sudo}}` — task/host resolves it per distro
+to apt / apt-get / dnf / microdnf / tdnf / yum / apk / pacman / zypper /
+xbps-install / emerge / nix-env (and brew on macOS), substituting `{{name}}`.
+
+Needs **root**, and you get whatever version the distro ships — so the same
+command yields different results on different machines. Only when tiers 1 and 2
+cannot work.
+Examples: `tool/git` on Linux, `tool/rsync` on Linux/macOS (rsync is published
+as source only, so there is no binary to fetch).
+
+### Tiers combine
+
+The usual shape for a well-behaved tool is **Tier 1 primary with a Tier 2/3
+declarative fallback**: `install()` downloads the binary, and returns
+`{'return':16, 'install_cmd': cmd}` when it cannot (unknown OS/arch, a version
+with no published asset), which makes `setup` fall through to `install_cmd:`.
+See §5. `tool/rclone` and `tool/rsync` (in a private content repository of the author) both do this.
+
+> **Never introduce a package manager that is not itself a cMeta `tool`.**
+> Only **`tool/winget`** and **`tool/brew`** exist. Something like chocolatey is
+> Windows-only, absent by default, needs an admin bootstrap, and has no artifact
+> — so `setup` could neither detect nor install it, and the whole chain would
+> quietly depend on untracked host state. If a mirror is only reachable through
+> such an ecosystem, fetch its **artifact over plain HTTPS** as a Tier-1
+> download instead of taking a dependency on its client (this is what
+> `tool/rsync` does with the Chocolatey CDN: a `.nupkg` is just a zip, so no
+> `choco.exe` is involved).
+
+Every tier still needs the **detection** block in `_desc.yaml`.
 
 ---
 
@@ -67,14 +112,14 @@ cx tool add ctuninglabs@cmeta-aops:bazel --yaml   # writes tool/bazel/_cmeta.yam
 `cx tool add` maps to the base `create_` (`cmeta/category_api_v1.py`). It only
 creates `_cmeta.*` (and its generated `copyright:` may differ from the siblings —
 fix it to `Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights
-reserved.`). Then hand-author `_desc.yaml` (and `api_v1.py` if strategy B).
+reserved.`). Then hand-author `_desc.yaml` (and `api_v1.py` for a Tier-1 download).
 
 If you accidentally created it in the wrong repo, remove it with the repo-qualified
 name (`cx tool rm local:<name> --force`) and re-add with the `<repo>:` prefix.
 
 Fastest correct route: **clone the nearest existing tool** and edit.
-- Strategy A → copy `tool/git/_desc.yaml`.
-- Strategy B → copy `tool/ninja/_desc.yaml` + `tool/ninja/api_v1.py`.
+- Tier 1 (download a binary) → copy `tool/ninja/_desc.yaml` + `tool/ninja/api_v1.py`.
+- Tier 2/3 (package manager) → copy `tool/git/_desc.yaml`.
 
 After a hand-edit to `_cmeta.*` meta: **`cx <cat> update <ref>`** (or
 `cx <cat> index <ref>` to register a hand-made folder). `cx --reindex` rebuilds
@@ -129,7 +174,7 @@ cmd_get_versions_regex: 'refs/tags/(\d+\.\d+\.\d+)$'
 
 ---
 
-## 4. `_desc.yaml` — declarative install (Strategy A)
+## 4. `_desc.yaml` — declarative install (Tiers 2 and 3)
 
 Per-OS commands, templated against `ctx['tasks']` (`{{global....}}`). The `setup`
 task picks `windows` / `linux` / `darwin` (falling back to `linux`), or a single
@@ -169,7 +214,7 @@ deps. Set `skip_common_install_uses: True` to opt out.
 
 ---
 
-## 5. `api_v1.py` — custom install (Strategy B)
+## 5. `api_v1.py` — custom install (Tier 1: download a binary)
 
 Subclass `CTool` and implement `install()`. Contract (from
 `task/setup/install.py::install_tool`):
@@ -198,9 +243,36 @@ versioned asset name), `unzip` (+ `strip_folders`, `clean_after_unzip` for
 archives; `False` for a bare binary), `check_file` (abs path that must exist
 after), `make_check_file_executable: True` (chmod +x on non-Windows).
 
+### 5.1 Mirrors, and two `download-file` behaviours to design around
+
+`url` accepts a **list**: `download-file` walks it in order and stops at the
+first success, so extra entries are mirrors. Worth adding whenever upstream is a
+single small host — a vendor being down otherwise makes a fresh install fail
+outright. Keep the official source first.
+
+Two constraints shape how you call it:
+
+- **It dispatches unpacking on the file *extension*** (`.zip`, `.tar.gz`, …) and
+  hard-errors on anything else: `extension is not yet supported for unzip/untar`.
+  A URL that ends in something like `.../package/rsync/6.4.8` therefore cannot be
+  handed to it with `unzip: True`. Fetch with **`unzip: False`** and unpack in
+  the hook — detecting archives with `zipfile.is_zipfile()` rather than by name
+  also lets you peel a mirror's outer wrapper (see `tool/rsync`).
+- **`filename` is matched to `url` positionally, and `init()` always collapses it
+  to a single value.** Passing one filename with several URLs used to raise
+  `IndexError` and made every mirror unreachable; `download-file` now falls back
+  to deriving a name from each URL when the list is shorter (same for `md5sum`).
+  The practical rule: with multiple URLs, either give **one name per URL** or
+  **none at all**.
+
+Locate the binary by **searching** the unpacked tree rather than assuming a fixed
+path — vendors move things between releases, and mirrors add a wrapper
+directory. Leave it where it was unpacked if it needs sibling libraries
+(cwRsync's `rsync.exe` must keep its Cygwin DLLs next to it).
+
 ---
 
-## 6. Worked example — bazel (cross-platform, Strategy B)
+## 6. Worked example — bazel (cross-platform, Tier 1)
 
 Bazel ships a **single static binary** per OS/arch on GitHub releases:
 `bazel-<ver>-<os>-<arch>[.exe]`, `os ∈ {windows,linux,darwin}`,
@@ -407,10 +479,10 @@ rebuild with `--update`, wipe with `--clean`.
 - [ ] Fixed the auto-generated `copyright:` in `_cmeta.*` to match the siblings.
 - [ ] `names:` ends with `{{global.host.vars.file_ext_exe}}`.
 - [ ] `match_version` regex tested against real `cmd_get_version` output; YAML backslashes escaped.
-- [ ] Strategy B: `install()` imports `from tool_c393ba5c6fa14f66.api.ctool import InitCTool`
+- [ ] Tier 1: `install()` imports `from tool_c393ba5c6fa14f66.api.ctool import InitCTool`
       (bazel's own tool UID stays out of code — this is the **category** UID, same in every tool's `api_v1.py`).
-- [ ] Strategy B: pass `filename` to `download-file` so the binary is stored under the plain tool name.
-- [ ] Strategy B: return `install_cmd: None` on success, or `{'return':16,'install_cmd':cmd}` to fall back.
+- [ ] Tier 1: pass `filename` to `download-file` so the binary is stored under the plain tool name (one name per URL, or none, when passing mirrors — see §5.1).
+- [ ] Tier 1: return `install_cmd: None` on success, or `{'return':16,'install_cmd':cmd}` to fall back.
 - [ ] Refreshed the index with the narrowest command (`cx <cat> update|index <ref>`) after editing `_cmeta.*` meta; a `_desc.yaml`-only edit needs none.
 - [ ] Verified with `cx tool run <name> -- --version` (real run, not just `--info`); used `--install` for unattended install.
 - [ ] Apache-2.0 copyright header copied from a sibling (upstream notices on vendored third-party source left verbatim); referenced sub-tasks by `alias,UID`.
