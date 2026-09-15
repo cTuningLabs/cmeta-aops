@@ -3,5 +3,6 @@ authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+desc: "OpenMP static runtime from the Android NDK, located for the selected Android target."
 last_update_timestamp: '2026-05-09T10:29:06.306439+00:00'
 

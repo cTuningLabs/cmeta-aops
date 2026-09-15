@@ -14,6 +14,7 @@ constraints:
   - darwin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+desc: "Clang C++ and Objective-C compiler (clang++), detected next to Clang for C++ programs."
 last_update_timestamp: '2026-06-08T10:40:35.590034+00:00'
 sort: 3000
 tags:

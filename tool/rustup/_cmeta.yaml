@@ -3,5 +3,6 @@ authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+desc: "Rust toolchain installer (rustup), detected on the host; rustc installs through it."
 last_update_timestamp: '2026-04-12T08:27:53.800277+00:00'
 

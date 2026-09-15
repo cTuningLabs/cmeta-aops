@@ -3,6 +3,7 @@ authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+desc: "Intel oneAPI C compiler (icx), detected once oneAPI is set up."
 last_update_timestamp: '2026-04-30T14:48:23.230881+00:00'
 sort: 4000
 constraints:

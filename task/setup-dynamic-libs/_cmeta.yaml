@@ -3,6 +3,7 @@ authors: Grigori Fursin
 category: task,c36be4b9314a45e0
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-02-01T15:29:13.399124+00:00'
+desc: "Set up the dynamic libraries a program needs and add their paths to the environment."
 last_update_timestamp: '2026-05-27T12:34:32.155058+00:00'
 uses_categories:
   tool: tool,c393ba5c6fa14f66

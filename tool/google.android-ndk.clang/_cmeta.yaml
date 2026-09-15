@@ -10,6 +10,7 @@ constraints:
   - darwin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+desc: "Clang C cross-compiler from the Android NDK, detected for the android-cpu target."
 last_update_timestamp: '2026-05-05T14:57:33.529479+00:00'
 tags:
 - lang-c

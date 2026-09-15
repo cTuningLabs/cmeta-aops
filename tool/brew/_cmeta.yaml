@@ -3,4 +3,5 @@ authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+desc: "Homebrew package manager for macOS and Linux, detected or installed with the official script; other tools install through it without sudo."
 last_update_timestamp: '2026-06-08T10:40:35.260801+00:00'

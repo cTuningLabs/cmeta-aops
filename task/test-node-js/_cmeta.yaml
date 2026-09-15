@@ -3,5 +3,6 @@ authors: Grigori Fursin
 category: task,c36be4b9314a45e0
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-02-01T15:29:13.399124+00:00'
+desc: "Smoke test: run a hello-world with Node.js."
 last_update_timestamp: '2026-04-14T09:10:42.317353+00:00'
 

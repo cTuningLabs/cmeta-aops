@@ -9,5 +9,6 @@
   },
   "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",
   "creation_timestamp": "2026-07-22T16:04:27.959379+00:00",
+  "desc": "Minimal hello-world C program that writes a statistics file; the smallest end-to-end check of the program pipeline.",
   "note": "minimal hello-world C program with a stats output file"
 }

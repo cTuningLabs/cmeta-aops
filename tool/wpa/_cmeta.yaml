@@ -3,5 +3,6 @@ authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+desc: "Windows Performance Analyzer (wpa) from the Windows ADK, detected for viewing performance traces (Windows only)."
 last_update_timestamp: '2026-05-15T12:24:09.350661+00:00'
 

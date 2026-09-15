@@ -13,6 +13,7 @@
   },
   "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",
   "creation_timestamp": "2026-04-30T09:12:17.910826+00:00",
+  "desc": "Check PyTorch with torchaudio in Python on the selected target, with optional profiling.",
   "last_update_timestamp": "2026-06-04T18:15:20.241116+00:00",
   "note": "test native matmul with openmp, ssl and math libs"
 }

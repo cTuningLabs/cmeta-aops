@@ -13,5 +13,6 @@
   },
   "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",
   "creation_timestamp": "2026-06-06T00:00:00.000000+00:00",
+  "desc": "Build PyTorch from source through the program pipeline (Python, compilers, CMake) for the selected target.",
   "last_update_timestamp": "2026-06-07T08:00:17.918161+00:00"
 }
