@@ -3,6 +3,8 @@
 [![Test cMeta core AOps](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core.yml/badge.svg)](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core.yml)
 [![Test cMeta core AOps via cTuning](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core-via-ctuning.yml/badge.svg)](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core-via-ctuning.yml)
 
+> **Lineage.** The [cMeta](https://github.com/cTuningLabs/cmeta) framework these artifacts run on is the next generation of the **Collective Knowledge** technology: the same idea - research and engineering as reusable, content-addressed components behind one common interface - that ran through the cTuning framework and MILEPOST (2006-), [Collective Knowledge (CK)](https://github.com/mlcommons/ck) with its community Artifact Evaluation at ACM and IEEE conferences, and MLCommons Collective Mind (CM / CMX) behind the MLPerf automations. The 2021 ACM TechTalk [*Reproducing 150 Research Papers and Testing Them in the Real World*](https://www.youtube.com/watch?v=7zpeIVwICa4) ([slides](https://learning.acm.org/binaries/content/assets/leaning-center/webinar-slides/2021/grigorifursin_techtalk_slides.pdf)) tells the story that led here, and the 2023 ACM REP keynote [*Collective Mind: toward a common language to facilitate reproducible research and technology transfer*](https://zenodo.org/records/8105339) set out the common language for reproducibility that cMeta now implements; the cMeta [history page](https://github.com/cTuningLabs/cmeta/blob/main/docs/history.md) has the full lineage and the publications.
+
 **`cmeta-aops`** is a collection of *artifacts* for AI Operations (AIOps) — recipes
 that **install and run tools, build and benchmark programs, and fetch models and
 datasets** in a portable, unified way across operating systems and hardware
@@ -70,14 +72,33 @@ see also [How to cite](#how-to-cite) below.
   manager and compute target, so a recipe written once runs in many places.
 - **Reusable and composable** — tools, libraries, builds and downloads are cached and
   shared across runs and across artifacts, so work isn't repeated.
+- **Scalable sideways** — more capability means more artifacts, not a bigger engine. A
+  new domain is a new category; the core stays the size it is.
+- **Sustainable** — work outlives the people who did it. What was run, what it depended
+  on and where a number came from are recorded beside the result, so whoever picks it up
+  next *resumes* instead of reconstructing.
+- **Abstractions you can operate** — every tool, library, program, model, dataset and
+  workflow here is one artifact: simple (a folder and a metadata file), reusable (it
+  states what it is, not where it fits), live (you run it, rather than read about
+  running it) and interconnected by `alias,UID`. Each stays inspectable down to its
+  inputs, versions and provenance, so a result can be taken back to first principles —
+  and the content is [FAIR](https://www.go-fair.org/fair-principles/) (findable,
+  accessible, interoperable, reusable) by construction rather than by extra effort.
 - **Automation- and agent-friendly** — artifacts are plain metadata + small hooks that
   humans and AI agents can read, extend and compose (see the [skills](.claude/skills/)).
+  This is where the effort repays itself fastest: an agent is only as useful as the
+  context it can assemble, and here that context is **already recorded and already
+  machine-readable**, so it never has to be reconstructed first.
 
 > This repository is **content**, not the engine. It runs on **cMeta**, a small portable
 > framework for unifying and reusing code, data, models, agents and knowledge through a
-> single uniform interface. cMeta targets collaborative, **reproducible-by-design**
-> research and experimentation (an ongoing effort — reproducibility is *improved*, not
-> "solved").
+> single uniform interface — one `cx` CLI and one Python `access()` call over plain files
+> and directories, with minimal dependencies.
+>
+> cMeta exists to make R&D **collaborative, reproducible, reusable, scalable, portable and
+> sustainable**. Reproducibility there is deliberately described as *gradually improving*
+> rather than solved: recording the context of a run removes most accidental differences,
+> but full determinism across heterogeneous environments remains ongoing R&D.
 >
 > - cMeta framework (Apache-2.0, open source): **https://github.com/cTuningLabs/cmeta**
 > - Homepage / author: **https://cTuning.ai** · [Grigori Fursin](https://cTuning.ai/@gfursin)
@@ -143,6 +164,7 @@ In-depth developer/agent documentation lives in
 - [The `task` workflow engine](docs/cmeta-aops/task-engine.md)
 - [The `tool` abstraction (detect/install/build/run, version listing)](docs/cmeta-aops/tool-abstraction.md)
 - [The `program` category & the `compute` abstraction](docs/cmeta-aops/program-and-compute.md)
+- [Coding agents and cloud CLIs as tasks (`run-claude2` / `run-codex2` / `run-opencode2`, `run-az`, models and reasoning effort)](docs/cmeta-aops/agent-tasks.md)
 
 See also `AGENTS.md` (canonical brief for AI agents), `CLAUDE.md`, and the authoring
 [skills](.claude/skills/) (`add-tool`, `add-task`, `add-program`).
