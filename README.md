@@ -14,6 +14,15 @@ artifact — a folder with a metadata file — that you drive through one comman
 cx <category> <command> [args] [--flags]
 ```
 
+[cMeta](https://github.com/cTuningLabs/cmeta) is a small, open-source framework that turns
+the pieces of research and engineering work into reusable, interconnected artifacts behind
+one interface, so that R&D becomes **collaborative, reproducible, reusable, scalable,
+portable and sustainable**. It was created by [Grigori Fursin](https://cTuning.ai/@gfursin)
+at cTuning Labs as the next generation of his community projects on reusable and
+reproducible research since 2008 (the cTuning framework,
+[Collective Knowledge](https://github.com/mlcommons/ck), MLCommons Collective Mind), and
+this repository is where we collect the automations built with it.
+
 New to cMeta? The [course from 0 to 1](https://cTuning.ai/project/cmeta/cmeta.course/)
 explains the idea step by step, the
 [interactive installer](https://cTuning.ai/project/cmeta/cmeta.install/) gets `cx` onto
@@ -45,25 +54,24 @@ part of its context, see [agent tasks](docs/cmeta-aops/agent-tasks.md).
 automations and artifacts — supporting open science, collaborative research,
 experimentation and portable AI-agent workflows.**
 
-This repository is where I encode my own R&D as **executable, composable workflows**
+This repository is where we encode our R&D as **executable, composable workflows**
 rather than as prose, scripts and half-remembered command lines. Each artifact is a
 small piece of accumulated practice — how to detect and install a toolchain, how to
 build and benchmark a program on a given target, how to fetch a model — written once
 in a portable form and then reused, composed and driven by humans or AI agents through
 the same `cx` / `access()` interface.
 
-The longer-term intent is personal and deliberately ambitious: to grow this into the
-substrate for **my own AI-driven research assistant** — an "open scientist" in a
-modest, literal sense. Not a system that invents science, but a growing body of
+The longer-term intent is deliberately ambitious: to grow this into the substrate
+for an **AI-driven research assistant** — an "open scientist" in a modest, literal
+sense. Not a system that invents science, but a growing body of
 machine-readable, self-describing automations that an agent can discover, compose and
 extend on its own, so that experiments, builds and benchmarks can be set up, varied
 and repeated without re-deriving the same work each time. The artifacts are the
 memory; the agent is the operator.
 
-cMeta and this repository continue the **Collective Knowledge** line of work
-([CK, now hosted by MLCommons](https://github.com/mlcommons/ck)); the framework's
-[history page](https://github.com/cTuningLabs/cmeta/blob/main/docs/history.md) tells the
-story and lists the publications (see also [How to cite](#how-to-cite)).
+The framework's [history page](https://github.com/cTuningLabs/cmeta/blob/main/docs/history.md)
+tells the story from Collective Knowledge to cMeta and lists the publications (see also
+[How to cite](#how-to-cite)).
 
 **What that means in practice — please read before relying on anything here:**
 
@@ -109,18 +117,10 @@ story and lists the publications (see also [How to cite](#how-to-cite)).
   context it can assemble, and here that context is **already recorded and already
   machine-readable**, so it never has to be reconstructed first.
 
-> This repository is **content**, not the engine. It runs on **cMeta**, a small portable
-> framework for unifying and reusing code, data, models, agents and knowledge through a
-> single uniform interface — one `cx` CLI and one Python `access()` call over plain files
-> and directories, with minimal dependencies.
->
-> cMeta exists to make R&D **collaborative, reproducible, reusable, scalable, portable and
-> sustainable**. Reproducibility there is deliberately described as *gradually improving*
-> rather than solved: recording the context of a run removes most accidental differences,
-> but full determinism across heterogeneous environments remains ongoing R&D.
->
-> - cMeta framework (Apache-2.0, open source): **https://github.com/cTuningLabs/cmeta**
-> - Homepage / author: **https://cTuning.ai** · [Grigori Fursin](https://cTuning.ai/@gfursin)
+This repository is **content**, not the engine: everything here runs on the
+[cMeta framework](https://github.com/cTuningLabs/cmeta) (Apache-2.0), whose README and
+[documentation](https://github.com/cTuningLabs/cmeta/blob/main/docs/README.md) explain the
+engine itself. Homepage: [cTuning.ai](https://cTuning.ai).
 
 ## Core concepts
 
@@ -209,7 +209,7 @@ this repository should also read [`llms.txt`](llms.txt) and
 
 **Using the ideas rather than the code?** Concepts aren't covered by copyright, so
 this is an invitation rather than a requirement: if this project's approach is
-useful to yours, a citation is very welcome — and I would rather collaborate than
+useful to yours, a citation is very welcome — and we would rather collaborate than
 be copied quietly. Get in touch: [cTuning.ai/@gfursin](https://cTuning.ai/@gfursin).
 
 > **Third-party components.** Parts of this repository are third-party works that
