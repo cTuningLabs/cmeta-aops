@@ -1,0 +1,18 @@
+artifact: cc3bbd0571c24c79
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-09-17T05:21:02.240763+00:00'
+desc: Clone the MLPerf Inference Endpoints benchmark source (mlcommons/endpoints)
+  into the cache.
+last_update_timestamp: '2026-09-17T05:21:32.467708+00:00'
+note: 'The MLPerf Inference Endpoints benchmark (LLM endpoint load testing, 50k+ QPS
+  target). Positional arg: a tag or branch to check out, e.g. cxt get-mlperf-endpoints-src
+  main. Results of a round: task get-mlperf-endpoints-results.'
+tags:
+- get
+- src
+- mlperf
+- endpoints
+- inference
+- github
+- mlcommons
