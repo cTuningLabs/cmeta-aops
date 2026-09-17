@@ -1,21 +1,43 @@
-# cMeta agentic ops repository (`cmeta-aops`)
+# cMeta AOps: reusable automations for cMeta (`cmeta-aops`)
 
 [![Test cMeta core AOps](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core.yml/badge.svg)](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core.yml)
 [![Test cMeta core AOps via cTuning](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core-via-ctuning.yml/badge.svg)](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core-via-ctuning.yml)
 
-> **Lineage.** The [cMeta](https://github.com/cTuningLabs/cmeta) framework these artifacts run on is the next generation of the **Collective Knowledge** technology: the same idea - research and engineering as reusable, content-addressed components behind one common interface - that ran through the cTuning framework and MILEPOST (2006-), [Collective Knowledge (CK)](https://github.com/mlcommons/ck) with its community Artifact Evaluation at ACM and IEEE conferences, and MLCommons Collective Mind (CM / CMX) behind the MLPerf automations. The 2021 ACM TechTalk [*Reproducing 150 Research Papers and Testing Them in the Real World*](https://www.youtube.com/watch?v=7zpeIVwICa4) ([slides](https://learning.acm.org/binaries/content/assets/leaning-center/webinar-slides/2021/grigorifursin_techtalk_slides.pdf)) tells the story that led here, and the 2023 ACM REP keynote [*Collective Mind: toward a common language to facilitate reproducible research and technology transfer*](https://zenodo.org/records/8105339) set out the common language for reproducibility that cMeta now implements; the cMeta [history page](https://github.com/cTuningLabs/cmeta/blob/main/docs/history.md) has the full lineage and the publications.
-
-**`cmeta-aops`** is a collection of *artifacts* for AI Operations (AIOps) — recipes
-that **install and run tools, build and benchmark programs, and fetch models and
-datasets** in a portable, unified way across operating systems and hardware
-(Linux, Windows, macOS, Android; CPU, CUDA, and more).
-
-Instead of a pile of one-off scripts, every capability here is a small, composable
-artifact you drive through **one command**:
+**`cmeta-aops`** is the reference content repository of the
+[cMeta](https://github.com/cTuningLabs/cmeta) framework: ready-to-run recipes that
+**install and run tools, build and benchmark programs, fetch models and datasets, and
+drive coding agents** in a portable way across operating systems and hardware (Linux,
+Windows, macOS, Android; CPU, CUDA and more). Every recipe is a small, self-describing
+artifact — a folder with a metadata file — that you drive through one command:
 
 ```bash
 cx <category> <command> [args] [--flags]
 ```
+
+New to cMeta? The [course from 0 to 1](https://cTuning.ai/project/cmeta/cmeta.course/)
+explains the idea step by step, the
+[interactive installer](https://cTuning.ai/project/cmeta/cmeta.install/) gets `cx` onto
+your machine, and the [catalogues on cTuning.ai](https://cTuning.ai/project/cmeta) list
+the tools, tasks and programs this repository can run today.
+
+## Try it
+
+```bash
+uv tool install "cmeta[server]"                 # the engine (or: pip install cmeta); see the installer for your OS
+cx repo get ctuninglabs@cmeta-aops              # this repository, from GitHub
+cx tool setup git                               # detect or install a tool into the cache
+cx tool run git -- status                       # run it (arguments go after --)
+cx task list                                    # browse the reusable workflow steps
+cx program run test-nmm-c-cpu cpu               # compile and run a matmul benchmark on CPU
+cx program run test-nmm-nvcc-cuda cuda          # ... or on CUDA, if you have it
+cx task run test-python -j                      # a task with the full trace: every tool and step it reused
+```
+
+Working from a clone instead? Run `cx repo plug .` in the repository root, then
+`cx --reindex`. Handy flags: `-j`/`--verbose` (full step-by-step trace), `--con`,
+`--quiet`, `--version=X` (pin a tool version), `--update`/`--clean`/`--new` (cache
+control). To hand this repository to a coding agent (Claude Code, Codex, OpenCode) as
+part of its context, see [agent tasks](docs/cmeta-aops/agent-tasks.md).
 
 ## Project status
 
@@ -38,13 +60,10 @@ extend on its own, so that experiments, builds and benchmarks can be set up, var
 and repeated without re-deriving the same work each time. The artifacts are the
 memory; the agent is the operator.
 
-That direction is the continuation of a long line of work on making code, data, models
-and knowledge reusable, portable and reproducible — the cTuning framework, Collective
-Knowledge (CK), and MLCommons Collective Mind (CM/CMX). The vision behind it is set
-out in the author's publications, listed in [`CITATION.cff`](CITATION.cff) and in the
-framework's
-[history and publications](https://github.com/cTuningLabs/cmeta/blob/main/docs/history.md);
-see also [How to cite](#how-to-cite) below.
+cMeta and this repository continue the **Collective Knowledge** line of work
+([CK, now hosted by MLCommons](https://github.com/mlcommons/ck)); the framework's
+[history page](https://github.com/cTuningLabs/cmeta/blob/main/docs/history.md) tells the
+story and lists the publications (see also [How to cite](#how-to-cite)).
 
 **What that means in practice — please read before relying on anything here:**
 
@@ -103,26 +122,6 @@ see also [How to cite](#how-to-cite) below.
 > - cMeta framework (Apache-2.0, open source): **https://github.com/cTuningLabs/cmeta**
 > - Homepage / author: **https://cTuning.ai** · [Grigori Fursin](https://cTuning.ai/@gfursin)
 
-## Quick start
-
-cMeta is a Python package (`pip install cmeta`, Python 3.9–3.14). Once it's installed and
-this repository is on disk:
-
-```bash
-cx repo plug .                      # register this repository with cMeta (once)
-cx --reindex                        # build the fast index
-
-cx tool setup git                   # detect or install git into the cache
-cx tool run git -- status           # run a set-up tool (args go after --)
-
-cx task list                        # browse the reusable workflow steps
-cx program run test-nmm-c-cpu cpu   # compile & run a matmul benchmark on CPU
-cx program run test-nmm-nvcc-cuda cuda   # ...or on CUDA (if available)
-```
-
-Handy flags: `-j`/`--verbose` (full step-by-step trace), `--con`, `--quiet`,
-`--version=X` (pin a tool version), `--update`/`--clean`/`--new` (cache control).
-
 ## Core concepts
 
 Four ideas cover almost everything here. Top-level folders are **categories**; each
@@ -170,7 +169,7 @@ See also `AGENTS.md` (canonical brief for AI agents), `CLAUDE.md`, and the autho
 [skills](.claude/skills/) (`add-tool`, `add-task`, `add-program`).
 
 
-# Useful configurations
+## Useful configurations
 
 ```
 cx config set task --meta.file_cache=x:\cmeta-file-cache-windows
@@ -179,7 +178,7 @@ cx config set default --meta.default_git=git@github.com:
 ```
 
 
-# Contributing
+## Contributing
 
 Contributions are welcome — new tools, tasks and programs, portability fixes, and
 documentation. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow.
@@ -191,7 +190,7 @@ sign your commits with `git commit -s`. Please read the third-party section of
 See also [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) and
 [`MAINTAINERS.md`](MAINTAINERS.md).
 
-# Copyright and license
+## Copyright and license
 
 Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
 

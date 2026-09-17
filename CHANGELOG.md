@@ -3,6 +3,11 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION
+- **README rewritten for first-time readers.** A plain opening (what the repository is, the one command,
+  where to start: the course, the installer, the catalogues), a "Try it" block that pulls the repository
+  from GitHub and runs the first tool, task and program, and one sentence on the Collective Knowledge
+  lineage with a link to the framework's history page instead of the lineage paragraph. The status
+  warnings, goals and core concepts are unchanged.
 - **Fix: `tool/llvm` with a partial version (`--use.llvm.version=22`, `--version=22.1`).** The
   install hook pasted the partial version into the release URL (`llvmorg-22/LLVM-22-Linux-X64.tar.xz`,
   HTTP 404), which failed the *clang++ 22* workflow on every OS. It now resolves a partial version to
