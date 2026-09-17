@@ -1,0 +1,9 @@
+params_map:
+  arg2: checkout
+
+uses:
+  - task: clone-git-to-cache,86919b3cfdd443d2
+    name: src-mlperf-endpoints
+    url: https://github.com/mlcommons/endpoints
+    checkout: '{{params.checkout|$None}}'
+    cache_extra_tags: '{{params.extra_tags|$None}}'

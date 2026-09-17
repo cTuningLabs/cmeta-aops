@@ -1,0 +1,18 @@
+artifact: 1eab14a22ca44ac8
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-09-17T05:21:02.484740+00:00'
+desc: Clone the MLPerf Inference Endpoints results repository of a given round (endpoints_results_v<round>)
+  into the cache.
+last_update_timestamp: '2026-09-17T05:21:32.677359+00:00'
+note: 'Rounds published so far: 0.7 (the default; mlcommons/endpoints_results_v0.7,
+  2026-07). Use --version=<round>, --url=<fork> to read a fork, --root_dir and --extra_tags
+  as in get-mlperf-inference-results.'
+tags:
+- get
+- results
+- mlperf
+- endpoints
+- inference
+- github
+- mlcommons

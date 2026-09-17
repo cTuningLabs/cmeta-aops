@@ -3,6 +3,11 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION
+- **MLPerf Inference v6.1 results and the MLPerf Inference Endpoints benchmark.** `task/get-mlperf-inference-results`
+  defaults to the v6.1 round (published 2026-09-15; `--version=6.0` etc. still work) with a test script, plus the
+  `clone-git` example scripts for inference v6.1 and training v6.0. Two new tasks read the Endpoints benchmark:
+  `task/get-mlperf-endpoints-src` (mlcommons/endpoints, optional tag or branch) and `task/get-mlperf-endpoints-results`
+  (`endpoints_results_v<round>`, default 0.7), both thin wrappers over `clone-git-to-cache` like their inference siblings.
 - **README rewritten for first-time readers.** A plain opening (what the repository is, the one command,
   where to start: the course, the installer, the catalogues), a "Try it" block that pulls the repository
   from GitHub and runs the first tool, task and program, and one sentence on the Collective Knowledge

@@ -1,6 +1,4 @@
 """
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
-
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
@@ -29,11 +27,11 @@ class CTask(InitCTask):
 
         version = params.get('version')
         if not version:
-            version = '6.1'
+            version = '0.7'
 
         url = params.get('url')
         if not url:
-            url = f'https://github.com/mlcommons/inference_results_v{version}'
+            url = f'https://github.com/mlcommons/endpoints_results_v{version}'
 
         extra_tags = params.get('extra_tags')
         if not extra_tags:
@@ -58,7 +56,7 @@ class CTask(InitCTask):
         version = _local['version']
         version2 = _local['version'].replace('.', '-')
 
-        key = f'clone-git-to-cache-mlperf-inference-results-{version2}'
+        key = f'clone-git-to-cache-mlperf-endpoints-results-{version2}'
 
         result_from_git = _global[key]
 

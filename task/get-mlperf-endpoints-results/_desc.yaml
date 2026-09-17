@@ -1,0 +1,12 @@
+params_map:
+  arg2: version
+  arg3: checkout
+
+uses:
+  - task: clone-git-to-cache,86919b3cfdd443d2
+    name: mlperf-endpoints-results-{{local.version}}
+    url: '{{local.url}}'
+    checkout: '{{params.checkout|$None}}'
+    version: '{{local.version}}'
+    root_dir: '{{params.root_dir|$None}}'
+    cache_extra_tags: '{{params.extra_tags|$None}}'
