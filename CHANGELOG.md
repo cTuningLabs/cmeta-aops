@@ -2,7 +2,25 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION
+## DEV VERSION (0.32.1.1)
+- **The ssh client is now a declared dependency, not a word on the caller's PATH.** `task/rclone-to-ssh`
+  built its sftp command as a bare `ssh`, so which binary ran depended on the shell. A Windows host can
+  carry several OpenSSH clients - the system one in `System32\OpenSSH`, the MSYS build inside Git, and
+  copies bundled with other products - and they disagree on one thing that matters: the Windows build
+  refuses a private key whose permissions let other users read it (`UNPROTECTED PRIVATE KEY FILE`, after
+  which the key is ignored and authentication fails), while the MSYS build uses it anyway. The result was
+  a sync that worked in one shell and failed in another with nothing but rclone's
+  `couldn't initialise SFTP: ... unexpected EOF` to go on, which reads like a network or server fault.
+  The task now resolves `tool/open-ssh` through `setup`, uses the absolute path, and prints it with its
+  version, so the binary in use is visible in the trace instead of being a property of the environment.
+  A resolved path containing a space keeps the bare name, because rclone parses `--sftp-ssh` as a
+  space-separated list and the value is already quoted; the path is still reported.
+- **`tool/open-ssh` detects properly and can install itself.** It gained `extra_paths` (the Windows
+  system directory, winget packages, Homebrew), a second version regex, a per-distribution package name
+  (`openssh-client` on Debian and Alpine, `openssh-clients` on Fedora, RHEL and SUSE, `openssh` on Arch),
+  install commands for the three platforms and help text naming the Windows optional feature. Detection
+  is what runs in practice, since the client ships with Windows 10 1809 and later, macOS and nearly
+  every Linux.
 - **MLPerf Inference v6.1 results and the MLPerf Inference Endpoints benchmark.** `task/get-mlperf-inference-results`
   defaults to the v6.1 round (published 2026-09-15; `--version=6.0` etc. still work) with a test script, plus the
   `clone-git` example scripts for inference v6.1 and training v6.0. Two new tasks read the Endpoints benchmark:
