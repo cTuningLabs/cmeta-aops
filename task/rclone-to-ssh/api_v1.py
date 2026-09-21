@@ -174,7 +174,31 @@ class CTask(InitCTask):
         # "qpath" is already quoted by task/setup when the path needs it
         rclone_path = ctx_tasks['global']['rclone']['qpath']
 
-        ssh_cmd = f'ssh {ssh_options.strip()} {ssh_target}' if ssh_options else f'ssh {ssh_target}'
+        # WHICH ssh runs is not a detail. A host can carry several OpenSSH clients - on Windows the system
+        # one in System32\OpenSSH and the MSYS build inside Git, plus copies bundled with other products -
+        # and they do not agree: the Windows build refuses a private key that other users can read, while
+        # the MSYS build uses it anyway. Spelled as a bare "ssh", the command therefore resolved through
+        # the caller's PATH and the same sync worked in one shell and failed in another with nothing but
+        # rclone's "unexpected EOF" to go on.
+        #
+        # task/open-ssh resolves it once, so the binary in use is the same everywhere and is printed below.
+        ssh_exe = 'ssh'
+        ssh_resolved = ctx_tasks['global'].get('open-ssh', {})
+        ssh_path = ssh_resolved.get('path') or ''
+        if ssh_path and ' ' not in ssh_path:
+            # rclone parses --sftp-ssh as a space-separated list, and this value is already inside double
+            # quotes, so a path containing a space cannot be nested safely. In that case the bare name is
+            # kept and the resolved path is only reported.
+            ssh_exe = ssh_path
+
+        if con:
+            print('')
+            print(f'{space}INFO: ssh client:  {ssh_path or "(not resolved - using PATH)"}'
+                  + (f'  (version {ssh_resolved["version"]})' if ssh_resolved.get('version') else ''))
+            if ssh_path and ssh_exe == 'ssh':
+                print(f'{space}INFO: that path contains a space, so "ssh" from PATH is used instead')
+
+        ssh_cmd = f'{ssh_exe} {ssh_options.strip()} {ssh_target}' if ssh_options else f'{ssh_exe} {ssh_target}'
 
         cmd_parts = [
             rclone_path,

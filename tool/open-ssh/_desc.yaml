@@ -1,11 +1,81 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# WHICH ssh you get matters, and more than it looks.
+#
+# A host can carry several OpenSSH clients. On Windows there is the system one in
+# System32\OpenSSH and the MSYS build shipped inside Git; a machine can also hold copies bundled with
+# Visual Studio or GitHub Desktop. They are NOT interchangeable: the Windows build refuses a private key
+# whose ACL lets other users read it ("UNPROTECTED PRIVATE KEY FILE" - the key is then ignored and
+# authentication fails), while the MSYS build does not enforce Windows ACLs and uses the key anyway.
+#
+# So the same command can succeed in one shell and fail in another purely because of PATH order, and a
+# caller that spells the command as a bare "ssh" cannot tell which one ran. That is why tasks should take
+# the resolved path from here ({{global.open-ssh.qpath}}) and print it: the binary in use becomes visible
+# in the trace instead of depending on the shell.
+
 names:
   - ssh{{global.host.vars.file_ext_exe}}
 
-match_version: 
+match_version:
   - regex: 'OpenSSH(?:_for_[^_]+)?_(\d+\.\d+p\d+)'
+    group: 1
+  - regex: 'OpenSSH(?:_for_[^_]+)?_(\d+\.\d+)'
     group: 1
 
 cmd_get_version: '{{tool_path}} -V'
 
+# Searched in addition to PATH, so the client is found on a host that does not export it (and so the
+# system build on Windows is reachable even from a shell whose PATH omits it).
+extra_paths:
+  windows:
+    - "{{global.host.os_env.SYSTEMROOT}}\\System32\\OpenSSH\\"
+    - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
+    - "C:\\Program Files\\OpenSSH\\**"
+  linux:
+    - "/usr/bin/"
+    - "/home/linuxbrew/.linuxbrew/**"
+  darwin:
+    - "/usr/bin/"
+    - "/opt/homebrew/opt/openssh*/**"
+
+# Present by default on Windows 10 1809+, on macOS and on nearly every Linux, so this is a fallback that
+# should rarely run. The package name differs per distribution.
+package_name: openssh-client
+
+package_name_os_id:
+  ubuntu: openssh-client
+  debian: openssh-client
+  fedora: openssh-clients
+  rhel: openssh-clients
+  centos: openssh-clients
+  almalinux: openssh-clients
+  rocky: openssh-clients
+  opensuse: openssh-clients
+  sles: openssh-clients
+  alpine: openssh-client
+  arch: openssh
+  manjaro: openssh
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+  darwin: 'brew install openssh'
+  windows: "{{global.winget.qpath}} install --id=Microsoft.OpenSSH.Beta -e --no-upgrade {{global.init.winget_install_flags|}}"
+
+install_cmd_version:
+  linux: '{{global.host.os_extra.install_cmd_sudo_version}}'
+
+requires_sudo:
+  linux: True
+
+install_help_text: |
+  Could not install an OpenSSH client automatically.
+
+  It is normally already present:
+    Windows 10 1809 and later  - "Settings > System > Optional features > OpenSSH Client",
+                                 or: Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+    macOS                      - shipped with the system
+    Linux                      - install the openssh-client (Debian/Ubuntu/Alpine) or
+                                 openssh-clients (Fedora/RHEL/SUSE) package
+
+  Then retry: cx tool setup open-ssh

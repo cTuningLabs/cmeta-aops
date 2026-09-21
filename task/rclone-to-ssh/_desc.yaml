@@ -181,3 +181,10 @@ uses:
     name: rclone,e8cb2f6227de4121
     version: '{{params.rclone_version|$None}}'
     install: '{{params.install|$None}}'
+
+  # The ssh client is a real dependency of the sftp remote, so it is resolved here instead of being
+  # spelled as a bare "ssh" and left to the caller's PATH. A host can carry several OpenSSH clients that
+  # disagree about whether a private key's permissions are acceptable, which made the same command work in
+  # one shell and fail in another; the resolved path and version are now printed with the run.
+  - task: setup,a2f9b61079ce4333
+    name: open-ssh,504895ca6bb04154
