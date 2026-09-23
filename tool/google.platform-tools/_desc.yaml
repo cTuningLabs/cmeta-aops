@@ -10,12 +10,12 @@ match_version:
 cmd_get_version: '{{tool_path}} --version'
 
 install_cmd:
-  windows: "{{global.winget.qpath}} install --id=Google.PlatformTools -e --no-upgrade {{global.init.winget_install_flags|}}"
+  windows: "{{global.winget.qpath}} install --id=Google.PlatformTools -e --no-upgrade --source winget {{global.init.winget_install_flags|}}"
   linux: '{{global.brew.qpath}} install android-platform-tools'
   darwin: '{{global.brew.qpath}} install android-platform-tools'
 
 install_cmd_version:
-  windows: "{{global.winget.qpath}} install --id=Google.PlatformTools -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"
+  windows: "{{global.winget.qpath}} install --id=Google.PlatformTools -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}"
   linux: '{{global.brew.qpath}} install android-platform-tools@{{major_version}}'
   darwin: '{{global.brew.qpath}} install android-platform-tools@{{major_version}}'
 

@@ -179,13 +179,17 @@ class CTask(InitCTask):
             y = '1' if x.get('passwordless_sudo', False) else '0'
             result['passwordless_sudo_noninteractive_int'] = y
         else:
+           # --source winget: without it winget also queries the Microsoft Store
+           # source, and where that fails (0x8a15005e, certificate pinning broken
+           # by an HTTPS-inspecting antivirus or proxy) winget refuses to install
+           # a package it has already found in the winget source.
            result['os_extra'] = {
              "id": "windows",
              "id_like": "windows",
-             "install_cmd": "winget install {{name}}",
-             "install_cmd_sudo": "winget install {{name}}",
-             "install_cmd_sudo_version": "winget install {{name}} --version {{version}}",
-             "install_cmd_version": "winget install {{name}} --version {{version}}",
+             "install_cmd": "winget install {{name}} --source winget",
+             "install_cmd_sudo": "winget install {{name}} --source winget",
+             "install_cmd_sudo_version": "winget install {{name}} --version {{version}} --source winget",
+             "install_cmd_version": "winget install {{name}} --version {{version}} --source winget",
              "package_manager": "winget",
              "passwordless_sudo": True,
              "sudo": False,

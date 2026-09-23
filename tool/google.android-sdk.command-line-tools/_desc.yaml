@@ -14,12 +14,12 @@ cache_meta_const:
 
 
 install_cmd:
-  windows: "{{global.winget.qpath}} install --id=Google.AndroidSDKCommandLineTools -e --no-upgrade {{global.init.winget_install_flags|}}"
+  windows: "{{global.winget.qpath}} install --id=Google.AndroidSDKCommandLineTools -e --no-upgrade --source winget {{global.init.winget_install_flags|}}"
   linux: '{{global.brew.qpath}} install --cask android-commandlinetools'
   darwin: '{{global.brew.qpath}} install --cask android-commandlinetools'
 
 install_cmd_version:
-  windows: "{{global.winget.qpath}} install --id=Google.AndroidSDKCommandLineTools -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"
+  windows: "{{global.winget.qpath}} install --id=Google.AndroidSDKCommandLineTools -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}"
   linux: '{{global.brew.qpath}} install --cask android-commandlinetools@{{major_version}}'
   darwin: '{{global.brew.qpath}} install --cask android-commandlinetools@{{major_version}}'
 

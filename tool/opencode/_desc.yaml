@@ -29,14 +29,14 @@ install_help_text:
 #   is a 404), so we go one rung down the ladder and use winget, which is set up
 #   by task/setup on Windows anyway.
 install_cmd:
-  windows: '{{global.winget.qpath}} install --id=SST.opencode -e --no-upgrade {{global.init.winget_install_flags|}}'
+  windows: '{{global.winget.qpath}} install --id=SST.opencode -e --no-upgrade --source winget {{global.init.winget_install_flags|}}'
   linux: '{{global.curl.qpath}} -fsSL https://opencode.ai/install | bash'
   darwin: '{{global.curl.qpath}} -fsSL https://opencode.ai/install | bash'
 
 # Specific version: the install script takes "--version X.Y.Z" (or $VERSION),
 # winget takes "--version".
 install_cmd_version:
-  windows: '{{global.winget.qpath}} install --id=SST.opencode -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}'
+  windows: '{{global.winget.qpath}} install --id=SST.opencode -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}'
   linux: '{{global.curl.qpath}} -fsSL https://opencode.ai/install | bash -s -- --version {{simple_version}}'
   darwin: '{{global.curl.qpath}} -fsSL https://opencode.ai/install | bash -s -- --version {{simple_version}}'
 

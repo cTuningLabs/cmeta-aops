@@ -20,12 +20,12 @@ cmd_get_versions_regex: '\brefs/tags/v(\d+\.\d+\.\d+)\b'
 install_cmd:
   linux: 'snap install kubectl --classic'
   darwin: 'brew install kubectl'
-  windows: '{{global.winget.qpath}} install --id=Kubernetes.kubectl -e --no-upgrade {{global.init.winget_install_flags|}}'
+  windows: '{{global.winget.qpath}} install --id=Kubernetes.kubectl -e --no-upgrade --source winget {{global.init.winget_install_flags|}}'
 
 install_cmd_version:
   linux: 'snap install kubectl --classic --channel={{simple_version}}/stable'
   darwin: 'brew install kubectl@{{simple_version}}'
-  windows: '{{global.winget.qpath}} install --id=Kubernetes.kubectl -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}'
+  windows: '{{global.winget.qpath}} install --id=Kubernetes.kubectl -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}'
 
 requires_sudo:
   linux: True

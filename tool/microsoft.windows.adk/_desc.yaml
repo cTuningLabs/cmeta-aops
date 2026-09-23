@@ -10,10 +10,10 @@ match_version:
 cmd_get_version: '{{tool_path}} /h'
 
 install_cmd:
-  windows: "{{global.winget.qpath}} install -e -id Microsoft.WindowsADK --no-upgrade {{global.init.winget_install_flags|}}"
+  windows: "{{global.winget.qpath}} install -e --id=Microsoft.WindowsADK --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
 install_cmd_version:
-  windows: "{{global.winget.qpath}} install -e -id Microsoft.WindowsADK --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"
+  windows: "{{global.winget.qpath}} install -e --id=Microsoft.WindowsADK --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
 extra_paths:
   windows:

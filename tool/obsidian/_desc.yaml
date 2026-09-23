@@ -34,11 +34,11 @@ download_url_templates:
 # The install ladder: Windows and macOS through the non-sudo package managers (tier 2); Linux downloads
 # the prebuilt AppImage (tier 1, api_v1.py) because there is no distribution package.
 install_cmd:
-  windows: '{{global.winget.qpath}} install --id=Obsidian.Obsidian -e --no-upgrade {{global.init.winget_install_flags|}}'
+  windows: '{{global.winget.qpath}} install --id=Obsidian.Obsidian -e --no-upgrade --source winget {{global.init.winget_install_flags|}}'
   darwin: '{{global.brew.qpath}} install --cask obsidian'
 
 install_cmd_version:
-  windows: '{{global.winget.qpath}} install --id=Obsidian.Obsidian -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}'
+  windows: '{{global.winget.qpath}} install --id=Obsidian.Obsidian -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}'
 
 install_uses:
   darwin:
