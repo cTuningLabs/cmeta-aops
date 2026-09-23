@@ -1,1 +1,1 @@
-﻿cx tool run codex -- --help
+cx tool run codex -- --help

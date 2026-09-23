@@ -1,1 +1,1 @@
-﻿cx program run test-pytorch-with-audio -v -j --clean --compute=cuda --use.target--cuda.with.ver=13.0 --use.pip-torch.version=2.11.0
+cx program run test-pytorch-with-audio -v -j --clean --compute=cuda --use.target--cuda.with.ver=13.0 --use.pip-torch.version=2.11.0

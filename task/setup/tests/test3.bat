@@ -1,1 +1,1 @@
-﻿cxt setup python --paths=c:\!progs\** --cache-
+cxt setup python --paths=c:\!progs\** --cache-

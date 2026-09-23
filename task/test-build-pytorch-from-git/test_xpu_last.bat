@@ -1,4 +1,4 @@
-﻿cx . run ^
+cx . run ^
    --use.clone-git-pytorch.cache_extra_params.version_tag="main" ^
    --use.clone-git-pytorch.cache_extra_params.tag="main" ^
    --use.clone-git-pytorch.cache_extra_params.version="main" ^

@@ -1,1 +1,1 @@
-﻿cx . run -- set ^> d:\x
+cx . run -- set ^> d:\x

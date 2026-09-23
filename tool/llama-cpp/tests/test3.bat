@@ -1,4 +1,4 @@
-﻿cx config set task --meta.winget_install_flags="--silent --accept-source-agreements --accept-package-agreements --disable-interactivity"
+cx config set task --meta.winget_install_flags="--silent --accept-source-agreements --accept-package-agreements --disable-interactivity"
 
 :: On Linux/Debian, can use only high version (until custom install)
 :: But on Windows - need specific version

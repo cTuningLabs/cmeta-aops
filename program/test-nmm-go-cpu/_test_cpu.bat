@@ -1,1 +1,1 @@
-﻿cx program run test-nmm-go-cpu --clean --compile.fastest -v
+cx program run test-nmm-go-cpu --clean --compile.fastest -v

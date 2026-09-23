@@ -1,4 +1,4 @@
-﻿cxt clone-git https://github.com/vllm-project/vllm.git ^
+cxt clone-git https://github.com/vllm-project/vllm.git ^
     --cache ^
     --cache_repo=fgg-work-usb ^
     --path=x:\work\vllm\v0.11.2 ^

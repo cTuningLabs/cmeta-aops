@@ -1,1 +1,1 @@
-﻿cx program run model-cnn-ylecun-mnist-pytorch,0f7147d4ca6f460c -v -j --cmd=run_local_image --image="%CD%\fgg-digit9.png"
+cx program run model-cnn-ylecun-mnist-pytorch,0f7147d4ca6f460c -v -j --cmd=run_local_image --image="%CD%\fgg-digit9.png"
