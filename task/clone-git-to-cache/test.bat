@@ -1,4 +1,4 @@
-﻿set checkout=b9006
+set checkout=b9006
 
 cxt clone-git-to-cache ^
     src-llama-cpp ^

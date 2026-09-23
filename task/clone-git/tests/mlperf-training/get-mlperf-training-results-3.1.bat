@@ -1,4 +1,4 @@
-﻿cxt clone-git https://github.com/mlcommons/training_results_v3.1 ^
+cxt clone-git https://github.com/mlcommons/training_results_v3.1 ^
     --cache ^
     --cache_repo=fgg-work-usb ^
     --path=x:\work\mlperf-training-results\v3.1 ^

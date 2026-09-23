@@ -1,2 +1,2 @@
-﻿cx program run test-pytorch-with-audio -v -j --clean
+cx program run test-pytorch-with-audio -v -j --clean
 

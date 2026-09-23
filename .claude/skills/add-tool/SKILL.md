@@ -184,10 +184,10 @@ task picks `windows` / `linux` / `darwin` (falling back to `linux`), or a single
 install_cmd:
   linux:   '{{global.host.os_extra.install_cmd_sudo}}'          # apt/dnf/... install <name>, filled by host
   darwin:  'xcode-select --install'
-  windows: "{{global.winget.qpath}} install --id=Bazel.Bazel -e --no-upgrade {{global.init.winget_install_flags|}}"
+  windows: "{{global.winget.qpath}} install --id=Bazel.Bazel -e --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
 install_cmd_version:                                            # used when a --version is requested
-  windows: "{{global.winget.qpath}} install --id=Bazel.Bazel -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"
+  windows: "{{global.winget.qpath}} install --id=Bazel.Bazel -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}"
   linux:   '{{global.host.os_extra.install_cmd_sudo_version}}'
 
 requires_sudo:            # forces non-interactive sudo handling
@@ -202,6 +202,11 @@ install_uses:            # extra tools this install needs, set up first (see tas
 install_help_text: |     # shown if every strategy fails
   Please install Bazel per https://bazel.build/install
 ```
+
+Always pass **`--source winget`** to winget. Without it winget also queries the
+Microsoft Store source, and on a machine where that source fails (`0x8a15005e`,
+certificate pinning broken by an HTTPS-inspecting antivirus or proxy) it
+refuses to install even a package it has already found in the winget source.
 
 Version placeholders the engine substitutes into `install_cmd_version`:
 `{{version}}`, `{{simple_version}}` (no comparators), `{{major_version}}`,

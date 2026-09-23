@@ -1,1 +1,1 @@
-﻿cx . setup --use.target.compute=android-cpu -j --fail
+cx . setup --use.target.compute=android-cpu -j --fail

@@ -1,1 +1,1 @@
-﻿cx . setup --version="<3.13" --cache- --update
+cx . setup --version="<3.13" --cache- --update

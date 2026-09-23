@@ -3,6 +3,40 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.32.1.1)
+- **Fix: `task/enable-long-paths-win` never enabled anything on a stock Windows.** Its
+  `enable-long-paths-win.bat` began with a UTF-8 BOM, which `cmd.exe` reads as part of the first command
+  under every code page except 65001 (UTF-8) - so on an ordinary English or French install the elevated
+  window failed on `'<BOM>reg' is not recognized`, closed at once, and the registry value was never
+  written. Every run then asked for administrator rights again and still reported long paths as off; it
+  only ever worked on machines with the system-wide UTF-8 code page. The task now starts `reg.exe`
+  elevated itself (no batch file, no user path to quote - an unquoted path with a space in the user name
+  broke it too), waits for it, and checks the registry rather than `RtlAreLongPathsEnabled`, which
+  Windows freezes when a process starts and so could never turn true within the same run. When the
+  value is already set in the registry it no longer prompts at all. The warning says up front that an
+  administrator prompt is coming and what to do if it does not work (Settings > System > Advanced >
+  "Enable long paths" on Windows 11, or the `reg add` command), and the error repeats it with the reason
+  (prompt declined, timed out, command failed). The `.bat` is kept, BOM-free, for running by hand.
+- **Batch files no longer start with a UTF-8 BOM.** 336 `.bat` test scripts and helpers under `program/`,
+  `task/` and `tool/` began with one, which `cmd.exe` reads as part of the first command under every code
+  page except 65001 - on an ordinary English or French Windows their first line failed with
+  `'<BOM>...' is not recognized`. Nothing else in them was non-ASCII, so they are plain ASCII now and run
+  the same under any code page.
+- **Tool detection lists each file once on merged-/usr Linux.** On Ubuntu, Debian, Fedora, Arch and
+  others `/bin` and `/sbin` (and on some `/usr/sbin`) are symlinks into `/usr`, and all of them are on
+  `PATH`, so every candidate was offered two to four times: a fresh Ubuntu listed `/bin/gcc`, `/bin/gcc-13`,
+  `/usr/bin/gcc`, `/usr/bin/gcc-13`, ... and the first `cx tool setup git` asked to choose between `/bin/git`
+  and `/usr/bin/git`, the same file. `find_path` now skips those three system aliases when the directory
+  they point to is searched anyway. Nothing else is resolved: paths that may lead to different versions
+  after an update - `/usr/local/cuda` and `/usr/local/cuda-13.0`, `gcc` and `gcc-13` - are still offered
+  side by side, and `-q` still takes the default where there is no terminal to ask.
+- **winget installs name `--source winget`.** Without it winget also queries the Microsoft Store source,
+  and where that fails - `0x8a15005e: The server certificate did not match any of the expected values`,
+  typically certificate pinning broken by an HTTPS-inspecting antivirus or proxy - it refuses to install
+  a package it has already found in the winget source and asks for `--source`. Every `tool/*` winget
+  command and the Windows `install_cmd*` of `task/host` (used by `install-sys-tool`) now pass it, as
+  `tool/swiftlang` already did. Two lines that could never have worked are fixed on the way: the
+  versioned `tool/tailscale` command said `--Tailscale.Tailscale` instead of `--id=Tailscale.Tailscale`,
+  and `tool/microsoft.windows.adk` used `-id`, which winget rejects.
 - **The ssh client is now a declared dependency, not a word on the caller's PATH.** `task/rclone-to-ssh`
   built its sftp command as a bare `ssh`, so which binary ran depended on the shell. A Windows host can
   carry several OpenSSH clients - the system one in `System32\OpenSSH`, the MSYS build inside Git, and

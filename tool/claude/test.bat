@@ -1,1 +1,1 @@
-﻿cx tool run claude -- --help
+cx tool run claude -- --help

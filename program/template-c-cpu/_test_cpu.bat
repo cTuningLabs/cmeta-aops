@@ -1,1 +1,1 @@
-﻿cx program run template-c-cpu --clean --compile.fastest -v
+cx program run template-c-cpu --clean --compile.fastest -v

@@ -1,4 +1,4 @@
-﻿cxt clone-git https://github.com/mlcommons/inference_results_v6.1 ^
+cxt clone-git https://github.com/mlcommons/inference_results_v6.1 ^
     --cache ^
     --cache_repo=fgg-work-usb ^
     --path=x:\work\mlperf-inference-results\v6.1 ^

@@ -12,12 +12,12 @@ cmd_get_version: '{{tool_path}} --version'
 install_cmd:
   linux: '{{global.host.os_extra.install_cmd_sudo}}'
   darwin: 'xcode-select --install'
-  windows: "{{global.winget.qpath}} install --id=Git.Git -e --no-upgrade {{global.init.winget_install_flags|}}"
+  windows: "{{global.winget.qpath}} install --id=Git.Git -e --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
 install_cmd_version:
   linux: '{{global.host.os_extra.install_cmd_sudo_version}}'
   darwin: 'xcode-select --install'
-  windows: "{{global.winget.qpath}} install --id=Git.Git -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"
+  windows: "{{global.winget.qpath}} install --id=Git.Git -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
 requires_sudo:
   linux: True

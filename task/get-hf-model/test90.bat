@@ -1,3 +1,3 @@
-﻿cxt get-hf-model ^
+cxt get-hf-model ^
      --repo=facebook/convnext-small-224 ^
      -j --update

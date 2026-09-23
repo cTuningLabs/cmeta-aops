@@ -1,1 +1,1 @@
-﻿cx . run --use.test-nvcc-cmd-0.open_shell
+cx . run --use.test-nvcc-cmd-0.open_shell

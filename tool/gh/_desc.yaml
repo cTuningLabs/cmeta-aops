@@ -12,12 +12,12 @@ cmd_get_version: '{{tool_path}} --version'
 install_cmd:
   darwin: '{{global.brew.qpath}} install gh'
   linux: '{{global.brew.qpath}} install gh'
-  windows: "{{global.winget.qpath}} install --id=GitHub.cli -e --no-upgrade {{global.init.winget_install_flags|}}"
+  windows: "{{global.winget.qpath}} install --id=GitHub.cli -e --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
 install_cmd_version:
   darwin: '{{global.brew.qpath}} install gh@{{major_version}}'
   linux: '{{global.brew.qpath}} install gh{{major_version}}'
-  windows: "{{global.winget.qpath}} install --id=GitHub.cli -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}"
+  windows: "{{global.winget.qpath}} install --id=GitHub.cli -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
 install_help_text:
   Please check https://github.com/cli/cli?tab=readme-ov-file !

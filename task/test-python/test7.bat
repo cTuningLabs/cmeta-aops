@@ -1,2 +1,2 @@
-﻿cx . run --use.target.devices=cpu,cuda
+cx . run --use.target.devices=cpu,cuda
 

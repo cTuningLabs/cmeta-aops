@@ -81,12 +81,12 @@ package_name: azure-cli
 # Fallbacks. Reached only when api_v1.py cannot (or should not) download - it
 # then returns the command below for task/setup to run.
 install_cmd:
-  windows: '{{global.winget.qpath}} install --exact --id=Microsoft.AzureCLI {{global.init.winget_install_flags|}}'
+  windows: '{{global.winget.qpath}} install --exact --id=Microsoft.AzureCLI --source winget {{global.init.winget_install_flags|}}'
   darwin: 'brew update && brew install {{name}}'
   linux: '{{global.host.os_extra.install_cmd_sudo}}'
 
 install_cmd_version:
-  windows: '{{global.winget.qpath}} install --exact --id=Microsoft.AzureCLI --version={{simple_version}} {{global.init.winget_install_flags|}}'
+  windows: '{{global.winget.qpath}} install --exact --id=Microsoft.AzureCLI --version={{simple_version}} --source winget {{global.init.winget_install_flags|}}'
   # No darwin entry on purpose: brew ships a single "azure-cli" formula with no
   # versioned variants, so "brew install azure-cli@2.51.0" would simply fail.
   # Without this key task/setup reuses install_cmd above and installs current.

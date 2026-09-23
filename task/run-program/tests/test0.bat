@@ -1,1 +1,1 @@
-﻿cxt setup python --tool-path={{sys.executable}} --cache-
+cxt setup python --tool-path={{sys.executable}} --cache-

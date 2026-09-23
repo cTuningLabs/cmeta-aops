@@ -1,2 +1,2 @@
-﻿cx . run --use.python.version=3.9.3 --use.python.venv_path=d:\work99999
+cx . run --use.python.version=3.9.3 --use.python.venv_path=d:\work99999
 
