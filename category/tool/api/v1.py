@@ -104,6 +104,8 @@ class Category(InitCategory):
                 if env_paths != '':
                     search_paths += env_paths.split(os.pathsep)
 
+            search_paths = self._drop_merged_usr_aliases(search_paths)
+
             if tool_name:
                 names = [tool_name]
             else:
@@ -175,6 +177,47 @@ class Category(InitCategory):
                             found_paths.append(candidate)
 
         return {'return':0, 'found_paths': found_paths}
+
+    ############################################################
+    def _drop_merged_usr_aliases(self, search_paths):
+        """
+        Drop the merged-/usr aliases from a list of directories to search.
+
+        On Ubuntu, Debian, Fedora, Arch and others /bin and /sbin (and on some
+        /usr/sbin) are symlinks into /usr, and all of them are on PATH - so
+        every tool there was found two to four times, and `cx tool setup git`
+        on a fresh machine asked which of /bin/git and /usr/bin/git, the same
+        file, to use.
+
+        Only these system aliases are dropped, and only when the directory
+        they point to is searched anyway. Any other symlinked directory stays,
+        because there the two paths mean different things: /usr/local/cuda
+        follows the next CUDA update while /usr/local/cuda-13.0 does not, and
+        a Homebrew opt/ path survives an upgrade that removes its Cellar/
+        version. Several real versions of a tool still ask which one to use;
+        -q (quiet) takes the default, which is what runs with no terminal need.
+        """
+
+        if os.name == 'nt':
+            return search_paths
+
+        searched = set(os.path.normpath(s.strip()) for s in search_paths
+                       if s.strip() and '*' not in s and '?' not in s)
+
+        # An alias goes only when its real directory is searched under its own
+        # name - never both of two aliases that merely point at each other.
+        aliases = set()
+        for alias in ('/bin', '/sbin', '/usr/sbin'):
+            if alias in searched and os.path.islink(alias):
+                real = os.path.realpath(alias)
+                if real != alias and real in searched:
+                    aliases.add(alias)
+
+        if not aliases:
+            return search_paths
+
+        return [s for s in search_paths
+                if not s.strip() or os.path.normpath(s.strip()) not in aliases]
 
     ############################################################
     def setup(self, params):
