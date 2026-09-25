@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.32.1.1)
+## 0.32.2
 - **`task/run-claude2` records how the artifacts of a claude session were made.** It sets
   `CMETA_GENERATOR` for the claude process - `{"method": "agent", "agent": "Claude Code <version>",
   "model": ..., "effort": ...}`, the model and effort as passed after `--`, else the thinking budget
