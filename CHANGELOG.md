@@ -3,13 +3,17 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.32.2
-- **`task/run-claude2` records how the artifacts of a claude session were made.** It sets
-  `CMETA_GENERATOR` for the claude process - `{"method": "agent", "agent": "Claude Code <version>",
-  "model": ..., "effort": ...}`, the model and effort as passed after `--`, else the thinking budget
-  of `MAX_THINKING_TOKENS` - unless a task that runs claude set it already, so an import task keeps
-  its own record. With the engine's `artifact_defaults` / `CMETA_GENERATOR` support, every artifact
-  claude creates through `cx` carries it as `generator`, and every one it updates as
-  `last_generator`. Documented in `docs/cmeta-aops/agent-tasks.md`.
+- **The agent launchers record how the artifacts of a session were made.** `task/run-claude`,
+  `task/run-claude2`, `task/run-codex2` and `task/run-opencode2` set `CMETA_GENERATOR` for the agent
+  process - `{"method": "agent", "agent": "<agent> <version>", "model": ..., "effort": ...}`, with
+  the model and effort as passed after `--` (claude `--model` / `--effort`, else the thinking budget of
+  `MAX_THINKING_TOKENS`; codex `-m` / `-c model_reasoning_effort=...`; opencode `--model` /
+  `--variant`) - unless a task that runs the agent set it already, so an import task keeps its own
+  record. `run-claude`, a pure pipeline so far, gains an `api_v1.py` whose `set_generator` step puts
+  the record into the aggregated env, since its `cmd` step builds claude's environment from the host
+  snapshot taken at bootstrap. With the engine's `artifact_defaults` / `CMETA_GENERATOR` support,
+  every artifact the agent creates through `cx` carries it as `generator`, and every one it updates
+  as `last_generator`. Documented in `docs/cmeta-aops/agent-tasks.md`.
 - **Fix: `task/enable-long-paths-win` never enabled anything on a stock Windows.** Its
   `enable-long-paths-win.bat` began with a UTF-8 BOM, which `cmd.exe` reads as part of the first command
   under every code page except 65001 (UTF-8) - so on an ordinary English or French install the elevated
