@@ -42,6 +42,17 @@ cx program run test-nmm-nvcc-cuda cuda          # ... or on CUDA, if you have it
 cx task run test-python -j                      # a task with the full trace: every tool and step it reused
 ```
 
+**Updating** — the engine and this repository are updated separately:
+
+```bash
+cx --version                                    # how the engine was installed, and the command that updates it
+uv tool upgrade cmeta                           # the engine, if installed with "uv tool install" (or: pip install -U cmeta)
+cx repo pull ctuninglabs@cmeta-aops             # this repository: git pull + reindex
+```
+
+Every install route, pinning a version, and a zip-fetched copy of this repository:
+[Updating cMeta](https://github.com/cTuningLabs/cmeta/blob/main/docs/installation.md#updating-cmeta).
+
 Working from a clone instead? Run `cx repo plug .` in the repository root, then
 `cx --reindex`. Handy flags: `-j`/`--verbose` (full step-by-step trace), `--con`,
 `--quiet`, `--version=X` (pin a tool version), `--update`/`--clean`/`--new` (cache

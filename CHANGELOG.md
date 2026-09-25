@@ -3,6 +3,10 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.32.2
+- **README: how to update.** The engine and this repository are updated separately - `cx --version`
+  (cMeta 0.32.2+) prints the command for the engine's install route (`uv tool upgrade cmeta`,
+  `pip install -U cmeta`, ...), and `cx repo pull ctuninglabs@cmeta-aops` updates this repository
+  (git pull + reindex); the engine's `docs/installation.md` "Updating cMeta" covers every route.
 - **The agent launchers record how the artifacts of a session were made.** `task/run-claude`,
   `task/run-claude2`, `task/run-codex2` and `task/run-opencode2` set `CMETA_GENERATOR` for the agent
   process - `{"method": "agent", "agent": "<agent> <version>", "model": ..., "effort": ...}`, with
