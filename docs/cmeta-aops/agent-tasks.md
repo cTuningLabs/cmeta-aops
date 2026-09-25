@@ -131,6 +131,21 @@ What is added, in this order and without duplicates:
 `--add_repos=none` adds nothing, not even the defaults. A path that was already
 passed after `--` as `--add-dir <path>` is never added twice.
 
+## How the artifacts of a session record who made them (`run-claude2`)
+
+`run-claude2` sets `CMETA_GENERATOR` for the claude process, unless a task that runs claude
+has set it already:
+
+```json
+{"method": "agent", "agent": "Claude Code 2.1.282", "model": "<--model>", "effort": "<--effort>"}
+```
+
+The model and effort are recorded when they are passed after `--`; otherwise the thinking
+budget, if `MAX_THINKING_TOKENS` is set. A model switched inside an interactive session is not
+seen. cMeta writes the record as `generator` into each artifact claude creates through `cx`,
+and as `last_generator` (with the date) into each one it updates - see the engine's
+`docs/using-cmeta.md` §7.6 (`artifact_defaults` of `_cmr.yaml`, `CMETA_GENERATOR`).
+
 ## Which model, which reasoning effort
 
 Which model an agent uses is **not** a cMeta setting — it is passed straight

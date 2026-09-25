@@ -64,6 +64,42 @@ EXACT_MODEL_PATTERN = r'-\d{8}$'
 # line argument instead - and Windows caps a whole command line at 32767 chars.
 MAX_INTERACTIVE_PROMPT_CHARS = 30000
 
+
+def _flag_value(flags, name):
+    """The value of "--name value" or "--name=value" in a claude command line, or ''."""
+    for index, flag in enumerate(flags):
+        if flag.split('=')[0] == name:
+            if '=' in flag:
+                return flag.split('=', 1)[1]
+            if index + 1 < len(flags):
+                return flags[index + 1]
+    return ''
+
+
+def _agent_generator(claude_path, flags):
+    """
+    The CMETA_GENERATOR record of a claude session: the agent and its version, and the model and
+    effort (or thinking budget) it was started with. A model switched inside the session is not seen.
+    """
+    rec = {'method': 'agent', 'agent': 'Claude Code'}
+    try:
+        out = subprocess.run([claude_path or 'claude', '--version'], capture_output=True, text=True,
+                             timeout=30).stdout.strip()
+        if out[:1].isdigit():
+            rec['agent'] = 'Claude Code ' + out.split()[0]
+    except Exception:
+        pass
+    model = _flag_value(flags, '--model')
+    if model:
+        rec['model'] = model
+    effort = _flag_value(flags, '--effort')
+    if effort:
+        rec['effort'] = effort
+    elif os.environ.get('MAX_THINKING_TOKENS'):
+        rec['thinking_budget'] = os.environ['MAX_THINKING_TOKENS']
+    return rec
+
+
 class CTask(InitCTask):
     """
     """
@@ -371,6 +407,12 @@ class CTask(InitCTask):
             if output_file:
                 print (f'{space}     (output: {output_file})')
             print ('')
+
+        # Provenance: an artifact claude creates through cMeta records how it was made (the _cmeta
+        # "generator"), and one it updates records it as "last_generator". A task that runs claude may
+        # have set CMETA_GENERATOR already (method "task", its log, ...) - it is kept then.
+        if not os.environ.get('CMETA_GENERATOR'):
+            os.environ['CMETA_GENERATOR'] = json.dumps(_agent_generator(claude_path, extra_flags))
 
         start_time = time.time()
 
