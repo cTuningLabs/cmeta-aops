@@ -59,6 +59,42 @@ RUN_ONLY_FLAGS = OUTPUT_FORMAT_FLAGS
 # chars on Windows, ~2MB of argv on Linux).
 MAX_PROMPT_ARG_CHARS = 30000
 
+
+def _flag_value(flags, names):
+    """The value of "<name> value" or "<name>=value" in an opencode command line, or ''."""
+    for index, flag in enumerate(flags):
+        if flag.split('=')[0] in names:
+            if '=' in flag:
+                return flag.split('=', 1)[1]
+            if index + 1 < len(flags):
+                return flags[index + 1]
+    return ''
+
+
+def _agent_generator(opencode_path, flags):
+    """
+    The CMETA_GENERATOR record of an opencode session: the agent and its version, and the model
+    ("provider/model") and reasoning variant it was started with (--model / --variant). A model
+    switched inside the session is not seen.
+    """
+    rec = {'method': 'agent', 'agent': 'OpenCode'}
+    try:
+        out = subprocess.run([opencode_path or 'opencode', '--version'], capture_output=True, text=True,
+                             timeout=30).stdout.strip()
+        version = next((x for x in out.split() if x[:1].isdigit()), '')
+        if version:
+            rec['agent'] = 'OpenCode ' + version
+    except Exception:
+        pass
+    model = _flag_value(flags, MODEL_FLAGS)
+    if model:
+        rec['model'] = model
+    effort = _flag_value(flags, ['--variant'])
+    if effort:
+        rec['effort'] = effort
+    return rec
+
+
 class CTask(InitCTask):
     """
     """
@@ -344,6 +380,12 @@ class CTask(InitCTask):
             if output_file:
                 print (f'{space}     (output: {output_file})')
             print ('')
+
+        # Provenance: an artifact opencode creates through cMeta records how it was made (the _cmeta
+        # "generator"), and one it updates records it as "last_generator". A task that runs opencode may
+        # have set CMETA_GENERATOR already (method "task", its log, ...) - it is kept then.
+        if not os.environ.get('CMETA_GENERATOR'):
+            os.environ['CMETA_GENERATOR'] = json.dumps(_agent_generator(opencode_path, extra_flags))
 
         start_time = time.time()
 

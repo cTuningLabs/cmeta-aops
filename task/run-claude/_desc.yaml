@@ -8,6 +8,11 @@ uses:
   - task: setup,a2f9b61079ce4333
     name: claude,383841b240c74e88
 
+  # Provenance: CMETA_GENERATOR for the session (Claude Code and its version, the model and
+  # effort passed after "--"), so artifacts claude creates through cMeta record how they
+  # were made - kept if a task that runs claude has set it already (api_v1.py)
+  - internal_func: set_generator
+
   # Launch claude interactively (no -p / --print => interactive TUI).
   # cmd runs with capture_output=False and no timeout, so stdin/stdout stay
   # attached to the current terminal.

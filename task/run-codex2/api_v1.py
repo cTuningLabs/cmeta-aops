@@ -61,6 +61,55 @@ EXEC_ONLY_FLAGS = STATS_FLAGS + REPRODUCIBLE_FLAGS + TRUST_FLAGS
 # line argument instead - and Windows caps a whole command line at 32767 chars.
 MAX_INTERACTIVE_PROMPT_CHARS = 30000
 
+
+def _flag_value(flags, names):
+    """The value of "<name> value" or "<name>=value" in a codex command line, or ''."""
+    for index, flag in enumerate(flags):
+        if flag.split('=')[0] in names:
+            if '=' in flag:
+                return flag.split('=', 1)[1]
+            if index + 1 < len(flags):
+                return flags[index + 1]
+    return ''
+
+
+def _config_value(flags, key):
+    """The value of "-c key=value" / "--config key=value" in a codex command line, or ''."""
+    for index, flag in enumerate(flags):
+        value = None
+        if flag in ('-c', '--config') and index + 1 < len(flags):
+            value = flags[index + 1]
+        elif flag.startswith('--config='):
+            value = flag.split('=', 1)[1]
+        if value and '=' in value and value.split('=', 1)[0].strip() == key:
+            return value.split('=', 1)[1].strip().strip('"\'')
+    return ''
+
+
+def _agent_generator(codex_path, flags):
+    """
+    The CMETA_GENERATOR record of a codex session: the agent and its version, and the model and
+    reasoning effort it was started with (-m / -c model_reasoning_effort=...). A model or effort set
+    only in the codex config file, or switched inside the session, is not seen.
+    """
+    rec = {'method': 'agent', 'agent': 'OpenAI Codex'}
+    try:
+        out = subprocess.run([codex_path or 'codex', '--version'], capture_output=True, text=True,
+                             timeout=30).stdout.strip()
+        version = next((x for x in out.split() if x[:1].isdigit()), '')
+        if version:
+            rec['agent'] = 'OpenAI Codex ' + version
+    except Exception:
+        pass
+    model = _flag_value(flags, MODEL_FLAGS)
+    if model:
+        rec['model'] = model
+    effort = _config_value(flags, 'model_reasoning_effort')
+    if effort:
+        rec['effort'] = effort
+    return rec
+
+
 class CTask(InitCTask):
     """
     """
@@ -343,6 +392,12 @@ class CTask(InitCTask):
             if output_file:
                 print (f'{space}     (output: {output_file})')
             print ('')
+
+        # Provenance: an artifact codex creates through cMeta records how it was made (the _cmeta
+        # "generator"), and one it updates records it as "last_generator". A task that runs codex may
+        # have set CMETA_GENERATOR already (method "task", its log, ...) - it is kept then.
+        if not os.environ.get('CMETA_GENERATOR'):
+            os.environ['CMETA_GENERATOR'] = json.dumps(_agent_generator(codex_path, extra_flags))
 
         start_time = time.time()
 

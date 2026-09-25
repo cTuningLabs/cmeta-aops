@@ -131,19 +131,26 @@ What is added, in this order and without duplicates:
 `--add_repos=none` adds nothing, not even the defaults. A path that was already
 passed after `--` as `--add-dir <path>` is never added twice.
 
-## How the artifacts of a session record who made them (`run-claude2`)
+## How the artifacts of a session record who made them
 
-`run-claude2` sets `CMETA_GENERATOR` for the claude process, unless a task that runs claude
-has set it already:
+`run-claude`, `run-claude2`, `run-codex2` and `run-opencode2` set `CMETA_GENERATOR` for the
+agent process, unless a task that runs the agent has set it already (an import task keeps its
+own `task` record):
 
 ```json
-{"method": "agent", "agent": "Claude Code 2.1.282", "model": "<--model>", "effort": "<--effort>"}
+{"method": "agent", "agent": "Claude Code 2.1.282", "model": "<model>", "effort": "<effort>"}
 ```
 
-The model and effort are recorded when they are passed after `--`; otherwise the thinking
-budget, if `MAX_THINKING_TOKENS` is set. A model switched inside an interactive session is not
-seen. cMeta writes the record as `generator` into each artifact claude creates through `cx`,
-and as `last_generator` (with the date) into each one it updates - see the engine's
+| Task | `agent` | `model` from | `effort` from |
+|---|---|---|---|
+| `run-claude`, `run-claude2` | `Claude Code <version>` | `--model` | `--effort`; else `thinking_budget` = `MAX_THINKING_TOKENS` |
+| `run-codex2` | `OpenAI Codex <version>` | `-m` / `--model` | `-c model_reasoning_effort=...` |
+| `run-opencode2` | `OpenCode <version>` | `--model` / `-m` | `--variant` |
+
+The model and effort are recorded only when they are passed after `--`: a model or effort
+chosen in the agent's own config file, or switched inside an interactive session, is not seen.
+cMeta writes the record as `generator` into each artifact the agent creates through `cx`, and as
+`last_generator` (with the date) into each one it updates - see the engine's
 `docs/using-cmeta.md` §7.6 (`artifact_defaults` of `_cmr.yaml`, `CMETA_GENERATOR`).
 
 ## Which model, which reasoning effort
