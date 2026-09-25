@@ -2,6 +2,27 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## Unreleased
+- **New `tool/aks-flex-node`** (the AKS Flex Node agent, https://github.com/Azure/AKSFlexNode,
+  MIT, public preview). On Linux amd64/arm64 it downloads the pinned release archive (default
+  `0.2.0`, any release with `--version=`) and verifies its SHA-256 against the release's
+  `checksums.txt`. `--build --skip_install` builds it from git in the cMeta cache instead - at
+  `v<version>`, or at any tag, branch or commit with `--with.checkout=<ref>` - with `tool/go`,
+  stamping version, commit and build time the way upstream's Makefile does (a build of `main`
+  reports e.g. `v0.2.1-alpha.1-7-g7f814fb`). The agent and its dependencies are Linux-only, so on
+  Windows and macOS the tool says so and points to WSL or a Linux container, where the same `cx`
+  commands work. Tested on Windows (the clear refusal) and in a `python:3.12` Linux container
+  (release install, build at a tag, build of `main`).
+- **`clone-git` gains `filter`, and `clone-git-to-cache` forwards `depth`, `filter` and `fetch`.** `filter`
+  is git's partial-clone filter: with `--filter=blob:none` the full history is fetched but file
+  contents only for the commits checked out, so a pinned checkout does not download blobs that exist
+  only in old history (large files, or anything that should not have been committed) - as long as
+  nothing reads them: `git show <old commit>`, `git log -p`, `git blame` and `git cat-file` fetch a
+  missing blob on demand (`GIT_NO_LAZY_FETCH=1` refuses). `depth` (shallow clones) was supported by
+  `clone-git` but not passed on by the cache wrapper, and neither was `fetch`; together,
+  `--depth=1 --fetch="--depth 1 origin <full commit sha>" --checkout=<full commit sha>` gives a pinned
+  checkout with no history at all, which still works after the branch moves on.
+
 ## 0.32.2
 - **README: how to update.** The engine and this repository are updated separately - `cx --version`
   (cMeta 0.32.2+) prints the command for the engine's install route (`uv tool upgrade cmeta`,

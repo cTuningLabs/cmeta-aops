@@ -73,6 +73,7 @@ class CTask(InitCTask):
             url: str = None,    
             directory: str = None,
             depth: int = None,
+            filter: str = None,
             branch: str = None,
             new_branch: str = None,
             fetch: str = None,
@@ -86,6 +87,16 @@ class CTask(InitCTask):
 
         """
         Clone git repo.
+
+        Args:
+            depth (int): shallow clone with this history depth (`git clone --depth`); checking out
+                         a commit older than the fetched history then fails.
+            filter (str): partial clone filter (`git clone --filter`), e.g. "blob:none": the full
+                          history is fetched but file contents only for the commits checked out.
+                          Old blobs stay remote only while nothing reads them: `git show <old>`,
+                          `git log -p`, `git blame` and `git cat-file` fetch a missing blob on
+                          demand (set GIT_NO_LAZY_FETCH=1 to refuse). For a checkout with no
+                          history at all use depth=1 plus fetch="--depth 1 origin <commit>".
 
         Returns:
             dict: A cMeta dictionary with the following keys:
@@ -159,6 +170,8 @@ class CTask(InitCTask):
         ########\###########################################################
         # Prepare CMDs
         xdepth = f' --depth {depth}' if depth != None and depth != '' else ''
+        if filter != None and filter != '':
+            xdepth += f' --filter={filter}'
 
         if not os.path.isdir(path_to_git_repo):
             cmd = f'{path_to_git_bin} clone {url} {directory}{xdepth}'
