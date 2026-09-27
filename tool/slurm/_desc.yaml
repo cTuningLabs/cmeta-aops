@@ -1,0 +1,37 @@
+authors: Grigori Fursin
+
+# Slurm client commands - https://slurm.schedmd.com (GPL-2.0).
+#
+# Detect-only. The client belongs to the cluster: its version and slurm.conf must match the
+# controller, so cMeta finds the commands on a login node (or where the distribution package
+# slurm-client is installed) instead of installing a copy of its own. The detected binary is
+# sinfo; srun, sbatch, squeue and scontrol sit in the same folder ({{global.slurm.path}}).
+#
+#   cx tool setup slurm                   # on a login node: finds sinfo and prints the Slurm version
+#   cx tool run slurm -- --version        # "slurm 25.x.y"
+#   cx tool run slurm -- -s               # the partitions summary (sinfo -s)
+#
+# Elsewhere "cx tool setup slurm" reports that Slurm was not found, which is expected.
+
+names:
+  - sinfo{{global.host.vars.file_ext_exe}}
+
+match_version:
+  - regex: 'slurm(?:-wlm)?\s+(\d+\.\d+(?:\.\d+)?)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+extra_paths:
+  linux:
+    - '/usr/bin'
+    - '/usr/local/bin'
+    - '/opt/slurm/bin'
+    - '/usr/local/slurm/bin'
+
+install_help_text: |
+  The Slurm client commands (sinfo, srun, sbatch, squeue, scontrol) come with the cluster:
+  run cMeta on a login node of your Slurm cluster, where they are already installed.
+  On a Debian/Ubuntu machine that should talk to a cluster, the package is slurm-client
+  ("sudo apt install slurm-client"), and it needs the cluster's /etc/slurm/slurm.conf.
+  On Windows and macOS use WSL or a Linux login node.

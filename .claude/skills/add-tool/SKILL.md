@@ -275,6 +275,61 @@ path — vendors move things between releases, and mirrors add a wrapper
 directory. Leave it where it was unpacked if it needs sibling libraries
 (cwRsync's `rsync.exe` must keep its Cygwin DLLs next to it).
 
+### 5.2 The shortcut: `common_release.py` for a pinned release with checksums
+
+Most Tier-1 tools are the same five steps: pick the asset for the OS and CPU, download it,
+check its SHA-256 against what upstream publishes, unpack one file, name it. The shared
+helper `category/tool/api/common_release.py` does exactly that, so the tool's `api_v1.py` is
+only a spec. Examples: `tool/helm`, `tool/kind`, `tool/gitleaks`, `tool/terraform`.
+
+```python
+from tool_c393ba5c6fa14f66.api.common_release import install_release
+
+GH = 'https://github.com/kubernetes-sigs/kind/releases/download'
+SPEC = {'name': 'kind', 'default_version': '0.33.0',
+        'url': GH + '/v{version}/kind-{os}-{arch}',
+        'checksum': {'file': '{url}.sha256sum'},
+        'unsupported': [['windows', 'arm64']]}
+
+class CTool(InitCTool):
+    def install(self, ctx, params, cmd=None, *misc):
+        return install_release(self, ctx, params, cmd, SPEC)
+```
+
+The spec keys:
+
+- **Templates:** `url`, `member` and the checksum URLs expand `{version}`, `{os}`, `{arch}`,
+  `{ext}` and `{exe}`.
+- **Spellings:** `os` and `arch` map cMeta's names to upstream's (`{'amd64': 'x64'}`,
+  `{'darwin': 'macos'}`).
+- **Archives:** `ext` is the archive type per OS (`{'windows': 'zip', '*': 'tar.gz'}`); omit it
+  for a bare binary.
+- **Checksums:** `checksum` is `{'list': url}` (a `<sha256>  <file>` list), `{'file': url}` (one
+  per asset) or yq's `{'yq': url, 'order': url}`. Omit it only when upstream publishes none.
+- **Other binaries:** `extra` fetches more binaries into the same folder (`tool/kwokctl` also
+  fetches `kwok`).
+- **Gaps:** `unsupported` lists pairs with no upstream asset; setup then prints
+  `install_help_text`.
+
+Unpacking uses Python's `zipfile` and `tarfile`, so no tar or unzip binary is needed on the
+host.
+
+### 5.3 Python command-line tools: `common_pyvenv.py`
+
+A tool that is a PyPI package gets its own virtual environment inside its cache entry, with
+a pinned Python that uv downloads if needed. The system Python and other tools' packages are
+never touched. Examples: `tool/yamllint`, `tool/aiperf`, `tool/ansible`.
+
+```python
+from tool_c393ba5c6fa14f66.api.common_pyvenv import install_pyvenv
+
+SPEC = {'name': 'ansible', 'package': 'ansible-core', 'default_version': '2.21.4', 'python': '3.12',
+        'unsupported_os': {'windows': 'Ansible does not run on Windows as a control node - use WSL or a container'}}
+```
+
+`extra` pins companion packages (`tool/ansible-lint` pins `ansible-core==2.21.4`), and
+`unsupported_os` turns a known-broken OS into one clear message instead of a traceback.
+
 ---
 
 ## 6. Worked example — bazel (cross-platform, Tier 1)

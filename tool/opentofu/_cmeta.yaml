@@ -1,0 +1,29 @@
+artifact: f0c65d6c365740c5
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-09-27T19:48:46.699744+00:00'
+desc: 'OpenTofu (tofu): the open-source (MPL-2.0) fork of Terraform - detected, or
+  installed from the pinned official release (SHA-256 checked) on Windows, Linux and
+  macOS.'
+generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  date: '2026-09-27'
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_update_timestamp: '2026-09-27T19:49:15.050022+00:00'
+note: 'OpenTofu is a drop-in, community-governed fork of Terraform under the MPL-2.0
+  licence: the same configuration language and commands, run as "tofu".'
+tags:
+- opentofu
+- tofu
+- iac
+- infrastructure
+- terraform

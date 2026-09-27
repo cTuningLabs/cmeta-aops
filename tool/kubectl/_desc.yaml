@@ -9,7 +9,9 @@ match_version:
 
 cmd_get_version: '{{tool_path}} version --client'
 
-default_version: '1.31.0'
+# kubectl supports one minor version of skew against the API server: for an older cluster use
+#   cx tool setup kubectl --version=1.<minor>.<patch> --new
+default_version: '1.37.1'
 
 cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/kubernetes/kubernetes'
 cmd_get_versions_uses:

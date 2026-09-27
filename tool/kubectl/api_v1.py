@@ -38,7 +38,7 @@ class CTool(InitCTool):
         version_simple = params.get('version_simple')
 
         if not version:
-            version        = '1.31.0'
+            version        = '1.37.1'
             version_simple = version
 
         if not version_simple:

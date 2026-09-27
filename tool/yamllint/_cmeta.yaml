@@ -1,0 +1,28 @@
+artifact: 34e9971ae668461f
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-09-27T20:02:28.298776+00:00'
+desc: 'yamllint: checks YAML files for syntax errors, duplicate keys and style - installed
+  as a pinned PyPI package in its own Python 3.12 environment on Windows, Linux and
+  macOS.'
+generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  date: '2026-09-27'
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_update_timestamp: '2026-09-27T20:02:29.331467+00:00'
+note: yamllint validates YAML syntax and style (duplicate keys, indentation, line
+  length, truthy values), configured by .yamllint; "-d relaxed" is a lenient preset.
+tags:
+- yamllint
+- yaml
+- lint
+- ci

@@ -1,0 +1,29 @@
+artifact: 493e60557f284a49
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-09-27T20:02:28.040265+00:00'
+desc: 'ansible-lint: checks Ansible playbooks, roles and collections for mistakes
+  and style - installed as a pinned PyPI package in its own Python 3.12 environment
+  (Linux and macOS; Windows through WSL or a container).'
+generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  date: '2026-09-27'
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_update_timestamp: '2026-09-27T20:02:29.078725+00:00'
+note: ansible-lint finds common mistakes and deprecated usage in playbooks and roles,
+  configured by .ansible-lint. It is installed together with the pinned ansible-core
+  it runs on.
+tags:
+- ansible-lint
+- ansible
+- lint
+- ci

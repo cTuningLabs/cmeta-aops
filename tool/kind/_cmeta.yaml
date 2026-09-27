@@ -1,0 +1,30 @@
+artifact: 79dbb00a5d234675
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-09-27T19:48:44.968852+00:00'
+desc: 'kind: local Kubernetes clusters in Docker or Podman containers - detected,
+  or installed from the pinned official release (SHA-256 checked) on Windows, Linux
+  and macOS.'
+generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  date: '2026-09-27'
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_update_timestamp: '2026-09-27T19:49:13.441391+00:00'
+note: 'kind runs a Kubernetes cluster whose nodes are containers: the usual way to
+  test manifests, operators and multi-node behaviour on a laptop or in CI. Creating
+  a cluster needs Docker or Podman running.'
+tags:
+- kind
+- kubernetes
+- cluster
+- docker
+- testing

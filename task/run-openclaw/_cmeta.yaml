@@ -1,0 +1,34 @@
+artifact: 91724507fb354b79
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-09-27T20:06:06.041770+00:00'
+desc: Run the OpenClaw agent on a prompt from --prompt/--prompt_file, headless (openclaw
+  agent --local) or in its terminal UI; records the output and token stats.
+generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_generator:
+  agent: Claude Code 2.1.283
+  by: Grigori Fursin
+  date: '2026-09-27'
+  method: agent
+  thinking_budget: '31999'
+last_update_timestamp: '2026-09-27T20:07:51.157361+00:00'
+note: Set up the "openclaw" tool, assemble a prompt from --prompt_file and --prompt,
+  run one agent turn headless ("openclaw agent --local --message ...") and record
+  the output next to the prompt file, or open the terminal UI with the prompt as the
+  first message (--interactive/--i, the default when no prompt is given). --dry_run
+  prints the command. Same flags as run-claude2, run-codex2 and run-opencode2.
+tags:
+- run
+- openclaw
+- ai
+- agent
+- cli
+- prompt
+- non-interactive
+- headless
+- interactive
