@@ -10,6 +10,7 @@ authors: Grigori Fursin
 #   cx task run scan-git-secrets --baseline=known.json  # ignore findings already accepted (a gitleaks report)
 #   cx task run scan-git-secrets --config=.gitleaks.toml
 #   cx task run scan-git-secrets --no_fail              # exit 0 even when something is found
+#   cx task run scan-git-secrets --install --quiet      # install gitleaks (and its downloader) without asking: CI, containers
 #
 # gitleaks runs with --redact, and the task drops the "Secret" and "Match" fields as well, so a secret
 # value never reaches the console, the report or the task result. Author e-mails are left out too.

@@ -11,6 +11,10 @@ cmd_get_version: '{{tool_path}} --version'
 
 package_name: 'curl'
 
+# curl is itself the common install dependency on Linux and macOS (task/setup install_uses):
+# without this, installing curl on a host that has none recurses into setting up curl again
+skip_common_install_uses: True
+
 install_cmd:
   linux: '{{global.host.os_extra.install_cmd_sudo}}'
 

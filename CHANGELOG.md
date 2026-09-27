@@ -65,7 +65,9 @@ All notable changes to cMeta AOps are documented here, newest first.
   - **Baseline:** `--baseline` accepts earlier findings by fingerprint, from this task's report or a
     native gitleaks one.
   - **Exit code:** 1 when something is found (`--no_fail` to always return 0).
-  - **Tested:** on a scratch repository whose history holds a removed fake token.
+  - **Tested:** on Windows and in a bare `python:3.12-slim` Linux container, on a scratch repository
+    whose history holds a removed fake token: the history scan finds it, the files-only scan and a
+    scan with the report as baseline are clean.
 - **New `tool/aks-flex-node`** (the AKS Flex Node agent, https://github.com/Azure/AKSFlexNode,
   MIT, public preview). On Linux amd64/arm64 it downloads the pinned release archive (default
   `0.2.0`, any release with `--version=`) and verifies its SHA-256 against the release's
@@ -85,6 +87,10 @@ All notable changes to cMeta AOps are documented here, newest first.
   `clone-git` but not passed on by the cache wrapper, and neither was `fetch`; together,
   `--depth=1 --fetch="--depth 1 origin <full commit sha>" --checkout=<full commit sha>` gives a pinned
   checkout with no history at all, which still works after the branch moves on.
+- **Fix: `tool/curl` no longer recurses when curl is missing.** curl is the common install dependency
+  of `task/setup` on Linux and macOS, so installing curl itself (on a bare container, for example) set up
+  curl again, over and over. `tool/curl` now sets `skip_common_install_uses: True`, as `tool/brew` does.
+  In a non-interactive shell, `--install --quiet` installs a tool and such dependencies without asking.
 
 ## 0.32.2
 - **README: how to update.** The engine and this repository are updated separately - `cx --version`
