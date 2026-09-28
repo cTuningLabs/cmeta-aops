@@ -3,6 +3,13 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## Unreleased
+- **`task/rclone-to-ssh`: a plain `bisync` now adds `--resilient --recover`** (turn off with `--no-recover`).
+  Without these flags, an interrupted run (a dropped link, a killed shell) leaves its listings as `*.lst-err` or
+  `*.lst-new`, and every later run aborts with "cannot find prior Path1 or Path2 listings ... Must run --resync
+  to recover". One pair stayed broken this way for three days, and the batch never ran the pairs after it. With
+  the flags, the next run resumes from the backup listings. The task notes also say how to recover by hand:
+  remove a leftover `*.partial` file first, because a resync would copy it across, then run
+  `resync ... -- --resync-mode newer`.
 - **Fix: `tool/brew` finds Homebrew on macOS when it is not on PATH.** It now searches Homebrew's default
   prefixes (`/opt/homebrew/bin` on Apple silicon, `/usr/local/bin` on Intel). Before, a shell that had not
   run `brew shellenv` (an ssh command, cron, CI) did not see an installed Homebrew, so setting up any tool

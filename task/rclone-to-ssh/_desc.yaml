@@ -137,10 +137,17 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #
 #     It is opt-in on purpose: the lock also stops two bisyncs of the same
 #     pair running at once, and only you know the other run is dead rather
-#     than busy. rclone's own non-destructive options are reachable through
+#     than busy. rclone's own non-destructive option is reachable through
 #     "--": "-- --max-lock 2m" expires locks older than a duration (minimum
-#     2m) instead of removing them, and "-- --recover" resumes an interrupted
-#     run without a full resync.
+#     2m) instead of removing them.
+#   - A plain "bisync" adds --resilient --recover (turn off with --no-recover).
+#     Without them an interrupted run leaves its listings as *.lst-err or
+#     *.lst-new, and every later run aborts with "cannot find prior Path1 or
+#     Path2 listings ... Must run --resync to recover". With them the next run
+#     resumes from the backup listings. A resync rebuilds the listings anyway,
+#     so it does not get them. To recover by hand: look for a leftover
+#     "*.partial" file on either side first (a resync would copy it across),
+#     then run "resync ... -- --resync-mode newer".
 #   - "bisync" (and so "resync") requires BOTH sides to exist already - unlike
 #     "sync"/"copy" it never creates the far side, and says so unhelpfully:
 #     "error reading source root directory: directory not found", then
