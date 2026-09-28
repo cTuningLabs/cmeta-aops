@@ -37,4 +37,9 @@ requires_sudo:
 extra_paths:
   linux:
     - "/home/linuxbrew/.linuxbrew/bin"
+  # Homebrew's default prefixes (Apple silicon, Intel): found even where the shell has not run
+  # "brew shellenv" (ssh commands, cron, CI), so setup does not try to install Homebrew again
+  darwin:
+    - "/opt/homebrew/bin"
+    - "/usr/local/bin"
 

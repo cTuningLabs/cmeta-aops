@@ -60,6 +60,9 @@ class CTask(InitCTask):
                                           # bisync errors out if either side is missing)
             unlock: bool = False,         # delete a stale bisync lock for this pair before running
                                           # (left behind when a previous run was interrupted)
+            recover: bool = True,         # plain bisync: add --resilient --recover, so the next run picks up
+                                          # after an interrupted one instead of demanding --resync
+                                          # (turn off with --no-recover)
             workdir: str = None,          # bisync working dir, where the lock and listings live
                                           # (default: rclone's own <cache dir>/bisync)
             ssh_options: str = None,      # extra flags for the ssh binary, e.g. --ssh_options="-p 2222 -i ~/.ssh/nas"
@@ -250,6 +253,18 @@ class CTask(InitCTask):
 
         if self._flag_is_on(resync, False):
             cmd_parts.append('--resync')
+
+        # An interrupted bisync (a dropped link, a killed shell, a laptop going to
+        # sleep) otherwise leaves its listings renamed to *.lst-err or never
+        # finished (*.lst-new), and every later run aborts with "cannot find
+        # prior Path1 or Path2 listings ... Must run --resync to recover" until
+        # someone runs one by hand - seen on a pair that stayed broken for three
+        # days while the rest of the batch behind it never ran. --recover resumes
+        # from the backup listings, and --resilient lets a run retry after a
+        # less serious error. A resync rebuilds the listings anyway.
+        if rclone_command == 'bisync' and not self._flag_is_on(resync, False) \
+                and self._flag_is_on(recover, True):
+            cmd_parts += ['--resilient', '--recover']
 
         cmd = ' '.join(cmd_parts)
 
