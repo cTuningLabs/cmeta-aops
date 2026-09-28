@@ -147,6 +147,24 @@ Dotted targets write into nested dicts / `use.*` / `ctx.*`
 CLI**, don't map them — use the `unparsed` passthrough (see §6): cMeta consumes
 parsed args, so a wrapped tool needs everything after `--`.
 
+**Changing a sub-task from the command line: `--use.<storage key>.<param>=<value>`.**
+You rarely need a param just to forward a version to a dependency. Any caller can
+reach any sub-task, however deep, by its **storage key**, and the value overrides what
+the `uses:` entry passes:
+
+```bash
+cxt <task> --use.python.version=3.12.13        # setup,name=python -> key "python"
+cxt <task> --use.uv.version=0.12.16            # setup,name=uv -> key "uv"
+cxt <task> --use.dle-setup.python=3.13         # a task's own storage_key (or its alias)
+cxt <task> --use.dle-setup.update              # control switches too: update, clean, new, path, cache*, skip
+```
+
+The key of a `setup` sub-task is the tool alias; for `clone-git-to-cache` it is
+`clone-git-to-cache-<name>`; `runner`/`host`/`init` are fixed; any other task uses
+its `storage_key` (or its alias), with dots turned into `-`. So choose a clear
+`storage_key` for a task that others will want to tune. The full rules and a table:
+`docs/cmeta-aops/task-engine.md`, section "Changing a dependency anywhere in a pipeline".
+
 ### 3c. Reuse — `store_global` / `storage_key` and the cache
 
 Two independent reuse layers:

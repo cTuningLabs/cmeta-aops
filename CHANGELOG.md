@@ -2,6 +2,15 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## Unreleased
+- **Docs: `--use.<storage key>.<param>=<value>`**, which changes any sub-task of a run from the command line,
+  however deep it sits: a dependency's version, or a control switch such as `update` of one step.
+  - a new section in `docs/cmeta-aops/task-engine.md`, "Changing a dependency anywhere in a pipeline": how it
+    works, the storage keys of `setup`, `clone-git-to-cache`, `runner`, compilers and other tasks, and the control
+    switches that travel with it;
+  - a line in the README;
+  - notes in the `add-task` and `add-tool` skills.
+
 ## 0.40.1
 - **`task/rclone-to-ssh`: a plain `bisync` now adds `--resilient --recover`** (turn off with `--no-recover`).
   Without these flags, an interrupted run (a dropped link, a killed shell) leaves its listings as `*.lst-err` or
