@@ -1,0 +1,28 @@
+artifact: 74df9a106df84e4b
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-09-27T19:48:45.698105+00:00'
+desc: 'Kustomize: template-free customization of Kubernetes YAML - detected, or installed
+  from the pinned official release (SHA-256 checked) on Windows, Linux and macOS.'
+generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  date: '2026-09-27'
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_update_timestamp: '2026-09-27T19:49:14.142447+00:00'
+note: Kustomize builds Kubernetes manifests from a base plus overlays and patches,
+  without templates; the same engine is behind "kubectl kustomize". Rendering needs
+  no cluster.
+tags:
+- kustomize
+- kubernetes
+- manifests
+- yaml

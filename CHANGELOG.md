@@ -2,6 +2,98 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.40.0
+- **Thirteen new tools installed from their pinned upstream release** (install ladder tier 1), on
+  Windows, Linux and macOS, amd64 and arm64 wherever upstream publishes an asset:
+  - Kubernetes: `tool/helm` (4.3.0), `tool/kind` (0.33.0), `tool/k3d` (5.9.0), `tool/kwokctl` (0.8.0,
+    with the `kwok` binary next to it), `tool/kustomize` (5.8.1), `tool/flux` (2.9.5), and for AKS
+    `tool/kubelogin` (0.2.20);
+  - infrastructure as code: `tool/terraform` (1.16.4, BUSL-1.1) and `tool/opentofu` (1.12.6, MPL-2.0,
+    the `tofu` binary);
+  - repository hygiene and scripting: `tool/gitleaks` (8.30.1), `tool/jq` (1.8.2), `tool/yq` (4.53.6),
+    `tool/golangci-lint` (2.14.0).
+
+  They share a new helper, `category/tool/api/common_release.py`. Each tool's `api_v1.py` declares only
+  where its assets live. The helper then:
+  - picks the asset for the OS and CPU;
+  - downloads it through `download-file`;
+  - verifies its SHA-256 against the checksums upstream publishes (all but kwok, which publishes
+    none), in any of three formats: a list, a per-asset file, or yq's multi-hash table;
+  - unpacks the binary with Python's zipfile/tarfile, so no tar or unzip binary is needed.
+
+  Pairs with no upstream asset (e.g. kind, k3d and OpenTofu on Windows arm64) print the install help
+  instead. Every tool also lists its released versions (`cx tool setup <tool> --versions`). An
+  installation already on the PATH is detected and used first.
+
+  **Tests:** each tool installs from its release, checks the SHA-256 and reports the pinned version, on
+  Windows and in a `python:3.12` Linux container. Offline checks also pass:
+  - `helm create` + `helm template` renders 4 objects;
+  - `kustomize build` produces a ConfigMap;
+  - `terraform apply` and `tofu apply` output `hello = "world"` with no cloud account;
+  - `jq` and `yq` extract values;
+  - `gitleaks` finds a fake token and reports it as `REDACTED`.
+- **Four new Python tools, each in its own environment:** `tool/ansible` (ansible-core 2.21.4),
+  `tool/ansible-lint` (26.9.0), `tool/yamllint` (1.38.0) and `tool/aiperf` (0.13.0, the load
+  generator for OpenAI-compatible LLM servers). A new helper, `category/tool/api/common_pyvenv.py`,
+  sets up `tool/uv`, creates a virtual environment with a pinned Python (3.12; uv downloads it if
+  missing) inside the tool's cache entry, and installs the pinned package. So the system Python and
+  other tools' packages are never touched, and aiperf (Python 3.11-3.13) works on a machine whose
+  Python is 3.14. Ansible and ansible-lint do not run on Windows (POSIX-only modules), so there they
+  stop with a pointer to WSL or a Linux container; yamllint and aiperf work on Windows too.
+- **New `tool/slurm` (detect-only):** the Slurm client commands (`sinfo`, `srun`, `sbatch`, `squeue`,
+  `scontrol`) of a login node, or of the `slurm-client` package. Every Slurm command reads the cluster
+  configuration first, even `sinfo --version`, so the version comes from the cluster when it is
+  configured and otherwise from the package that installed the binary (dpkg or rpm). The result
+  records `configured: false/true`. Tested in a Linux container with Debian's slurm-client and no
+  cluster (version 24.11.5 from dpkg).
+- **`tool/kubectl`:** the default version moves from 1.31.0 to **1.37.1**, the latest stable; kubectl
+  supports one minor version of skew, so `--version=1.<minor>.<patch>` matches an older cluster.
+- **New `task/run-openclaw`:** the OpenClaw sibling of `run-claude2`, `run-codex2` and `run-opencode2`,
+  with the same flags (`--prompt`, `--prompt_file`, `--output_file`, `--stats`, `--interactive`/`--i`,
+  everything after `--` for openclaw) plus `--agent`, `--session`, `--gateway` and `--dry_run`.
+  - **Headless:** one agent turn with `openclaw agent --local --agent main --message <prompt>`. With no
+    prompt, or with `--interactive`, it opens `openclaw tui --local` with the prompt as the first message.
+  - **Windows:** the npm `.cmd` shim is bypassed and node runs `openclaw.mjs` directly, so cmd.exe never
+    parses a prompt (no `&`, `|`, `%` injection).
+  - **Provenance:** `CMETA_GENERATOR` records `OpenClaw <version>` with the model and thinking level.
+  - **Tested on Windows:** dry runs of the three examples, and a real turn that reaches the model call
+    and stops at the missing provider key.
+- **New `task/scan-git-secrets`:** gitleaks over a repository's whole history (or, with `--files`, only
+  its current files, or a plain folder).
+  - **Output:** file, line, rule and commit, never the values (`--redact`, and the secret, match and
+    e-mail fields are dropped), plus a value-free `--report`.
+  - **Baseline:** `--baseline` accepts earlier findings by fingerprint, from this task's report or a
+    native gitleaks one.
+  - **Exit code:** 1 when something is found (`--no_fail` to always return 0).
+  - **Tested:** on Windows and in a bare `python:3.12-slim` Linux container, on a scratch repository
+    whose history holds a removed fake token: the history scan finds it, the files-only scan and a
+    scan with the report as baseline are clean.
+- **New `tool/aks-flex-node`** (the AKS Flex Node agent, https://github.com/Azure/AKSFlexNode,
+  MIT, public preview). On Linux amd64/arm64 it downloads the pinned release archive (default
+  `0.2.0`, any release with `--version=`) and verifies its SHA-256 against the release's
+  `checksums.txt`. `--build --skip_install` builds it from git in the cMeta cache instead - at
+  `v<version>`, or at any tag, branch or commit with `--with.checkout=<ref>` - with `tool/go`,
+  stamping version, commit and build time the way upstream's Makefile does (a build of `main`
+  reports e.g. `v0.2.1-alpha.1-7-g7f814fb`). The agent and its dependencies are Linux-only, so on
+  Windows and macOS the tool says so and points to WSL or a Linux container, where the same `cx`
+  commands work. Tested on Windows (the clear refusal) and in a `python:3.12` Linux container
+  (release install, build at a tag, build of `main`).
+- **`clone-git` gains `filter`, and `clone-git-to-cache` forwards `depth`, `filter` and `fetch`.** `filter`
+  is git's partial-clone filter: with `--filter=blob:none` the full history is fetched but file
+  contents only for the commits checked out, so a pinned checkout does not download blobs that exist
+  only in old history (large files, or anything that should not have been committed) - as long as
+  nothing reads them: `git show <old commit>`, `git log -p`, `git blame` and `git cat-file` fetch a
+  missing blob on demand (`GIT_NO_LAZY_FETCH=1` refuses). `depth` (shallow clones) was supported by
+  `clone-git` but not passed on by the cache wrapper, and neither was `fetch`; together,
+  `--depth=1 --fetch="--depth 1 origin <full commit sha>" --checkout=<full commit sha>` gives a pinned
+  checkout with no history at all, which still works after the branch moves on.
+- **Removed the `test-core-via-ctuning` workflow** (outdated; `test-core` stays)
+  and its README badge.
+- **Fix: `tool/curl` no longer recurses when curl is missing.** curl is the common install dependency
+  of `task/setup` on Linux and macOS, so installing curl itself (on a bare container, for example) set up
+  curl again, over and over. `tool/curl` now sets `skip_common_install_uses: True`, as `tool/brew` does.
+  In a non-interactive shell, `--install --quiet` installs a tool and such dependencies without asking.
+
 ## 0.32.2
 - **README: how to update.** The engine and this repository are updated separately - `cx --version`
   (cMeta 0.32.2+) prints the command for the engine's install route (`uv tool upgrade cmeta`,

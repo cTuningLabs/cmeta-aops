@@ -99,7 +99,9 @@ class CTask(InitCTask):
           'update': cparams.get('update')
         }
 
-        for k in ['url', 'directory', 'tag', 'checkout']:
+        # depth: shallow clone; filter: partial clone such as "blob:none"; fetch: extra "git fetch"
+        # arguments, e.g. "--depth 1 origin <commit>" to pin a commit in a shallow clone (see clone-git)
+        for k in ['url', 'directory', 'tag', 'checkout', 'depth', 'filter', 'fetch']:
             if k in params:
                 p[k] = params[k]
 

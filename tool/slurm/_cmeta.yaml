@@ -1,0 +1,31 @@
+artifact: 393f15abe0374eb6
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-09-27T19:54:56.099083+00:00'
+desc: 'Slurm client commands (sinfo, squeue, srun, sbatch, scontrol): detected on
+  a Slurm login node or wherever the slurm-client package is installed (Linux).'
+generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  date: '2026-09-27'
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_update_timestamp: '2026-09-27T20:02:29.816550+00:00'
+note: 'Detect-only: the Slurm client belongs to the cluster (its version and slurm.conf
+  must match the controller), so cMeta finds the commands rather than installing its
+  own copy. "cx tool run slurm -- <args>" runs sinfo; tasks reach srun, sbatch, squeue
+  and scontrol in the same folder through {{global.slurm.path}}. On Windows and macOS
+  use WSL or a Linux login node.'
+tags:
+- slurm
+- hpc
+- scheduler
+- cluster
+- jobs

@@ -1,0 +1,33 @@
+artifact: ce443542b73a4ba8
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-09-25T13:53:54.801953+00:00'
+desc: 'AKS Flex Node agent (aks-flex-node): detected, or installed from the official
+  Linux release archive (checksum-verified), or built from git at any tag, branch
+  or commit with the go tool.'
+generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  date: '2026-09-25'
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_update_timestamp: '2026-09-25T13:56:06.779216+00:00'
+note: AKS Flex Node (https://github.com/Azure/AKSFlexNode, MIT, public preview) -
+  the host agent that joins customer-managed Linux VMs and bare-metal hosts to an
+  Azure Kubernetes Service cluster as worker nodes in an isolated systemd-nspawn environment.
+  The tool only makes the binary available (for version checks, preflight, docs and
+  offline bootstrap artifacts); joining a host is a separate, deliberate step that
+  needs an AKS cluster, a Flex node pool and a host identity.
+tags:
+- aks
+- azure
+- kubernetes
+- flex-node
+- node-agent

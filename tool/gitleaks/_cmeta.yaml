@@ -1,0 +1,30 @@
+artifact: 55925d4ad63c480f
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-09-27T19:48:46.932571+00:00'
+desc: 'Gitleaks: finds secrets (keys, tokens, passwords) in git history and in folders
+  - detected, or installed from the pinned official release (SHA-256 checked) on Windows,
+  Linux and macOS.'
+generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  date: '2026-09-27'
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_update_timestamp: '2026-09-27T19:49:15.271875+00:00'
+note: Gitleaks scans a repository's whole history ("gitleaks git") or plain files
+  ("gitleaks dir"). Use --redact so reports never contain the secret itself. task/scan-git-secrets
+  wraps it with a summary by file and rule.
+tags:
+- gitleaks
+- secrets
+- security
+- git
+- scanner

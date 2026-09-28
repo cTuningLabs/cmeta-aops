@@ -1,0 +1,37 @@
+authors: Grigori Fursin
+
+# yamllint, the YAML linter - https://yamllint.readthedocs.io (GPL-3.0).
+#
+# Installed as the pinned PyPI package "yamllint" in its own Python 3.12
+# environment by the shared helper category/tool/api/common_pyvenv.py: tool/uv creates the
+# environment in the tool's cache entry (and downloads that Python if needed), so the system
+# Python and other tools' packages are never touched. An installation already on the PATH is
+# detected and used first.
+#
+#   cx tool setup yamllint                          # detect, else install the pinned version
+#   cx tool setup yamllint --version=<x.y.z> --new  # another version
+#
+# Quick checks:
+#   cx tool run yamllint -- --version
+#   cx tool run yamllint -- -d relaxed <file>.yaml
+
+names:
+  - yamllint{{global.host.vars.file_ext_exe}}
+
+default_version: '1.38.0'
+
+match_version:
+  - regex: 'yamllint (\d+\.\d+\.\d+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/adrienverge/yamllint'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: git,959d8c0fbc004bd0
+cmd_get_versions_regex: '\brefs/tags/v?(\d+\.\d+\.\d+)(?![\w.-])'
+
+install_help_text: |
+  Could not install yamllint automatically on this system.
+  See https://yamllint.readthedocs.io and run "cx tool setup yamllint" again.

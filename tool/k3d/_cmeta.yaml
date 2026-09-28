@@ -1,0 +1,30 @@
+artifact: b28fcff89bd74ef9
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-09-27T19:48:45.227952+00:00'
+desc: 'k3d: lightweight k3s Kubernetes clusters in Docker - detected, or installed
+  from the pinned official release (SHA-256 checked) on Windows, Linux and macOS.'
+generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  date: '2026-09-27'
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_update_timestamp: '2026-09-27T19:49:13.673832+00:00'
+note: k3d starts k3s (a small Kubernetes distribution) in Docker containers, with
+  any number of agent nodes and a load balancer - fast local clusters. Creating a
+  cluster needs Docker running.
+tags:
+- k3d
+- k3s
+- kubernetes
+- cluster
+- docker
+- testing

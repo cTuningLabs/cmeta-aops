@@ -1,0 +1,31 @@
+authors: Grigori Fursin
+
+# Look for secrets (keys, tokens, passwords) in a git repository's whole history, or in a folder,
+# with gitleaks - and report WHERE they are (file, line, rule, commit), never WHAT they are.
+#
+#   cx task run scan-git-secrets                        # the current folder: its git history if it is a repository
+#   cx task run scan-git-secrets --path=<repo or folder>
+#   cx task run scan-git-secrets --path=<repo> --files  # only the files as they are now, not the history
+#   cx task run scan-git-secrets --report=findings.json # also write the (value-free) findings to a file
+#   cx task run scan-git-secrets --baseline=known.json  # ignore findings already accepted (a gitleaks report)
+#   cx task run scan-git-secrets --config=.gitleaks.toml
+#   cx task run scan-git-secrets --no_fail              # exit 0 even when something is found
+#   cx task run scan-git-secrets --install --quiet      # install gitleaks (and its downloader) without asking: CI, containers
+#
+# gitleaks runs with --redact, and the task drops the "Secret" and "Match" fields as well, so a secret
+# value never reaches the console, the report or the task result. Author e-mails are left out too.
+# Exit code: 1 when something is found (unless --no_fail), so the task can gate a CI job or a release.
+
+# Reads a repository and writes nothing but the optional report - never memoize it
+cache: False
+
+params_map:
+  arg2: path
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  # Detect / install gitleaks (pinned release, SHA-256 checked) -> {{global.gitleaks.path}}
+  - task: setup,a2f9b61079ce4333
+    name: gitleaks,55925d4ad63c480f
+    install: '{{params.install|$None}}'

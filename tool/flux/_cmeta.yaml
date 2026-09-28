@@ -1,0 +1,28 @@
+artifact: bda99380b0e8407d
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-09-27T19:48:45.952869+00:00'
+desc: 'Flux CLI (flux): GitOps for Kubernetes - detected, or installed from the pinned
+  official release (SHA-256 checked) on Windows, Linux and macOS.'
+generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  date: '2026-09-27'
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_update_timestamp: '2026-09-27T19:49:14.361455+00:00'
+note: Flux keeps a Kubernetes cluster in sync with configuration in git (and OCI or
+  Helm repositories). The CLI bootstraps, inspects and drives it; "flux check --pre"
+  tells whether a cluster is ready for it.
+tags:
+- flux
+- fluxcd
+- gitops
+- kubernetes

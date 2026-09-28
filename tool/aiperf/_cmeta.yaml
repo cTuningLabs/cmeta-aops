@@ -1,0 +1,31 @@
+artifact: 5c4d4b4ff1174a2a
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-09-27T20:02:28.564378+00:00'
+desc: 'AIPerf: load generator and benchmark for OpenAI-compatible LLM inference servers
+  (throughput, time to first token, inter-token latency) - installed as a pinned PyPI
+  package in its own Python 3.12 environment on Windows, Linux and macOS.'
+generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_generator:
+  agent: Claude Code 2.1.282
+  by: Grigori Fursin
+  date: '2026-09-27'
+  method: agent
+  model: claude-opus-5-5
+  thinking_budget: '31999'
+last_update_timestamp: '2026-09-27T20:02:29.583458+00:00'
+note: AIPerf sends synthetic or trace-based load to a served model (vLLM, SGLang,
+  llama.cpp server, TensorRT-LLM, any OpenAI-compatible endpoint) and reports tokens
+  per second, time to first token, inter-token latency and request latency percentiles.
+tags:
+- aiperf
+- llm
+- inference
+- benchmark
+- openai-api
+- load-generator

@@ -1,0 +1,54 @@
+authors: Grigori Fursin
+
+# Run the OpenClaw agent (https://openclaw.ai) on an assembled prompt and exit, or open its
+# terminal UI. The same flags as the sister tasks "run-claude2", "run-codex2" and "run-opencode2":
+#
+#   cx task run run-openclaw --prompt="{prompt text}"
+#   cx task run run-openclaw --prompt_file={file}
+#   cx task run run-openclaw --prompt_file={file} --prompt="{extra text}" --output_file={file}
+#   cx task run run-openclaw --prompt_file={file} --stats
+#   cx task run run-openclaw --prompt="..." --dry_run         # print the openclaw command, run nothing
+#
+# Headless it runs one agent turn with "openclaw agent --local --message <prompt>": the embedded
+# agent runtime of this machine, with the model-provider keys of your shell or of OpenClaw's own
+# auth store ("openclaw configure" / "openclaw onboard" once per machine). --gateway sends the turn
+# through a running OpenClaw Gateway instead ("openclaw agent" without --local). A headless turn needs a
+# session: the task passes "--agent main" (the agent OpenClaw creates by default) unless --agent=<id> or
+# --session=<id> is given, or a session flag (--agent, --session-id, --session-key, --to) follows "--".
+#
+# With no prompt at all, or with --interactive (short: --i or -i), it opens OpenClaw's terminal UI
+# ("openclaw tui --local", i.e. "openclaw chat"), with the assembled prompt as the first message:
+#
+#   cx task run run-openclaw                                  # just open the terminal UI
+#   cx task run run-openclaw --prompt_file=review.txt --i     # preload a prompt, then continue by hand
+#
+# Since the terminal UI owns the terminal, nothing can be captured: --stats, --stats_file and
+# --output_file are switched off, and a non-zero exit code is reported but does not fail the task.
+#
+# "openclaw agent" has no stdin mode, so the prompt always travels as a command-line argument: the OS
+# caps a command line (~32K chars on Windows, ~2MB argv on Linux), so a very long prompt is warned about.
+#
+# --stats asks OpenClaw for JSON output ("--json") and prints the reply text plus the token usage and
+# cost it reports. --stats_file={file} records the same statistics ("*.json" = JSON, otherwise text).
+#
+# The prompt sent is the text of --prompt_file (when given), then "\n", then the text of --prompt.
+# The full output is streamed to the console and recorded into "{prompt_file without extension}-output.txt"
+# unless --output_file overrides it. Anything after "--" is appended to the openclaw command line, e.g.
+#
+#   cx task run run-openclaw --prompt_file=p.txt -- --model anthropic/claude-sonnet-5 --thinking medium
+#   cx task run run-openclaw --prompt="Summarise the inbox" -- --agent ops --timeout 300
+#
+# Provenance: when nothing else set CMETA_GENERATOR, it is set for the run to
+# {"method": "agent", "agent": "OpenClaw <version>", "model": ..., "effort": <--thinking>}, so artifacts
+# created through cMeta during the run record what made them.
+
+# This task launches an agent that may change files - never memoize it on disk
+cache: False
+
+uses:
+  # Bootstrap host (OS detection, env, vars) - normally already resolved from global
+  - task: runner,1e48cc0c5f6041a5
+
+  # Detect / install the "openclaw" tool (npm) and expose {{global.openclaw.path}}
+  - task: setup,a2f9b61079ce4333
+    name: openclaw,1776c76162b14545
