@@ -87,6 +87,8 @@ All notable changes to cMeta AOps are documented here, newest first.
   `clone-git` but not passed on by the cache wrapper, and neither was `fetch`; together,
   `--depth=1 --fetch="--depth 1 origin <full commit sha>" --checkout=<full commit sha>` gives a pinned
   checkout with no history at all, which still works after the branch moves on.
+- **Removed the outdated `test-core-via-ctuning` workflow** (outdated; `test-core` stays)
+  and its README badge.
 - **Fix: `tool/curl` no longer recurses when curl is missing.** curl is the common install dependency
   of `task/setup` on Linux and macOS, so installing curl itself (on a bare container, for example) set up
   curl again, over and over. `tool/curl` now sets `skip_common_install_uses: True`, as `tool/brew` does.

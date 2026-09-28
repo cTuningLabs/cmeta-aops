@@ -1,7 +1,6 @@
 # cMeta AOps: reusable automations for cMeta (`cmeta-aops`)
 
 [![Test cMeta core AOps](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core.yml/badge.svg)](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core.yml)
-[![Test cMeta core AOps via cTuning](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core-via-ctuning.yml/badge.svg)](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core-via-ctuning.yml)
 
 **`cmeta-aops`** is the reference content repository of the
 [cMeta](https://github.com/cTuningLabs/cmeta) framework: ready-to-run recipes that
