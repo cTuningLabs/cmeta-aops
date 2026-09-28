@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## Unreleased
+## 0.40.1
 - **`task/rclone-to-ssh`: a plain `bisync` now adds `--resilient --recover`** (turn off with `--no-recover`).
   Without these flags, an interrupted run (a dropped link, a killed shell) leaves its listings as `*.lst-err` or
   `*.lst-new`, and every later run aborts with "cannot find prior Path1 or Path2 listings ... Must run --resync
