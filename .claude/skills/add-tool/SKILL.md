@@ -513,7 +513,14 @@ cx tool setup bazel --install -j   # auto-proceed with install (no prompt) — n
 cx tool setup bazel --version=7.4.1 --new -j
 cx tool run bazel -- --version     # sets up then runs; args go after -- (expect: bazel 7.4.1)
 cx tool setup bazel --versions     # (if you added cmd_get_versions) list release tags
+cxt <task> --use.bazel.version=7.4.1   # a task that sets up bazel as a dependency, at another version
 ```
+
+A tool set up inside a task pipeline is the `setup` sub-task whose storage key is the
+tool's alias, so `--use.<tool alias>.version=<v>` changes its version for that whole
+run, however deep the `setup` sits. `--use.<tool alias>.new` gives it a fresh cache
+entry. See `docs/cmeta-aops/task-engine.md`, "Changing a dependency anywhere in a
+pipeline".
 
 > **Interactive install prompt:** when detection fails, `setup` calls `input()`
 > to ask before installing. That raises `EOFError` under a non-interactive shell

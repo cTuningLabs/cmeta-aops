@@ -55,7 +55,10 @@ Every install route, pinning a version, and a zip-fetched copy of this repositor
 Working from a clone instead? Run `cx repo plug .` in the repository root, then
 `cx --reindex`. Handy flags: `-j`/`--verbose` (full step-by-step trace), `--con`,
 `--quiet`, `--version=X` (pin a tool version), `--update`/`--clean`/`--new` (cache
-control). To hand this repository to a coding agent (Claude Code, Codex, OpenCode) as
+control), and `--use.<key>.<param>=<value>` to change any sub-task of a task, however deep:
+for example `--use.python.version=3.12.13` for the Python it sets up
+([how the keys work](docs/cmeta-aops/task-engine.md#changing-a-dependency-anywhere-in-a-pipeline)).
+To hand this repository to a coding agent (Claude Code, Codex, OpenCode) as
 part of its context, see [agent tasks](docs/cmeta-aops/agent-tasks.md).
 
 ## Project status
