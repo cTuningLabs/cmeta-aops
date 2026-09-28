@@ -102,7 +102,7 @@ it sits, without editing a `_desc.yaml`:
 cxt test-mojo-life --use.python.version=3.12.13            # the python that some sub-task sets up
 cxt <task> --use.uv.version=0.12.16                         # the uv that setup,name=uv installs or detects
 cxt <task> --use.clang.version=22.1.7 --use.clang-cpp.version=22.1.7
-cxt <task> --use.dle-setup.python=3.13 --use.dle-setup.update   # a param and a control switch of one sub-task
+cxt <task> --use.get-hf-model.repo=<org>/<model> --use.get-hf-model.update   # a param and a control switch of one sub-task
 ```
 
 How it works (`v2.py`: `use` is parsed with the other dotted keys, kept in `ctx['tasks']['use']`, and
@@ -113,7 +113,7 @@ applied in "UPDATE PARAMS FROM USE BASED ON STORAGE KEY"):
   key>]`, **overriding** what its parent passed in the `uses:` entry.
 - **Control switches travel too.** `path`, `skip`, `cache`, `cache_repo`, `cache_name`,
   `cache_extra_alias`, `cache_extra_params`, `cache_extra_tags`, `update`, `clean`, `new` go to that
-  task's control params: `--use.dle-setup.update` rebuilds only that step.
+  task's control params: `--use.get-hf-model.update` redoes only that step.
 
 The storage key of a sub-task:
 
@@ -123,7 +123,7 @@ The storage key of a sub-task:
 | `clone-git-to-cache` | `clone-git-to-cache-<name>` | `--use.clone-git-to-cache-src-<x>.depth=1` |
 | `runner`, `host`, `init` | fixed: `runner`, `host`, `init` | |
 | a compiler | `compiler-<lang>` | `--use.compiler-c.name=gcc,...` |
-| any other task | its `storage_key` in `_desc.yaml`, else its alias | `--use.dle-setup.python=3.13` |
+| any other task | its `storage_key` in `_desc.yaml`, else its alias | `--use.get-hf-model.repo=<org>/<model>` |
 
 Dots inside a key become `-`. To see the keys of a run, read the names under `tasks.global` in a
 task's `cmeta-task-cached-ctx.json`, or run with `-v`.

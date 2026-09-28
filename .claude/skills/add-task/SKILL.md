@@ -155,8 +155,8 @@ the `uses:` entry passes:
 ```bash
 cxt <task> --use.python.version=3.12.13        # setup,name=python -> key "python"
 cxt <task> --use.uv.version=0.12.16            # setup,name=uv -> key "uv"
-cxt <task> --use.dle-setup.python=3.13         # a task's own storage_key (or its alias)
-cxt <task> --use.dle-setup.update              # control switches too: update, clean, new, path, cache*, skip
+cxt <task> --use.get-hf-model.repo=<org>/<model>  # a task's own storage_key (or its alias)
+cxt <task> --use.get-hf-model.update             # control switches too: update, clean, new, path, cache*, skip
 ```
 
 The key of a `setup` sub-task is the tool alias; for `clone-git-to-cache` it is
