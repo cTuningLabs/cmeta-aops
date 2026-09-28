@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## Unreleased
+## 0.40.0
 - **Thirteen new tools installed from their pinned upstream release** (install ladder tier 1), on
   Windows, Linux and macOS, amd64 and arm64 wherever upstream publishes an asset:
   - Kubernetes: `tool/helm` (4.3.0), `tool/kind` (0.33.0), `tool/k3d` (5.9.0), `tool/kwokctl` (0.8.0,
@@ -87,7 +87,7 @@ All notable changes to cMeta AOps are documented here, newest first.
   `clone-git` but not passed on by the cache wrapper, and neither was `fetch`; together,
   `--depth=1 --fetch="--depth 1 origin <full commit sha>" --checkout=<full commit sha>` gives a pinned
   checkout with no history at all, which still works after the branch moves on.
-- **Removed the outdated `test-core-via-ctuning` workflow** (outdated; `test-core` stays)
+- **Removed the `test-core-via-ctuning` workflow** (outdated; `test-core` stays)
   and its README badge.
 - **Fix: `tool/curl` no longer recurses when curl is missing.** curl is the common install dependency
   of `task/setup` on Linux and macOS, so installing curl itself (on a bare container, for example) set up
