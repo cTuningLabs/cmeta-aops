@@ -34,6 +34,11 @@ class CProgram(InitCProgram):
         if 'cuda' in compute:
             _local['lang'] = 'cuda'
 
+        # --compute=cpu: keep the model on the CPU even when the build has a GPU backend (the
+        # macOS build always has Metal, CUDA and Vulkan builds offload by default)
+        if compute == ['cpu']:
+            _local['llama_cpp_compute_flags'] = '-ngl 0'
+
         return {'return':0}
 
     ############################################################

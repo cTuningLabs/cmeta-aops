@@ -138,6 +138,7 @@ updates:
                --no-display-prompt
                --single-turn
                --simple-io
+               {{local.llama_cpp_compute_flags|}}
                2> llama.log
                > output.txt
 
