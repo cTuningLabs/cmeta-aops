@@ -180,6 +180,20 @@ class CProgram(InitCProgram):
         _local['target_exe'] = run_exe
         _local['target_path_exe'] = os.path.join(target_path_bin, run_exe)
 
+        # Nested CMake projects (ggml-vulkan's vulkan-shaders-gen, built for the host at build time)
+        # inherit neither CMAKE_MAKE_PROGRAM nor the compilers: they need ninja (and cmake) on PATH
+        # and CC/CXX in the environment, while cMeta's ninja and cmake live in its cache
+        build_env = {'+PATH': []}
+        for tool in ('ninja', 'cmake'):
+            p = _global.get(tool, {}).get('path')
+            if p:
+                build_env['+PATH'].append(os.path.dirname(p))
+        if 'CMAKE_C_COMPILER' in d:
+            build_env['CC'] = str(d['CMAKE_C_COMPILER']).strip('"')
+        if 'CMAKE_CXX_COMPILER' in d:
+            build_env['CXX'] = str(d['CMAKE_CXX_COMPILER']).strip('"')
+        _local['llama_cpp_build_env'] = build_env
+
 #        _local['cmake_d_vars'] = " ".join(f"-D{k}={shlex.quote(str(v))}" for k, v in d.items())
         _local['cmake_d_vars'] = " ".join(f"-D{k}={self.cm.q(str(v))}" for k, v in d.items())
 

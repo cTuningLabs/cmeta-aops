@@ -107,6 +107,7 @@ updates:
             storage_key: compile-program
             save_script: '{{local.target_path}}//tmp-cmeta-compile-program{{global.host.vars.file_ext_bat}}'
             chdir: '{{local.target_path}}'
+            env: '{{local.llama_cpp_build_env|$None}}'
             cmds: 
               - '{{global.cmake.qpath}} "{{global.clone-git-to-cache-src-llama-cpp.path_to_git_repo}}" -G Ninja {{local.cmake_d_vars}}'
               - '{{global.cmake.qpath}} --build . --config {{local.build_type}}'
