@@ -113,6 +113,20 @@ def finish_llama_run(program, ctx, desc = {}, **misc):
         with open(log, encoding = 'utf-8', errors = 'replace') as f:
             perf = parse_llama_log(f.read())
 
+    # Builds since b8xxx no longer log their number: take the release cMeta installed, or the
+    # tag a source build checked out (and its commit)
+    _global = ctx['tasks']['global']
+    clone = _global.get('clone-git-to-cache-src-llama-cpp', {})
+    if 'build' not in perf:
+        for candidate in (_global.get('llama-cpp', {}).get('version'), clone.get('branch'),
+                          _local.get('params', {}).get('checkout')):
+            m = re.match(r'b?(\d+)$', str(candidate or ''))
+            if m:
+                perf['build'] = int(m.group(1))
+                break
+    if clone.get('checkout_short'):
+        perf.setdefault('commit', clone['checkout_short'])
+
     with open(os.path.join(work_path, 'perf.json'), 'w', encoding = 'utf-8') as f:
         json.dump(perf, f, indent = 2)
 
