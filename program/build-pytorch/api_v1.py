@@ -10,6 +10,7 @@ import shutil
 import sys
 
 from program_22788f3c30d04e6d.api.cprogram import InitCProgram
+from program_22788f3c30d04e6d.api import common_build
 
 class CProgram(InitCProgram):
     """
@@ -133,9 +134,9 @@ class CProgram(InitCProgram):
         env.setdefault('CMAKE_BUILD_TYPE', 'Debug' if debug_info else 'Release')
         # Tests are not needed to use or benchmark the build and double its time
         env.setdefault('BUILD_TEST', '0')
-        max_jobs = params.get('max_jobs')
-        if max_jobs:
-            env.setdefault('MAX_JOBS', str(max_jobs))
+        # setup.py starts one compile job per CPU, too many for the RAM of a laptop building CUDA kernels
+        device = next((c for c in ('cuda', 'rocm', 'xpu') if c in compute), 'cpu')
+        env.setdefault('MAX_JOBS', str(params.get('max_jobs') or common_build.default_max_jobs(device)))
         env.setdefault('PYTHONUNBUFFERED', '1')
 
         git_repo = _global.get('clone-git-to-cache-src-pytorch', {}).get('path_to_git_repo', '')
