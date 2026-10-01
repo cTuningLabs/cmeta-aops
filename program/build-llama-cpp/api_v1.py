@@ -131,7 +131,8 @@ class CProgram(InitCProgram):
             d.setdefault('LLAMA_BUILD_BORINGSSL', 'ON')
         elif 'android-cpu' not in compute and 'OPENSSL_ROOT_DIR' not in d and 'LLAMA_OPENSSL' not in d:
             if 'lib-openssl' not in _global:
-                self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run',
+                common_llama_cpp.optional_access(self.cm, ctx, {
+                                'category': 'task,c36be4b9314a45e0', 'command': 'run',
                                 'arg1': 'setup,a2f9b61079ce4333', 'name': 'lib-openssl,903191f1fab74064',
                                 'ctx': ctx, 'skip_install': True, 'skip_build': True,
                                 'con': False, 'quiet': True})

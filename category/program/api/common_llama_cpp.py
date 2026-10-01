@@ -112,6 +112,25 @@ def finish_llama_run(program, ctx, desc = {}, **misc):
     return {'return': 0}
 
 
+def optional_access(cm, ctx, ii):
+    """
+    Run a sub-task whose failure is acceptable (an optional dependency). A failed task returns
+    without restoring the caller's context (local, params, control), which would break every
+    step that follows, so it is saved and restored here.
+    """
+    tasks = ctx['tasks']
+    saved = {k: tasks.get(k) for k in ('local', 'params', 'cparams')}
+    saved_control = dict(ctx['control'])
+    try:
+        return cm.access(ii)
+    finally:
+        for k, v in saved.items():
+            if v is not None:
+                tasks[k] = v
+        ctx['control'].clear()
+        ctx['control'].update(saved_control)
+
+
 def completion_binary(path_to_git_repo, target_path_bin, exe_ext):
     """
     The binary a source build should run for a one-shot completion: llama-completion when the

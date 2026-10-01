@@ -423,14 +423,25 @@ class CTool(InitCTool):
         cuda_driver = target.get('features', {}).get('cuda', {}).get('versions', {}).get('cuda version')
         if backend == 'cuda' and not cuda_driver and not ver:
             if 'cuda' not in _global:
-                rc = self.cm.access({'category': 'task,c36be4b9314a45e0',
-                                     'command': 'run',
-                                     'arg1': 'setup,a2f9b61079ce4333',
-                                     'name': 'cuda,805716c4f32d42cf',
-                                     'ctx': ctx,
-                                     'skip_install': True,
-                                     'skip_build': True,
-                                     'con': con, 'quiet': quiet, 'verbose': verbose})
+                # A failed sub-task does not restore the caller's context: keep a copy
+                tasks = ctx['tasks']
+                saved = {k: tasks.get(k) for k in ('local', 'params', 'cparams')}
+                saved_control = dict(ctx['control'])
+                try:
+                    rc = self.cm.access({'category': 'task,c36be4b9314a45e0',
+                                         'command': 'run',
+                                         'arg1': 'setup,a2f9b61079ce4333',
+                                         'name': 'cuda,805716c4f32d42cf',
+                                         'ctx': ctx,
+                                         'skip_install': True,
+                                         'skip_build': True,
+                                         'con': con, 'quiet': quiet, 'verbose': verbose})
+                finally:
+                    for k, v in saved.items():
+                        if v is not None:
+                            tasks[k] = v
+                    ctx['control'].clear()
+                    ctx['control'].update(saved_control)
                 if rc['return'] > 0 and con:
                     print ('')
                     print (f'{space}WARNING: no NVIDIA driver detected ({rc.get("error")})')
