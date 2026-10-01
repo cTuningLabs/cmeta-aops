@@ -4,6 +4,16 @@ inherits:
   - template-c-cpu,649899ef3f004e4a
 
 local_vars:
+  run_time_env:
+    CMETA_TARGETS: '{{global.target.cmeta_targets}}'
+    CMETA_VLLM_MODEL: '{{params.model|Qwen/Qwen2.5-0.5B-Instruct}}'
+    CMETA_VLLM_MAX_TOKENS: '{{params.n|64}}'
+    CMETA_VLLM_GPU_MEM: '{{params.gpu_mem|0.8}}'
+    CMETA_VLLM_MAX_LEN: '{{params.max_len|4096}}'
+    # CPU: the KV cache in GiB (unset, vLLM reserves 92% of the RAM and may refuse to start)
+    VLLM_CPU_KVCACHE_SPACE: '{{params.cpu_kv_cache_gib|4}}'
+    PYTHONUNBUFFERED: 1
+
   run_src_file_names: 
     - 'program.py'
 
@@ -34,16 +44,13 @@ updates:
              with:
                package: numpy
 
-           - task: setup,a2f9b61079ce4333
-             name: pip
-             with:
-               package: torch
-
+           # vLLM pins its torch and brings it (tool/pip-vllm picks the wheel index for the
+           # compute and the driver): no separate torch step, which would install another build
            - task: setup,a2f9b61079ce4333
              name: pip
              with:
                package: vllm
-               flags: -v
+             version: '{{params.vllm_version|$None}}'
              env:
                 PYTHONUNBUFFERED: 1
 
