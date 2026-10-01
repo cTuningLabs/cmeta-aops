@@ -14,10 +14,45 @@ CMETA_TARGETS (cpu -> the model stays on the CPU; vulkan -> OLLAMA_VULKAN=1).
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
 import urllib.request
+
+
+def start_server(cmd, env, log):
+    """ollama serve in its own process group, so stop_server() can end its runners too."""
+    if os.name == 'nt':
+        return subprocess.Popen(cmd, env = env, stdout = log, stderr = subprocess.STDOUT,
+                                creationflags = subprocess.CREATE_NEW_PROCESS_GROUP)
+    return subprocess.Popen(cmd, env = env, stdout = log, stderr = subprocess.STDOUT, start_new_session = True)
+
+
+def stop_server(server):
+    """
+    Stop ollama serve and the model runners (llama-server) it started. On Windows terminating
+    ollama.exe alone leaves each runner running, holding its RAM and VRAM, so the whole process
+    tree goes; elsewhere the process group gets SIGTERM, then SIGKILL.
+    """
+    if server.poll() is not None:
+        return
+    if os.name == 'nt':
+        subprocess.run(['taskkill', '/T', '/F', '/PID', str(server.pid)],
+                       stdout = subprocess.DEVNULL, stderr = subprocess.DEVNULL)
+    else:
+        try:
+            os.killpg(server.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+    try:
+        server.wait(timeout = 30)
+    except subprocess.TimeoutExpired:
+        if os.name == 'nt':
+            server.kill()
+        else:
+            os.killpg(server.pid, signal.SIGKILL)
+        server.wait(timeout = 30)
 
 
 def api(base, path, payload = None, timeout = 600):
@@ -44,7 +79,7 @@ def main():
 
     base = f'http://127.0.0.1:{port}'
     log = open('ollama-serve.log', 'w', encoding = 'utf-8')
-    server = subprocess.Popen([ollama, 'serve'], env = env, stdout = log, stderr = subprocess.STDOUT)
+    server = start_server([ollama, 'serve'], env, log)
 
     stats = {'model': model, 'targets': targets, 'port': port}
     rc = 0
@@ -102,11 +137,7 @@ def main():
         print('ERROR:', stats['error'], file = sys.stderr)
         rc = 1
     finally:
-        server.terminate()
-        try:
-            server.wait(timeout = 30)
-        except subprocess.TimeoutExpired:
-            server.kill()
+        stop_server(server)
         log.close()
 
     with open('tmp-cmeta-program-stats.json', 'w', encoding = 'utf-8') as f:
