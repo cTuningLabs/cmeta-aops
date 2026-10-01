@@ -7,7 +7,8 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 # Installed (api_v1.py install()) from the pinned portable release into the cMeta cache - no
 # installer, no system service, no administrator rights:
 #   Windows: ollama-windows-{amd64,arm64}.zip     (ollama.exe + lib/ollama with the GPU runners)
-#   Linux:   ollama-linux-{amd64,arm64}.tar.zst   (bin/ollama + lib/ollama; unpacked with zstd)
+#   Linux:   ollama-linux-{amd64,arm64}.tar.zst   (bin/ollama + lib/ollama; unpacked by Python
+#            3.14+ - uv downloads one, no root - or the zstd CLI)
 #   macOS:   ollama-darwin.tgz                    (universal binary, Metal)
 # --with.variant=rocm|mlx|jetpack6 picks the other Linux/Windows builds. Fallbacks: winget
 # (Ollama.Ollama), Homebrew (ollama), the official script (Linux, needs root).

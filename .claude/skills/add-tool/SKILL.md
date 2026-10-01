@@ -72,6 +72,13 @@ cannot work.
 Examples: `tool/git` on Linux, `tool/rsync` on Linux/macOS (rsync is published
 as source only, so there is no binary to fetch).
 
+In a quiet run (`-q`) without passwordless sudo, `task/setup` runs every `sudo`
+of the command as `sudo -n`: it fails at once (and prints the command) instead of
+waiting at a password prompt nobody sees. So a tier-3 step is never a silent
+dependency of an unattended run — when a helper is only needed for one step
+(unpacking an archive, say), look for a tier-1 route first, as `tool/ollama`
+does by unpacking `.tar.zst` with a Python 3.14 set up through uv.
+
 ### Tiers combine
 
 The usual shape for a well-behaved tool is **Tier 1 primary with a Tier 2/3

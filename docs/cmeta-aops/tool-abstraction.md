@@ -51,6 +51,17 @@ by requested `--version`, sorts (`@detected_version-`), and returns `path`/`vers
 `[openclaw{{file_ext_exe}}, openclaw.cmd]`) because on Windows the binary is `X.cmd`, not
 `X.exe`.
 
+Two `api_v1.py` hooks replace the search when a name on a path cannot find the tool:
+
+- `find_paths(ctx, params)` returns `{'found_paths': [...]}`, and the version check above
+  runs on them. `tool/microsoft.visual-studio` asks `vswhere` for every installation;
+  `tool/clang-cpp` looks next to the detected `clang`. A forced path (`--tool_path`, or the
+  path an `install()` reported) skips the hook and is checked as given.
+- `detect(ctx, params)` returns `{'parsed_paths_with_versions': [...]}`, i.e. paths with
+  their versions and features, for tools that no `--version` output describes.
+  `tool/vulkan` asks the Vulkan loader for its devices, and `tool/vulkan-sdk` checks SDK
+  folders for headers and `glslc`. `params` includes `tool_path`/`paths` when they are given.
+
 ## `_desc.yaml` — version listing (`cx tool setup X --versions`)
 
 The setup `--versions` path runs `cmd_get_versions`, first setting up any
