@@ -14,9 +14,12 @@ local_vars:
 
   output_files:
     - output.txt
+    - llama.log
+    - perf.json
 
   result_files:
     response: output.txt
+    perf: perf.json
 
   print_files:
     - output.txt
@@ -130,9 +133,18 @@ updates:
                -f {qinput_files.data}
                -n {{params.n|500}}
                --temp {{params.temp|0.7}}
-               -c {{params.с|4096}}
+               -c {{params.c|4096}}
                --seed {{params.seed|12345}}
-               --no-display-prompt 
-               --log-disable 
-               --single-turn 
+               --no-display-prompt
+               --single-turn
+               --simple-io
+               2> llama.log
                > output.txt
+
+       # Clean output.txt and record llama.cpp's timings (llama.log) as result['perf']
+       - match:
+           task: finish-run,5e14d7eca4f64440
+         prepend:
+           - internal_func: finish_llama_run
+             internal_func_from_local_key: selected-program
+             internal_func_safe: True

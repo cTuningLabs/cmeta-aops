@@ -9,6 +9,7 @@ import os
 import shlex
 
 from program_22788f3c30d04e6d.api.cprogram import InitCProgram
+from program_22788f3c30d04e6d.api import common_llama_cpp
 
 class CProgram(InitCProgram):
     """
@@ -98,7 +99,7 @@ class CProgram(InitCProgram):
         if 'CMAKE_MAKE_PROGRAM' not in d:
             d['CMAKE_MAKE_PROGRAM'] = _global['ninja']['qpath']
 
-        if 'cpu' in compute or 'cuda' in compute:
+        if 'cpu' in compute or 'cuda' in compute or 'vulkan' in compute:
             cmake_c_compiler = _global['compiler-c']['qpath']
             if 'CMAKE_C_COMPILER' not in d:
                 d['CMAKE_C_COMPILER'] = cmake_c_compiler
@@ -129,6 +130,7 @@ class CProgram(InitCProgram):
                 ('cpu', 'GGML_CPU', 'OFF'),
                 ('cuda', 'GGML_CUDA', 'OFF'),
                 ('metal', 'GGML_METAL', 'OFF'),
+                ('vulkan', 'GGML_VULKAN', 'OFF'),
             ]:
             if x[0] in compute:
                 if x[1] not in d:
@@ -137,9 +139,14 @@ class CProgram(InitCProgram):
                 d[x[1]] = x[2]
 
         _local['target_path_bin'] = target_path_bin
-        _local['target_exe'] = target_file_name_with_ext
         _local['target_path_llama_cli'] = os.path.join(target_path_bin, target_file_name_with_ext)
-        _local['target_path_exe'] = _local['target_path_llama_cli']
+
+        # The run uses llama-completion when the checkout has it (llama-cli is an interactive
+        # chat UI since the late-2025 rework), llama-cli in older checkouts
+        path_to_git_repo = _global.get('clone-git-to-cache-src-llama-cpp', {}).get('path_to_git_repo')
+        run_exe = common_llama_cpp.completion_binary(path_to_git_repo, target_path_bin, target_file_name_ext)
+        _local['target_exe'] = run_exe
+        _local['target_path_exe'] = os.path.join(target_path_bin, run_exe)
 
 #        _local['cmake_d_vars'] = " ".join(f"-D{k}={shlex.quote(str(v))}" for k, v in d.items())
         _local['cmake_d_vars'] = " ".join(f"-D{k}={self.cm.q(str(v))}" for k, v in d.items())
@@ -147,4 +154,16 @@ class CProgram(InitCProgram):
         _local['skip_template_compile'] = True
 
         return {'return':0}
+
+    ############################################################
+    def finish_llama_run(self,
+                         ctx: dict,
+                         desc: dict = {},
+                         **misc,
+    ):
+        """
+        After the run: clean output.txt, record llama.cpp's timings in perf.json (result['perf']).
+        """
+
+        return common_llama_cpp.finish_llama_run(self, ctx, desc, **misc)
 

@@ -9,6 +9,7 @@ import os
 import shlex
 
 from program_22788f3c30d04e6d.api.cprogram import InitCProgram
+from program_22788f3c30d04e6d.api import common_llama_cpp
 
 class CProgram(InitCProgram):
     """
@@ -42,3 +43,15 @@ class CProgram(InitCProgram):
                 _use.setdefault('dataset',{})['filename'] = os.path.abspath(prompt)
 
         return {'return':0}
+
+    ############################################################
+    def finish_llama_run(self,
+                         ctx: dict,
+                         desc: dict = {},
+                         **misc,
+    ):
+        """
+        After the run: clean output.txt, record llama.cpp's timings in perf.json (result['perf']).
+        """
+
+        return common_llama_cpp.finish_llama_run(self, ctx, desc, **misc)
