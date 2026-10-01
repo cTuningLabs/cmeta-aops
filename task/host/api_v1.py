@@ -524,11 +524,25 @@ def detect_linux_env():
     cmd_upgrade = upgrade_command_for(package_manager) or cmd
     candidate_cmd, candidate_regex = candidate_version_query_for(package_manager)
 
+    def with_index_refresh(cmd, sudo, upgrade = False):
+        # apt installs only what its package lists know, and a fresh container (or a machine
+        # unused for long) has none yet: "Unable to locate package". An install retries after
+        # refreshing them; an upgrade refreshes them first, as stale lists hold no newer version.
+        if not cmd:
+            return cmd
+        s = 'sudo ' if sudo else ''
+        if package_manager not in ('apt', 'apt-get'):
+            return s + cmd
+        refresh = f'{s}{package_manager} update'
+        if upgrade:
+            return f'{refresh} && {s}{cmd}'
+        return f'{s}{cmd} || ({refresh} && {s}{cmd})'
+
     sudo_installed, passwordless_sudo = detect_sudo()
     sudo_cmd = 'sudo ' if sudo_installed else ''
-    cmd_sudo = f"sudo {cmd}" if sudo_installed else cmd
-    cmd_sudo_version = f"sudo {cmd_version}" if sudo_installed else cmd_version
-    cmd_sudo_upgrade = f"sudo {cmd_upgrade}" if sudo_installed and cmd_upgrade else cmd_upgrade
+    cmd_sudo = with_index_refresh(cmd, sudo_installed)
+    cmd_sudo_version = with_index_refresh(cmd_version, sudo_installed)
+    cmd_sudo_upgrade = with_index_refresh(cmd_upgrade, sudo_installed, upgrade = True)
 
     return {
         "id": distro_id,
