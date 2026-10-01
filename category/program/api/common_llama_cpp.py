@@ -26,6 +26,9 @@ _PERF = re.compile(r'(?P<key>load|prompt eval|eval|sampling|total) time\s*=\s*(?
 # Devices llama.cpp offloads to: "using device CUDA0 (NVIDIA ...)" (newer builds) or "ggml_cuda_init: found 1 CUDA devices"
 _DEVICE = re.compile(r'using device (\S+) \(([^)]*)\)')
 
+# "load_tensors: offloaded 25/25 layers to GPU" (with -v in builds since b8xxx)
+_OFFLOAD = re.compile(r'offloaded (\d+)/(\d+) layers to GPU')
+
 END_MARKERS = ('[end of text]',)
 
 
@@ -61,6 +64,10 @@ def parse_llama_log(text):
             result['generation_tokens_per_second'] = perf['eval']['tokens_per_second']
     if devices:
         result['devices'] = devices
+
+    offload = _OFFLOAD.search(text)
+    if offload:
+        result['gpu_layers'] = {'offloaded': int(offload.group(1)), 'total': int(offload.group(2))}
 
     build = re.search(r'build\s*[:=]\s*b?(\d+)', text)
     if build:

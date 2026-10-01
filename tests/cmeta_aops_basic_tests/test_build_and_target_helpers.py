@@ -288,3 +288,25 @@ def test_sdk_layout_lunarg_windows(vksdk, tmp_path):
 
 def test_sdk_layout_not_an_sdk(vksdk, tmp_path):
     assert vksdk.sdk_layout(str(tmp_path), "linux") is None
+
+
+# --------------------------------------------------------------------------------------------
+# common_llama_cpp.parse_llama_log with -v (llama.cpp b11324 prints devices only when verbose)
+
+VERBOSE_LOG = """0.00.002.021 I llama_completion: llama backend init
+0.00.153.092 I llama_prepare_model_devices: using device Vulkan0 (Apple M4) (unknown id) - 12123 MiB free
+0.00.201.462 I load_tensors: offloaded 25/25 layers to GPU
+0.01.807.491 I system_info: n_threads = 4 (n_threads_batch = 4) / 10 | CPU : NEON = 1 | ARM_FMA = 1 |
+0.02.841.114 I common_perf_print:    sampling time =       4.24 ms
+0.02.841.120 I common_perf_print: prompt eval time =      36.04 ms /    18 tokens (    2.00 ms per token,   499.42 tokens per second)
+0.02.841.125 I common_perf_print:        eval time =     490.00 ms /    63 runs   (    7.78 ms per token,   128.57 tokens per second)
+"""
+
+
+def test_parse_llama_log_devices_and_offload():
+    m = load_module("category/program/api/common_llama_cpp.py", "common_llama_cpp")
+    r = m.parse_llama_log(VERBOSE_LOG)
+    assert r["devices"] == [{"name": "Vulkan0", "description": "Apple M4"}]
+    assert r["gpu_layers"] == {"offloaded": 25, "total": 25}
+    assert r["prompt_tokens_per_second"] == 499.42 and r["generation_tokens_per_second"] == 128.57
+    assert r["threads"] == 4
