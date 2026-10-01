@@ -91,7 +91,9 @@ def detect_existing_tool(self,
             parsed_paths_with_versions = r['parsed_paths_with_versions']
 
     else:
-        if hasattr(tool_api_code, 'find_paths') and callable(getattr(tool_api_code, 'find_paths')):
+        # find_paths replaces the search only: a forced path (--tool_path, or the path an
+        # install() just reported) is checked as given
+        if not (path or paths) and hasattr(tool_api_code, 'find_paths') and callable(getattr(tool_api_code, 'find_paths')):
             r = tool_api_code.find_paths(ctx, params)
             if self.cm.catch_error(r): return r
 

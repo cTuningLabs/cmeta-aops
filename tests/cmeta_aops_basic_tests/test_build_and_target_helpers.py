@@ -206,3 +206,31 @@ def test_unpack_with_python_314(ollama, tmp_path):
     rc = subprocess.run([sys.executable, "-c", ollama.UNPACK_WITH_PYTHON, str(archive), str(dest)]).returncode
     assert rc == 0
     assert (dest / "bin" / "ollama").read_bytes().startswith(b"#!/bin/sh")
+
+
+# --------------------------------------------------------------------------------------------
+# tool/microsoft.visual-studio
+
+@pytest.fixture(scope = "module")
+def vs():
+    return load_head("tool/microsoft.visual-studio/api_v1.py", "\nclass CTool",
+                     ["from tool_c393ba5c6fa14f66.api.ctool import InitCTool"])
+
+
+def test_build_tools_winget_ids(vs):
+    assert vs.BUILD_TOOLS_WINGET_IDS["2026"] == "Microsoft.VisualStudio.BuildTools"
+    assert vs.BUILD_TOOLS_WINGET_IDS["2022"] == "Microsoft.VisualStudio.2022.BuildTools"
+
+
+def test_build_tools_install_cmd():
+    import yaml
+    desc = yaml.safe_load((REPO_ROOT / "tool" / "microsoft.visual-studio" / "_desc.yaml").read_text(encoding = "utf-8"))
+    cmd = desc["install_cmd"]["windows"]
+    assert "--id=@VS_BUILD_TOOLS@" in cmd                      # replaced by customize_install_cmd()
+    assert "Microsoft.VisualStudio.Workload.VCTools" in cmd and "--includeRecommended" in cmd
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason = "Visual Studio is Windows-only")
+def test_vswhere_installations_are_folders(vs):
+    for path in vs.vswhere_installations():
+        assert pathlib.Path(path).is_dir()
