@@ -234,3 +234,23 @@ def test_build_tools_install_cmd():
 def test_vswhere_installations_are_folders(vs):
     for path in vs.vswhere_installations():
         assert pathlib.Path(path).is_dir()
+
+
+# --------------------------------------------------------------------------------------------
+# Programs: run_time_env is expanded by task/setup-run, whose own params are not the program's
+
+def test_run_time_env_reads_the_program_params():
+    """
+    '{{params.X|default}}' in local_vars.run_time_env always gave the default: setup-run expands
+    run_time_env with its own params. compile-and-run-program keeps the program's params in
+    local.params, so '{{local.params.X|default}}' is the form that sees --X on the command line.
+    """
+    import yaml
+    offenders = []
+    for desc in sorted((REPO_ROOT / "program").glob("*/_desc.yaml")):
+        data = yaml.safe_load(desc.read_text(encoding = "utf-8")) or {}
+        env = (data.get("local_vars") or {}).get("run_time_env") or {}
+        for key, value in env.items():
+            if isinstance(value, str) and "{{params." in value:
+                offenders.append(f"{desc.parent.name}: {key}: {value}")
+    assert offenders == []

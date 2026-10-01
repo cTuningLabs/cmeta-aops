@@ -49,6 +49,11 @@ All notable changes to cMeta AOps are documented here, newest first.
   features of the tool set up in the same call. `target--metal` and `target--xpu` parse the probe that
   runs in each call, and `target--cpu` probes again when its host fingerprint changes. `target--xpu`
   also uses PowerShell CIM instead of `wmic`, which current Windows 11 builds no longer have.
+- **Fix: program parameters reach the run-time environment.** `task/setup-run` expands
+  `local_vars.run_time_env` with its own parameters, so `{{params.X|default}}` there always gave the
+  default: `--model`, `--n`, `--max_len` and `--cpu_kv_cache_gib` of `test-vllm` and `build-vllm`, the
+  options of `test-ollama`, and `--repeat` of the milepost codelet. They now read `{{local.params.X}}`,
+  where `compile-and-run-program` keeps the program's parameters, and a test checks every program for it.
 - **Quiet installs never wait at a sudo password prompt.** With `-q` and a `sudo` that needs a password,
   every `sudo` in an install command runs as `sudo -n`. It fails at once, where an unattended run used
   to hang (15 minutes in one case), and cMeta prints the command to run by hand.

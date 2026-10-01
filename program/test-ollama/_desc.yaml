@@ -20,10 +20,10 @@ local_vars:
   run_time_env:
     CMETA_TARGETS: '{{global.target.cmeta_targets}}'
     CMETA_OLLAMA: '{{global.ollama.path}}'
-    CMETA_OLLAMA_MODEL: '{{params.model|qwen2.5:0.5b}}'
-    CMETA_OLLAMA_MAX_TOKENS: '{{params.n|64}}'
-    CMETA_OLLAMA_PORT: '{{params.port|11435}}'
-    CMETA_OLLAMA_MODELS: '{{params.models_dir|}}'
+    CMETA_OLLAMA_MODEL: '{{local.params.model|qwen2.5:0.5b}}'
+    CMETA_OLLAMA_MAX_TOKENS: '{{local.params.n|64}}'
+    CMETA_OLLAMA_PORT: '{{local.params.port|11435}}'
+    CMETA_OLLAMA_MODELS: '{{local.params.models_dir|}}'
     PYTHONUNBUFFERED: 1
 
   output_files:

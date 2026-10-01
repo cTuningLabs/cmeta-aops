@@ -40,11 +40,11 @@ local_vars:
     # the venv's python runs without the venv being activated
     +PATH:
       - '{{global.python.path_bin}}'
-    CMETA_VLLM_MODEL: '{{params.model|Qwen/Qwen2.5-0.5B-Instruct}}'
-    CMETA_VLLM_MAX_TOKENS: '{{params.n|64}}'
-    CMETA_VLLM_GPU_MEM: '{{params.gpu_mem|0.8}}'
-    CMETA_VLLM_MAX_LEN: '{{params.max_len|4096}}'
-    VLLM_CPU_KVCACHE_SPACE: '{{params.cpu_kv_cache_gib|4}}'
+    CMETA_VLLM_MODEL: '{{local.params.model|Qwen/Qwen2.5-0.5B-Instruct}}'
+    CMETA_VLLM_MAX_TOKENS: '{{local.params.n|64}}'
+    CMETA_VLLM_GPU_MEM: '{{local.params.gpu_mem|0.8}}'
+    CMETA_VLLM_MAX_LEN: '{{local.params.max_len|4096}}'
+    VLLM_CPU_KVCACHE_SPACE: '{{local.params.cpu_kv_cache_gib|4}}'
     PYTHONUNBUFFERED: 1
 
   output_files:
