@@ -13,15 +13,17 @@ uses:
     sudo: True
     package: pciutils
 
+  # GPUs are "VGA compatible", "3D" or "Display" controllers (data-center GPUs are not VGA)
   - task: cmd,c9ba0a88df394d7f
     if_os: linux
-    cmd: 'lspci | grep -i vga > {{local.generate-temp-file-target-xpu.temp_file}}'
+    cmd: 'lspci | grep -i -E "vga|3d controller|display controller" > {{local.generate-temp-file-target-xpu.temp_file}} || true'
 
+  # wmic is gone from current Windows 11 builds: the same query through PowerShell (CIM), as UTF-8
   - task: cmd,c9ba0a88df394d7f
     if_os: windows
-    cmd: 'wmic path win32_VideoController get name,driverversion > {{local.generate-temp-file-target-xpu.temp_file}}'
+    cmd: 'powershell -NoProfile -Command "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-CimInstance Win32_VideoController | Format-List Name,DriverVersion" > {{local.generate-temp-file-target-xpu.temp_file}}'
     local:
-      encoding: 'utf-16'
+      encoding: 'utf-8-sig'
 
 env_if_not_used:
   CMETA_TARGET_XPU: 0

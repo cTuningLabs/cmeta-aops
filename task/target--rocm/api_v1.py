@@ -60,6 +60,13 @@ class CTask(InitCTask):
 
         _result = {'return':0}
 
+        # A cached target keeps the features of the run that created the entry, possibly on another
+        # machine (a copied or shared CMETA_HOME) or before a GPU or driver change. The rocm tool
+        # was set up again in this call ('uses'), so its features describe this machine now.
+        tool_features = ctx['tasks']['global'].get('rocm', {}).get('features')
+        if tool_features:
+            result['features'] = copy.deepcopy(tool_features)
+
         _with = params.get('with', {})
 
         ver = _with.get('ver')
