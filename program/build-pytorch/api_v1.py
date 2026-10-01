@@ -91,7 +91,10 @@ class CProgram(InitCProgram):
         if uname == 'windows':
             venv_site = os.path.join(python_root, 'Lib', 'site-packages')
         else:
-            py_ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
+            # The venv's Python, not the one running cMeta
+            py_ver = 'python' + '.'.join(str(_global['python'].get('version', '')).split('.')[:2])
+            if py_ver == 'python':
+                py_ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
             venv_site = os.path.join(python_root, 'lib', py_ver, 'site-packages')
 
         # -----------------------------------------------------------------------
@@ -128,11 +131,39 @@ class CProgram(InitCProgram):
         # Build type / misc
         env.setdefault('DEBUG', '1' if debug_info else '0')
         env.setdefault('CMAKE_BUILD_TYPE', 'Debug' if debug_info else 'Release')
-        env.setdefault('BUILD_TEST', '1')
+        # Tests are not needed to use or benchmark the build and double its time
+        env.setdefault('BUILD_TEST', '0')
         max_jobs = params.get('max_jobs')
         if max_jobs:
             env.setdefault('MAX_JOBS', str(max_jobs))
         env.setdefault('PYTHONUNBUFFERED', '1')
+
+        git_repo = _global.get('clone-git-to-cache-src-pytorch', {}).get('path_to_git_repo', '')
+
+        # A tag checkout builds as 2.14.1a0+git<sha> unless the version is given
+        checkout = str(params.get('checkout') or 'v2.14.1')   # the default of the clone step in _desc.yaml
+        if checkout.startswith('v') and checkout[1:2].isdigit():
+            env.setdefault('PYTORCH_BUILD_VERSION', checkout[1:])
+            env.setdefault('PYTORCH_BUILD_NUMBER', '1')
+
+        # The build requirements of this source tree
+        for name in ('requirements-build.txt', 'requirements.txt'):
+            p = os.path.join(git_repo, name)
+            if os.path.isfile(p):
+                _local['pytorch_build_requirements'] = self.cm.q(p)
+                break
+
+        if 'cuda' in compute and 'TORCH_CUDA_ARCH_LIST' not in env:
+            # Unset, PyTorch detects the visible GPUs, and without one it falls back to a list that
+            # starts at compute 5.0, which CUDA 13 rejects: name the GPUs of this machine
+            devices = _global.get('target', {}).get('features', {}).get('cuda', {}).get('devices', [])
+            caps = sorted({dv.get('compute_cap') for dv in devices if dv.get('compute_cap')})
+            if caps:
+                env['TORCH_CUDA_ARCH_LIST'] = ';'.join(caps)
+
+        if uname == 'windows':
+            # setuptools must use the MSVC environment set up by the msvc tool (vcvars)
+            env.setdefault('DISTUTILS_USE_SDK', '1')
 
         # Ninja: setup.py reads CMAKE_GENERATOR to pick the cmake generator
         env.setdefault('CMAKE_GENERATOR', 'Ninja')

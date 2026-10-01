@@ -130,7 +130,8 @@ updates:
           - task: clone-git-to-cache,86919b3cfdd443d2
             name: src-pytorch
             url: 'https://github.com/pytorch/pytorch'
-            checkout: '{{params.checkout|$None}}'
+            # The newest release (master is the next development version); --checkout=<tag|branch>
+            checkout: '{{params.checkout|v2.14.1}}'
 
           # PyTorch depends heavily on submodules (e.g. pybind11, sleef, XNNPACK)
           - task: cmd,c9ba0a88df394d7f
@@ -158,6 +159,10 @@ updates:
             chdir: '{{global.clone-git-to-cache-src-pytorch.path_to_git_repo}}'
             env: '{{local.pip_install_env}}'
             cmds:
+              # The release's own build requirements: since 2.14 the build backend is
+              # scikit-build-core, which --no-build-isolation needs in the venv (older trees:
+              # requirements.txt)
+              - '{{global.python.qpath}} -m pip install -r {{local.pytorch_build_requirements}}'
               - '{{global.python.qpath}} -m pip install --no-build-isolation -v .'
 
 
