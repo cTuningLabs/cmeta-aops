@@ -191,7 +191,9 @@ def test_github_repo_from_cmd(up, cmd, repo):
     ("v4.3.0", r"refs/tags/v(\d+\.\d+\.\d+)$", "4.3.0"),                                         # helm-style
     ("v4.3.0", None, "4.3.0"),                                                                   # no regex: first version-like token
     ("jdk-25.0.2+10", None, "25.0.2+10"),
-    ("vscode-v2.0.21", r"refs/tags/v([\d.]+)(?:\^\{\})?$", "2.0.21"),                            # falls back to the token
+    ("vscode-v2.0.21", r"refs/tags/v([\d.]+)(?:\^\{\})?$", None),                                # a tag the regex rejects is not a version
+    ("v0.5.0", r"\brefs/tags/b(\d+)\b", None),                                                   # llama.cpp: releases are numbered builds
+    ("b11322", r"\brefs/tags/b(\d+)\b", "11322"),
     ("latest", None, None),
 ])
 def test_version_from_tag(up, tag, regex, version):

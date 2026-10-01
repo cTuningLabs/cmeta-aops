@@ -78,6 +78,9 @@ WINGET_NOTHING_TO_DO = {0x8A15002B, 0x8A150011, 0x8A15002B - 2**32, 0x8A150011 -
 
 VERSION_LIKE = r'(\d+(?:\.\d+)+[\w.\-+]*)'
 
+# Where an upstream version came from when it is not the release GitHub marks as latest
+TAGS_SOURCE = 'the newest release among the upstream tags (cmd_get_versions)'
+
 
 ###################################################################################################
 # Pure helpers (no cMeta, no network) - unit-tested offline
@@ -339,18 +342,20 @@ def github_repo_from_cmd(cmd):
 def version_from_tag(tag, regex = None, group = 1):
     """
     Apply a tool's cmd_get_versions_regex (written for "git ls-remote --tags" lines) to
-    one tag, falling back to the first version-like token of the tag.
+    one tag. With a regex, a tag it does not match is not one of the tool's versions
+    (llama.cpp numbers its builds b11322 while GitHub marks a "v0.5.0" release as latest)
+    and None is returned; without one, the first version-like token of the tag.
     """
     line = f'refs/tags/{tag}'
     if regex:
         m = re.search(regex, line)
-        if m:
-            try:
-                v = m.group(group or 1)
-                if v:
-                    return v
-            except IndexError:
-                pass
+        if not m:
+            return None
+        try:
+            v = m.group(group or 1)
+        except IndexError:
+            return None
+        return v or None
     m = re.search(VERSION_LIKE, tag)
     return m.group(1) if m else None
 
@@ -830,7 +835,7 @@ def find_latest(self, ctx, desc, tool_read, params, channels, query_channel = No
                     result['upstream_version'] = v
                     result['upstream_source'] = f'https://github.com/{repo}/releases/latest'
                 else:
-                    notes.append(f'no version in the latest GitHub release tag "{tag}"')
+                    notes.append(f'the GitHub release marked latest ("{tag}") is not one of this tool\'s versions; using tags')
             else:
                 notes.append(f'github.com/{repo} has no release marked latest (or is unreachable); using tags')
 
@@ -842,7 +847,7 @@ def find_latest(self, ctx, desc, tool_read, params, channels, query_channel = No
                 v = pick_latest(r['versions'])
                 if v:
                     result['upstream_version'] = v
-                    result['upstream_source'] = 'newest non-pre-release of cmd_get_versions'
+                    result['upstream_source'] = TAGS_SOURCE
             else:
                 notes.append('cmd_get_versions listed no versions')
 
@@ -1030,9 +1035,8 @@ def status_tool(self, ctx, params, tool_read):
             print (f'{space}  note:      {n}')
         print ('')
 
-        via = f' via {latest_source}' if latest_source and not str(latest_source).startswith('http') else ''
-        if latest_source and str(latest_source).startswith('http'):
-            via = ' upstream'
+        upstream_sources = latest_source and (str(latest_source).startswith('http') or latest_source == TAGS_SOURCE)
+        via = ' upstream' if upstream_sources else (f' via {latest_source}' if latest_source else '')
         upstream_ahead = (rl['upstream_version'] and latest and rl['upstream_version'] != latest and
                           version_verdict(latest, rl['upstream_version']) == 'outdated')
 
