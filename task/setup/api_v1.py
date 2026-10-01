@@ -14,6 +14,7 @@ from . import build
 from . import common
 from . import detect
 from . import install
+from . import upgrade
 
 class CTask(InitCTask):
     """
@@ -26,6 +27,20 @@ class CTask(InitCTask):
     build_tool = build.build_tool
     read_tool = common.read_tool
     detect_existing_tool = detect.detect_existing_tool
+
+    # --status / --upgrade (task/setup/upgrade.py)
+    status_tool = upgrade.status_tool
+    upgrade_tool = upgrade.upgrade_tool
+    prepare_upgrade_version = upgrade.prepare_upgrade_version
+    describe_channels = upgrade.describe_channels
+    find_latest = upgrade.find_latest
+    list_versions = upgrade.list_versions
+    resolve_package_name = upgrade.resolve_package_name
+    _detect_kwargs = upgrade._detect_kwargs
+    _install_uses = upgrade._install_uses
+    cached_tools = upgrade.cached_tools
+    _run_capture = upgrade._run_capture
+    _use = upgrade._use
 
     x = None
 
@@ -46,6 +61,7 @@ class CTask(InitCTask):
 
         r = self.cm.check_params(params, [
                 'detect','install', 'build', 'versions',
+                'status', 'upgrade',
                 'skip_detect', 'skip_install', 'skip_build',
                 'skip_install_uses', 'skip_build_uses',
                 'skip_cache_version_check',
@@ -182,6 +198,8 @@ class CTask(InitCTask):
             r['return'] = 1
             return r
 
+        tool_read = r
+
         desc = r['desc']
         tool_api_code = r['tool_api_code']
         tool_api_code2 = r.get('tool_api_code2')
@@ -215,87 +233,12 @@ class CTask(InitCTask):
         ###########################################################################################
         # Checking versions
         if params.get('versions', False):
-            cmd_versions = desc.get('cmd_get_versions')
-
-            r = self.cm.utils.common.expand_string(cmd_versions, ctx_tasks)
-            if self.cm.catch_error(r): return r
-            cmd_versions = r['string']
-
-            _con = _verbose = True if self.cm.debug else False
-
-            env = params.get('env')
-            timeout = params.get('timeout')
-
-            ii = {'category': self.category_alias + ',' + self.category_uid,
-                  'command': 'run',
-                  'ctx': ctx,
-                  'arg1': 'cmd,c9ba0a88df394d7f',
-                  'cmd': cmd_versions,
-                  'env': env,
-                  'timeout': timeout,
-                  'con': _con, 
-                  'verbose': _verbose, 
-                  'text_cmd': 'RUN:', 
-                  'fail_if_nonzero_return_code': False,
-                  'capture_output': True,
-            }
-
-            rx = self.cm.access(ii)
-            if self.cm.debug:
-                print ('='*60)
-                print ('Output of versions detection:')
-                print ('')
-                self.cm.j(rx)
-                print ('='*60)
-
-            if self.cm.catch_error(rx): return rx
-
-            versions = []
-            returncode = rx['returncode']
-            output = ''
-            if returncode >0:
-                err = rx['stderr'] + '\n' + rx['stdout']
+            r = self.list_versions(ctx, desc, params)
+            if r['return'] > 0:
+                err = r.get('error', '')
                 return self.cm.error(f'failed to get versions for tool "{artifact_print_name}" in "{__file__}":\n{err}')
 
-            output = rx['stdout'] + '\n' + rx['stderr']
-
-            # Attempt to detect versions (pip, git, etc)
-            j = output.find('Available versions:')
-            if j>=0:
-                # Attempt to decode as pip
-                sversions = output[j+19:].strip()
-                j = sversions.find('\n')
-                if j>0:
-                    sversions = sversions[:j].strip()
-                versions = self.cm.utils.common.split_clean(sversions, ',')
-            elif desc.get('cmd_get_versions_regex'):
-                # Attempt to decode with regex
-                cmd_get_versions_regex = desc['cmd_get_versions_regex']
-                cmd_get_versions_regex_group = desc.get('cmd_get_versions_regex_group')
-                if not cmd_get_versions_regex_group:
-                    cmd_get_versions_regex_group = 1
-                import re
-                for s in output.splitlines():
-                    match = re.search(cmd_get_versions_regex, s)
-                    if match:
-                        v = match.group(cmd_get_versions_regex_group)
-                        if v not in versions:
-                            versions.append(v)
-            else:
-                versions = output.splitlines()
-
-            # Sort 
-            if versions:
-                dversions = [{'version': x} for x in versions]
-
-                sort_keys = ['@version-']
-
-                dversions = sorted(
-                   dversions,
-                   key=lambda v: self.cm.utils.common.build_sort_key(v, sort_keys),
-                )
-
-                versions = [dv['version'] for dv in dversions]
+            versions = r['versions']
 
             result['stop'] = True
             result['versions'] = versions
@@ -307,6 +250,23 @@ class CTask(InitCTask):
 
                 if versions:
                     print (', '.join(versions))
+
+            return result
+
+        ###########################################################################################
+        # --status: report installed vs newest versions and stop (nothing is installed or cached)
+        if params.get('status', False):
+            r = self.status_tool(ctx, params, tool_read)
+            if self.cm.catch_error(r): return r
+
+            r['stop'] = True
+            return r
+
+        ###########################################################################################
+        # --upgrade: the cached result must not be replayed, and the cache entry must record
+        # the new version afterwards - both are what the engine's "update" switch does
+        if params.get('upgrade', False):
+            cparams['update'] = True
 
         return result
 
@@ -486,6 +446,11 @@ class CTask(InitCTask):
         skip_build_uses = kwargs_copy.get('skip_build_uses', False)
         skip_cache_version_check = kwargs_copy.get('skip_cache_version_check')
 
+        # --upgrade: detect, then upgrade (or install) through the tool's channel, then detect
+        # again - see task/setup/upgrade.py. --status stops earlier, in check_params.
+        upgrade_requested = kwargs_copy.pop('upgrade', False)
+        kwargs_copy.pop('status', None)
+
         result = {'return': 0}
 
         ctx_tasks = ctx['tasks']
@@ -505,7 +470,8 @@ class CTask(InitCTask):
 
         if name == 'pip' and update:
             # Usually update happens for new pip features while package can be only one
-            # so force install/build ...
+            # so force install/build ... (--upgrade switches "update" on too, so pip packages
+            # are upgraded by pip's own uninstall + install logic in customize_install_cmd)
             skip_detect = True
 
         # TBD: add better support for clean, update and new in tools
@@ -574,6 +540,19 @@ class CTask(InitCTask):
                 if detect is None: detect = False
                 if install is None: install = False
 
+        if upgrade_requested:
+            # The user asked for the upgrade: no "install (Y/n)?" prompt, and the
+            # not-installed case installs the newest version
+            detect = True
+            install = True
+
+            # The engine has already picked this run's cache entry (the one "cx tool setup"
+            # replays): the tool it points to is the one to upgrade, wherever the PATH leads
+            if not kwargs_copy.get('tool_path') and ctx_tasks['run_control'].get('cache', False):
+                cached_path = upgrade.cached_tool_path(os.getcwd())
+                if cached_path:
+                    kwargs_copy['tool_path'] = cached_path
+
         success = False
 
         warning = ''
@@ -624,11 +603,27 @@ class CTask(InitCTask):
                     if x != '': x += ' and'
                     x += f' with cache params "{cache_params}"'
 
-                err = r['error'] + x 
+                err = r['error'] + x
 
                 if con:
                     print ('')
                     print (f'{space}WARNING: {err} !')
+
+        ##############################################################################
+        if upgrade_requested and success:
+            # Upgrade the detected tool through its channel and detect it again
+            r = self.upgrade_tool(ctx, result, **kwargs_copy)
+            if self.cm.catch_error(r): return r
+
+            result = r
+
+        elif upgrade_requested and install and not skip_install:
+            # Not installed: release downloads get the newest release instead of the pinned default
+            r = self.prepare_upgrade_version(ctx, kwargs_copy)
+            if self.cm.catch_error(r): return r
+
+            if r.get('version'):
+                version = r['version']
 
         ##############################################################################
         if not success and install and not skip_install:
@@ -748,6 +743,20 @@ class CTask(InitCTask):
 
             # Normally, should not be 16 here and not 16 since setup task failed at this stage
             return self.cm.error(f'failed to setup tool "{artifact_print_name}"{x} in "{__file__}"', 32, extra = extra)
+
+        ##############################################################################
+        if upgrade_requested and 'last_upgrade' not in result:
+            # --upgrade of a tool that was not installed: record the fresh install
+            result['last_upgrade'] = {'from': None,
+                                      'to': result.get('version'),
+                                      'path': result.get('path'),
+                                      'changed': True,
+                                      'installed': True,
+                                      'timestamp': upgrade.now_iso()}
+
+            if con:
+                print ('')
+                print (f'{space}UPGRADE: "{artifact_print_name}" was not installed - installed {result.get("version")} ({result.get("path")})')
 
         ##############################################################################
         # Add cache path if in cache

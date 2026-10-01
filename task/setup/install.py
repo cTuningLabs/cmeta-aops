@@ -7,6 +7,8 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 
 import os
 
+from . import upgrade
+
 def install_tool(self,
         ctx: dict,                  # cMeta context
         _result: dict,              # Aggregated result for setup
@@ -59,7 +61,12 @@ def install_tool(self,
         if with_version != '': with_version += ' and'
         with_version += f' with params "{_with}"'
 
-    result = {'return': 16, 'error':f'tool {artifact_print_name}{with_version} was not installed'}
+    # --upgrade runs this same procedure, with the install command turned into the
+    # channel's upgrade command below (task/setup/upgrade.py)
+    upgrade_mode = task_extra_control.get('upgrade', False)
+    verb, verb_done = ('upgrade', 'upgraded') if upgrade_mode else ('install', 'installed')
+
+    result = {'return': 16, 'error':f'tool {artifact_print_name}{with_version} was not {verb_done}'}
 
     # Check direct or custom installation
     install_cmd_desc = desc.get('install_cmd', {})
@@ -108,13 +115,13 @@ def install_tool(self,
         if quiet or install is True or not con:
             proceed = True
 
-        if proceed:   
+        if proceed:
             print ('')
-            print (f'{space}INFO: attempting to install tool "{artifact_print_name}"{with_version} ...')
+            print (f'{space}INFO: attempting to {verb} tool "{artifact_print_name}"{with_version} ...')
 
         elif con:
             print ('')
-            x = input (f'{space}INFO: would you like to install tool "{artifact_print_name}"{with_version} (Y/n)? ')
+            x = input (f'{space}INFO: would you like to {verb} tool "{artifact_print_name}"{with_version} (Y/n)? ')
 
             x = x.strip().lower()
 
@@ -193,6 +200,7 @@ def install_tool(self,
       'clean': task_extra_control['clean'],
       'update': task_extra_control['update'],
       'new': task_extra_control['new'],
+      'upgrade': upgrade_mode,
     }
 
 
@@ -235,13 +243,17 @@ def install_tool(self,
 
     if install_cmd and not force_custom_install:
         # Add version if supported
+        versioned = False
+
         if version and install_cmd_ver:
             if '{{pip_version}}' in install_cmd_ver:
                 xversion = '=='+version if version and version[0].isdigit() else version
                 install_cmd = install_cmd_ver.replace('{{pip_version}}', xversion)
+                versioned = True
 
             elif '{{version}}' in install_cmd_ver:
                 install_cmd = install_cmd_ver.replace('{{version}}', version)
+                versioned = True
 
             elif '{{simple_version}}' in install_cmd_ver or '{{major_version}}' in install_cmd_ver:
                 simple_version = True
@@ -262,6 +274,7 @@ def install_tool(self,
 
                     install_cmd = install_cmd_ver.replace('{{simple_version}}', xversion)
                     install_cmd = install_cmd.replace('{{major_version}}', major_version)
+                    versioned = True
 
         package_name = artifact_au
         if 'package_name_os_id' in desc and os_id in desc['package_name_os_id']:
@@ -310,6 +323,20 @@ def install_tool(self,
 
             if 'package_name' in r:
                 package_name = r['package_name']
+
+        if upgrade_mode:
+            # Turn the install command into the channel's upgrade command: the tool's
+            # own upgrade_cmd when it has one (unless a version was asked for), else
+            # "winget install" -> "winget upgrade" without --no-upgrade, "brew install"
+            # -> "brew upgrade", install_cmd_sudo -> upgrade_cmd_sudo, "npm install X"
+            # -> "X@latest"; install scripts and pip are run again as they are
+            upgrade_cmd_desc = upgrade.select_for_os(desc.get('upgrade_cmd'), uname)
+
+            if upgrade_cmd_desc and not versioned:
+                install_cmd = upgrade_cmd_desc
+            else:
+                channel, _ = upgrade.derive_channel(install_cmd)
+                install_cmd = upgrade.derive_upgrade_cmd(channel, install_cmd, versioned = versioned)
 
         # Check uninstall
         cmds = []
@@ -363,7 +390,10 @@ def install_tool(self,
                 result['failed'] = True
             else:
                 # Restart tool detection
-                result = {'return':0, 'found_paths': None}
+                result = {'return':0, 'found_paths': None, 'install_cmd': install_cmd}
+
+            # --upgrade reads the code of the last command: winget, for one, fails when there is nothing to upgrade
+            result['returncode'] = returncode
     
     if hasattr(tool_api_code, 'post_install') and callable(getattr(tool_api_code, 'post_install')):
         r = tool_api_code.post_install(ctx, install_params)

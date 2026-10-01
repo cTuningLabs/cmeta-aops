@@ -451,16 +451,19 @@ class Category(InitCategory):
                 # It's usually done when code should not continue - for example to print versions, help, etc
 
                 # Do not aggregate further - already done!
-                r = self._finish_run(
-                        ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro, 
-                        aggregate = False, 
+                rr = self._finish_run(
+                        ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro,
+                        aggregate = False,
                         saved_uparams = saved_uparams,
                         saved_cparams = saved_cparams,
                         saved_local = saved_local,
                         saved_ctx_control = saved_ctx_control,
                         preserve_global = preserve_global,
                 )
-                if self.cm.catch_error(r): return r
+                if self.cm.catch_error(rr): return rr
+
+                # Hand what check_params produced (versions, status, ...) to the caller
+                r.pop('stop', None)
 
                 # !!! Exit from this function
                 return r

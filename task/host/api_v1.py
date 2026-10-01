@@ -190,6 +190,10 @@ class CTask(InitCTask):
              "install_cmd_sudo": "winget install {{name}} --source winget",
              "install_cmd_sudo_version": "winget install {{name}} --version {{version}} --source winget",
              "install_cmd_version": "winget install {{name}} --version {{version}} --source winget",
+             "upgrade_cmd": "winget upgrade {{name}} --source winget",
+             "upgrade_cmd_sudo": "winget upgrade {{name}} --source winget",
+             "candidate_version_cmd": "winget show {{name}} --source winget --versions --accept-source-agreements --disable-interactivity",
+             "candidate_version_regex": r"^\s*(\d[\w.\-+]*)\s*$",
              "package_manager": "winget",
              "passwordless_sudo": True,
              "sudo": False,
@@ -440,6 +444,44 @@ def detect_linux_env():
         }
         return commands_version.get(package_manager)
 
+    def upgrade_command_for(package_manager):
+        # What "cx tool setup <tool> --upgrade" runs for a tool installed with install_cmd_sudo:
+        # the package manager's "move this package to the newest version it offers"
+        commands_upgrade = {
+            "brew": "brew upgrade {{name}}",
+            "apt": "apt install --only-upgrade -y {{name}}",
+            "apt-get": "apt-get install --only-upgrade -y {{name}}",
+            "dnf": "dnf upgrade -y {{name}}",
+            "tdnf": "tdnf upgrade -y {{name}}",
+            "microdnf": "microdnf upgrade -y {{name}}",
+            "yum": "yum update -y {{name}}",
+            "apk": "apk add --upgrade {{name}}",
+            "pacman": "pacman -S --noconfirm {{name}}",
+            "zypper": "zypper --non-interactive update {{name}}",
+            "xbps-install": "xbps-install -yu {{name}}",
+            "emerge": "emerge --update {{name}}",
+            "nix-env": "nix-env -u {{name}}",
+        }
+        return commands_upgrade.get(package_manager)
+
+    def candidate_version_query_for(package_manager):
+        # How "cx tool setup <tool> --status" asks the package manager for the newest version
+        # it offers (no root needed; every "Version" the query prints is collected and the
+        # newest one is taken, because dnf prints the installed and the available package)
+        queries = {
+            "brew": ("brew info --json=v2 --formula {{name}}", r'"stable"\s*:\s*"([^"]+)"'),
+            "apt": ("apt-cache policy {{name}}", r"Candidate:\s*(\S+)"),
+            "apt-get": ("apt-cache policy {{name}}", r"Candidate:\s*(\S+)"),
+            "dnf": ("dnf info {{name}}", r"^Version\s*:\s*(\S+)"),
+            "tdnf": ("tdnf info {{name}}", r"^Version\s*:\s*(\S+)"),
+            "microdnf": ("microdnf repoquery --info {{name}}", r"^Version\s*:\s*(\S+)"),
+            "yum": ("yum info {{name}}", r"^Version\s*:\s*(\S+)"),
+            "apk": ("apk policy {{name}}", r"^\s+(\d\S*):\s*$"),
+            "pacman": ("pacman -Si {{name}}", r"^Version\s*:\s*(\S+)"),
+            "zypper": ("zypper --non-interactive info {{name}}", r"^Version\s*:\s*(\S+)"),
+        }
+        return queries.get(package_manager, (None, None))
+
     def detect_sudo():
         sudo_path = shutil.which("sudo")
         if not sudo_path:
@@ -479,11 +521,14 @@ def detect_linux_env():
     package_manager = choose_best_package_manager(distro_id, id_like)
     cmd = install_command_for(package_manager)
     cmd_version = install_command_for_version(package_manager)
+    cmd_upgrade = upgrade_command_for(package_manager) or cmd
+    candidate_cmd, candidate_regex = candidate_version_query_for(package_manager)
 
     sudo_installed, passwordless_sudo = detect_sudo()
     sudo_cmd = 'sudo ' if sudo_installed else ''
     cmd_sudo = f"sudo {cmd}" if sudo_installed else cmd
     cmd_sudo_version = f"sudo {cmd_version}" if sudo_installed else cmd_version
+    cmd_sudo_upgrade = f"sudo {cmd_upgrade}" if sudo_installed and cmd_upgrade else cmd_upgrade
 
     return {
         "id": distro_id,
@@ -493,6 +538,10 @@ def detect_linux_env():
         "install_cmd_version": cmd_version,
         "install_cmd_sudo": cmd_sudo,
         "install_cmd_sudo_version": cmd_sudo_version,
+        "upgrade_cmd": cmd_upgrade,
+        "upgrade_cmd_sudo": cmd_sudo_upgrade,
+        "candidate_version_cmd": candidate_cmd,
+        "candidate_version_regex": candidate_regex,
         "sudo": sudo_installed,
         "sudo_cmd": sudo_cmd,
         "passwordless_sudo": passwordless_sudo,

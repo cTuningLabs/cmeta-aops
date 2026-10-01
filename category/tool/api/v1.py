@@ -265,7 +265,8 @@ class Category(InitCategory):
         if self.cm.catch_error(r): return r
 
         # Setup may stop early without producing a CMD - for example
-        # "--versions" only prints the available versions of a tool
+        # "--versions" only prints the available versions of a tool and
+        # "--status" only reports the installed and the newest versions
         if 'cmd' not in r:
             return r
 
@@ -277,10 +278,11 @@ class Category(InitCategory):
                 param = '"' + param + '"'
 
             cmd += ' ' + param
-        
+
         # Clean some params (needed for "setup tool" task but not for "cmd" task)
 
         for k in ['detect','install', 'build', 'skip_install', 'skip_detect', 'skip_build',
+                  'status', 'upgrade',
                   'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 'with',
                   'version']:
             if k in pp:
