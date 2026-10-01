@@ -10,6 +10,21 @@ All notable changes to cMeta AOps are documented here, newest first.
     switches that travel with it;
   - a line in the README;
   - notes in the `add-task` and `add-tool` skills.
+- **Fix: `tool/ccache` downloads the right release asset.** The macOS branch left `uarch2` unassigned
+  (an `UnboundLocalError` on every Mac) and asked for `ccache-<v>-macos.tar.gz`, which upstream never
+  published - the asset is `ccache-<v>-darwin.tar.gz`, one universal binary. Linux asked for `.tar.gz`,
+  while upstream publishes `.tar.xz`, since 4.13 as `ccache-<v>-linux-<arch>-{glibc,musl-static}.tar.xz`
+  (musl on Alpine); Windows arm64 is `windows-aarch64.zip`. Verified: 4.13.6 installs from its release
+  on Windows x86_64, macOS arm64 and Linux x86_64 (Debian container).
+- **Fix: `cx tool setup <tool> --versions` lists releases only** for the tools whose regex also accepted
+  pre-release or unrelated tags: `kubectl`, `pytorch` and `torch-cpp` (`\b` let `v1.38.0-alpha.0` yield an
+  unreleased `1.38.0`), `go` (`rcN`), `codex` (`-alpha`), `openclaw` (`-beta`), `uv` (every tag), `openjdk`
+  (`jdk-(.+)` matched the nightly `jdk25u-...-beta` tags), `python` (`3.14.0rc3`, `+freethreaded`),
+  `obsidian`, `llvm`/`clang`/`clang-cpp` (`-rc1`, `-init`), and the generic regex of `ccache`, `cmake`,
+  `node-js`, `rclone`, `rustc` and `lib-openssl-android`. `--version=<pre-release>` still installs one.
+- **Fix: versioned installs that could never work are gone**: `tool/gh` asked Homebrew for `gh@2` /
+  `gh2` and `tool/kubectl` for `kubectl@1.37.1` and a snap channel `1.37.1/stable` - no such formulae or
+  channel exist. Without the entries task/setup reuses `install_cmd` (current), as `az` already does.
 
 ## 0.40.1
 - **`task/rclone-to-ssh`: a plain `bisync` now adds `--resilient --recover`** (turn off with `--no-recover`).
