@@ -28,6 +28,6 @@
     "method": "agent",
     "model": "claude-opus-5-5"
   },
-  "last_update_timestamp": "2026-10-01T20:31:57.019758+00:00",
+  "last_update_timestamp": "2026-10-01T20:36:34.570105+00:00",
   "note": "Builds into a venv of a vLLM-compatible Python: the release tag (--checkout=v0.30.0), torch matching the local CUDA toolkit, VLLM_TARGET_DEVICE from --compute, TORCH_CUDA_ARCH_LIST of the detected GPU, MAX_JOBS that fits the RAM."
 }

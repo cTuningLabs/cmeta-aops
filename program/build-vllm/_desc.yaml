@@ -35,6 +35,10 @@ local_vars:
 
   run_time_env:
     CMETA_TARGETS: '{{global.target.cmeta_targets}}'
+    # The venv's console scripts (ninja, nvcc of nvidia-cuda-nvcc) for FlashInfer's JIT kernels:
+    # the venv's python runs without the venv being activated
+    +PATH:
+      - '{{global.python.path_bin}}'
     CMETA_VLLM_MODEL: '{{params.model|Qwen/Qwen2.5-0.5B-Instruct}}'
     CMETA_VLLM_MAX_TOKENS: '{{params.n|64}}'
     CMETA_VLLM_GPU_MEM: '{{params.gpu_mem|0.8}}'
@@ -102,6 +106,11 @@ updates:
              name: python,c00fb574d8ca4463
              if_os: darwin
              version: '{{params.python_version|3.12}}'
+           # vLLM's CPU kernels link against libnuma (Linux)
+           - task: setup,a2f9b61079ce4333
+             name: lib-numa,d81f892278524cfa
+             if_os: linux
+             if: '"cpu" in {{global.target.compute|$[]}} and "cuda" not in {{global.target.compute|$[]}}'
 
          update:
            target_exe:
