@@ -120,6 +120,13 @@ class CTool(InitCTool):
             return self.cm.error(str(e))
 
         python_version = _global.get('python', {}).get('version', '')
+        try:
+            py = tuple(int(x) for x in python_version.split('.')[:2])
+        except ValueError:
+            py = ()
+        if py and not ((3, 10) <= py < (3, 15)):
+            return self.cm.error(f'vLLM {simple} supports Python 3.10-3.14 (the selected Python is {python_version}): '
+                                 f'add --use.python.version=">=3.10,<3.15" or set up another Python')
         if uname == 'darwin' and not python_version.startswith('3.12'):
             return self.cm.error(f'vLLM publishes its macOS wheel for Python 3.12 only (the selected Python is '
                                  f'{python_version or "unknown"}): add --use.python.version=3.12')
