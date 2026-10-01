@@ -142,6 +142,12 @@ error handling, with the repo's real idioms.
   detection/install: `names:`, `match_version:`/`cmd_get_version:`,
   `install_cmd:`/`install_cmd_version:` (per OS, templated with `{{global....}}`),
   `extra_paths:`, `requires_sudo:`.
+- **`tool setup X --status` / `--upgrade`** (`task/setup/upgrade.py`): the install
+  **channel** is derived from the tool's install command or hook (winget, brew, the
+  distro package manager, an install script, npm, pip, a release download) and decides
+  which version counts as "latest" and what the upgrade runs — no `_desc.yaml` change
+  needed; `upgrade_cmd:` and `cmd_get_latest_version:` override it. Details in
+  `docs/cmeta-aops/tool-abstraction.md`, "Checking for and installing upgrades".
 - **Install strategy — always work down this ladder** (details and worked
   examples in the `add-tool` skill, §1):
   1. **Download a prebuilt binary** (`curl`-style, via task

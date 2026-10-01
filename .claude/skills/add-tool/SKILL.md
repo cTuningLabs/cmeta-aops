@@ -213,6 +213,20 @@ Version placeholders the engine substitutes into `install_cmd_version`:
 `{{pip_version}}` (adds `==`). `{{name}}` → the resolved package/artifact name.
 Per-distro package names: `package_name` or `package_name_os_id: {ubuntu: ..., fedora: ...}`.
 
+**`--status` and `--upgrade` come for free.** `cx tool setup <name> --status` and
+`--upgrade` derive the install *channel* from `install_cmd` (winget, brew, the distro
+package manager, an install script, npm, pip) or from an `install()` hook (release
+download) and know how to ask each for its newest version and how to upgrade through it
+— see `docs/cmeta-aops/tool-abstraction.md`, "Checking for and installing upgrades".
+Only when the derivation is wrong for your tool add one of the optional keys:
+
+```yaml
+upgrade_cmd:                                    # per OS, like install_cmd - what --upgrade runs
+  linux: 'rustup update'
+cmd_get_latest_version: 'npm view <pkg> version' # prints the newest version (default: GitHub's latest
+cmd_get_latest_version_regex: '(\d+\.\d+\.\d+)'  #   release of the repo in cmd_get_versions, else its newest tag)
+```
+
 Note: `task/setup/_desc.yaml` already contributes common `install_uses`
 (winget on Win, curl on Linux/macOS, brew on macOS) — you only add tool-specific
 deps. Set `skip_common_install_uses: True` to opt out.
@@ -513,6 +527,8 @@ cx tool setup bazel --install -j   # auto-proceed with install (no prompt) — n
 cx tool setup bazel --version=7.4.1 --new -j
 cx tool run bazel -- --version     # sets up then runs; args go after -- (expect: bazel 7.4.1)
 cx tool setup bazel --versions     # (if you added cmd_get_versions) list release tags
+cx tool setup bazel --status       # installed vs newest (channel + upstream), and what --upgrade would run; no side effects
+cx tool setup bazel --upgrade -q   # upgrade through the channel (a release tool: fetch the newest release), then detect again
 cxt <task> --use.bazel.version=7.4.1   # a task that sets up bazel as a dependency, at another version
 ```
 
@@ -552,6 +568,7 @@ rebuild with `--update`, wipe with `--clean`.
 - [ ] Tier 1: return `install_cmd: None` on success, or `{'return':16,'install_cmd':cmd}` to fall back.
 - [ ] Refreshed the index with the narrowest command (`cx <cat> update|index <ref>`) after editing `_cmeta.*` meta; a `_desc.yaml`-only edit needs none.
 - [ ] Verified with `cx tool run <name> -- --version` (real run, not just `--info`); used `--install` for unattended install.
+- [ ] `cx tool setup <name> --status` names the right channel and newest version (add `cmd_get_versions` so upstream is known; `upgrade_cmd` / `cmd_get_latest_version` only if the derivation is wrong).
 - [ ] Apache-2.0 copyright header copied from a sibling (upstream notices on vendored third-party source left verbatim); referenced sub-tasks by `alias,UID`.
 - [ ] Don't touch author scratch siblings (`*.yaml2`, `*.py2`, `*.arc1`, `tmp*/`).
 ```
