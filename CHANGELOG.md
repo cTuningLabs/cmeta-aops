@@ -41,7 +41,7 @@ All notable changes to cMeta AOps are documented here, newest first.
     installer, no service and no administrator rights. The Linux `.tar.zst` is unpacked by a Python
     3.14 (uv downloads one) before any `sudo` package is tried. `tool/zstd` is new, and
     `program/test-ollama` runs a private server on its own port and records Ollama's timings and VRAM
-    use.
+    use, and stops the model runners with it (on Windows they outlived the server, holding RAM and VRAM).
   - **Source builds size `MAX_JOBS` to the RAM** (`category/program/api/common_build.py`: 4 GiB per
     CUDA job, 2 GiB per C++ job), because PyTorch's and vLLM's builds start one job per CPU.
 - **Fix: a cached compute target described the machine that created it.** In a `CMETA_HOME` copied or
