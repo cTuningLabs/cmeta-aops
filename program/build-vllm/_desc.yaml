@@ -8,7 +8,8 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #   cx program run build-vllm --compute=cpu --checkout=v0.30.0      # CPU (Linux, macOS)
 #
 # Steps (customize_vllm in api_v1.py prepares them):
-#   1. a Python vLLM supports (3.10-3.14; 3.12 on macOS) in a venv;
+#   1. a Python the source build supports (3.10-3.13: vllm-flash-attn rejects 3.14; 3.12 on
+#      macOS) in a venv;
 #   2. the vLLM repository at the tag (--checkout, default v0.30.0);
 #   3. vLLM's build requirements (requirements/build/<device>.txt; older trees:
 #      requirements/build.txt) with torch matching the local CUDA toolkit: PyPI's torch is
@@ -59,11 +60,13 @@ updates:
       - match:
           internal_func: customize2
         append:
-          # A Python vLLM supports (its venv receives the build)
+          # A Python the source build supports (its venv receives the build). vLLM 0.30.0 accepts
+          # 3.10-3.14, but the vllm-flash-attn it fetches at configure time only 3.9-3.13 (the
+          # wheels run on 3.14): --python_version=3.14 for a tree whose flash-attn accepts it
           - task: setup,a2f9b61079ce4333
             name: python,c00fb574d8ca4463
             if_os: linux,windows
-            version: '{{params.python_version|>=3.10,<3.15}}'
+            version: '{{params.python_version|>=3.10,<3.14}}'
           - task: setup,a2f9b61079ce4333
             name: python,c00fb574d8ca4463
             if_os: darwin
@@ -98,10 +101,11 @@ updates:
        - match:
            task: setup-run,148f6c1fdb4247df
          prepend:
+           # The Python of the build (see the compile step)
            - task: setup,a2f9b61079ce4333
              name: python,c00fb574d8ca4463
              if_os: linux,windows
-             version: '{{params.python_version|>=3.10,<3.15}}'
+             version: '{{params.python_version|>=3.10,<3.14}}'
            - task: setup,a2f9b61079ce4333
              name: python,c00fb574d8ca4463
              if_os: darwin

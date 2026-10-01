@@ -85,7 +85,9 @@ cx program run build-vllm --compute=cuda --checkout=v0.30.0
 cx program run build-vllm --compute=cpu --checkout=v0.30.0
 ```
 
-The build installs `requirements/build/<device>.txt`, with a torch whose CUDA major version
+The build uses Python 3.10–3.13: vLLM 0.30.0 itself accepts 3.14, but the vllm-flash-attn
+it fetches at configure time does not (`--python_version` overrides this for newer trees).
+It installs `requirements/build/<device>.txt`, with a torch whose CUDA major version
 matches the local toolkit, then runs `pip install --no-build-isolation -v .`. The variables
 it sets are `VLLM_TARGET_DEVICE`, `CUDA_HOME` (the toolkit of `nvcc`), `TORCH_CUDA_ARCH_LIST`
 (the detected GPU; a single architecture shortens the build a lot), `NVCC_THREADS`, and
