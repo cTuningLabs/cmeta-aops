@@ -43,8 +43,11 @@ cx tool setup llama-cpp --versions                              # the release bu
 - The model is a GGUF from the `model` category, and the prompt comes from the `dataset`
   category.
 - The result has `response` (the generated text) and `perf` (`perf.json`): prompt and
-  generation tokens per second, load and total time, the devices used and the CUDA
-  architectures of the build.
+  generation tokens per second, load and total time, the device used and the layers
+  offloaded to it, the build and commit, and the CUDA architectures of the build. The runs
+  pass `-v`, because newer builds log the device only then; `--log_flags=` drops it.
+- The first Vulkan run on a machine also compiles the shaders (on the Mac M4: 101
+  instead of 136 tokens per second). For benchmarks, discard that run or repeat it.
 
 From source, with the same run afterwards:
 

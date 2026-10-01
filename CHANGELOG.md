@@ -14,8 +14,9 @@ All notable changes to cMeta AOps are documented here, newest first.
     version is read from both the new (`version: 0.5.0-dev (build N, ...)`) and the old output.
   - **llama.cpp programs**: `llama-completion` runs the generation (`llama-cli` is now the chat UI).
     The timings in `llama.log` become `perf.json` (result `perf`): prompt and generation tokens per
-    second, load and total time, the devices and the CUDA architectures. `--compute=cpu` keeps the
-    model on the CPU (`-ngl 0 --device none`).
+    second, load and total time, the device used and the layers offloaded to it (the runs pass `-v`,
+    as newer builds log them only then), the build and commit, and the CUDA architectures.
+    `--compute=cpu` keeps the model on the CPU (`-ngl 0 --device none`).
   - **build-llama-cpp**: Vulkan builds (`GGML_VULKAN`, the loader library from `tool/vulkan-sdk`);
     OpenSSL is optional (the system library, else `LLAMA_OPENSSL=OFF`, or `--compile.boringssl`);
     Ninja, CMake and the compilers reach nested CMake projects (`vulkan-shaders-gen`).
@@ -68,11 +69,11 @@ All notable changes to cMeta AOps are documented here, newest first.
 
   | Machine | llama.cpp release | llama.cpp from source (build time) | vLLM | Ollama | PyTorch from source |
   |---|---|---|---|---|---|
-  | Windows 11, RTX PRO 1000 Blackwell | CPU 103, CUDA 330, Vulkan 264 | CUDA 315 (320 s), Vulkan 269 (130 s) | WSL2 only | CUDA ✓ | |
+  | Windows 11, RTX PRO 1000 Blackwell | CPU 103, CUDA 330, Vulkan 264 | CUDA 315 (320 s), Vulkan 269 (130 s) | WSL2 only | CUDA 237, CPU 117 | |
   | WSL2 Ubuntu 24.04 (same laptop) | CUDA 318 | | CUDA wheel 66.5 (Python 3.14) | | |
   | ThinkPad P14s, RTX A500 (sm_86) | CPU 81, CUDA 176, Vulkan 124 | CUDA 175 (780 s), CPU 50 (241 s), Vulkan 107 (298 s) | | | |
-  | ThinkPad T470p, GeForce 940MX | CPU 41, Vulkan 32 | CPU 41 (316 s), Vulkan 34 (474 s) | | CPU 40.8, Vulkan 37.5 | |
-  | Mac mini M4, macOS 27 | Metal 191 | Metal 169 (87 s) | CPU wheel 55 (Python 3.12) | Metal 190.5, CPU 159.8 | MPS ✓ (1000 s) |
+  | ThinkPad T470p, GeForce 940MX | CPU 41, Vulkan 32 | CPU 41 (316 s), Vulkan 34 (474 s) | CPU wheel 12.9 (1 GiB KV cache) | CPU 40.8, Vulkan 37.5 | |
+  | Mac mini M4, macOS 27 | Metal 191, CPU 156 | Metal 169 (87 s), Vulkan/MoltenVK 136 (81 s; 101 on the first run) | CPU wheel 55, CPU from source 49.9 (79 s) | Metal 190.5, CPU 159.8 | MPS ✓ (1000 s) |
   | Docker `python:3.12` (x86_64) | | | CPU wheel 18 | | |
 - **Docs: `--use.<storage key>.<param>=<value>`**, which changes any sub-task of a run from the command line,
   however deep it sits: a dependency's version, or a control switch such as `update` of one step.
