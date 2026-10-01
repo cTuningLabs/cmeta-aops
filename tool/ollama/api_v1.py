@@ -30,10 +30,26 @@ def release_asset(uname, uarch, variant = None):
     return None
 
 
-def extract_tar_zst(archive, dest, zstd = None):
+# Unpacks argv[1] into argv[2] with the zstd support of Python 3.14+
+UNPACK_WITH_PYTHON = ("import sys, tarfile; "
+                      "tarfile.open(sys.argv[1], 'r:zst').extractall(sys.argv[2], filter = 'data')")
+
+
+def can_unpack_zst():
+    """True when this Python unpacks .tar.zst alone (3.14+ or the zstandard module)."""
+    for module in ('compression.zstd', 'zstandard'):
+        try:
+            __import__(module)
+            return True
+        except ImportError:
+            pass
+    return False
+
+
+def extract_tar_zst(archive, dest, zstd = None, python = None):
     """
-    Unpack a .tar.zst: Python's own zstd (3.14+), else the zstandard module, else the zstd CLI.
-    Returns None on success or an error message.
+    Unpack a .tar.zst: Python's own zstd (3.14+), else the zstandard module, else another
+    Python 3.14+ (python), else the zstd CLI. Returns None on success or an error message.
     """
     os.makedirs(dest, exist_ok = True)
     try:
@@ -51,6 +67,9 @@ def extract_tar_zst(archive, dest, zstd = None):
         return None
     except ImportError:
         pass
+    if python:
+        rc = subprocess.run([python, '-c', UNPACK_WITH_PYTHON, archive, dest]).returncode
+        return None if rc == 0 else f'{python} failed to unpack {archive} (return code {rc})'
     zstd = zstd or shutil.which('zstd')
     if not zstd:
         return 'no zstd to unpack the archive (cx tool setup zstd)'
@@ -124,26 +143,15 @@ class CTool(InitCTool):
                 return r
             archive = os.path.join(content, asset)
             zstd = _global.get('zstd', {}).get('path') or shutil.which('zstd')
-            if not zstd:
-                try:
-                    from compression import zstd as _zstd  # noqa: F401  (Python 3.14+ unpacks it alone)
-                except ImportError:
-                    # Only now: the zstd CLI (a failed sub-task must not break the caller's context)
-                    tasks = ctx['tasks']
-                    saved = {k: tasks.get(k) for k in ('local', 'params', 'cparams')}
-                    saved_control = dict(ctx['control'])
-                    try:
-                        self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run',
-                                        'arg1': 'setup,a2f9b61079ce4333', 'name': 'zstd,e70d016f472d462e',
-                                        'ctx': ctx, 'con': con, 'quiet': True, 'verbose': verbose})
-                    finally:
-                        for k, v in saved.items():
-                            if v is not None:
-                                tasks[k] = v
-                        ctx['control'].clear()
-                        ctx['control'].update(saved_control)
-                    zstd = _global.get('zstd', {}).get('path')
-            err = extract_tar_zst(archive, content, zstd)
+            python = None
+            if not zstd and not can_unpack_zst():
+                # Down the install ladder: a Python 3.14+ (uv downloads one, no root needed)
+                # unpacks it alone; only then the zstd CLI (on Linux a sudo package)
+                python = self._optional_setup(ctx, 'python,c00fb574d8ca4463', {'version': '>=3.14'},
+                                              con, verbose).get('path')
+                if not python:
+                    zstd = self._optional_setup(ctx, 'zstd,e70d016f472d462e', {}, con, verbose).get('path')
+            err = extract_tar_zst(archive, content, zstd, python)
             if err:
                 return {'return': 16, 'install_cmd': cmd, 'error': err}
             os.remove(archive)
@@ -162,3 +170,41 @@ class CTool(InitCTool):
             os.chmod(path, os.stat(path).st_mode | 0o111)
 
         return {'return': 0, 'install_cmd': None, 'found_path': path}
+
+    ############################################################
+    def _optional_setup(self, ctx, name, extra, con, verbose):
+        """
+        Set up a helper tool quietly, for this installation only, and return its result (empty
+        when it failed). A failed sub-task must not break the caller's context, and the helper
+        must not replace what the caller set up under the same key (a program's own Python).
+        """
+        tasks = ctx['tasks']
+        _global = tasks['global']
+        key = name.split(',')[0]
+
+        saved = {k: tasks.get(k) for k in ('local', 'params', 'cparams')}
+        saved_control = dict(ctx['control'])
+        had_key = key in _global
+        saved_global = _global.get(key)
+
+        result = {}
+        try:
+            ii = {'category': 'task,c36be4b9314a45e0', 'command': 'run',
+                  'arg1': 'setup,a2f9b61079ce4333', 'name': name,
+                  'ctx': ctx, 'con': con, 'quiet': True, 'verbose': verbose}
+            ii.update(extra)
+            r = self.cm.access(ii)
+            if r['return'] == 0:
+                result = dict(_global.get(key) or {})
+        finally:
+            for k, v in saved.items():
+                if v is not None:
+                    tasks[k] = v
+            ctx['control'].clear()
+            ctx['control'].update(saved_control)
+            if had_key:
+                _global[key] = saved_global
+            else:
+                _global.pop(key, None)
+
+        return result
