@@ -5,7 +5,11 @@ storage_key: cuda
 names:
   - nvidia-smi{{global.host.vars.file_ext_exe}}
 
-match_version: 
+# "nvidia-smi --version": drivers 610+ print "CUDA UMD version : 13.3" and
+# "CUDA version : Deprecated, see ..."; older drivers print "CUDA Version : 13.0"
+match_version:
+  - regex: 'CUDA UMD version\s*:\s*([0-9.]+)'
+    group: 1
   - regex: 'CUDA Version\s*:\s*([0-9.]+)'
     group: 1
 
