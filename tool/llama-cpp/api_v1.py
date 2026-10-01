@@ -54,7 +54,7 @@ def release_assets(build, timeout = 30):
     return names or None
 
 
-def select_asset(build, uname, uarch, backend, assets = None, cuda_driver = None, cuda_wanted = None):
+def select_asset(build, uname, uarch, backend, assets = None, cuda_driver = None, cuda_wanted = None, glibc = None):
     """
     The release asset (and its cudart bundle) for this platform and backend.
 
@@ -101,6 +101,11 @@ def select_asset(build, uname, uarch, backend, assets = None, cuda_driver = None
             if has(name) and (assets is not None or name == names[0]):
                 return {'asset': name}
         return {'error': f'release b{build} has no {backend} build for {plat}/{arch}'}
+
+    if backend == 'cuda' and plat == 'ubuntu' and glibc and _version_tuple(glibc) < (2, 38):
+        # The Linux CUDA builds come from Ubuntu 24.04 containers
+        return {'error': f'the Linux CUDA binaries need glibc 2.38 or newer (this system has {glibc}): '
+                         f'build from source'}
 
     if backend in ('rocm', 'openvino', 'cuda'):
         pattern = re.compile(rf'^{re.escape(prefix)}{backend}-([\d.]+)-{arch}\.{re.escape(ext)}$')
@@ -436,8 +441,15 @@ class CTool(InitCTool):
             print ('')
             print (f'{space}WARNING: could not list the assets of release b{version_simple}; using the naming rules')
 
+        glibc = None
+        if uname == 'linux':
+            import platform
+            lib, glibc_version = platform.libc_ver()
+            if lib == 'glibc':
+                glibc = glibc_version
+
         sel = select_asset(version_simple, uname, uarch, backend, assets = assets,
-                           cuda_driver = cuda_driver, cuda_wanted = ver)
+                           cuda_driver = cuda_driver, cuda_wanted = ver, glibc = glibc)
         if 'error' in sel:
             return {
                 'return': 16,

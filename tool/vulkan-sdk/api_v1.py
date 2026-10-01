@@ -14,6 +14,9 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 LUNARG = 'https://sdk.lunarg.com/sdk/download'
 LUNARG_VERSION = re.compile(r'^\d+\.\d+\.\d+\.\d+$')
 
+# Characters the LunarG Windows installer (Qt Installer Framework) refuses in --root
+UNSUPPORTED_PATH_CHARS = '!'
+
 
 def sdk_layout(root, uname):
     """glslc, header, include, lib and bin of an SDK root, or None when it is not one."""
@@ -78,6 +81,12 @@ class CTool(InitCTool):
         if env:
             roots.append(env)
 
+        # An SDK this setup installed: in its cache entry (the working directory of setup), or
+        # in ~/VulkanSDK when the cache path has characters the LunarG installer rejects
+        here = os.path.join(os.getcwd(), 'content')
+        roots += [p for p in glob.glob(os.path.join(here, '*', 'x86_64')) + glob.glob(os.path.join(here, '*'))
+                  if os.path.isdir(p)]
+
         def versions_desc(pattern):
             found = [p for p in glob.glob(pattern) if os.path.isdir(p)]
             def key(p):
@@ -88,6 +97,7 @@ class CTool(InitCTool):
         if uname == 'windows':
             for drive in ('C:', 'D:'):
                 roots += versions_desc(drive + r'\VulkanSDK\*')
+            roots += versions_desc(os.path.join(home, 'VulkanSDK', '*'))
         elif uname == 'darwin':
             roots += versions_desc(os.path.join(home, 'VulkanSDK', '*', 'macOS'))
             roots += ['/opt/homebrew', '/usr/local']
@@ -212,6 +222,15 @@ class CTool(InitCTool):
         directory = 'content'
         content = os.path.join(os.getcwd(), directory)
         root = os.path.join(content, version, 'x86_64') if uname == 'linux' else os.path.join(content, version)
+
+        if uname == 'windows' and any(c in root for c in UNSUPPORTED_PATH_CHARS):
+            # The LunarG installer refuses such paths ("The installation path must not contain !"):
+            # install per user, as LunarG's Linux default ~/VulkanSDK/<version> (detect() looks there)
+            root = os.path.join(os.path.expanduser('~'), 'VulkanSDK', version)
+            if con:
+                print ('')
+                print (f'{space}INFO: the cMeta cache path has a character the LunarG installer rejects: '
+                       f'installing into {root}')
 
         if uname == 'linux':
             url = f'{LUNARG}/{version}/linux/vulkan_sdk.tar.xz'

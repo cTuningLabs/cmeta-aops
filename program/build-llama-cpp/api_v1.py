@@ -35,9 +35,10 @@ class CProgram(InitCProgram):
             _local['lang'] = 'cuda'
 
         # --compute=cpu: keep the model on the CPU even when the build has a GPU backend (the
-        # macOS build always has Metal, CUDA and Vulkan builds offload by default)
+        # macOS build always has Metal, CUDA and Vulkan builds offload by default); -ngl 0 alone
+        # may still use the GPU, --device none does not
         if compute == ['cpu']:
-            _local['llama_cpp_compute_flags'] = '-ngl 0'
+            _local['llama_cpp_compute_flags'] = '-ngl 0 --device none'
 
         return {'return':0}
 
@@ -123,8 +124,22 @@ class CProgram(InitCProgram):
         if fastest and 'GGML_NATIVE' not in d:
             d['GGML_NATIVE'] = 'ON'
 
-        if 'lib-openssl' in _global and 'OPENSSL_ROOT_DIR' not in d:
-            d['OPENSSL_ROOT_DIR'] = _global['lib-openssl']['features']['paths']['qroot']
+        # HTTPS (llama.cpp's own -hf downloads; cMeta downloads models itself): OpenSSL when it
+        # is installed, BoringSSL built along (--compile.boringssl, as the release binaries do),
+        # else none - llama.cpp then only warns, as it does without OpenSSL
+        if _compile.get('boringssl'):
+            d.setdefault('LLAMA_BUILD_BORINGSSL', 'ON')
+        elif 'android-cpu' not in compute and 'OPENSSL_ROOT_DIR' not in d and 'LLAMA_OPENSSL' not in d:
+            if 'lib-openssl' not in _global:
+                self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run',
+                                'arg1': 'setup,a2f9b61079ce4333', 'name': 'lib-openssl,903191f1fab74064',
+                                'ctx': ctx, 'skip_install': True, 'skip_build': True,
+                                'con': False, 'quiet': True})
+            qroot = _global.get('lib-openssl', {}).get('features', {}).get('paths', {}).get('qroot')
+            if qroot:
+                d['OPENSSL_ROOT_DIR'] = qroot
+            else:
+                d['LLAMA_OPENSSL'] = 'OFF'
 
         if 'lib-openmp' in _global and 'OpenMP_omp_LIBRARY' not in d:
             d['OpenMP_omp_LIBRARY'] = _global['lib-openmp']['qpath']
@@ -142,6 +157,10 @@ class CProgram(InitCProgram):
                     d[x[1]] = 'ON'
             elif strict_compute and x[1] not in d:
                 d[x[1]] = x[2]
+
+        # Metal is on by default on macOS: a Vulkan build (MoltenVK) turns it off
+        if uname == 'darwin' and 'vulkan' in compute and 'metal' not in compute and 'GGML_METAL' not in d:
+            d['GGML_METAL'] = 'OFF'
 
         _local['target_path_bin'] = target_path_bin
         _local['target_path_llama_cli'] = os.path.join(target_path_bin, target_file_name_with_ext)

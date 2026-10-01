@@ -41,21 +41,21 @@ cmd_get_versions_uses:
 cmd_get_versions_regex: '\brefs/tags/vulkan-sdk-(\d+\.\d+\.\d+\.\d+)(?![\w.-])'
 
 # Fallbacks of the LunarG install (api_v1.py returns 16 with these)
-package_name: 'libvulkan-dev glslc vulkan-tools'
+package_name: 'libvulkan-dev glslc spirv-headers vulkan-tools'
 package_name_os_id:
-  fedora: 'vulkan-headers vulkan-loader-devel glslc vulkan-tools'
-  rhel: 'vulkan-headers vulkan-loader-devel glslc vulkan-tools'
-  rocky: 'vulkan-headers vulkan-loader-devel glslc vulkan-tools'
-  almalinux: 'vulkan-headers vulkan-loader-devel glslc vulkan-tools'
-  amzn: 'vulkan-headers vulkan-loader-devel glslc vulkan-tools'
-  azurelinux: 'vulkan-headers vulkan-loader-devel glslc vulkan-tools'
-  alpine: 'vulkan-headers vulkan-loader-dev shaderc vulkan-tools'
-  arch: 'vulkan-headers vulkan-icd-loader shaderc vulkan-tools'
+  fedora: 'vulkan-headers vulkan-loader-devel glslc spirv-headers-devel vulkan-tools'
+  rhel: 'vulkan-headers vulkan-loader-devel glslc spirv-headers-devel vulkan-tools'
+  rocky: 'vulkan-headers vulkan-loader-devel glslc spirv-headers-devel vulkan-tools'
+  almalinux: 'vulkan-headers vulkan-loader-devel glslc spirv-headers-devel vulkan-tools'
+  amzn: 'vulkan-headers vulkan-loader-devel glslc spirv-headers-devel vulkan-tools'
+  azurelinux: 'vulkan-headers vulkan-loader-devel glslc spirv-headers-devel vulkan-tools'
+  alpine: 'vulkan-headers vulkan-loader-dev shaderc spirv-headers vulkan-tools'
+  arch: 'vulkan-headers vulkan-icd-loader shaderc spirv-headers vulkan-tools'
 
 install_cmd:
   windows: '{{global.winget.qpath}} install --id=KhronosGroup.VulkanSDK -e --source winget {{global.init.winget_install_flags|}}'
   linux: '{{global.host.os_extra.install_cmd_sudo}}'
-  darwin: '{{global.brew.qpath}} install vulkan-headers vulkan-loader molten-vk shaderc vulkan-tools'
+  darwin: '{{global.brew.qpath}} install vulkan-headers vulkan-loader molten-vk shaderc spirv-headers vulkan-tools'
 
 install_cmd_version:
   windows: '{{global.winget.qpath}} install --id=KhronosGroup.VulkanSDK -e --version={{simple_version}} --source winget {{global.init.winget_install_flags|}}'

@@ -51,9 +51,7 @@ updates:
 
           ######################################################################################
           # Prepare Libs for Target CPU
-          - task: setup,a2f9b61079ce4333
-            if: '"android-cpu" not in {{global.target.compute|$[]}}'
-            name: lib-openssl,903191f1fab74064
+          # (OpenSSL is optional - customize_llama_cpp uses it when it is installed)
 
           # Only for Clang on Linux and MacOS
           - task: setup,a2f9b61079ce4333

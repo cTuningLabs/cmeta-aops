@@ -33,9 +33,10 @@ class CProgram(InitCProgram):
         uname = ctx['tasks']['global']['host']['os']['uname']
 
         # --compute=cpu: keep the model on the CPU even when the build has a GPU backend (the
-        # macOS build always has Metal, CUDA and Vulkan builds offload by default)
+        # macOS build always has Metal, CUDA and Vulkan builds offload by default); -ngl 0 alone
+        # may still use the GPU, --device none does not
         if compute == ['cpu']:
-            ctx['tasks']['local']['llama_cpp_compute_flags'] = '-ngl 0'
+            ctx['tasks']['local']['llama_cpp_compute_flags'] = '-ngl 0 --device none'
 
         model = params.get('model')
         prompt = params.get('prompt')
