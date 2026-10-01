@@ -6,6 +6,11 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
+import re
+
+# "sudo " at the start of a command or after ; & | ( - but not "sudo -n" already
+SUDO_PREFIX = re.compile(r'(^|[;&|(]\s*)sudo\s+(?!-n\b)')
+
 
 def install_tool(self,
         ctx: dict,                  # cMeta context
@@ -338,7 +343,17 @@ def install_tool(self,
 
         result['install_cmd'] = install_cmd
 
+        # A quiet run (-q) must not wait at a sudo password prompt that nobody may see: an unattended
+        # benchmark would hang for hours. "sudo -n" fails at once when sudo needs a password
+        # (and still works when it does not, or when the credentials are cached).
+        passwordless_sudo = ctx_tasks['global'].get('host', {}).get('os_extra', {}).get('passwordless_sudo', False)
+        sudo_non_interactive = quiet and uname != 'windows' and not passwordless_sudo
+
         for cmd in cmds:
+            original_cmd = cmd
+            if sudo_non_interactive:
+                cmd = SUDO_PREFIX.sub(r'\1sudo -n ', cmd)
+
             # Run installation
             ii = {'category': 'task,c36be4b9314a45e0',
                   'command': 'run',
@@ -361,6 +376,13 @@ def install_tool(self,
             returncode = rx['returncode']
             if returncode>0:
                 result['failed'] = True
+
+                if cmd != original_cmd and con:
+                    print ('')
+                    print (f'{space}WARNING: this installation needs sudo with a password, which a quiet run (-q) does not ask for.')
+                    print (f'{space}         Run it yourself, then repeat the cMeta command:')
+                    print ('')
+                    print (f'{space}           {original_cmd}')
             else:
                 # Restart tool detection
                 result = {'return':0, 'found_paths': None}
