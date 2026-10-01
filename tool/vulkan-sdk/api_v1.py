@@ -21,7 +21,12 @@ UNSUPPORTED_PATH_CHARS = '!'
 def sdk_layout(root, uname):
     """glslc, header, include, lib and bin of an SDK root, or None when it is not one."""
     exe = '.exe' if uname == 'windows' else ''
-    for bin_dir, inc_dir, lib_dir in (('Bin', 'Include', 'Lib'), ('bin', 'include', 'lib')):
+    # The LunarG Windows SDK has Bin, Include and Lib; elsewhere the folders are lower-case, and
+    # trying them first keeps a case-insensitive macOS disk from reporting /opt/homebrew/Bin
+    layouts = [('Bin', 'Include', 'Lib'), ('bin', 'include', 'lib')]
+    if uname != 'windows':
+        layouts.reverse()
+    for bin_dir, inc_dir, lib_dir in layouts:
         glslc = os.path.join(root, bin_dir, 'glslc' + exe)
         header = os.path.join(root, inc_dir, 'vulkan', 'vulkan_core.h')
         if os.path.isfile(glslc) and os.path.isfile(header):

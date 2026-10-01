@@ -254,3 +254,37 @@ def test_run_time_env_reads_the_program_params():
             if isinstance(value, str) and "{{params." in value:
                 offenders.append(f"{desc.parent.name}: {key}: {value}")
     assert offenders == []
+
+
+# --------------------------------------------------------------------------------------------
+# tool/vulkan-sdk sdk_layout
+
+@pytest.fixture(scope = "module")
+def vksdk():
+    return load_head("tool/vulkan-sdk/api_v1.py", "\nclass CTool",
+                     ["from tool_c393ba5c6fa14f66.api.ctool import InitCTool"])
+
+
+def make_sdk(root, bin_dir, inc_dir, exe):
+    (root / bin_dir).mkdir(parents = True)
+    (root / bin_dir / ("glslc" + exe)).write_text("")
+    (root / inc_dir / "vulkan").mkdir(parents = True)
+    (root / inc_dir / "vulkan" / "vulkan_core.h").write_text("")
+
+
+def test_sdk_layout_lower_case_outside_windows(vksdk, tmp_path):
+    make_sdk(tmp_path, "bin", "include", "")
+    layout = vksdk.sdk_layout(str(tmp_path), "darwin")
+    assert pathlib.Path(layout["glslc"]).parent.name == "bin"       # not "Bin" on a case-insensitive disk
+    assert pathlib.Path(layout["lib"]).name == "lib"
+
+
+def test_sdk_layout_lunarg_windows(vksdk, tmp_path):
+    make_sdk(tmp_path, "Bin", "Include", ".exe")
+    layout = vksdk.sdk_layout(str(tmp_path), "windows")
+    assert pathlib.Path(layout["glslc"]).name == "glslc.exe"
+    assert pathlib.Path(layout["include"]).name == "Include"
+
+
+def test_sdk_layout_not_an_sdk(vksdk, tmp_path):
+    assert vksdk.sdk_layout(str(tmp_path), "linux") is None
