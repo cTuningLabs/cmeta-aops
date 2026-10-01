@@ -1,0 +1,22 @@
+artifact: f7097a132e3349ba
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-10-01T20:05:50.152155+00:00'
+desc: 'Vulkan SDK (LunarG): headers, loader, glslc and tools for building Vulkan programs;
+  detected (LunarG SDK, distro or Homebrew packages) or installed from the pinned LunarG
+  release (Linux, Windows) or Homebrew (macOS); exports VULKAN_SDK.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+note: What building Vulkan programs needs (llama.cpp with GGML_VULKAN, ...); tool/vulkan
+  is the runtime.
+tags:
+- vulkan
+- vulkan-sdk
+- glslc
+- sdk
+- gpu

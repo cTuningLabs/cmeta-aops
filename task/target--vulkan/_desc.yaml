@@ -1,0 +1,21 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+store_global: True
+storage_key: target--vulkan
+cache: True
+
+# The runtime and its devices (tool/vulkan asks the loader; no SDK needed to run)
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: vulkan,5e701705d99b405b
+
+env_if_not_used:
+  CMETA_TARGET_VULKAN: 0
+env:
+  CMETA_TARGET_VULKAN: 1
+
+# Building for Vulkan: headers, loader library and glslc (exports VULKAN_SDK)
+sdk:
+  uses:
+    - task: setup,a2f9b61079ce4333
+      name: vulkan-sdk,f7097a132e3349ba
