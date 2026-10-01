@@ -159,6 +159,13 @@ class CProgram(InitCProgram):
             elif strict_compute and x[1] not in d:
                 d[x[1]] = x[2]
 
+        # Vulkan: the loader library to link with - the LunarG Linux SDK no longer ships it, so
+        # CMake's FindVulkan needs it named (the system's libvulkan.so.1)
+        if 'vulkan' in compute and 'Vulkan_LIBRARY' not in d:
+            loader_lib = _global.get('vulkan-sdk', {}).get('features', {}).get('paths', {}).get('loader_lib')
+            if loader_lib:
+                d['Vulkan_LIBRARY'] = loader_lib
+
         # Metal is on by default on macOS: a Vulkan build (MoltenVK) turns it off
         if uname == 'darwin' and 'vulkan' in compute and 'metal' not in compute and 'GGML_METAL' not in d:
             d['GGML_METAL'] = 'OFF'

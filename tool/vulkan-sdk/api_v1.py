@@ -30,6 +30,31 @@ def sdk_layout(root, uname):
     return None
 
 
+def loader_library(layout, uname):
+    """
+    The loader library to link with: the SDK's own (Windows: Lib/vulkan-1.lib, macOS:
+    lib/libvulkan.dylib), else - the LunarG Linux SDK no longer ships the loader - the system's
+    libvulkan.so (from libvulkan-dev) or its runtime libvulkan.so.1.
+    """
+    names = {'windows': ['vulkan-1.lib'], 'darwin': ['libvulkan.dylib', 'libvulkan.1.dylib']}.get(
+        uname, ['libvulkan.so', 'libvulkan.so.1'])
+    for name in names:
+        p = os.path.join(layout['lib'], name)
+        if os.path.isfile(p):
+            return p
+    if uname == 'linux':
+        for pattern in ('/usr/lib/*-linux-gnu/libvulkan.so', '/usr/lib64/libvulkan.so', '/usr/lib/libvulkan.so',
+                        '/usr/lib/*-linux-gnu/libvulkan.so.1', '/usr/lib64/libvulkan.so.1', '/usr/lib/libvulkan.so.1'):
+            found = sorted(glob.glob(pattern))
+            if found:
+                return found[0]
+    if uname == 'darwin':
+        for p in ('/opt/homebrew/lib/libvulkan.dylib', '/usr/local/lib/libvulkan.dylib'):
+            if os.path.isfile(p):
+                return p
+    return None
+
+
 def header_version(header):
     """1.<minor>.<VK_HEADER_VERSION> from vulkan_core.h."""
     try:
@@ -147,6 +172,8 @@ class CTool(InitCTool):
 
             if con and verbose:
                 print (f'{space}INFO: Vulkan SDK {version} at {root}')
+
+            layout = dict(layout, loader_lib = loader_library(layout, uname))
 
             parsed.append({'path': layout['glslc'],
                            'detected_version': version,
