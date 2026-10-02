@@ -257,6 +257,17 @@ def test_run_time_env_reads_the_program_params():
     assert offenders == []
 
 
+def test_folder_names_take_the_targets_tag():
+    """
+    Folders named after the targets use cmeta_targets_tag (cpu-cuda), not cmeta_targets
+    (cpu,cuda): on Windows a comma split the venv's activation command, and -Wl,... linker flags
+    split a path at its commas.
+    """
+    offenders = [str(desc.relative_to(REPO_ROOT)) for desc in sorted((REPO_ROOT / "program").glob("*/_desc.yaml"))
+                 if "-{{global.target.cmeta_targets}}" in desc.read_text(encoding = "utf-8")]
+    assert offenders == []
+
+
 # --------------------------------------------------------------------------------------------
 # tool/vulkan-sdk sdk_layout
 

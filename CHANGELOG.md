@@ -124,7 +124,10 @@ All notable changes to cMeta AOps are documented here, newest first.
   the venv `build-vllm` had filled and replaced vLLM's torch 2.13.0 with the 2.14.1 it had built. The
   new torch then failed to import ("undefined symbol: cublasLtGroupedMatrixLayoutCreate"): it was built
   with the CUDA 13.3 toolkit (cuBLAS 13.6), but loaded the pip cuBLAS 13.1 of vLLM's torch. A build
-  made before keeps its venv until `--recompile`.
+  made before keeps its venv until `--recompile`. The venv of several targets is named with dashes
+  (`venv-cpu-cuda`, from the new `{{global.target.cmeta_targets_tag}}`): on Windows, a comma in the
+  path split the venv's activation command. `tool/python` also quotes that path now, so a venv in a
+  folder with spaces activates too.
 - **Fix: program parameters reach the run-time environment.** `task/setup-run` expands
   `local_vars.run_time_env` with its own parameters, so `{{params.X|default}}` there always gave the
   default: `--model`, `--n`, `--max_len` and `--cpu_kv_cache_gib` of `test-vllm` and `build-vllm`, the

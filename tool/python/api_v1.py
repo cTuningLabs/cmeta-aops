@@ -227,7 +227,9 @@ class CTool(InitCTool):
                     if activate_script_path:
                         host = ctx['tasks']['global']['host']
 
-                        cmd_activate_script_path = host['vars']['call_script'] + ' ' + activate_script_path
+                        # Quoted: a space or a comma in the venv's path would split it in cmd.exe
+                        cmd_activate_script_path = host['vars']['call_script'] + ' ' + \
+                            self.cm.utils.files.quote_path(activate_script_path)
 
                         features['cmd_venv_activate_scipt'] = cmd_activate_script_path
 

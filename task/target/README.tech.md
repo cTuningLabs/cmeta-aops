@@ -22,6 +22,8 @@ cx program run <program> --compute                  # asks which ones (several c
 - The selected targets reach every step of the pipeline:
   - `{{global.target.compute}}` is the list;
   - `{{global.target.cmeta_targets}}` is the same as text (`cpu,cuda`);
+  - `{{global.target.cmeta_targets_tag}}` is the same for folder names (`cpu-cuda`): a comma
+    splits an unquoted path in `cmd.exe` and breaks `-Wl,...` linker flags;
   - `{{global.target.features.<target>}}` holds what was detected, for example
     `features.cuda.devices[].compute_cap`;
   - the environment has `CMETA_TARGETS` and `CMETA_TARGET_<NAME>`.
@@ -67,8 +69,8 @@ What a program does with `--compute=a,b` is up to the program:
   ```
 
 - `test-vllm`, `build-vllm` and `build-pytorch` install Python packages. Each set of targets
-  gets its own venv (`<folder>/venv-<targets>`), so the CPU and the CUDA builds of torch never
-  replace each other.
+  gets its own venv (`<folder>/venv-<targets>`, for example `venv-cpu-cuda`), so the CPU and the
+  CUDA builds of torch never replace each other.
 - Tools are cached per target too. The llama.cpp CUDA and Vulkan release builds, for example,
   are two cache entries.
 
