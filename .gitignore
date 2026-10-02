@@ -231,6 +231,8 @@ __marimo__/
 # paths and user names. Do not commit.
 # ---------------------------------------------------------------------------
 tmp/
+# ... but not the tmp category itself (its artifacts, the sandboxes, live in the local repository)
+!/category/tmp/
 tmp-*/
 *tmp-cmeta-*
 *cmeta-task-saved-*

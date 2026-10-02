@@ -138,9 +138,13 @@ All notable changes to cMeta AOps are documented here, newest first.
   generally, `--upgrade` now installs the newest version of every tool whose install command
   takes a version and whose versions are known, instead of running the pinned install again.
 - **Test sessions: a sandbox and a kept log for every test** (`task/test-session`, see its
-  [README](task/test-session/README.md)). `cx task run test-session --start --type=<type>` gives
-  `<CMETA_HOME>/tmp/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>/` to work in, and a log in
-  `<CMETA_HOME>/log/cmeta-tests-<YYYYMMDD>/` (Markdown and JSON) that stays when the sandbox goes. The
+  [README](task/test-session/README.md)). `cx task run test-session --start --type=<type>` gives a
+  sandbox to work in and a record that stays when the sandbox goes, as the folder
+  `<YYYYMMDD>/<HHMM>.<type>/` (the session id) of two artifacts of the local repository:
+  `tmp::cmeta-aops-test-sessions` (the new `category/tmp`, for disposable folders; `cx tmp prune`)
+  and `log::cmeta-aops-test-sessions` (`session.md`, `session.json`, attachments). `--list` filters by
+  date, type, status and host; `--migrate` moves the folders of the first version
+  (`<CMETA_HOME>/tmp|log/cmeta-tests-*`) there. The
   log records the host, cMeta, the repositories' branch, commit and changed files, and the agent
   (`CMETA_GENERATOR`, the Claude Code session). Notes, results and attached files are added during the
   test. The costs are the wall time, the sandbox size, and the tokens the Claude Code session used
