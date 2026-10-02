@@ -104,6 +104,15 @@ def test_plain_property_values(program):
     assert program["plain"](ElementType("f16")) == "f16"
 
 
+def test_timed_run_by_iterations_and_by_seconds(program):
+    calls = []
+    times, per_second, elapsed = program["timed_run"](lambda: calls.append(1), 10, 0, 1e9, "X")
+    assert len(times) == 10 and len(calls) == 10 and per_second == []
+    # A timed run: as many calls as fit, and the GFLOPS of each full second (none in 0.3 s)
+    times, per_second, elapsed = program["timed_run"](lambda: None, 10, 0.3, 1e9, "X")
+    assert len(times) > 10 and elapsed >= 0.3 and per_second == []
+
+
 def test_device_of_target(program):
     assert program["DEVICE_OF_TARGET"] == {"npu-intel": "NPU", "xpu": "GPU", "cpu": "CPU"}
 

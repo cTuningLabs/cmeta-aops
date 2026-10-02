@@ -39,6 +39,7 @@ cx program run test-openvino --compute=xpu                  # the Intel GPU
 cx program run test-openvino --compute=openvino             # every device OpenVINO finds
 cx program run test-openvino --compute=npu-intel --size=2048 --iterations=500 --precision=f32
 cx program run test-openvino --compute=openvino --size=4096 --batch=256   # compute, not bandwidth
+cx program run test-openvino --compute=xpu --size=4096 --batch=256 --seconds=30   # a 30 s load
 ```
 
 | Option | Default | Meaning |
@@ -46,6 +47,7 @@ cx program run test-openvino --compute=openvino --size=4096 --batch=256   # comp
 | `--size` | 1024 | n: a (batch x n) @ (n x n) matmul and a ReLU |
 | `--batch` | 1 | the rows of the input: 1 is a matrix-vector product, which memory bandwidth limits; 256 and more use the compute units |
 | `--iterations` | 200 | timed inferences per device, after 5 warm-up ones |
+| `--seconds` | | run each device this long instead (3, 30, 60, ...), printing its progress; records `calls`, `gflops_sustained` and `gflops_per_second` (a device that slows down as it heats shows there) |
 | `--precision` | the device's | `f16` or `f32` (`INFERENCE_PRECISION_HINT`); the NPU computes in f16 |
 | `--devices` | from the targets | OpenVINO device names instead (`NPU,GPU.1,CPU`) |
 | `--openvino_version` | the newest | the `openvino` pip package's version |
@@ -67,7 +69,8 @@ cx program run test-openvino --compute=openvino --size=4096 --batch=256   # comp
     `NPU_DRIVER_VERSION`, `NPU_COMPILER_VERSION` and `NPU_DEVICE_TOTAL_MEM_SIZE`; for a GPU,
     `GPU_DEVICE_TOTAL_MEM_SIZE` and `GPU_EXECUTION_UNITS_COUNT`;
   - `compile_ms`, `execution_devices` and `inference_precision`;
-  - `latency_us` (min, median, p90, max, mean), `inferences_per_second` and `gflops`;
+  - `calls`, `latency_us` (min, median, p90, max, mean), `inferences_per_second` and `gflops`; for
+    `--seconds` also `seconds`, `gflops_sustained` and `gflops_per_second`;
   - `max_abs_error`, `max_rel_error`, `passed`, or `error`.
 
 With the defaults the model is small, so the latency measures how long a call to the device

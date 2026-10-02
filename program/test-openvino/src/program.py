@@ -19,6 +19,8 @@ Environment (set by the program's _desc.yaml from its parameters):
   CMETA_OPENVINO_BATCH       the rows of the input (default 1: a matrix-vector product, which
                              memory bandwidth limits; 256 and more use the compute units)
   CMETA_OPENVINO_ITERATIONS  timed inferences per device (default 200)
+  CMETA_OPENVINO_SECONDS     run each device this long instead (3, 30, 60, ...), printing its
+                             progress; records the GFLOPS of every second too
   CMETA_OPENVINO_PRECISION   f16 or f32 (INFERENCE_PRECISION_HINT; default: the device's own)
   CMETA_OPENVINO_DEVICES     OpenVINO devices instead of the targets' (NPU,CPU)
 """
@@ -68,6 +70,37 @@ def device_properties(core, device):
     return props
 
 
+def timed_run(infer, iterations, seconds, flops, label):
+    """
+    Time the calls of infer(): `iterations` of them, or as many as fit in `seconds`. A timed run
+    also gives the GFLOPS of the calls finished in each second, which shows a device slowing down
+    as it heats up, and prints its progress.
+    """
+    times, per_second = [], []
+    start = time.perf_counter()
+    mark, in_second = start + 1.0, 0
+    every = 1 if seconds <= 10 else 5
+    while True:
+        t = time.perf_counter()
+        infer()
+        now = time.perf_counter()
+        times.append(now - t)
+        if not seconds:
+            if len(times) >= iterations:
+                break
+            continue
+        in_second += 1
+        while now >= mark:
+            per_second.append(round(in_second * flops / 1e9, 2))
+            in_second = 0
+            mark += 1.0
+            if len(per_second) % every == 0:
+                print(f'  {label}: {len(per_second)} s, {len(times)} calls, {per_second[-1]} GFLOPS', flush = True)
+        if now - start >= seconds:
+            break
+    return times, per_second, time.perf_counter() - start
+
+
 def latency_stats(seconds):
     us = sorted(s * 1e6 for s in seconds)
     return {'min': round(us[0], 1), 'median': round(statistics.median(us), 1),
@@ -87,7 +120,9 @@ def main():
     n = int(os.environ.get('CMETA_OPENVINO_SIZE') or 1024)
     batch = int(os.environ.get('CMETA_OPENVINO_BATCH') or 1)
     iterations = int(os.environ.get('CMETA_OPENVINO_ITERATIONS') or 200)
+    seconds = float(os.environ.get('CMETA_OPENVINO_SECONDS') or 0)
     precision = (os.environ.get('CMETA_OPENVINO_PRECISION') or '').strip().lower()
+    flops = 2 * batch * n * n
 
     core = ov.Core()
     available = list(core.available_devices)
@@ -105,7 +140,8 @@ def main():
     param = ops.parameter([batch, n], np.float32, name = 'x')
     model = ov.Model([ops.relu(ops.matmul(param, ops.constant(w), False, False))], [param], 'matmul-relu')
 
-    stats = {'openvino': ov.get_version(), 'targets': targets, 'size': n, 'batch': batch, 'iterations': iterations,
+    stats = {'openvino': ov.get_version(), 'targets': targets, 'size': n, 'batch': batch,
+             'iterations': None if seconds else iterations, 'seconds': seconds or None,
              'precision_hint': precision or None, 'available_devices': available, 'devices': {}}
 
     for device in wanted:
@@ -132,16 +168,21 @@ def main():
             request = compiled.create_infer_request()
             for _ in range(5):
                 request.infer({0: x})
-            times = []
-            for _ in range(iterations):
-                t = time.perf_counter()
-                request.infer({0: x})
-                times.append(time.perf_counter() - t)
+            if seconds:
+                print(f'{device}: running for {seconds:g} s ...', flush = True)
+            times, per_second, elapsed = timed_run(lambda: request.infer({0: x}), iterations, seconds, flops, device)
             out = np.array(request.get_output_tensor(0).data, dtype = np.float32)
             err = float(np.max(np.abs(out - ref)))
+            entry['calls'] = len(times)
             entry['latency_us'] = latency_stats(times)
-            entry['inferences_per_second'] = round(1e6 / entry['latency_us']['median'], 1)
-            entry['gflops'] = round(2 * batch * n * n / (entry['latency_us']['median'] / 1e6) / 1e9, 2)
+            entry['gflops'] = round(flops / (entry['latency_us']['median'] / 1e6) / 1e9, 2)
+            if seconds:
+                entry['seconds'] = round(elapsed, 2)
+                entry['inferences_per_second'] = round(len(times) / elapsed, 1)
+                entry['gflops_sustained'] = round(len(times) * flops / elapsed / 1e9, 2)
+                entry['gflops_per_second'] = per_second
+            else:
+                entry['inferences_per_second'] = round(1e6 / entry['latency_us']['median'], 1)
             entry['max_abs_error'] = err
             entry['max_rel_error'] = err / scale
             ran_there = not entry.get('execution_devices') or \
@@ -154,9 +195,14 @@ def main():
 
         name = entry.get('properties', {}).get('FULL_DEVICE_NAME', device)
         if entry.get('latency_us'):
+            timed = ''
+            if entry.get('seconds'):
+                ps = entry.get('gflops_per_second') or [entry['gflops_sustained']]
+                timed = (f'; {entry["calls"]} calls in {entry["seconds"]} s, {entry["gflops_sustained"]} GFLOPS sustained '
+                         f'(per second: {min(ps)}-{max(ps)})')
             print(f'{device} ({name}): compile {entry["compile_ms"]} ms, median {entry["latency_us"]["median"]} us '
                   f'(min {entry["latency_us"]["min"]}, p90 {entry["latency_us"]["p90"]}), {entry["gflops"]} GFLOPS, '
-                  f'max error {entry["max_abs_error"]:.2e} -> {"OK" if entry["passed"] else "FAILED"}')
+                  f'max error {entry["max_abs_error"]:.2e}{timed} -> {"OK" if entry["passed"] else "FAILED"}')
         else:
             print(f'{device} ({name}): {entry.get("error")}')
 

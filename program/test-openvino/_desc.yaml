@@ -6,6 +6,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #   cx program run test-openvino --compute=openvino           # every device OpenVINO finds
 #   cx program run test-openvino --compute=npu-intel --size=2048 --iterations=500 --precision=f32
 #   cx program run test-openvino --compute=openvino --size=4096 --batch=256   # compute, not bandwidth
+#   cx program run test-openvino --compute=xpu --size=4096 --batch=256 --seconds=30   # a 30 s load
 #
 # Each device is named in compile_model ("NPU", "GPU", "CPU"), never AUTO, so a device that
 # fails cannot pass by falling back to the CPU; the run fails when a selected device is missing.
@@ -19,6 +20,7 @@ local_vars:
     CMETA_OPENVINO_SIZE: '{{local.params.size|1024}}'
     CMETA_OPENVINO_BATCH: '{{local.params.batch|1}}'
     CMETA_OPENVINO_ITERATIONS: '{{local.params.iterations|200}}'
+    CMETA_OPENVINO_SECONDS: '{{local.params.seconds|}}'
     CMETA_OPENVINO_PRECISION: '{{local.params.precision|}}'
     CMETA_OPENVINO_DEVICES: '{{local.params.devices|}}'
     PYTHONUNBUFFERED: 1
