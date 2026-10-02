@@ -21,7 +21,7 @@ cmd_get_versions_uses:
     name: node-js,238f15e1d6184359
     with:
       add_tool_path_to_env: True   # put node/npm bin on PATH for the command below
-cmd_get_versions_regex: '"([0-9][^"]*)"'
+cmd_get_versions_regex: '"(\d+\.\d+\.\d+)"'
 cmd_get_versions_regex_group: 1
 
 install_help_text: |
