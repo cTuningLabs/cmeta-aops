@@ -24,7 +24,8 @@ _PERF = re.compile(r'(?P<key>load|prompt eval|eval|sampling|total) time\s*=\s*(?
                    r'(?:.*?(?P<tps>[\d.]+)\s*tokens per second)?')
 
 # Devices llama.cpp offloads to: "using device CUDA0 (NVIDIA ...)" (newer builds) or "ggml_cuda_init: found 1 CUDA devices"
-_DEVICE = re.compile(r'using device (\S+) \(([^)]*)\)')
+# using device SYCL0 (Intel(R) Graphics) (unknown id) - 15018 MiB free: the name may hold parentheses
+_DEVICE = re.compile(r'using device (\S+) \((.+?)\)(?= \(| -|\s*$)', re.M)
 
 # "load_tensors: offloaded 25/25 layers to GPU" (with -v in builds since b8xxx)
 _OFFLOAD = re.compile(r'offloaded (\d+)/(\d+) layers to GPU')
@@ -56,6 +57,19 @@ def run_flags(compute, params):
         if 'devices' not in settings:
             flags += ['--device', 'none']
     return ' '.join(flags), settings
+
+
+def openvino_device(compute):
+    """
+    The device of llama.cpp's OpenVINO build (GGML_OPENVINO_DEVICE) for the targets: the NPU
+    for npu-intel, the Intel GPU for xpu,openvino; None leaves OpenVINO's default.
+    """
+    compute = list(compute)
+    if 'npu-intel' in compute:
+        return 'NPU'
+    if 'openvino' in compute and 'xpu' in compute:
+        return 'GPU'
+    return None
 
 
 def parse_llama_log(text):

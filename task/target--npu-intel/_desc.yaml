@@ -1,0 +1,56 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+###################################################################################################
+# The Intel NPU, found without any SDK: on Windows the "ComputeAccelerator" devices (with their
+# driver version), on Linux the accel devices of the intel_vpu driver. The NPU is matched by its
+# PCI ID (VEN_8086 and 7D1D, AD1D, 643E, B03E, FD3E, D71D), not by name: Intel documents
+# "Intel(R) AI Boost", and some laptops report "Intel(R) NPU".
+#
+# Its default stack is OpenVINO (device "NPU"): --compute=npu-intel or --compute=npu-intel,openvino.
+###################################################################################################
+store_global: True
+storage_key: target--npu-intel
+cache: True
+
+uses:
+  # The host (its OS for the conditions below), when no program has set it up
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: generate-temp-file,2e96e68cd41046d1
+    storage_key: generate-temp-file-target-npu-intel
+
+  - task: cmd,c9ba0a88df394d7f
+    if_os: windows
+    cmd: >-
+      powershell -NoProfile -Command "[Console]::OutputEncoding = [Text.Encoding]::UTF8;
+      Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPClass -eq 'ComputeAccelerator' } |
+      ForEach-Object { 'Name: ' + $_.Name; 'DeviceID: ' + $_.DeviceID; 'Status: ' + $_.Status;
+      'DriverVersion: ' + (Get-PnpDeviceProperty -InstanceId $_.DeviceID -KeyName DEVPKEY_Device_DriverVersion).Data; '' }"
+      > {{local.generate-temp-file-target-npu-intel.temp_file}}
+    local:
+      encoding: 'utf-8-sig'
+
+  # accel0 intel_vpu 0x8086 0xb03e
+  - task: cmd,c9ba0a88df394d7f
+    if_os: linux
+    cmd: >-
+      for d in /sys/class/accel/accel*; do [ -e "$d/device" ] &&
+      echo "$(basename $d) $(basename "$(readlink -f $d/device/driver)") $(cat $d/device/vendor) $(cat $d/device/device)";
+      done > {{local.generate-temp-file-target-npu-intel.temp_file}} 2>/dev/null || true
+
+  - task: force-fail,fbc834fe54894aec
+    if_os: darwin
+    text: 'the Intel NPU needs Windows or Linux (macOS has the Apple Neural Engine)'
+
+env_if_not_used:
+  CMETA_TARGET_NPU_INTEL: 0
+env:
+  CMETA_TARGET_NPU_INTEL: 1
+
+# Builds against OpenVINO set up its Python package (programs set it up in their own venv)
+sdk:
+  uses:
+    - task: setup,a2f9b61079ce4333
+      name: pip
+      with:
+        package: openvino

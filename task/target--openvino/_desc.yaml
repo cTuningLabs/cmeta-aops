@@ -1,0 +1,22 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+###################################################################################################
+# A stack target: it detects nothing itself; the device targets next to it say where OpenVINO
+# runs (npu-intel -> "NPU", xpu -> "GPU", cpu -> "CPU"). Alone, programs use every device
+# OpenVINO finds. The OpenVINO runtime is a pip package, which programs set up in their venv.
+###################################################################################################
+store_global: True
+storage_key: target--openvino
+cache: False
+
+env_if_not_used:
+  CMETA_TARGET_OPENVINO: 0
+env:
+  CMETA_TARGET_OPENVINO: 1
+
+sdk:
+  uses:
+    - task: setup,a2f9b61079ce4333
+      name: pip
+      with:
+        package: openvino
