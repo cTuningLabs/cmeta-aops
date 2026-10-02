@@ -148,6 +148,9 @@ cache identity of that sub-task, so it gets its own cache entry and the default 
   - CLI: `--update` (rebuild), `--clean` (wipe), `--new` (fresh entry), `--path=<dir>`
     (distinct path = distinct entry). Unfinished entries carry a `tmp` tag; the
     `check_versions` config re-detects a cached tool's version and invalidates stale ones.
+    `--update` rebuilds an entry from what is installed; upgrading the *tool* itself is
+    `cx tool setup <tool> --upgrade` (see [tool-abstraction.md](tool-abstraction.md)),
+    which switches `update` on for its run so the entry records the new version.
   - Files in an entry: `cmeta-task-cached-result.json`, `cmeta-task-cached-ctx.json`
     (and `cmeta-task-saved-*.json` with `--save`).
 
