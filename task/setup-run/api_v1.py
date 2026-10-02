@@ -60,8 +60,11 @@ class CTask(InitCTask):
         target_compute = _global['target']['compute']
 
         # Every Android target runs on the device that target--android-cpu selected (android-gpu and
-        # android-npu set it up too): pushed and run over adb
-        _android_cpu = any(c in ('android-cpu', 'android-gpu', 'android-npu') for c in target_compute)
+        # android-npu set it up too): pushed and run over adb. A program that drives the device
+        # from the host itself (run_on_host: True, e.g. one that exports models with the host's
+        # Python and then pushes and runs them with adb) runs on the host.
+        _android_cpu = (any(c in ('android-cpu', 'android-gpu', 'android-npu') for c in target_compute)
+                        and not params.get('run_on_host'))
         _cuda = True if 'cuda' in target_compute else False
 
         _cpu = False

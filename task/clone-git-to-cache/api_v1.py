@@ -100,8 +100,11 @@ class CTask(InitCTask):
         }
 
         # depth: shallow clone; filter: partial clone such as "blob:none"; fetch: extra "git fetch"
-        # arguments, e.g. "--depth 1 origin <commit>" to pin a commit in a shallow clone (see clone-git)
-        for k in ['url', 'directory', 'tag', 'checkout', 'depth', 'filter', 'fetch']:
+        # arguments, e.g. "--depth 1 origin <commit>" to pin a commit in a shallow clone (see clone-git).
+        # branch, new_branch and update_submodules are part of this task's cache identity too, so
+        # they reach clone-git as well
+        for k in ['url', 'directory', 'tag', 'checkout', 'branch', 'new_branch', 'depth', 'filter', 'fetch',
+                  'update_submodules']:
             if k in params:
                 p[k] = params[k]
 
