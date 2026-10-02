@@ -1,0 +1,48 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# MPI for distributed programs: the launcher (mpiexec) and its library. A system MPI on the PATH
+# is detected first (Open MPI, MPICH, Intel MPI, MS-MPI). Otherwise a pinned MPI from PyPI is
+# installed into the tool's own Python environment, without root, with mpi4py (api_v1.py):
+# Open MPI on Linux and macOS, the Intel MPI runtime on Windows; --with.mpi=openmpi|mpich|intel
+# picks another one.
+#
+#   cx tool setup mpi
+#   cx tool setup mpi --with.mpi=mpich
+#   cx tool run mpi -- -n 4 hostname
+#   {{global.mpi.qpath}} -n 4 {{global.mpi.features.python}} program.py       # mpi4py
+#
+# Several machines need the same MPI on each and a way to start processes there (passwordless
+# SSH between them, or a resource manager such as Slurm).
+
+cache_params_with: False
+cache_params:
+  - with.mpi
+
+names:
+  - mpiexec{{global.host.vars.file_ext_exe}}
+
+match_version:
+  - regex: '\(Open MPI\)\s+(\d+\.\d+\.\d+)'
+    group: 1
+  - regex: 'Version:\s+(\d+\.\d+\.\d+)'
+    group: 1
+  - regex: 'Intel\(R\) MPI Library[^\n]*Version (\d+\.\d+(?:\.\d+)?)'
+    group: 1
+  - regex: 'Microsoft MPI Startup Program \[Version (\d+\.\d+\.\d+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+extra_paths:
+  windows:
+    - 'C:\Program Files\Microsoft MPI\Bin'
+  linux:
+    - '/usr/lib64/openmpi/bin'
+    - '/usr/lib64/mpich/bin'
+  darwin:
+    - '/opt/homebrew/bin'
+
+install_help_text: |
+  Could not install MPI automatically here. Install Open MPI or MPICH with the package manager
+  (openmpi-bin, open-mpi, mpich) or MS-MPI on Windows, and run "cx tool setup mpi" again.

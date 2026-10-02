@@ -1,0 +1,18 @@
+artifact: 63269da3af2040f6
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+desc: 'Ray, distributed Python (tasks, actors, Train, Serve; the cluster of multi-node vLLM): detected, else
+  the pinned ray[default] in its own Python 3.12 environment, the same pins on every node.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+tags:
+- ray
+- distributed
+- cluster
+- training
+- inference
