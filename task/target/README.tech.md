@@ -36,6 +36,8 @@ cx program run <program> --compute                  # asks which ones (several c
 | `metal` | the Apple GPU (system_profiler) |
 | `rocm` | AMD GPUs (ROCm) |
 | `xpu` | Intel GPUs (oneAPI) |
+| `npu-intel` | the Intel NPU, Meteor Lake and newer (its PCI ID, generation and driver, found without any SDK; its stack is OpenVINO) |
+| `openvino` | the OpenVINO stack: with a device target it runs there (`npu-intel` -> NPU, `xpu` -> GPU, `cpu` -> CPU); alone, on every device OpenVINO finds |
 | `android-cpu` | an Android device over adb (`--serial`) |
 | `tpu`, `opu-lumai` | placeholders: fail until supported |
 
@@ -50,6 +52,7 @@ What a program does with `--compute=a,b` is up to the program:
 | `test-ollama` | `--ngl=N` sets Ollama's `num_gpu` (layers on the GPU) |
 | `test-vllm`, `build-vllm` | one device type (cuda, rocm, xpu or cpu); `--cpu_offload_gb` keeps part of the weights in CPU memory |
 | `build-pytorch` | `USE_CUDA`, `USE_MPS`, `USE_ROCM`, `USE_XPU` for each target listed |
+| `test-openvino` | runs on each device listed (`cpu,npu-intel`: the CPU and the NPU side by side), each named in `compile_model`, never AUTO; with `openvino` alone, every device OpenVINO finds |
 
 ## Comparing targets on one machine
 
