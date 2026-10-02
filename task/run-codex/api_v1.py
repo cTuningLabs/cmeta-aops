@@ -15,7 +15,7 @@ from task_c36be4b9314a45e0.api.ctask import InitCTask
 OUTPUT_FILE_SUFFIX = '-output.txt'
 
 # Output file used when there is no prompt file to derive the name from
-DEFAULT_OUTPUT_FILE = 'run-codex2-output.txt'
+DEFAULT_OUTPUT_FILE = 'run-codex-output.txt'
 
 # Flags added by --yes to answer "yes" to every codex question:
 #   --dangerously-bypass-approvals-and-sandbox
@@ -139,7 +139,7 @@ class CTask(InitCTask):
         """
         Assemble a prompt, run the "codex" CLI non-interactively (codex exec) and exit.
 
-        This is the codex sister of the "run-claude2" task and takes the same flags.
+        This is the codex sister of the "run-claude" task and takes the same flags.
 
         The prompt is the text of "prompt_file" (when given), then a new line,
         then "prompt".
@@ -149,7 +149,7 @@ class CTask(InitCTask):
         message and codex keeps the terminal afterwards, so the preset prompt can be
         followed up on by hand. This is also what happens when no prompt is given at
         all - an empty prompt opens a session rather than failing, so a plain
-        "cx task run run-codex2" is just "codex" with the flags below. Since an
+        "cx task run run-codex" is just "codex" with the flags below. Since an
         interactive session owns the terminal, nothing can be captured: "stats",
         "stats_file" and "output_file" are switched off, the result carries no output,
         and a non-zero exit code of codex is reported but not turned into an error
@@ -161,7 +161,7 @@ class CTask(InitCTask):
         The output is streamed to the console while codex runs and is recorded
         into "output_file". When "output_file" is not given, it defaults to the
         prompt file name without extension + "-output.txt" (or
-        "run-codex2-output.txt" when there is no prompt file).
+        "run-codex-output.txt" when there is no prompt file).
 
         With "yes", codex runs fully unattended: approvals are skipped, commands
         run without the sandbox and the current directory is trusted without a
@@ -488,7 +488,7 @@ class CTask(InitCTask):
 
         # Description of this run - shared by the output file and the statistics file
         run_info = {
-            'task': 'run-codex2',
+            'task': 'run-codex',
             'date': time.strftime('%Y-%m-%d %H:%M:%S'),
             'codex': codex_path,
             'prompt_file': prompt_file,

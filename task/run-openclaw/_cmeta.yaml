@@ -21,7 +21,7 @@ note: Set up the "openclaw" tool, assemble a prompt from --prompt_file and --pro
   run one agent turn headless ("openclaw agent --local --message ...") and record
   the output next to the prompt file, or open the terminal UI with the prompt as the
   first message (--interactive/--i, the default when no prompt is given). --dry_run
-  prints the command. Same flags as run-claude2, run-codex2 and run-opencode2.
+  prints the command. Same flags as run-claude, run-codex and run-opencode.
 tags:
 - run
 - openclaw

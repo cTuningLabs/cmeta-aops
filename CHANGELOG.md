@@ -2,7 +2,18 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## 0.41.0
+## 0.42.0
+- **Agent tasks renamed: `run-claude2` -> `run-claude`, `run-codex2` -> `run-codex`,
+  `run-opencode2` -> `run-opencode`**, and the first `run-claude` prototype is removed. The
+  tasks keep their UIDs, so references by `alias,UID` (`run-claude2,38be73ffceaa4f67`) keep
+  working; commands that name `run-claude2` alone need the new name. Also renamed:
+  - the default output files (`run-claude-output.txt`, `run-codex-output.txt`,
+    `run-opencode-output.txt`);
+  - the `task` field of their statistics;
+  - their key in a pipeline's context: a task that reads `local['run-claude2']` reads
+    `local['run-claude']` now.
+
+  After pulling, run `cx --reindex`, because task folders moved.
 - **xpu on Linux sets up the Intel GPU compute runtime, without root** (`tool/intel-gpu-runtime`, see its
   [README.tech.md](tool/intel-gpu-runtime/README.tech.md)). An Intel GPU computes through a user-space
   runtime the kernel driver does not bring: the OpenCL ICD, the Level Zero driver, the graphics compiler,
