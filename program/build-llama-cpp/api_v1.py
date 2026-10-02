@@ -166,8 +166,9 @@ class CProgram(InitCProgram):
             if loader_lib:
                 d['Vulkan_LIBRARY'] = loader_lib
 
-        # Metal is on by default on macOS: a Vulkan build (MoltenVK) turns it off
-        if uname == 'darwin' and 'vulkan' in compute and 'metal' not in compute and 'GGML_METAL' not in d:
+        # Metal is on by default on macOS: a build for another target (cpu, vulkan through MoltenVK)
+        # turns it off, so a CPU benchmark opens no GPU device at all
+        if uname == 'darwin' and 'metal' not in compute and 'GGML_METAL' not in d:
             d['GGML_METAL'] = 'OFF'
 
         _local['target_path_bin'] = target_path_bin
