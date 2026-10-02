@@ -140,8 +140,8 @@ class CTask(InitCTask):
         devices = parse_npus(data, uname)
 
         if not devices:
-            hint = ('a "ComputeAccelerator" device from Intel (VEN_8086) in the Device Manager' if uname == 'windows'
-                    else 'an accel device of the intel_vpu driver in /sys/class/accel')
-            return self.cm.error(f'the Intel NPU is not detected: no {hint}')
+            hint = ('no "ComputeAccelerator" device from Intel (VEN_8086) in the Device Manager' if uname == 'windows'
+                    else 'no accel device of the intel_vpu driver in /sys/class/accel')
+            return self.cm.error(f'the Intel NPU is not detected: {hint}')
 
         return {'return': 0, 'features': {'output': data, 'devices': devices}}

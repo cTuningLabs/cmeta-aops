@@ -53,6 +53,10 @@ cx program run test-openvino --compute=xpu --size=4096 --batch=256 --seconds=30 
 | `--openvino_version` | the newest | the `openvino` pip package's version |
 | `--python_version` | `>=3.10,<3.15` | the Python of the program's venv (one per set of targets) |
 
+- `xpu` is the first OpenVINO GPU whose name says Intel. OpenVINO's GPU plugin also drives
+  other GPUs through OpenCL (an NVIDIA GPU is `GPU.0` when no Intel GPU runtime is installed),
+  and without an Intel GPU the run fails and lists the GPUs OpenVINO found. On Linux the Intel
+  GPU needs the compute runtime (`intel-opencl-icd`) and access to `/dev/dri` (the `render` group).
 - Each device is named in `compile_model` ("NPU", "GPU", "CPU"), never AUTO, and
   `EXECUTION_DEVICES` must name it. A device that fails cannot pass by falling back to the CPU.
 - A device passes when its largest error against NumPy is at most 1% of the output's scale.
