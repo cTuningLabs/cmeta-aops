@@ -21,6 +21,14 @@ cx tool setup vulkan --tool_path=<loader>   # a given loader (vulkan-1.dll, libv
   - the loader comes with the GPU driver on Windows;
   - on Linux, `libvulkan1` and `mesa-vulkan-drivers` (the distribution's names, with sudo);
   - on macOS, `brew install vulkan-loader molten-vk`.
+- **Linux without a GPU:** the setup stops before any install when no device node can reach a GPU:
+  - no DRM render node (`/dev/dri/renderD*`, which also covers the GPUs of Arm SoCs);
+  - no WSL2 `/dev/dxg`;
+  - no `/dev/nvidia0` or `/dev/kfd`.
+
+  Mesa would then run Vulkan on the CPU only (llvmpipe). PCI display devices without a node are
+  named in the message: no driver, or not passed into the container. For example, Docker on WSL2
+  without `--gpus` shows the VM's virtual GPUs on PCI. `--with.allow_cpu` installs Mesa anyway.
 
 ## The SDK: tool/vulkan-sdk
 
@@ -55,8 +63,10 @@ cx program run build-llama-cpp --compute=vulkan --target_tmp=auto
 cx program run test-ollama --compute=vulkan          # sets OLLAMA_VULKAN=1
 ```
 
-- It fails when the loader lists no device. When it lists only CPU devices (Mesa's llvmpipe),
-  it warns.
+- It fails when the loader lists no device, and when it lists only CPU devices (Mesa's
+  llvmpipe): a vulkan run there would compute on the CPU. `--use.target--vulkan.allow_cpu`
+  accepts them, to test Vulkan code without a GPU. A cached target is checked again, because the
+  machine may have lost its GPU driver since.
 - It sets `CMETA_TARGET_VULKAN=1`, and its SDK step sets up `tool/vulkan-sdk` for builds.
 - Several GPUs may expose Vulkan (an Intel iGPU and an NVIDIA GPU, say). llama.cpp then uses
   all of them unless `--devices=Vulkan1` picks one, and `perf.devices` records which it used.

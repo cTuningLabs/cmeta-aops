@@ -3,6 +3,14 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **Vulkan needs a GPU** (`target--vulkan`, `tool/vulkan`, see its
+  [README.tech.md](tool/vulkan/README.tech.md)):
+  - **Target:** a vulkan run on a machine where Vulkan sees only CPU devices (Mesa's llvmpipe) now
+    fails, instead of warning and computing on the CPU. `--use.target--vulkan.allow_cpu` accepts
+    them. A cached target is checked again.
+  - **Tool:** `tool/vulkan` no longer installs Mesa (with sudo) on a Linux machine with no device
+    node to reach a GPU: no DRM render node, no WSL2 `/dev/dxg`, no NVIDIA or AMD node. PCI
+    display devices without a node are named in the message. `--with.allow_cpu` installs it anyway.
 - **CUDA toolkits of any version, without root, with the host compiler they support** (`tool/nvcc`,
   see its [README.tech.md](tool/nvcc/README.tech.md)). nvcc skips the toolkits whose programs could
   not run here: those whose oldest architecture is newer than the GPU (CUDA 13 dropped Maxwell to
