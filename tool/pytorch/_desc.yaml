@@ -37,7 +37,7 @@ cache_meta_const:
 build_uses:
   all:
     - task: compile-and-run-program,05437a1aae224270
-      name: build-pytorch,b8f3d1c9a5e27046
+      name: build-pytorch,de1ea5b65d8c4b5e
       clean: '{{params.with.clean|$None}}'
       recompile: '{{params.with.recompile|$None}}'
       compute: '{{params.with.compute|$[]}}'

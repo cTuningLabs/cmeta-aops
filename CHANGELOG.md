@@ -3,6 +3,24 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **ExecuTorch on Android, with no app and no source build** (`tool/executorch-android` and
+  `tool/android-d8`, new):
+  - **`executorch-android`:** the official runtime, PyTorch's AAR on Maven Central. The tool
+    reads the dependencies from the POMs (fbjni, nativeloader, kotlin-stdlib), checks every file
+    against Maven Central's SHA-256 (SHA-1 for old artifacts) and unpacks the native libraries per
+    ABI and the Java classes.
+    - Its library registers XNNPACK (CPU) only and exports only JNI. Programs use its Java API,
+      from the adb shell through `app_process`.
+  - **`android-d8`:** Android's dexer. It uses the `d8.jar` of an installed SDK, else downloads
+    the pinned r8 jar from Google's Maven and checks its SHA-256.
+  - **`setup-run`:** `run_on_host: True` runs a program with an Android target on the host, so it
+    can drive the device itself: export models with the host's Python, then push and run them
+    with adb.
+- **Fixes:**
+  - `clone-git-to-cache` now passes `branch`, `new_branch` and `update_submodules` to `clone-git`.
+    They were part of its cache identity but never reached git.
+  - `tool/pytorch` names `build-pytorch` by its current UID. Its build path had failed since that
+    UID changed.
 - **flatc, the FlatBuffers compiler** (`tool/flatc`, new). The setup uses an installed flatc when
   it finds one. Otherwise it downloads the pinned GitHub release for Windows, macOS (arm64 and
   x86_64) or Linux x86_64, whose static binary runs on every distribution, Alpine included. It

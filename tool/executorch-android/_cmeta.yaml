@@ -1,0 +1,19 @@
+artifact: 4a84ca30ffe741e0
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+desc: 'The official ExecuTorch runtime for Android from Maven Central (executorch-android AAR: libexecutorch.so
+  for arm64-v8a and x86_64, its Java API) with fbjni, nativeloader and kotlin-stdlib, checksum-verified and
+  unpacked into the cache.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+tags:
+- executorch
+- pytorch
+- android
+- runtime
+- xnnpack
