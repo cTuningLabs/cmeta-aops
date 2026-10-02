@@ -5,12 +5,14 @@ Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 
 Test sessions: one dated place per test, build or benchmark, so tests leave no folders in
-random places and their history stays when the sandbox goes (see _desc.yaml for the commands):
+random places and their history stays when the sandbox goes (see _desc.yaml for the commands).
+All sessions live in two cMeta artifacts of the local repository (--repo, --artifact), in a
+folder per day and a subfolder per session, so a session adds no index entry; the session id
+<YYYYMMDD>/<HHMM>.<type> is that path:
 
-    <CMETA_HOME>/tmp/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>/       the sandbox (deletable)
-    <CMETA_HOME>/log/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>.md     the log (kept)
-    <CMETA_HOME>/log/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>.json   the same as data
-    <CMETA_HOME>/log/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>/       attached files (kept)
+    log::cmeta-aops-test-sessions/<YYYYMMDD>/<HHMM>.<type>/   the record (kept): session.md,
+                                                               session.json, attachments/
+    tmp::cmeta-aops-test-sessions/<YYYYMMDD>/<HHMM>.<type>/   the sandbox (deletable)
 
 A record holds the host, cMeta and the repositories (branch, commit, uncommitted changes), the
 agent with its model, reasoning effort and session, the command, the notes, the results and the
@@ -29,9 +31,11 @@ import sys
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
-PREFIX = 'cmeta-tests-'
-MAX_KEEP_MIB = 1024         # finish removes a larger sandbox (--keep keeps it)
-MAX_ATTACH_MIB = 20         # a larger file is not copied into the log
+ARTIFACT = 'cmeta-aops-test-sessions'  # the log artifact (records) and the tmp artifact (sandboxes)
+TAG = 'test-session'
+OLD_PREFIX = 'cmeta-tests-'            # the folders before 0.42.0: <CMETA_HOME>/{tmp,log}/cmeta-tests-<YYYYMMDD>/
+MAX_KEEP_MIB = 1024                    # finish removes a larger sandbox (--keep keeps it)
+MAX_ATTACH_MIB = 20                    # a larger file is not copied into the log
 
 
 def now():
@@ -43,6 +47,21 @@ def parse_time(text):
         return datetime.datetime.fromisoformat(text)
     except (TypeError, ValueError):
         return None
+
+
+def name_of(session_id):
+    """The session id, which is its path below the two artifacts: 20261002/1338.ubuntu-npu-xpu
+    (also from 20261002-1338.ubuntu-npu-xpu and test-session.20261002-1338.ubuntu-npu-xpu), or None."""
+    text = str(session_id or '').strip().replace('\\', '/')
+    if text.startswith('test-session.'):
+        text = text[len('test-session.'):]
+    m = re.fullmatch(r'(\d{8})[/-](\d{4}\.[\w.-]+)', text)
+    return f'{m.group(1)}/{m.group(2)}' if m else None
+
+
+def tag_of(text):
+    """A type or a host name as a short key: lowercase letters, digits, '.', '_' and '-'."""
+    return re.sub(r'[^a-z0-9._-]+', '-', str(text or '').lower()).strip('-.')
 
 
 def stamp(t, date = True):
@@ -277,7 +296,7 @@ def value(v):
 
 
 def render_md(rec):
-    """The human-readable log, rebuilt from the record each time it changes."""
+    """The human-readable log (session.md), rebuilt from the record each time it changes."""
     started = parse_time(rec.get('started'))
     finished = parse_time(rec.get('finished'))
     host = rec.get('host') or {}
@@ -304,9 +323,12 @@ def render_md(rec):
         lines.append(f"- **Repository:** {repo.get('name')}{where}{changed_text(repo.get('changed_files'))}")
     if rec.get('command'):
         lines.append(f"- **Command:** `{rec['command']}`")
+    if rec.get('artifacts'):
+        lines.append(f"- **cMeta:** `log::{rec['artifacts'].get('log')}` and `tmp::{rec['artifacts'].get('tmp')}`, "
+                     f"subfolder `{rec['id']}`")
     sandbox = f"- **Sandbox:** `{rec.get('sandbox')}`"
     if rec.get('sandbox_removed'):
-        sandbox += f" (removed, {size_text(costs.get('sandbox_mib'))})"
+        sandbox += f" (removed, {size_text(costs.get('sandbox_mib'))})" if costs.get('sandbox_mib') is not None else ' (removed)'
     elif costs.get('sandbox_mib') is not None:
         sandbox += f" ({size_text(costs['sandbox_mib'])}, kept)"
     lines += [sandbox, '']
@@ -354,9 +376,8 @@ def render_md(rec):
 
     if rec.get('attachments'):
         lines += ['## Attachments', '']
-        folder = rec['id'].split('/', 1)[1]
         for a in rec['attachments']:
-            lines.append(f"- [{a['name']}]({folder}/{a['name']}) ({bytes_text(a.get('bytes', 0))})")
+            lines.append(f"- [{a['name']}](attachments/{a['name']}) ({bytes_text(a.get('bytes', 0))})")
         lines.append('')
 
     return '\n'.join(lines)
@@ -375,7 +396,7 @@ class CTask(InitCTask):
             **params,
     ):
         """
-        Start, annotate, finish, list or prune test sessions (see _desc.yaml).
+        Start, annotate, finish, list, prune or migrate test sessions (see _desc.yaml).
 
         Args (as --flags):
             start (bool): start a session (--type, --title, --cmd: the command under test,
@@ -388,15 +409,21 @@ class CTask(InitCTask):
                 --keep, or --max_keep_mib: a larger sandbox is removed, default 1024 MiB).
                 With a Claude Code session, the tokens it used meanwhile come from its
                 transcripts (--skip_usage: not), the cost with test_session.prices.<model>.
-            list (bool): list the sessions (--date=YYYYMMDD, --type); the default action.
+            list (bool): list the sessions (--date=YYYYMMDD, --type, --status, --host); the
+                default action.
             prune (bool): remove the sandboxes of finished sessions older than --days (0)
                 (--id: only that one; --all: also those finished with --keep).
+            migrate (bool): move the sessions kept as folders before 0.42.0
+                (<CMETA_HOME>/log/cmeta-tests-*, <CMETA_HOME>/tmp/cmeta-tests-*, or under --from)
+                into the artifacts; --remove_old then removes those folders.
+            repo (str): the repository of the two artifacts (default local, or the config
+                test_session.repo); artifact (str): their name (default cmeta-aops-test-sessions,
+                or test_session.artifact).
             print (str): sandbox, log, id or json - print only that, on the last line.
-            root (str): instead of CMETA_HOME (also CMETA_TESTS_ROOT, or the config
-                test_session.root).
 
         Returns:
-            dict: return, id, sandbox, log, record (sessions for --list, pruned for --prune).
+            dict: return, id, sandbox, log, record (sessions for --list, pruned for --prune,
+                migrated for --migrate).
         """
 
         con = ctx['control'].get('con', False)
@@ -406,12 +433,18 @@ class CTask(InitCTask):
         if self.cm.catch_error(r): return r
         cfg = r.get('config_cmeta', {}).get('test_session', {})
 
-        root = params.get('root') or os.environ.get('CMETA_TESTS_ROOT') or cfg.get('root') or str(self.cm.home_path)
-        root = os.path.normpath(os.path.abspath(os.path.expanduser(str(root))))
-        self.tmp_root = os.path.join(root, 'tmp')
-        self.log_root = os.path.join(root, 'log')
         self.cfg = cfg
+        self.repo = str(params.get('repo') or cfg.get('repo') or 'local')
+        self.artifact = str(params.get('artifact') or cfg.get('artifact') or ARTIFACT)
         self.con = con and not params.get('print')
+
+        # The two artifacts that hold the sessions: the records and the sandboxes
+        self.base = {}
+        for key in ('log', 'tmp'):
+            r = self._artifact(self.cmeta['uses_categories'][key])
+            if r['return'] > 0:
+                return r
+            self.base[key] = r['path']
 
         if params.get('start'):
             r = self._start(params)
@@ -419,6 +452,8 @@ class CTask(InitCTask):
             r = self._finish(params)
         elif params.get('prune'):
             return self._prune(params, con)
+        elif params.get('migrate'):
+            return self._migrate(params, con)
         elif params.get('id') and not params.get('list'):
             r = self._update(params)
         else:
@@ -436,34 +471,56 @@ class CTask(InitCTask):
         return r
 
     ############################################################
-    def _paths(self, session_id):
-        date, _, name = str(session_id).strip().replace('\\', '/').partition('/')
-        if not re.fullmatch(r'\d{8}', date) or not re.fullmatch(r'[\w.-]+', name):
-            return None
-        log = os.path.join(self.log_root, PREFIX + date, name)
-        return {'sandbox': os.path.join(self.tmp_root, PREFIX + date, name),
-                'md': log + '.md', 'json': log + '.json', 'files': log}
+    def _artifact(self, category):
+        """The path of the artifact (in self.repo) that holds the sessions, made on first use."""
+        ref = f'{self.repo}:{self.artifact}'
+        r = self.cm.access({'category': category, 'command': 'find', 'arg1': ref})
+        if r['return'] == 0 and r.get('artifacts'):
+            return {'return': 0, 'path': r['artifacts'][0]['path']}
+        if r['return'] > 0 and r['return'] != 16:
+            return r
+        what = 'records' if category.startswith('log') else 'sandboxes'
+        r = self.cm.access({'category': category, 'command': 'create', 'arg1': ref, 'yaml': True,
+                            'tags': [TAG, 'cmeta-aops'],
+                            'meta': {'desc': f'The {what} of the test sessions of the cmeta-aops task test-session: '
+                                             'a folder per day and a subfolder per session, '
+                                             '<YYYYMMDD>/<HHMM>.<type>.'}})
+        if r['return'] > 0:
+            return r
+        return {'return': 0, 'path': r['path']}
+
+    def _dirs(self, session_id):
+        date, _, name = session_id.partition('/')
+        return os.path.join(self.base['log'], date, name), os.path.join(self.base['tmp'], date, name)
+
+    def _files(self, rec):
+        log_dir = self._dirs(rec['id'])[0]
+        return {'dir': log_dir, 'json': os.path.join(log_dir, 'session.json'),
+                'md': os.path.join(log_dir, 'session.md'), 'attachments': os.path.join(log_dir, 'attachments')}
 
     def _save(self, rec):
-        p = self._paths(rec['id'])
-        os.makedirs(os.path.dirname(p['json']), exist_ok = True)
-        with open(p['json'], 'w', encoding = 'utf-8') as f:
-            json.dump(rec, f, indent = 2)
-        with open(p['md'], 'w', encoding = 'utf-8') as f:
-            f.write(render_md(rec))
+        f = self._files(rec)
+        os.makedirs(f['dir'], exist_ok = True)
+        with open(f['json'], 'w', encoding = 'utf-8') as out:
+            json.dump(rec, out, indent = 2)
+        with open(f['md'], 'w', encoding = 'utf-8') as out:
+            out.write(render_md(rec))
 
     def _load(self, session_id):
-        p = self._paths(session_id)
-        if not p:
+        name = name_of(session_id)
+        if not name:
             return None, self.cm.error(f'test-session: "{session_id}" is not a session id (YYYYMMDD/HHMM.type)')
-        if not os.path.isfile(p['json']):
-            return None, self.cm.error(f'test-session: no session "{session_id}" in {self.log_root}')
-        with open(p['json'], encoding = 'utf-8') as f:
-            return json.load(f), None
+        path = os.path.join(self._dirs(name)[0], 'session.json')
+        if not os.path.isfile(path):
+            return None, self.cm.error(f'test-session: no session "{name}" in {self.base["log"]}')
+        with open(path, encoding = 'utf-8') as f:
+            rec = json.load(f)
+        rec['id'] = name
+        rec['sandbox'] = self._dirs(name)[1]
+        return rec, None
 
     def _result(self, rec):
-        p = self._paths(rec['id'])
-        return {'return': 0, 'id': rec['id'], 'sandbox': rec['sandbox'], 'log': p['md'], 'record': rec}
+        return {'return': 0, 'id': rec['id'], 'sandbox': rec['sandbox'], 'log': self._files(rec)['md'], 'record': rec}
 
     ############################################################
     def _add(self, rec, params):
@@ -494,7 +551,7 @@ class CTask(InitCTask):
         attach = params.get('attach')
         if attach not in (None, '', True):
             items = attach if isinstance(attach, list) else str(attach).split(',')
-            folder = self._paths(rec['id'])['files']
+            folder = self._files(rec)['attachments']
             max_mib = float(params.get('attach_max_mib') or MAX_ATTACH_MIB)
             for item in items:
                 files = sorted(glob.glob(os.path.expanduser(item.strip()))) or [item.strip()]
@@ -516,16 +573,13 @@ class CTask(InitCTask):
 
     ############################################################
     def _start(self, params):
-        kind = re.sub(r'[^a-z0-9._-]+', '-', str(params.get('type') or 'test').lower()).strip('-.') or 'test'
+        kind = tag_of(params.get('type') or 'test') or 'test'
         t = now()
-        date = t.strftime('%Y%m%d')
-        name = f"{t.strftime('%H%M')}.{kind}"
-        n = 2
-        while os.path.exists(os.path.join(self.log_root, PREFIX + date, name + '.json')):
-            name = f"{t.strftime('%H%M')}.{kind}-{n}"
+        stem = f"{t.strftime('%Y%m%d/%H%M')}.{kind}"
+        name, n = stem, 2
+        while any(os.path.exists(d) for d in self._dirs(name)):
+            name = f'{stem}-{n}'
             n += 1
-        session_id = f'{date}/{name}'
-        paths = self._paths(session_id)
 
         repos = []
         here = repo_root(__file__)
@@ -540,9 +594,10 @@ class CTask(InitCTask):
             if path not in [x['path'] for x in repos]:
                 repos.append(describe_repo(path))
 
-        os.makedirs(paths['sandbox'], exist_ok = True)
+        log_dir, sandbox = self._dirs(name)
+        os.makedirs(sandbox, exist_ok = True)
         rec = {
-            'id': session_id,
+            'id': name,
             'type': kind,
             'title': params.get('title') or '',
             'status': 'running',
@@ -554,7 +609,8 @@ class CTask(InitCTask):
             'repositories': repos,
             'agent': agent_info(params),
             'command': params.get('cmd') or '',
-            'sandbox': paths['sandbox'],
+            'artifacts': {'log': f'{self.repo}:{self.artifact}', 'tmp': f'{self.repo}:{self.artifact}'},
+            'sandbox': sandbox,
             'notes': [],
             'results': {},
             'costs': {},
@@ -566,9 +622,9 @@ class CTask(InitCTask):
 
         if self.con:
             print ('')
-            print (f'Test session {session_id} started')
-            print (f'  sandbox: {paths["sandbox"]}')
-            print (f'  log:     {paths["md"]}')
+            print (f'Test session {name} started')
+            print (f'  sandbox: {sandbox}')
+            print (f'  log:     {self._files(rec)["md"]}')
         return self._result(rec)
 
     ############################################################
@@ -583,6 +639,12 @@ class CTask(InitCTask):
         return self._result(rec)
 
     ############################################################
+    def _remove_sandbox(self, rec):
+        if os.path.isdir(rec['sandbox']):
+            rec.setdefault('costs', {})['sandbox_mib'] = folder_mib(rec['sandbox'])
+            shutil.rmtree(rec['sandbox'], ignore_errors = True)
+        rec['sandbox_removed'] = True
+
     def _finish(self, params):
         rec, err = self._load(params.get('id'))
         if err:
@@ -613,15 +675,13 @@ class CTask(InitCTask):
                     costs['agent_cost_usd_estimate'] = cost
 
         # The sandbox goes when it is large (builds, downloads) unless --keep; the log stays
-        sandbox = rec['sandbox']
         if params.get('keep'):
             rec['keep_sandbox'] = True
-        if os.path.isdir(sandbox):
-            costs['sandbox_mib'] = folder_mib(sandbox)
+        if os.path.isdir(rec['sandbox']):
+            costs['sandbox_mib'] = folder_mib(rec['sandbox'])
             max_keep = float(params.get('max_keep_mib') or self.cfg.get('max_keep_mib') or MAX_KEEP_MIB)
             if not rec.get('keep_sandbox') and costs['sandbox_mib'] > max_keep:
-                shutil.rmtree(sandbox, ignore_errors = True)
-                rec['sandbox_removed'] = True
+                self._remove_sandbox(rec)
 
         self._save(rec)
         if self.con:
@@ -630,42 +690,48 @@ class CTask(InitCTask):
             if 'sandbox_mib' in costs:
                 line += f"; sandbox {size_text(costs['sandbox_mib'])} " + ('removed' if rec.get('sandbox_removed') else 'kept')
             print (line)
-            print (f"  log: {self._paths(rec['id'])['md']}")
+            print (f"  log: {self._files(rec)['md']}")
         return self._result(rec)
 
     ############################################################
-    def _sessions(self, date = None, kind = None):
+    def _sessions(self, date = None, kind = None, status = None, host = None):
+        """The records, read from the folders of the log artifact (no index entry per session)."""
         sessions = []
-        if not os.path.isdir(self.log_root):
-            return sessions
-        for day in sorted(os.listdir(self.log_root)):
-            if not day.startswith(PREFIX) or (date and day != PREFIX + str(date)):
+        base = self.base['log']
+        for day in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+            if not re.fullmatch(r'\d{8}', day) or (date and day != str(date)) or not os.path.isdir(os.path.join(base, day)):
                 continue
-            folder = os.path.join(self.log_root, day)
-            for name in sorted(os.listdir(folder)):
-                if not name.endswith('.json'):
+            for name in sorted(os.listdir(os.path.join(base, day))):
+                session_id = name_of(f'{day}/{name}')
+                if not session_id:
                     continue
                 try:
-                    with open(os.path.join(folder, name), encoding = 'utf-8') as f:
+                    with open(os.path.join(base, day, name, 'session.json'), encoding = 'utf-8') as f:
                         rec = json.load(f)
                 except (OSError, ValueError):
                     continue
-                if kind and rec.get('type') != kind:
+                rec['id'] = session_id
+                rec['sandbox'] = self._dirs(session_id)[1]
+                if kind and rec.get('type') != tag_of(kind):
+                    continue
+                if status and str(rec.get('status')).lower() != str(status).lower():
+                    continue
+                if host and tag_of((rec.get('host') or {}).get('name')) != tag_of(host):
                     continue
                 sessions.append(rec)
         return sessions
 
     def _list(self, params, con):
-        sessions = self._sessions(params.get('date'), params.get('type'))
+        sessions = self._sessions(params.get('date'), params.get('type'), params.get('status'), params.get('host'))
         if con:
             print ('')
             if not sessions:
-                print (f'No test sessions in {self.log_root}')
+                print (f'No test sessions in {self.base["log"]}')
             for rec in sessions:
                 costs = rec.get('costs', {})
                 sandbox = ('removed' if rec.get('sandbox_removed') else
                            size_text(costs['sandbox_mib']) if 'sandbox_mib' in costs else
-                           'in use' if os.path.isdir(rec.get('sandbox', '')) else 'gone')
+                           'in use' if os.path.isdir(rec['sandbox']) else 'gone')
                 agent = rec.get('agent') or {}
                 model = '/'.join(str(agent[k]) for k in ('model', 'effort') if agent.get(k))
                 print (f"{rec['id']:36} {rec.get('status', ''):8} {duration_text(costs.get('wall_time_s')):>12}  "
@@ -676,24 +742,97 @@ class CTask(InitCTask):
     def _prune(self, params, con):
         days = float(params.get('days') or 0)
         limit = now() - datetime.timedelta(days = days)
-        only = params.get('id')
+        only = name_of(params.get('id')) if params.get('id') else None
         pruned = []
         for rec in self._sessions():
-            if only and rec['id'] != str(only).replace('\\', '/'):
+            if only and rec['id'] != only:
                 continue
             finished = parse_time(rec.get('finished'))
             if rec.get('status') == 'running' or not finished or finished > limit:
                 continue
             if rec.get('keep_sandbox') and not params.get('all'):
                 continue
-            if os.path.isdir(rec.get('sandbox', '')):
-                rec.setdefault('costs', {})['sandbox_mib'] = folder_mib(rec['sandbox'])
-                shutil.rmtree(rec['sandbox'], ignore_errors = True)
-                rec['sandbox_removed'] = True
-                self._save(rec)
-                pruned.append(rec['id'])
-                if con:
-                    print (f"Removed the sandbox of {rec['id']} ({size_text(rec['costs']['sandbox_mib'])})")
+            if not os.path.isdir(rec['sandbox']):
+                continue
+            self._remove_sandbox(rec)
+            self._save(rec)
+            pruned.append(rec['id'])
+            if con:
+                print (f"Removed the sandbox of {rec['id']} ({size_text(rec['costs'].get('sandbox_mib'))})")
         if con:
-            print (f'Removed {len(pruned)} sandbox(es); the logs stay in {self.log_root}')
+            print (f'Removed {len(pruned)} sandbox(es); the records stay in {self.base["log"]}')
         return {'return': 0, 'pruned': pruned}
+
+    ############################################################
+    def _migrate(self, params, con):
+        """The sessions kept as folders before 0.42.0 -> subfolders of the two artifacts."""
+        root = os.path.normpath(os.path.abspath(os.path.expanduser(str(params.get('from') or self.cm.home_path))))
+        old_log, old_tmp = os.path.join(root, 'log'), os.path.join(root, 'tmp')
+        migrated, skipped = [], []
+        days = sorted(d for d in os.listdir(old_log) if d.startswith(OLD_PREFIX)) if os.path.isdir(old_log) else []
+        for day in days:
+            folder = os.path.join(old_log, day)
+            for file in sorted(n for n in os.listdir(folder) if n.endswith('.json')):
+                json_path = os.path.join(folder, file)
+                old_sandbox = os.path.join(old_tmp, day, file[:-5])
+                old_files = os.path.join(folder, file[:-5])
+                try:
+                    with open(json_path, encoding = 'utf-8') as f:
+                        rec = json.load(f)
+                except (OSError, ValueError):
+                    skipped.append(json_path)
+                    continue
+                name = name_of(rec.get('id'))
+                if not name:
+                    skipped.append(json_path)
+                    continue
+                log_dir, sandbox = self._dirs(name)
+                if os.path.exists(log_dir):
+                    # Moved before: --remove_old still removes what is left of the old folders
+                    skipped.append(name)
+                    if params.get('remove_old'):
+                        for path in (json_path, json_path[:-5] + '.md'):
+                            if os.path.isfile(path):
+                                os.remove(path)
+                        for path in (old_files, old_sandbox):
+                            if os.path.isdir(path) and not os.listdir(path):
+                                os.rmdir(path)
+                    continue
+
+                rec['migrated_from'] = {'id': rec.get('id'), 'log': json_path, 'sandbox': rec.get('sandbox') or old_sandbox}
+                rec['id'] = name
+                rec['artifacts'] = {'log': f'{self.repo}:{self.artifact}', 'tmp': f'{self.repo}:{self.artifact}'}
+                rec['sandbox'] = sandbox
+                os.makedirs(log_dir, exist_ok = True)
+                os.makedirs(os.path.dirname(sandbox), exist_ok = True)
+                if os.path.isdir(old_sandbox):
+                    shutil.move(old_sandbox, sandbox)
+                    rec.pop('sandbox_removed', None)
+                else:
+                    rec['sandbox_removed'] = True
+                if os.path.isdir(old_files):
+                    shutil.move(old_files, self._files(rec)['attachments'])
+                self._save(rec)
+                migrated.append(name)
+                if con:
+                    print (f"{rec['migrated_from']['id']} -> {log_dir}")
+
+                if params.get('remove_old'):
+                    for path in (json_path, json_path[:-5] + '.md'):
+                        if os.path.isfile(path):
+                            os.remove(path)
+
+        if params.get('remove_old'):
+            for base in (old_log, old_tmp):
+                for day in (sorted(os.listdir(base)) if os.path.isdir(base) else []):
+                    path = os.path.join(base, day)
+                    if day.startswith(OLD_PREFIX) and os.path.isdir(path) and not os.listdir(path):
+                        os.rmdir(path)
+                if os.path.isdir(base) and not os.listdir(base):
+                    os.rmdir(base)
+
+        if con:
+            print ('')
+            print (f'Migrated {len(migrated)} session(s), skipped {len(skipped)}' +
+                   ('' if params.get('remove_old') else '; add --remove_old to remove the old folders'))
+        return {'return': 0, 'migrated': migrated, 'skipped': skipped}

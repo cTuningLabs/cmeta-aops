@@ -51,9 +51,10 @@ only.
   hermetic — own temporary `CMETA_HOME`, no network.
 - **Run every real test, build or benchmark in a test session**
   (`cx task run test-session --start --type=<type> --title="…"`): work in its sandbox
-  `<CMETA_HOME>/tmp/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>/`, record notes, results and
-  attachments in its log `<CMETA_HOME>/log/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>.md`,
-  and `--finish` it (passed or failed). Never make sandbox folders in random places.
+  (`tmp::cmeta-aops-test-sessions/<YYYYMMDD>/<HHMM>.<type>/` in the local repo), record
+  notes, results and attachments in its log (`log::cmeta-aops-test-sessions/` at the same
+  path: `session.md`), and `--finish` it (passed or failed). Never make sandbox folders in
+  random places.
   The log records the model, effort, Claude Code session and its token use; on remote
   machines pass `--agent --model --effort --session`. See `AGENTS.md` §7.1 and
   [`task/test-session/README.md`](task/test-session/README.md).
