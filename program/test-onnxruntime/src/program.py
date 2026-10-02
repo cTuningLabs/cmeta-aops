@@ -27,6 +27,7 @@ Environment (set by the program's _desc.yaml from its parameters):
 import json
 import os
 import statistics
+import subprocess
 import sys
 import time
 
@@ -51,6 +52,24 @@ def providers_for(targets):
         if t in PROVIDER_OF_TARGET and PROVIDER_OF_TARGET[t] not in runs:
             runs.append(PROVIDER_OF_TARGET[t])
     return runs
+
+
+class DeviceNames:
+    """OpenVINO's devices and their names, listed in another process: on Linux the openvino
+    package and onnxruntime-openvino each bring a libopenvino.so.2541 of their own, and loading
+    the package's in this process breaks the provider's ("undefined symbol")."""
+
+    def __init__(self, timeout = 120):
+        code = ('import json, openvino as ov; c = ov.Core(); '
+                'print(json.dumps({d: str(c.get_property(d, "FULL_DEVICE_NAME")) for d in c.available_devices}))')
+        r = subprocess.run([sys.executable, '-c', code], capture_output = True, text = True, timeout = timeout)
+        if r.returncode != 0:
+            raise ImportError((r.stderr.strip().splitlines() or ['openvino failed'])[-1])
+        self.names = json.loads(r.stdout.strip().splitlines()[-1])
+        self.available_devices = list(self.names)
+
+    def get_property(self, device, prop):
+        return self.names[device]
 
 
 def intel_gpu(core, available):
@@ -152,8 +171,7 @@ def main():
     xpu_check, missing_intel_gpu = None, None
     if 'xpu' in targets and not explicit:
         try:
-            import openvino as ov
-            core = ov.Core()
+            core = DeviceNames()
             ov_devices = list(core.available_devices)
             gpu = intel_gpu(core, ov_devices)
             if gpu:
@@ -163,10 +181,11 @@ def main():
             else:
                 names = [f'{d} ({core.get_property(d, "FULL_DEVICE_NAME")})' for d in ov_devices if d.split('.')[0] == 'GPU']
                 missing_intel_gpu = ('no Intel GPU: OpenVINO finds ' + (', '.join(names) or 'no GPU') +
-                                     ' (on Linux the Intel GPU needs intel-opencl-icd and access to /dev/dri)')
+                                     ' (on Linux the Intel GPU needs its compute runtime, cx tool setup '
+                                     'intel-gpu-runtime, and access to /dev/dri: the render group)')
                 runs = [(p, o) for p, o in runs if not (p == 'OpenVINOExecutionProvider' and o.get('device_type') == 'GPU')]
-        except ImportError:
-            xpu_check = 'not verified: the openvino package is not installed to list the GPUs'
+        except (ImportError, subprocess.SubprocessError, ValueError) as e:
+            xpu_check = f'not verified: OpenVINO could not list the GPUs ({e})'
 
     rng = np.random.default_rng(12345)
     x = rng.random((batch, n), dtype = np.float32)

@@ -3,6 +3,22 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.41.0
+- **xpu on Linux sets up the Intel GPU compute runtime, without root** (`tool/intel-gpu-runtime`, see its
+  [README.tech.md](tool/intel-gpu-runtime/README.tech.md)). An Intel GPU computes through a user-space
+  runtime the kernel driver does not bring: the OpenCL ICD, the Level Zero driver, the graphics compiler,
+  gmmlib and the Level Zero loader. The tool uses the system's when it has one; otherwise it downloads
+  Intel's release packages, checks their sha256 and unpacks them into the cMeta cache. The release line
+  follows the GPU's PCI id: 26.35 for Gen12 and later (also WSL2), legacy1 24.35 for Gen8-Gen11. The
+  result exports `LD_LIBRARY_PATH` and `OCL_ICD_FILENAMES`, so the system's ICD loader adds the Intel GPU
+  next to the others. It warns when the user cannot open `/dev/dri/renderD*` (the render group).
+  - `target --compute=xpu` sets it up on Linux x86_64 once the Intel GPU is found, so every program run
+    on xpu gets the runtime. In WSL2, where lspci sees a virtual adapter, the target asks Windows for
+    its GPUs.
+  - `test-onnxruntime` lists OpenVINO's devices in a separate process: on Linux the `openvino` package
+    and `onnxruntime-openvino` each bring a `libopenvino.so.2541`, and loading both in one process broke
+    the OpenVINO EP.
+  - Tested on Ubuntu with a Gen12 Iris Xe (the 26.35 line) and a Gen9 HD Graphics 630 (legacy1):
+    `test-openvino` and `test-onnxruntime` run on xpu.
 - **LLM stacks on CPU, CUDA, Vulkan and Metal: the newest llama.cpp, vLLM 0.30.0, Ollama 0.35.0 and
   PyTorch 2.14.1**, installed or built from source with the same commands on Windows, Linux/WSL2 and
   macOS. The guide is the new [`docs/cmeta-aops/llm-stacks.md`](docs/cmeta-aops/llm-stacks.md).

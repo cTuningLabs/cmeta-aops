@@ -2,27 +2,28 @@ import os
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
+INTEL_GPU_RUNTIME = 'intel-gpu-runtime,1fce5a1fbba34a81'
+
 
 def parse_gpus(data, uname):
     """
-    The GPUs in the probe's output: lspci lines on Linux, or the Name/DriverVersion pairs
-    that PowerShell prints for Win32_VideoController (Format-List) on Windows.
+    The GPUs in the probe's output: lspci lines on Linux, and the Name/DriverVersion pairs
+    that PowerShell prints for Win32_VideoController (Format-List) on Windows - and in WSL2,
+    where lspci sees a virtual adapter and the probe asks Windows (powershell.exe).
     """
     devices = []
-    if uname == 'windows':
-        for line in data.splitlines():
-            key, sep, value = line.partition(':')
-            key = key.strip()
-            if sep and key == 'Name':
-                devices.append({'name': value.strip()})
-            elif sep and key == 'DriverVersion' and devices:
-                devices[-1]['driver_version'] = value.strip()
-    else:
-        for line in data.splitlines():
+    for line in data.splitlines():
+        key, sep, value = line.partition(':')
+        key = key.strip()
+        if sep and key == 'Name':
+            devices.append({'name': value.strip()})
+        elif sep and key == 'DriverVersion' and devices:
+            devices[-1]['driver_version'] = value.strip()
+        elif uname != 'windows':
             # 00:02.0 VGA compatible controller: Intel Corporation Arc A770 [8086:56a0]
             slot, _, rest = line.strip().partition(' ')
             pci_class, sep, name = rest.partition(': ')
-            if sep:
+            if sep and ':' in slot:
                 devices.append({'pci_slot': slot, 'class': pci_class, 'name': name.strip()})
     return devices
 
@@ -76,6 +77,10 @@ class CTask(InitCTask):
         A cached target keeps the GPUs of the run that created the entry, possibly on another
         machine (a copied or shared CMETA_HOME). The probe ran again in this call ('uses'),
         so its output describes this machine now.
+
+        On Linux x86_64 an Intel GPU computes only with the user-space compute runtime: set up
+        tool/intel-gpu-runtime (the system's, else Intel's packages unpacked without root), whose
+        result exports it to the steps that follow. Windows has it in the graphics driver.
         """
 
         temp_file = ctx['tasks']['local'].get('generate-temp-file-target-xpu', {}).get('temp_file')
@@ -85,6 +90,18 @@ class CTask(InitCTask):
             if self.cm.catch_error(r): return r
 
             result['features'] = r['features']
+
+        os_info = ctx['tasks']['global']['host']['os']
+        if os_info['uname'] == 'linux' and os_info.get('uarch') == 'amd64' and not params.get('skip_runtime'):
+            c = ctx['control']
+            r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'setup,a2f9b61079ce4333',
+                                'ctx': ctx, 'name': INTEL_GPU_RUNTIME,
+                                'con': c.get('con', False), 'quiet': c.get('quiet', False), 'verbose': c.get('verbose', False)})
+            if self.cm.catch_error(r): return r
+            runtime = ctx['tasks']['global'].get('intel-gpu-runtime', {})
+            result.setdefault('features', {})['runtime'] = {
+                'path': runtime.get('path'), 'version': runtime.get('version'),
+                'kind': runtime.get('features', {}).get('kind')}
 
         return {'return': 0, 'result': result}
 
