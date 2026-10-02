@@ -3,6 +3,14 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **LiteRT for Android from its official releases** (`tool/lib-litert-android`, new):
+  - **Contents:** the AAR from Google Maven (`libLiteRt.so` with its C API and the GPU
+    accelerator, per ABI; Maven's SHA-256), the C/C++ SDK headers (with the `build_config.h` that
+    CMake would generate), the NPU dispatch libraries (Google Tensor; Qualcomm HTP v69-v81) and
+    the release's MobileNet v2 test model. GitHub's SHA-256 digests come from the release API,
+    pinned for the default release (2.2.0).
+  - **As a `lib-*` tool:** an NDK build links `-lLiteRt` with its headers, and setup-run pushes
+    the arm64-v8a runtime, GPU accelerator and Google Tensor NPU libraries to the device.
 - **ExecuTorch for Android from source** (`program/build-executorch-android`, new): builds
   `executor_runner` with the XNNPACK (CPU) and Vulkan (GPU) backends, which the prebuilt runtime
   lacks. It cross-compiles with the NDK and uses the LunarG `glslc` for the shaders (NDK r29's

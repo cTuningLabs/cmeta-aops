@@ -1,0 +1,25 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# Google's LiteRT (formerly TensorFlow Lite) runtime for Android, from its official releases
+# (Apache-2.0), checked against the published SHA-256 and unpacked into the cache (install ladder
+# tier 1, api_v1.py): libLiteRt.so with its C API and the GPU accelerator per ABI (Google Maven
+# AAR), the C/C++ SDK headers, the NPU dispatch libraries (Google Tensor, Qualcomm HTP) and the
+# release's MobileNet v2 test model. Programs built against libLiteRt.so with the NDK run on a
+# device over adb: as a lib-* tool, setup-compile links -lLiteRt with its headers and setup-run
+# pushes its arm64-v8a libraries (runtime, GPU accelerator, Google Tensor NPU) to the device.
+#
+#   cx tool setup lib-litert-android
+#   cx tool setup lib-litert-android --version=2.1.6 --new
+
+default_version: '2.2.0'
+
+cmd_get_versions: '{{global.curl.qpath}} -s https://dl.google.com/android/maven2/com/google/ai/edge/litert/litert/maven-metadata.xml'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: curl,bfbb8526694d4f21
+cmd_get_versions_regex: '<version>(\d+\.\d+\.\d+)</version>'
+
+install_help_text: |
+  Could not download LiteRT for Android (Google Maven and github.com/google-ai-edge/LiteRT/releases).
+  Check the network and run "cx tool setup lib-litert-android" again.
