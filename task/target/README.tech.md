@@ -37,7 +37,7 @@ cx program run <program> --compute                  # asks which ones (several c
 | `metal` | the Apple GPU (system_profiler) |
 | `rocm` | AMD GPUs (ROCm) |
 | `xpu` | Intel GPUs (oneAPI) |
-| `npu-intel` | the Intel NPU, Meteor Lake and newer (its PCI ID, generation and driver, found without any SDK; its stack is OpenVINO) |
+| `npu-intel` | the Intel NPU, Meteor Lake and newer (its PCI ID, generation and driver, found without any SDK; its stack is OpenVINO). On Linux x86_64 it then gets `tool/intel-npu-runtime`, the user-space driver the kernel's `intel_vpu` does not bring (`--use.target--npu-intel.skip_runtime` skips it) |
 | `openvino` | the OpenVINO stack: with a device target it runs there (`npu-intel` -> NPU, `xpu` -> GPU, `cpu` -> CPU); alone, on every device OpenVINO finds |
 | `android-cpu` | an Android device over adb (`--serial`) |
 | `android-gpu` | the GPU of that device: its Vulkan devices (`cmd gpu vkjson`), GLES driver and OpenCL library (public or not). Programs are built with the NDK and run over adb, as for `android-cpu`. From the adb shell, a vendor `libOpenCL.so` may find its platform only when loaded in the vendor namespace (`android_load_sphal_library`) |

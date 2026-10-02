@@ -3,6 +3,21 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **The Intel NPU user-space driver for Linux, without root** (`tool/intel-npu-runtime`, new; see its
+  [README.tech.md](tool/intel-npu-runtime/README.tech.md)):
+  - **The driver:** the kernel's `intel_vpu` driver does not bring the NPU's Level Zero driver or
+    the compiler in driver that OpenVINO's NPU plugin needs.
+  - **Detection:** the setup uses the system's driver (`intel-level-zero-npu`) when it has one.
+  - **Install:** otherwise it unpacks Intel's release packages for the Ubuntu release (24.04 or
+    26.04) into the cache, with the Level Zero loader and, when missing, oneTBB. Every archive is
+    checked against its sha256.
+  - **What it refuses or skips:** a glibc older than 2.38 fails before any download. The
+    firmware package, which needs root, is left out.
+  - **The npu-intel target:** on Linux x86_64 it sets the driver up once it finds the NPU
+    (`--use.target--npu-intel.skip_runtime` skips it). When the NPU is on the PCI bus but has no
+    accel device, the error says the kernel lacks its `intel_vpu` driver or its firmware.
+  - **Shared helpers:** the `.deb` helpers of `tool/intel-gpu-runtime` moved to
+    `category/tool/api/common_deb.py`, which both tools use.
 - **The opencl, android-gpu and android-npu targets** (see [tool/opencl/README.tech.md](tool/opencl/README.tech.md)
   and [task/target/README.tech.md](task/target/README.tech.md)):
   - **opencl** (`tool/opencl`, new):

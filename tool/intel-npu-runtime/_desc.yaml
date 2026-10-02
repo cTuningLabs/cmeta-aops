@@ -1,0 +1,26 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# The user-space driver of the Intel NPU for Linux (Meteor Lake and later): the Level Zero driver
+# (libze_intel_npu.so.1) and the compiler in driver (libopenvino_intel_npu_compiler.so), which
+# OpenVINO's NPU plugin uses through the Level Zero loader. The kernel driver (intel_vpu) and the
+# NPU firmware (/lib/firmware/intel/vpu) come with the distribution.
+#
+# Detected (api_v1.py detect()) when the system has it: libze_intel_npu.so.1 with the version of
+# its intel-level-zero-npu package. Otherwise installed without root (install ladder, tier 1):
+# Intel's release archive for the Ubuntu release (24.04 or 26.04), checked against GitHub's sha256;
+# its intel-level-zero-npu and intel-driver-compiler-npu packages, the Level Zero loader and, when
+# the system has none, oneTBB (from the Ubuntu archive), unpacked into this cache entry. The result
+# exports their folder on LD_LIBRARY_PATH.
+#
+#   cx tool setup intel-npu-runtime
+#   cx task run target --compute=npu-intel     # does the same on Linux x86_64, once the NPU is found
+#
+# Computing on the NPU also needs access to its device (/dev/accel/accel*: the render group).
+
+storage_key: intel-npu-runtime
+
+install_help_text: |
+  Install the Intel NPU driver for Linux from https://github.com/intel/linux-npu-driver/releases
+  (intel-level-zero-npu, intel-driver-compiler-npu, intel-fw-npu, libze1, libtbb12) and run
+  "cx tool setup intel-npu-runtime" again. On Windows the driver comes from Windows Update.

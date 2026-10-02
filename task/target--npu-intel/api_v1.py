@@ -5,10 +5,13 @@ Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
+import glob
 import os
 import re
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
+
+INTEL_NPU_RUNTIME = 'intel-npu-runtime,ca41aa6b8313427b'
 
 # The NPUs of the Linux kernel's intel_vpu driver (drivers/accel/ivpu): PCI device ID ->
 # platform and NPU generation (the driver's IVPU_HW_IP_<gen>)
@@ -31,6 +34,22 @@ def describe(vendor, device):
         d['platform'] = platform
         d['npu_generation'] = generation
     return d
+
+
+def intel_npus_on_pci(sys_pci = '/sys/bus/pci/devices'):
+    """The Intel NPUs on the PCI bus (vendor 0x8086, a device ID of INTEL_NPUS), with or without a driver."""
+    npus = []
+    for d in sorted(glob.glob(os.path.join(sys_pci, '*'))):
+        try:
+            with open(os.path.join(d, 'vendor')) as f:
+                vendor = f.read().strip().lower().replace('0x', '')
+            with open(os.path.join(d, 'device')) as f:
+                device = f.read().strip().lower().replace('0x', '')
+        except OSError:
+            continue
+        if vendor == '8086' and device in INTEL_NPUS:
+            npus.append(describe(vendor, device))
+    return npus
 
 
 def parse_npus(data, uname):
@@ -109,6 +128,11 @@ class CTask(InitCTask):
         A cached target keeps the NPU of the run that created the entry, possibly on another
         machine (a copied or shared CMETA_HOME). The probe ran again in this call ('uses'),
         so its output describes this machine now.
+
+        On Linux x86_64 the NPU computes through Intel's user-space driver, which the kernel
+        driver does not bring: once the NPU is found, tool/intel-npu-runtime sets it up (the
+        system's, else Intel's packages without root), for fresh and cached results alike.
+        --use.target--npu-intel.skip_runtime skips that.
         """
 
         temp_file = ctx['tasks']['local'].get('generate-temp-file-target-npu-intel', {}).get('temp_file')
@@ -118,6 +142,19 @@ class CTask(InitCTask):
             if self.cm.catch_error(r): return r
 
             result['features'] = r['features']
+
+        os_info = ctx['tasks']['global']['host']['os']
+        if (os_info['uname'] == 'linux' and os_info.get('uarch') == 'amd64' and not params.get('skip_runtime')
+                and result.get('features', {}).get('devices')):
+            c = ctx['control']
+            r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'setup,a2f9b61079ce4333',
+                                'ctx': ctx, 'name': INTEL_NPU_RUNTIME,
+                                'con': c.get('con', False), 'quiet': c.get('quiet', False), 'verbose': c.get('verbose', False)})
+            if self.cm.catch_error(r): return r
+            runtime = ctx['tasks']['global'].get('intel-npu-runtime', {})
+            result['features']['runtime'] = {
+                'path': runtime.get('path'), 'version': runtime.get('version'),
+                'kind': runtime.get('features', {}).get('kind')}
 
         return {'return': 0, 'result': result}
 
@@ -140,8 +177,18 @@ class CTask(InitCTask):
         devices = parse_npus(data, uname)
 
         if not devices:
-            hint = ('no "ComputeAccelerator" device from Intel (VEN_8086) in the Device Manager' if uname == 'windows'
-                    else 'no accel device of the intel_vpu driver in /sys/class/accel')
+            if uname == 'windows':
+                hint = 'no "ComputeAccelerator" device from Intel (VEN_8086) in the Device Manager'
+            else:
+                hint = 'no accel device of the intel_vpu driver in /sys/class/accel'
+                # The NPU without its accel device: the kernel has no intel_vpu for it, or the
+                # driver could not load the NPU's firmware
+                on_pci = intel_npus_on_pci()
+                if on_pci:
+                    d = on_pci[0]
+                    hint += (f', although the {d["platform"]} NPU ({d["pci_id"]}) is on the PCI bus: the kernel lacks '
+                             f'its intel_vpu driver or its firmware (vpu_{d["npu_generation"]}_v1.bin in /lib/firmware/intel/vpu '
+                             f'from linux-firmware; the kernel log tells which: sudo dmesg | grep -i vpu)')
             return self.cm.error(f'the Intel NPU is not detected: {hint}')
 
         return {'return': 0, 'features': {'output': data, 'devices': devices}}
