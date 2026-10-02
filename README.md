@@ -181,7 +181,7 @@ In-depth developer/agent documentation lives in
 - [The `tool` abstraction (detect/install/build/run, version listing)](docs/cmeta-aops/tool-abstraction.md)
 - [The `program` category & the `compute` abstraction](docs/cmeta-aops/program-and-compute.md)
 - [LLM inference stacks: llama.cpp, vLLM, Ollama and PyTorch on CPU, CUDA, Vulkan and Metal](docs/cmeta-aops/llm-stacks.md)
-- [Coding agents and cloud CLIs as tasks (`run-claude2` / `run-codex2` / `run-opencode2`, `run-az`, models and reasoning effort)](docs/cmeta-aops/agent-tasks.md)
+- [Coding agents and cloud CLIs as tasks (`run-claude` / `run-codex` / `run-opencode`, `run-az`, models and reasoning effort)](docs/cmeta-aops/agent-tasks.md)
 
 See also `AGENTS.md` (canonical brief for AI agents), `CLAUDE.md`, and the authoring
 [skills](.claude/skills/) (`add-tool`, `add-task`, `add-program`).
