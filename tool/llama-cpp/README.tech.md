@@ -107,7 +107,7 @@ cx program run build-llama-cpp --compute=metal --checkout=b11400 --compile.d.GGM
 - **Release against source build:** run both, alternating, on an idle machine.
   `cx program run llama-cpp --compute=cuda` and
   `cx program run build-llama-cpp --compute=cuda --target_tmp=tmp-build-cuda`, three rounds
-  each. On 2026-10-02 they agreed within 1% on four machines.
+  each.
 - **Partial offload:** `--compute=cpu,cuda --ngl=N` for N from 0 to the layer count (25 for
   the 0.5B model). `perf.gpu_layers` confirms the split.
 - **Two GPUs, or CUDA against Vulkan on one GPU:** build with `--compute=cuda,vulkan`, then run

@@ -10,9 +10,9 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #
 #   cx task run test-session --start --type=llama-drift --title="llama.cpp release vs source" \
 #                            [--cmd="cx program run llama-cpp cuda"] [--repos=<other repo>]
-#   cx task run test-session --id=20261002/0915.llama-drift --note="CUDA: 157.3 vs 156.9 t/s"
-#   cx task run test-session --id=20261002/0915.llama-drift --results.cuda_tps=157.3 --attach=bench.txt
-#   cx task run test-session --finish --id=20261002/0915.llama-drift --status=passed --summary="no drift"
+#   cx task run test-session --id=20261002/0915.llama-drift --note="CUDA release done"
+#   cx task run test-session --id=20261002/0915.llama-drift --results.cuda_tps=<value> --attach=bench.txt
+#   cx task run test-session --finish --id=20261002/0915.llama-drift --status=passed --summary="<what was found>"
 #   cx task run test-session [--list] [--date=20261002] [--type=llama-drift]
 #   cx task run test-session --prune [--days=7]        # sandboxes of finished sessions; logs stay
 #

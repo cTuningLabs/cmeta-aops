@@ -86,13 +86,3 @@ cx program run build-vllm --compute=cuda --cuda_arch_list="8.6;12.0" --max_jobs=
   `TORCH_CUDA_ARCH_LIST`, `MAX_JOBS` and `NVCC_THREADS`. A CPU build also sets
   `-DCMAKE_DISABLE_FIND_PACKAGE_CUDA=ON`, so a local CUDA toolkit stays out of it.
 - The run takes the options of `test-vllm` and records the same `stats`.
-
-## Measured (2026-10-01/02)
-
-| Machine | Wheel | From source |
-|---|---|---|
-| ThinkPad P14s, RTX A500 | 78.8 tokens/s (eager), 73.0 (CUDA graphs) | 77.8 (6,749 s build) |
-| Mac mini M4, CPU | 54.6 / 55.0 | 54.4 / 55.0 |
-
-The wheel and the source build run at the same speed: no drift. More results:
-[docs/cmeta-aops/llm-stacks.md](../../docs/cmeta-aops/llm-stacks.md).

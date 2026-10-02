@@ -58,14 +58,3 @@ cx program run test-ollama --model=qwen2.5:1.5b --n=128 --port=11436 --models_di
 - `settings`, `response` and `error`.
 
 The server's log is `ollama-serve.log` in the program's build folder.
-
-## Measured (2026-10-01/02, generation tokens per second)
-
-| Machine | GPU | CPU | Partial (`--ngl=12`) |
-|---|---|---|---|
-| Windows laptop, RTX PRO 1000 | CUDA 273.7 | 116.7 | |
-| Mac mini M4 | Metal 190.5 | 159.8 | |
-| ThinkPad P14s, RTX A500 | CUDA 160.6 | | 118.0 (306 MiB in VRAM; 11.0 on the first run after the install) |
-| ThinkPad T470p, GeForce 940MX | Vulkan 37.3 | 41.2 | 40.9 (395 MiB in VRAM) |
-
-More results: [docs/cmeta-aops/llm-stacks.md](../../docs/cmeta-aops/llm-stacks.md).

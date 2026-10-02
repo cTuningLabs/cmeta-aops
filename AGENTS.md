@@ -226,9 +226,9 @@ for people. Don't create sandbox folders in random places (`~/cmeta-llm-test`,
 cx task run test-session --start --type=llama-drift --title="llama.cpp release vs source"
 #  sandbox  <CMETA_HOME>/tmp/cmeta-tests-20261002/0915.llama-drift/       (deletable)
 #  log      <CMETA_HOME>/log/cmeta-tests-20261002/0915.llama-drift.md     (+ .json; kept)
-cx task run test-session --id=20261002/0915.llama-drift --note="CUDA release: 157.3 t/s" --results.cuda_tps=157.3
+cx task run test-session --id=20261002/0915.llama-drift --note="CUDA release done" --results.cuda_tps=<value>
 cx task run test-session --id=20261002/0915.llama-drift --attach=bench.txt
-cx task run test-session --finish --id=20261002/0915.llama-drift --status=passed --summary="no drift (<1%)"
+cx task run test-session --finish --id=20261002/0915.llama-drift --status=passed --summary="<what was found>"
 cx task run test-session                 # list;  --prune [--days=7] removes finished sandboxes
 ```
 

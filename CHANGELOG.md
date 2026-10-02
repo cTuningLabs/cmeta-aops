@@ -163,33 +163,10 @@ All notable changes to cMeta AOps are documented here, newest first.
     switches that travel with it;
   - a line in the README;
   - notes in the `add-task` and `add-tool` skills.
-- **Tested on 2026-10-01 and 2026-10-02** (generation tokens per second, 64 tokens; on the P14s, T470p
-  and Mac the mean of three warm runs):
-
-  | Machine | llama.cpp release | llama.cpp from source (build time) | vLLM | Ollama | PyTorch from source |
-  |---|---|---|---|---|---|
-  | Windows 11, RTX PRO 1000 Blackwell | CPU 103, CUDA 330, Vulkan 264 | CUDA 315 (320 s), Vulkan 269 (130 s) | WSL2 only | CUDA 274, CPU 117 | |
-  | WSL2 Ubuntu 24.04 (same laptop) | CUDA 318 | | CUDA wheel 66.5 (Python 3.14) | | |
-  | ThinkPad P14s, RTX A500 (sm_86) | CPU 79, CUDA 157, Vulkan 107 | CPU 77 (241 s), CUDA 157 (780 s), Vulkan 108 (298 s) | CUDA wheel 78.8, from source 77.8 (6,749 s) | CUDA 160.6 | CUDA works (2 h 53 min) |
-  | ThinkPad T470p, GeForce 940MX | CPU 40.8, Vulkan 35.9 | CPU 40.8 (316 s), Vulkan 36.2 (474 s) | CPU wheel 13.0 (1 GiB KV cache) | CPU 41.2, Vulkan 37.3 | |
-  | Mac mini M4, macOS 27 | Metal 184, CPU 158 | Metal 185 (87 s), CPU 158 (60 s), Vulkan/MoltenVK 136 (81 s) | CPU wheel 54.8, from source 54.7 | Metal 190.5, CPU 159.8 | MPS works (1,000 s) |
-  | Docker `python:3.12` (x86_64) | | | CPU wheel 17.9 | | |
-
-  - **Release against source builds:** alternating on an idle machine, they agree within 1% (llama.cpp
-    on the Mac, the T470p and the P14s; vLLM on the Mac and the P14s). The gaps seen before (P14s
-    CPU: 50 against 81) came from runs made right after a compile. The exception is CUDA on Windows:
-    over 20 alternating rounds on the (busy) laptop, the source build (MSVC 14.50, nvcc 13.3, sm_120)
-    generated 6.7% slower than the release (Clang 20): medians 306.6 against 328.5 tokens/s, slower
-    in 17 of 20 rounds. Vulkan agreed there (265.8 against 265.2), and on the P14s the CUDA builds
-    (gcc 15, nvcc 13.3) agreed too, which points to the Windows host compiler.
-  - **Several targets on the P14s:**
-    - `--compute=cpu,cuda --ngl=12` (12 of 25 layers on the RTX A500): llama.cpp 111 tokens/s, against
-      79 on the CPU and 177 on the GPU; Ollama 118, against 161 on the GPU.
-    - `build-llama-cpp --compute=cuda,vulkan --target_tmp=auto` (866 s): one binary with both
-      backends. `--devices=CUDA0` gives 175.6, `--devices=Vulkan0` 140.6, and both with
-      `--tensor_split=1,1` 148.6, on the same RTX A500.
-  - **On the T470p:** `--compute=cpu,vulkan --ngl=12`: llama.cpp 39.4, Ollama 40.9 (the 940MX is
-    slower than the CPU for this model).
+- **Tested on 2026-10-01 and 2026-10-02:** llama.cpp (release and source builds), vLLM, Ollama and
+  PyTorch on Windows 11, WSL2, Ubuntu and macOS, on the CPU, CUDA, Vulkan and Metal targets each
+  machine has, including several targets at once (`--compute=cpu,cuda --ngl=N`, and a
+  `cuda,vulkan` build run with `--devices`).
 
 ## 0.40.1
 - **`task/rclone-to-ssh`: a plain `bisync` now adds `--resilient --recover`** (turn off with `--no-recover`).

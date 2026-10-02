@@ -44,10 +44,3 @@ cx program run build-pytorch --compute=cuda --checkout=v2.14.0 --max_jobs=4 --co
 
 **The run** prints the Python and PyTorch versions, whether CUDA, MPS and XPU are available,
 and checks a small matmul on the device. It is a check, not a benchmark.
-
-## Measured (2026-10-01/02)
-
-| Machine | Target | Result |
-|---|---|---|
-| Mac mini M4 | MPS | works, 1,000 s |
-| ThinkPad P14s, RTX A500 | CUDA 13.3, sm_86 | works: 2 h 53 min for the first build, 20 min to rebuild into its own venv |

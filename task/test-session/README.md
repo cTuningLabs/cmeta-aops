@@ -22,12 +22,12 @@ cx task run test-session --start --type=llama-drift --title="llama.cpp release v
    [--cmd="cx program run llama-cpp cuda"] [--repos=<another repository>]
 
 # While it runs: notes, results, files to keep
-cx task run test-session --id=20261002/0915.llama-drift --note="CUDA release: 157.3 t/s"
-cx task run test-session --id=20261002/0915.llama-drift --results.cuda_release_tps=157.3 --results_file=bench.json
+cx task run test-session --id=20261002/0915.llama-drift --note="CUDA release done"
+cx task run test-session --id=20261002/0915.llama-drift --results.cuda_release_tps=<value> --results_file=bench.json
 cx task run test-session --id=20261002/0915.llama-drift --attach=bench.txt,logs/*.log
 
 # Finish: status (default passed), summary; removes a sandbox above 1 GiB unless --keep
-cx task run test-session --finish --id=20261002/0915.llama-drift --status=passed --summary="no drift (<1%)"
+cx task run test-session --finish --id=20261002/0915.llama-drift --status=passed --summary="<what was found>"
 
 # List (the default action) and clean up
 cx task run test-session [--list] [--date=20261002] [--type=llama-drift]
