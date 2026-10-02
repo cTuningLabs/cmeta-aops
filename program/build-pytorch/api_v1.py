@@ -138,6 +138,9 @@ class CProgram(InitCProgram):
         device = next((c for c in ('cuda', 'rocm', 'xpu') if c in compute), 'cpu')
         env.setdefault('MAX_JOBS', str(params.get('max_jobs') or common_build.default_max_jobs(device)))
         env.setdefault('PYTHONUNBUFFERED', '1')
+        # CMake 4 no longer configures projects that require CMake < 3.5, like the helper
+        # projects NNPACK downloads; this keeps them configuring (CMake 3.x ignores it)
+        env.setdefault('CMAKE_POLICY_VERSION_MINIMUM', '3.5')
 
         git_repo = _global.get('clone-git-to-cache-src-pytorch', {}).get('path_to_git_repo', '')
 

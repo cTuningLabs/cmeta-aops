@@ -41,6 +41,9 @@ updates:
           # Python is required both for the build system and the resulting Python bindings
           - task: setup,a2f9b61079ce4333
             name: python,c00fb574d8ca4463
+            # Its own venv: the torch it builds must not meet another program's torch or the
+            # CUDA wheels it brings (an older pip cuBLAS broke the import of a CUDA 13.3 build)
+            venv_path: '{{local.target_path}}'
 
           # Host compiler
           - task: setup,a2f9b61079ce4333
@@ -173,6 +176,7 @@ updates:
          prepend:
            - task: setup,a2f9b61079ce4333
              name: python,c00fb574d8ca4463
+             venv_path: '{{local.target_path}}'
 
          update:
            target_exe:
