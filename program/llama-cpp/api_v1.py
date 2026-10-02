@@ -55,6 +55,13 @@ class CProgram(InitCProgram):
         compute = ctx['tasks']['global']['target']['compute']
 
         flags, settings = common_llama_cpp.run_flags(compute, params)
+
+        # The OpenVINO build runs where GGML_OPENVINO_DEVICE says: the NPU for npu-intel
+        device = common_llama_cpp.openvino_device(compute)
+        if device:
+            ctx['tasks']['local'].setdefault('run_time_env', {})['GGML_OPENVINO_DEVICE'] = device
+            settings['openvino_device'] = device
+
         ctx['tasks']['local']['llama_cpp_compute_flags'] = flags
         ctx['tasks']['local']['llama_cpp_settings'] = settings
 

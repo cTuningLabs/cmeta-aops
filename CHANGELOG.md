@@ -71,6 +71,24 @@ All notable changes to cMeta AOps are documented here, newest first.
   - `README.tech.md` files with every cMeta option: targets (`task/target`), llama.cpp
     (`tool/llama-cpp`), vLLM (`tool/pip-vllm`), Ollama (`tool/ollama`), PyTorch
     (`program/build-pytorch`) and Vulkan (`tool/vulkan`). The programs point to them.
+- **The Intel NPU and OpenVINO as targets** (`task/target--npu-intel`, `task/target--openvino`,
+  `program/test-openvino`; every option in
+  [`program/test-openvino/README.tech.md`](program/test-openvino/README.tech.md)):
+  - `npu-intel` finds the NPU without any SDK, by its PCI ID: the PnP `ComputeAccelerator` devices on
+    Windows (with the driver version), the `intel_vpu` accel devices on Linux. It records the platform
+    (Meteor Lake to Nova Lake) and the NPU generation. `openvino` is the stack target.
+  - `test-openvino` runs a matmul and a ReLU on each device the targets name (`npu-intel` -> NPU,
+    `xpu` -> GPU, `cpu` -> CPU; `openvino` alone: every device OpenVINO finds). Each device is named
+    in `compile_model`, never AUTO, and checked against `EXECUTION_DEVICES`, so a failing device
+    cannot pass on the CPU. It records the device's properties, the compile time, the latency and
+    the error against NumPy; `--size` and `--batch` choose a bandwidth- or a compute-bound matmul.
+  - `program/llama-cpp` accepts `xpu` (the SYCL release), `npu-intel` and `openvino` (the OpenVINO
+    release; `npu-intel` sets `GGML_OPENVINO_DEVICE=NPU`). A release has one accelerator backend, now
+    counted by backend, so `npu-intel,openvino` is one. Device names with parentheses
+    (`Intel(R) Graphics`) are recorded whole.
+  - Tested on a Panther Lake laptop: `test-openvino` on the NPU, the Intel iGPU, the NVIDIA GPU
+    (OpenVINO's `GPU.1`) and the CPU; llama.cpp on the iGPU with the SYCL release and with the
+    Vulkan release (`--devices=Vulkan0`). llama.cpp on the NPU is not tested yet.
 - **Test sessions: a sandbox and a kept log for every test** (`task/test-session`, see its
   [README](task/test-session/README.md)). `cx task run test-session --start --type=<type>` gives
   `<CMETA_HOME>/tmp/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>/` to work in, and a log in

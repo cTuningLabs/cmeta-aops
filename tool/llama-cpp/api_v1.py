@@ -163,17 +163,29 @@ def select_asset(build, uname, uarch, backend, assets = None, cuda_driver = None
     return {'error': f'unknown llama.cpp backend "{backend}"'}
 
 
-# The cMeta targets that select a GPU backend of llama.cpp (backend_from_compute)
-GPU_TARGETS = ('cuda', 'vulkan', 'rocm', 'xpu', 'openvino', 'metal')
+# The cMeta targets that select an accelerator backend of llama.cpp, and the backend: the
+# Intel NPU runs through the OpenVINO build (GGML_OPENVINO_DEVICE=NPU)
+TARGET_BACKENDS = (('cuda', 'cuda'), ('vulkan', 'vulkan'), ('rocm', 'rocm'), ('xpu', 'sycl'),
+                   ('npu-intel', 'openvino'), ('openvino', 'openvino'), ('metal', 'metal'))
+GPU_TARGETS = tuple(c for c, _ in TARGET_BACKENDS)
 
 
 def backend_from_compute(compute, uname):
     """The llama.cpp backend for a cMeta compute list (accelerators first; CPU is in every build)."""
-    for c, backend in (('cuda', 'cuda'), ('vulkan', 'vulkan'), ('rocm', 'rocm'), ('xpu', 'sycl'),
-                       ('openvino', 'openvino'), ('metal', 'metal')):
+    for c, backend in TARGET_BACKENDS:
         if c in compute:
             return backend
     return 'metal' if uname == 'darwin' else 'cpu'
+
+
+def backends_of(compute):
+    """The accelerator backends a compute list asks for (npu-intel,openvino is one: OpenVINO)."""
+    backends = []
+    for c in compute:
+        for target, backend in TARGET_BACKENDS:
+            if c == target and backend not in backends:
+                backends.append(backend)
+    return backends
 
 
 class CTool(InitCTool):
@@ -395,7 +407,7 @@ class CTool(InitCTool):
         # A release build has one GPU backend (and the CPU one): taking the first of two GPU
         # targets would run a different experiment than the one asked for
         gpu_targets = [c for c in compute if c in GPU_TARGETS]
-        if len(gpu_targets) > 1 and not _with.get('backend'):
+        if len(backends_of(compute)) > 1 and not _with.get('backend'):
             return self.cm.error(f'llama.cpp releases have one GPU backend per build, not '
                                  f'{" + ".join(gpu_targets)}: build one with all of them '
                                  f'(cx program run build-llama-cpp --compute={",".join(compute)}) '

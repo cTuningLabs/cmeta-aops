@@ -1,0 +1,73 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+###################################################################################################
+#   cx program run test-openvino --compute=npu-intel          # the NPU
+#   cx program run test-openvino --compute=cpu,npu-intel      # the CPU and the NPU, side by side
+#   cx program run test-openvino --compute=openvino           # every device OpenVINO finds
+#   cx program run test-openvino --compute=npu-intel --size=2048 --iterations=500 --precision=f32
+#   cx program run test-openvino --compute=openvino --size=4096 --batch=256   # compute, not bandwidth
+#   cx program run test-openvino --compute=xpu --size=4096 --batch=256 --seconds=30   # a 30 s load
+#
+# Each device is named in compile_model ("NPU", "GPU", "CPU"), never AUTO, so a device that
+# fails cannot pass by falling back to the CPU; the run fails when a selected device is missing.
+###################################################################################################
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  run_time_env:
+    CMETA_TARGETS: '{{global.target.cmeta_targets}}'
+    CMETA_OPENVINO_SIZE: '{{local.params.size|1024}}'
+    CMETA_OPENVINO_BATCH: '{{local.params.batch|1}}'
+    CMETA_OPENVINO_ITERATIONS: '{{local.params.iterations|200}}'
+    CMETA_OPENVINO_SECONDS: '{{local.params.seconds|}}'
+    CMETA_OPENVINO_PRECISION: '{{local.params.precision|}}'
+    CMETA_OPENVINO_DEVICES: '{{local.params.devices|}}'
+    PYTHONUNBUFFERED: 1
+
+  run_src_file_names:
+    - 'program.py'
+
+  output_files:
+    - tmp-cmeta-program-stats.json
+
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+
+updates:
+  compile:
+    skip: True
+
+  run:
+    uses:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+
+         prepend:
+           # OpenVINO wheels: Python 3.10-3.14 on Windows, Linux and macOS
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+             version: '{{params.python_version|>=3.10,<3.15}}'
+             # Its own venv per set of targets
+             with:
+               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             with:
+               package: numpy
+
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             with:
+               package: openvino
+             version: '{{params.openvino_version|$None}}'
+
+         update:
+           target_exe:
+           run_src_file_names: '{{local.run_src_file_names}}'
+           cmd: >-
+             {{global.python.qpath}}
+             {run_flags_after_exe}
+             {{params.run_flags|}}
+             {run_src_file_names_str_with_path}
