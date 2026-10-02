@@ -1,0 +1,17 @@
+artifact: f4d9ec722b814be8
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+desc: 'JAX Python package with the plugin of the target compute (jax[cuda13] or jax[cuda12] for
+  NVIDIA GPUs, jax[rocm7-local] for AMD, jax[oneapi] for Intel GPUs, jax-metal for Apple GPUs),
+  installed with pip: cx tool setup pip jax.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+tags:
+- pip
+- jax
+- xla

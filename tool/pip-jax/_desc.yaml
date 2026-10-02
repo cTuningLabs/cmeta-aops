@@ -1,0 +1,3 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+_error: "Don't use 'setup pip-jax' directly - use 'setup pip jax' instead"

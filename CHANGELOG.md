@@ -3,6 +3,14 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **JAX for every target** (`tool/pip-jax`, new; see its [README.tech.md](tool/pip-jax/README.tech.md)):
+  `cx tool setup pip jax` picks JAX's plugin from the targets.
+  - **Plugins:** `jax[cuda13]` or `jax[cuda12]` (from the driver and the oldest GPU),
+    `jax[rocm7-local]`, `jax[oneapi]` for Intel GPUs, and `jax-metal` with JAX 0.5.0 (the newest
+    JAX that Apple's last plugin runs).
+  - **Refused before any download:** platforms without a plugin (Windows: CUDA runs in WSL2) and
+    the integrated Intel GPUs that the oneAPI plugin cannot compute on (`--with.any_intel_gpu`
+    tries anyway).
 - **The Intel NPU user-space driver for Linux, without root** (`tool/intel-npu-runtime`, new; see its
   [README.tech.md](tool/intel-npu-runtime/README.tech.md)):
   - **The driver:** the kernel's `intel_vpu` driver does not bring the NPU's Level Zero driver or
