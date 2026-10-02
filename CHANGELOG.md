@@ -86,10 +86,9 @@ All notable changes to cMeta AOps are documented here, newest first.
     release; `npu-intel` sets `GGML_OPENVINO_DEVICE=NPU`). A release has one accelerator backend, now
     counted by backend, so `npu-intel,openvino` is one. Device names with parentheses
     (`Intel(R) Graphics`) are recorded whole.
-  - Tested on a Panther Lake laptop (Core Ultra 9 386H): the NPU (architecture 5010, driver
-    32.0.100.5540) passed 10 of 10 runs, about 170 µs per call of the small model. OpenVINO also
-    drives the Intel iGPU and, as `GPU.1`, the NVIDIA GPU. llama.cpp on the iGPU: the SYCL release
-    47 tokens/s, the Vulkan release (`--devices=Vulkan0`) 105. llama.cpp on the NPU is not tested yet.
+  - Tested on a Panther Lake laptop: `test-openvino` on the NPU, the Intel iGPU, the NVIDIA GPU
+    (OpenVINO's `GPU.1`) and the CPU; llama.cpp on the iGPU with the SYCL release and with the
+    Vulkan release (`--devices=Vulkan0`). llama.cpp on the NPU is not tested yet.
 - **Test sessions: a sandbox and a kept log for every test** (`task/test-session`, see its
   [README](task/test-session/README.md)). `cx task run test-session --start --type=<type>` gives
   `<CMETA_HOME>/tmp/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>/` to work in, and a log in
