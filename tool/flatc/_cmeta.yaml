@@ -1,0 +1,17 @@
+artifact: fa4f4754144f499b
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+desc: 'flatc, the FlatBuffers schema compiler: detected, else its pinned GitHub release (Windows,
+  Linux x86_64, macOS) checked against its SHA-256, else the distribution package.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+tags:
+- flatc
+- flatbuffers
+- compiler
+- serialization
