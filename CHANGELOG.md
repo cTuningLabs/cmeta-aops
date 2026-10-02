@@ -3,6 +3,13 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **Apple MLX for every target** (`tool/pip-mlx`, new): `cx tool setup pip mlx` picks the
+  backend from the targets.
+  - **Backends:** Metal on Apple silicon, `mlx[cuda13]` or `mlx[cuda12]` on Linux with NVIDIA
+    GPUs (from the driver and the oldest GPU), and `mlx[cpu]` on Linux and Windows.
+  - **Windows:** MLX 0.32 declares its `cpu` extra for Linux only, although `mlx-cpu` has Windows
+    wheels. The setup names `mlx-cpu` there; before, `import mlx.core` failed with "DLL load
+    failed".
 - **The Android NDK without Java** (`tool/google.android-ndk`):
   - **Install:** the setup downloads the NDK zip for this host OS from Google's repository, checks
     it against the SHA-1 of Google's repository index, and unpacks it with its file modes and
