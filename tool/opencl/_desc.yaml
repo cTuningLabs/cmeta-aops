@@ -1,0 +1,43 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# The OpenCL runtime: the ICD loader (OpenCL.dll, libOpenCL.so.1, the macOS OpenCL framework) and
+# the drivers (ICDs) of the GPUs and CPUs. api_v1.py detect() runs opencl_probe.py, which asks the
+# library itself for the platforms and devices (ctypes, no SDK or clinfo needed); the tool's path
+# is the library, its version the newest OpenCL version of its platforms, and features.platforms,
+# features.devices and features.gpus what it found:
+#
+#   cx tool setup opencl -j                  # library, platforms, devices
+#   cx tool setup opencl --tool_path=<OpenCL library>
+#
+# The drivers bring the ICDs: NVIDIA's driver, Intel's GPU runtime (tool/intel-gpu-runtime on
+# Linux, the graphics driver on Windows), AMD's ROCm or Mesa's rusticl. Building OpenCL programs
+# needs no SDK when they load the library at run time.
+
+storage_key: opencl
+
+# OpenCL comes with the GPU drivers on Windows and with macOS, so there is nothing to install
+# there. Linux: the ICD loader (ocl-icd); the drivers' ICDs register themselves in
+# /etc/OpenCL/vendors (or OCL_ICD_FILENAMES, as tool/intel-gpu-runtime exports).
+package_name: 'ocl-icd-libopencl1'
+package_name_os_id:
+  fedora: 'ocl-icd'
+  rhel: 'ocl-icd'
+  rocky: 'ocl-icd'
+  almalinux: 'ocl-icd'
+  centos: 'ocl-icd'
+  amzn: 'ocl-icd'
+  azurelinux: 'ocl-icd'
+  alpine: 'opencl-icd-loader'
+  arch: 'ocl-icd'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+
+requires_sudo:
+  linux: True
+
+install_help_text: |
+  OpenCL comes with the GPU driver: install or update the driver of your GPU (NVIDIA, AMD,
+  Intel; on Linux also the ICD loader, ocl-icd) and run "cx tool setup opencl" again.
+  https://github.com/KhronosGroup/OpenCL-ICD-Loader

@@ -59,7 +59,9 @@ class CTask(InitCTask):
         ################################################################################
         target_compute = _global['target']['compute']
 
-        _android_cpu = True if 'android-cpu' in target_compute else False
+        # Every Android target runs on the device that target--android-cpu selected (android-gpu and
+        # android-npu set it up too): pushed and run over adb
+        _android_cpu = any(c in ('android-cpu', 'android-gpu', 'android-npu') for c in target_compute)
         _cuda = True if 'cuda' in target_compute else False
 
         _cpu = False

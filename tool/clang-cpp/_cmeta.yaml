@@ -7,6 +7,7 @@ constraints:
   - cuda
   - metal
   - vulkan
+  - opencl
   supports_nvcc_os:
   - linux
   supports_os:

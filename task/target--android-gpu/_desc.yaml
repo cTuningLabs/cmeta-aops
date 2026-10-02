@@ -1,0 +1,17 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+store_global: True
+storage_key: target--android-gpu
+cache: False
+
+# The device: target--android-cpu selects it (adb, by serial: --use.target--android-cpu.serial=<s/n>)
+# and the NDK toolchain and sysroot follow, as for the CPU; programs built for android-gpu are
+# pushed and run over adb like any Android program. api_v1.py then asks the device for its GPU:
+# the Vulkan devices (cmd gpu vkjson), the GLES driver (SurfaceFlinger) and the OpenCL library.
+uses:
+  - task: target--android-cpu,eb4790d97cf74df9
+
+env_if_not_used:
+  CMETA_TARGET_ANDROID_GPU: 0
+env:
+  CMETA_TARGET_ANDROID_GPU: 1

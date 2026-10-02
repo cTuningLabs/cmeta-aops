@@ -3,6 +3,22 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **The opencl, android-gpu and android-npu targets** (see [tool/opencl/README.tech.md](tool/opencl/README.tech.md)
+  and [task/target/README.tech.md](task/target/README.tech.md)):
+  - **opencl** (`tool/opencl`, new):
+    - The OpenCL platforms and devices come from the ICD loader itself (ctypes, no SDK, no
+      clinfo), on Windows, Linux and macOS.
+    - On Linux, the ICD loader is installed (with sudo) only when a GPU can use it, and an Intel
+      GPU gets `tool/intel-gpu-runtime` first.
+    - CPU-only OpenCL fails unless `--use.target--opencl.allow_cpu`.
+    - gcc, g++, clang, clang++ and MSVC now declare `supports_compute: opencl`.
+  - **android-gpu** and **android-npu** cover the Android device that android-cpu selects:
+    - android-gpu records the GPU: its Vulkan devices, GLES driver and OpenCL library;
+    - android-npu records the NPU: the NNAPI accelerators and the vendor stack (Samsung ENN,
+      MediaTek APU, Google TPU, Qualcomm);
+    - programs built for them with the NDK are pushed and run over adb, like Android CPU
+      programs: `setup-run` and `compile-and-run-program` treat every Android target alike, and
+      the NDK clang tools declare both targets.
 - **Vulkan needs a GPU** (`target--vulkan`, `tool/vulkan`, see its
   [README.tech.md](tool/vulkan/README.tech.md)):
   - **Target:** a vulkan run on a machine where Vulkan sees only CPU devices (Mesa's llvmpipe) now

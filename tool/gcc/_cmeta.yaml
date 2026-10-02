@@ -6,6 +6,7 @@ constraints:
   - cpu
   - cuda
   - vulkan
+  - opencl
   supports_os:
   - linux
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
