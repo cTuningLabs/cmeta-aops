@@ -19,6 +19,11 @@ uses:
     if_os: linux
     cmd: 'lspci | grep -i -E "vga|3d controller|display controller" > {{local.generate-temp-file-target-xpu.temp_file}} || true'
 
+  # In WSL2 the GPU is behind /dev/dxg and lspci sees a virtual adapter: ask Windows (interop)
+  - task: cmd,c9ba0a88df394d7f
+    if_os: linux
+    cmd: 'if [ -e /dev/dxg ] && command -v powershell.exe > /dev/null 2>&1; then powershell.exe -NoProfile -Command "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-CimInstance Win32_VideoController | Format-List Name,DriverVersion" | tr -d "\r" >> {{local.generate-temp-file-target-xpu.temp_file}}; fi; true'
+
   # wmic is gone from current Windows 11 builds: the same query through PowerShell (CIM), as UTF-8
   - task: cmd,c9ba0a88df394d7f
     if_os: windows

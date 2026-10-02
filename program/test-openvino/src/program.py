@@ -189,7 +189,8 @@ def main():
     if missing_intel_gpu:
         gpus = gpu_names(core, available)
         error = ('no Intel GPU: OpenVINO finds ' + (', '.join(gpus) if gpus else 'no GPU') +
-                 ' (on Linux the Intel GPU needs the compute runtime, intel-opencl-icd, and access to /dev/dri)')
+                 ' (on Linux the Intel GPU needs its compute runtime - cx tool setup intel-gpu-runtime, which '
+                 'target --compute=xpu sets up - and access to /dev/dri: the render group)')
         stats['devices']['GPU (Intel)'] = {'error': error}
         print(f'GPU (Intel): {error}')
 
