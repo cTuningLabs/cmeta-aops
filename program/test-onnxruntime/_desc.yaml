@@ -1,9 +1,30 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+###################################################################################################
+#   cx program run test-onnxruntime --compute=cpu                     # CPUExecutionProvider
+#   cx program run test-onnxruntime --compute=cuda                    # CUDAExecutionProvider
+#   cx program run test-onnxruntime --compute=npu-intel               # OpenVINO EP on the NPU
+#   cx program run test-onnxruntime --compute=xpu                     # OpenVINO EP on the Intel GPU
+#   cx program run test-onnxruntime --compute=cpu,cuda --size=4096 --batch=256 --seconds=30
+#
+# Each target's execution provider is named alone, with the session's CPU fallback disabled
+# (session.disable_cpu_ep_fallback), so a provider that cannot run the model fails instead of
+# running on the CPU. The ONNX Runtime package fits the targets (tool/pip-onnxruntime), in a
+# venv of its own per set of targets.
+###################################################################################################
 inherits:
   - template-c-cpu,649899ef3f004e4a
 
 local_vars:
+  run_time_env:
+    CMETA_TARGETS: '{{global.target.cmeta_targets}}'
+    CMETA_ORT_SIZE: '{{local.params.size|1024}}'
+    CMETA_ORT_BATCH: '{{local.params.batch|1}}'
+    CMETA_ORT_ITERATIONS: '{{local.params.iterations|200}}'
+    CMETA_ORT_SECONDS: '{{local.params.seconds|}}'
+    CMETA_ORT_PROVIDERS: '{{local.params.providers|}}'
+    PYTHONUNBUFFERED: 1
+
   run_src_file_names:
     - 'program.py'
 
@@ -12,11 +33,6 @@ local_vars:
 
   result_files:
     stats: tmp-cmeta-program-stats.json
-
-  library: onnx
-
-#params:
-#  compute: cuda
 
 updates:
   compile:
@@ -28,9 +44,7 @@ updates:
            task: setup-run,148f6c1fdb4247df
 
          prepend:
-           # One venv per set of targets: the ONNX Runtime packages for CPU, CUDA and OpenVINO
-           # all install the "onnxruntime" module (tool/pip-onnxruntime picks the one that fits);
-           # onnxruntime-openvino has wheels for Python 3.11-3.13
+           # onnxruntime-openvino has wheels for Python 3.11-3.13, the others for 3.11-3.14
            - task: setup,a2f9b61079ce4333
              name: python,c00fb574d8ca4463
              if: '"npu-intel" in {{global.target.compute|$[]}} or "xpu" in {{global.target.compute|$[]}} or "openvino" in {{global.target.compute|$[]}}'
@@ -52,36 +66,20 @@ updates:
            - task: setup,a2f9b61079ce4333
              name: pip
              with:
-               package: pillow
+               package: onnx
 
+           # The build for the targets: onnxruntime-gpu, onnxruntime-openvino, ... (tool/pip-onnxruntime)
            - task: setup,a2f9b61079ce4333
              name: pip
              with:
                package: onnxruntime
-
-           - task: model,86f0effd07ad454d
-             model_tags: '{{local.library}},image-classification,imagenet-1k'
-
-           - task: download-file,03fed13e2e0447cf
-             storage_key: download-file--dataset-classes
-             chdir: '{{local.target_path}}'
-             url: "https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt"
-
-           - task: dataset,30e20c7489f14f84
-             storage_key: dataset-file
-             dataset_tags: image,jpg
-
+             version: '{{params.onnxruntime_version|$None}}'
 
          update:
            target_exe:
-           profile_python: '{{params.profile_python|$None}}'
            run_src_file_names: '{{local.run_src_file_names}}'
            cmd: >-
              {{global.python.qpath}}
              {run_flags_after_exe}
              {{params.run_flags|}}
              {run_src_file_names_str_with_path}
-             {{local.dataset-file.qpath}}
-             {{local.model.qpath_root}}
-             {{local.download-file--dataset-classes.qpath_to_file}}
-             -v
