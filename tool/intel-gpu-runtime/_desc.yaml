@@ -1,0 +1,36 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# The Intel GPU compute runtime for Linux: the OpenCL ICD (libigdrcl.so), the Level Zero
+# driver, the Intel Graphics Compiler, gmmlib and the Level Zero loader - what OpenVINO's GPU
+# plugin, ONNX Runtime's OpenVINO EP, SYCL and PyTorch XPU need to compute on an Intel GPU.
+# The kernel driver (i915 or xe) comes with the distribution; this is the user-space part.
+#
+# Detected (api_v1.py detect()) when the system has it: an ICD in /etc/OpenCL/vendors naming
+# libigdrcl.so, with its package version (dpkg or rpm). Otherwise installed without root
+# (install ladder, tier 1): Intel's release packages from GitHub, checked against their sha256,
+# unpacked into this cache entry. Two release lines (Intel's):
+#
+#   26.35.39758.10   Gen12 and later: Tiger Lake, Alder/Raptor Lake, Meteor/Arrow/Lunar/Panther Lake, Arc
+#   24.35.30872.36   legacy1: Gen8, Gen9, Gen11 (Broadwell, Skylake, Kaby Lake, Coffee Lake, Ice Lake, ...)
+#
+# Without --version the line follows the PCI device id of the Intel GPU (/sys/bus/pci/devices).
+# The result exports the unpacked runtime for the steps that follow: its libraries on
+# LD_LIBRARY_PATH and its ICD in OCL_ICD_FILENAMES (the ICD loader adds it to the system's
+# ICDs, so an NVIDIA GPU stays visible too).
+#
+#   cx tool setup intel-gpu-runtime                          # detect, else install the right line
+#   cx tool setup intel-gpu-runtime --version=24.35.30872.36 # the legacy1 line
+#
+# Computing on the GPU also needs access to its device (/dev/dri/renderD*: the render group,
+# or a desktop session on the machine): the setup says when that is missing. In WSL2 the GPU is
+# /dev/dxg and the 26.35 line works with the Windows driver. On Windows the Intel graphics
+# driver brings the runtime; macOS has no Intel GPU compute.
+
+storage_key: intel-gpu-runtime
+
+install_help_text: |
+  Could not set up the Intel GPU compute runtime on this system.
+  It needs Linux on x86_64 with an Intel GPU (Gen8 or later); on Windows install or update
+  the Intel graphics driver. The packages are also in most distributions (sudo):
+  intel-opencl-icd and libze-intel-gpu1 (Ubuntu/Debian), intel-compute-runtime (Fedora, Arch).

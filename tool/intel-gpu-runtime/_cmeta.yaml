@@ -1,0 +1,26 @@
+artifact: 1fce5a1fbba34a81
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-10-02T13:50:25.614780+00:00'
+desc: 'The Intel GPU compute runtime for Linux (OpenCL ICD, Level Zero driver, graphics
+  compiler, gmmlib, Level Zero loader): detected in the system, else Intel''s release
+  packages unpacked into the cMeta cache without root (the 26.35 line for Gen12 and
+  later, legacy1 24.35 for Gen8-Gen11) and exported (LD_LIBRARY_PATH, OCL_ICD_FILENAMES).'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+note: What xpu (the Intel GPU) needs on Linux for OpenVINO, ONNX Runtime's OpenVINO EP,
+  SYCL and PyTorch XPU; target--xpu sets it up. On Windows the Intel graphics driver brings
+  the runtime.
+tags:
+- intel
+- gpu
+- xpu
+- opencl
+- level-zero
+- compute-runtime
+- runtime
