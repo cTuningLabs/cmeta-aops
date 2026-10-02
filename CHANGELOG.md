@@ -71,6 +71,16 @@ All notable changes to cMeta AOps are documented here, newest first.
   - `README.tech.md` files with every cMeta option: targets (`task/target`), llama.cpp
     (`tool/llama-cpp`), vLLM (`tool/pip-vllm`), Ollama (`tool/ollama`), PyTorch
     (`program/build-pytorch`) and Vulkan (`tool/vulkan`). The programs point to them.
+- **Test sessions: a sandbox and a kept log for every test** (`task/test-session`, see its
+  [README](task/test-session/README.md)). `cx task run test-session --start --type=<type>` gives
+  `<CMETA_HOME>/tmp/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>/` to work in, and a log in
+  `<CMETA_HOME>/log/cmeta-tests-<YYYYMMDD>/` (Markdown and JSON) that stays when the sandbox goes. The
+  log records the host, cMeta, the repositories' branch, commit and changed files, and the agent
+  (`CMETA_GENERATOR`, the Claude Code session). Notes, results and attached files are added during the
+  test. The costs are the wall time, the sandbox size, and the tokens the Claude Code session used
+  meanwhile, read from its transcripts (with configured prices, the cost in USD too). Finishing
+  removes a sandbox above 1 GiB; `--list` and `--prune` keep the overview. `AGENTS.md` §7.1 makes
+  test sessions the rule for every real test.
 - **`cx tool setup <tool> --status` and `--upgrade`** - for every tool, with no change to its `_desc.yaml`
   (`task/setup/upgrade.py`). The tool's install **channel** on this OS is derived from its install command
   or hook - winget, Homebrew, the distro package manager (`install_cmd_sudo`), an upstream install script,

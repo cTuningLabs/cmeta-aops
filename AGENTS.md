@@ -215,6 +215,40 @@ Two layers:
   `{ubuntu,windows,macos} × py{3.9,3.14}`. To verify a real change, run the relevant
   recipe locally.
 
+### 7.1 Test sessions — where real tests run and what they record
+
+Run every real test, build or benchmark (anything beyond the hermetic pytest suite)
+inside a **test session** (`task/test-session`), on every machine and for agents as
+for people. Don't create sandbox folders in random places (`~/cmeta-llm-test`,
+`repos/tmp`, `C:\tmp\x`):
+
+```bash
+cx task run test-session --start --type=llama-drift --title="llama.cpp release vs source"
+#  sandbox  <CMETA_HOME>/tmp/cmeta-tests-20261002/0915.llama-drift/       (deletable)
+#  log      <CMETA_HOME>/log/cmeta-tests-20261002/0915.llama-drift.md     (+ .json; kept)
+cx task run test-session --id=20261002/0915.llama-drift --note="CUDA release: 157.3 t/s" --results.cuda_tps=157.3
+cx task run test-session --id=20261002/0915.llama-drift --attach=bench.txt
+cx task run test-session --finish --id=20261002/0915.llama-drift --status=passed --summary="no drift (<1%)"
+cx task run test-session                 # list;  --prune [--days=7] removes finished sandboxes
+```
+
+- Work in the sandbox: scripts, outputs, clones, venvs, temporary builds. What cMeta
+  builds and downloads stays in its cache, where the next test reuses it.
+- Record as you go: a note per step or finding, results as `--results.<key>=<value>`,
+  and the files worth keeping with `--attach` (the sandbox may go; the log stays).
+- The record fills itself with the host, the cMeta version, the repositories' branch,
+  commit and changed files, and the agent from `CMETA_GENERATOR` (agent, model,
+  effort) and the Claude Code session. Finishing adds the wall time, the sandbox size
+  and the tokens the session used meanwhile (from its transcripts; the cost too with
+  `test_session.prices.<model>` configured, else `--cost_usd`).
+- Finishing removes a sandbox above 1 GiB (`--keep` keeps it); finish failed runs too
+  (`--status=failed`), with what went wrong in the summary.
+- On a remote machine run the session there and pass `--agent`, `--model`, `--effort`
+  and `--session`; keep a local session for the same work to hold the agent's costs,
+  and attach the remote log to it at the end.
+
+Details: [`task/test-session/README.md`](task/test-session/README.md).
+
 ## 8. Conventions
 
 - **Copyright headers are load-bearing** — copy the Apache header from a sibling
