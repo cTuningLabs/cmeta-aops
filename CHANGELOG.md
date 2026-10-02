@@ -3,6 +3,18 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **ExecuTorch for Android from source** (`program/build-executorch-android`, new): builds
+  `executor_runner` with the XNNPACK (CPU) and Vulkan (GPU) backends, which the prebuilt runtime
+  lacks. It cross-compiles with the NDK and uses the LunarG `glslc` for the shaders (NDK r29's
+  lacks `GL_KHR_cooperative_matrix`). A CPU torch, in a venv next to the build folder, does the
+  code generation.
+  - **Options:** `--checkout=<tag|branch|commit>` (default v1.5.1, cloned with its submodules),
+    `--vulkan=OFF`, `--android_abi`, `--android_api` and `--cmake_flags`.
+  - **The binary** is stripped (15 MB).
+  - **Build environment:** ninja goes on PATH, because XNNPACK's nested CMake builds look for it
+    there.
+- **`tool/pip-mlx`:** refuses CUDA for GPUs older than Volta (7.0) before the install, because
+  MLX's CUDA kernels need `__grid_constant__`.
 - **Apple MLX for every target** (`tool/pip-mlx`, new): `cx tool setup pip mlx` picks the
   backend from the targets.
   - **Backends:** Metal on Apple silicon, `mlx[cuda13]` or `mlx[cuda12]` on Linux with NVIDIA

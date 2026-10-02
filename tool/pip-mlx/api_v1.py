@@ -10,7 +10,8 @@ from PyPI:
   metal, cpu on macOS (Apple silicon)   mlx              (Metal; mlx-metal comes with it)
   cuda                                  mlx[cuda13]      Linux; a CUDA 13 driver and GPUs of
                                                          compute capability 7.5 (Turing) or newer
-                                        mlx[cuda12]      Linux; the other NVIDIA GPUs and drivers
+                                        mlx[cuda12]      Linux; Volta (7.0) and CUDA 12 drivers;
+                                                         older GPUs are refused (MLX needs 7.0)
   cpu elsewhere                         mlx[cpu]         Linux (x86_64, aarch64) and Windows (where
                                                          mlx-cpu is named too: the extra is Linux-only)
 
@@ -20,6 +21,9 @@ from PyPI:
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 
 CUDA13_MIN_ARCH = 75
+
+# MLX's CUDA kernels use __grid_constant__, which needs compute capability 7.0 (Volta) or newer
+MLX_CUDA_MIN_ARCH = 70
 
 
 def mlx_extras(compute, uname, uarch, driver_cuda = None, gpu_arch_min = None, extras = None):
@@ -36,6 +40,9 @@ def mlx_extras(compute, uname, uarch, driver_cuda = None, gpu_arch_min = None, e
         major = int(driver.split('.')[0]) if driver[:1].isdigit() else None
         if major is not None and major < 12:
             return None, f'MLX needs an NVIDIA driver for CUDA 12 or newer; this one supports CUDA {driver}'
+        if gpu_arch_min is not None and gpu_arch_min < MLX_CUDA_MIN_ARCH:
+            return None, (f"MLX's CUDA backend needs compute capability 7.0 (Volta) or newer; the oldest GPU here "
+                          f'is {gpu_arch_min // 10}.{gpu_arch_min % 10}')
         if (major is None or major >= 13) and (gpu_arch_min is None or gpu_arch_min >= CUDA13_MIN_ARCH):
             return ['cuda13'], None
         return ['cuda12'], None

@@ -1,0 +1,26 @@
+{
+  "artifact": "38f28f35e0074612",
+  "authors": "Grigori Fursin",
+  "category": "program,22788f3c30d04e6d",
+  "constraints": {
+    "supported_compute": [
+      "cpu"
+    ]
+  },
+  "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",
+  "desc": "ExecuTorch executor_runner for Android built from source with the XNNPACK and Vulkan backends (NDK cross-build, LunarG glslc for the shaders, torch for the code generation); --checkout picks the release, branch or commit.",
+  "generator": {
+    "agent": "Claude Code 2.1.286",
+    "by": "Grigori Fursin",
+    "effort": "max",
+    "method": "agent",
+    "model": "claude-opus-5-5"
+  },
+  "tags": [
+    "build",
+    "executorch",
+    "android",
+    "vulkan",
+    "xnnpack"
+  ]
+}

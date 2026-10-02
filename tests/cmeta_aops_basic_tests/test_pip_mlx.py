@@ -31,7 +31,7 @@ def mlx():
     (["cpu"], "linux", "amd64", None, None, ["cpu"]),
     (["cpu"], "windows", "amd64", None, None, ["cpu"]),
     (["cuda"], "linux", "amd64", "13.3", 120, ["cuda13"]),
-    (["cuda"], "linux", "amd64", "13.0", 50, ["cuda12"]),
+    (["cuda"], "linux", "amd64", "12.8", 70, ["cuda12"]),          # Volta
     (["cuda"], "linux", "aarch64", "12.8", 87, ["cuda12"]),
 ])
 def test_the_backend(mlx, compute, uname, uarch, driver, arch, want):
@@ -47,6 +47,12 @@ def test_the_backend(mlx, compute, uname, uarch, driver, arch, want):
 def test_no_backend_here(mlx, compute, uname, uarch, driver, hint):
     extras, error = mlx["mlx_extras"](compute, uname, uarch, driver)
     assert extras is None and hint in error
+
+
+def test_gpus_before_volta(mlx):
+    # the 940MX (sm_50): MLX's kernels use __grid_constant__ (compute capability 7.0 and newer)
+    extras, error = mlx["mlx_extras"](["cuda"], "linux", "amd64", "13.0", 50)
+    assert extras is None and "compute capability 7.0" in error and "5.0" in error
 
 
 class FakeCM:
