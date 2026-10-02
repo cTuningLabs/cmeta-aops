@@ -167,6 +167,9 @@ All notable changes to cMeta AOps are documented here, newest first.
   - **Several targets on the P14s:**
     - `--compute=cpu,cuda --ngl=12` (12 of 25 layers on the RTX A500): llama.cpp 111 tokens/s, against
       79 on the CPU and 177 on the GPU; Ollama 118, against 161 on the GPU.
+    - `build-llama-cpp --compute=cuda,vulkan --target_tmp=auto` (866 s): one binary with both
+      backends. `--devices=CUDA0` gives 175.6, `--devices=Vulkan0` 140.6, and both with
+      `--tensor_split=1,1` 148.6, on the same RTX A500.
   - **On the T470p:** `--compute=cpu,vulkan --ngl=12`: llama.cpp 39.4, Ollama 40.9 (the 940MX is
     slower than the CPU for this model).
 
