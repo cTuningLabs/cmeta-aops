@@ -1,5 +1,18 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# The Android NDK. An NDK of an Android SDK (extra_paths) or on the PATH is detected first.
+# Otherwise api_v1.py downloads the zip of the pinned (or requested) NDK for this host OS from
+# Google's repository and checks it against the SHA-1 of Google's repository index (install
+# ladder tier 1: no Java, no sdkmanager, no administrator rights); on Linux ARM, which Google
+# publishes no zip for, it falls back to sdkmanager (the SDK command-line tools, with Java).
+#
+#   cx tool setup google.android-ndk
+#   cx tool setup google.android-ndk --version=30.0.16248370 --new
+#   cx tool setup google.android-ndk --versions        # the revisions (needs the command-line tools)
+
+default_version: '29.0.14206865'
+
 names:
   - ndk-which{{global.host.vars.file_ext_cmd2}}
 
@@ -17,28 +30,19 @@ cmd_get_versions_uses:
     name: google.android-sdk.command-line-tools,2ee8eb31da764eef
 cmd_get_versions_regex: '\bndk;(\d+\.\d+\.\d+)\b'
 
-install_note: >-
-  Please note that installing Android NDK may require administrative privileges!
-
-install_cmd:
-  all: '{{global.google-android-sdk-command-line-tools.qpath}} "ndk;29.0.14206865"'
-
-install_cmd_version:
-  all: '{{global.google-android-sdk-command-line-tools.qpath}} "ndk;{{simple_version}}"'
-
 extra_paths:
   windows:
+    - "{{global.host.os_env.LOCALAPPDATA}}\\Android\\Sdk\\ndk\\**"
     - "C:\\Program Files\\Android\\**"
     - "C:\\Program Files (x86)\\Android*\\**"
     - "D:\\Program Files\\Android\\**"
     - "D:\\Program Files (x86)\\Android*\\**"
   linux:
+    - "{{user_home}}/Android/Sdk/ndk/**"
     - "/home/linuxbrew/.linuxbrew/**"
   darwin:
+    - "{{user_home}}/Library/Android/sdk/ndk/**"
     - "/opt/homebrew/opt/**"
     - "/opt/homebrew/share/**"
 
-uses:
-  - task: setup,a2f9b61079ce4333
-    name: google.android-sdk.command-line-tools,2ee8eb31da764eef
 

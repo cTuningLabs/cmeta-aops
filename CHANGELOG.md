@@ -3,6 +3,15 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **The Android NDK without Java** (`tool/google.android-ndk`):
+  - **Install:** the setup downloads the NDK zip for this host OS from Google's repository, checks
+    it against the SHA-1 of Google's repository index, and unpacks it with its file modes and
+    symlinks. It needs no Java, no sdkmanager and no administrator rights. Before, it always went
+    through the SDK command-line tools, so a machine without Java (a container, a fresh Linux)
+    could not get an NDK.
+  - **Fallback:** sdkmanager is still used on Linux ARM, for which Google publishes no zip.
+  - **Detection:** it now also looks in Android Studio's SDK folders, and detecting an installed
+    NDK no longer sets up the command-line tools first.
 - **Tools for distributed runs:**
   - **`tool/ray`:** Ray `ray[default]` 2.59.0 in its own Python environment. Every node of a Ray
     cluster needs the same Python down to the patch release (3.12.3 and 3.12.14 refuse each
