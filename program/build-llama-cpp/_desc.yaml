@@ -129,9 +129,22 @@ updates:
 
        - match:
            task: setup-run,148f6c1fdb4247df
+         # The binary and the model: here, or on the Android device (kept under /data/local/tmp)
+         prepend:
+           - internal_func: prepare_target_run
+             internal_func_from_local_key: selected-program
+             internal_func_safe: True
          update:
+           # Android (--compute=android-cpu): the build's binary and libraries and the model
+           android_push_folders: '{{local.llama_cpp_setup_run.android_push_folders|$None}}'
+           android_push_files: '{{local.llama_cpp_setup_run.android_push_files|$None}}'
+           android_ld_library_path: '{{local.llama_cpp_setup_run.android_ld_library_path|$None}}'
+           android_skip_pull: '{{local.llama_cpp_setup_run.android_skip_pull|$None}}'
+           cmd: >-
+             {{local.llama_cpp_exe}}
+             {run_flags_after_exe}
            cmd_main: >-
-               -m {{local.model.qpath}}
+               -m {{local.llama_cpp_model}}
                -f {qinput_files.data}
                -n {{params.n|500}}
                --temp {{params.temp|0.7}}

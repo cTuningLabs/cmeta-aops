@@ -102,6 +102,34 @@ cx program run build-llama-cpp --compute=metal --checkout=b11400 --compile.d.GGM
   set of targets.
 - The run takes the same options and gives the same results as `program/llama-cpp`.
 
+## Android devices: --compute=android-cpu
+
+```bash
+cx program run llama-cpp --compute=android-cpu --threads=6           # llama.cpp's Android release
+cx program run build-llama-cpp --compute=android-cpu --max_jobs=4    # built here with the NDK
+```
+
+- The device is reached over adb (`task/target--android-cpu`); with several devices connected,
+  the target asks which one.
+- **Release:** llama.cpp's own Android build (`llama-b11324-bin-android-arm64.tar.gz`), with every
+  CPU variant; the best one is picked on the device at run time. It is downloaded here, never
+  run here, and its build number is recorded next to it.
+- **Source build:** the NDK's CMake toolchain file (`tool/google.android-ndk`) with the release's
+  settings. That means `ANDROID_ABI=arm64-v8a` and `ANDROID_PLATFORM=android-28`
+  (`--android_abi`, `--android_api`), shared libraries with `GGML_BACKEND_DL` and
+  `GGML_CPU_ALL_VARIANTS`, no OpenMP and no OpenSSL. `--max_jobs=N` limits the parallel
+  compile jobs (Ninja starts the CPU count plus 2).
+- **On the device:**
+  - the run binary and its libraries go to `/data/local/tmp/cmeta-llama-cpp/<variant>/`
+    (`release-b11324-cpu`, `source-b11324-<build folder>`);
+  - the model goes to `/data/local/tmp/cmeta-models/`;
+  - both are pushed once, and again only when they change, so a run takes seconds after the
+    first one;
+  - the prompt, `output.txt` and `llama.log` go to `/data/local/tmp`, as for the other Android
+    programs; `llama.log` is pulled back and `perf.json` is made from it here.
+- **Threads:** phones mix big and little cores, and the little ones can slow the others down:
+  compare `--threads` values below the core count (the big cores alone, for example).
+
 ## Recipes
 
 - **Release against source build:** run both, alternating, on an idle machine.

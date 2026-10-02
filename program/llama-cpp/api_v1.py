@@ -68,6 +68,23 @@ class CProgram(InitCProgram):
         return {'return':0}
 
     ############################################################
+    def prepare_target_run(self,
+                           ctx: dict,
+                           **misc
+    ):
+        """
+        The binary and the model of the run: here, or on the Android device (--compute=android-cpu),
+        where the release and the model are kept under /data/local/tmp between runs.
+        """
+
+        tool = ctx['tasks']['global']['llama-cpp']
+        backend = tool.get('features', {}).get('with', {}).get('backend', 'cpu')
+        common_llama_cpp.target_run(self.cm, ctx, tool['completion_path'],
+                                    f"release-b{tool.get('version')}-{backend}")
+
+        return {'return':0}
+
+    ############################################################
     def finish_llama_run(self,
                          ctx: dict,
                          desc: dict = {},

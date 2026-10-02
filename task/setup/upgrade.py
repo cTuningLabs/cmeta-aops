@@ -101,6 +101,22 @@ def select_for_os(value, uname):
     return value.get(os_key)
 
 
+def versioned_install_cmd(desc, uname, channels):
+    """
+    The install command that takes a version (install_cmd_version) of a tool installed through
+    its install command whose versions are known (cmd_get_versions): --upgrade installs the
+    newest version with it, rather than running the pinned install command again. None otherwise.
+    """
+    if channels.get('primary') != CHANNEL_RERUN or not desc.get('cmd_get_versions'):
+        return None
+    return select_for_os(desc.get('install_cmd_version'), uname)
+
+
+def expand_version(cmd, version):
+    """The {{version}} and {{simple_version}} of an install command template."""
+    return cmd.replace('{{simple_version}}', version).replace('{{version}}', version)
+
+
 def split_version(version):
     """The version_pip / version_simple / version_major trio that setup hands to install() and detect()."""
     if not version:
@@ -962,8 +978,12 @@ def status_tool(self, ctx, params, tool_read):
 
     # What --upgrade would run
     upgrade_cmd = None
+    versioned_install = versioned_install_cmd(desc, uname, channels)
     if channels['upgrade_cmd']:
         upgrade_cmd = channels['upgrade_cmd']
+    elif versioned_install and rl['upstream_version']:
+        # An install command that takes the version (the Android NDK through sdkmanager)
+        upgrade_cmd = expand_version(versioned_install, rl['upstream_version'])
     elif channels['primary'] == CHANNEL_RELEASE:
         upgrade_cmd = f'download of the newest release ({rl["upstream_version"] or "unknown"})'
         if channels['declared'] not in (CHANNEL_NONE, CHANNEL_RERUN) and channels['install_cmd']:
@@ -1135,8 +1155,11 @@ def upgrade_tool(self, ctx, old, **kwargs):
         old['last_upgrade'] = record
         return old
 
-    # Release downloads: pick the version to install - the newest release unless one was asked for
-    if channel == CHANNEL_RELEASE and not version:
+    # Release downloads, and install commands that take the version (install_cmd_version with
+    # cmd_get_versions: the Android NDK through sdkmanager): pick the version to install - the
+    # newest unless one was asked for
+    uname = ctx['tasks']['global']['host']['os']['uname']
+    if (channel == CHANNEL_RELEASE or versioned_install_cmd(desc, uname, channels)) and not version:
         rl = self.find_latest(ctx, desc, tool_read, kwargs, channels, query_channel = None, never_install = False)
         if self.cm.catch_error(rl): return rl
         latest = rl['upstream_version']

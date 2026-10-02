@@ -255,6 +255,20 @@ def test_select_for_os(up):
     assert up.select_for_os(None, "linux") is None
 
 
+def test_versioned_install_cmd(up):
+    """The Android NDK installs through sdkmanager "ndk;<version>": --upgrade takes the newest version."""
+    ndk = {"install_cmd": {"all": 'sdkmanager "ndk;29.0.14206865"'},
+           "install_cmd_version": {"all": 'sdkmanager "ndk;{{simple_version}}"'},
+           "cmd_get_versions": "sdkmanager --list"}
+    rerun = {"primary": up.CHANNEL_RERUN}
+    cmd = up.versioned_install_cmd(ndk, "windows", rerun)
+    assert cmd == 'sdkmanager "ndk;{{simple_version}}"'
+    assert up.expand_version(cmd, "30.0.16248370") == 'sdkmanager "ndk;30.0.16248370"'
+    # Without known versions, or through another channel: none
+    assert up.versioned_install_cmd(dict(ndk, cmd_get_versions = None), "windows", rerun) is None
+    assert up.versioned_install_cmd(ndk, "windows", {"primary": up.CHANNEL_WINGET}) is None
+
+
 def test_split_version(up):
     assert up.split_version("1.2.3") == {"version_pip": "==1.2.3", "version_simple": "1.2.3", "version_major": "1"}
     assert up.split_version("==1.2.3")["version_simple"] == "1.2.3"
