@@ -205,7 +205,7 @@ The driver persists three JSON snapshots in `target_path` and reuses them to ski
    `recompile=True` if **any** differs:
    - the selected targets differ from the cached `target.compute` (in either direction:
      `cuda` → `cpu,cuda` and `cpu,cuda` → `cuda`). They are read after the `all`
-     pipeline, where the target task resolves them; read before (until 0.41.0), the list was
+     pipeline, where the target task resolves them; read before (until 0.40.1), the list was
      empty and a change of targets reused the other target's build and run flags;
    - `android-cpu` in compute **and** the cached `target--android-cpu.serial` differs
      from the current device serial;

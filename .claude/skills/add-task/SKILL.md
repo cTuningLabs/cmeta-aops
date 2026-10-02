@@ -1,6 +1,6 @@
 ---
 name: add-task
-description: Add a new cMeta `task` artifact (the workflow-engine unit) under `task/<name>/` — a composable, cacheable step built from a declarative `_desc.yaml` pipeline (`uses` sub-tasks, `params_map`, `store_global`/`storage_key`, cache keys) plus an optional `api_v1.py` (`CTask` hooks: `init`/`check_params`/`run`/`finish_dynamic_result`/`customize_cache_artifact`). Use when the user asks to "add a task", "create a workflow/pipeline", "make a task that sets up tool X and runs it", or "wrap steps so `cx task run <name>` works". Worked example: run-claude (setup the `claude` tool + run it interactively).
+description: Add a new cMeta `task` artifact (the workflow-engine unit) under `task/<name>/` — a composable, cacheable step built from a declarative `_desc.yaml` pipeline (`uses` sub-tasks, `params_map`, `store_global`/`storage_key`, cache keys) plus an optional `api_v1.py` (`CTask` hooks: `init`/`check_params`/`run`/`finish_dynamic_result`/`customize_cache_artifact`). Use when the user asks to "add a task", "create a workflow/pipeline", "make a task that sets up tool X and runs it", or "wrap steps so `cx task run <name>` works". Worked example: run-claude-minimal (setup the `claude` tool + run it interactively).
 ---
 
 # add-task — author a cMeta `task` workflow artifact
@@ -36,7 +36,7 @@ This choice determines whether you write Python at all.
 - **A. Pure pipeline (`_desc.yaml` only)** — the task is a sequence of existing
   sub-tasks (set up a tool, run a command, clone a repo, …) wired with
   templating and conditions. **Most tasks are this.** Examples:
-  `task/test-python`, `task/test-claude`, `task/run-claude`, `task/cmd`,
+  `task/test-python`, `task/test-claude`, `task/cmd`,
   `task/setup-run`.
 - **B. Pipeline + `api_v1.py`** — you need imperative work: inspect/transform
   results, compute params, loop, parse output, decide control flow. Add a
@@ -55,7 +55,7 @@ Both still live under `task/<name>/`; B just adds one file.
 `_cmr.yaml` → `ctuninglabs@cmeta-aops`):
 
 ```bash
-cx task add ctuninglabs@cmeta-aops:run-claude --yaml   # writes task/run-claude/_cmeta.yaml (fresh UID, category: task,c36be4b9314a45e0)
+cx task add ctuninglabs@cmeta-aops:run-claude-minimal --yaml   # writes task/run-claude-minimal/_cmeta.yaml (fresh UID, category: task,c36be4b9314a45e0)
 ```
 
 `--yaml` matches the siblings (which use `_cmeta.yaml`); omit for `_cmeta.json`.
@@ -288,7 +288,7 @@ Look up a UID with `cx task find <alias>` or read the sibling's `_cmeta.*`.
 
 ---
 
-## 6. Worked example — `run-claude` (set up a tool + run it interactively)
+## 6. Worked example — `run-claude-minimal` (set up a tool + run it interactively; `task/run-claude` is the full version)
 
 Goal: set up the `claude` CLI tool, then launch it **interactively**, passing any
 extra CLI flags straight through.
@@ -300,9 +300,9 @@ Key facts this relies on:
 - cMeta consumes parsed args, so user CLI flags must arrive as `unparsed`
   (everything after `--`); the `cmd` task quotes and appends them.
 
-### `task/run-claude/_cmeta.yaml`
+### `task/run-claude-minimal/_cmeta.yaml`
 ```yaml
-artifact: e5d500ebc094460f      # fresh 16-hex UID (python -c "import uuid;print(uuid.uuid4().hex[:16])")
+artifact: <16 hex digits>       # a fresh UID (python -c "import uuid;print(uuid.uuid4().hex[:16])")
 authors: Grigori Fursin
 category: task,c36be4b9314a45e0
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
@@ -315,7 +315,7 @@ tags:
 note: Set up the "claude" tool and run it interactively via CLI.
 ```
 
-### `task/run-claude/_desc.yaml`
+### `task/run-claude-minimal/_desc.yaml`
 ```yaml
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
@@ -343,11 +343,11 @@ first-class params, add a `CTask` with a `run` signature (§4).
 ## 7. Index, test, verify
 
 ```bash
-cx task index ctuninglabs@cmeta-aops:run-claude   # register the hand-authored folder (or `cx --reindex`)
-cx task find run-claude                            # confirm it resolves to task/run-claude in THIS repo
+cx task index ctuninglabs@cmeta-aops:run-claude-minimal   # register the hand-authored folder (or `cx --reindex`)
+cx task find run-claude-minimal                            # confirm it resolves to task/run-claude-minimal in THIS repo
 
-cx task run run-claude -- --version                # passthrough check: RUN ... claude.exe --version
-cx task run run-claude                             # real interactive launch (needs a TTY)
+cx task run run-claude-minimal -- --version                # passthrough check: RUN ... claude.exe --version
+cx task run run-claude-minimal                             # real interactive launch (needs a TTY)
 ```
 
 Verifying without side effects:

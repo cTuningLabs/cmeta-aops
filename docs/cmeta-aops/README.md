@@ -28,7 +28,7 @@ targets together across OSes (Linux / Windows / macOS / Android; CPU / CUDA / �
 | [tool-abstraction.md](tool-abstraction.md) | The `tool` category — detect / install / build / run an external CLI portably; version listing; `install_cmd_version`. |
 | [program-and-compute.md](program-and-compute.md) | The `program` category — template inheritance, the **compute** abstraction, the compile/run task machinery, libraries, and 4 deep dives (repro-cache recompile, Android remote exec, `updates_cmd`, `build-*` vs template). |
 | [llm-stacks.md](llm-stacks.md) | **LLM inference stacks** — install, build from source and run llama.cpp, vLLM, Ollama and PyTorch on CPU, CUDA, Vulkan and Metal (Windows, Linux/WSL2, macOS): the commands, how each picks its build for the target and driver, the build variables (`TORCH_CUDA_ARCH_LIST`, `MAX_JOBS`, …), and the build tools per OS. |
-| [agent-tasks.md](agent-tasks.md) | **Coding agents and cloud CLIs as tasks** — `run-claude2` / `run-codex2` / `run-opencode2` (headless or interactive, transcript + token statistics), the repositories they add to the agent's context (`--add_repos`, the `agent_add_repos` config key), `tool/az` + `run-az`, and which model / reasoning effort to pass to each agent. |
+| [agent-tasks.md](agent-tasks.md) | **Coding agents and cloud CLIs as tasks** — `run-claude` / `run-codex` / `run-opencode` (headless or interactive, transcript + token statistics), the repositories they add to the agent's context (`--add_repos`, the `agent_add_repos` config key), `tool/az` + `run-az`, and which model / reasoning effort to pass to each agent. |
 
 ## One-paragraph mental model
 

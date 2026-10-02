@@ -1,30 +1,30 @@
 authors: Grigori Fursin
 
 # Run the "opencode" CLI (OpenCode.AI) non-interactively on an assembled prompt
-# and exit. Same flags as the sister tasks "run-claude2" and "run-codex2":
+# and exit. Same flags as the sister tasks "run-claude" and "run-codex":
 #
-#   cx task run run-opencode2 --prompt="{prompt text}"
-#   cx task run run-opencode2 --prompt_file={file}
-#   cx task run run-opencode2 --prompt_file={file} --prompt="{extra text}" --output_file={file}
-#   cx task run run-opencode2 --prompt_file={file} --yes --stats
+#   cx task run run-opencode --prompt="{prompt text}"
+#   cx task run run-opencode --prompt_file={file}
+#   cx task run run-opencode --prompt_file={file} --prompt="{extra text}" --output_file={file}
+#   cx task run run-opencode --prompt_file={file} --yes --stats
 #
 # With no prompt at all, this task opens an interactive opencode session instead
-# of failing (same default as run-claude2 / run-codex2):
+# of failing (same default as run-claude / run-codex):
 #
-#   cx task run run-opencode2                        # just open an opencode session
+#   cx task run run-opencode                        # just open an opencode session
 #
 # --interactive (short: --i or -i) asks for that session explicitly: the assembled
 # prompt is preloaded as the first message and opencode keeps the terminal
 # afterwards, so a preset prompt can be followed up on by hand:
 #
-#   cx task run run-opencode2 --prompt_file=review.txt --interactive
-#   cx task run run-opencode2 --i --prompt="look at the failing tests"
+#   cx task run run-opencode --prompt_file=review.txt --interactive
+#   cx task run run-opencode --i --prompt="look at the failing tests"
 #
 # Since the session owns the terminal, nothing can be captured: --stats,
 # --stats_file and --output_file are switched off, and a non-zero exit code is
 # reported but does not fail the task (quitting is normal).
 #
-# IMPORTANT difference from run-claude2 / run-codex2: "opencode run" has no stdin
+# IMPORTANT difference from run-claude / run-codex: "opencode run" has no stdin
 # mode, so the prompt always travels as a command line argument - in both modes.
 # The OS caps a command line (~32K chars on Windows, ~2MB argv on Linux), so a
 # very long prompt file is warned about and may be refused by the OS.
@@ -47,7 +47,7 @@ authors: Grigori Fursin
 # recorded into "{prompt_file without extension}-output.txt" unless --output_file
 # overrides it. Anything after "--" is appended to the opencode command line, e.g.
 #
-#   cx task run run-opencode2 --prompt_file=p.txt -- --model anthropic/claude-opus-5 --variant max
+#   cx task run run-opencode --prompt_file=p.txt -- --model anthropic/claude-opus-5 --variant max
 #
 # See api_v1.py for the full list of flags, and ../../README.md for the models
 # each agent can reach.

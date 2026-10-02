@@ -2,8 +2,8 @@
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 
-This task is the OpenCode.AI (https://opencode.ai) sibling of the "run-claude2"
-and "run-codex2" tasks.
+This task is the OpenCode.AI (https://opencode.ai) sibling of the "run-claude"
+and "run-codex" tasks.
 """
 
 import json
@@ -18,7 +18,7 @@ from task_c36be4b9314a45e0.api.ctask import InitCTask
 OUTPUT_FILE_SUFFIX = '-output.txt'
 
 # Output file used when there is no prompt file to derive the name from
-DEFAULT_OUTPUT_FILE = 'run-opencode2-output.txt'
+DEFAULT_OUTPUT_FILE = 'run-opencode-output.txt'
 
 # Flag added by --yes to answer "yes" to every opencode question. "--auto"
 # auto-approves every permission that is not explicitly denied in the config,
@@ -124,7 +124,7 @@ class CTask(InitCTask):
         """
         Assemble a prompt, run the "opencode" CLI non-interactively (opencode run) and exit.
 
-        This is the OpenCode.AI sister of the "run-claude2" and "run-codex2" tasks
+        This is the OpenCode.AI sister of the "run-claude" and "run-codex" tasks
         and takes the same flags.
 
         The prompt is the text of "prompt_file" (when given), then a new line,
@@ -149,7 +149,7 @@ class CTask(InitCTask):
         The output is streamed to the console while opencode runs and is recorded
         into "output_file". When "output_file" is not given, it defaults to the
         prompt file name without extension + "-output.txt" (or
-        "run-opencode2-output.txt" when there is no prompt file).
+        "run-opencode-output.txt" when there is no prompt file).
 
         With "yes", opencode runs unattended: every permission that is not
         explicitly denied is auto-approved via "--auto". A permission flag passed
@@ -257,7 +257,7 @@ class CTask(InitCTask):
             print ('')
             print (f'{space}WARNING: the prompt is {len(full_prompt)} chars long - opencode takes it '
                    f'as a command line argument, which the OS may refuse')
-            print (f'{space}         (opencode has no stdin mode - use run-claude2 or run-codex2 '
+            print (f'{space}         (opencode has no stdin mode - use run-claude or run-codex '
                    f'for a very long prompt)')
 
         ###########################################################################################
@@ -471,7 +471,7 @@ class CTask(InitCTask):
 
         # Description of this run - shared by the output file and the statistics file
         run_info = {
-            'task': 'run-opencode2',
+            'task': 'run-opencode',
             'date': time.strftime('%Y-%m-%d %H:%M:%S'),
             'opencode': opencode_path,
             'prompt_file': prompt_file,
