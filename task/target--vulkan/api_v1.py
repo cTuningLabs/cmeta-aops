@@ -23,7 +23,9 @@ class CTask(InitCTask):
     ):
         """
         The Vulkan devices of this machine as the target's features (from tool/vulkan).
-        Fails without any device; warns when only CPU devices (Mesa's llvmpipe) exist.
+        Fails without any device, and when only CPU devices (Mesa's llvmpipe) exist: a vulkan run
+        there would compute on the CPU. --use.target--vulkan.allow_cpu accepts them (to test
+        Vulkan code without a GPU).
 
         Returns:
             dict: A cMeta dictionary with the following keys:
@@ -32,11 +34,20 @@ class CTask(InitCTask):
                 - **features** (dict): devices, gpus, vendors, paths.loader.
         """
 
+        features = ctx['tasks']['global']['vulkan']['features']
+
+        r = self._check(ctx, features, kwargs)
+        if self.cm.catch_error(r): return r
+
+        return {'return': 0, 'features': features}
+
+    ############################################################
+    def _check(self, ctx, features, params):
+        """A GPU among the Vulkan devices, or CPU devices with allow_cpu."""
+
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
         space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
-
-        features = ctx['tasks']['global']['vulkan']['features']
 
         devices = features.get('devices', [])
         if not devices:
@@ -44,11 +55,17 @@ class CTask(InitCTask):
             return self.cm.error(f'no Vulkan device found ({x}): install or update the GPU driver '
                                  f'(Mesa on Linux, MoltenVK on macOS: "cx tool setup vulkan --install")')
 
-        if not features.get('gpus') and con:
-            print ('')
-            print (f'{space}WARNING: Vulkan sees no GPU, only CPU devices ({", ".join(d["name"] for d in devices)})')
+        if not features.get('gpus'):
+            names = ', '.join(d['name'] for d in devices)
+            if not params.get('allow_cpu'):
+                return self.cm.error(f'Vulkan sees no GPU, only CPU devices ({names}): a vulkan run would compute on '
+                                     f'the CPU. Install the GPU\'s driver, or accept them with '
+                                     f'--use.target--vulkan.allow_cpu')
+            if con:
+                print ('')
+                print (f'{space}WARNING: Vulkan sees no GPU, only CPU devices ({names}): allowed (allow_cpu)')
 
-        return {'return': 0, 'features': features}
+        return {'return': 0}
 
     ############################################################
     def finish_dynamic_result(self,
@@ -65,5 +82,9 @@ class CTask(InitCTask):
         features = ctx['tasks']['global'].get('vulkan', {}).get('features')
         if features:
             result['features'] = copy.deepcopy(features)
+
+            # The same check as for a fresh target: the machine may have lost its GPU driver
+            r = self._check(ctx, features, params)
+            if self.cm.catch_error(r): return r
 
         return {'return': 0, 'result': result}

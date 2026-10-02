@@ -5,11 +5,49 @@ Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
+import glob
 import json
 import os
 import sys
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
+
+
+def gpu_nodes(dev = '/dev'):
+    """
+    The device nodes through which a Linux machine can use a GPU: DRM render nodes (the kernel
+    driver of an AMD, Intel or NVIDIA GPU, also of the GPUs of Arm SoCs, which are not on PCI),
+    WSL2's /dev/dxg (Mesa's dzn runs Vulkan on the Windows GPU), NVIDIA's and AMD's compute nodes.
+    [] when there is none: Mesa would then give Vulkan on the CPU only (llvmpipe).
+    """
+    found = sorted(glob.glob(os.path.join(dev, 'dri', 'renderD*')))
+    for name in ('dxg', 'nvidia0', 'kfd'):
+        if os.path.exists(os.path.join(dev, name)):
+            found.append(os.path.join(dev, name))
+    return found
+
+
+def pci_display_devices(sys_pci = '/sys/bus/pci/devices'):
+    """
+    PCI display controllers (class 0x03xxxx) as '<address> <vendor>:<device>'. One without a
+    device node has no driver here, or was not passed into the container (WSL2 shows its virtual
+    GPUs as 3D controllers even then), so Mesa could not use it.
+    """
+    found = []
+    for d in sorted(glob.glob(os.path.join(sys_pci, '*'))):
+        try:
+            with open(os.path.join(d, 'class')) as f:
+                cls = f.read().strip()
+            if not cls.lower().startswith('0x03'):
+                continue
+            ids = []
+            for name in ('vendor', 'device'):
+                with open(os.path.join(d, name)) as f:
+                    ids.append(f.read().strip().lower().replace('0x', ''))
+            found.append(f'{os.path.basename(d)} {ids[0]}:{ids[1]}')
+        except OSError:
+            continue
+    return found
 
 class CTool(InitCTool):
     """
@@ -71,6 +109,18 @@ class CTool(InitCTool):
         if not loader or not os.path.isfile(loader):
             if con and verbose:
                 print (f'{space}INFO: no Vulkan loader: {data.get("error")}')
+
+            # Without a GPU, installing Mesa (with sudo) would only give Vulkan on the CPU: say so
+            # before any install, unless --with.allow_cpu asks for that
+            uname = ctx['tasks']['global']['host']['os']['uname']
+            if uname == 'linux' and not params.get('with', {}).get('allow_cpu') and not gpu_nodes():
+                pci = pci_display_devices()
+                x = (f'PCI display devices {", ".join(pci)} have no device node here (no driver, or not passed '
+                     f'into the container)') if pci else 'no GPU'
+                return self.cm.error(f'no Vulkan loader, and no GPU to use: {x}; no /dev/dri render node, no '
+                                     f'/dev/dxg. Mesa would only run Vulkan on the CPU (llvmpipe): '
+                                     f'--with.allow_cpu installs it anyway')
+
             return {'return': 0, 'parsed_paths_with_versions': []}
 
         devices = data.get('devices', [])
