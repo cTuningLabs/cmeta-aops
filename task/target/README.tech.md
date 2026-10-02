@@ -33,12 +33,15 @@ cx program run <program> --compute                  # asks which ones (several c
 | `cpu` | the host CPU (the CPU inventory, with a host fingerprint) |
 | `cuda` | NVIDIA GPUs (`tool/cuda`: nvidia-smi; the SDK step sets up `nvcc`) |
 | `vulkan` | any Vulkan GPU (`tool/vulkan`; the SDK step sets up `tool/vulkan-sdk`) |
+| `opencl` | any OpenCL GPU (`tool/opencl`: the platforms and devices from the ICD loader, without an SDK; on Linux an Intel GPU gets `tool/intel-gpu-runtime` first, so its ICD joins the others). CPU-only OpenCL fails unless `--use.target--opencl.allow_cpu` |
 | `metal` | the Apple GPU (system_profiler) |
 | `rocm` | AMD GPUs (ROCm) |
 | `xpu` | Intel GPUs (oneAPI) |
 | `npu-intel` | the Intel NPU, Meteor Lake and newer (its PCI ID, generation and driver, found without any SDK; its stack is OpenVINO) |
 | `openvino` | the OpenVINO stack: with a device target it runs there (`npu-intel` -> NPU, `xpu` -> GPU, `cpu` -> CPU); alone, on every device OpenVINO finds |
 | `android-cpu` | an Android device over adb (`--serial`) |
+| `android-gpu` | the GPU of that device: its Vulkan devices (`cmd gpu vkjson`), GLES driver and OpenCL library (public or not). Programs are built with the NDK and run over adb, as for `android-cpu`. From the adb shell, a vendor `libOpenCL.so` may find its platform only when loaded in the vendor namespace (`android_load_sphal_library`) |
+| `android-npu` | the NPU of that device, as an adb shell program reaches it: the NNAPI accelerators (`google-edgetpu`, `mtk-mdla`, ...) and the vendor stack (Samsung ENN: app only; MediaTek APU: NNAPI; Google TPU: NNAPI and LiteRT; Qualcomm: QNN). Fails without an NNAPI accelerator, saying what the vendor stack needs |
 | `tpu`, `opu-lumai` | placeholders: fail until supported |
 
 ## Several targets at once

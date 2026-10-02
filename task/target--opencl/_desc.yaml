@@ -1,0 +1,21 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+store_global: True
+storage_key: target--opencl
+cache: True
+
+# On Linux an Intel GPU computes through Intel's user-space runtime, which the kernel driver does
+# not bring: intel_gpu_runtime (api_v1.py) sets it up first (tool/intel-gpu-runtime, without root),
+# so its ICD joins the system's. Then the OpenCL library lists the platforms and devices.
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - internal_func: intel_gpu_runtime
+
+  - task: setup,a2f9b61079ce4333
+    name: opencl,14ea96800e2841cc
+
+env_if_not_used:
+  CMETA_TARGET_OPENCL: 0
+env:
+  CMETA_TARGET_OPENCL: 1

@@ -4,6 +4,8 @@ category: tool,c393ba5c6fa14f66
 constraints:
   supports_compute:
   - android-cpu
+  - android-gpu
+  - android-npu
   supports_os:
   - windows
   - linux

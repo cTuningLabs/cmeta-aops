@@ -1,0 +1,19 @@
+artifact: eee94b72afa440ce
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+desc: 'Compute target: the NPU of an Android device over adb (the device as android-cpu selects it)
+  through NNAPI; records the NNAPI accelerators and the vendor NPU stack (Samsung ENN, MediaTek
+  APU, Google EdgeTPU, Qualcomm Hexagon).'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+name: Android NPU
+sort: 3002
+tags:
+- target
+- android
+- npu

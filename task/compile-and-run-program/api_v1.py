@@ -379,7 +379,7 @@ class CTask(InitCTask):
                     if compile_target_compute and set(selected_compute) != set(compile_target_compute):
                         recompile = True
 
-                    if not recompile and 'android-cpu' in compile_target_compute:
+                    if not recompile and any(c in ('android-cpu', 'android-gpu', 'android-npu') for c in compile_target_compute):
                         compile_target_adb_serial = _compiled_state_global.get('target--android-cpu',{}).get('serial')
                         target_adb_serial = ctx_tasks['global'].get('target--android-cpu',{}).get('serial')
                         if compile_target_adb_serial != target_adb_serial:
