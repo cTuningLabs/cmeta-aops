@@ -3,6 +3,33 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## Unreleased
+- **`cx tool setup <tool> --status` and `--upgrade`** - for every tool, with no change to its `_desc.yaml`
+  (`task/setup/upgrade.py`). The tool's install **channel** on this OS is derived from its install command
+  or hook - winget, Homebrew, the distro package manager (`install_cmd_sudo`), an upstream install script,
+  npm, pip, or a release download - and decides which version counts as "latest" and what the upgrade runs:
+  - `--status` lists every copy found (the cMeta cache entries `setup` replays first, then the PATH), the
+    newest version the channel offers (`winget show --versions`, `brew info`, `apt-cache policy` /
+    `dnf info` / `apk policy` / `pacman -Si` / `zypper info`), the newest upstream version (the release
+    GitHub marks as latest, read from the `/releases/latest` redirect - not the newest tag, which can be a
+    pre-release), the command `--upgrade` would run, and a verdict. It installs nothing and writes nothing;
+    Python callers get `result['status']`.
+  - `--upgrade` upgrades a detected tool through its channel (`winget upgrade`, `brew upgrade`,
+    `apt-get install --only-upgrade`, the install script again, `npm install X@latest`, pip's own update,
+    the release download of the newest version into the same cache entry), detects it again and reports
+    `before -> after`; a tool that is not installed gets the newest version. Several copies found: the
+    usual selection prompt, `-q` takes the newest. The cache entry records the new version and a
+    `last_upgrade` entry. `--update` is unchanged (it rebuilds the entry from what is installed).
+  - Two optional `_desc.yaml` keys override the derivation: `upgrade_cmd` (per OS) and
+    `cmd_get_latest_version` (+ `_regex`, `_uses`). `task/host` gained `upgrade_cmd(_sudo)` and
+    `candidate_version_cmd/_regex` per package manager.
+  - Also: a `check_params` stop (`--versions`, `--status`) now returns its data to the caller;
+    `common_release` names checksum files per version (an in-place upgrade reused the old release's
+    checksums) and drops a download whose SHA-256 did not match; `detect` returns every matching copy
+    in `detected`.
+  - Tested: Windows (winget: uv 0.11.1 -> 0.12.21, opencode and git; release: jq 1.7.1 -> 1.8.2 in place),
+    Debian and Ubuntu containers as root (apt: git, curl; release: jq), Ubuntu as a user (install script:
+    claude; apt status without sudo), macOS arm64 (Homebrew: gh; install script: claude; release: helm).
+    Offline unit tests in `tests/cmeta_aops_basic_tests/test_tool_upgrade.py`.
 - **Docs: `--use.<storage key>.<param>=<value>`**, which changes any sub-task of a run from the command line,
   however deep it sits: a dependency's version, or a control switch such as `update` of one step.
   - a new section in `docs/cmeta-aops/task-engine.md`, "Changing a dependency anywhere in a pipeline": how it

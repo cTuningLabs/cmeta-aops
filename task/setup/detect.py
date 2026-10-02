@@ -521,6 +521,10 @@ def detect_existing_tool(self,
     detected_version = tool['detected_version']
     cmd_call = tool.get('cmd_call')
 
+    # Every copy that matched, in selection order (--status lists them)
+    result['detected'] = [{'path': x['path'], 'version': x['detected_version']}
+                          for x in sorted_matched_paths_with_versions]
+
     if 'add_to_result' in tool:
         add_to_result = tool['add_to_result']
         result.update(add_to_result)
