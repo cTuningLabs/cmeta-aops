@@ -133,20 +133,32 @@ class CTask(InitCTask):
         selected_compute = _global.get('target',{}).get('compute', [])
 
         ###########################################################################################
+        # The folder of the build and the run under the program's cache entry (or the current
+        # directory for programs that run in '{pwd}'): --target_tmp, else the configured default,
+        # else tmp. "auto" gives every set of targets its own folder (tmp-cuda, tmp-cpu-cuda),
+        # so builds for different targets stay side by side for comparisons on one machine.
+        r = self.cm.access({
+          'category':self.cmeta['uses_categories']['config'],
+          'command':'get',
+          'arg1':'task',
+        })
+        if self.cm.catch_error(r): return r
+
+        cfg = r['config_cmeta']
+
+        target_tmp = params.get('target_tmp') or cfg.get('compile_and_run_program', {}).get('target_tmp') or 'tmp'
+        if target_tmp == 'auto':
+            # The target task has not run yet: the targets as given (the template's default is cpu)
+            requested = params.get('compute') or 'cpu'
+            if isinstance(requested, str):
+                requested = requested.split(',')
+            requested = [str(c).strip().lower() for c in requested if str(c).strip()] if isinstance(requested, list) else []
+            target_tmp = 'tmp-' + '-'.join(requested) if requested else 'tmp'
+
         if not target_path:
             target_path = ctx_tasks['local'].get('target_path')
             if not target_path:
-                x = 'tmp' if not params.get('target_tmp') else params['target_tmp']
-
-                # Check if in current path or cache
-                r = self.cm.access({
-                  'category':self.cmeta['uses_categories']['config'],
-                  'command':'get', 
-                  'arg1':'task',
-                })
-                if self.cm.catch_error(r): return r
-
-                cfg = r['config_cmeta']
+                x = target_tmp
 
                 skip_cache = cfg.get('compile_and_run_program',{}).get('skip_cache', False)
 
@@ -185,8 +197,7 @@ class CTask(InitCTask):
         if work_path.strip().lower() == '{pwd}':
             work_path = cur_dir
 
-            x = 'tmp' if not params.get('target_tmp') else params['target_tmp']
-            work_path = os.path.join(work_path, x)
+            work_path = os.path.join(work_path, target_tmp)
 
             work_path = work_path.replace('//', os.sep)
 
@@ -313,6 +324,13 @@ class CTask(InitCTask):
             ctx['tasks']['local']['src_file_names_str_with_path'] = src_file_names_str_with_path
 
         ###########################################################################################
+        # The target task of the 'all' pipeline has resolved the targets only now: read before
+        # (above), selected_compute was empty, so a change of --compute never triggered a
+        # recompile, and the cached context of the other target (its build, its run flags) was
+        # reused - a --compute=metal run after a --compute=cpu build ran on the CPU
+        selected_compute = ctx_tasks['global'].get('target', {}).get('compute', []) or selected_compute
+
+        ###########################################################################################
         # Compile
 
         compile_desc = desc.get('compile', {})
@@ -354,14 +372,12 @@ class CTask(InitCTask):
             _compiled = False
 
             if not recompile:
-                # Check if compute didn't change:
+                # Check if compute didn't change (in either direction: cpu,cuda -> cuda changes the
+                # build as much as cuda -> cpu,cuda):
                 if _compiled_state_global:
                     compile_target_compute = _compiled_state_global.get('target',{}).get('compute', [])
-                    if compile_target_compute:
-                        for sc in selected_compute:
-                            if sc not in compile_target_compute:
-                                recompile = True
-                                break
+                    if compile_target_compute and set(selected_compute) != set(compile_target_compute):
+                        recompile = True
 
                     if not recompile and 'android-cpu' in compile_target_compute:
                         compile_target_adb_serial = _compiled_state_global.get('target--android-cpu',{}).get('serial')

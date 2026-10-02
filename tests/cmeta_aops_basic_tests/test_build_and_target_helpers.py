@@ -311,3 +311,29 @@ def test_parse_llama_log_devices_and_offload():
     assert r["gpu_layers"] == {"offloaded": 25, "total": 25}
     assert r["prompt_tokens_per_second"] == 499.42 and r["generation_tokens_per_second"] == 128.57
     assert r["threads"] == 4
+
+
+# --------------------------------------------------------------------------------------------
+# common_llama_cpp.run_flags: targets and offload parameters -> llama.cpp flags
+
+@pytest.mark.parametrize("compute, params, flags, settings", [
+    (["cpu"], {}, "-ngl 0 --device none", {}),
+    (["cuda"], {}, "", {}),
+    (["cpu", "cuda"], {"ngl": "12"}, "-ngl 12", {"ngl": "12"}),
+    (["cuda", "vulkan"], {"devices": "CUDA0,Vulkan0", "split_mode": "layer", "tensor_split": "3,1"},
+     "--device CUDA0,Vulkan0 -sm layer -ts 3,1", {"devices": "CUDA0,Vulkan0", "split_mode": "layer", "tensor_split": "3,1"}),
+    (["cpu"], {"ngl": "4", "threads": "8"}, "-ngl 4 -t 8 --device none", {"ngl": "4", "threads": "8"}),
+    (["cpu"], {"devices": "MTL0"}, "-ngl 0 --device MTL0", {"devices": "MTL0"}),
+    (["metal"], {"main_gpu": "0", "ngl": ""}, "-mg 0", {"main_gpu": "0"}),
+])
+def test_llama_cpp_run_flags(compute, params, flags, settings):
+    m = load_module("category/program/api/common_llama_cpp.py", "common_llama_cpp_flags")
+    assert m.run_flags(compute, params) == (flags, settings)
+
+
+def test_llama_cpp_release_gpu_targets():
+    ll = load_head("tool/llama-cpp/api_v1.py", "\nclass CTool",
+                   ["from tool_c393ba5c6fa14f66.api.ctool import InitCTool"])
+    assert set(ll.GPU_TARGETS) >= {"cuda", "vulkan", "metal"}
+    assert ll.backend_from_compute(["cpu", "cuda"], "linux") == "cuda"
+    assert ll.backend_from_compute(["cpu"], "darwin") == "metal"

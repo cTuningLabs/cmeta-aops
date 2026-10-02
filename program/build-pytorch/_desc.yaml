@@ -44,7 +44,7 @@ updates:
             # Its own venv: the torch it builds must not meet another program's torch or the
             # CUDA wheels it brings (an older pip cuBLAS broke the import of a CUDA 13.3 build)
             with:
-              venv_path: '{{local.target_path}}'
+              venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets}}'
 
           # Host compiler
           - task: setup,a2f9b61079ce4333
@@ -178,7 +178,7 @@ updates:
            - task: setup,a2f9b61079ce4333
              name: python,c00fb574d8ca4463
              with:
-               venv_path: '{{local.target_path}}'
+               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets}}'
 
          update:
            target_exe:

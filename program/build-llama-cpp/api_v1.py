@@ -34,11 +34,26 @@ class CProgram(InitCProgram):
         if 'cuda' in compute:
             _local['lang'] = 'cuda'
 
-        # --compute=cpu: keep the model on the CPU even when the build has a GPU backend (the
-        # macOS build always has Metal, CUDA and Vulkan builds offload by default); -ngl 0 alone
-        # may still use the GPU, --device none does not
-        if compute == ['cpu']:
-            _local['llama_cpp_compute_flags'] = '-ngl 0 --device none'
+        return {'return':0}
+
+    ############################################################
+    def customize_run(self,
+                      ctx: dict,
+                      **misc
+    ):
+        """
+        The llama.cpp flags of this run from the targets and the offload parameters (--ngl,
+        --devices, --split_mode, --tensor_split, --main_gpu, --threads): see common_llama_cpp.
+        Set at run time, not with the build: a reused build would otherwise bring back the
+        flags of the run that compiled it.
+        """
+
+        params = misc.get('params') or ctx['tasks']['local'].get('params', {})
+        compute = ctx['tasks']['global']['target']['compute']
+
+        flags, settings = common_llama_cpp.run_flags(compute, params)
+        ctx['tasks']['local']['llama_cpp_compute_flags'] = flags
+        ctx['tasks']['local']['llama_cpp_settings'] = settings
 
         return {'return':0}
 

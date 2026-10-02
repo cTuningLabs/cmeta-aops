@@ -6,6 +6,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #
 #   cx program run test-ollama --compute=cuda            # cpu, cuda, metal, rocm, vulkan
 #   cx program run test-ollama --model=qwen2.5:0.5b --n=64 --port=11435
+#   cx program run test-ollama --compute=cpu,cuda --ngl=12  # 12 layers on the GPU, the rest on the CPU
 #
 # --compute=cpu keeps the model on the CPU (num_gpu 0); vulkan sets OLLAMA_VULKAN=1.
 # Models go to Ollama's default folder (~/.ollama/models) unless --models_dir is given.
@@ -24,6 +25,7 @@ local_vars:
     CMETA_OLLAMA_MAX_TOKENS: '{{local.params.n|64}}'
     CMETA_OLLAMA_PORT: '{{local.params.port|11435}}'
     CMETA_OLLAMA_MODELS: '{{local.params.models_dir|}}'
+    CMETA_OLLAMA_NUM_GPU: '{{local.params.ngl|}}'
     PYTHONUNBUFFERED: 1
 
   output_files:

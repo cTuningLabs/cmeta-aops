@@ -9,7 +9,8 @@ Ollama's timings in tmp-cmeta-program-stats.json. Standard library only.
 
 Environment (from the program's _desc.yaml): CMETA_OLLAMA (the binary), CMETA_OLLAMA_MODEL,
 CMETA_OLLAMA_MAX_TOKENS, CMETA_OLLAMA_PORT, CMETA_OLLAMA_MODELS (models folder, optional),
-CMETA_TARGETS (cpu -> the model stays on the CPU; vulkan -> OLLAMA_VULKAN=1).
+CMETA_TARGETS (cpu -> the model stays on the CPU; vulkan -> OLLAMA_VULKAN=1),
+CMETA_OLLAMA_NUM_GPU (--ngl: layers on the GPU).
 """
 
 import json
@@ -104,6 +105,10 @@ def main():
         options = {'seed': 12345, 'temperature': 0, 'num_predict': max_tokens}
         if targets.split(',') == ['cpu']:
             options['num_gpu'] = 0
+        # --ngl: the layers on the GPU, the rest on the CPU (Ollama's num_gpu), as with llama.cpp
+        if os.environ.get('CMETA_OLLAMA_NUM_GPU'):
+            options['num_gpu'] = int(os.environ['CMETA_OLLAMA_NUM_GPU'])
+        stats['settings'] = {k: v for k, v in options.items() if k != 'num_predict'}
 
         # Warm-up: the first request also pays for loading the model and initializing the GPU
         api(base, '/api/generate', {'model': model, 'stream': False, 'prompt': 'Hi',

@@ -31,6 +31,32 @@ _OFFLOAD = re.compile(r'offloaded (\d+)/(\d+) layers to GPU')
 
 END_MARKERS = ('[end of text]',)
 
+# Run parameters of the llama.cpp programs and the llama.cpp flags they become, for offload and
+# multi-device experiments: --ngl=12 (layers on the GPU, the rest on the CPU), --devices=CUDA0,Vulkan0,
+# --split_mode=layer|row|none, --tensor_split=3,1, --main_gpu=1, --threads=8
+RUN_FLAGS = (('ngl', '-ngl'), ('devices', '--device'), ('split_mode', '-sm'),
+             ('tensor_split', '-ts'), ('main_gpu', '-mg'), ('threads', '-t'))
+
+
+def run_flags(compute, params):
+    """
+    The llama.cpp flags of a run and the settings to record with its results.
+    --compute=cpu keeps the model on the CPU even in a build with a GPU backend (-ngl 0 alone may
+    still use the GPU, --device none does not), unless --ngl or --devices say otherwise.
+    """
+    flags, settings = [], {}
+    for key, flag in RUN_FLAGS:
+        value = params.get(key)
+        if value not in (None, '', True):
+            settings[key] = value
+            flags += [flag, str(value)]
+    if list(compute) == ['cpu']:
+        if 'ngl' not in settings:
+            flags = ['-ngl', '0'] + flags
+        if 'devices' not in settings:
+            flags += ['--device', 'none']
+    return ' '.join(flags), settings
+
 
 def parse_llama_log(text):
     """The timings and devices of a llama-completion / llama-cli run from its log."""
@@ -126,6 +152,11 @@ def finish_llama_run(program, ctx, desc = {}, **misc):
                 break
     if clone.get('checkout_short'):
         perf.setdefault('commit', clone['checkout_short'])
+
+    # What was asked for: the cMeta targets and the offload settings (run_flags)
+    perf['targets'] = _global.get('target', {}).get('compute', [])
+    if _local.get('llama_cpp_settings'):
+        perf['settings'] = _local['llama_cpp_settings']
 
     with open(os.path.join(work_path, 'perf.json'), 'w', encoding = 'utf-8') as f:
         json.dump(perf, f, indent = 2)

@@ -163,6 +163,10 @@ def select_asset(build, uname, uarch, backend, assets = None, cuda_driver = None
     return {'error': f'unknown llama.cpp backend "{backend}"'}
 
 
+# The cMeta targets that select a GPU backend of llama.cpp (backend_from_compute)
+GPU_TARGETS = ('cuda', 'vulkan', 'rocm', 'xpu', 'openvino', 'metal')
+
+
 def backend_from_compute(compute, uname):
     """The llama.cpp backend for a cMeta compute list (accelerators first; CPU is in every build)."""
     for c, backend in (('cuda', 'cuda'), ('vulkan', 'vulkan'), ('rocm', 'rocm'), ('xpu', 'sycl'),
@@ -387,6 +391,15 @@ class CTool(InitCTool):
             compute = ['cpu']
         if type(compute) == str:
             compute = compute.split(',')
+
+        # A release build has one GPU backend (and the CPU one): taking the first of two GPU
+        # targets would run a different experiment than the one asked for
+        gpu_targets = [c for c in compute if c in GPU_TARGETS]
+        if len(gpu_targets) > 1 and not _with.get('backend'):
+            return self.cm.error(f'llama.cpp releases have one GPU backend per build, not '
+                                 f'{" + ".join(gpu_targets)}: build one with all of them '
+                                 f'(cx program run build-llama-cpp --compute={",".join(compute)}) '
+                                 f'or run one target at a time')
 
         backend = _with.get('backend') or backend_from_compute(compute, uname)
 

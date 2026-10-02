@@ -29,15 +29,6 @@ class CProgram(InitCProgram):
         desc = misc.get('desc', {})
         params = misc.get('params', {})
 
-        compute = ctx['tasks']['global']['target']['compute']
-        uname = ctx['tasks']['global']['host']['os']['uname']
-
-        # --compute=cpu: keep the model on the CPU even when the build has a GPU backend (the
-        # macOS build always has Metal, CUDA and Vulkan builds offload by default); -ngl 0 alone
-        # may still use the GPU, --device none does not
-        if compute == ['cpu']:
-            ctx['tasks']['local']['llama_cpp_compute_flags'] = '-ngl 0 --device none'
-
         model = params.get('model')
         prompt = params.get('prompt')
 
@@ -47,6 +38,25 @@ class CProgram(InitCProgram):
                 _use.setdefault('model',{})['filename'] = os.path.abspath(model)
             if prompt:
                 _use.setdefault('dataset',{})['filename'] = os.path.abspath(prompt)
+
+        return {'return':0}
+
+    ############################################################
+    def customize_run(self,
+                      ctx: dict,
+                      **misc
+    ):
+        """
+        The llama.cpp flags of this run from the targets and the offload parameters (--ngl,
+        --devices, --split_mode, --tensor_split, --main_gpu, --threads): see common_llama_cpp.
+        """
+
+        params = misc.get('params') or ctx['tasks']['local'].get('params', {})
+        compute = ctx['tasks']['global']['target']['compute']
+
+        flags, settings = common_llama_cpp.run_flags(compute, params)
+        ctx['tasks']['local']['llama_cpp_compute_flags'] = flags
+        ctx['tasks']['local']['llama_cpp_settings'] = settings
 
         return {'return':0}
 
