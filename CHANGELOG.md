@@ -126,8 +126,9 @@ All notable changes to cMeta AOps are documented here, newest first.
   with the CUDA 13.3 toolkit (cuBLAS 13.6), but loaded the pip cuBLAS 13.1 of vLLM's torch. A build
   made before keeps its venv until `--recompile`. The venv of several targets is named with dashes
   (`venv-cpu-cuda`, from the new `{{global.target.cmeta_targets_tag}}`): on Windows, a comma in the
-  path split the venv's activation command. `tool/python` also quotes that path now, so a venv in a
-  folder with spaces activates too.
+  path split the venv's activation command. Paths with spaces work too now (a Windows user name with a
+  space puts one in the default `CMETA_HOME`): `tool/python` quotes the venv's activation script and
+  its pip check, and `tool/python-pip` checks Python's plain path rather than the quoted one.
 - **Fix: program parameters reach the run-time environment.** `task/setup-run` expands
   `local_vars.run_time_env` with its own parameters, so `{{params.X|default}}` there always gave the
   default: `--model`, `--n`, `--max_len` and `--cpu_kv_cache_gib` of `test-vllm` and `build-vllm`, the

@@ -261,7 +261,7 @@ class CTool(InitCTool):
 
             if to_add and pip:
                 # Run check for pip
-                pip_cmd = python_path + ' -m pip --version'
+                pip_cmd = self.cm.utils.files.quote_path(python_path) + ' -m pip --version'
 
                 ii = {'category': 'task,c36be4b9314a45e0',
                       'command': 'run',
