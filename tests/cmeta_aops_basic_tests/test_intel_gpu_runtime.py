@@ -20,14 +20,29 @@ import pytest
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
+COMMON_DEB_IMPORT = "from tool_c393ba5c6fa14f66.api.common_deb import ar_members, extract_deb, sha256_of, zstd_decompress"
+
+
+def common_deb():
+    """category/tool/api/common_deb.py, which the tools import as tool_c393ba5c6fa14f66.api.common_deb."""
+    path = REPO_ROOT / "category" / "tool" / "api" / "common_deb.py"
+    ns = {"__name__": "common_deb", "__file__": str(path)}
+    exec(compile(path.read_text(encoding = "utf-8"), str(path), "exec"), ns)
+    return ns
+
+
 def load_head(rel_path, class_line, imports):
-    """The module-level code of a hook file, up to its class (which needs cMeta)."""
+    """The module-level code of a hook file, up to its class (which needs cMeta), with the shared
+    .deb helpers it imports."""
     path = REPO_ROOT / rel_path
     src = path.read_text(encoding = "utf-8")
     head = src[:src.index(class_line)]
-    for line in imports:
-        head = head.replace(line, "")
     ns = {"__name__": "helpers", "__file__": str(path)}
+    if COMMON_DEB_IMPORT in head:
+        deb = common_deb()
+        ns.update({k: deb[k] for k in ("ar_members", "extract_deb", "sha256_of", "zstd_decompress")})
+    for line in imports + [COMMON_DEB_IMPORT]:
+        head = head.replace(line, "")
     exec(compile(head, str(path), "exec"), ns)
     return ns
 
