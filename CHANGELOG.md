@@ -89,6 +89,26 @@ All notable changes to cMeta AOps are documented here, newest first.
   - Tested on a Panther Lake laptop: `test-openvino` on the NPU, the Intel iGPU, the NVIDIA GPU
     (OpenVINO's `GPU.1`) and the CPU; llama.cpp on the iGPU with the SYCL release and with the
     Vulkan release (`--devices=Vulkan0`). llama.cpp on the NPU is not tested yet.
+- **llama.cpp on Android devices** (`--compute=android-cpu`, over adb; see
+  [`tool/llama-cpp/README.tech.md`](tool/llama-cpp/README.tech.md)):
+  - `program/llama-cpp` runs llama.cpp's own Android release (`android-arm64`, every CPU variant,
+    the best one picked on the device). It is downloaded here and never run here; its build is
+    recorded next to it for the version check.
+  - `build-llama-cpp` builds with the NDK's CMake toolchain file and the release's settings
+    (arm64-v8a, android-28, shared libraries with all CPU variants, no OpenMP, no OpenSSL).
+    `--max_jobs=N` limits the parallel compile jobs on any target.
+  - `task/setup-run` keeps folders and large files on the device between runs: the binary with
+    its libraries in `/data/local/tmp/cmeta-llama-cpp/<variant>/` and the model in
+    `/data/local/tmp/cmeta-models/`. They are pushed once, and again only when they change.
+  - **Fix:** a program without a binary of its own made `task/setup-run` run
+    `rm -rf /data/local/tmp/` on the device, emptying its work folder. That command now runs only
+    for a program's own binary.
+  - Tested on a Pixel 10 Pro (Android 17): the release and the NDK r29 source build, with several
+    thread counts.
+- **The Android NDK lists its versions:** `cx tool setup google.android-ndk --status` shows what
+  the SDK offers (`sdkmanager --list`), and `--upgrade` installs the newest one side by side. More
+  generally, `--upgrade` now installs the newest version of every tool whose install command
+  takes a version and whose versions are known, instead of running the pinned install again.
 - **Test sessions: a sandbox and a kept log for every test** (`task/test-session`, see its
   [README](task/test-session/README.md)). `cx task run test-session --start --type=<type>` gives
   `<CMETA_HOME>/tmp/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>/` to work in, and a log in

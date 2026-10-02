@@ -10,6 +10,8 @@ import platform
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
+from . import android
+
 class CTask(InitCTask):
     """
     """
@@ -297,9 +299,35 @@ class CTask(InitCTask):
 
             cmds.append(adb_with_serial + f' shell "rm -rf {adb_tmp_path_lib}"')
             cmds.append(adb_with_serial + f' shell "mkdir {adb_tmp_path_lib}"')
-            cmds.append(adb_with_serial + f' shell "rm -rf {adb_tmp_path}/{target_exe}"')
-            cmds.append(adb_with_serial + f' push "{target_path_exe}" {adb_tmp_path}/{target_exe}')
-            cmds.append(adb_with_serial + f' shell chmod 755 {adb_tmp_path}/{target_exe}')
+            # Only for a program of its own: without one, "rm -rf /data/local/tmp/" would empty
+            # the device's work folder (programs that run a release keep it in a folder below)
+            if target_exe:
+                cmds.append(adb_with_serial + f' shell "rm -rf {adb_tmp_path}/{target_exe}"')
+                cmds.append(adb_with_serial + f' push "{target_path_exe}" {adb_tmp_path}/{target_exe}')
+                cmds.append(adb_with_serial + f' shell chmod 755 {adb_tmp_path}/{target_exe}')
+
+            # Folders and large files kept on the device between runs (a llama.cpp release or
+            # build, a model): pushed once, and again only when they change
+            adb_path = _global['adb']['path']
+            serial = _global['target--android-cpu']['serial']
+            for device_dir, files in (params.get('android_push_folders') or {}).items():
+                ddir = android.device_path(adb_tmp_path, device_dir)
+                if con:
+                    print (f'{space}INFO: Android folder {ddir} ({len(files)} files) ...')
+                pushed, error = android.push_folder(adb_path, serial, list(files), ddir)
+                if error:
+                    return self.cm.error(f'failed to push to {ddir} on the Android device: {error}')
+                if con:
+                    print (f'{space}      ' + ('pushed' if pushed else 'already on the device'))
+            for device_file, host_file in (params.get('android_push_files') or {}).items():
+                dfile = android.device_path(adb_tmp_path, device_file)
+                if con:
+                    print (f'{space}INFO: Android file {dfile} ...')
+                pushed, error = android.push_file(adb_path, serial, host_file, dfile)
+                if error:
+                    return self.cm.error(f'failed to push {host_file} to {dfile} on the Android device: {error}')
+                if con:
+                    print (f'{space}      ' + ('pushed' if pushed else 'already on the device'))
 
             # Process input files
             for k in input_files:
@@ -318,8 +346,9 @@ class CTask(InitCTask):
                         ll = os.path.basename(l)
                         cmds.append(adb_with_serial + f' push "{l}" "{adb_tmp_path_lib}/{ll}"')
 
-            # Check run-time env ...
-            run_time_env['LD_LIBRARY_PATH'] = adb_tmp_path_lib
+            # Check run-time env ... (the folders of a release or build first)
+            ld_paths = [android.device_path(adb_tmp_path, p) for p in (params.get('android_ld_library_path') or [])]
+            run_time_env['LD_LIBRARY_PATH'] = ':'.join(ld_paths + [adb_tmp_path_lib])
 
             envs = ''
             for k in run_time_env:
@@ -363,7 +392,8 @@ class CTask(InitCTask):
                     print (f'{space}INFO: Removing "{output_file}"')
                 os.remove(output_file)
 
-            if _android_cpu:
+            # Files the host makes after the run (llama.cpp's perf.json) are not on the device
+            if _android_cpu and f not in (params.get('android_skip_pull') or []):
                 x1 = f'{adb_tmp_path}/{f}'
                 xx1 = self.cm.qq(x1)
                 x2 = f'{f}'

@@ -27,6 +27,18 @@ FALLBACK_CUDA = {'windows': ['13.4', '13.3', '12.4'], 'linux': ['13.4', '13.3', 
 # Binaries next to llama-cli that programs use (result keys <name>_path / <name>_qpath)
 SIBLINGS = {'completion': 'llama-completion', 'bench': 'llama-bench', 'server': 'llama-server', 'cli': 'llama-cli'}
 
+# Next to the binaries of an Android release: its build, as "llama-cli --version" would print it
+ANDROID_RELEASE_FILE = 'cmeta-llama-cpp-release.txt'
+
+
+def android_release_version(path):
+    """The version text recorded next to an Android release's binary at path, or None."""
+    marker = os.path.join(os.path.dirname(path.lstrip('!')), ANDROID_RELEASE_FILE)
+    if os.path.isfile(marker):
+        with open(marker, encoding = 'utf-8') as f:
+            return f.read().strip()
+    return None
+
 
 def _version_tuple(v):
     try:
@@ -69,7 +81,7 @@ def select_asset(build, uname, uarch, backend, assets = None, cuda_driver = None
     if not arch:
         return {'error': f'llama.cpp publishes no binaries for the CPU architecture "{uarch}"'}
 
-    plat = {'windows': 'win', 'linux': 'ubuntu', 'darwin': 'macos'}.get(uname)
+    plat = {'windows': 'win', 'linux': 'ubuntu', 'darwin': 'macos', 'android': 'android'}.get(uname)
     if not plat:
         return {'error': f'llama.cpp publishes no binaries for "{uname}"'}
 
@@ -78,6 +90,15 @@ def select_asset(build, uname, uarch, backend, assets = None, cuda_driver = None
 
     def has(name):
         return assets is None or name in assets
+
+    # Android: the CPU build (every CPU variant, picked at run time), and the Snapdragon build
+    # (CPU, Adreno GPU, Hexagon NPU) for Qualcomm devices
+    if plat == 'android':
+        if backend not in ('cpu', 'snapdragon'):
+            return {'error': f'llama.cpp publishes no {backend} build for Android (cpu, or snapdragon '
+                             f'for Qualcomm devices: build-llama-cpp builds the others)'}
+        name = f'{prefix}{arch}.{ext}' if backend == 'cpu' else f'{prefix}{arch}-snapdragon.{ext}'
+        return {'asset': name} if has(name) else {'error': f'release b{build} has no asset {name}'}
 
     if plat == 'macos':
         if backend not in ('cpu', 'metal'):
@@ -313,6 +334,16 @@ class CTool(InitCTool):
 
         result = {'return':0}
 
+        # Android binaries do not run here: the build recorded when the release was installed
+        if _android_cpu:
+            for path in paths:
+                output = android_release_version(path)
+                if output:
+                    found_paths_with_versions[path] = {'output': output, 'cmd_call': None, 'cmd': None}
+            if found_paths_with_versions:
+                result['found_paths_with_versions'] = found_paths_with_versions
+                return result
+
         for path in paths:
 #            Actually, even if compiled as static, it may pick up and link dynamically compiled libs from cMeta!
 #            if not _static:
@@ -403,6 +434,13 @@ class CTool(InitCTool):
             compute = ['cpu']
         if type(compute) == str:
             compute = compute.split(',')
+
+        # An Android device (--compute=android-cpu): the release for Android, which runs there
+        # (programs push it over adb), never on this machine
+        android = 'android-cpu' in compute
+        if android:
+            uname = 'android'
+            uarch = _global.get('target--android-cpu', {}).get('features', {}).get('arch_normalized') or 'arm64'
 
         # A release build has one GPU backend (and the CPU one): taking the first of two GPU
         # targets would run a different experiment than the one asked for
@@ -506,7 +544,8 @@ class CTool(InitCTool):
 
         directory = 'content'
         name = self.cdesc.get('name', 'llama-cli')
-        path_to_llama = os.path.join(os.getcwd(), directory, name + _global['host']['vars']['file_ext_exe'])
+        ext_exe = '' if android else _global['host']['vars']['file_ext_exe']
+        path_to_llama = os.path.join(os.getcwd(), directory, name + ext_exe)
 
         if filename2:
             url2 = f'{RELEASES}/download/b{version_simple}/{filename2}'
@@ -559,6 +598,11 @@ class CTool(InitCTool):
 
             rx = self.cm.access(ii)
             if self.cm.catch_error(rx): return rx
+
+        # The build of an Android release, which cannot run here to tell it (detect_versions)
+        if android:
+            with open(os.path.join(os.path.dirname(path_to_llama), ANDROID_RELEASE_FILE), 'w', encoding = 'utf-8') as f:
+                f.write(f'version: (build {version_simple}) {filename}\n')
 
         result = {
           'return': 0,

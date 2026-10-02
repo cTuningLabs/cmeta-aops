@@ -59,6 +59,55 @@ def run_flags(compute, params):
     return ' '.join(flags), settings
 
 
+ANDROID_TMP = '/data/local/tmp'
+ANDROID_DIR = 'cmeta-llama-cpp'     # <ANDROID_TMP>/cmeta-llama-cpp/<variant>/: the binary and its libraries
+ANDROID_MODELS = 'cmeta-models'     # <ANDROID_TMP>/cmeta-models/<model file>
+
+
+def android_run(bin_dir, exe_name, variant, model_path):
+    """
+    A run on an Android device: the llama.cpp files to keep there (the run binary and the
+    shared libraries, which a GGML_BACKEND_DL build loads from the binary's folder), the model,
+    and the device paths of both. setup-run pushes them once, and again only when they change.
+    """
+    import glob
+    files = [os.path.join(bin_dir, exe_name)] + sorted(glob.glob(os.path.join(bin_dir, '*.so')))
+    device_dir = f'{ANDROID_DIR}/{variant}'
+    device_model = f'{ANDROID_MODELS}/{os.path.basename(model_path)}'
+    return {
+        'exe': f'{ANDROID_TMP}/{device_dir}/{exe_name}',
+        'model': f'{ANDROID_TMP}/{device_model}',
+        'setup_run': {
+            'android_push_folders': {device_dir: files},
+            'android_push_files': {device_model: model_path},
+            'android_ld_library_path': [device_dir],
+            # perf.json is made here after the run, from the llama.log pulled from the device
+            'android_skip_pull': ['perf.json'],
+        },
+    }
+
+
+def target_run(cm, ctx, exe_path, variant):
+    """
+    The binary and the model of a run, as local llama_cpp_exe and llama_cpp_model: here, or on
+    the Android device (--compute=android-cpu), with what setup-run keeps there between runs in
+    local llama_cpp_setup_run. Returns True for a run on Android.
+    """
+    _local = ctx['tasks']['local']
+    model = _local.get('model', {})
+    model_path = model.get('path') or str(model.get('qpath', '')).strip('"')
+    if 'android-cpu' in ctx['tasks']['global']['target']['compute']:
+        a = android_run(os.path.dirname(exe_path), os.path.basename(exe_path), variant, model_path)
+        _local['llama_cpp_exe'] = a['exe']
+        _local['llama_cpp_model'] = a['model']
+        _local['llama_cpp_setup_run'] = a['setup_run']
+        return True
+    _local['llama_cpp_exe'] = cm.q(exe_path)
+    _local['llama_cpp_model'] = model.get('qpath') or cm.q(model_path)
+    _local['llama_cpp_setup_run'] = {}
+    return False
+
+
 def openvino_device(compute):
     """
     The device of llama.cpp's OpenVINO build (GGML_OPENVINO_DEVICE) for the targets: the NPU
@@ -159,7 +208,8 @@ def finish_llama_run(program, ctx, desc = {}, **misc):
     clone = _global.get('clone-git-to-cache-src-llama-cpp', {})
     if 'build' not in perf:
         for candidate in (_global.get('llama-cpp', {}).get('version'), clone.get('branch'),
-                          _local.get('params', {}).get('checkout')):
+                          _local.get('params', {}).get('checkout'),
+                          (clone.get('_params') or {}).get('checkout')):
             m = re.match(r'b?(\d+)$', str(candidate or ''))
             if m:
                 perf['build'] = int(m.group(1))
