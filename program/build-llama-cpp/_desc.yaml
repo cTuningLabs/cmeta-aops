@@ -92,10 +92,13 @@ updates:
             if: '"android-cpu" in {{global.target.compute|$[]}}'
             name: lib-openssl-android,c6cd8622939a4f66
 
+          # The same build as the release tool installs (tool/llama-cpp default_version), so a
+          # release and a source build compare out of the box; --checkout=<tag|branch|commit>
+          # (master was the default: whatever it was at the first clone, then cached)
           - task: clone-git-to-cache,86919b3cfdd443d2
             name: src-llama-cpp
             url: 'https://github.com/ggml-org/llama.cpp'
-            checkout: '{{params.checkout|$None}}'
+            checkout: '{{params.checkout|b11324}}'
 
           - internal_func: customize_llama_cpp
             internal_func_from_local_key: selected-program

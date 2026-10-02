@@ -34,6 +34,18 @@ class CProgram(InitCProgram):
         if 'cuda' in compute:
             _local['lang'] = 'cuda'
 
+        # --model=<file.gguf>, --prompt=<file>: instead of the model and dataset categories, as in
+        # program llama-cpp (the same experiment with a release and a source build)
+        program_params = params.get('params', {})
+        model = program_params.get('model')
+        prompt = program_params.get('prompt')
+        if model or prompt:
+            _use = ctx['tasks'].setdefault('use', {})
+            if model:
+                _use.setdefault('model', {})['filename'] = os.path.abspath(model)
+            if prompt:
+                _use.setdefault('dataset', {})['filename'] = os.path.abspath(prompt)
+
         return {'return':0}
 
     ############################################################

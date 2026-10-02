@@ -337,3 +337,11 @@ def test_llama_cpp_release_gpu_targets():
     assert set(ll.GPU_TARGETS) >= {"cuda", "vulkan", "metal"}
     assert ll.backend_from_compute(["cpu", "cuda"], "linux") == "cuda"
     assert ll.backend_from_compute(["cpu"], "darwin") == "metal"
+
+
+def test_build_llama_cpp_default_checkout_is_the_release_build():
+    """A release and a source build of llama.cpp compare out of the box: the same default build."""
+    import yaml
+    tool = yaml.safe_load((REPO_ROOT / "tool" / "llama-cpp" / "_desc.yaml").read_text(encoding = "utf-8"))
+    desc = (REPO_ROOT / "program" / "build-llama-cpp" / "_desc.yaml").read_text(encoding = "utf-8")
+    assert "checkout: '{{params.checkout|b%s}}'" % tool["default_version"] in desc
