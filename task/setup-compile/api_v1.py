@@ -403,6 +403,11 @@ class CTask(InitCTask):
         if x:
             cmd += ' ' + x
 
+        # The host compiler of a compiler driver (nvcc's -ccbin)
+        x = compiler_features.get('flags', {}).get('host_compiler')
+        if x:
+            cmd += ' ' + x
+
         x = result.get('pre_target_exe_flag')
         if x:
             cmd += ' ' + x

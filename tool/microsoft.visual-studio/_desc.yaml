@@ -32,6 +32,9 @@ extra_paths:
 # Visual Studio Build Tools with the C++ workload (MSVC, the Windows SDK, CMake) through winget:
 #   cx tool setup microsoft.visual-studio --install                 # the newest (2026)
 #   cx tool setup microsoft.visual-studio --install --with.year=2022
+#   cx tool setup microsoft.visual-studio --version="<19.50"        # the release whose cl.exe has it: 2022
+# The version of this tool is cl.exe's (19.5x is 2026, 19.3x-19.4x 2022, 19.2x 2019, 19.1x 2017):
+# nvcc asks for the range its toolkit supports. A version no release has installs nothing.
 # The Visual Studio installer asks for administrator rights (UAC).
 install_cmd:
   windows: '{{global.winget.qpath}} install --id=@VS_BUILD_TOOLS@ -e --source winget {{global.init.winget_install_flags|}} --override "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"'

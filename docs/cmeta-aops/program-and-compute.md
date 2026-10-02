@@ -78,7 +78,10 @@ The **`target` task** (`task/target/api_v1.py`) resolves it:
 1. Normalise (string→list; or interactively pick `target--*` artifacts if `ask`).
 2. For each `c`, run sub-task **`target--<c>`** (e.g. `target--cuda` sets up the `cuda`
    tool, exposes `global.cuda.features`, emits env `CMETA_TARGET_CUDA=1`, and has an
-   `sdk:` sub-pipeline that sets up `nvcc`; `target--vulkan` lists the devices of the
+   `sdk:` sub-pipeline that sets up `nvcc`: the newest CUDA toolkit that suits the GPU and the
+   driver, installed from NVIDIA's archives without root when the system has none, with the
+   host compiler the toolkit supports, see
+   [tool/nvcc/README.tech.md](../../tool/nvcc/README.tech.md); `target--vulkan` lists the devices of the
    Vulkan loader (`tool/vulkan`) and its SDK step sets up `tool/vulkan-sdk`;
    `target--cpu` records the CPU inventory and sets `CMETA_TARGET_CPU=1`;
    `target--android-cpu` detects the device — deep dive #2).

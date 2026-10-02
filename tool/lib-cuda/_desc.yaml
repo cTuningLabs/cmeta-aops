@@ -19,6 +19,10 @@ only_paths:
     - "{{global.nvcc.features.paths.home}}/**"
 
 uses:
+  # A toolkit that nvcc installed from NVIDIA's archives gets the libraries asked for here
+  # (cublas, cufft, ...) when it lacks them
   - task: setup,a2f9b61079ce4333
     name: nvcc,7f0e9193fef74919
+    with:
+      cuda_libs: '{{params.with.lib_names|$None}}'
 
