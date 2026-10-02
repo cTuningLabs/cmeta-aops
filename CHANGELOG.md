@@ -3,6 +3,17 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **flatc, the FlatBuffers compiler** (`tool/flatc`, new). The setup uses an installed flatc when
+  it finds one. Otherwise it downloads the pinned GitHub release for Windows, macOS (arm64 and
+  x86_64) or Linux x86_64, whose static binary runs on every distribution, Alpine included. It
+  checks the download against the SHA-256 that GitHub lists for it. Linux on other CPUs gets the
+  distribution's package. ExecuTorch's exporter needs flatc on Windows: point `FLATC_EXECUTABLE`
+  at it.
+  - `common_release` specs can pin digests per version and asset (`checksum: {'sha256': ...}`),
+    for releases that publish no checksum file.
+- **setup:** the "this installation requires SUDO" warning now appears only when the sudo command
+  runs. Before, it also appeared before a release download that needs no root (rclone, zstd,
+  flatc).
 - **JAX for every target** (`tool/pip-jax`, new; see its [README.tech.md](tool/pip-jax/README.tech.md)):
   `cx tool setup pip jax` picks JAX's plugin from the targets.
   - **Plugins:** `jax[cuda13]` or `jax[cuda12]` (from the driver and the oldest GPU),

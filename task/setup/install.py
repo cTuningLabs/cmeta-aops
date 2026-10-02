@@ -177,12 +177,14 @@ def install_tool(self,
 
     os_key = uname if (uname == 'windows' or uname in requires_sudo) else 'linux'
     x = requires_sudo.get('all') if 'all' in requires_sudo else requires_sudo.get(os_key)
+    sudo_warning = False
     if x:
         # Turn on non-interactive mode unless passwordless sudo
         # You may customize it further via customize_install_cmd
-        if con:
-            print ('')
-            print (f'{space}WARNING: this installation requires SUDO ...')
+        # The warning is printed when the install command runs: a custom install (a release
+        # download into the cache) needs no sudo, and falls back to the command only when it
+        # cannot install the tool itself
+        sudo_warning = con
 
         # It's needed to use bash that checks for sudo (even if in non-interactive mode)...
         timeout = None
@@ -247,6 +249,10 @@ def install_tool(self,
                 force_custom_install = False # to be able to proceed with install_cmd if needed ...
 
     if install_cmd and not force_custom_install:
+        if sudo_warning:
+            print ('')
+            print (f'{space}WARNING: this installation requires SUDO ...')
+
         # Add version if supported
         versioned = False
 
