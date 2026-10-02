@@ -20,7 +20,29 @@ BUILD_TOOLS_WINGET_IDS = {
     '2017': 'Microsoft.VisualStudio.2017.BuildTools',
 }
 
+# The cl.exe versions of each release (the tool's version is cl.exe's: 19.44 is Visual Studio 2022)
+CL_MINORS = {'2026': (50, 59), '2022': (30, 49), '2019': (20, 29), '2017': (10, 19)}
+
 VCVARS_DIR = os.path.join('VC', 'Auxiliary', 'Build')
+
+
+def year_for(version, matches):
+    """
+    The newest Build Tools release whose cl.exe has the version asked for: a plain version
+    (19.44.35217, 19.44) by its major.minor, a range (>=19.10,<19.50) by the newest minor in it;
+    None when no release has it.
+    """
+    v = str(version or '').strip().lstrip('=')
+    parts = v.split('.')
+    if len(parts) >= 2 and all(p.isdigit() for p in parts[:2]):
+        major, minor = int(parts[0]), int(parts[1])
+        if major != 19:
+            return None
+        return next((y for y, (lo, hi) in CL_MINORS.items() if lo <= minor <= hi), None)
+    for year, (lo, hi) in CL_MINORS.items():
+        if any(matches(version, f'19.{minor}.0') for minor in range(hi, lo - 1, -1)):
+            return year
+    return None
 
 
 def vswhere_installations():
@@ -106,10 +128,20 @@ class CTool(InitCTool):
                               uninstall_cmd: str = None,
     ):
         """
-        The winget package of the Build Tools release: the newest (2026) unless --with.year.
+        The winget package of the Build Tools release: --with.year, else the release whose cl.exe
+        has the version asked for (the tool's version is cl.exe's: 19.44 is 2022), else the
+        newest (2026). A version that no release has stops here, before anything is installed.
         """
 
-        year = str(params.get('with', {}).get('year') or '2026')
+        year = params.get('with', {}).get('year')
+        version = params.get('version')
+        if not year and version:
+            year = year_for(version, lambda spec, v: self.cm.packages.match_version(spec, v).get('matched', False))
+            if not year:
+                return self.cm.error(f'no Visual Studio Build Tools release has cl.exe {version}: the version of '
+                                     f'this tool is cl.exe\'s (19.5x is 2026, 19.3x-19.4x 2022, 19.2x 2019, 19.1x 2017); '
+                                     f'--with.year picks a release')
+        year = str(year or '2026')
         winget_id = BUILD_TOOLS_WINGET_IDS.get(year)
         if not winget_id:
             return self.cm.error(f'unknown Visual Studio Build Tools release "{year}" '

@@ -3,6 +3,30 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **CUDA toolkits of any version, without root, with the host compiler they support** (`tool/nvcc`,
+  see its [README.tech.md](tool/nvcc/README.tech.md)). nvcc skips the toolkits whose programs could
+  not run here: those whose oldest architecture is newer than the GPU (CUDA 13 dropped Maxwell to
+  Volta), and those for a newer major CUDA version than the driver's. When none suits, or
+  `--version` asks for another, it installs one from NVIDIA's redistributable archives: the newest
+  release that suits the GPU and the driver, with each archive checked against NVIDIA's sha256 and
+  unpacked into the cMeta cache. `--version` is nvcc's (`12.9`, `12.9.86`, a range); a CUDA release
+  label gets a hint.
+  - **Libraries on demand:** `--with.cuda_libs` and `lib-cuda`'s `lib_names` add cuBLAS, cuFFT and
+    the others to a toolkit made from the archives, once. Without `-q`, it asks first.
+  - **The host compiler** is set up once the toolkit is known: the newest GCC, clang or MSVC that
+    the toolkit's `host_config.h` accepts (Visual Studio 2022 for CUDA 12.x, when Visual Studio
+    2026 is also installed). It is passed to nvcc as `-ccbin`, through the new `host_compiler` flag
+    of `setup-compile`.
+    - `--use.<tool>.version` still decides.
+    - An unsupported compiler set up earlier in the run stops the run, with the option to use.
+    - `--with.any_host_compiler` adds `-allow-unsupported-compiler`.
+  - **`--with.arch_flags`:** a GPU newer than the toolkit gets PTX, which the driver compiles (it
+    got machine code the GPU could not run). A GPU older than the toolkit gets an error, instead of
+    code for another GPU.
+  - One nvcc cache entry per GPU architecture.
+  - **`microsoft.visual-studio`:** a version (cl.exe's, such as `<19.50`) picks the Build Tools
+    release to install. A version that no release has installs nothing; before, it installed the
+    newest.
 - **Agent tasks renamed: `run-claude2` -> `run-claude`, `run-codex2` -> `run-codex`,
   `run-opencode2` -> `run-opencode`**, and the first `run-claude` prototype is removed. The
   tasks keep their UIDs, so references by `alias,UID` (`run-claude2,38be73ffceaa4f67`) keep
