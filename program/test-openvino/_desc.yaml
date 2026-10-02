@@ -50,7 +50,7 @@ updates:
              version: '{{params.python_version|>=3.10,<3.15}}'
              # Its own venv per set of targets
              with:
-               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets}}'
+               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
 
            - task: setup,a2f9b61079ce4333
              name: pip
