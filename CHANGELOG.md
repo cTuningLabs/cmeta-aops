@@ -75,6 +75,33 @@ All notable changes to cMeta AOps are documented here, newest first.
   | ThinkPad T470p, GeForce 940MX | CPU 41, Vulkan 32 | CPU 41 (316 s), Vulkan 34 (474 s) | CPU wheel 12.9 (1 GiB KV cache) | CPU 40.8, Vulkan 37.5 | |
   | Mac mini M4, macOS 27 | Metal 191, CPU 156 | Metal 169 (87 s), Vulkan/MoltenVK 136 (81 s; 101 on the first run) | CPU wheel 55, CPU from source 49.9 (79 s) | Metal 190.5, CPU 159.8 | MPS ✓ (1000 s) |
   | Docker `python:3.12` (x86_64) | | | CPU wheel 18 | | |
+- **`cx tool setup <tool> --status` and `--upgrade`** - for every tool, with no change to its `_desc.yaml`
+  (`task/setup/upgrade.py`). The tool's install **channel** on this OS is derived from its install command
+  or hook - winget, Homebrew, the distro package manager (`install_cmd_sudo`), an upstream install script,
+  npm, pip, or a release download - and decides which version counts as "latest" and what the upgrade runs:
+  - `--status` lists every copy found (the cMeta cache entries `setup` replays first, then the PATH), the
+    newest version the channel offers (`winget show --versions`, `brew info`, `apt-cache policy` /
+    `dnf info` / `apk policy` / `pacman -Si` / `zypper info`), the newest upstream version (the release
+    GitHub marks as latest, read from the `/releases/latest` redirect - not the newest tag, which can be a
+    pre-release), the command `--upgrade` would run, and a verdict. It installs nothing and writes nothing;
+    Python callers get `result['status']`.
+  - `--upgrade` upgrades a detected tool through its channel (`winget upgrade`, `brew upgrade`,
+    `apt-get install --only-upgrade`, the install script again, `npm install X@latest`, pip's own update,
+    the release download of the newest version into the same cache entry), detects it again and reports
+    `before -> after`; a tool that is not installed gets the newest version. Several copies found: the
+    usual selection prompt, `-q` takes the newest. The cache entry records the new version and a
+    `last_upgrade` entry. `--update` is unchanged (it rebuilds the entry from what is installed).
+  - Two optional `_desc.yaml` keys override the derivation: `upgrade_cmd` (per OS) and
+    `cmd_get_latest_version` (+ `_regex`, `_uses`). `task/host` gained `upgrade_cmd(_sudo)` and
+    `candidate_version_cmd/_regex` per package manager.
+  - Also: a `check_params` stop (`--versions`, `--status`) now returns its data to the caller;
+    `common_release` names checksum files per version (an in-place upgrade reused the old release's
+    checksums) and drops a download whose SHA-256 did not match; `detect` returns every matching copy
+    in `detected`.
+  - Tested: Windows (winget: uv 0.11.1 -> 0.12.21, opencode and git; release: jq 1.7.1 -> 1.8.2 in place),
+    Debian and Ubuntu containers as root (apt: git, curl; release: jq), Ubuntu as a user (install script:
+    claude; apt status without sudo), macOS arm64 (Homebrew: gh; install script: claude; release: helm).
+    Offline unit tests in `tests/cmeta_aops_basic_tests/test_tool_upgrade.py`.
 - **Docs: `--use.<storage key>.<param>=<value>`**, which changes any sub-task of a run from the command line,
   however deep it sits: a dependency's version, or a control switch such as `update` of one step.
   - a new section in `docs/cmeta-aops/task-engine.md`, "Changing a dependency anywhere in a pipeline": how it
@@ -82,6 +109,21 @@ All notable changes to cMeta AOps are documented here, newest first.
     switches that travel with it;
   - a line in the README;
   - notes in the `add-task` and `add-tool` skills.
+- **Fix: `tool/ccache` downloads the right release asset.** The macOS branch left `uarch2` unassigned
+  (an `UnboundLocalError` on every Mac) and asked for `ccache-<v>-macos.tar.gz`, which upstream never
+  published - the asset is `ccache-<v>-darwin.tar.gz`, one universal binary. Linux asked for `.tar.gz`,
+  while upstream publishes `.tar.xz`, since 4.13 as `ccache-<v>-linux-<arch>-{glibc,musl-static}.tar.xz`
+  (musl on Alpine); Windows arm64 is `windows-aarch64.zip`. Verified: 4.13.6 installs from its release
+  on Windows x86_64, macOS arm64 and Linux x86_64 (Debian container).
+- **Fix: `cx tool setup <tool> --versions` lists releases only** for the tools whose regex also accepted
+  pre-release or unrelated tags: `kubectl`, `pytorch` and `torch-cpp` (`\b` let `v1.38.0-alpha.0` yield an
+  unreleased `1.38.0`), `go` (`rcN`), `codex` (`-alpha`), `openclaw` (`-beta`), `uv` (every tag), `openjdk`
+  (`jdk-(.+)` matched the nightly `jdk25u-...-beta` tags), `python` (`3.14.0rc3`, `+freethreaded`),
+  `obsidian`, `llvm`/`clang`/`clang-cpp` (`-rc1`, `-init`), and the generic regex of `ccache`, `cmake`,
+  `node-js`, `rclone`, `rustc` and `lib-openssl-android`. `--version=<pre-release>` still installs one.
+- **Fix: versioned installs that could never work are gone**: `tool/gh` asked Homebrew for `gh@2` /
+  `gh2` and `tool/kubectl` for `kubectl@1.37.1` and a snap channel `1.37.1/stable` - no such formulae or
+  channel exist. Without the entries task/setup reuses `install_cmd` (current), as `az` already does.
 
 ## 0.40.1
 - **`task/rclone-to-ssh`: a plain `bisync` now adds `--resilient --recover`** (turn off with `--no-recover`).

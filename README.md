@@ -35,6 +35,8 @@ uv tool install "cmeta[server]"                 # the engine (or: pip install cm
 cx repo get ctuninglabs@cmeta-aops              # this repository, from GitHub
 cx tool setup git                               # detect or install a tool into the cache
 cx tool run git -- status                       # run it (arguments go after --)
+cx tool setup git --status                      # installed version vs the newest its install channel offers
+cx tool setup git --upgrade                     # upgrade it there (or install the newest if it is missing)
 cx task list                                    # browse the reusable workflow steps
 cx program run test-nmm-c-cpu cpu               # compile and run a matmul benchmark on CPU
 cx program run test-nmm-nvcc-cuda cuda          # ... or on CUDA, if you have it
@@ -148,8 +150,10 @@ subfolder is an **artifact** described by `_cmeta.*` (identity) + `_desc.yaml`
 
 - **`tool` — external programs, made portable.** A tool artifact knows how to **detect,
   install, build and run** one CLI (git, cmake, clang, cuda, python, node-js, …) across
-  OSes, and how to list its available versions. Set one up once and reuse it everywhere.
-  → `cx tool setup <name>` · `cx tool run <name> -- <args>` · `cx tool setup <name> --versions`
+  OSes, how to list its available versions, and how to check for and install upgrades.
+  Set one up once and reuse it everywhere.
+  → `cx tool setup <name>` · `cx tool run <name> -- <args>` · `cx tool setup <name> --versions` ·
+  `cx tool setup <name> --status` · `cx tool setup <name> --upgrade`
 
 - **`program` — build & run benchmarks and apps.** A program is a compilable/runnable
   artifact (matmul micro-benchmarks, PyTorch/llama.cpp builds, image classification, …).

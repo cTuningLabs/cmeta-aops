@@ -79,7 +79,8 @@ def test_total_ram_gib_on_this_machine(common_build):
 
 @pytest.fixture(scope = "module")
 def sudo_prefix():
-    return load_module("task/setup/install.py", "setup_install").SUDO_PREFIX
+    # The module-level code only: install.py imports its package sibling upgrade.py
+    return load_head("task/setup/install.py", "\ndef install_tool", ["from . import upgrade"]).SUDO_PREFIX
 
 
 @pytest.mark.parametrize("cmd, expected", [

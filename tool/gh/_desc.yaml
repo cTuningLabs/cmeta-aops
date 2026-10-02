@@ -14,9 +14,9 @@ install_cmd:
   linux: '{{global.brew.qpath}} install gh'
   windows: "{{global.winget.qpath}} install --id=GitHub.cli -e --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
+# No darwin/linux entries on purpose: Homebrew ships a single "gh" formula with no
+# versioned variants, so without them task/setup reuses install_cmd and installs current.
 install_cmd_version:
-  darwin: '{{global.brew.qpath}} install gh@{{major_version}}'
-  linux: '{{global.brew.qpath}} install gh{{major_version}}'
   windows: "{{global.winget.qpath}} install --id=GitHub.cli -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
 install_help_text:
