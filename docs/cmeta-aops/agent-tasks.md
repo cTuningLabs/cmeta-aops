@@ -12,8 +12,7 @@ statistics next to the prompt file.
 | Artifact | What it does |
 |---|---|
 | [`tool/claude`](../../tool/claude/_desc.yaml), [`tool/codex`](../../tool/codex/_desc.yaml), [`tool/opencode`](../../tool/opencode/_desc.yaml) | Detect or install the three agent CLIs, pin a release, list the published versions. |
-| [`task/run-claude`](../../task/run-claude/_desc.yaml) | Open Claude Code interactively; everything after `--` goes straight to it. |
-| [`task/run-claude2`](../../task/run-claude2/_desc.yaml), [`task/run-codex2`](../../task/run-codex2/_desc.yaml), [`task/run-opencode2`](../../task/run-opencode2/_desc.yaml) | Run an agent on an assembled prompt — headless or interactive — and record the output and the token statistics. `run-claude2` also adds cMeta repositories to the agent's context. |
+| [`task/run-claude`](../../task/run-claude/_desc.yaml), [`task/run-codex`](../../task/run-codex/_desc.yaml), [`task/run-opencode`](../../task/run-opencode/_desc.yaml) | Run an agent on an assembled prompt — headless or interactive — and record the output and the token statistics. `run-claude` also adds cMeta repositories to the agent's context. |
 | [`tool/az`](../../tool/az/_desc.yaml), [`task/run-az`](../../task/run-az/_desc.yaml) | Detect or install the Azure CLI and run it with the terminal attached (`az login` works). |
 
 The three `run-*2` tasks share one design: the prompt is the text of
@@ -23,42 +22,42 @@ unless `--output_file` says otherwise; with no prompt at all the task opens an
 interactive session instead of failing. Their `_desc.yaml` files carry the full
 per-agent reasoning (which CLI flags implement `--yes`, `--reproducible`, `--stats`).
 
-## Claude Code — `task/run-claude2`
+## Claude Code — `task/run-claude`
 
 Uses `tool/claude`; see [Which model, which effort](#which-model-which-reasoning-effort)
 for `--model` / `--effort`.
 
 ```bash
-cx task run run-claude2                                      # open an interactive session
-cx task run run-claude2 --prompt="explain this repo"          # headless, one prompt
-cx task run run-claude2 --prompt_file=review.txt --yes --stats
-cx task run run-claude2 --prompt_file=review.txt --interactive
-cx task run run-claude2 --prompt="fix the tests" -- --model opus --effort xhigh
+cx task run run-claude                                      # open an interactive session
+cx task run run-claude --prompt="explain this repo"          # headless, one prompt
+cx task run run-claude --prompt_file=review.txt --yes --stats
+cx task run run-claude --prompt_file=review.txt --interactive
+cx task run run-claude --prompt="fix the tests" -- --model opus --effort xhigh
 ```
 
-## OpenAI Codex — `task/run-codex2`
+## OpenAI Codex — `task/run-codex`
 
 Uses `tool/codex`.
 
 ```bash
-cx task run run-codex2                                       # open an interactive session
-cx task run run-codex2 --prompt="explain this repo"           # headless, one prompt
-cx task run run-codex2 --prompt_file=review.txt --yes --stats
-cx task run run-codex2 --prompt="fix the tests" -- -m gpt-5.6-sol -c model_reasoning_effort="xhigh"
+cx task run run-codex                                       # open an interactive session
+cx task run run-codex --prompt="explain this repo"           # headless, one prompt
+cx task run run-codex --prompt_file=review.txt --yes --stats
+cx task run run-codex --prompt="fix the tests" -- -m gpt-5.6-sol -c model_reasoning_effort="xhigh"
 ```
 
-## OpenCode.AI — `tool/opencode` + `task/run-opencode2`
+## OpenCode.AI — `tool/opencode` + `task/run-opencode`
 
 ```bash
 cx tool setup opencode --install        # detect or install the CLI
 cx tool run opencode -- --version       # 1.18.19
 cx tool setup opencode --versions       # every published release
 
-cx task run run-opencode2                                    # open an interactive session
-cx task run run-opencode2 --prompt="explain this repo"        # headless, one prompt
-cx task run run-opencode2 --prompt_file=review.txt --yes --stats
-cx task run run-opencode2 --prompt_file=review.txt --interactive
-cx task run run-opencode2 --prompt="fix the tests" -- -m anthropic/claude-opus-5 --variant high
+cx task run run-opencode                                    # open an interactive session
+cx task run run-opencode --prompt="explain this repo"        # headless, one prompt
+cx task run run-opencode --prompt_file=review.txt --yes --stats
+cx task run run-opencode --prompt_file=review.txt --interactive
+cx task run run-opencode --prompt="fix the tests" -- -m anthropic/claude-opus-5 --variant high
 ```
 
 ## Azure CLI — `tool/az` + `task/run-az`
@@ -86,7 +85,7 @@ in its `_desc.yaml` and `api_v1.py` carry the full reasoning:
 | **macOS** | **Download** — the official `macos` tarball from the GitHub release | Relocatable, but *not* self-contained: the upstream launcher demands `AZ_PYTHON`, so a small `bin/az` wrapper supplies it. Falls back to `brew` when the host has no matching CPython. |
 | **Linux** | Package manager | Upstream publishes **no** portable download (the `.deb`/`.rpm` bundle a venv wired to `/opt/az`). apt-based distros get the Microsoft repo script — plain `apt install azure-cli` fails on stock Debian/Ubuntu — everything else the generic sudo package manager. |
 
-## Flags shared by `run-claude2` / `run-codex2` / `run-opencode2`
+## Flags shared by `run-claude` / `run-codex` / `run-opencode`
 
 | Flag | Effect |
 |---|---|
@@ -94,7 +93,7 @@ in its `_desc.yaml` and `api_v1.py` carry the full reasoning:
 | *(none of the above)* | **Opens an interactive session** instead of failing. |
 | `--interactive`, `--i`, `-i` | Preload the prompt, then keep the terminal (follow up by hand). |
 | `--yes` | Run unattended (auto-approve every permission question). |
-| `--add_repos=<alias,alias>` (`run-claude2`) | cMeta repositories added to the agent's context as `--add-dir <path>`, resolved on this machine — see [the next section](#repositories-in-the-agents-context-run-claude2). `none` adds nothing at all. |
+| `--add_repos=<alias,alias>` (`run-claude`) | cMeta repositories added to the agent's context as `--add-dir <path>`, resolved on this machine — see [the next section](#repositories-in-the-agents-context-run-claude). `none` adds nothing at all. |
 | `--reproducible` | Strip the per-machine parts of the session. Never fully deterministic — pin the model too. |
 | `--stats` / `--stats_file=<file>` | Token counters + cost of this prompt (via the agent's JSON event stream). |
 | `--output_file=<file>` | Where to record the transcript (default: `<prompt_file>-output.txt`). |
@@ -105,10 +104,10 @@ An interactive session owns the terminal, so `--stats`, `--stats_file` and
 `--output_file` are switched off there, and a non-zero exit code is reported but
 does not fail the task (quitting a session is normal).
 
-## Repositories in the agent's context (`run-claude2`)
+## Repositories in the agent's context (`run-claude`)
 
 Claude Code reads the `CLAUDE.md`, `AGENTS.md` and the skills under `.claude/skills/`
-of every directory it is given with `--add-dir`. `run-claude2` builds those flags
+of every directory it is given with `--add-dir`. `run-claude` builds those flags
 from **repository aliases**, resolving each path on the current machine through
 cMeta's own registry (`cx repo find`) — so the same command works everywhere, and
 nobody has to build the path with a shell substitution by hand.
@@ -133,7 +132,7 @@ passed after `--` as `--add-dir <path>` is never added twice.
 
 ## How the artifacts of a session record who made them
 
-`run-claude`, `run-claude2`, `run-codex2` and `run-opencode2` set `CMETA_GENERATOR` for the
+`run-claude`, `run-codex` and `run-opencode` set `CMETA_GENERATOR` for the
 agent process, unless a task that runs the agent has set it already (an import task keeps its
 own `task` record):
 
@@ -143,9 +142,9 @@ own `task` record):
 
 | Task | `agent` | `model` from | `effort` from |
 |---|---|---|---|
-| `run-claude`, `run-claude2` | `Claude Code <version>` | `--model` | `--effort`; else `thinking_budget` = `MAX_THINKING_TOKENS` |
-| `run-codex2` | `OpenAI Codex <version>` | `-m` / `--model` | `-c model_reasoning_effort=...` |
-| `run-opencode2` | `OpenCode <version>` | `--model` / `-m` | `--variant` |
+| `run-claude` | `Claude Code <version>` | `--model` | `--effort`; else `thinking_budget` = `MAX_THINKING_TOKENS` |
+| `run-codex` | `OpenAI Codex <version>` | `-m` / `--model` | `-c model_reasoning_effort=...` |
+| `run-opencode` | `OpenCode <version>` | `--model` / `-m` | `--variant` |
 
 The model and effort are recorded only when they are passed after `--`: a model or effort
 chosen in the agent's own config file, or switched inside an interactive session, is not seen.
@@ -166,12 +165,12 @@ and the limit is a rate limit, not a bill.
 > `opencode` 1.18.19. Model line-ups move fast — re-check with `/model` (claude,
 > codex) or `opencode models` before trusting a table.
 
-### `run-claude2` → Claude Code
+### `run-claude` → Claude Code
 
 Pass the model and the reasoning effort as CLI flags:
 
 ```bash
-cx task run run-claude2 --prompt="…" -- --model opus --effort xhigh
+cx task run run-claude --prompt="…" -- --model opus --effort xhigh
 ```
 
 `--model` takes an alias (`fable`, `opus`, `sonnet`, `haiku`) or a full name
@@ -192,13 +191,13 @@ Context window is 1M on everything except Haiku 4.5 (200K). For
 `--reproducible`, pin an **exact** version (`--model claude-haiku-4-5-20251001`)
 — an alias moves to another model over time.
 
-### `run-codex2` → OpenAI Codex
+### `run-codex` → OpenAI Codex
 
 Codex takes the model with `-m` and the reasoning effort through a config
 override:
 
 ```bash
-cx task run run-codex2 --prompt="…" -- -m gpt-5.6-sol -c model_reasoning_effort="xhigh"
+cx task run run-codex --prompt="…" -- -m gpt-5.6-sol -c model_reasoning_effort="xhigh"
 ```
 
 | Model | Strength | Cost | Speed | Reasoning effort |
@@ -212,14 +211,14 @@ cx task run run-codex2 --prompt="…" -- -m gpt-5.6-sol -c model_reasoning_effor
 `--effort` flag — it is always `-c model_reasoning_effort="…"` (or `/model` in
 the TUI).
 
-### `run-opencode2` → OpenCode.AI
+### `run-opencode` → OpenCode.AI
 
 OpenCode is provider-agnostic: a model is `provider/model`, and the reasoning
 effort is a provider-specific **variant**:
 
 ```bash
-cx task run run-opencode2 --prompt="…" -- -m anthropic/claude-opus-5 --variant high
-cx task run run-opencode2 --prompt="…" -- -m openai/gpt-5.6-sol --variant xhigh
+cx task run run-opencode --prompt="…" -- -m anthropic/claude-opus-5 --variant high
+cx task run run-opencode --prompt="…" -- -m openai/gpt-5.6-sol --variant xhigh
 ```
 
 | Provider | Reach it with | `--variant` values (reasoning effort) |
@@ -247,14 +246,14 @@ expressed as `--variant` instead of `--effort` / `model_reasoning_effort`.
 - **`opencode run` has no stdin mode.** Unlike `claude -p` and `codex exec -`,
   the prompt always travels as a command line argument — in both interactive and
   headless mode. The OS caps a command line (~32K chars on Windows, ~2MB of argv
-  on Linux), so `run-opencode2` warns above 30K chars. Use `run-claude2` or
-  `run-codex2` for a very long prompt file.
+  on Linux), so `run-opencode` warns above 30K chars. Use `run-claude` or
+  `run-codex` for a very long prompt file.
 - **Windows installs `opencode` through winget** (`SST.opencode`), because
   upstream publishes no `.cmd`/`.ps1` installer — `https://opencode.ai/install.ps1`
   is a 404. Linux/macOS use the official install script, which drops a prebuilt
   binary into `~/.opencode/bin` and pins an exact version with
   `--version X.Y.Z`.
-- **OpenCode's JSON event schema is not frozen.** `run-opencode2` walks the
+- **OpenCode's JSON event schema is not frozen.** `run-opencode` walks the
   events for text/tool-calls/usage instead of hard-coding one shape, and passes
   anything it cannot recognize through unchanged — so a schema change degrades
   the `--stats` output rather than losing the transcript.
