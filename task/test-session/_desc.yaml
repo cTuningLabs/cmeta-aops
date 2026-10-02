@@ -1,12 +1,15 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 ###################################################################################################
-# One dated place per test, build or benchmark: a sandbox to work in, and a log that stays.
+# One dated place per test, build or benchmark: a sandbox to work in, and a log that stays,
+# as two cMeta artifacts of the same name in the local repository (--repo for another one):
 #
-#   <CMETA_HOME>/tmp/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>/       the sandbox (deletable)
-#   <CMETA_HOME>/log/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>.md     the log (kept)
-#   <CMETA_HOME>/log/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>.json   the same as data
-#   <CMETA_HOME>/log/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>/       attached files (kept)
+#   tmp::test-session.<YYYYMMDD>-<HHMM>.<type>   the sandbox (deletable: cx tmp prune --days=7)
+#   log::test-session.<YYYYMMDD>-<HHMM>.<type>   the record (kept): session.md, session.json,
+#                                                 attachments/; tags test-session, <type>,
+#                                                 <YYYYMMDD>, <status>, <host>; its meta holds a
+#                                                 summary (cx log find --tags=test-session,<type>
+#                                                 --match.test_session.status=failed)
 #
 #   cx task run test-session --start --type=llama-drift --title="llama.cpp release vs source" \
 #                            [--cmd="cx program run llama-cpp cuda"] [--repos=<other repo>]
@@ -15,6 +18,8 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #   cx task run test-session --finish --id=20261002/0915.llama-drift --status=passed --summary="<what was found>"
 #   cx task run test-session [--list] [--date=20261002] [--type=llama-drift]
 #   cx task run test-session --prune [--days=7]        # sandboxes of finished sessions; logs stay
+#   cx task run test-session --migrate [--remove_old]   # the folders of cMeta-aops before 0.42.0
+#                                                       # (<CMETA_HOME>/{log,tmp}/cmeta-tests-*)
 #
 # The record holds the host, cMeta and the repositories (branch, commit, changed files), and the
 # agent: CMETA_GENERATOR (agent, model, effort), the Claude Code session, or --agent, --model,
@@ -25,8 +30,8 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 # --costs.<key>=<value> for what is reported otherwise.
 #
 # Finish removes a sandbox above --max_keep_mib (1024) unless --keep. --print=sandbox|log|id|json
-# prints only that, on the last line (for scripts). --root (or CMETA_TESTS_ROOT) instead of
-# CMETA_HOME. Defaults: cx config set task --meta.test_session.max_keep_mib=4096 (also .root).
+# prints only that, on the last line (for scripts). Defaults: cx config set task
+# --meta.test_session.max_keep_mib=4096 (also .repo).
 ###################################################################################################
 cache: False
 

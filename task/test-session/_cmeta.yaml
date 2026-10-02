@@ -4,9 +4,9 @@ category: task,c36be4b9314a45e0
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
   files in the project root for details.
 creation_timestamp: '2026-10-02T08:53:03.261803+00:00'
-desc: 'Test sessions: a dated sandbox for a test, build or benchmark under CMETA_HOME/tmp,
-  and a log under CMETA_HOME/log that stays (what was done, by which agent, model
-  and effort, the results and the costs).'
+desc: 'Test sessions: a dated sandbox for a test, build or benchmark (a tmp artifact)
+  and a record that stays (a log artifact, both in the local repository): what was
+  done, by which agent, model and effort, the results and the costs.'
 generator:
   agent: Claude Code 2.1.286
   by: Grigori Fursin
@@ -20,7 +20,7 @@ last_generator:
   effort: max
   method: agent
   model: claude-opus-5-5
-last_update_timestamp: '2026-10-02T09:04:30.229149+00:00'
+last_update_timestamp: '2026-10-02T13:16:53.380932+00:00'
 name: Test session
 tags:
 - test
@@ -29,3 +29,5 @@ tags:
 - log
 uses_categories:
   config: config,cc6bfe174be847ed
+  log: log,487a7639093a4685
+  tmp: tmp,a2551f6124a34cf3

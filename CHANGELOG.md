@@ -127,9 +127,12 @@ All notable changes to cMeta AOps are documented here, newest first.
   generally, `--upgrade` now installs the newest version of every tool whose install command
   takes a version and whose versions are known, instead of running the pinned install again.
 - **Test sessions: a sandbox and a kept log for every test** (`task/test-session`, see its
-  [README](task/test-session/README.md)). `cx task run test-session --start --type=<type>` gives
-  `<CMETA_HOME>/tmp/cmeta-tests-<YYYYMMDD>/<HHMM>.<type>/` to work in, and a log in
-  `<CMETA_HOME>/log/cmeta-tests-<YYYYMMDD>/` (Markdown and JSON) that stays when the sandbox goes. The
+  [README](task/test-session/README.md)). `cx task run test-session --start --type=<type>` gives a
+  sandbox to work in, a `tmp` artifact (the new `category/tmp`, for disposable folders; `cx tmp prune`),
+  and a record that stays when the sandbox goes, a `log` artifact of the same name in the local
+  repository (`session.md`, `session.json`, attachments), found by its tags and summary
+  (`cx log find --tags=test-session,<type>`). `--migrate` turns the folders of the first version
+  (`<CMETA_HOME>/tmp|log/cmeta-tests-*`) into artifacts. The
   log records the host, cMeta, the repositories' branch, commit and changed files, and the agent
   (`CMETA_GENERATOR`, the Claude Code session). Notes, results and attached files are added during the
   test. The costs are the wall time, the sandbox size, and the tokens the Claude Code session used

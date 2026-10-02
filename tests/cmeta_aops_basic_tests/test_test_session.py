@@ -4,14 +4,16 @@ Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 
-The test-session task: a dated sandbox under <root>/tmp and a log under <root>/log that stays,
-with the agent, the results and the costs. Offline; every test uses its own root.
+The test-session task: a dated sandbox (a tmp artifact) and a record that stays (a log
+artifact of the same name, in the local repository), with the agent, the results and the costs.
+Offline; the tests share the suite's throwaway CMETA_HOME, so each uses its own session types.
 """
 
 import datetime
 import json
 import os
 import re
+import uuid
 
 import pytest
 
@@ -27,12 +29,12 @@ def session(cm, tmp_path, monkeypatch):
     monkeypatch.delenv("CMETA_TESTS_ROOT", raising=False)
 
     def run(**params):
-        request = {"category": "task", "command": "run", "arg1": "test-session",
-                   "root": str(tmp_path), "con": False, "quiet": True}
+        request = {"category": "task", "command": "run", "arg1": "test-session", "con": False, "quiet": True}
         request.update(params)
         return cm.access(request)
 
-    run.root = tmp_path
+    run.home = str(cm.home_path)
+    run.unique = uuid.uuid4().hex[:6]   # session types of this test only
     return run
 
 
@@ -51,11 +53,13 @@ def helpers(repo_root):
 def test_start_creates_sandbox_and_log(session, repo_root):
     r = session(start=True, type="Self Test", title="session test", cmd="cx task run x")
     assert r["return"] == 0, r.get("error")
-    assert re.fullmatch(r"\d{8}/\d{4}\.self-test", r["id"])
+    assert re.fullmatch(r"\d{8}/\d{4}\.self-test(-\d+)?", r["id"])
     date, name = r["id"].split("/")
-    assert r["sandbox"] == os.path.join(str(session.root), "tmp", "cmeta-tests-" + date, name)
+    alias = f"test-session.{date}-{name}"
+    local = os.path.join(session.home, "repos", "local")
+    assert r["sandbox"] == os.path.join(local, "tmp", alias)
     assert os.path.isdir(r["sandbox"])
-    assert os.path.isfile(r["log"]) and r["log"].endswith(name + ".md")
+    assert r["log"] == os.path.join(local, "log", alias, "session.md") and os.path.isfile(r["log"])
 
     rec = r["record"]
     assert rec["status"] == "running"
@@ -93,7 +97,7 @@ def test_notes_results_costs_and_attachments(session, tmp_path):
     assert rec["notes"][-1]["text"] == "CUDA run"
     assert rec["results"] == {"model": "qwen2.5-0.5b-q4_k_m", "cuda_tps": 157.3, "runs": 3}
     assert rec["costs"] == {"gpu_minutes": 2, "agent_tokens": 1200, "agent_cost_usd": 0.5}
-    kept = os.path.join(os.path.dirname(r["log"]), sid.split("/")[1], "bench.txt")
+    kept = os.path.join(os.path.dirname(r["log"]), "attachments", "bench.txt")
     assert os.path.isfile(kept)
     assert rec["attachments"][0]["name"] == "bench.txt"
 
@@ -101,7 +105,24 @@ def test_notes_results_costs_and_attachments(session, tmp_path):
     assert "| cuda_tps | 157.3 |" in md
     assert "Agent tokens (reported): 1,200" in md and "Agent cost (reported): $0.5" in md
     assert "gpu_minutes: 2" in md
-    assert "bench.txt" in md
+    assert "(attachments/bench.txt)" in md
+
+
+def test_the_record_is_a_log_artifact_found_by_tags_and_meta(session, cm):
+    kind = "find-" + session.unique
+    r = session(start=True, type=kind, title="find me")
+    assert r["return"] == 0, r.get("error")
+    found = cm.access({"category": "log", "command": "find", "tags": ["test-session", kind, "running"]})
+    assert [a["path"] for a in found["artifacts"]] == [os.path.dirname(r["log"])]
+    tmp = cm.access({"category": "tmp", "command": "find", "tags": ["test-session", kind]})
+    assert [a["path"] for a in tmp["artifacts"]] == [r["sandbox"]]
+
+    assert session(finish=True, id=r["id"], status="failed")["return"] == 0
+    # nothing found: a soft error (16) without artifacts
+    assert not cm.access({"category": "log", "command": "find", "tags": ["test-session", kind, "running"]}).get("artifacts")
+    failed = cm.access({"category": "log", "command": "find", "tags": ["test-session", kind],
+                        "match": {"test_session": {"status": "failed"}}})["artifacts"]
+    assert len(failed) == 1 and failed[0]["cmeta"]["test_session"]["title"] == "find me"
 
 
 def test_finish_removes_a_large_sandbox_and_keeps_the_log(session):
@@ -122,9 +143,10 @@ def test_finish_removes_a_large_sandbox_and_keeps_the_log(session):
 
 
 def test_keep_list_and_prune(session):
-    kept = session(start=True, type="keepme")
-    small = session(start=True, type="small")
-    running = session(start=True, type="running")
+    u = session.unique
+    kept = session(start=True, type="keepme-" + u)
+    small = session(start=True, type="small-" + u)
+    running = session(start=True, type="running-" + u)
     assert session(finish=True, id=kept["id"], keep=True, max_keep_mib="0")["return"] == 0
     assert session(finish=True, id=small["id"])["return"] == 0
     assert os.path.isdir(small["sandbox"]), "a small sandbox stays after finish"
@@ -133,13 +155,13 @@ def test_keep_list_and_prune(session):
     assert listed["return"] == 0
     ids = [s["id"] for s in listed["sessions"]]
     assert {kept["id"], small["id"], running["id"]} <= set(ids)
-    only = session(list=True, type="small")["sessions"]
+    only = session(list=True, type="small-" + u)["sessions"]
     assert [s["id"] for s in only] == [small["id"]]
     assert session()["sessions"], "listing is the default action"
 
     r = session(prune=True)
     assert r["return"] == 0
-    assert r["pruned"] == [small["id"]]
+    assert small["id"] in r["pruned"] and kept["id"] not in r["pruned"] and running["id"] not in r["pruned"]
     assert not os.path.exists(small["sandbox"])
     assert os.path.isdir(kept["sandbox"]), "--keep survives a plain prune"
     assert os.path.isdir(running["sandbox"]), "a running session is never pruned"
@@ -166,6 +188,47 @@ def test_helpers(helpers):
     assert helpers["changed_text"](1) == ", 1 changed file" and helpers["changed_text"](0) == ""
     t = datetime.datetime(2026, 10, 2, 9, 15, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=2)))
     assert helpers["stamp"](t) == "2026-10-02 09:15:00 UTC+02:00"
+    assert helpers["alias_of"]("20261002/1338.ubuntu-npu-xpu") == "test-session.20261002-1338.ubuntu-npu-xpu"
+    assert helpers["alias_of"]("test-session.20261002-1338.x") == "test-session.20261002-1338.x"
+    assert helpers["alias_of"]("not-an-id") is None and helpers["alias_of"]("2026/1338.x") is None
+    assert helpers["id_of"]("test-session.20261002-1338.ubuntu-npu-xpu") == "20261002/1338.ubuntu-npu-xpu"
+    assert helpers["tag_of"]("FGG-LENOVO-P14S") == "fgg-lenovo-p14s" and helpers["tag_of"]("Self Test") == "self-test"
+
+
+def test_migrate_the_old_folders(session, cm, tmp_path):
+    """The folders kept before 0.42.0 become log and tmp artifacts, and --remove_old removes them."""
+    kind = "old-" + session.unique
+    day, name = "20261001", f"1200.{kind}"
+    old_log = tmp_path / "log" / ("cmeta-tests-" + day)
+    old_tmp = tmp_path / "tmp" / ("cmeta-tests-" + day) / name
+    (old_log / name).mkdir(parents=True)
+    old_tmp.mkdir(parents=True)
+    (old_tmp / "build.log").write_text("built\n", encoding="utf-8")
+    (old_log / name / "result.json").write_text("{}", encoding="utf-8")
+    rec = {"id": f"{day}/{name}", "type": kind, "title": "old one", "status": "passed",
+           "started": "2026-10-01T12:00:00+02:00", "finished": "2026-10-01T12:05:00+02:00",
+           "host": {"name": "host-a"}, "sandbox": str(old_tmp), "notes": [], "results": {"x": 1},
+           "costs": {"wall_time_s": 300}, "attachments": [{"name": "result.json", "bytes": 2}]}
+    (old_log / (name + ".json")).write_text(json.dumps(rec), encoding="utf-8")
+    (old_log / (name + ".md")).write_text("# old\n", encoding="utf-8")
+
+    r = session(migrate=True, remove_old=True, **{"from": str(tmp_path)})
+    assert r["return"] == 0, r.get("error")
+    assert r["migrated"] == [f"{day}/{name}"]
+    found = cm.access({"category": "log", "command": "find",
+                       "tags": ["test-session", kind, "passed", "host-a"]})["artifacts"]
+    assert len(found) == 1
+    log = found[0]["path"]
+    assert os.path.isfile(os.path.join(log, "session.md"))
+    assert os.path.isfile(os.path.join(log, "attachments", "result.json"))
+    with open(os.path.join(log, "session.json"), encoding="utf-8") as f:
+        new = json.load(f)
+    assert new["results"] == {"x": 1} and new["migrated_from"]["sandbox"] == str(old_tmp)
+    assert os.path.isfile(os.path.join(new["sandbox"], "build.log"))
+    assert not (tmp_path / "log").exists() and not (tmp_path / "tmp").exists()
+
+    again = session(migrate=True, **{"from": str(tmp_path)})
+    assert again["return"] == 0 and again["migrated"] == []
 
 
 def transcript_line(t, request, model="claude-opus-5-5", output=100, cache_read=1000):
