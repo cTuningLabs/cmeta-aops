@@ -3,6 +3,20 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **Tools for distributed runs:**
+  - **`tool/ray`:** Ray `ray[default]` 2.59.0 in its own Python environment. Every node of a Ray
+    cluster needs the same Python down to the patch release (3.12.3 and 3.12.14 refuse each
+    other), so the tool pins Python 3.12.14 and uv installs that same build everywhere.
+  - **`tool/mpi`:** `mpiexec` and the MPI library. The setup uses a system MPI when it has one
+    (Open MPI, MPICH, Intel MPI, MS-MPI). Otherwise it installs one from PyPI, without root,
+    with mpi4py in the same environment: Open MPI 5.0.11 (Linux, macOS), MPICH 5.0.2 (Linux,
+    macOS) or the Intel MPI runtime 2021.18.1 (Linux, Windows; the default on Windows).
+    `--with.mpi=openmpi|mpich|intel` picks one, and the choice is part of the cache identity.
+    The launcher's folder goes on PATH (`mpicc` is next to it), and `features.python` is the
+    environment's Python.
+  - **`common_pyvenv`:** the spec key `bin` names the folder that holds the command, for packages
+    whose programs are data files rather than console scripts (`impi-rt` on Windows:
+    `Library/bin`).
 - **ExecuTorch on Android, with no app and no source build** (`tool/executorch-android` and
   `tool/android-d8`, new):
   - **`executorch-android`:** the official runtime, PyTorch's AAR on Maven Central. The tool
