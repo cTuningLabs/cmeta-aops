@@ -1,0 +1,35 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# libnuma.so.1, the Linux NUMA policy library (numactl). vLLM's CPU kernels (vllm._C_AVX2,
+# _C_AVX512) link against it; without it they do not load:
+#   ImportError('libnuma.so.1: cannot open shared object file')
+#
+#   cx tool setup lib-numa        # detect, else install the distribution package (sudo)
+
+storage_key: lib-numa
+
+package_name: 'libnuma1'
+package_name_os_id:
+  fedora: 'numactl-libs'
+  rhel: 'numactl-libs'
+  rocky: 'numactl-libs'
+  almalinux: 'numactl-libs'
+  centos: 'numactl-libs'
+  amzn: 'numactl-libs'
+  azurelinux: 'numactl-libs'
+  alpine: 'numactl'
+  arch: 'numactl'
+  opensuse-leap: 'libnuma1'
+  opensuse-tumbleweed: 'libnuma1'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+
+requires_sudo:
+  linux: True
+
+install_help_text: |
+  libnuma is a Linux library: install your distribution's package (libnuma1 on
+  Debian/Ubuntu, numactl-libs on Fedora/RHEL, numactl on Alpine/Arch) and run
+  "cx tool setup lib-numa" again.

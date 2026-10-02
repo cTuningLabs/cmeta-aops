@@ -114,7 +114,7 @@ local_vars:
   result_files:                   # {label: file} surfaced in the result
     stats: tmp-cmeta-program-stats.json
 # input_files: { data: '{{local.dataset.path}}' }   # for programs that take an input
-# run_time_env: { MY_VAR: '1' }
+# run_time_env: { MY_VAR: '1', MY_N: '{{local.params.n|64}}' }   # --n on the command line
 
 # Compile/run defaults (params_os: for per-OS overrides; params.compute: for a default target).
 params:
@@ -160,6 +160,12 @@ Key ideas:
 - Templating reads `ctx['tasks']`: `{{global.target.compute}}`, `{{global.<tool>.qpath}}`,
   `{{params.<x>|default}}` (`|$None` → Python None, `|$[]` → empty list, `|` → empty
   string), `{{local.<x>}}`, `{{os_sep}}`.
+- **`params` is the parameters of the task that expands the template.** In `updates`
+  steps (`cmd_main`, `version:` of a `setup` step) that is the program, so
+  `{{params.n|64}}` sees `--n`. But `local_vars.run_time_env` is expanded later by
+  `setup-run` with its own parameters, so there write `{{local.params.n|64}}`:
+  `compile-and-run-program` keeps the program's parameters in `local.params`. A plain
+  `{{params.n}}` in `run_time_env` always gives the default (a test checks for it).
 
 ---
 
@@ -243,9 +249,14 @@ cx program clean                                           # remove all tmp*/ bu
   commands (also saved as `tmp-cmeta-compile-program{ext}` / `tmp-cmeta-run-program{ext}`
   scripts in the build dir).
 - The build lives in a `cache` entry `task--program--<name>` (unless
-  `config task --meta.compile_and_run_program.skip_cache`). Re-running reuses the compiled
-  binary via the **repro cache** (`_repro_ctx_compile.json`) unless compute/host/serial/
-  binary changed — use `--recompile` or `--clean` to force.
+  `cx config set task --meta.compile_and_run_program.skip_cache=True`), in the folder `tmp`
+  or `--target_tmp=<name>` (`auto`: one folder per set of targets, `tmp-cuda`; also the
+  default with `cx config set task --meta.compile_and_run_program.target_tmp=auto`).
+  Re-running reuses the compiled binary via the **repro cache** (`_repro_ctx_compile.json`)
+  unless the targets, host, serial or binary changed — use `--recompile` or `--clean` to force.
+- Run-time choices (flags of the program's command line) belong in `customize_run`, not
+  in `customize1`: a reused build restores the context it was compiled with, so values set
+  before the compile step come back from the cache.
 - Test each declared compute target you claimed in `constraints.supported_compute`
   (only those the host can actually build — e.g. `cuda` needs a CUDA toolchain).
 

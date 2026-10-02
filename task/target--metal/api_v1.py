@@ -57,7 +57,42 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
-        output_file = ctx_tasks['local']['generate-temp-file-target-metal']['temp_file']
+        r = self._detect(ctx)
+        if self.cm.catch_error(r): return r
+
+        result['features'] = r['features']
+
+        return result
+
+    ############################################################
+    def finish_dynamic_result(self,
+                              ctx: dict,
+                              result: dict = {},
+                              params: dict = {},
+    ):
+        """
+        A cached target keeps the devices of the run that created the entry, possibly on another
+        Mac (a copied or shared CMETA_HOME). system_profiler ran again in this call ('uses'),
+        so its output describes this machine now.
+        """
+
+        output_file = ctx['tasks']['local'].get('generate-temp-file-target-metal', {}).get('temp_file')
+
+        if output_file and os.path.isfile(output_file):
+            r = self._detect(ctx)
+            if self.cm.catch_error(r): return r
+
+            result['features'] = r['features']
+
+        return {'return': 0, 'result': result}
+
+    ############################################################
+    def _detect(self, ctx):
+        """
+        The Metal devices in the output of system_profiler SPDisplaysDataType (the temp file).
+        """
+
+        output_file = ctx['tasks']['local']['generate-temp-file-target-metal']['temp_file']
 
         r = self.cm.utils.files.read_file(output_file, remove_after_read = True)
         if self.cm.catch_error(r): return r
@@ -78,9 +113,5 @@ class CTask(InitCTask):
         if not metal_present:
             return self.cm.error(f'Apple Metal accelerator is not detected in "{__file__}"')
 
-        features = {'devices': devices}
-
-        result['features'] = features
-
-        return result
+        return {'return': 0, 'features': {'devices': devices}}
 

@@ -1,0 +1,140 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+###################################################################################################
+# Build vLLM from source (https://docs.vllm.ai/en/latest/getting_started/installation/) and run
+# one generation, as program test-vllm does with the wheels:
+#
+#   cx program run build-vllm --compute=cuda --checkout=v0.30.0     # CUDA (Linux, WSL2)
+#   cx program run build-vllm --compute=cpu --checkout=v0.30.0      # CPU (Linux, macOS)
+#
+# Steps (customize_vllm in api_v1.py prepares them):
+#   1. a Python the source build supports (3.10-3.13: vllm-flash-attn rejects 3.14; 3.12 on
+#      macOS) in a venv;
+#   2. the vLLM repository at the tag (--checkout, default v0.30.0);
+#   3. vLLM's build requirements (requirements/build/<device>.txt; older trees:
+#      requirements/build.txt) with torch matching the local CUDA toolkit: PyPI's torch is
+#      the CUDA 13.0 build, a CUDA 12 toolkit gets the cu129 one, CPU the +cpu one;
+#   4. pip install --no-build-isolation -v .  with VLLM_TARGET_DEVICE (cuda, cpu, rocm, xpu),
+#      CUDA_HOME (the toolkit of nvcc), TORCH_CUDA_ARCH_LIST (the detected GPU, e.g. 8.6 - a
+#      single architecture shortens the build), MAX_JOBS that fits the RAM, NVCC_THREADS.
+#
+# Parameters: --checkout, --max_jobs, --nvcc_threads, --cuda_arch_list="8.6;12.0",
+# --build_type (Release, RelWithDebInfo, Debug), --compile.env.<VAR>=<value> for any other
+# variable (setup.py / vllm/envs.py). The run takes the parameters of test-vllm
+# (--model, --n, --gpu_mem, --max_len, --cpu_kv_cache_gib).
+###################################################################################################
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  lang: cpp
+
+  target_file_name: 'vllm'
+
+  run_src_file_names:
+    - 'program.py'
+
+  run_time_env:
+    CMETA_TARGETS: '{{global.target.cmeta_targets}}'
+    # The venv's console scripts (ninja, nvcc of nvidia-cuda-nvcc) for FlashInfer's JIT kernels:
+    # the venv's python runs without the venv being activated
+    +PATH:
+      - '{{global.python.path_bin}}'
+    CMETA_VLLM_MODEL: '{{local.params.model|Qwen/Qwen2.5-0.5B-Instruct}}'
+    CMETA_VLLM_MAX_TOKENS: '{{local.params.n|64}}'
+    CMETA_VLLM_GPU_MEM: '{{local.params.gpu_mem|0.8}}'
+    CMETA_VLLM_MAX_LEN: '{{local.params.max_len|4096}}'
+    CMETA_VLLM_ENFORCE_EAGER: '{{local.params.enforce_eager|1}}'
+    CMETA_VLLM_CPU_OFFLOAD_GB: '{{local.params.cpu_offload_gb|}}'
+    CMETA_VLLM_DTYPE: '{{local.params.dtype|}}'
+    CMETA_VLLM_TP: '{{local.params.tp|}}'
+    VLLM_CPU_KVCACHE_SPACE: '{{local.params.cpu_kv_cache_gib|4}}'
+    PYTHONUNBUFFERED: 1
+
+  output_files:
+    - tmp-cmeta-program-stats.json
+
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+
+###################################################################################################
+updates:
+  compile:
+    uses:
+      - match:
+          internal_func: customize2
+        append:
+          # A Python the source build supports (its venv receives the build). vLLM 0.30.0 accepts
+          # 3.10-3.14, but the vllm-flash-attn it fetches at configure time only 3.9-3.13 (the
+          # wheels run on 3.14): --python_version=3.14 for a tree whose flash-attn accepts it
+          - task: setup,a2f9b61079ce4333
+            name: python,c00fb574d8ca4463
+            if_os: linux,windows
+            version: '{{params.python_version|>=3.10,<3.14}}'
+            # Its own venv per set of targets: another program's packages, or the CPU and the
+            # CUDA builds of torch, must not mix in
+            with:
+              venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+          - task: setup,a2f9b61079ce4333
+            name: python,c00fb574d8ca4463
+            if_os: darwin
+            version: '{{params.python_version|3.12}}'
+            with:
+              venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+
+          # Host C compiler (vLLM's CMake needs both; the C++ one comes from the template)
+          - task: compiler,f3925b201c704bde
+            lang: c
+            compute: '{{global.target.compute}}'
+
+          - task: clone-git-to-cache,86919b3cfdd443d2
+            name: src-vllm
+            url: 'https://github.com/vllm-project/vllm'
+            checkout: '{{params.checkout|v0.30.0}}'
+
+          - internal_func: customize_vllm
+            internal_func_from_local_key: selected-program
+            internal_func_safe: True
+
+          - task: cmd,c9ba0a88df394d7f
+            storage_key: compile-program
+            save_script: '{{local.target_path}}//tmp-cmeta-compile-program{{global.host.vars.file_ext_bat}}'
+            chdir: '{{global.clone-git-to-cache-src-vllm.path_to_git_repo}}'
+            env: '{{local.vllm_build_env}}'
+            cmds:
+              - '{{global.python.qpath}} -m pip install -U pip'
+              - '{{global.python.qpath}} -m pip install {{local.vllm_index_flags}} -r {{local.vllm_build_requirements}}'
+              - '{{global.python.qpath}} -m pip install {{local.vllm_index_flags}} --no-build-isolation -v .'
+
+  run:
+    uses:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         prepend:
+           # The Python of the build (see the compile step)
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+             if_os: linux,windows
+             version: '{{params.python_version|>=3.10,<3.14}}'
+             with:
+               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+             if_os: darwin
+             version: '{{params.python_version|3.12}}'
+             with:
+               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+           # vLLM's CPU kernels link against libnuma (Linux)
+           - task: setup,a2f9b61079ce4333
+             name: lib-numa,d81f892278524cfa
+             if_os: linux
+             if: '"cpu" in {{global.target.compute|$[]}} and "cuda" not in {{global.target.compute|$[]}}'
+
+         update:
+           target_exe:
+           run_src_file_names: '{{local.run_src_file_names}}'
+           cmd: >-
+             {{global.python.qpath}}
+             {run_flags_after_exe}
+             {{params.run_flags|}}
+             {run_src_file_names_str_with_path}

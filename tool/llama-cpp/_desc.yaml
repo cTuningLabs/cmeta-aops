@@ -4,10 +4,16 @@ storage_key: llama-cpp
 
 name: llama-cli
 
-default_version: 9524
+# Build number of the release installed when no --version is given (and checked out for
+# source builds). "cx tool setup llama-cpp --versions" lists the builds.
+default_version: 11324
 
-match_version: 
-  - regex: '^version:\s*(\d+)\b'
+# "llama-cli --version" prints "version: 0.5.0-dev (build 11324, commit 32dd62ee6)" since
+# the 0.5.0 line (September 2026) and "version: 9524 (59917d392)" before
+match_version:
+  - regex: '\(build\s+(\d+)\b'
+    group: 1
+  - regex: '^version:\s*(\d+)\s*\('
     group: 1
 
 cmd_get_version: '{{tool_path}} --version'

@@ -78,10 +78,60 @@ class Category(InitCategory):
         if arg1: p['name'] = arg1
         if arg2: p['compute'] = arg2
 
+        # --target is --compute by another name ("cx program targets" lists them); before, it was
+        # ignored without a word and the program ran on the default CPU
+        if 'target' in p:
+            target = p.pop('target')
+            if 'compute' not in p:
+                p['compute'] = target
+
         r = self.cm.access(p)
         if self.cm.catch_error(r): return r
 
         return r
+
+    ############################################################
+    def targets(self, params):
+        """
+        List the compute targets that --compute (or --target) of "cx program run" accepts: the
+        task/target--<name> artifacts. Several go together: --compute=cpu,cuda.
+
+            cx program targets
+        """
+
+        ctx = params['ctx']
+        con = ctx['control'].get('con', False)
+
+        r = self.cm.access({'category': self.cmeta['uses_categories']['task'],
+                            'command': 'find',
+                            'arg1': 'target--*'})
+        if self.cm.catch_error(r): return r
+
+        targets = []
+        for a in r.get('artifacts', []):
+            alias = a['cmeta_ref_parts']['artifact_alias']
+            if not alias.startswith('target--'):
+                continue
+            meta = a.get('cmeta', {})
+            targets.append({'target': alias[len('target--'):], 'name': meta.get('name', ''),
+                            'desc': meta.get('desc', ''), 'sort': meta.get('sort', 0)})
+
+        targets.sort(key = lambda t: (t['sort'], t['target']))
+
+        if con:
+            width = max([len(t['target']) for t in targets] + [6])
+            print ('')
+            print ('Compute targets ("cx program run <program> --compute=<target>[,<target>...]"):')
+            print ('')
+            for t in targets:
+                desc = t['desc']
+                if desc.startswith('Compute target: '):
+                    desc = desc[len('Compute target: '):]
+                print (f'  {t["target"]:{width}}  {desc}')
+            print ('')
+            print ('A bare --compute (or --target) asks which ones to use.')
+
+        return {'return': 0, 'targets': targets}
 
     ############################################################
     def clean(self, params):

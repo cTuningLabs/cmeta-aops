@@ -1,0 +1,33 @@
+{
+  "artifact": "aaa8a12fa5bc4c89",
+  "authors": "Grigori Fursin",
+  "category": "program,22788f3c30d04e6d",
+  "constraints": {
+    "supported_compute": [
+      "cpu",
+      "cuda",
+      "metal",
+      "rocm",
+      "vulkan"
+    ]
+  },
+  "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",
+  "creation_timestamp": "2026-10-01T20:42:00.000000+00:00",
+  "desc": "Run one generation with Ollama on a private server (own port, started and stopped by the program) and record Ollama's timings: prompt and generation tokens per second, load time, VRAM use.",
+  "generator": {
+    "agent": "Claude Code 2.1.286",
+    "by": "Grigori Fursin",
+    "effort": "max",
+    "method": "agent",
+    "model": "claude-opus-5-5"
+  },
+  "last_generator": {
+    "agent": "Claude Code 2.1.286",
+    "by": "Grigori Fursin",
+    "date": "2026-10-01",
+    "effort": "max",
+    "method": "agent",
+    "model": "claude-opus-5-5"
+  },
+  "last_update_timestamp": "2026-10-01T20:40:47.461344+00:00"
+}

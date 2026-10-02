@@ -20,7 +20,7 @@ local_vars:
     stats-xopenme: tmp-ck-timer.json
 
   run_time_env:
-    CT_REPEAT_MAIN: '{{params.repeat|10000}}'
+    CT_REPEAT_MAIN: '{{local.params.repeat|10000}}'
 
 #params_os:
 #  windows:

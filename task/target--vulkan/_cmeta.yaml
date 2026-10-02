@@ -1,0 +1,14 @@
+artifact: dfe82a742e5647a7
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-10-01T20:12:23.000000+00:00'
+desc: "Compute target: any GPU through Vulkan (NVIDIA, AMD, Intel, Apple via MoltenVK, Mesa's llvmpipe); records the Vulkan devices; the Vulkan SDK follows for builds."
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+name: Vulkan
+sort: -1500

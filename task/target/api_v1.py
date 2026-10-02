@@ -189,6 +189,9 @@ class CTask(InitCTask):
         cmeta_targets = ','.join(compute)
         env = {'CMETA_TARGETS': cmeta_targets}
         result['cmeta_targets'] = cmeta_targets
+        # The same for folder names (venv-cpu-cuda): a comma splits an unquoted path in cmd.exe
+        # and breaks -Wl,... linker flags
+        result['cmeta_targets_tag'] = '-'.join(compute)
 
         cmake_vars = {}
         env_vars = {}

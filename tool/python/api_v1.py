@@ -227,7 +227,9 @@ class CTool(InitCTool):
                     if activate_script_path:
                         host = ctx['tasks']['global']['host']
 
-                        cmd_activate_script_path = host['vars']['call_script'] + ' ' + activate_script_path
+                        # Quoted: a space or a comma in the venv's path would split it in cmd.exe
+                        cmd_activate_script_path = host['vars']['call_script'] + ' ' + \
+                            self.cm.utils.files.quote_path(activate_script_path)
 
                         features['cmd_venv_activate_scipt'] = cmd_activate_script_path
 
@@ -259,7 +261,7 @@ class CTool(InitCTool):
 
             if to_add and pip:
                 # Run check for pip
-                pip_cmd = python_path + ' -m pip --version'
+                pip_cmd = self.cm.utils.files.quote_path(python_path) + ' -m pip --version'
 
                 ii = {'category': 'task,c36be4b9314a45e0',
                       'command': 'run',
