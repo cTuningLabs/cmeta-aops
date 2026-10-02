@@ -1,0 +1,60 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# Ollama (https://ollama.com, MIT): a local LLM server (ollama serve) and its CLI, with
+# CUDA, ROCm and Metal support built in.
+#
+# Installed (api_v1.py install()) from the pinned portable release into the cMeta cache - no
+# installer, no system service, no administrator rights:
+#   Windows: ollama-windows-{amd64,arm64}.zip     (ollama.exe + lib/ollama with the GPU runners)
+#   Linux:   ollama-linux-{amd64,arm64}.tar.zst   (bin/ollama + lib/ollama; unpacked by Python
+#            3.14+ - uv downloads one, no root - or the zstd CLI)
+#   macOS:   ollama-darwin.tgz                    (universal binary, Metal)
+# --with.variant=rocm|mlx|jetpack6 picks the other Linux/Windows builds. Fallbacks: winget
+# (Ollama.Ollama), Homebrew (ollama), the official script (Linux, needs root).
+#
+#   cx tool setup ollama                     # detect, else install the pinned release
+#   cx tool setup ollama --versions          # the released versions
+#   cx program run test-ollama --compute=cuda   # a private server, one generation, timings
+
+names:
+  - ollama{{global.host.vars.file_ext_exe}}
+
+default_version: '0.35.0'
+
+# "ollama --version": "ollama version is 0.35.0" (server running) or
+# "Warning: client version is 0.35.0" (no server)
+match_version:
+  - regex: '(?:version is|client version is)\s+v?(\d+\.\d+\.\d+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/ollama/ollama'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: git,959d8c0fbc004bd0
+cmd_get_versions_regex: '\brefs/tags/v(\d+\.\d+\.\d+)(?![\w.-])'
+
+install_cmd:
+  windows: '{{global.winget.qpath}} install --id=Ollama.Ollama -e --source winget {{global.init.winget_install_flags|}}'
+  darwin: '{{global.brew.qpath}} install ollama'
+  linux: '{{global.curl.qpath}} -fsSL https://ollama.com/install.sh | sh'
+
+install_cmd_version:
+  windows: '{{global.winget.qpath}} install --id=Ollama.Ollama -e --version={{simple_version}} --source winget {{global.init.winget_install_flags|}}'
+  linux: '{{global.curl.qpath}} -fsSL https://ollama.com/install.sh | OLLAMA_VERSION={{simple_version}} sh'
+
+extra_paths:
+  windows:
+    - '{{global.host.os_env.LOCALAPPDATA}}\Programs\Ollama'
+    - '{{global.host.os_env.LOCALAPPDATA}}\Microsoft\WinGet\Links'
+  darwin:
+    - '/Applications/Ollama.app/Contents/Resources'
+    - '/opt/homebrew/bin'
+    - '/usr/local/bin'
+  linux:
+    - '/usr/local/bin'
+
+install_help_text: |
+  Could not install Ollama automatically on this system.
+  Install it as described at https://ollama.com/download and run "cx tool setup ollama" again.

@@ -14,9 +14,12 @@ local_vars:
 
   output_files:
     - output.txt
+    - llama.log
+    - perf.json
 
   result_files:
     response: output.txt
+    perf: perf.json
 
   print_files:
     - output.txt
@@ -48,9 +51,7 @@ updates:
 
           ######################################################################################
           # Prepare Libs for Target CPU
-          - task: setup,a2f9b61079ce4333
-            if: '"android-cpu" not in {{global.target.compute|$[]}}'
-            name: lib-openssl,903191f1fab74064
+          # (OpenSSL is optional - customize_llama_cpp uses it when it is installed)
 
           # Only for Clang on Linux and MacOS
           - task: setup,a2f9b61079ce4333
@@ -91,10 +92,13 @@ updates:
             if: '"android-cpu" in {{global.target.compute|$[]}}'
             name: lib-openssl-android,c6cd8622939a4f66
 
+          # The same build as the release tool installs (tool/llama-cpp default_version), so a
+          # release and a source build compare out of the box; --checkout=<tag|branch|commit>
+          # (master was the default: whatever it was at the first clone, then cached)
           - task: clone-git-to-cache,86919b3cfdd443d2
             name: src-llama-cpp
             url: 'https://github.com/ggml-org/llama.cpp'
-            checkout: '{{params.checkout|$None}}'
+            checkout: '{{params.checkout|b11324}}'
 
           - internal_func: customize_llama_cpp
             internal_func_from_local_key: selected-program
@@ -106,6 +110,7 @@ updates:
             storage_key: compile-program
             save_script: '{{local.target_path}}//tmp-cmeta-compile-program{{global.host.vars.file_ext_bat}}'
             chdir: '{{local.target_path}}'
+            env: '{{local.llama_cpp_build_env|$None}}'
             cmds: 
               - '{{global.cmake.qpath}} "{{global.clone-git-to-cache-src-llama-cpp.path_to_git_repo}}" -G Ninja {{local.cmake_d_vars}}'
               - '{{global.cmake.qpath}} --build . --config {{local.build_type}}'
@@ -130,9 +135,20 @@ updates:
                -f {qinput_files.data}
                -n {{params.n|500}}
                --temp {{params.temp|0.7}}
-               -c {{params.с|4096}}
+               -c {{params.c|4096}}
                --seed {{params.seed|12345}}
-               --no-display-prompt 
-               --log-disable 
-               --single-turn 
+               --no-display-prompt
+               --single-turn
+               --simple-io
+               {{params.log_flags|-v}}
+               {{local.llama_cpp_compute_flags|}}
+               2> llama.log
                > output.txt
+
+       # Clean output.txt and record llama.cpp's timings (llama.log) as result['perf']
+       - match:
+           task: finish-run,5e14d7eca4f64440
+         prepend:
+           - internal_func: finish_llama_run
+             internal_func_from_local_key: selected-program
+             internal_func_safe: True

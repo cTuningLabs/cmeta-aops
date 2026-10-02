@@ -77,14 +77,23 @@ def detect_existing_tool(self,
     tool_name = ctx['tasks']['local'].get('tool_name')
 
     if hasattr(tool_api_code, 'detect') and callable(getattr(tool_api_code, 'detect')):
-        r = tool_api_code.detect(ctx, params)
+        # tool_path and paths are named arguments here: hand them to the hook too, or it cannot
+        # see a forced --tool_path or the path an install() just reported
+        detect_params = dict(params)
+        if tool_path:
+            detect_params['tool_path'] = tool_path
+        if paths:
+            detect_params['paths'] = paths
+        r = tool_api_code.detect(ctx, detect_params)
         if self.cm.catch_error(r): return r
 
         if 'parsed_paths_with_versions' in r:
             parsed_paths_with_versions = r['parsed_paths_with_versions']
 
     else:
-        if hasattr(tool_api_code, 'find_paths') and callable(getattr(tool_api_code, 'find_paths')):
+        # find_paths replaces the search only: a forced path (--tool_path, or the path an
+        # install() just reported) is checked as given
+        if not (path or paths) and hasattr(tool_api_code, 'find_paths') and callable(getattr(tool_api_code, 'find_paths')):
             r = tool_api_code.find_paths(ctx, params)
             if self.cm.catch_error(r): return r
 

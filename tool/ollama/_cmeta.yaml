@@ -1,0 +1,21 @@
+artifact: ffbd6b12d1ac4c7d
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-10-01T20:42:00.000000+00:00'
+desc: 'Ollama (local LLM server and CLI): detected, or installed from the pinned portable release
+  (Windows, Linux, macOS; no installer, no service) with winget, Homebrew or the official script as
+  fallbacks; lists the published versions.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+note: GPU support (CUDA, ROCm, Metal) is built in; program test-ollama runs a private server.
+tags:
+- ollama
+- llm
+- ai
+- server
+- cli
