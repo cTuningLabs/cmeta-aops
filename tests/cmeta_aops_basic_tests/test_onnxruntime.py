@@ -71,6 +71,31 @@ def test_providers_of_the_targets(program):
     assert runs(["metal"]) == [("CoreMLExecutionProvider", {})]
 
 
+class FakeCore:
+    """OpenVINO's Core with GPUs of given names."""
+    def __init__(self, names):
+        self.names = names
+
+    def get_property(self, device, prop):
+        return self.names[device]
+
+
+def test_xpu_is_the_intel_gpu(program):
+    # No Intel GPU runtime: the NVIDIA GPU is OpenVINO's only GPU, and xpu must not take it
+    nvidia_only = FakeCore({"GPU": "NVIDIA RTX A500 Laptop GPU (dGPU)"})
+    assert program["intel_gpu"](nvidia_only, ["CPU", "GPU"]) is None
+    both = FakeCore({"GPU.0": "NVIDIA RTX PRO 1000 (dGPU)", "GPU.1": "Intel(R) Graphics (iGPU)"})
+    assert program["intel_gpu"](both, ["CPU", "GPU.0", "GPU.1", "NPU"]) == "GPU.1"
+
+
+def test_openvino_xpu_is_the_intel_gpu(repo_root):
+    path = repo_root / "program" / "test-openvino" / "src" / "program.py"
+    ns = {"__name__": "helpers"}
+    exec(compile(path.read_text(encoding = "utf-8"), str(path), "exec"), ns)
+    assert ns["intel_gpu"](FakeCore({"GPU": "NVIDIA GeForce 940MX (dGPU)"}), ["CPU", "GPU"]) is None
+    assert ns["intel_gpu"](FakeCore({"GPU.0": "Intel(R) Graphics (iGPU)"}), ["GPU.0"]) == "GPU.0"
+
+
 def test_timed_run(program):
     times, per_second, elapsed = program["timed_run"](lambda: None, 7, 0, 1e9, "X")
     assert len(times) == 7 and per_second == []

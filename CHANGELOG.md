@@ -92,15 +92,20 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **ONNX Runtime per target** (`tool/pip-onnxruntime`, `program/test-onnxruntime`; see
   [`program/test-onnxruntime/README.tech.md`](program/test-onnxruntime/README.tech.md)):
   - `setup pip onnxruntime` installs the build that fits the targets: `onnxruntime-gpu[cuda,cudnn]`
-    for CUDA (CUDA and cuDNN from pip), `onnxruntime-openvino` for the Intel NPU and GPU (on Windows
-    with the `openvino` release it was built against), `onnxruntime-migraphx` for AMD, else
-    `onnxruntime`.
+    for CUDA (CUDA and cuDNN from pip), `onnxruntime-openvino` for the Intel NPU and GPU (with the
+    `openvino` release it was built against), `onnxruntime-migraphx` for AMD, else `onnxruntime`.
   - `test-onnxruntime` runs a small ONNX model on each target's execution provider alone, with
     the CPU fallback disabled, and records the provider, latency and error against NumPy
     (`--size`, `--batch`, `--seconds`).
   - `image-classification-onnx` uses one venv per set of targets and the OpenVINO device of the
     target (`npu-intel` -> NPU, `xpu` -> GPU), and warns when its provider is not the active one.
-  - Tested on Windows: the CPU, CUDA, the Intel NPU and the Intel GPU.
+  - `xpu` runs on the Intel GPU only: OpenVINO's GPU plugin also drives NVIDIA GPUs through
+    OpenCL, so `test-openvino` and `test-onnxruntime` pick the GPU whose name says Intel, and fail
+    when there is none.
+  - `install-sys-tool --check_binary=<binary>` skips the install when the binary is on the PATH:
+    `target--xpu` no longer runs `sudo apt-get install pciutils` when `lspci` is there.
+  - Tested on Windows (the CPU, CUDA, the Intel NPU and GPU) and Ubuntu (the CPU, CUDA; the NPU
+    target reports no NPU on machines without one).
 - **llama.cpp on Android devices** (`--compute=android-cpu`, over adb; see
   [`tool/llama-cpp/README.tech.md`](tool/llama-cpp/README.tech.md)):
   - `program/llama-cpp` runs llama.cpp's own Android release (`android-arm64`, every CPU variant,

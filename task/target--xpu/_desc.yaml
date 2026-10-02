@@ -12,6 +12,7 @@ uses:
     os: linux
     sudo: True
     package: pciutils
+    check_binary: lspci
 
   # GPUs are "VGA compatible", "3D" or "Display" controllers (data-center GPUs are not VGA)
   - task: cmd,c9ba0a88df394d7f

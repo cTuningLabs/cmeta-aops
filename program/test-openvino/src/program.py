@@ -60,6 +60,35 @@ def as_list(value):
     return [str(d) for d in value]
 
 
+def intel_gpu(core, available):
+    """
+    The OpenVINO name of the first Intel GPU (GPU, GPU.0, GPU.1, ...), or None: OpenVINO's GPU
+    plugin also drives other GPUs through OpenCL (an NVIDIA GPU is GPU.0 when no Intel GPU
+    runtime is installed), and the xpu target means the Intel one.
+    """
+    for d in available:
+        if d.split('.')[0] != 'GPU':
+            continue
+        try:
+            name = str(core.get_property(d, 'FULL_DEVICE_NAME'))
+        except Exception:
+            name = ''
+        if 'intel' in name.lower():
+            return d
+    return None
+
+
+def gpu_names(core, available):
+    names = []
+    for d in available:
+        if d.split('.')[0] == 'GPU':
+            try:
+                names.append(f'{d} ({core.get_property(d, "FULL_DEVICE_NAME")})')
+            except Exception:
+                names.append(d)
+    return names
+
+
 def device_properties(core, device):
     props = {}
     for p in PROPERTIES:
@@ -128,8 +157,21 @@ def main():
     available = list(core.available_devices)
 
     wanted = [d.strip().upper() for d in (os.environ.get('CMETA_OPENVINO_DEVICES') or '').split(',') if d.strip()]
+    missing_intel_gpu = False
     if not wanted:
-        wanted = [DEVICE_OF_TARGET[t] for t in targets if t in DEVICE_OF_TARGET] or available
+        for t in targets:
+            if t not in DEVICE_OF_TARGET:
+                continue
+            device = DEVICE_OF_TARGET[t]
+            if t == 'xpu':
+                device = intel_gpu(core, available)
+                if not device:
+                    missing_intel_gpu = True
+                    continue
+            if device not in wanted:
+                wanted.append(device)
+        if not wanted and not missing_intel_gpu:
+            wanted = available
 
     rng = np.random.default_rng(12345)
     x = rng.random((batch, n), dtype = np.float32)
@@ -143,6 +185,13 @@ def main():
     stats = {'openvino': ov.get_version(), 'targets': targets, 'size': n, 'batch': batch,
              'iterations': None if seconds else iterations, 'seconds': seconds or None,
              'precision_hint': precision or None, 'available_devices': available, 'devices': {}}
+
+    if missing_intel_gpu:
+        gpus = gpu_names(core, available)
+        error = ('no Intel GPU: OpenVINO finds ' + (', '.join(gpus) if gpus else 'no GPU') +
+                 ' (on Linux the Intel GPU needs the compute runtime, intel-opencl-icd, and access to /dev/dri)')
+        stats['devices']['GPU (Intel)'] = {'error': error}
+        print(f'GPU (Intel): {error}')
 
     for device in wanted:
         entry = {}

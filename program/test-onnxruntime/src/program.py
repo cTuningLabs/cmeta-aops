@@ -53,6 +53,20 @@ def providers_for(targets):
     return runs
 
 
+def intel_gpu(core, available):
+    """The OpenVINO name of the first Intel GPU (OpenVINO's GPU plugin also drives other GPUs)."""
+    for d in available:
+        if d.split('.')[0] != 'GPU':
+            continue
+        try:
+            name = str(core.get_property(d, 'FULL_DEVICE_NAME'))
+        except Exception:
+            name = ''
+        if 'intel' in name.lower():
+            return d
+    return None
+
+
 def timed_run(infer, iterations, seconds, flops, label):
     """
     Time the calls of infer(): `iterations` of them, or as many as fit in `seconds` (printing
@@ -133,6 +147,27 @@ def main():
 
     available = ort.get_available_providers()
 
+    # xpu: the Intel GPU among OpenVINO's GPUs, which OpenVINO lists (an NVIDIA GPU is GPU.0 when
+    # no Intel GPU runtime is installed)
+    xpu_check, missing_intel_gpu = None, None
+    if 'xpu' in targets and not explicit:
+        try:
+            import openvino as ov
+            core = ov.Core()
+            ov_devices = list(core.available_devices)
+            gpu = intel_gpu(core, ov_devices)
+            if gpu:
+                runs = [(p, dict(o, device_type = gpu)) if p == 'OpenVINOExecutionProvider' and o.get('device_type') == 'GPU'
+                        else (p, o) for p, o in runs]
+                xpu_check = f'the Intel GPU is OpenVINO {gpu}'
+            else:
+                names = [f'{d} ({core.get_property(d, "FULL_DEVICE_NAME")})' for d in ov_devices if d.split('.')[0] == 'GPU']
+                missing_intel_gpu = ('no Intel GPU: OpenVINO finds ' + (', '.join(names) or 'no GPU') +
+                                     ' (on Linux the Intel GPU needs intel-opencl-icd and access to /dev/dri)')
+                runs = [(p, o) for p, o in runs if not (p == 'OpenVINOExecutionProvider' and o.get('device_type') == 'GPU')]
+        except ImportError:
+            xpu_check = 'not verified: the openvino package is not installed to list the GPUs'
+
     rng = np.random.default_rng(12345)
     x = rng.random((batch, n), dtype = np.float32)
     w = rng.random((n, n), dtype = np.float32) / n
@@ -142,7 +177,11 @@ def main():
 
     stats = {'onnxruntime': ort.__version__, 'device': ort.get_device(), 'targets': targets, 'size': n,
              'batch': batch, 'iterations': None if seconds else iterations, 'seconds': seconds or None,
-             'available_providers': available, 'providers': {}}
+             'available_providers': available, 'xpu_check': xpu_check, 'providers': {}}
+
+    if missing_intel_gpu:
+        stats['providers']['OpenVINO:GPU (Intel)'] = {'error': missing_intel_gpu}
+        print(f'OpenVINO:GPU (Intel): {missing_intel_gpu}')
 
     for provider, options in runs:
         label = provider.replace('ExecutionProvider', '') + (f':{options["device_type"]}' if 'device_type' in options else '')

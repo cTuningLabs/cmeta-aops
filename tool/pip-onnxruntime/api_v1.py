@@ -92,11 +92,11 @@ class CTool(InitCTool):
         variations = _with.setdefault('variations', {})
         variations['compute'] = sorted(set(variations.get('compute', [])) | set(compute))
 
-        # Windows: the OpenVINO runtime onnxruntime-openvino was built against, in the same pip
-        # install (and in the cache identity, so an older setup without it is not reused)
+        # The OpenVINO release onnxruntime-openvino was built against, in the same pip install (and
+        # in the cache identity, so an older setup without it is not reused): on Windows its EP
+        # loads openvino.dll from it; everywhere it lists the devices (which GPU is the Intel one)
         note = ''
-        uname = _global['host']['os']['uname']
-        if package == 'onnxruntime-openvino' and uname == 'windows':
+        if package == 'onnxruntime-openvino':
             version = params.get('version')
             if not version:
                 version = ORT_OPENVINO_DEFAULT

@@ -17,7 +17,7 @@ targets (`venv-<targets>` in the build folder).
 | Targets | Package | Notes |
 |---|---|---|
 | `cuda` | `onnxruntime-gpu[cuda,cudnn]` | CUDA 13 and cuDNN 9 come from pip; Windows and Linux |
-| `npu-intel`, `xpu`, `openvino` | `onnxruntime-openvino` | Windows and Linux x86_64, Python 3.11-3.13; on Windows the `openvino` package it was built against comes along |
+| `npu-intel`, `xpu`, `openvino` | `onnxruntime-openvino` | Windows and Linux x86_64, Python 3.11-3.13; with the `openvino` package it was built against (Windows loads its DLLs; it also tells which GPU is the Intel one) |
 | `rocm` | `onnxruntime-migraphx` | Linux |
 | `cpu`, `metal`, others | `onnxruntime` | CoreML is in the macOS package |
 
@@ -48,7 +48,7 @@ cx program run test-onnxruntime --compute=cpu,cuda --size=4096 --batch=256 --sec
 | `cpu` | `CPUExecutionProvider` |
 | `cuda` | `CUDAExecutionProvider` |
 | `npu-intel` | `OpenVINOExecutionProvider`, `device_type=NPU` |
-| `xpu` | `OpenVINOExecutionProvider`, `device_type=GPU` |
+| `xpu` | `OpenVINOExecutionProvider` on the Intel GPU (`device_type=GPU.<n>`, from OpenVINO's device names) |
 | `openvino` alone | `OpenVINOExecutionProvider`, `device_type=CPU` |
 | `metal` | `CoreMLExecutionProvider` |
 | `rocm` | `MIGraphXExecutionProvider` |
