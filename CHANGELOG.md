@@ -173,7 +173,11 @@ All notable changes to cMeta AOps are documented here, newest first.
 
   - **Release against source builds:** alternating on an idle machine, they agree within 1% (llama.cpp
     on the Mac, the T470p and the P14s; vLLM on the Mac and the P14s). The gaps seen before (P14s
-    CPU: 50 against 81) came from runs made right after a compile.
+    CPU: 50 against 81) came from runs made right after a compile. The exception is CUDA on Windows:
+    over 20 alternating rounds on the (busy) laptop, the source build (MSVC 14.50, nvcc 13.3, sm_120)
+    generated 6.7% slower than the release (Clang 20): medians 306.6 against 328.5 tokens/s, slower
+    in 17 of 20 rounds. Vulkan agreed there (265.8 against 265.2), and on the P14s the CUDA builds
+    (gcc 15, nvcc 13.3) agreed too, which points to the Windows host compiler.
   - **Several targets on the P14s:**
     - `--compute=cpu,cuda --ngl=12` (12 of 25 layers on the RTX A500): llama.cpp 111 tokens/s, against
       79 on the CPU and 177 on the GPU; Ollama 118, against 161 on the GPU.
