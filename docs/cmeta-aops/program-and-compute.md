@@ -67,7 +67,13 @@ Defines three sub-pipelines the driver runs in order, plus `local_vars`:
 ## 4. The `compute` abstraction — the pivot
 
 `compute` is a **list**: `["cpu"]`, `["cuda"]`, `["vulkan"]`, `["android-cpu"]`,
-`["metal"]`, or hybrids. The **`target` task** (`task/target/api_v1.py`) resolves it:
+`["metal"]`, or hybrids. On the command line it is `--compute=cpu,cuda`, `--target=cpu,cuda`
+(the same option), or the second argument of `cx program run <program> cpu,cuda`; a bare
+`--compute` asks, and `cx program targets` lists the targets. How programs use several targets,
+how builds for different targets stay apart (`--target_tmp=auto`) and what the results record:
+[task/target/README.tech.md](../../task/target/README.tech.md).
+
+The **`target` task** (`task/target/api_v1.py`) resolves it:
 
 1. Normalise (string→list; or interactively pick `target--*` artifacts if `ask`).
 2. For each `c`, run sub-task **`target--<c>`** (e.g. `target--cuda` sets up the `cuda`
@@ -187,14 +193,20 @@ The driver persists three JSON snapshots in `target_path` and reuses them to ski
 - else ⇒ a dedicated `cache` entry `task--program--<name>` (tags `[task,
   c36be4b9314a45e0, compile-and-run-program, 05437a1aae224270]`), `target_path =
   <cache_entry>/tmp`. A distinct `--path`/`work_path` gives a distinct build.
-`work_path` (run cwd) defaults to `target_path`; `{pwd}` maps to `<cur_dir>/tmp`.
+- The folder `tmp` is `--target_tmp=<name>` when given, else the config default
+  (`cx config set task --meta.compile_and_run_program.target_tmp=<name>`). `auto` makes it
+  `tmp-<targets>` (`tmp-cuda`, `tmp-cpu-cuda`): one build per set of targets, side by side.
+`work_path` (run cwd) defaults to `target_path`; `{pwd}` maps to `<cur_dir>/<that folder>`.
 
 **Compile reuse decision** (`recompile` starts False unless `--recompile`):
 1. Read `_repro_ctx_compile.json`. Missing ⇒ `recompile=True`. Present but
    `result.return != 0` ⇒ `recompile=True`.
 2. Otherwise compare the cached compile context against the current run and force
    `recompile=True` if **any** differs:
-   - a currently selected `compute` isn't in the cached `target.compute`;
+   - the selected targets differ from the cached `target.compute` (in either direction:
+     `cuda` → `cpu,cuda` and `cpu,cuda` → `cuda`). They are read after the `all`
+     pipeline, where the target task resolves them; read before (until 0.41.0), the list was
+     empty and a change of targets reused the other target's build and run flags;
    - `android-cpu` in compute **and** the cached `target--android-cpu.serial` differs
      from the current device serial;
    - the cached `host.os.uname` differs from the current one (Docker / WSL on a shared

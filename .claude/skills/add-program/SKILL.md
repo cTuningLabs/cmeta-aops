@@ -249,9 +249,14 @@ cx program clean                                           # remove all tmp*/ bu
   commands (also saved as `tmp-cmeta-compile-program{ext}` / `tmp-cmeta-run-program{ext}`
   scripts in the build dir).
 - The build lives in a `cache` entry `task--program--<name>` (unless
-  `config task --meta.compile_and_run_program.skip_cache`). Re-running reuses the compiled
-  binary via the **repro cache** (`_repro_ctx_compile.json`) unless compute/host/serial/
-  binary changed — use `--recompile` or `--clean` to force.
+  `cx config set task --meta.compile_and_run_program.skip_cache=True`), in the folder `tmp`
+  or `--target_tmp=<name>` (`auto`: one folder per set of targets, `tmp-cuda`; also the
+  default with `cx config set task --meta.compile_and_run_program.target_tmp=auto`).
+  Re-running reuses the compiled binary via the **repro cache** (`_repro_ctx_compile.json`)
+  unless the targets, host, serial or binary changed — use `--recompile` or `--clean` to force.
+- Run-time choices (flags of the program's command line) belong in `customize_run`, not
+  in `customize1`: a reused build restores the context it was compiled with, so values set
+  before the compile step come back from the cache.
 - Test each declared compute target you claimed in `constraints.supported_compute`
   (only those the host can actually build — e.g. `cuda` needs a CUDA toolchain).
 

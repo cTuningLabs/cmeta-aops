@@ -25,6 +25,30 @@ where a stack supports them (see [program-and-compute.md](program-and-compute.md
   or CPU count changed. A `CMETA_HOME` copied or shared between machines therefore never
   builds for another machine's GPU.
 
+## Several targets, offloading, and comparisons on one machine
+
+- **Selecting:** `--compute=a,b` or `--target=a,b`. `cx program targets` lists the targets.
+- **Splitting the model** is done with the options of each stack:
+
+  | Stack | Options |
+  |---|---|
+  | llama.cpp | `--compute=cpu,cuda --ngl=12` keeps 12 layers on the GPU; `--devices=CUDA0,Vulkan0`, `--split_mode`, `--tensor_split` and `--main_gpu` place them across GPUs |
+  | Ollama | `--ngl=12` sets its `num_gpu` |
+  | vLLM | `--cpu_offload_gb` keeps part of the weights in CPU memory; `--tp` sets tensor parallelism; `--enforce_eager=0` allows CUDA graphs |
+
+- **Recording:** the runs store the targets and these settings with their results.
+- **Release builds:** a llama.cpp release has one GPU backend. For `cuda,vulkan`, build from
+  source.
+- **Same-machine comparisons:**
+  - `--target_tmp=auto` keeps one build folder per set of targets;
+  - a change of targets in the same folder builds again;
+  - the vLLM and PyTorch programs keep one venv per set of targets.
+- **Every option of each stack:** [tool/llama-cpp](../../tool/llama-cpp/README.tech.md),
+  [tool/pip-vllm](../../tool/pip-vllm/README.tech.md), [tool/ollama](../../tool/ollama/README.tech.md),
+  [program/build-pytorch](../../program/build-pytorch/README.tech.md),
+  [tool/vulkan](../../tool/vulkan/README.tech.md), and targets in
+  [task/target](../../task/target/README.tech.md) (all `README.tech.md`).
+
 ## llama.cpp
 
 The prebuilt release for the OS, CPU and backend, then one generation:
