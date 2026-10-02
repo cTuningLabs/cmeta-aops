@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## Unreleased
+## 0.41.0
 - **LLM stacks on CPU, CUDA, Vulkan and Metal: the newest llama.cpp, vLLM 0.30.0, Ollama 0.35.0 and
   PyTorch 2.14.1**, installed or built from source with the same commands on Windows, Linux/WSL2 and
   macOS. The guide is the new [`docs/cmeta-aops/llm-stacks.md`](docs/cmeta-aops/llm-stacks.md).
@@ -19,7 +19,10 @@ All notable changes to cMeta AOps are documented here, newest first.
     `--compute=cpu` keeps the model on the CPU (`-ngl 0 --device none`).
   - **build-llama-cpp**: Vulkan builds (`GGML_VULKAN`, the loader library from `tool/vulkan-sdk`);
     OpenSSL is optional (the system library, else `LLAMA_OPENSSL=OFF`, or `--compile.boringssl`);
-    Ninja, CMake and the compilers reach nested CMake projects (`vulkan-shaders-gen`).
+    Ninja, CMake and the compilers reach nested CMake projects (`vulkan-shaders-gen`). The default
+    checkout is `b11324`, the build the release tool installs (it was master as of the first clone);
+    `--model` and `--prompt` work as in `program/llama-cpp`; on macOS, builds without `metal` leave
+    Metal out, so a CPU build opens no GPU.
   - **Vulkan**: `tool/vulkan` lists the devices through the loader itself (ctypes, no SDK and no
     `vulkaninfo`; MoltenVK through portability enumeration). `tool/vulkan-sdk` detects an SDK in
     `$VULKAN_SDK`, the LunarG folders, the distribution or Homebrew. Otherwise it installs the pinned
@@ -36,7 +39,8 @@ All notable changes to cMeta AOps are documented here, newest first.
   - **PyTorch** (`build-pytorch`, default `v2.14.1`): the scikit-build-core build
     (`pip install --no-build-isolation -v .` after `requirements-build.txt`), `TORCH_CUDA_ARCH_LIST`
     from the detected GPUs (without one, CUDA 13 rejects PyTorch's default list), `BUILD_TEST=0`,
-    `PYTORCH_BUILD_VERSION` from the tag, and `DISTUTILS_USE_SDK=1` on Windows.
+    `PYTORCH_BUILD_VERSION` from the tag, `DISTUTILS_USE_SDK=1` on Windows, and
+    `CMAKE_POLICY_VERSION_MINIMUM=3.5` (CMake 4 refuses the helper projects NNPACK downloads).
   - **Ollama**: `tool/ollama` installs the pinned portable release into the cMeta cache, with no
     installer, no service and no administrator rights. The Linux `.tar.zst` is unpacked by a Python
     3.14 (uv downloads one) before any `sudo` package is tried. `tool/zstd` is new, and
@@ -44,37 +48,29 @@ All notable changes to cMeta AOps are documented here, newest first.
     use, and stops the model runners with it (on Windows they outlived the server, holding RAM and VRAM).
   - **Source builds size `MAX_JOBS` to the RAM** (`category/program/api/common_build.py`: 4 GiB per
     CUDA job, 2 GiB per C++ job), because PyTorch's and vLLM's builds start one job per CPU.
-- **Fix: a cached compute target described the machine that created it.** In a `CMETA_HOME` copied or
-  shared between machines, WSL with an RTX PRO 1000 (sm_120) got the RTX A500 (sm_86) of another laptop,
-  and the vLLM build compiled for 8.6. Now `target--cuda`, `target--rocm` and `target--vulkan` take the
-  features of the tool set up in the same call. `target--metal` and `target--xpu` parse the probe that
-  runs in each call, and `target--cpu` probes again when its host fingerprint changes. `target--xpu`
-  also uses PowerShell CIM instead of `wmic`, which current Windows 11 builds no longer have.
-- **Fix: program parameters reach the run-time environment.** `task/setup-run` expands
-  `local_vars.run_time_env` with its own parameters, so `{{params.X|default}}` there always gave the
-  default: `--model`, `--n`, `--max_len` and `--cpu_kv_cache_gib` of `test-vllm` and `build-vllm`, the
-  options of `test-ollama`, and `--repeat` of the milepost codelet. They now read `{{local.params.X}}`,
-  where `compile-and-run-program` keeps the program's parameters, and a test checks every program for it.
-- **Quiet installs never wait at a sudo password prompt.** With `-q` and a `sudo` that needs a password,
-  every `sudo` in an install command runs as `sudo -n`. It fails at once, where an unattended run used
-  to hang (15 minutes in one case), and cMeta prints the command to run by hand.
-- **Visual Studio: every installation, Build Tools included.** `tool/microsoft.visual-studio` lists
-  installations with `vswhere`; before, it searched only `C:` and `D:\Program Files`, and Build Tools
-  live under `Program Files (x86)`. `--version` picks one by its `cl.exe` version. `--install` sets up
-  the newest Build Tools with the C++ workload through winget (`--with.year=2022` for an older line).
-- **Engine fixes:** a failed optional sub-task no longer clobbers the caller's context. `detect()` hooks
-  receive `tool_path`/`paths`, and a forced path is checked even when a tool has `find_paths()`.
-  CUDA is detected with NVIDIA drivers 610+ (`nvidia-smi` prints `CUDA UMD version`).
-- **Tested on 2026-10-01** (generation tokens per second, 64 tokens):
-
-  | Machine | llama.cpp release | llama.cpp from source (build time) | vLLM | Ollama | PyTorch from source |
-  |---|---|---|---|---|---|
-  | Windows 11, RTX PRO 1000 Blackwell | CPU 103, CUDA 330, Vulkan 264 | CUDA 315 (320 s), Vulkan 269 (130 s) | WSL2 only | CUDA 237, CPU 117 | |
-  | WSL2 Ubuntu 24.04 (same laptop) | CUDA 318 | | CUDA wheel 66.5 (Python 3.14) | | |
-  | ThinkPad P14s, RTX A500 (sm_86) | CPU 81, CUDA 176, Vulkan 124 | CUDA 175 (780 s), CPU 50 (241 s), Vulkan 107 (298 s) | | | |
-  | ThinkPad T470p, GeForce 940MX | CPU 41, Vulkan 32 | CPU 41 (316 s), Vulkan 34 (474 s) | CPU wheel 12.9 (1 GiB KV cache) | CPU 40.8, Vulkan 37.5 | |
-  | Mac mini M4, macOS 27 | Metal 191, CPU 156 | Metal 169 (87 s), Vulkan/MoltenVK 136 (81 s; 101 on the first run) | CPU wheel 55, CPU from source 49.9 (79 s) | Metal 190.5, CPU 159.8 | MPS ✓ (1000 s) |
-  | Docker `python:3.12` (x86_64) | | | CPU wheel 18 | | |
+- **Targets: selecting, combining and comparing them on one machine**
+  ([`task/target/README.tech.md`](task/target/README.tech.md)):
+  - `--target` is `--compute` by another name; before, it was ignored and the program ran on the CPU.
+    `cx program targets` lists the targets.
+  - **Fix: a change of targets in the same build folder builds again.** The targets were read before
+    the target task resolved them, so a `--compute=metal` run after a `--compute=cpu` build reused the
+    CPU build and its run flags, and ran on the CPU. `cpu,cuda` -> `cuda` now counts as a change too.
+  - `--target_tmp=auto`, or `cx config set task --meta.compile_and_run_program.target_tmp=auto`, gives
+    every set of targets its own build folder (`tmp-cuda`, `tmp-cpu-cuda`); builds for different
+    targets stay side by side.
+  - `test-vllm`, `build-vllm` and `build-pytorch` set up Python in a venv of their own, one per set of
+    targets (`venv-<targets>`), so the CPU and the CUDA builds of torch never replace each other.
+  - Splitting a model across devices:
+    - llama.cpp: `--ngl`, `--devices`, `--split_mode`, `--tensor_split`, `--main_gpu` and
+      `--threads`. They are set at run time (a reused build brought back the flags of the run that
+      compiled it), and `perf.json` records them with the targets.
+    - Ollama: `--ngl` (its `num_gpu`).
+    - vLLM: `--cpu_offload_gb`, `--tp`, `--dtype`, and `--enforce_eager=0` for CUDA graphs.
+  - A llama.cpp release build refuses two GPU targets, since it has one backend. `nvcc` declares
+    `supports_compute: vulkan`, so `build-llama-cpp --compute=cuda,vulkan` builds both backends.
+  - `README.tech.md` files with every cMeta option: targets (`task/target`), llama.cpp
+    (`tool/llama-cpp`), vLLM (`tool/pip-vllm`), Ollama (`tool/ollama`), PyTorch
+    (`program/build-pytorch`) and Vulkan (`tool/vulkan`). The programs point to them.
 - **`cx tool setup <tool> --status` and `--upgrade`** - for every tool, with no change to its `_desc.yaml`
   (`task/setup/upgrade.py`). The tool's install **channel** on this OS is derived from its install command
   or hook - winget, Homebrew, the distro package manager (`install_cmd_sudo`), an upstream install script,
@@ -98,17 +94,38 @@ All notable changes to cMeta AOps are documented here, newest first.
     `common_release` names checksum files per version (an in-place upgrade reused the old release's
     checksums) and drops a download whose SHA-256 did not match; `detect` returns every matching copy
     in `detected`.
+  - apt refreshes its package lists when an install cannot find the package (a fresh container has
+    none), and before an upgrade, since stale lists hold no newer version.
   - Tested: Windows (winget: uv 0.11.1 -> 0.12.21, opencode and git; release: jq 1.7.1 -> 1.8.2 in place),
     Debian and Ubuntu containers as root (apt: git, curl; release: jq), Ubuntu as a user (install script:
     claude; apt status without sudo), macOS arm64 (Homebrew: gh; install script: claude; release: helm).
     Offline unit tests in `tests/cmeta_aops_basic_tests/test_tool_upgrade.py`.
-- **Docs: `--use.<storage key>.<param>=<value>`**, which changes any sub-task of a run from the command line,
-  however deep it sits: a dependency's version, or a control switch such as `update` of one step.
-  - a new section in `docs/cmeta-aops/task-engine.md`, "Changing a dependency anywhere in a pipeline": how it
-    works, the storage keys of `setup`, `clone-git-to-cache`, `runner`, compilers and other tasks, and the control
-    switches that travel with it;
-  - a line in the README;
-  - notes in the `add-task` and `add-tool` skills.
+- **Visual Studio: every installation, Build Tools included.** `tool/microsoft.visual-studio` lists
+  installations with `vswhere`; before, it searched only `C:` and `D:\Program Files`, and Build Tools
+  live under `Program Files (x86)`. `--version` picks one by its `cl.exe` version. `--install` sets up
+  the newest Build Tools with the C++ workload through winget (`--with.year=2022` for an older line).
+- **Fix: a cached compute target described the machine that created it.** In a `CMETA_HOME` copied or
+  shared between machines, WSL with an RTX PRO 1000 (sm_120) got the RTX A500 (sm_86) of another laptop,
+  and the vLLM build compiled for 8.6. Now `target--cuda`, `target--rocm` and `target--vulkan` take the
+  features of the tool set up in the same call. `target--metal` and `target--xpu` parse the probe that
+  runs in each call, and `target--cpu` probes again when its host fingerprint changes. `target--xpu`
+  also uses PowerShell CIM instead of `wmic`, which current Windows 11 builds no longer have.
+- **Fix: source builds and `test-vllm` use their own Python venv.** On the P14s, `build-pytorch` reused
+  the venv `build-vllm` had filled and replaced vLLM's torch 2.13.0 with the 2.14.1 it had built. The
+  new torch then failed to import ("undefined symbol: cublasLtGroupedMatrixLayoutCreate"): it was built
+  with the CUDA 13.3 toolkit (cuBLAS 13.6), but loaded the pip cuBLAS 13.1 of vLLM's torch. A build
+  made before keeps its venv until `--recompile`.
+- **Fix: program parameters reach the run-time environment.** `task/setup-run` expands
+  `local_vars.run_time_env` with its own parameters, so `{{params.X|default}}` there always gave the
+  default: `--model`, `--n`, `--max_len` and `--cpu_kv_cache_gib` of `test-vllm` and `build-vllm`, the
+  options of `test-ollama`, and `--repeat` of the milepost codelet. They now read `{{local.params.X}}`,
+  where `compile-and-run-program` keeps the program's parameters, and a test checks every program for it.
+- **Quiet installs never wait at a sudo password prompt.** With `-q` and a `sudo` that needs a password,
+  every `sudo` in an install command runs as `sudo -n`. It fails at once, where an unattended run used
+  to hang (15 minutes in one case), and cMeta prints the command to run by hand.
+- **Engine fixes:** a failed optional sub-task no longer clobbers the caller's context. `detect()` hooks
+  receive `tool_path`/`paths`, and a forced path is checked even when a tool has `find_paths()`.
+  CUDA is detected with NVIDIA drivers 610+ (`nvidia-smi` prints `CUDA UMD version`).
 - **Fix: `tool/ccache` downloads the right release asset.** The macOS branch left `uarch2` unassigned
   (an `UnboundLocalError` on every Mac) and asked for `ccache-<v>-macos.tar.gz`, which upstream never
   published - the asset is `ccache-<v>-darwin.tar.gz`, one universal binary. Linux asked for `.tar.gz`,
@@ -124,6 +141,34 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **Fix: versioned installs that could never work are gone**: `tool/gh` asked Homebrew for `gh@2` /
   `gh2` and `tool/kubectl` for `kubectl@1.37.1` and a snap channel `1.37.1/stable` - no such formulae or
   channel exist. Without the entries task/setup reuses `install_cmd` (current), as `az` already does.
+
+- **Docs: `--use.<storage key>.<param>=<value>`**, which changes any sub-task of a run from the command line,
+  however deep it sits: a dependency's version, or a control switch such as `update` of one step.
+  - a new section in `docs/cmeta-aops/task-engine.md`, "Changing a dependency anywhere in a pipeline": how it
+    works, the storage keys of `setup`, `clone-git-to-cache`, `runner`, compilers and other tasks, and the control
+    switches that travel with it;
+  - a line in the README;
+  - notes in the `add-task` and `add-tool` skills.
+- **Tested on 2026-10-01 and 2026-10-02** (generation tokens per second, 64 tokens; on the P14s, T470p
+  and Mac the mean of three warm runs):
+
+  | Machine | llama.cpp release | llama.cpp from source (build time) | vLLM | Ollama | PyTorch from source |
+  |---|---|---|---|---|---|
+  | Windows 11, RTX PRO 1000 Blackwell | CPU 103, CUDA 330, Vulkan 264 | CUDA 315 (320 s), Vulkan 269 (130 s) | WSL2 only | CUDA 274, CPU 117 | |
+  | WSL2 Ubuntu 24.04 (same laptop) | CUDA 318 | | CUDA wheel 66.5 (Python 3.14) | | |
+  | ThinkPad P14s, RTX A500 (sm_86) | CPU 79, CUDA 157, Vulkan 107 | CPU 77 (241 s), CUDA 157 (780 s), Vulkan 108 (298 s) | CUDA wheel 78.8, from source 77.8 (6,749 s) | CUDA 160.6 | CUDA works (2 h 53 min) |
+  | ThinkPad T470p, GeForce 940MX | CPU 40.8, Vulkan 35.9 | CPU 40.8 (316 s), Vulkan 36.2 (474 s) | CPU wheel 13.0 (1 GiB KV cache) | CPU 41.2, Vulkan 37.3 | |
+  | Mac mini M4, macOS 27 | Metal 184, CPU 158 | Metal 185 (87 s), CPU 158 (60 s), Vulkan/MoltenVK 136 (81 s) | CPU wheel 54.8, from source 54.7 | Metal 190.5, CPU 159.8 | MPS works (1,000 s) |
+  | Docker `python:3.12` (x86_64) | | | CPU wheel 17.9 | | |
+
+  - **Release against source builds:** alternating on an idle machine, they agree within 1% (llama.cpp
+    on the Mac, the T470p and the P14s; vLLM on the Mac and the P14s). The gaps seen before (P14s
+    CPU: 50 against 81) came from runs made right after a compile.
+  - **Several targets on the P14s:**
+    - `--compute=cpu,cuda --ngl=12` (12 of 25 layers on the RTX A500): llama.cpp 111 tokens/s, against
+      79 on the CPU and 177 on the GPU; Ollama 118, against 161 on the GPU.
+  - **On the T470p:** `--compute=cpu,vulkan --ngl=12`: llama.cpp 39.4, Ollama 40.9 (the 940MX is
+    slower than the CPU for this model).
 
 ## 0.40.1
 - **`task/rclone-to-ssh`: a plain `bisync` now adds `--resilient --recover`** (turn off with `--no-recover`).
