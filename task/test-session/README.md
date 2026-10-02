@@ -1,22 +1,22 @@
 # test-session — a sandbox and a kept log for every test
 
 Every real test, build or benchmark gets one dated place to work in and a record that
-stays when the work is cleaned up: two cMeta artifacts of the same name, in the `local`
-repository by default (`--repo=<alias>` for another one), the same on every machine:
+stays when the work is cleaned up, the same on every machine. All sessions live in two
+cMeta artifacts of the `local` repository, a folder per day and a subfolder per session,
+so a session adds no index entry (`--repo=<alias>` and `--artifact=<name>` for others):
 
 ```
-tmp::test-session.20261002-0915.llama-drift   sandbox: scripts, outputs, clones, venvs (deletable)
-log::test-session.20261002-0915.llama-drift   record (kept):
+tmp::cmeta-aops-test-sessions/20261002/0915.llama-drift/   sandbox: scripts, outputs, clones, venvs (deletable)
+log::cmeta-aops-test-sessions/20261002/0915.llama-drift/   record (kept):
     session.md        what was done, by whom, results, costs
     session.json      the same as data
     attachments/      attached files
-    _cmeta.yaml       tags test-session, llama-drift, 20261002, <status>, <host>, and a summary
 ```
 
-The session id is `<YYYYMMDD>/<HHMM>.<type>` (local time; a second session of the same
-type in the same minute gets `-2`); the commands also take the artifact name. What cMeta
-builds and downloads still goes to its cache, where the next test reuses it; the sandbox
-holds everything else a test creates.
+The session id is that path, `<YYYYMMDD>/<HHMM>.<type>` (local time; a second session of
+the same type in the same minute gets `-2`; `20261002-0915.llama-drift` works too). The two
+artifacts are made on first use. What cMeta builds and downloads still goes to its cache,
+where the next test reuses it; the sandbox holds everything else a test creates.
 
 ## Commands
 
@@ -34,19 +34,16 @@ cx task run test-session --id=20261002/0915.llama-drift --attach=bench.txt,logs/
 cx task run test-session --finish --id=20261002/0915.llama-drift --status=passed --summary="<what was found>"
 
 # List (the default action) and clean up
-cx task run test-session [--list] [--date=20261002] [--type=llama-drift]
+cx task run test-session [--list] [--date=20261002] [--type=llama-drift] [--status=failed] [--host=<name>]
 cx task run test-session --prune [--days=7]   # sandboxes of finished sessions; the logs stay
 cx task run test-session --prune --id=20261002/0915.llama-drift --all   # also one finished with --keep
 ```
 
-The records are ordinary `log` artifacts, so cMeta finds and queries them:
+Where the two artifacts are:
 
 ```bash
-cx log find --tags=test-session,llama-drift                       # by type (also date, status, host)
-cx log find --tags=test-session,failed                            # the failed ones
-cx log find --tags=test-session --match.test_session.model=claude-opus-5-5
-cx tmp find --tags=test-session                                   # the sandboxes still there
-cx tmp prune --days=7 [--force]                                   # list (or delete) old tmp artifacts
+cx log find cmeta-aops-test-sessions        # the records
+cx tmp find cmeta-aops-test-sessions        # the sandboxes
 ```
 
 The id is also the first argument: `cx task run test-session 20261002/0915.llama-drift --note=...`.

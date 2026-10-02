@@ -220,18 +220,18 @@ Two layers:
 Run every real test, build or benchmark (anything beyond the hermetic pytest suite)
 inside a **test session** (`task/test-session`), on every machine and for agents as
 for people. Don't create sandbox folders in random places (`~/cmeta-llm-test`,
-`repos/tmp`, `C:\tmp\x`). A session is two artifacts in the `local` repository: the
-sandbox, a `tmp` artifact, and the record, a `log` artifact that cMeta can query later:
+`repos/tmp`, `C:\tmp\x`). All sessions live in two artifacts of the `local` repository,
+a folder per day and a subfolder per session:
 
 ```bash
 cx task run test-session --start --type=llama-drift --title="llama.cpp release vs source"
-#  sandbox  tmp::test-session.20261002-0915.llama-drift    (deletable)
-#  record   log::test-session.20261002-0915.llama-drift    (session.md, session.json, attachments/; kept)
+#  sandbox  tmp::cmeta-aops-test-sessions/20261002/0915.llama-drift/   (deletable)
+#  record   log::cmeta-aops-test-sessions/20261002/0915.llama-drift/   (session.md, session.json, attachments/; kept)
 cx task run test-session --id=20261002/0915.llama-drift --note="CUDA release done" --results.cuda_tps=<value>
 cx task run test-session --id=20261002/0915.llama-drift --attach=bench.txt
 cx task run test-session --finish --id=20261002/0915.llama-drift --status=passed --summary="<what was found>"
-cx task run test-session                 # list;  --prune [--days=7] removes finished sandboxes
-cx log find --tags=test-session,llama-drift   # the records, by type, date, status or host
+cx task run test-session                 # list (--date, --type, --status, --host);
+                                         # --prune [--days=7] removes finished sandboxes
 ```
 
 - Work in the sandbox: scripts, outputs, clones, venvs, temporary builds. What cMeta

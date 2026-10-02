@@ -4,9 +4,9 @@ category: task,c36be4b9314a45e0
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
   files in the project root for details.
 creation_timestamp: '2026-10-02T08:53:03.261803+00:00'
-desc: 'Test sessions: a dated sandbox for a test, build or benchmark (a tmp artifact)
-  and a record that stays (a log artifact, both in the local repository): what was
-  done, by which agent, model and effort, the results and the costs.'
+desc: 'Test sessions: a dated sandbox for a test, build or benchmark and a record that
+  stays (folders of tmp:: and log::cmeta-aops-test-sessions in the local repository):
+  what was done, by which agent, model and effort, the results and the costs.'
 generator:
   agent: Claude Code 2.1.286
   by: Grigori Fursin
