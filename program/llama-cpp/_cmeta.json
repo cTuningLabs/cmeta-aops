@@ -10,7 +10,8 @@
       "vulkan",
       "xpu",
       "npu-intel",
-      "openvino"
+      "openvino",
+      "android-cpu"
     ]
   },
   "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",
@@ -24,5 +25,5 @@
     "method": "agent",
     "model": "claude-opus-5-5"
   },
-  "last_update_timestamp": "2026-10-02T09:31:52.819923+00:00"
+  "last_update_timestamp": "2026-10-02T10:37:30.730926+00:00"
 }

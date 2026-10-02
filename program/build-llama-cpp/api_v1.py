@@ -70,6 +70,28 @@ class CProgram(InitCProgram):
         return {'return':0}
 
     ############################################################
+    def prepare_target_run(self,
+                           ctx: dict,
+                           **misc
+    ):
+        """
+        The binary and the model of the run: here, or on the Android device (--compute=android-cpu),
+        where the build's binary and libraries and the model are kept under /data/local/tmp.
+        """
+
+        _local = ctx['tasks']['local']
+        exe_path = _local['target_path_exe']
+        checkout = _local.get('params', {}).get('checkout') or 'b11324'
+        variant = f"source-{checkout}-{os.path.basename(os.path.normpath(_local['target_path']))}"
+
+        if common_llama_cpp.target_run(self.cm, ctx, exe_path, variant):
+            # The binary goes with its libraries into the build's folder on the device, not
+            # alone into /data/local/tmp
+            _local['target_exe'] = None
+
+        return {'return':0}
+
+    ############################################################
     def customize_llama_cpp(self,
                             ctx: dict,        # cMeta context
                             desc: dict = {},
@@ -148,6 +170,30 @@ class CProgram(InitCProgram):
                 if 'CMAKE_CUDA_COMPILER' not in d:
                     d['CMAKE_CUDA_COMPILER'] = ctx['tasks']['global']['nvcc']['qpath']
 
+        # Android (--compute=android-cpu): the NDK's CMake toolchain file sets the compilers, the
+        # sysroot, the ABI and the API level. The defaults are those of llama.cpp's own Android
+        # release: shared libraries with every CPU variant, the best one picked on the device at
+        # run time, and no OpenMP. --android_api (28), --android_abi (arm64-v8a).
+        android = 'android-cpu' in compute
+        if android:
+            ndk = _global.get('google-android-ndk', {}).get('path')
+            if not ndk:
+                return self.cm.error('the Android NDK is not set up: cx tool setup google.android-ndk')
+            ndk_root = os.path.dirname(ndk)
+            d.setdefault('CMAKE_TOOLCHAIN_FILE', os.path.join(ndk_root, 'build', 'cmake', 'android.toolchain.cmake'))
+            d.setdefault('ANDROID_ABI', params.get('android_abi') or 'arm64-v8a')
+            d.setdefault('ANDROID_PLATFORM', f"android-{params.get('android_api') or 28}")
+            # Cross-compiled: the CPU of this machine says nothing about the device's
+            d.setdefault('GGML_NATIVE', 'OFF')
+            d.setdefault('GGML_OPENMP', 'OFF')
+            if static:
+                d.setdefault('GGML_BACKEND_DL', 'OFF')
+            else:
+                d.setdefault('GGML_BACKEND_DL', 'ON')
+                d.setdefault('GGML_CPU_ALL_VARIANTS', 'ON')
+            if not _compile.get('boringssl'):
+                d.setdefault('LLAMA_OPENSSL', 'OFF')
+
         if fastest and 'GGML_NATIVE' not in d:
             d['GGML_NATIVE'] = 'ON'
 
@@ -220,6 +266,10 @@ class CProgram(InitCProgram):
             build_env['CC'] = str(d['CMAKE_C_COMPILER']).strip('"')
         if 'CMAKE_CXX_COMPILER' in d:
             build_env['CXX'] = str(d['CMAKE_CXX_COMPILER']).strip('"')
+        # --max_jobs=N: parallel compile jobs (Ninja's default is the CPU count plus 2, which can
+        # take more memory than a busy machine has)
+        if params.get('max_jobs'):
+            build_env['CMAKE_BUILD_PARALLEL_LEVEL'] = str(params['max_jobs'])
         _local['llama_cpp_build_env'] = build_env
 
 #        _local['cmake_d_vars'] = " ".join(f"-D{k}={shlex.quote(str(v))}" for k, v in d.items())

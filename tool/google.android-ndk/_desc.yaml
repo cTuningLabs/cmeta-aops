@@ -9,6 +9,14 @@ match_version:
 
 cmd_get_version: 'more {{root_tool_path}}{{os_sep}}source.properties'
 
+# The NDKs the Android SDK offers (sdkmanager --list: "ndk;30.0.16248370 | ..."), for --versions,
+# --status and --upgrade; NDKs install side by side
+cmd_get_versions: '{{global.google-android-sdk-command-line-tools.qpath}} --list'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: google.android-sdk.command-line-tools,2ee8eb31da764eef
+cmd_get_versions_regex: '\bndk;(\d+\.\d+\.\d+)\b'
+
 install_note: >-
   Please note that installing Android NDK may require administrative privileges!
 
