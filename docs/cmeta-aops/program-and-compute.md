@@ -133,6 +133,14 @@ var, and wires profiling (perf/WPR/xctrace CPU, nsys/ncu CUDA, cProfile python) 
 Android remote path (deep dive #2). **`finish-run`** collects declared `result_files`
 into the result and prints `print_files`.
 
+**Timeouts.** `cx program run <program> --timeout=<seconds>` limits each run command and
+`--compile_timeout=<seconds>` each compile command (the template passes them to its `cmd`
+steps, `run-program` and `compile-program`). A command that runs past the limit is stopped with
+all its subprocesses (a process group on Linux and macOS, a Job Object on Windows) and the run
+fails with "timed out". The default is no limit. On an Android target the limit stops the local
+`adb` command, not necessarily the process on the device. `cx task run cmd --timeout=<seconds>`
+and `cx tool run <tool> --timeout=<seconds> -- <args>` work the same way.
+
 ## 7. Libraries are programs too (`lib-*`)
 
 `lib-xopenme` inherits `template-c-cpu` with `params.compile.lib: True, install: True`

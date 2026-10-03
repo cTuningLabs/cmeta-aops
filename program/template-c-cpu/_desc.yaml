@@ -1,4 +1,4 @@
-7authors: Grigori Fursin
+authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 ###################################################################################################
 local_vars:
@@ -73,6 +73,8 @@ compile:
       chdir: '{{local.target_path}}'
       env: '{{local.setup-compile.compile_env}}'
       cmds: '{{local.compile_cmds}}'
+      # --compile_timeout=<seconds> stops each compile command with its subprocesses
+      timeout: '{{params.compile_timeout|$None}}'
          
 
 
@@ -136,6 +138,8 @@ run:
       print_line_in_verbose: True
       env: '{{local.run_time_env|$None}}'
       cmds: '{{local.run_time_cmds}}'
+      # --timeout=<seconds> stops each run command with its subprocesses
+      timeout: '{{params.timeout|$None}}'
 
     - task: finish-run,5e14d7eca4f64440
       chdir: '{{local.work_path}}'
