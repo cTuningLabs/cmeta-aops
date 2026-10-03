@@ -72,6 +72,13 @@ updates:
             if: '"android-cpu" in {{global.target.compute|$[]}}'
             name: lib-openmp-android,4631aca5f3d241b4
 
+          ######################################################################################
+          # The CUDA runtime: its library folder goes on the run-time library path (a CUDA from
+          # the cMeta cache is not on the system's, e.g. CUDA 12 for an older GPU)
+          - task: setup,a2f9b61079ce4333
+            if: '"cuda" in {{global.target.compute|$[]}}'
+            name: lib-cuda,ac9daedec465409e
+
 
   run:
     uses:

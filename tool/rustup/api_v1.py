@@ -127,8 +127,9 @@ class CTool(InitCTool):
         ###########################################################################################
         # Attempt to run init
 
-        start_exe_prefix = _global['host']['vars']['start_exe_prefix']
-        cmd = f'{start_exe_prefix}{filename} -y --no-modify-path'
+        # The downloaded file by its full path: cmd.exe does not look in the current directory
+        # when NoDefaultCurrentDirectoryInExePath is set
+        cmd = f'{self.cm.q(path_to_tool)} -y --no-modify-path'
 
         if 'RUSTUP_HOME' not in env: env['RUSTUP_HOME'] = content_dir
         if 'CARGO_HOME' not in env: env['CARGO_HOME'] = content_dir

@@ -289,8 +289,10 @@ class CTask(InitCTask):
                 target_ext = compiler_features.get('vars', {}).get('file_ext_exe')
                 target_ext2 = '' if target_ext is None else target_ext
 
-            if target_file_name and not target_exe:
-                target_exe = target_file_name + target_ext2
+        # The program's own target name also with an explicit extension (Java's Program.class:
+        # "program.class" was found only on file systems that ignore case)
+        if target_file_name and not target_exe:
+            target_exe = target_file_name + target_ext2
 
         if not target_exe:
             target_exe = 'program' + target_ext2
