@@ -1,0 +1,27 @@
+artifact: ba11350ad7c94f58
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
+  files in the project root for details.
+creation_timestamp: '2026-10-03T13:56:48.767383+00:00'
+desc: 'Amazon Corretto (a Java Development Kit): the latest release of a major version,
+  downloaded and checked against Amazon''s SHA-256.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  date: '2026-10-03'
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_update_timestamp: '2026-10-03T14:03:57.295156+00:00'
+tags:
+- jdk
+- java
+- javac
+- corretto

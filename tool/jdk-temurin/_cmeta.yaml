@@ -1,0 +1,27 @@
+artifact: 2f081116a26c4826
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
+  files in the project root for details.
+creation_timestamp: '2026-10-03T13:56:48.274260+00:00'
+desc: 'Eclipse Temurin (a Java Development Kit): the latest release of a major version,
+  downloaded and checked against Adoptium''s SHA-256.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  date: '2026-10-03'
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_update_timestamp: '2026-10-03T14:03:56.962871+00:00'
+tags:
+- jdk
+- java
+- javac
+- temurin

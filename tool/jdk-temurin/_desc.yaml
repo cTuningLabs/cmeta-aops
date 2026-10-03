@@ -1,0 +1,27 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# Eclipse Temurin: the latest release of --with.feature (the major version, default 25), downloaded into
+# the cache from the Adoptium API and checked against Adoptium's SHA-256 (Windows, Linux (also musl/Alpine), macOS; x64, aarch64).
+# --version pins a release (25.0.2+10). No detection: an installed JDK is tool/openjdk's. The result is
+# stored as "openjdk" as well, so tool/javac and tool/java (--with.vendor=temurin) use this JDK.
+#
+#   cx tool setup jdk-temurin
+#   cx tool setup jdk-temurin --with.feature=21
+#   cx tool setup javac --with.vendor=temurin
+#   cx program run test-nmm-java-cpu --jdk=temurin
+
+storage_key: openjdk
+skip_detect: True
+
+cache_params:
+  - with.feature
+
+names:
+  - javac{{global.host.vars.file_ext_exe}}
+
+match_version:
+  - regex: 'javac\s+([^\s]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} -version'

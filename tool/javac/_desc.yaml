@@ -18,8 +18,19 @@ match_version:
 
 cmd_get_version: '{{tool_path}} -version'
 
+# The JDK: tool/openjdk (an installed JDK, else Temurin), or with --with.vendor=temurin|microsoft|
+# corretto|zulu|oracle the tool jdk-<vendor> (--with.feature=<major>). Both store their result as
+# "openjdk", so the path and the cache identity of this tool follow the JDK chosen.
 uses:
   - task: setup,a2f9b61079ce4333
+    if: '"{{params.with.vendor|}}" == ""'
     name: openjdk,5bc3b6e965174534
     version: "{{params.version|$None}}"
+
+  - task: setup,a2f9b61079ce4333
+    if: '"{{params.with.vendor|}}" != ""'
+    name: 'jdk-{{params.with.vendor}}'
+    version: "{{params.version|$None}}"
+    with:
+      feature: "{{params.with.feature|$None}}"
 

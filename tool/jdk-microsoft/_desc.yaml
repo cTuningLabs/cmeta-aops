@@ -1,0 +1,27 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# the Microsoft Build of OpenJDK: the latest release of --with.feature (the major version, default 25), downloaded into
+# the cache from aka.ms and checked against Microsoft's SHA-256 (Windows, Linux, macOS; x64, aarch64).
+# --version pins a release (25.0.4.1). No detection: an installed JDK is tool/openjdk's. The result is
+# stored as "openjdk" as well, so tool/javac and tool/java (--with.vendor=microsoft) use this JDK.
+#
+#   cx tool setup jdk-microsoft
+#   cx tool setup jdk-microsoft --with.feature=21
+#   cx tool setup javac --with.vendor=microsoft
+#   cx program run test-nmm-java-cpu --jdk=microsoft
+
+storage_key: openjdk
+skip_detect: True
+
+cache_params:
+  - with.feature
+
+names:
+  - javac{{global.host.vars.file_ext_exe}}
+
+match_version:
+  - regex: 'javac\s+([^\s]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} -version'

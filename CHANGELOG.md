@@ -3,6 +3,34 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **JDKs of five vendors** (`tool/jdk-temurin`, `jdk-microsoft`, `jdk-corretto`, `jdk-zulu`,
+  `jdk-oracle`, new; `category/tool/api/common_jdk.py`):
+  - **Install:** the latest release of `--with.feature` (the major version, default 25) for this OS
+    and CPU (x64, aarch64), from the vendor's API or download site, checked against the vendor's
+    SHA-256. Temurin also has a musl (Alpine) build. `--version` pins a release (Temurin, Microsoft,
+    Zulu). Oracle's license applies to the Oracle JDK.
+  - **Separate tools, so nothing changes for `tool/openjdk`:** its detection of an installed JDK,
+    its Temurin download and its cache entries stay as they were. The vendor tools store their
+    result as `openjdk` too.
+  - **`tool/javac`, `tool/java`:** `--with.vendor=<vendor>` (and `--with.feature`) uses that vendor's
+    JDK; without it, `tool/openjdk` as before.
+  - **`test-nmm-java-cpu --jdk=<vendor>`** (and `--jdk_feature`) compiles and runs with it.
+  - **`task/compiler`:** `tool_with` passes `with` to the setup of the compiler tool (the javac of a
+    vendor); without it nothing changes.
+- **`tool/java`:** the version is read from `openjdk version "…"` and `java version "…"` (Oracle
+  JDK); before, the word "version" was taken as the version, and Oracle's output was not read.
+- **`task/setup-compile`:** the program's target name is also used with an explicit target extension
+  (Java's `Program.class`); before, `program.class` was expected, which only file systems that ignore
+  case found.
+- **`tool/rustup`:** runs `rustup-init` by its full path; it failed where cmd.exe does not search the
+  current directory (`NoDefaultCurrentDirectoryInExePath`).
+- **`polybench-gemm-cpu-cuda`:** sets up `lib-cuda` for CUDA targets, so a CUDA runtime from the
+  cMeta cache (CUDA 12 for an older GPU) is on the run-time library path.
+- **`tool/mpi`:** `--with.build=source|pip`. The source build compiles Open MPI from its release
+  tarball (SHA-256 pinned) into the tool's environment, with mpi4py built against it, so that macOS
+  and Linux nodes can run one job; it is the default on macOS (it needs the Xcode Command Line
+  Tools). The build is part of the cache identity, so the first setup after this change installs the
+  wheel again into a new entry.
 - **Timeouts for program runs:** `cx program run <program> --timeout=<seconds>` limits each run
   command, `--compile_timeout=<seconds>` each compile command (the template passes them to its
   `cmd` steps). The default stays without a limit.
