@@ -4,9 +4,10 @@ Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 
-Offline tests of tool/mpi (which MPI a host gets, the environment of a launcher, the default in
-the cache identity), tool/ray (the exact Python every node needs) and common_pyvenv's "bin"
-folder for packages whose programs are not console scripts.
+Offline tests of tool/mpi (which MPI a host gets and how it is installed, the environment of a
+launcher, the defaults in the cache identity, the PRRTE byte-order change of the source build),
+tool/ray (the exact Python every node needs) and common_pyvenv's "bin" folder for packages whose
+programs are not console scripts.
 """
 
 import os
@@ -29,11 +30,12 @@ def load(rel_path, stubs = ()):
 
 
 PYVENV_IMPORT = "from tool_c393ba5c6fa14f66.api.common_pyvenv import install_pyvenv"
+RELEASE_IMPORT = "from tool_c393ba5c6fa14f66.api.common_release import _download, _sha256"
 
 
 @pytest.fixture(scope = "module")
 def mpi():
-    return load("tool/mpi/api_v1.py", [PYVENV_IMPORT])
+    return load("tool/mpi/api_v1.py", [PYVENV_IMPORT, RELEASE_IMPORT])
 
 
 @pytest.fixture(scope = "module")
@@ -63,6 +65,50 @@ def test_the_default_is_in_the_cache_identity(mpi):
     params = {"with": {"mpi": "mpich"}}
     t.init({"tasks": {"global": {"host": {"os": {"uname": "linux"}}}}}, params)
     assert params["with"]["mpi"] == "mpich"
+
+
+def test_how_it_is_installed(mpi):
+    kind = mpi["build_kind"]
+    assert kind("darwin", "openmpi") == ("source", None)        # PRRTE's byte order (see the module)
+    assert kind("linux", "openmpi") == ("pip", None)
+    assert kind("windows", "intel") == ("pip", None) and kind("darwin", "mpich") == ("pip", None)
+    assert kind("darwin", "openmpi", "pip") == ("pip", None) and kind("linux", "openmpi", "SOURCE") == ("source", None)
+    assert "Open MPI only" in kind("linux", "mpich", "source")[1]
+    assert "pip|source" in kind("linux", "openmpi", "conda")[1]
+
+
+class FakeCM:
+    def error(self, text, code = 1, extra = None):
+        return {"return": code, "error": text}
+
+
+def test_the_build_is_in_the_cache_identity(mpi):
+    t = mpi["CTool"].__new__(mpi["CTool"])
+    t.cm = FakeCM()
+    host = lambda uname: {"tasks": {"global": {"host": {"os": {"uname": uname}}}}}
+    params = {}
+    assert t.init(host("darwin"), params)["return"] == 0
+    assert params["with"] == {"mpi": "openmpi", "build": "source"} and params["skip_detect"] is True
+    params = {}
+    t.init(host("linux"), params)
+    assert params["with"] == {"mpi": "openmpi", "build": "pip"} and "skip_detect" not in params
+    params = {"with": {"build": "pip"}}
+    t.init(host("darwin"), params)
+    assert params["with"]["build"] == "pip" and "skip_detect" not in params
+    assert t.init(host("linux"), {"with": {"mpi": "intel", "build": "source"}})["return"] > 0
+
+
+def test_prrte_byte_order(mpi, tmp_path):
+    path = tmp_path / "3rd-party" / "prrte" / "src" / "hwloc" / "hwloc_base_util.c"
+    path.parent.mkdir(parents = True)
+    path.write_text('#ifdef __BYTE_ORDER\n#    if __BYTE_ORDER == __LITTLE_ENDIAN\n    endian = "le";\n'
+                    '#    else\n    endian = "be";\n#    endif\n#else\n    endian = "unknown";\n#endif\n')
+    assert mpi["fix_prrte_byte_order"](str(tmp_path)) is True
+    text = path.read_text()
+    assert "#elif defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__)" in text
+    assert text.index("__ORDER_LITTLE_ENDIAN__") < text.index('endian = "unknown"')
+    assert mpi["fix_prrte_byte_order"](str(tmp_path)) is False          # once only
+    assert mpi["fix_prrte_byte_order"](str(tmp_path / "none")) is False
 
 
 def test_the_environment_of_a_launcher(mpi, tmp_path):
