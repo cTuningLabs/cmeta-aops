@@ -1,0 +1,27 @@
+artifact: a720f665818343c6
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
+  files in the project root for details.
+creation_timestamp: '2026-10-03T13:56:49.266102+00:00'
+desc: 'Oracle JDK (a Java Development Kit): the latest release of a major version,
+  downloaded and checked against Oracle''s SHA-256.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  date: '2026-10-03'
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_update_timestamp: '2026-10-03T14:03:57.624145+00:00'
+tags:
+- jdk
+- java
+- javac
+- oracle

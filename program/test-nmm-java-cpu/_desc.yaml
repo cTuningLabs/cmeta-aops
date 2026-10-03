@@ -23,7 +23,19 @@ params:
     target_ext: '.class'
     flags: '-d .'
 
+# --jdk=temurin|microsoft|corretto|zulu|oracle (and --jdk_feature=<major>) compiles and runs with
+# that vendor's JDK (tool/jdk-<vendor>); without it, tool/openjdk (the installed JDK or Temurin)
 updates:
+  compile:
+    uses:
+      - match:
+          task: compiler,f3925b201c704bde
+        update:
+          cache: '{{local.compiler_cache|$None}}'
+          tool_with:
+            vendor: '{{params.jdk|$None}}'
+            feature: '{{params.jdk_feature|$None}}'
+
   run:
     uses:
        - match:
@@ -31,6 +43,9 @@ updates:
          prepend:
            - task: setup,a2f9b61079ce4333
              name: java,6c8d509f22c841e8
+             with:
+               vendor: '{{params.jdk|$None}}'
+               feature: '{{params.jdk_feature|$None}}'
          update:
            target_exe: None
            cmd: >-

@@ -36,8 +36,20 @@ class CTask(InitCTask):
                 'compute',
                 'copy_to_storage_key',
                 'with',
+                'tool_with',
             ], __name__)
         if self.cm.catch_error(r): return r
+
+        # "with" for the setup of the compiler tool, e.g. the JDK vendor of javac: only the keys that
+        # have a value. It is not part of the cache identity: a program that passes it runs this step
+        # without the cache (test-nmm-java-cpu --jdk), so the runs without it keep their entry
+        tool_with = params.get('tool_with')
+        if isinstance(tool_with, dict):
+            tool_with = {k: v for k, v in tool_with.items() if v not in (None, '')}
+            if tool_with:
+                params['tool_with'] = tool_with
+            else:
+                del params['tool_with']
 
         return {'return':0}
 
@@ -142,6 +154,9 @@ class CTask(InitCTask):
         if version:
             p['version'] = version
 
+        if params.get('tool_with'):
+            p['with'] = params['tool_with']
+
         r = self.cm.access(p)
         if self.cm.catch_error(r, fail16=True): return r
 
@@ -200,6 +215,9 @@ class CTask(InitCTask):
         }
 
         if version: p['version'] = version
+
+        if params.get('tool_with'):
+            p['with'] = params['tool_with']
 
         r = self.cm.access(p)
         if self.cm.catch_error(r, fail16=True): 
