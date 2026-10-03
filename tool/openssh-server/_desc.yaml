@@ -1,0 +1,38 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# The OpenSSH server (sshd), for task/run-openssh (a server run as the user, on a port of its own):
+# - Windows: the portable Win32-OpenSSH release (x64, ARM64), downloaded into the cache and checked
+#   against its pinned SHA-256: no installer, no service, no administrator (api_v1.py);
+# - Linux, macOS: the system sshd; on Linux the openssh-server package otherwise.
+#
+#   cx tool setup openssh-server
+#   cx task run run-openssh --keys=<public key file>
+
+names:
+  - sshd{{global.host.vars.file_ext_exe}}
+
+extra_paths:
+  linux:
+    - '/usr/sbin'
+  darwin:
+    - '/usr/sbin'
+
+# "OpenSSH_9.6p1 Ubuntu-...", "OpenSSH_for_Windows_10.0p2 Win32-OpenSSH-GitHub"
+match_version:
+  - regex: 'OpenSSH_(?:for_Windows_)?([0-9][0-9A-Za-z.]*)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} -V'
+
+package_name: openssh-server
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+
+requires_sudo:
+  linux: True
+
+install_help_text: |
+  Could not set up the OpenSSH server: install it with the package manager (openssh-server) and
+  run "cx tool setup openssh-server" again.

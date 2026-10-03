@@ -3,6 +3,17 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **An OpenSSH server run as the user** (`tool/openssh-server`, `task/run-openssh`, new):
+  - **`cx task run run-openssh --keys=<public key file>`** starts sshd on a port of its own (2222)
+    with key-only logins, as the user: no service, no administrator. `status` shows it, and `stop`
+    ends it together with its logins.
+  - **Address:** the machine's Tailscale address (`tailscale ip -4`) by default, else 127.0.0.1;
+    `--listen` picks another.
+  - **Keys:** `--keys` takes public key files, `authorized_keys` files or keys; without it, the
+    user's `~/.ssh/authorized_keys`.
+  - **The server:** Windows gets the portable Win32-OpenSSH release (x64, ARM64, SHA-256 pinned) in
+    the cache, and logins get cmd.exe; Linux and macOS use the system sshd. Its host key,
+    configuration and log stay in a cache entry, one per `--name` and port.
 - **JDKs of five vendors** (`tool/jdk-temurin`, `jdk-microsoft`, `jdk-corretto`, `jdk-zulu`,
   `jdk-oracle`, new; `category/tool/api/common_jdk.py`):
   - **Install:** the latest release of `--with.feature` (the major version, default 25) for this OS
