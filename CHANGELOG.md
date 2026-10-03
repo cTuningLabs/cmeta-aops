@@ -3,6 +3,17 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **Timeouts for program runs:** `cx program run <program> --timeout=<seconds>` limits each run
+  command, `--compile_timeout=<seconds>` each compile command (the template passes them to its
+  `cmd` steps). The default stays without a limit.
+- **`task/cmd`:**
+  - **Timeouts:** a command that runs past `--timeout` is stopped with all its subprocesses (a
+    process group on Linux and macOS, a Job Object on Windows), and the task fails with "timed
+    out". Before, the stopped command's return code (-1) counted as a success. With
+    `fail_if_nonzero_return_code=False` the result has `timed_out: True`.
+  - **Any return code but 0 fails:** a negative code (a command ended by a signal on Linux and
+    macOS) passed as a success before.
+  - The working directory is restored when the command fails, too.
 - **LiteRT for Android from its official releases** (`tool/lib-litert-android`, new):
   - **Contents:** the AAR from Google Maven (`libLiteRt.so` with its C API and the GPU
     accelerator, per ABI; Maven's SHA-256), the C/C++ SDK headers (with the `build_config.h` that
