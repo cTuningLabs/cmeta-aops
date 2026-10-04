@@ -6,8 +6,8 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 
 task/host resolves the hostname to add its addresses, but a name no resolver knows (a CI runner, a
 machine without a DNS entry) made every task run wait for the resolver's timeouts - half a minute on
-some machines. The lookup is bounded now: after two seconds the task goes on with the addresses it
-found without DNS.
+some machines. The lookup is bounded now (one second) and asked once per process: afterwards the task
+goes on with the addresses it found without DNS.
 """
 
 import pathlib
@@ -35,9 +35,23 @@ def test_a_slow_resolver_does_not_hold_the_task(monkeypatch):
     ns = host_module()
     started = time.time()
     info = ns["get_hostname_info"]()
-    assert time.time() - started < 5
+    assert time.time() - started < 4
     assert info["hostname"]
     assert not (info["ipv4"] and "203.0.113.7" in info["ipv4"])     # the late answer is not waited for
+
+
+def test_the_resolver_is_asked_once_per_process(monkeypatch):
+    calls = []
+
+    def counting(host, port, *a, **k):
+        calls.append(host)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("203.0.113.7", 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", counting)
+    ns = host_module()
+    first = ns["get_hostname_info"]()
+    second = ns["get_hostname_info"]()
+    assert len(calls) == 1 and first["ipv4"] == second["ipv4"] and "203.0.113.7" in second["ipv4"]
 
 
 def test_a_quick_resolver_adds_its_addresses(monkeypatch):

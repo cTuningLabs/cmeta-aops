@@ -562,14 +562,22 @@ def detect_linux_env():
     }
 
 ###################################################################################################
-def resolve_hostname_addresses(hostname, timeout = 2.0):
+# hostname -> its getaddrinfo() entries, or [] when the resolver did not answer in time: asked once per
+# process (the host task runs in every task pipeline, and a name no resolver knows would cost the
+# wait every time)
+_RESOLVED_HOSTNAMES = {}
+
+def resolve_hostname_addresses(hostname, timeout = 1.0):
     """
     The getaddrinfo() entries of a hostname, or [] when the resolver has not answered after
     `timeout` seconds (the lookup runs in a daemon thread, so the task goes on without it; the
-    outbound addresses found without DNS are kept anyway).
+    outbound addresses found without DNS are kept anyway). The answer is remembered for the process.
     """
 
     import threading
+
+    if hostname in _RESOLVED_HOSTNAMES:
+        return _RESOLVED_HOSTNAMES[hostname]
 
     found = []
 
@@ -583,7 +591,8 @@ def resolve_hostname_addresses(hostname, timeout = 2.0):
     thread.start()
     thread.join(timeout)
 
-    return [] if thread.is_alive() else list(found)
+    _RESOLVED_HOSTNAMES[hostname] = [] if thread.is_alive() else list(found)
+    return _RESOLVED_HOSTNAMES[hostname]
 
 ###################################################################################################
 def get_hostname_info():

@@ -80,7 +80,13 @@ def test_without_a_deadline_nothing_changes(cm, tmp_path):
     assert r["return"] == 0 and r["stdout"].strip() == "42" and not r.get("timed_out")
 
 
+def warm_up(cm):
+    """One command before the deadline opens: the first task run of a process also detects the host."""
+    assert run_cmd(cm, f'{PY} -c "pass"')["return"] == 0
+
+
 def test_deadline_stops_a_long_command(cm, deadlines, tmp_path):
+    warm_up(cm)
     ctx = {"tasks": {}}
     deadlines.open_deadline(ctx, "compile", 2, "--compile_timeout")
     started = time.time()
@@ -111,6 +117,7 @@ def test_a_command_after_the_deadline_is_not_started(cm, deadlines, tmp_path):
 
 def test_nested_commands_share_the_deadline_and_it_closes(cm, deadlines, tmp_path):
     """Two commands in one phase: the second gets only the time left; after the phase, none."""
+    warm_up(cm)
     ctx = {"tasks": {}}
     entry = deadlines.open_deadline(ctx, "compile", 3, "--compile_timeout")
     r1 = run_cmd(cm, f'{PY} -c "import time; time.sleep(1.2)"', ctx = ctx)
