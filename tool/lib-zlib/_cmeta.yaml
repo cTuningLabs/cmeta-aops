@@ -1,0 +1,28 @@
+artifact: c46f457c9da347a7
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
+  files in the project root for details.
+creation_timestamp: '2026-10-03T21:06:18.420506+00:00'
+desc: zlib as a static library (libz.a) built from its pinned source release with
+  the C compiler of cMeta, for static links that need it (a distribution's static
+  OpenSSL).
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  date: '2026-10-03'
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_update_timestamp: '2026-10-03T21:06:40.994471+00:00'
+tags:
+- lib
+- zlib
+- static
+- compression

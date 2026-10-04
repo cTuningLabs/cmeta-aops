@@ -3,6 +3,18 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **Static Linux links of OpenSSL** (`tool/lib-zlib`, `tool/lib-zstd`, `tool/lib-jitterentropy`,
+  new; `category/tool/api/common_static_lib.py`; `tool/lib-openssl`):
+  - **New tools:** zlib, Zstandard and the Jitter RNG as static libraries built from their pinned
+    source releases (SHA-256 checked) with the C compiler of cMeta, into the cache: no root, no
+    system package. Linux and macOS.
+  - **`tool/lib-openssl`:** a static link on Linux links only the libraries that the
+    distribution's `libssl.a`/`libcrypto.a` need (`nm -u`), each from the system's static archive,
+    else from its tool; `--with.static_deps=cmeta` always uses the tools. Before, `-lz -lzstd` were
+    always added and the link failed where those archives were missing. Dynamic links and
+    macOS/Windows are unchanged.
+  - **`test-nmm-c-cpu`, `test-nmm-cpp-cpu`:** pass `with.static` to `lib-openssl` for static builds
+    on Linux.
 - **`tool/openjdk`:** on musl Linux (Alpine) the default JDK is Temurin's `alpine-linux` build;
   before, the glibc build was downloaded and did not run there.
 - **An OpenSSH server run as the user** (`tool/openssh-server`, `task/run-openssh`, new):

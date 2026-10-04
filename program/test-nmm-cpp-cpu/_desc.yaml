@@ -33,8 +33,16 @@ updates:
           ######################################################################################
           # Prepare Libs for Host CPU
           - task: setup,a2f9b61079ce4333
-            if: '{{global.target.compute|$[]}} == ["cpu"]'
+            if: '{{global.target.compute|$[]}} == ["cpu"] and not ("{{global.host.os.uname}}" == "linux" and "{{params.compile.static|False}}" == "True")'
             name: lib-openssl,903191f1fab74064
+
+          # A static link on Linux: lib-openssl links only what the distribution's static OpenSSL
+          # needs (zlib, zstd, jitterentropy) and builds those the system has no static library of
+          - task: setup,a2f9b61079ce4333
+            if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.host.os.uname}}" == "linux" and "{{params.compile.static|False}}" == "True"'
+            name: lib-openssl,903191f1fab74064
+            with:
+              static: True
 
           - task: setup,a2f9b61079ce4333
             name: lib-xopenme,c7b96678a7734510

@@ -1,0 +1,20 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# libzstd.a built from the pinned source release with the C compiler of cMeta, into the tool's cache
+# entry (api_v1.py, category/tool/api/common_static_lib.py); Linux and macOS.
+#
+#   cx tool setup lib-zstd
+
+skip_detect: True
+
+names:
+  - zstd.h
+
+match_version:
+  - regex: '^.*$'
+    group: 0
+
+install_help_text: |
+  Could not build libzstd.a: see the error above. A version that the tool does not pin needs its
+  SHA-256: cx tool setup lib-zstd --version=<version> --with.sha256=<SHA-256 of the source release>
