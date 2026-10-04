@@ -74,11 +74,22 @@ to 15. Once the toolkit is found, `finish_dynamic_result` sets up the host compi
 (`host.py`):
 
 1. It reads those limits from the toolkit.
-2. It turns them into versions of the compiler tools, as `--use` would: the Visual Studio
-   installation and MSVC by `cl.exe`'s version (`>=19.10,<19.50` for CUDA 12.8), `gcc-cpp`, and
-   `clang-cpp`. A version you give with `--use.<tool>.version` stays.
+2. It turns them into versions of the compiler tools, as `--use` would: `msvc` by `cl.exe`'s
+   version (`>=19.10,<19.50` for CUDA 12.8; the Visual Studio installation follows the version
+   asked of `msvc`), `gcc-cpp`, and `clang-cpp`. A version you give with `--use.<tool>.version`
+   stays, and a C++ compiler version you ask for with `--use.compiler-cpp.version` is taken as it
+   is: when the toolkit rejects it, the run stops with the message below instead of quietly using
+   another version. Once the compiler is decided, `task compiler` narrows the range of its tool to
+   that version, so the later setups of the same run (and the Visual Studio of `msvc`) follow it
+   without a question.
 3. It sets up `task compiler --lang=cpp`, which picks the newest compiler in those ranges: for
-   CUDA 12.8 on a machine with Visual Studio 2026 and 2022, it picks 2022.
+   CUDA 12.8 on a machine with Visual Studio 2026 and 2022, it picks 2022. Cached compilers
+   outside the ranges, or without the tags and constraints of the request, are not offered; when
+   several cached compilers remain, the one whose tool the repository ranks first (MSVC, GCC,
+   clang) is taken, then the newest version, without a prompt (an INFO line names the others).
+   `--use.compiler-cpp.name=<tool>` picks another. The same task selects the cached entry of nvcc
+   itself (`--lang=cuda`): it follows the toolkit set up for the `cuda` target in this run, so the
+   toolkit is chosen once.
 4. It passes the compiler to nvcc as `-ccbin <path>` (the `host_compiler` flag that
    `setup-compile` adds), so every build records which compiler it used.
 

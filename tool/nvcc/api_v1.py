@@ -78,9 +78,10 @@ class CTool(InitCTool):
         The host compiler of nvcc, set up once the toolkit is known: the newest one its
         include/crt/host_config.h accepts. Its limits become the versions of the compiler tools
         (--use.microsoft-visual-studio, msvc, gcc-cpp, clang-cpp.version); a version given with
-        --use stays. --with.any_host_compiler takes any compiler, with nvcc's
-        -allow-unsupported-compiler. A C++ compiler set up earlier in the run that the toolkit
-        rejects stops the run with what to change.
+        --use stays, and a C++ compiler version asked for with --use.compiler-cpp.version is not
+        steered into the limits (the toolkit's check below reports it when it is rejected).
+        --with.any_host_compiler takes any compiler, with nvcc's -allow-unsupported-compiler. A C++
+        compiler set up earlier in the run that the toolkit rejects stops the run with what to change.
 
         Returns the flags that name the compiler to nvcc (-ccbin).
         """
@@ -101,8 +102,11 @@ class CTool(InitCTool):
 
         if 'compiler-cpp' not in _global:
             use = ctx['tasks'].setdefault('use', {})
-            for key, spec in ranges.items():
-                use.setdefault(key, {}).setdefault('version', spec)
+            if not (use.get('compiler-cpp') or {}).get('version'):
+                # the compiler tools only: the Visual Studio installation follows the version of msvc
+                for key, spec in ranges.items():
+                    if key != 'microsoft-visual-studio':
+                        use.setdefault(key, {}).setdefault('version', spec)
 
             compiler_extra_match = dict(_with.get('compiler_extra_match') or {})
             constraints = dict(compiler_extra_match.get('constraints') or {})
@@ -125,8 +129,7 @@ class CTool(InitCTool):
 
         why = host.unsupported(name, cc.get('version'), lim)
         if why:
-            key = 'microsoft-visual-studio' if name == 'msvc' else name
-            hint = f" (--use.{key}.version='{ranges[key]}')" if key in ranges else ''
+            hint = f" (--use.{name}.version='{ranges[name]}')" if name in ranges else ''
             return self.cm.error(f'nvcc {result.get("version")} does not support the C++ compiler of this run: {why}. '
                                  f'Set up a supported one first{hint}, or pass --use.nvcc.with.any_host_compiler '
                                  f'(nvcc may then fail)')

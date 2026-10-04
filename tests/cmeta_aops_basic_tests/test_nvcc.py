@@ -574,8 +574,9 @@ def test_the_host_compiler_follows_the_toolkit(nvcc_api, tmp_path):
     ctx = context("windows", arch = 120, driver = "13.3")
     r = t.finish_dynamic_result(ctx, nvcc_result(toolkit_home(tmp_path, "12.8")), {"with": {}})
     assert r["return"] == 0, r
-    assert cm.compiler_calls[0]["microsoft-visual-studio"] == {"version": ">=19.10,<19.50"}
     assert cm.compiler_calls[0]["msvc"] == {"version": ">=19.10,<19.50"}
+    # the Visual Studio installation follows the version of msvc (tool/msvc passes it on): no range of its own
+    assert "microsoft-visual-studio" not in cm.compiler_calls[0]
     assert r["result"]["features"]["flags"]["host_compiler"] == "-ccbin " + cl
 
     # reused in the same run: the compiler is not set up again
@@ -593,13 +594,32 @@ def test_a_version_given_with_use_stays(nvcc_api, tmp_path):
     assert cm.compiler_calls[0]["clang-cpp"] == {"version": "<20"}
 
 
+def test_a_compiler_version_asked_for_is_not_steered_into_the_limits(nvcc_api, tmp_path):
+    """--use.compiler-cpp.version=19.50 with CUDA 12.8: no limits are set for the compiler tools, the toolkit's check stops the run."""
+    cm = FakeCM({}, host_cc = {"tool": {"name": "msvc"}, "version": "19.50.35717", "qpath": '"cl.exe"'})
+    t = tool(nvcc_api, cm)
+    ctx = context("windows", arch = 120, driver = "13.3")
+    ctx["tasks"]["use"] = {"compiler-cpp": {"version": "19.50"}}
+    r = t.finish_dynamic_result(ctx, nvcc_result(toolkit_home(tmp_path, "12.8")), {"with": {}})
+    assert "msvc" not in cm.compiler_calls[0] and "microsoft-visual-studio" not in cm.compiler_calls[0]
+    assert r["return"] == 1 and "19.50" in r["error"] and "any_host_compiler" in r["error"]
+
+    # a version the toolkit accepts goes through as it is
+    cm = FakeCM({}, host_cc = {"tool": {"name": "msvc"}, "version": "19.44.35217", "qpath": '"cl.exe"'})
+    t = tool(nvcc_api, cm)
+    ctx = context("windows", arch = 120, driver = "13.3")
+    ctx["tasks"]["use"] = {"compiler-cpp": {"version": "19.44"}}
+    r = t.finish_dynamic_result(ctx, nvcc_result(toolkit_home(tmp_path, "12.8")), {"with": {}})
+    assert r["return"] == 0 and "msvc" not in cm.compiler_calls[0]
+
+
 def test_an_unsupported_compiler_set_up_earlier_stops_the_run(nvcc_api, tmp_path):
     t = tool(nvcc_api, FakeCM({}))
     ctx = context("windows", arch = 120, driver = "13.3")
     ctx["tasks"]["global"]["compiler-cpp"] = {"tool": {"name": "msvc"}, "version": "19.50.35717", "qpath": '"cl.exe"'}
     r = t.finish_dynamic_result(ctx, nvcc_result(toolkit_home(tmp_path, "12.8")), {"with": {}})
     assert r["return"] == 1
-    assert "--use.microsoft-visual-studio.version='>=19.10,<19.50'" in r["error"] and "any_host_compiler" in r["error"]
+    assert "--use.msvc.version='>=19.10,<19.50'" in r["error"] and "any_host_compiler" in r["error"]
 
     # --with.any_host_compiler: nvcc is told to try anyway
     r = t.finish_dynamic_result(ctx, nvcc_result(toolkit_home(tmp_path, "12.8")), {"with": {"any_host_compiler": True}})

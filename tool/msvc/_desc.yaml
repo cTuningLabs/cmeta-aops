@@ -21,8 +21,12 @@ match_version:
 cmd_get_version: 'cl.exe'
 
 uses:
+  # The installation whose cl.exe has the version asked of msvc (both carry cl.exe's version), as
+  # gcc-cpp and clang-cpp pass their version on: with two Visual Studios installed, a request for
+  # one version of MSVC then needs no choice of the installation
   - task: setup,a2f9b61079ce4333
     name: microsoft.visual-studio,b30299aeb2bd4c6e
+    version: "{{params.version|$None}}"
 
 features:
   windows:

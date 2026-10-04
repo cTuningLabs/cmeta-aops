@@ -3,6 +3,23 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **The compilers of a CUDA run are chosen without a prompt** (`task/compiler`, `tool/nvcc`): among
+  the cached C++ compilers that match a CUDA run, those the toolkit rejects (the limits of its
+  `host_config.h`, which `tool/nvcc` sets as version limits of the compiler tools) or that lack the
+  request's `extra_tags` / `extra_match` are no longer offered; of the rest, the compiler the
+  repository ranks first (MSVC, GCC, clang: the compiler of the OS) is taken, then the newest version -
+  the order of a machine without cached compilers - said in an INFO line. Cache entries of one
+  compiler and version made for different compute lists (`cuda`, then `cuda,vulkan`) count as one
+  compiler, for every language; and the entry of nvcc itself follows the toolkit set up for the `cuda`
+  target in the run. Before, a CUDA run on a machine with such entries asked "More than 1 cache entry"
+  up to three times, and `-q` took the newest version: a clang the toolkit rejects on some machines,
+  after which the setup tried to install an older one. `--use.compiler-cpp.name=<tool>` still picks
+  another compiler; a `--use.compiler-cpp.version` the toolkit rejects now stops the run with the
+  toolkit's message (before, the version was quietly replaced by one within the limits). Once a
+  compiler is decided, the version range set for its tool narrows to that version, and `tool/msvc`
+  passes the version asked of it on to the Visual Studio installation it sets up, as `gcc-cpp` and
+  `clang-cpp` do with theirs: a machine with two Visual Studios is not asked which one once the MSVC
+  version is known. Choices between different compilers for other targets are asked as before.
 - **Tests:** the hermetic suite passes on Linux as on Windows (the Windows-path cases of
   `test_tool_upgrade` run on Windows only; the Intel NPU install tests pin the glibc version they
   assume). `task/compiler` accepts `version` (its `run()` read it, `init()` rejected it: a static C++
