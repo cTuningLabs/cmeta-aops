@@ -90,6 +90,8 @@ features:
       lib_postfix: ''
       openmp: '-Xcompiler -fopenmp'
       link_openmp:
+      # a linker option passed through the host compiler to the linker (gcc's -Wl,)
+      linker_option_prefix: '-Xlinker '
       fast: '-O3'
       fastest: '-O3'
       profile: ''

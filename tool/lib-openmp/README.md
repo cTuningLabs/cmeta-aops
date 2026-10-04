@@ -28,6 +28,23 @@ not available on Windows") and MSVC's OpenMP runtime, vcomp, is a DLL as well. A
 Windows therefore means the static C run time and static libraries with the OpenMP runtime as a
 DLL; `setup-compile` prints a warning for such a build.
 
+## gcc's runtime, libgomp, in a static build
+
+gcc needs no `lib-openmp`: `-fopenmp` compiles with its own runtime, libgomp, and appends `-lgomp`
+to the link. A fully static build (`-static`) resolves that to `libgomp.a`; a link without `-static`
+- nvcc's host link of a static CUDA program (`-cudart=static`) - would take `libgomp.so`. So for a
+static build with OpenMP, `task/setup-compile` asks the compiler that provides the runtime (gcc, or
+nvcc's host compiler) for its archive with `-print-file-name=libgomp.a` (`openmp_static_archive` in
+`tool/gcc` and `tool/gcc-cpp`) and hands it to the linker by its path, followed by `-lpthread -ldl`
+(what the archive needs on older glibc) and `--as-needed` (so the `-lgomp` that gcc appends after
+the inputs adds no shared library). A compiler without the archive stops the static build with what
+provides it on this system; the build never falls back to the shared runtime.
+
+Where `libgomp.a` comes from (checked in containers, 2026-10): with the compiler itself on Debian and
+Ubuntu (`libgcc-<N>-dev`, installed with `gcc-<N>`), Fedora and RHEL-likes (`gcc`), openSUSE (`gcc<N>`)
+and Alpine (`gcc`); Arch Linux ships none (only its cross compilers do) - use clang there, whose
+`libomp.a` this tool builds, or a dynamic build.
+
 ```bash
 cx program run test-nmm-c-cpu --compile.static          # with clang: libomp linked statically (Linux, macOS)
 cx tool setup lib-openmp --with.static                    # the static archive on its own

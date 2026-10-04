@@ -3,6 +3,14 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **A static build links GCC's OpenMP runtime statically too** (`task/setup-compile`, `tool/gcc`, `tool/gcc-cpp`,
+  `tool/nvcc`): with `with.static` and OpenMP, the static runtime of the compiler that provides it - `libgomp.a`,
+  which the compiler reports with `-print-file-name` (`openmp_static_archive` in the compiler's meta; the host
+  compiler's when nvcc runs the link) - goes to the linker by its path, with `-lpthread -ldl` and `--as-needed`
+  after it, so that the `-lgomp` gcc appends for `-fopenmp` adds no shared library: a static CUDA binary no
+  longer loads `libgomp.so`. A compiler without the archive stops the static build with what provides it (the
+  archive comes with gcc itself on Debian, Ubuntu, Fedora, RHEL-likes, openSUSE and Alpine; Arch Linux ships
+  none), as the static OpenSSL rule does. clang keeps `lib-openmp`'s `libomp.a`; Windows keeps its DLL note.
 - **The compiler of every build is chosen without a prompt** (`task/compiler`): when several compilers
   suit a request that names none - several compiler tools on the machine, or several cached compilers of
   a CPU build - the preferred compiler of the OS is taken (`preferred_compilers` in

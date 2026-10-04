@@ -8,8 +8,25 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 import os
 import platform
 import shutil
+import subprocess
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
+
+# Where a Linux system gets GCC's static OpenMP runtime, libgomp.a, by the ID (or an ID_LIKE) of
+# /etc/os-release. Checked in containers (2026-10): the archive comes with the compiler itself on Debian 12
+# and Ubuntu 24.04 (libgcc-<N>-dev, installed with gcc-<N>), Fedora 42 and Rocky Linux 9 (gcc), openSUSE
+# (gcc<N>) and Alpine 3.21 (gcc); Arch Linux ships none (only its cross compilers do).
+STATIC_OPENMP_PACKAGES = {
+    'debian': 'the archive comes with the compiler (libgcc-<N>-dev, installed with gcc-<N>); this gcc lacks it',
+    'ubuntu': 'the archive comes with the compiler (libgcc-<N>-dev, installed with gcc-<N>); this gcc lacks it',
+    'fedora': 'the archive comes with the gcc package; this gcc lacks it',
+    'rhel': 'the archive comes with the gcc package; this gcc lacks it',
+    'suse': 'the archive comes with the gcc<N> package; this gcc lacks it',
+    'opensuse': 'the archive comes with the gcc<N> package; this gcc lacks it',
+    'alpine': 'the archive comes with the gcc package; this gcc lacks it',
+    'arch': 'Arch Linux packages no libgomp.a (its gcc ships the shared runtime only)',
+}
+
 
 def static_openmp_note(uname, static, openmp):
     """
@@ -33,6 +50,65 @@ def is_library_file(name):
     return os.path.isabs(name) and os.path.isfile(name)
 
 
+def print_file_name(compiler, name):
+    """
+    What "<compiler> -print-file-name=<name>" prints (gcc, clang): the path of the file when the
+    compiler's installation has it, the bare name when it has not. None when the compiler cannot run.
+    """
+    try:
+        r = subprocess.run([compiler, f'-print-file-name={name}'], capture_output = True, text = True)
+    except OSError:
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def no_static_openmp_runtime(compiler, archive, printed, os_id = None, id_like = None):
+    """
+    Why a static build with OpenMP stops when the compiler has no static OpenMP runtime, and what
+    gives it on this system. As for the other libraries, a static build never falls back to the
+    shared runtime: it must be what it says.
+    """
+    lines = [f'a static build with OpenMP needs the static OpenMP runtime of {compiler} ({archive}), and this '
+             f'compiler has none (-print-file-name={archive}: "{printed}"):']
+    key = next((k for k in [os_id or ''] + (id_like or '').split() if k in STATIC_OPENMP_PACKAGES), None)
+    if key:
+        lines.append(f'  this system ({os_id}): {STATIC_OPENMP_PACKAGES[key]}')
+    lines += ['  Debian, Ubuntu: libgcc-<N>-dev (installed with gcc-<N>); Fedora, RHEL-likes, openSUSE, Alpine: the gcc',
+              '  package itself ships the archive; Arch Linux ships none',
+              '  or use clang (--use.compiler-c.name=clang --use.compiler-cpp.name=clang-cpp: lib-openmp builds libomp.a),',
+              '  or build the program without --compile.static']
+    return '\n'.join(lines)
+
+
+def static_openmp_runtime(compiler, archive, driver_flags, uname, os_id = None, id_like = None, q = None):
+    """
+    The link inputs of a static build with OpenMP for a compiler whose OpenMP runtime has a static
+    archive (`archive`, flags.openmp_static_archive of its meta: gcc's libgomp.a) - the archive by
+    its path, the libraries it needs (pthread, dl) and --as-needed for what the driver appends after
+    them (gcc's -fopenmp appends -lgomp, which a link without -static would otherwise keep as a
+    shared library) - or {'return': 1, 'error': ...} when the compiler has no such archive. None
+    without an archive name (clang: tool/lib-openmp hands its libomp.a) and on Windows (no static
+    OpenMP runtime).
+
+    `compiler` is the entry of the compiler that provides the runtime (the host compiler of a driver
+    such as nvcc), `driver_flags` the flags of the compiler that runs the link (-l and -Wl,/-Xlinker).
+    """
+    if not archive or uname == 'windows':
+        return None
+
+    q = q or (lambda s: s)
+    path = compiler.get('path') or compiler.get('qpath', '').strip('"')
+    printed = print_file_name(path, archive)
+    if not printed or not os.path.isabs(printed) or not os.path.isfile(printed):
+        return {'return': 1, 'error': no_static_openmp_runtime(path, archive, printed, os_id, id_like)}
+
+    found = os.path.normpath(printed)
+    lib_prefix = driver_flags.get('lib_prefix', '-l')
+    linker_option = driver_flags.get('linker_option_prefix', '-Wl,')
+    link = [q(found), lib_prefix + 'pthread', lib_prefix + 'dl', linker_option + '--as-needed']
+    return {'return': 0, 'archive': found, 'link': link}
+
+
 class CTask(InitCTask):
     """
     """
@@ -51,8 +127,36 @@ class CTask(InitCTask):
         return {'return':0}
 
     ############################################################
-    def run(self, 
-            ctx, 
+    def tool_desc_flags(self,
+                        ctx: dict,
+                        compiler: dict,
+                        uname: str,
+    ):
+        """
+        The features.flags of a compiler tool's _desc.yaml for this OS (the "all", "<uname>", "linux"
+        precedence of task/setup), or {}. A cached compiler entry carries the flags of the time it was
+        cached, so a flag added to the tool's meta afterwards (openmp_static_archive, linker_option_prefix)
+        is read from the tool itself; nothing else of the cached entry changes.
+        """
+        name = (compiler.get('tool') or {}).get('name')
+        tool_category = (getattr(self, 'cmeta', None) or {}).get('uses_categories', {}).get('tool')
+        if not name or not tool_category:
+            return {}
+        r = self.cm.access({'category': tool_category, 'command': 'find', 'arg1': name})
+        if r.get('return', 1) > 0 or not r.get('artifacts'):
+            return {}
+        r = self.cm.utils.files.safe_read_file(os.path.join(r['artifacts'][0]['path'], '_desc.yaml'))
+        if r.get('return', 1) > 0 or not isinstance(r.get('data'), dict):
+            return {}
+        features = r['data'].get('features') or {}
+        for k in ['all', uname, 'linux']:
+            if k in features:
+                return (features[k] or {}).get('flags') or {}
+        return {}
+
+    ############################################################
+    def run(self,
+            ctx,
             **params,
     ):
         """
@@ -198,6 +302,34 @@ class CTask(InitCTask):
             if note and ctx.get('control', {}).get('con', False):
                 print(f'WARNING: {note}')
 
+        # A static build with OpenMP links the compiler's static OpenMP runtime by its path (gcc's
+        # libgomp.a: the runtime of the host compiler when a driver such as nvcc runs the link), or
+        # stops when the compiler has none - never the shared runtime (see static_openmp_runtime)
+        static_openmp = None
+        if _static and _openmp:
+            host = _global.get('host', {})
+            uname = host.get('os', {}).get('uname')
+            runtime_compiler = _global[global_compiler_key]
+            if flags.get('host_compiler') and 'compiler-cpp' in _global:
+                runtime_compiler = _global['compiler-cpp']
+            # The flags of a cached compiler entry are those of the time it was cached: a flag the
+            # tool's meta gained since is read from the tool itself
+            desc_flags = None
+            archive = runtime_compiler.get('features', {}).get('flags', {}).get('openmp_static_archive')
+            if archive is None:
+                desc_flags = self.tool_desc_flags(ctx, runtime_compiler, uname)
+                archive = desc_flags.get('openmp_static_archive')
+            driver_flags = flags
+            if archive and 'linker_option_prefix' not in flags:
+                driver = _global[global_compiler_key]
+                x = (desc_flags if driver is runtime_compiler and desc_flags is not None else self.tool_desc_flags(ctx, driver, uname)).get('linker_option_prefix')
+                if x:
+                    driver_flags = {**flags, 'linker_option_prefix': x}
+            static_openmp = static_openmp_runtime(runtime_compiler, archive, driver_flags, uname, host.get('os_extra', {}).get('id'),
+                                                  host.get('os_extra', {}).get('id_like'), q = self.cm.q)
+            if static_openmp is not None and static_openmp['return'] > 0:
+                return self.cm.error(static_openmp['error'])
+
         found_dynamic_libs = []
         found_dynamic_lib_paths = []
 
@@ -287,6 +419,12 @@ class CTask(InitCTask):
                 else:
                     x = flags.get('lib_prefix2','') + lib + flags.get('lib_postfix','')
                 compiler_link_flags.append(flags['lib_prefix'] + self.cm.q(x))
+
+        # The static OpenMP runtime after every library, its --as-needed covering only what the
+        # driver appends after the inputs (gcc's -lgomp from -fopenmp, nvcc's own libraries)
+        if static_openmp is not None:
+            compiler_link_flags += [x for x in static_openmp['link'] if x not in compiler_link_flags]
+            result['static_openmp_runtime'] = static_openmp['archive']
 
         if _profile:
             if flags.get('link_profile'):

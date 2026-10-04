@@ -453,3 +453,118 @@ def test_static_openmp_note():
 def test_lib_readmes_mention_static():
     assert "## Static builds" in (REPO_ROOT / "tool/lib-openssl/README.md").read_text(encoding = "utf-8")
     assert "libomp.a" in (REPO_ROOT / "tool/lib-openmp/README.md").read_text(encoding = "utf-8")
+
+
+# task/setup-compile: GCC's static OpenMP runtime (libgomp.a) by its path in a static build
+
+def test_compiler_metas_declare_the_static_openmp_runtime():
+    for name in ("gcc", "gcc-cpp"):
+        assert desc(f"tool/{name}/_desc.yaml")["features"]["linux"]["flags"]["openmp_static_archive"] == "libgomp.a"
+    assert desc("tool/nvcc/_desc.yaml")["features"]["linux"]["flags"]["linker_option_prefix"] == "-Xlinker "
+    for name in ("clang", "clang-cpp", "msvc"):                                 # clang: lib-openmp's libomp.a; Windows: none
+        for flags in (v.get("flags", {}) for v in desc(f"tool/{name}/_desc.yaml")["features"].values()):
+            assert "openmp_static_archive" not in flags
+
+
+def gcc_entry(tmp_path, archive = "libgomp.a", path = "/usr/bin/gcc"):
+    return {"path": path, "qpath": f'"{path}"',
+            "features": {"flags": {"static_build": "-static", "openmp": "-fopenmp", "openmp_static_archive": archive, "lib_path": "-L",
+                                   "lib_prefix": "-l", "lib_prefix2": "", "exe_file": "-o ", "include_path": "-I"},
+                         "vars": {"file_ext_exe": ""}}}
+
+
+def test_static_openmp_runtime_resolution(tmp_path):
+    ns, task = setup_compile_task()
+    archive = tmp_path / "lib" / "gcc" / "12" / "libgomp.a"
+    archive.parent.mkdir(parents = True)
+    archive.write_bytes(b"!<arch>\n")
+    q = lambda s: f'"{s}"'
+    gcc = gcc_entry(tmp_path)
+    ns["print_file_name"] = lambda compiler, name: str(tmp_path / "lib" / "gcc" / "12" / ".." / "12" / name)   # as gcc prints it, with ..
+    r = ns["static_openmp_runtime"](gcc, "libgomp.a", gcc["features"]["flags"], "linux", q = q)
+    assert r["return"] == 0 and r["archive"] == str(archive)
+    assert r["link"] == [f'"{archive}"', "-lpthread", "-ldl", "-Wl,--as-needed"]
+    nvcc_flags = {"lib_prefix": "-l", "linker_option_prefix": "-Xlinker ", "host_compiler": "-ccbin g++"}
+    assert ns["static_openmp_runtime"](gcc, "libgomp.a", nvcc_flags, "linux", q = q)["link"][-1] == "-Xlinker --as-needed"
+    # no archive: the compiler prints the bare name - an error that names the compiler and the system's package facts
+    ns["print_file_name"] = lambda compiler, name: name
+    r = ns["static_openmp_runtime"](gcc, "libgomp.a", gcc["features"]["flags"], "linux", os_id = "arch", q = q)
+    assert r["return"] == 1 and "/usr/bin/gcc (libgomp.a)" in r["error"] and "this system (arch): Arch Linux" in r["error"]
+    r = ns["static_openmp_runtime"](gcc, "libgomp.a", gcc["features"]["flags"], "linux", os_id = "rocky", id_like = "rhel centos fedora", q = q)
+    assert "this system (rocky): the archive comes with the gcc package" in r["error"] and "--compile.static" in r["error"]
+    # a compiler without an archive name (clang) and Windows: not this rule
+    clang = {"path": "/usr/bin/clang", "features": {"flags": {"openmp": "-fopenmp"}}}
+    assert ns["static_openmp_runtime"](clang, None, clang["features"]["flags"], "linux", q = q) is None
+    assert ns["static_openmp_runtime"](gcc, "libgomp.a", gcc["features"]["flags"], "windows", q = q) is None
+
+
+def test_setup_compile_reads_a_flag_a_cached_compiler_entry_lacks(tmp_path):
+    """The flags of a cached compiler entry are those of its time: openmp_static_archive comes from the tool's meta."""
+    ns, task = setup_compile_task()
+    archive = tmp_path / "libgomp.a"
+    archive.write_bytes(b"!<arch>\n")
+    ns["print_file_name"] = lambda compiler, name: str(archive)
+    gcc = gcc_entry(tmp_path)
+    del gcc["features"]["flags"]["openmp_static_archive"]
+    gcc["tool"] = {"name": "gcc"}
+    asked = []
+    task.tool_desc_flags = lambda ctx, compiler, uname: (asked.append(compiler["tool"]["name"]), {"openmp_static_archive": "libgomp.a"})[1]
+    r = task.run(openmp_ctx(tmp_path, "compiler-c", gcc), lang = "c", src_path = str(tmp_path), src_file_names = ["a.c"],
+                 target_path = str(tmp_path / "build"), **{"with": {"static": True, "openmp": True}})
+    assert r["return"] == 0 and r["static_openmp_runtime"] == str(archive) and asked == ["gcc"]
+    assert f'"{archive}" -lpthread -ldl -Wl,--as-needed' in r["add_to_local"]["compile_cmds"][0]
+    # without self.cmeta (no categories to look in) the lookup is simply empty
+    task2 = setup_compile_task()[1]
+    assert task2.tool_desc_flags({}, gcc, "linux") == {}
+
+
+def openmp_ctx(tmp_path, compiler_key, compiler, extra_global = {}):
+    g = {"host": {"os": {"uname": "linux"}, "os_extra": {"id": "debian"}}, compiler_key: compiler}
+    g.update(extra_global)
+    return {"control": {}, "tasks": {"global": g, "local": {}}}
+
+
+def test_setup_compile_static_openmp_with_gcc(tmp_path):
+    ns, task = setup_compile_task()
+    archive = tmp_path / "libgomp.a"
+    archive.write_bytes(b"!<arch>\n")
+    ns["print_file_name"] = lambda compiler, name: str(archive)
+    gcc = gcc_entry(tmp_path)
+    run = lambda with_: task.run(openmp_ctx(tmp_path, "compiler-c", gcc, {"lib-m": {"features": {"paths": {}, "lib_names": ["m"]}}}),
+                                 lang = "c", src_path = str(tmp_path), src_file_names = ["a.c"], target_path = str(tmp_path / "build"), **{"with": with_})
+    r = run({"static": True, "openmp": True})
+    cmd = r["add_to_local"]["compile_cmds"][0]
+    assert r["return"] == 0 and "-static" in cmd and "-fopenmp" in cmd and r["static_openmp_runtime"] == str(archive)
+    assert cmd.index('-l"m"') < cmd.index(f'"{archive}"') < cmd.index("-lpthread -ldl -Wl,--as-needed") < cmd.index("-o ")
+    for with_ in ({"openmp": True}, {"static": True}, {}):                                # dynamic, or no OpenMP: not concerned
+        r = run(with_)
+        cmd = r["add_to_local"]["compile_cmds"][0]
+        assert r["return"] == 0 and str(archive) not in cmd and "--as-needed" not in cmd and "static_openmp_runtime" not in r
+
+
+def test_setup_compile_static_openmp_with_nvcc_and_its_host_gcc(tmp_path):
+    """nvcc runs the host link without -static: the runtime of the host compiler (compiler-cpp), the -Xlinker form."""
+    ns, task = setup_compile_task()
+    archive = tmp_path / "libgomp.a"
+    archive.write_bytes(b"!<arch>\n")
+    ns["print_file_name"] = lambda compiler, name: str(archive) if compiler == "/usr/bin/g++" else name
+    nvcc = {"path": "/usr/local/cuda/bin/nvcc", "qpath": '"/usr/local/cuda/bin/nvcc"',
+            "features": {"flags": {"static_build": "-cudart=static", "openmp": "-Xcompiler -fopenmp", "link_openmp": None, "host_compiler": "-ccbin /usr/bin/g++",
+                                   "lib_path": "-L", "lib_prefix": "-l", "lib_prefix2": "", "exe_file": "-o ", "include_path": "-I", "linker_option_prefix": "-Xlinker "},
+                         "vars": {"file_ext_exe": ""}}}
+    gpp = gcc_entry(tmp_path, path = "/usr/bin/g++")
+    r = task.run(openmp_ctx(tmp_path, "compiler-cuda", nvcc, {"compiler-cpp": gpp}), lang = "cuda", src_path = str(tmp_path),
+                 src_file_names = ["a.cu"], target_path = str(tmp_path / "build"), **{"with": {"static": True, "openmp": True}})
+    cmd = r["add_to_local"]["compile_cmds"][0]
+    assert r["return"] == 0 and "-ccbin /usr/bin/g++" in cmd and "-cudart=static" in cmd and "-Xcompiler -fopenmp" in cmd
+    assert f'"{archive}" -lpthread -ldl -Xlinker --as-needed' in cmd and cmd.index("--as-needed") < cmd.index("-o ")
+    # the host compiler has no archive: the build stops before the compile with the reason
+    ns["print_file_name"] = lambda compiler, name: name
+    r = task.run(openmp_ctx(tmp_path, "compiler-cuda", nvcc, {"compiler-cpp": gpp}), lang = "cuda", src_path = str(tmp_path),
+                 src_file_names = ["a.cu"], target_path = str(tmp_path / "build"), **{"with": {"static": True, "openmp": True}})
+    assert r["return"] == 1 and r["error"].startswith("a static build with OpenMP needs the static OpenMP runtime of /usr/bin/g++ (libgomp.a)")
+    assert "this system (debian): the archive comes with the compiler" in r["error"]
+
+
+def test_openmp_readme_mentions_libgomp():
+    assert "libgomp.a" in (REPO_ROOT / "tool/lib-openmp/README.md").read_text(encoding = "utf-8")

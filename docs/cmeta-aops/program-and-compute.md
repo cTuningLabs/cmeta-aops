@@ -135,6 +135,11 @@ libraries, compilers, profilers and run wrapping. Two consumers filter on it:
    would otherwise resolve to a shared library of that name), and a `lib-*` entry whose
    `features.static_unavailable` says why it cannot serve a static build stops a static build
    with that reason (`tool/lib-openssl/README.md`).
+   A static build with OpenMP and gcc links the compiler's own static runtime by its path too
+   (`libgomp.a`, which the compiler reports with `-print-file-name`; `openmp_static_archive` in
+   `tool/gcc`/`tool/gcc-cpp` - the host compiler's when nvcc runs the link), with `-lpthread -ldl`
+   and `--as-needed` after it so that the `-lgomp` gcc appends adds no shared library; a compiler
+   without the archive stops the static build with what provides it (`tool/lib-openmp/README.md`).
 
 ## 6. Run machinery
 
