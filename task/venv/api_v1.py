@@ -159,7 +159,7 @@ class CTask(InitCTask):
                 break
 
         if not found:
-            return self.cm.error(f'Path to scripts not found in venv: {path_venv}')
+            return self.cm.error(f'Path to scripts not found in venv: {path_to_venv}')
 
         result['path_to_venv'] = path_to_venv
         result['qpath_to_venv'] = self.cm.utils.files.quote_path(path_to_venv)
@@ -187,7 +187,7 @@ class CTask(InitCTask):
             return self.cm.error(f'Path to python not found in venv: {path_to_python}')
 
         result['path_to_python'] = path_to_python
-        result['qpath_to_python'] = self.cm.utils.files.quote_path(path_to_activate_script)
+        result['qpath_to_python'] = self.cm.utils.files.quote_path(path_to_python)
 
         _params['version'] = version
 

@@ -1,0 +1,56 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# Rust programs for the Android device of the android-cpu target, compiled by the host's rustc
+# (tool/rustc through rustup: the same rustc as the host builds). api_v1.py takes the Rust target
+# from the device's ABI (aarch64-linux-android, ...), adds its standard library to rustc's
+# toolchain with "rustup target add" when it is missing, and links with the Android NDK's clang
+# for the device's API level (tool/google.android-ndk.clang), through features.target_arch.flags.
+#
+#   cx program run test-nmm-rust-cpu android-cpu
+
+names:
+  - rustc{{global.host.vars.file_ext_exe}}
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: rustc,bb769ef6ef6e4c5a
+
+  - task: setup,a2f9b61079ce4333
+    name: google.android-ndk.clang,0f9584af13b0402c
+
+force_tool_path: "{{global.rustc.path}}"
+
+cache_params_use:
+  all:
+    rustc:
+      path: "{{global.rustc.path}}"
+    android-ndk-clang:
+      path: "{{global.android-ndk-clang.path}}"
+
+match_version:
+  - regex: 'rustc\s+([\d\.]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+# The same on every host: an Android executable has no file extension
+features:
+  windows:
+    flags:
+      fast: '-C opt-level=1'
+      fastest: '-C opt-level=3'
+    vars:
+      file_ext_exe:
+  linux:
+    flags:
+      fast: '-C opt-level=1'
+      fastest: '-C opt-level=3'
+    vars:
+      file_ext_exe:
+  darwin:
+    flags:
+      fast: '-C opt-level=1'
+      fastest: '-C opt-level=3'
+    vars:
+      file_ext_exe:

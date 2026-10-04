@@ -1,0 +1,43 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+storage_key: torch-cpp-prebuilt
+
+# LibTorch, the PyTorch C++ distribution, from PyTorch's prebuilt archives
+# (https://download.pytorch.org/libtorch/) instead of a local build (tool/torch-cpp): the archive of
+# a release for this system, CPU and build (cpu, cu118, cu126, cu128) is downloaded into the cache,
+# checked against the SHA-256 pinned in api_v1.py and unpacked.
+#
+#   cx tool setup torch-cpp-prebuilt                        # the CPU build (macOS: CPU and MPS)
+#   cx tool setup torch-cpp-prebuilt --with.compute=cuda    # the newest CUDA build for this machine's GPUs
+#   cx tool setup torch-cpp-prebuilt --with.variant=cu126   # a given build
+#   cx tool setup torch-cpp --with.build=prebuilt           # the same through tool/torch-cpp
+
+default_version: '2.7.1'
+
+# Only the downloaded archive: a libtorch in PATH could be any build
+skip_detect: True
+
+# The common install uses (winget, curl, brew) are not needed: the download is done in Python
+skip_common_install_uses: True
+
+names:
+  - libtorch{{global.host.vars.file_ext_dlib}}
+  - torch.dll
+
+match_version:
+  - regex: '^(\d+\.\d+[\.\d]*)'
+    group: 1
+
+# The GPUs (compute capability) and the driver's CUDA version, to choose the CUDA build
+# (the build is part of the cache identity: api_v1.py, customize_tool_cache_artifact). The
+# condition sees --with.compute as given (a list, a string or nothing); a CUDA target of a
+# program has set up tool/cuda already
+uses:
+  - task: setup,a2f9b61079ce4333
+    if: '"cuda" in "{{params.with.compute|}}" and "{{params.with.variant|}}" == ""'
+    name: cuda,805716c4f32d42cf
+
+install_help_text: |
+  Could not get the prebuilt LibTorch. The archives are listed at
+  https://download.pytorch.org/libtorch/ ; without one for this system, build LibTorch from
+  source with tool/torch-cpp (without --with.build=prebuilt).

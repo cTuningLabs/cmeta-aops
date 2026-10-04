@@ -1,0 +1,6 @@
+# Disk space of an Android NDK install in GB (the NDK archive and its unpacked tree).
+sizes:
+  - if: {method: install}
+    peak: 6
+    kept: 3
+  - peak: 6

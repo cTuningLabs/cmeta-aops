@@ -12,9 +12,12 @@ local_vars:
 
   output_files:
     - output.txt
+    - llama.log
+    - perf.json
 
   result_files:
     response: output.txt
+    perf: perf.json
 
   print_files:
     - output.txt
@@ -45,21 +48,44 @@ updates:
 
        - match:
            task: setup-run,148f6c1fdb4247df
+         # The binary and the model: here, or on the Android device (kept under /data/local/tmp)
+         prepend:
+           - internal_func: prepare_target_run
+             internal_func_from_local_key: selected-program
+             internal_func_safe: True
          update:
            global_keys_with_dynamic_libs:
              - llama-cpp
+           # Android (--compute=android-cpu): the release folder and the model to keep on the device
+           android_push_folders: '{{local.llama_cpp_setup_run.android_push_folders|$None}}'
+           android_push_files: '{{local.llama_cpp_setup_run.android_push_files|$None}}'
+           android_ld_library_path: '{{local.llama_cpp_setup_run.android_ld_library_path|$None}}'
+           android_skip_pull: '{{local.llama_cpp_setup_run.android_skip_pull|$None}}'
+           # llama-completion: one-shot text generation (llama-cli became an interactive
+           # chat UI that prints a banner, late 2025); llama-cli itself in older builds
            cmd: >-
-             {{global.llama-cpp.qpath}}
+             {{local.llama_cpp_exe}}
              {run_flags_after_exe}
              {{params.run_flags|}} 
            cmd_main: >-
-               -m {{local.model.qpath}}
+               -m {{local.llama_cpp_model}}
                -f {qinput_files.data}
                -n {{params.n|500}}
                --temp {{params.temp|0.7}}
-               -c {{params.с|4096}}
+               -c {{params.c|4096}}
                --seed {{params.seed|12345}}
-               --no-display-prompt 
-               --log-disable 
+               --no-display-prompt
                --single-turn
+               --simple-io
+               {{params.log_flags|-v}}
+               {{local.llama_cpp_compute_flags|}}
+               2> llama.log
                > output.txt
+
+       # Clean output.txt and record llama.cpp's timings (llama.log) as result['perf']
+       - match:
+           task: finish-run,5e14d7eca4f64440
+         prepend:
+           - internal_func: finish_llama_run
+             internal_func_from_local_key: selected-program
+             internal_func_safe: True

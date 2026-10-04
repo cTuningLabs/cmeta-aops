@@ -17,5 +17,20 @@ class CProgram(InitCProgram):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
 
+    ############################################################
+    def customize1(self,
+                   ctx: dict,
+                   **misc
+    ):
+        """
+        With a JDK vendor (--jdk), the compiler step does not use its cache: a cached compiler entry
+        would also match the runs without --jdk (an entry matches every request whose parameters
+        it contains), which keep the cached compiler of the installed JDK.
+        """
+        local = ctx['tasks']['local']
+        if local.get('params', {}).get('jdk'):
+            local['compiler_cache'] = False
+        return {'return': 0}
+
 # Can be used for more complex workflow logic
 

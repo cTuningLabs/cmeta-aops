@@ -1,0 +1,29 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# The official ExecuTorch runtime for Android: org.pytorch:executorch-android on Maven Central
+# (BSD-3-Clause), an AAR with libexecutorch.so for arm64-v8a and x86_64 and its Java API
+# (org.pytorch.executorch.Module), plus the dependencies its POM names that a program outside an
+# app needs: fbjni (libfbjni.so, libc++_shared.so), nativeloader and kotlin-stdlib. Each file is
+# checked against Maven Central's SHA-256 (SHA-1 for old artifacts without one) and unpacked into
+# the cache (install ladder tier 1): content/<version>/jni/<abi>/*.so and content/<version>/jars/.
+#
+# The library registers the XNNPACK (CPU) backend only and exports JNI functions only: programs
+# use it through its Java API, from an app or from the adb shell with app_process (dex built with
+# tool/android-d8). The Vulkan, Qualcomm, MediaTek and Samsung backends need a source build.
+#
+#   cx tool setup executorch-android                  # the pinned release
+#   cx tool setup executorch-android --version=1.4.0 --new
+
+default_version: '1.5.1'
+
+cmd_get_versions: '{{global.curl.qpath}} -s https://repo1.maven.org/maven2/org/pytorch/executorch-android/maven-metadata.xml'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: curl,bfbb8526694d4f21
+cmd_get_versions_regex: '<version>(\d+\.\d+\.\d+)</version>'
+
+install_help_text: |
+  Could not download the ExecuTorch Android runtime from Maven Central
+  (https://repo1.maven.org/maven2/org/pytorch/executorch-android/). Check the network and run
+  "cx tool setup executorch-android" again.

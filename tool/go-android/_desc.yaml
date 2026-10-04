@@ -1,0 +1,51 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# Go programs for the Android device of the android-cpu target, compiled by the host's Go toolchain
+# (tool/go: the same go binary as the host builds). api_v1.py sets the target from the device's ABI
+# in features.env (GOOS=android, GOARCH, CGO_ENABLED=0), which task/setup-compile passes to the
+# compile command, and -buildmode=pie. Pure Go needs no Android NDK: the Go linker makes the
+# position-independent executable for Android's /system/bin/linker64 itself.
+#
+#   cx program run test-nmm-go-cpu android-cpu
+
+names:
+  - go{{global.host.vars.file_ext_exe}}
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: go,8387494b5d574044
+
+force_tool_path: "{{global.go.path}}"
+
+cache_params_use:
+  all:
+    go:
+      path: "{{global.go.path}}"
+
+match_version:
+  - regex: 'go([^\s]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} version'
+
+# The same on every host: an Android executable has no file extension
+features:
+  windows:
+    flags:
+      force_build: 'build'
+      exe_file: '-o '
+    vars:
+      file_ext_exe:
+  linux:
+    flags:
+      force_build: 'build'
+      exe_file: '-o '
+    vars:
+      file_ext_exe:
+  darwin:
+    flags:
+      force_build: 'build'
+      exe_file: '-o '
+    vars:
+      file_ext_exe:

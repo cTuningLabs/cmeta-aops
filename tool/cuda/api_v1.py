@@ -51,6 +51,14 @@ class CTool(InitCTool):
                 if len(oo) == 2:
                     versions[oo[0].strip().lower()] = oo[1].strip().lower()
 
+            # Drivers 610+ deprecate "DRIVER version" and "CUDA version" (their value is
+            # 'Deprecated, see "KMD version" instead') in favour of "KMD version" and
+            # "CUDA UMD version": keep the old keys meaningful for the tools that read them
+            for old_key, new_key in [('cuda version', 'cuda umd version'), ('driver version', 'kmd version')]:
+                value = versions.get(old_key, '')
+                if versions.get(new_key) and not value[:1].isdigit():
+                    versions[old_key] = versions[new_key]
+
             if versions:
                 features_versions = features.setdefault('versions', {})
                 features_versions.update(versions)
@@ -114,7 +122,7 @@ class CTool(InitCTool):
 
                 # process versions to simplify further analysis
                 cuda_version = features.get('versions',{}).get('cuda version')
-                if cuda_version:
+                if cuda_version and cuda_version.replace('.', '').isdigit():
                     features['versions']['cuda_version_int'] = int(cuda_version.replace('.',''))
 
         return {'return':0, 'paths':paths}

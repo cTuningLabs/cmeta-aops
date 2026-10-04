@@ -51,6 +51,17 @@ by requested `--version`, sorts (`@detected_version-`), and returns `path`/`vers
 `[openclaw{{file_ext_exe}}, openclaw.cmd]`) because on Windows the binary is `X.cmd`, not
 `X.exe`.
 
+Two `api_v1.py` hooks replace the search when a name on a path cannot find the tool:
+
+- `find_paths(ctx, params)` returns `{'found_paths': [...]}`, and the version check above
+  runs on them. `tool/microsoft.visual-studio` asks `vswhere` for every installation;
+  `tool/clang-cpp` looks next to the detected `clang`. A forced path (`--tool_path`, or the
+  path an `install()` reported) skips the hook and is checked as given.
+- `detect(ctx, params)` returns `{'parsed_paths_with_versions': [...]}`, i.e. paths with
+  their versions and features, for tools that no `--version` output describes.
+  `tool/vulkan` asks the Vulkan loader for its devices, and `tool/vulkan-sdk` checks SDK
+  folders for headers and `glslc`. `params` includes `tool_path`/`paths` when they are given.
+
 ## `_desc.yaml` — version listing (`cx tool setup X --versions`)
 
 The setup `--versions` path runs `cmd_get_versions`, first setting up any
@@ -82,6 +93,71 @@ cmd_get_versions_regex: '"([0-9][^"]*)"'
 Anchor GitHub-tag regexes tightly to exclude junk tag schemes — e.g. codex has
 `rust-vv…`, `rusty-v8-…`, `winget-test-…` noise, so it anchors on `rust-v` + a digit:
 `'refs/tags/rust-v(\d[\w.\-]*?)(?:\^\{\})?$'`.
+
+## Checking for and installing upgrades (`--status`, `--upgrade`)
+
+Two flags of `setup` work for every tool, with no new keys in its `_desc.yaml`
+(`task/setup/upgrade.py`):
+
+```bash
+cx tool setup opencode --status              # installed vs newest; installs nothing, writes nothing
+cx tool setup opencode --upgrade             # upgrade through the tool's channel; install the newest if absent
+cx tool setup jq --upgrade --version=1.8.2   # to a specific version, where the channel allows it
+cx tool run opencode --upgrade -- --help     # upgrade, then run
+```
+
+`--status` prints every copy it finds — the cMeta cache entries `setup` replays first,
+then the PATH — the **channel** the tool is installed through on this OS, the newest
+version **that channel** offers, the newest **upstream** version, the command `--upgrade`
+would run, and a verdict. Python callers get the same as `result['status']`
+(`installed`, `path`, `version`, `detected`, `channel`, `latest_version`,
+`upstream_version`, `verdict` ∈ `up-to-date | outdated | newer | not-installed | unknown`,
+`upgrade_cmd`, `notes`).
+
+The channel is derived from the tool's install command (or `install()` hook) for this
+OS. It decides what "latest" means and what `--upgrade` runs:
+
+| Channel (from `install_cmd` / `api_v1.py`) | newest version for `--status` | `--upgrade` runs |
+|---|---|---|
+| winget — `{{global.winget.qpath}} install --id=X …` | `winget show --id X --versions` | the install command with `install` → `upgrade` and `--no-upgrade` dropped |
+| Homebrew — `brew install X` (casks too) | `brew info --json=v2` → `versions.stable` | `brew upgrade X` |
+| system package manager — `{{global.host.os_extra.install_cmd_sudo}}` | the candidate: `apt-cache policy`, `dnf info`, `apk policy`, `pacman -Si`, `zypper info` | `{{global.host.os_extra.upgrade_cmd_sudo}}`: `apt-get install --only-upgrade`, `dnf upgrade`, `apk add --upgrade`, … |
+| install script — `curl … \| bash`, `irm … \| iex`, `install.cmd` | upstream | the script again (they install the newest release) |
+| npm — `npm install -g X` | upstream | `npm install -g X@latest` |
+| pip | `pip index versions` | pip's own update logic (as `--update` does) |
+| release download — `install()` in `api_v1.py`, pinned by default | upstream | the normal install with `--version=<newest upstream>`, into the same cache entry |
+| any other command | upstream | the command again (`rustup toolchain install` → `rustup update`, `snap install` → `snap refresh`) |
+
+**Upstream** is the release GitHub marks as *latest*, read from the redirect of
+`/releases/latest` of the repository named in `cmd_get_versions` (no API, no quota) —
+not the newest tag, which may be a pre-release or an unreleased line (opencode had
+`v2.0.21` tags while `v1.18.34` was the latest release). Without releases it is the newest
+non-pre-release of `cmd_get_versions`. The verdict compares against the channel that
+provides the installed copy (judged by its path): opencode installed by winget is "up to
+date" at 1.18.33 while upstream has 1.18.34, because winget cannot install what its source
+does not have yet — `--status` shows both. Distro revisions (`1:2.53.0-1ubuntu1`) are
+compared by their upstream part.
+
+`--upgrade` does not let the lookup decide: it runs the channel's upgrade command, detects
+the tool again and reports `before -> after` (winget's "No available upgrade found" exit
+code counts as "already the newest"). Only release downloads need the lookup, to know which
+version to fetch. Several copies found → the usual selection prompt, `-q` takes the newest.
+The cache entry `setup` replays is the one upgraded; it records the new version and a
+`last_upgrade` entry (`from`, `to`, `changed`, `cmd`, `timestamp`). `--update` is unchanged:
+it rebuilds the cache entry from whatever is installed, it does not upgrade the tool.
+
+Two optional keys override the derivation when it is wrong for a tool:
+
+```yaml
+upgrade_cmd:                                          # per OS, like install_cmd
+  linux: 'rustup update'
+cmd_get_latest_version: 'npm view openclaw version'   # a command that prints the newest version
+cmd_get_latest_version_regex: '(\d+\.\d+\.\d+)'       # default: the first version-like token
+cmd_get_latest_version_uses: [...]                    # set up first, as for cmd_get_versions
+```
+
+Tools that only detect (cuda, msvc, …) or delegate to a parent (clang → llvm) report their
+status and say that there is no upgrade procedure, naming the parent to upgrade.
 
 ## `_desc.yaml` — install (declarative)
 
@@ -137,6 +213,7 @@ dictionary that the `program` compile machinery consumes — `dynamic_build`/`st
 ## Verifying safely
 
 - `cx tool setup X --versions` — no side effects (lists versions).
+- `cx tool setup X --status` — no side effects (installed vs newest, and what `--upgrade` would run).
 - `cx tool setup X --detect` — detect only (never installs; `detect=True` forces
   `install=build=False`).
 - `cx tool setup X --version=<already-installed>` — detection matches, no install.

@@ -28,8 +28,21 @@ updates:
            task: setup-run,148f6c1fdb4247df
 
          prepend:
+           # One venv per set of targets: the ONNX Runtime packages for CPU, CUDA and OpenVINO
+           # all install the "onnxruntime" module (tool/pip-onnxruntime picks the one that fits);
+           # onnxruntime-openvino has wheels for Python 3.11-3.13
            - task: setup,a2f9b61079ce4333
              name: python,c00fb574d8ca4463
+             if: '"npu-intel" in {{global.target.compute|$[]}} or "xpu" in {{global.target.compute|$[]}} or "openvino" in {{global.target.compute|$[]}}'
+             version: '{{params.python_version|>=3.11,<3.14}}'
+             with:
+               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+             if: 'not ("npu-intel" in {{global.target.compute|$[]}} or "xpu" in {{global.target.compute|$[]}} or "openvino" in {{global.target.compute|$[]}})'
+             version: '{{params.python_version|>=3.11,<3.15}}'
+             with:
+               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
 
            - task: setup,a2f9b61079ce4333
              name: pip

@@ -7,8 +7,35 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 
 import os
 import copy
+import re
 
 from cmeta.category import InitCategory
+
+# Where a recursive search ("**") must not start: a filesystem root (it would walk the whole disk and,
+# on Linux, /proc and /sys, which never end) and the pseudo file systems themselves
+UNSAFE_SEARCH_ROOTS = ('/proc', '/sys', '/dev', '/run')
+
+
+def glob_pattern_is_safe(pattern):
+    """
+    Whether a search pattern may be expanded: a pattern without "**" always; one with "**" only when
+    the fixed part before its first wildcard is a real folder below a filesystem root (not "/", not
+    "C:\\", not /proc, /sys, /dev, /run). A tool's "{{...home}}/**" becomes "//**" when the home of a
+    distribution's compiler resolves to "/".
+    """
+    if '**' not in pattern:
+        return True
+    head = pattern
+    for wildcard in ('*', '?', '['):
+        i = head.find(wildcard)
+        if i >= 0:
+            head = head[:i]
+    head = os.path.normpath(os.path.dirname(head + 'x')) if head and not head.endswith(('/', '\\')) else os.path.normpath(head or '/')
+    posix = head.replace('\\', '/').rstrip('/')
+    if posix in ('', '.') or re.fullmatch(r'[A-Za-z]:', posix):     # "/", "//" or a drive root, on any OS
+        return False
+    return not any(posix == root or posix.startswith(root + '/') for root in UNSAFE_SEARCH_ROOTS)
+
 
 class Category(InitCategory):
     """
@@ -143,6 +170,15 @@ class Category(InitCategory):
                         import glob
 
                         pattern = os.path.join(spath, name)
+
+                        # A recursive search from a filesystem root or a pseudo file system never ends
+                        # (/proc, /sys): such a pattern comes from a tool whose home resolved to "/"
+                        # (a distribution's /usr/bin/clang) and is skipped
+                        if not glob_pattern_is_safe(pattern):
+                            if verbose:
+                                print (f'{space}SEARCH: skipping "{pattern}": a recursive search from a filesystem root')
+                            continue
+
                         matches = glob.iglob(pattern, recursive = True)
                   
                         for match in matches:
@@ -265,7 +301,8 @@ class Category(InitCategory):
         if self.cm.catch_error(r): return r
 
         # Setup may stop early without producing a CMD - for example
-        # "--versions" only prints the available versions of a tool
+        # "--versions" only prints the available versions of a tool and
+        # "--status" only reports the installed and the newest versions
         if 'cmd' not in r:
             return r
 
@@ -277,10 +314,11 @@ class Category(InitCategory):
                 param = '"' + param + '"'
 
             cmd += ' ' + param
-        
+
         # Clean some params (needed for "setup tool" task but not for "cmd" task)
 
         for k in ['detect','install', 'build', 'skip_install', 'skip_detect', 'skip_build',
+                  'status', 'upgrade',
                   'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 'with',
                   'version']:
             if k in pp:

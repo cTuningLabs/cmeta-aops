@@ -6,6 +6,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
+import copy
 
 
 def read_tool(self,
@@ -161,6 +162,63 @@ def read_tool(self,
         'tool_api_code2': tool_api_code2,
         'artifact_au': artifact_au,
         'artifact_print_name': artifact_print_name,
+        'artifact_path': artifact['path'],
         '_update_params': _update_params,
     }
 
+###################################################################################################
+def desc_features_block(desc, uname):
+    """
+    The declarative features of a tool's _desc.yaml for this OS: the "all" block, else the host's
+    uname block, else the "linux" one (the precedence of the detection); None when the desc has none.
+    """
+
+    features = desc.get('features') if isinstance(desc, dict) else None
+    if not isinstance(features, dict):
+        return None
+
+    for k in ['all', uname, 'linux']:
+        if k in features and isinstance(features[k], dict):
+            return features[k]
+
+    return None
+
+###################################################################################################
+def missing_feature_keys(block, features, prefix = ''):
+    """The dotted names of the keys of `block` that `features` lacks (descending into dicts both have)."""
+
+    missing = []
+
+    for k, v in block.items():
+        name = f'{prefix}{k}'
+        if not isinstance(features, dict) or k not in features:
+            missing.append(name)
+        elif isinstance(v, dict) and isinstance(features[k], dict):
+            missing.extend(missing_feature_keys(v, features[k], name + '.'))
+
+    return missing
+
+###################################################################################################
+def layer_desc_features(desc, result, uname, deep_merge):
+    """
+    The current declarative features of the tool's _desc.yaml under the features of a reused result:
+    a key the result lacks (one the meta gained after the entry was cached) comes from the desc; a key
+    the result has keeps its value (detected, or the desc of its time); lists stay as cached, nothing
+    is appended. The result is changed in place and the cache entry is never written: it stays the
+    record of what was detected (--update re-detects). Returns the dotted names of the keys added,
+    [] when the result already had them all.
+    """
+
+    block = desc_features_block(desc, uname)
+    if not block:
+        return []
+
+    features = result.get('features')
+    if not isinstance(features, dict):
+        features = {}
+
+    added = missing_feature_keys(block, features)
+    if added:
+        result['features'] = deep_merge(copy.deepcopy(block), features)
+
+    return added

@@ -66,14 +66,32 @@ Defines three sub-pipelines the driver runs in order, plus `local_vars`:
 
 ## 4. The `compute` abstraction — the pivot
 
-`compute` is a **list**: `["cpu"]`, `["cuda"]`, `["android-cpu"]`, `["metal"]`, or
-hybrids. The **`target` task** (`task/target/api_v1.py`) resolves it:
+`compute` is a **list**: `["cpu"]`, `["cuda"]`, `["vulkan"]`, `["android-cpu"]`,
+`["metal"]`, or hybrids. On the command line it is `--compute=cpu,cuda`, `--target=cpu,cuda`
+(the same option), or the second argument of `cx program run <program> cpu,cuda`; a bare
+`--compute` asks, and `cx program targets` lists the targets. How programs use several targets,
+how builds for different targets stay apart (`--target_tmp=auto`) and what the results record:
+[task/target/README.tech.md](../../task/target/README.tech.md).
+
+The **`target` task** (`task/target/api_v1.py`) resolves it:
 
 1. Normalise (string→list; or interactively pick `target--*` artifacts if `ask`).
 2. For each `c`, run sub-task **`target--<c>`** (e.g. `target--cuda` sets up the `cuda`
    tool, exposes `global.cuda.features`, emits env `CMETA_TARGET_CUDA=1`, and has an
-   `sdk:` sub-pipeline that sets up `nvcc`; `target--cpu` just sets `CMETA_TARGET_CPU=1`;
+   `sdk:` sub-pipeline that sets up `nvcc`: the newest CUDA toolkit that suits the GPU and the
+   driver, installed from NVIDIA's archives without root when the system has none, with the
+   host compiler the toolkit supports, see
+   [tool/nvcc/README.tech.md](../../tool/nvcc/README.tech.md); `target--vulkan` lists the devices of the
+   Vulkan loader (`tool/vulkan`) and its SDK step sets up `tool/vulkan-sdk`;
+   `target--cpu` records the CPU inventory and sets `CMETA_TARGET_CPU=1`;
    `target--android-cpu` detects the device — deep dive #2).
+
+   Targets are cached, but a cached target still describes the machine it runs on:
+   `target--cuda`, `target--rocm` and `target--vulkan` take the features of the tool set
+   up in this call, `target--metal` and `target--xpu` parse the probe that ran in this
+   call (`uses`), and `target--cpu` probes again when its host fingerprint (name,
+   architecture, CPU count) changed. A `CMETA_HOME` copied or shared between machines
+   would otherwise build for another machine's GPU.
 3. Aggregate each target's `env` / `cmake_vars` — using `env_if_not_used` /
    `cmake_vars_if_not_used` so *unused* targets still set `CMETA_TARGET_*=0`.
 4. Store **`global.target = {compute, features, cmeta_targets, cmake_vars}`** and push
@@ -95,16 +113,43 @@ libraries, compilers, profilers and run wrapping. Two consumers filter on it:
 1. **`compiler` task** selects a tool tagged `lang-<lang>` supporting the current
    OS+compute (gcc / clang / msvc / nvcc / icx / android-ndk clang), sets it up, stores
    it under `global.compiler-<lang>`. Its `finish_dynamic_result` derives `compiler_flags`
-   from the tool's `features.flags`.
+   from the tool's `features.flags`. When several compilers suit a request that names none
+   (several tools on the machine, or several cached compilers), it takes the preferred
+   compiler of the OS (`preferred_compilers` in `task/compiler/_desc.yaml`: MSVC on
+   Windows, GCC on Linux, clang on macOS), then the tool the repository ranks first, then
+   the newest version - no question asked, an INFO line names the others;
+   `--use.compiler-<lang>.name=<tool>` picks another compiler,
+   `--use.compiler-<lang>.version=<version>` another version, and a choice that cannot be
+   honoured stops the run. With two Visual Studios installed, the installation follows the
+   compiler's version; when none decides it (clang's dependency `msvc`), the newest is taken
+   without a question (`--use.microsoft-visual-studio.version=<version>` picks another).
 2. **The compiler tool** carries per-OS `features.flags` (see
    [tool-abstraction.md](tool-abstraction.md)) — the abstraction that makes one template
-   work across toolchains.
+   work across toolchains. A cached compiler entry carries the flags of the time it was
+   detected, so task `setup` lays the tool's *current* `_desc.yaml` features block under the
+   cached features on every reuse: a flag added to the meta afterwards is there without
+   `--update`, a detected value keeps its own, and the cache entry itself is not rewritten
+   (`--update` re-detects).
 3. **`setup-compile` task** (`task/setup-compile/api_v1.py`) is the assembler: reads
    `global['compiler-<lang>'].features.flags`, translates `params.compile`
    (`openmp`/`static`/`debug`/`d:{...}`/`fast`) into concrete flags, **scans every
    `global['lib-*']` entry** for include paths / lib paths / lib names / dynamic-lib
    paths, resolves `target_exe`/`target_path_exe`, and emits `local.compile_cmds`
    (compiler cmd + optional `ar` static-lib cmd). The template's `cmd` step runs it.
+   A lib name that is the path of a library file goes to the linker as it is (the static
+   archives of `lib-openssl` and of the static `lib-*` tools, which a link without `-static`
+   would otherwise resolve to a shared library of that name), and a `lib-*` entry whose
+   `features.static_unavailable` says why it cannot serve a static build stops a static build
+   with that reason (`tool/lib-openssl/README.md`).
+   A static build with OpenMP and gcc links the compiler's own static runtime by its path too
+   (`libgomp.a`, which the compiler reports with `-print-file-name`; `openmp_static_archive` in
+   `tool/gcc`/`tool/gcc-cpp` - the host compiler's when nvcc runs the link), with `-lpthread -ldl`
+   and `--as-needed` after it so that the `-lgomp` gcc appends adds no shared library; a compiler
+   without the archive stops the static build with what provides it (`tool/lib-openmp/README.md`).
+   `libstdc++` and `libgcc_s` stay shared in a static CUDA build on purpose: the shared libraries
+   NVIDIA ships (cuBLAS, cuDNN, the dynamic runtime) depend on the shared `libstdc++`, and a second,
+   static copy in the executable would put two C++ runtimes in one process; a static CPU build
+   (`-static`) links them statically.
 
 ## 6. Run machinery
 
@@ -114,6 +159,26 @@ the run-cmd template (`{target_xpath_exe}`, `{run_flags_after_exe}`, `{cmd_main}
 var, and wires profiling (perf/WPR/xctrace CPU, nsys/ncu CUDA, cProfile python) and the
 Android remote path (deep dive #2). **`finish-run`** collects declared `result_files`
 into the result and prints `print_files`.
+
+**Timeouts.** `cx program run <program> --timeout=<seconds>` limits each run command (the
+template passes it to its `cmd` step `run-program`). A command that runs past the limit is
+stopped with all its subprocesses (a process group on Linux and macOS, a Job Object on Windows)
+and the run fails with "timed out". The default is no limit. On an Android target the limit
+stops the local `adb` command, not necessarily the process on the device.
+`cx task run cmd --timeout=<seconds>` and `cx tool run <tool> --timeout=<seconds> -- <args>`
+work the same way.
+
+`--compile_timeout=<seconds>` is a **deadline for the whole compile phase**: from the start of
+the compile pipeline, every command that runs before it ends gets at most the time left, the
+builds that tools run inside the phase included (a LibTorch or OpenMPI built from source by a
+`tool` the program sets up). The program's own compile command is also limited to that many
+seconds, as before. A command stopped by the deadline fails with "stopped after N s: the compile
+deadline of M s (--compile_timeout) passed"; a command that would start after the deadline is not
+started. The deadline ends with the compile phase, so the run phase is governed by `--timeout`
+only, and a reused build is not affected. Without the option nothing is limited: a long build is
+never stopped by default, so the option is for automations that know how long a build may take
+(`compile-and-run-program` opens the deadline in `ctx['tasks']['deadlines']`, `task/cmd` reads it;
+pure Python, no external tools).
 
 ## 7. Libraries are programs too (`lib-*`)
 
@@ -138,10 +203,11 @@ and OS/compute libs `lib-openssl`, `lib-openmp`, `lib-cuda`, `lib-cudnn`,
   Several of these vendor third-party sources under terms that are **not**
   Apache-2.0 — see [`THIRD-PARTY.md`](../../THIRD-PARTY.md) before reusing them.
 - **`build-*`** (real source builds via compile-cmd override): `build-pytorch`,
-  `build-pytorchvision`, `build-torch-cpp`, `build-llama-cpp`.
+  `build-pytorchvision`, `build-torch-cpp`, `build-llama-cpp`, `build-vllm`.
 - **Inference / run apps:** `llama-cpp`, `image-classification-pytorch`,
   `image-classification-onnx`, `model-cnn-ylecun-mnist-pytorch`, `test-pytorch-with-audio`,
-  `test-pytorch-with-vision`, `test-vllm`.
+  `test-pytorch-with-vision`, `test-vllm`, `test-ollama`. How to run the LLM stacks
+  (llama.cpp, vLLM, Ollama, PyTorch) per OS and target: [llm-stacks.md](llm-stacks.md).
 
 ## 9. End-to-end flow (`cx program run test-nmm-c-cpu cpu`)
 
@@ -177,14 +243,20 @@ The driver persists three JSON snapshots in `target_path` and reuses them to ski
 - else ⇒ a dedicated `cache` entry `task--program--<name>` (tags `[task,
   c36be4b9314a45e0, compile-and-run-program, 05437a1aae224270]`), `target_path =
   <cache_entry>/tmp`. A distinct `--path`/`work_path` gives a distinct build.
-`work_path` (run cwd) defaults to `target_path`; `{pwd}` maps to `<cur_dir>/tmp`.
+- The folder `tmp` is `--target_tmp=<name>` when given, else the config default
+  (`cx config set task --meta.compile_and_run_program.target_tmp=<name>`). `auto` makes it
+  `tmp-<targets>` (`tmp-cuda`, `tmp-cpu-cuda`): one build per set of targets, side by side.
+`work_path` (run cwd) defaults to `target_path`; `{pwd}` maps to `<cur_dir>/<that folder>`.
 
 **Compile reuse decision** (`recompile` starts False unless `--recompile`):
 1. Read `_repro_ctx_compile.json`. Missing ⇒ `recompile=True`. Present but
    `result.return != 0` ⇒ `recompile=True`.
 2. Otherwise compare the cached compile context against the current run and force
    `recompile=True` if **any** differs:
-   - a currently selected `compute` isn't in the cached `target.compute`;
+   - the selected targets differ from the cached `target.compute` (in either direction:
+     `cuda` → `cpu,cuda` and `cpu,cuda` → `cuda`). They are read after the `all`
+     pipeline, where the target task resolves them; read before (until 0.40.1), the list was
+     empty and a change of targets reused the other target's build and run flags;
    - `android-cpu` in compute **and** the cached `target--android-cpu.serial` differs
      from the current device serial;
    - the cached `host.os.uname` differs from the current one (Docker / WSL on a shared
@@ -257,8 +329,8 @@ sorted keys, default index 0). The chosen block is applied via the program categ
 ## D. `build-*` programs vs the compile template
 
 `build-*` programs (`build-pytorch`, `build-pytorchvision`, `build-torch-cpp`,
-`build-llama-cpp`) reuse the **same** template skeleton (target → compiler → cache →
-repro), but their `updates.compile.uses` **append** a full real-build chain after
+`build-llama-cpp`, `build-vllm`) reuse the **same** template skeleton (target → compiler →
+cache → repro), but their `updates.compile.uses` **append** a full real-build chain after
 `customize2` and **replace the compile `cmd`** with an actual build:
 
 - Set up the build toolchain by tag/name: extra `compiler lang: c`, `cmake`, `ninja`,
@@ -268,15 +340,19 @@ repro), but their `updates.compile.uses` **append** a full real-build chain afte
   (keyed by `url`/`checkout`; result at `global.clone-git-to-cache-<name>.path_to_git_repo`)
   — the source cache is **separate** from the program's `task--program--<name>` build
   cache. Submodules are initialised with a `cmd` sub-task.
-- A program-specific `internal_func` (`customize_pytorch` / `customize_llama_cpp`)
-  computes build env / cmake vars / check-file paths.
+- A program-specific `internal_func` (`customize_pytorch` / `customize_llama_cpp` /
+  `customize_vllm`) computes build env / cmake vars / check-file paths. The CUDA
+  architecture list comes from the detected GPUs, and `MAX_JOBS` from the RAM
+  (`category/program/api/common_build.py`: 4 GiB per CUDA job, 2 GiB per C++ job), since
+  the Python build systems otherwise start one job per CPU and run out of memory.
 - The build itself is a `cmd` with `storage_key: compile-program` (so the repro-cache in
   deep dive #A still governs it) running e.g.
-  `python -m pip install --no-build-isolation -v .` (pytorch) or
+  `python -m pip install --no-build-isolation -v .` (pytorch, vllm) or
   `cmake … -G Ninja … && cmake --build .` (llama.cpp) in the cloned source / target dir.
 - `run` swaps `setup-run`'s cmd to run the built artifact — `python program.py` for the
-  Python builds, `llama-cli -m {model} -f {input}` for llama.cpp — pulling models/datasets
-  via the `model,86f0effd07ad454d` and `dataset,30e20c7489f14f84` category tasks.
+  Python builds, `llama-completion -m {model} -f {input}` for llama.cpp (`llama-cli` in
+  trees without `tools/completion`) — pulling models/datasets via the
+  `model,86f0effd07ad454d` and `dataset,30e20c7489f14f84` category tasks.
 
 So the difference from a `test-nmm-*` program is **only in the compile step's content**
 (a real multi-tool build vs a single compiler invocation) and the **extra source-clone

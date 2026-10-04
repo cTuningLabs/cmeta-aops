@@ -1,0 +1,40 @@
+{
+  "artifact": "efadf3bb1f5d462d",
+  "authors": "Grigori Fursin",
+  "category": "program,22788f3c30d04e6d",
+  "constraints": {
+    "supported_compute": [
+      "cpu",
+      "cuda",
+      "npu-intel",
+      "xpu",
+      "openvino",
+      "metal",
+      "rocm"
+    ]
+  },
+  "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",
+  "creation_timestamp": "2026-10-02T10:51:30.900000+00:00",
+  "desc": "Run a matmul + ReLU ONNX model with ONNX Runtime on each selected target's execution provider (CPU, CUDA, OpenVINO on the Intel NPU or GPU, CoreML, MIGraphX), with CPU fallback disabled; compare with NumPy and record the provider, latency and GFLOPS.",
+  "generator": {
+    "agent": "Claude Code 2.1.286",
+    "by": "Grigori Fursin",
+    "effort": "max",
+    "method": "agent",
+    "model": "claude-opus-5-5"
+  },
+  "last_generator": {
+    "agent": "Claude Code 2.1.286",
+    "by": "Grigori Fursin",
+    "date": "2026-10-02",
+    "effort": "max",
+    "method": "agent",
+    "model": "claude-opus-5-5"
+  },
+  "last_update_timestamp": "2026-10-02T10:53:15.828683+00:00",
+  "tags": [
+    "test",
+    "onnx",
+    "onnxruntime"
+  ]
+}

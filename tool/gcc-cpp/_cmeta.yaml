@@ -1,19 +1,29 @@
 artifact: b444b09b95b84696
 authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
-copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
-creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
-desc: "GNU C++ compiler (g++), detected next to GCC for C++ programs."
-sort: 2000
 constraints:
   supports_compute:
   - cpu
   - cuda
+  - vulkan
+  - opencl
   supports_nvcc_os:
   - linux
   supports_os:
   - linux
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
+  files in the project root for details.
+creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+desc: GNU C++ compiler (g++), detected next to GCC for C++ programs.
+last_generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  date: '2026-10-01'
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_update_timestamp: '2026-10-01T20:25:09.014084+00:00'
+sort: 2000
 tags:
 - lang-cpp
 - gcc-cpp
-

@@ -1,0 +1,257 @@
+"""
+Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
+
+Licensed under the Apache License, Version 2.0.
+See the COPYRIGHT and LICENSE files in the project root for details.
+
+Shared by the programs that run llama.cpp (llama-cpp, build-llama-cpp):
+
+    from program_22788f3c30d04e6d.api.common_llama_cpp import finish_llama_run, completion_binary
+
+The run writes the generated text to output.txt and llama.cpp's log (stderr) to llama.log.
+finish_llama_run() removes the end-of-generation marker from output.txt and records the
+timings llama.cpp prints (common_perf_print) in perf.json, which the programs return as
+result['perf']: prompt and generation tokens per second, load and total time.
+"""
+
+import json
+import os
+import re
+
+# "...: prompt eval time =      36.04 ms /    18 tokens (    2.00 ms per token,   499.42 tokens per second)"
+_PERF = re.compile(r'(?P<key>load|prompt eval|eval|sampling|total) time\s*=\s*(?P<ms>[\d.]+)\s*ms'
+                   r'(?:\s*/\s*(?P<n>\d+)\s*(?P<unit>tokens|runs))?'
+                   r'(?:.*?(?P<tps>[\d.]+)\s*tokens per second)?')
+
+# Devices llama.cpp offloads to: "using device CUDA0 (NVIDIA ...)" (newer builds) or "ggml_cuda_init: found 1 CUDA devices"
+# using device SYCL0 (Intel(R) Graphics) (unknown id) - 15018 MiB free: the name may hold parentheses
+_DEVICE = re.compile(r'using device (\S+) \((.+?)\)(?= \(| -|\s*$)', re.M)
+
+# "load_tensors: offloaded 25/25 layers to GPU" (with -v in builds since b8xxx)
+_OFFLOAD = re.compile(r'offloaded (\d+)/(\d+) layers to GPU')
+
+END_MARKERS = ('[end of text]',)
+
+# Run parameters of the llama.cpp programs and the llama.cpp flags they become, for offload and
+# multi-device experiments: --ngl=12 (layers on the GPU, the rest on the CPU), --devices=CUDA0,Vulkan0,
+# --split_mode=layer|row|none, --tensor_split=3,1, --main_gpu=1, --threads=8
+RUN_FLAGS = (('ngl', '-ngl'), ('devices', '--device'), ('split_mode', '-sm'),
+             ('tensor_split', '-ts'), ('main_gpu', '-mg'), ('threads', '-t'))
+
+
+def run_flags(compute, params):
+    """
+    The llama.cpp flags of a run and the settings to record with its results.
+    --compute=cpu keeps the model on the CPU even in a build with a GPU backend (-ngl 0 alone may
+    still use the GPU, --device none does not), unless --ngl or --devices say otherwise.
+    """
+    flags, settings = [], {}
+    for key, flag in RUN_FLAGS:
+        value = params.get(key)
+        if value not in (None, '', True):
+            settings[key] = value
+            flags += [flag, str(value)]
+    if list(compute) == ['cpu']:
+        if 'ngl' not in settings:
+            flags = ['-ngl', '0'] + flags
+        if 'devices' not in settings:
+            flags += ['--device', 'none']
+    return ' '.join(flags), settings
+
+
+ANDROID_TMP = '/data/local/tmp'
+ANDROID_DIR = 'cmeta-llama-cpp'     # <ANDROID_TMP>/cmeta-llama-cpp/<variant>/: the binary and its libraries
+ANDROID_MODELS = 'cmeta-models'     # <ANDROID_TMP>/cmeta-models/<model file>
+
+
+def android_run(bin_dir, exe_name, variant, model_path):
+    """
+    A run on an Android device: the llama.cpp files to keep there (the run binary and the
+    shared libraries, which a GGML_BACKEND_DL build loads from the binary's folder), the model,
+    and the device paths of both. setup-run pushes them once, and again only when they change.
+    """
+    import glob
+    files = [os.path.join(bin_dir, exe_name)] + sorted(glob.glob(os.path.join(bin_dir, '*.so')))
+    device_dir = f'{ANDROID_DIR}/{variant}'
+    device_model = f'{ANDROID_MODELS}/{os.path.basename(model_path)}'
+    return {
+        'exe': f'{ANDROID_TMP}/{device_dir}/{exe_name}',
+        'model': f'{ANDROID_TMP}/{device_model}',
+        'setup_run': {
+            'android_push_folders': {device_dir: files},
+            'android_push_files': {device_model: model_path},
+            'android_ld_library_path': [device_dir],
+            # perf.json is made here after the run, from the llama.log pulled from the device
+            'android_skip_pull': ['perf.json'],
+        },
+    }
+
+
+def target_run(cm, ctx, exe_path, variant):
+    """
+    The binary and the model of a run, as local llama_cpp_exe and llama_cpp_model: here, or on
+    the Android device (--compute=android-cpu), with what setup-run keeps there between runs in
+    local llama_cpp_setup_run. Returns True for a run on Android.
+    """
+    _local = ctx['tasks']['local']
+    model = _local.get('model', {})
+    model_path = model.get('path') or str(model.get('qpath', '')).strip('"')
+    if 'android-cpu' in ctx['tasks']['global']['target']['compute']:
+        a = android_run(os.path.dirname(exe_path), os.path.basename(exe_path), variant, model_path)
+        _local['llama_cpp_exe'] = a['exe']
+        _local['llama_cpp_model'] = a['model']
+        _local['llama_cpp_setup_run'] = a['setup_run']
+        return True
+    _local['llama_cpp_exe'] = cm.q(exe_path)
+    _local['llama_cpp_model'] = model.get('qpath') or cm.q(model_path)
+    _local['llama_cpp_setup_run'] = {}
+    return False
+
+
+def openvino_device(compute):
+    """
+    The device of llama.cpp's OpenVINO build (GGML_OPENVINO_DEVICE) for the targets: the NPU
+    for npu-intel, the Intel GPU for xpu,openvino; None leaves OpenVINO's default.
+    """
+    compute = list(compute)
+    if 'npu-intel' in compute:
+        return 'NPU'
+    if 'openvino' in compute and 'xpu' in compute:
+        return 'GPU'
+    return None
+
+
+def parse_llama_log(text):
+    """The timings and devices of a llama-completion / llama-cli run from its log."""
+    perf = {}
+    for line in text.splitlines():
+        if 'time =' not in line:
+            continue
+        m = _PERF.search(line)
+        if not m:
+            continue
+        key = m.group('key').replace(' ', '_')
+        entry = {'ms': float(m.group('ms'))}
+        if m.group('n'):
+            entry[m.group('unit')] = int(m.group('n'))
+        if m.group('tps'):
+            entry['tokens_per_second'] = float(m.group('tps'))
+        perf[key] = entry
+
+    devices = []
+    for m in _DEVICE.finditer(text):
+        d = {'name': m.group(1), 'description': m.group(2)}
+        if d not in devices:
+            devices.append(d)
+
+    result = {}
+    if perf:
+        result['timings'] = perf
+        if 'prompt_eval' in perf and 'tokens_per_second' in perf['prompt_eval']:
+            result['prompt_tokens_per_second'] = perf['prompt_eval']['tokens_per_second']
+        if 'eval' in perf and 'tokens_per_second' in perf['eval']:
+            result['generation_tokens_per_second'] = perf['eval']['tokens_per_second']
+    if devices:
+        result['devices'] = devices
+
+    offload = _OFFLOAD.search(text)
+    if offload:
+        result['gpu_layers'] = {'offloaded': int(offload.group(1)), 'total': int(offload.group(2))}
+
+    build = re.search(r'build\s*[:=]\s*b?(\d+)', text)
+    if build:
+        result['build'] = int(build.group(1))
+
+    # "system_info: n_threads = 16 (n_threads_batch = 16) / 16 | CUDA : ARCHS = 750,...,1210 | ... | CPU : AVX2 = 1 | ..."
+    m = re.search(r'system_info:\s*(.+)', text)
+    if m:
+        info = m.group(1).strip().rstrip('|').strip()
+        result['system_info'] = info
+        threads = re.search(r'n_threads\s*=\s*(\d+)', info)
+        if threads:
+            result['threads'] = int(threads.group(1))
+        archs = re.search(r'ARCHS\s*=\s*([\d,]+)', info)
+        if archs:
+            result['cuda_archs'] = [int(a) for a in archs.group(1).split(',') if a]
+
+    return result
+
+
+def finish_llama_run(program, ctx, desc = {}, **misc):
+    """The program's internal_func after the run: clean output.txt, write perf.json."""
+    _local = ctx['tasks']['local']
+    work_path = _local.get('work_path')
+    if not work_path or not os.path.isdir(work_path):
+        work_path = os.getcwd()
+
+    output = os.path.join(work_path, 'output.txt')
+    if os.path.isfile(output):
+        with open(output, encoding = 'utf-8', errors = 'replace') as f:
+            text = f.read()
+        cleaned = text.rstrip()
+        for marker in END_MARKERS:
+            if cleaned.endswith(marker):
+                cleaned = cleaned[:-len(marker)].rstrip()
+        if cleaned != text:
+            with open(output, 'w', encoding = 'utf-8') as f:
+                f.write(cleaned + '\n')
+
+    log = os.path.join(work_path, 'llama.log')
+    perf = {}
+    if os.path.isfile(log):
+        with open(log, encoding = 'utf-8', errors = 'replace') as f:
+            perf = parse_llama_log(f.read())
+
+    # Builds since b8xxx no longer log their number: take the release cMeta installed, or the
+    # tag a source build checked out (and its commit)
+    _global = ctx['tasks']['global']
+    clone = _global.get('clone-git-to-cache-src-llama-cpp', {})
+    if 'build' not in perf:
+        for candidate in (_global.get('llama-cpp', {}).get('version'), clone.get('branch'),
+                          _local.get('params', {}).get('checkout'),
+                          (clone.get('_params') or {}).get('checkout')):
+            m = re.match(r'b?(\d+)$', str(candidate or ''))
+            if m:
+                perf['build'] = int(m.group(1))
+                break
+    if clone.get('checkout_short'):
+        perf.setdefault('commit', clone['checkout_short'])
+
+    # What was asked for: the cMeta targets and the offload settings (run_flags)
+    perf['targets'] = _global.get('target', {}).get('compute', [])
+    if _local.get('llama_cpp_settings'):
+        perf['settings'] = _local['llama_cpp_settings']
+
+    with open(os.path.join(work_path, 'perf.json'), 'w', encoding = 'utf-8') as f:
+        json.dump(perf, f, indent = 2)
+
+    return {'return': 0}
+
+
+def optional_access(cm, ctx, ii):
+    """
+    Run a sub-task whose failure is acceptable (an optional dependency). A failed task returns
+    without restoring the caller's context (local, params, control), which would break every
+    step that follows, so it is saved and restored here.
+    """
+    tasks = ctx['tasks']
+    saved = {k: tasks.get(k) for k in ('local', 'params', 'cparams')}
+    saved_control = dict(ctx['control'])
+    try:
+        return cm.access(ii)
+    finally:
+        for k, v in saved.items():
+            if v is not None:
+                tasks[k] = v
+        ctx['control'].clear()
+        ctx['control'].update(saved_control)
+
+
+def completion_binary(path_to_git_repo, target_path_bin, exe_ext):
+    """
+    The binary a source build should run for a one-shot completion: llama-completion when the
+    checkout has it (the late-2025 llama-cli rework), else llama-cli (older checkouts).
+    """
+    if path_to_git_repo and os.path.isdir(os.path.join(path_to_git_repo, 'tools', 'completion')):
+        return 'llama-completion' + exe_ext
+    return 'llama-cli' + exe_ext

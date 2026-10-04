@@ -5,14 +5,23 @@ constraints:
   supports_compute:
   - cpu
   - cuda
+  - vulkan
   supports_os:
   - windows
   - linux
-copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
+  files in the project root for details.
 creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
-desc: "NVIDIA CUDA compiler (nvcc), detected inside the CUDA toolkit together with a host compiler, for compile-and-run CUDA programs."
-last_update_timestamp: '2026-05-16T15:21:50.948530+00:00'
+desc: NVIDIA CUDA compiler (nvcc), detected inside the CUDA toolkit together with
+  a host compiler, for compile-and-run CUDA programs.
+last_generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  date: '2026-10-02'
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_update_timestamp: '2026-10-02T08:10:30.759490+00:00'
 tags:
 - lang-cuda
 - cuda
-

@@ -1,0 +1,27 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# Amazon Corretto: the latest release of --with.feature (the major version, default 25), downloaded into
+# the cache from corretto.aws and checked against Amazon's SHA-256 (Windows, Linux, macOS; x64, aarch64).
+# Releases are picked by --with.feature only. No detection: an installed JDK is tool/openjdk's. The result is
+# stored as "openjdk" as well, so tool/javac and tool/java (--with.vendor=corretto) use this JDK.
+#
+#   cx tool setup jdk-corretto
+#   cx tool setup jdk-corretto --with.feature=21
+#   cx tool setup javac --with.vendor=corretto
+#   cx program run test-nmm-java-cpu --jdk=corretto
+
+storage_key: openjdk
+skip_detect: True
+
+cache_params:
+  - with.feature
+
+names:
+  - javac{{global.host.vars.file_ext_exe}}
+
+match_version:
+  - regex: 'javac\s+([^\s]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} -version'

@@ -6,6 +6,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
+import platform
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 
@@ -74,7 +75,8 @@ class CTool(InitCTool):
             uos = 'windows'
             uext = '.zip'
         elif uname == 'linux':
-            uos = 'linux'
+            # musl (Alpine): Temurin's alpine-linux build, since the glibc one does not run there
+            uos = 'linux' if platform.libc_ver()[0] == 'glibc' else 'alpine-linux'
             uext = '.tar.gz'
         elif uname == 'darwin':
             uos = 'mac'

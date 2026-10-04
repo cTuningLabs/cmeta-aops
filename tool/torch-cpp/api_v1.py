@@ -8,6 +8,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 import os
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
+from tool_c393ba5c6fa14f66.api.common_libtorch import found_paths_with_versions, add_path_features
 
 
 class CTool(InitCTool):
@@ -36,6 +37,28 @@ class CTool(InitCTool):
         ctx['tasks']['local']['compute'] = compute
         ctx['tasks']['local']['target_abi'] = None
 
+        # --with.build: source (the default, program/build-torch-cpp) or prebuilt (PyTorch's
+        # archives through tool/torch-cpp-prebuilt, set up by "uses" in _desc.yaml)
+        build = str(_with.get('build') or '').strip().lower()
+        if build in ('', 'source'):
+            # Without the key the cache identity of the source builds stays as it was
+            _with.pop('build', None)
+        elif build == 'prebuilt':
+            if str(_with.get('static')).strip().lower() in ('true', 'yes', '1', 'on'):
+                return self.cm.error('PyTorch\'s prebuilt LibTorch has shared libraries only: '
+                                     '--with.static needs a source build (without --with.build=prebuilt)')
+            _with['build'] = 'prebuilt'
+            # tool/torch-cpp-prebuilt caches the archive under its own name; this setup is not cached,
+            # since a cache entry with "build: prebuilt" would also match the requests without
+            # --with.build (an entry matches every request whose parameters it contains)
+            cparams['cache'] = False
+            # Detect the prebuilt library (force_tool_path in _desc.yaml); never fall back to a build
+            params['skip_detect'] = False
+            params['skip_install'] = True
+            params['skip_build'] = True
+        else:
+            return self.cm.error(f'unknown --with.build={build}: use source (the default) or prebuilt')
+
         return {'return': 0}
 
 
@@ -46,12 +69,41 @@ class CTool(InitCTool):
     ):
         result = {'return': 0}
 
+        # The git tag to build: v<version> for a requested version (PyTorch's tags are v2.7.1,
+        # v2.12.0, ...), else the default_checkout of _desc.yaml, so that the source build of a
+        # machine without a PyTorch clone is the tested release and not PyTorch's default branch
         version = misc.get('version')
         if version:
-            # PyTorch git tags are v2.7.1, v2.12.0, etc.
             result['add_to_local'] = {'checkout': f'v{version}'}
+        else:
+            checkout = (getattr(self, 'cdesc', None) or {}).get('default_checkout')
+            if checkout:
+                result['add_to_local'] = {'checkout': str(checkout)}
 
         return result
+
+
+    ############################################################
+    def build(self,
+              ctx: dict,
+              params: dict,
+    ):
+        """
+        After build_uses (program/build-torch-cpp: configure, build, cmake --install), the library
+        that the install put into <entry>/<build sub-dir>/install/lib, as the path to detect. Without
+        it the detection would search the whole build sub-dir and find the library of the build tree
+        too (lib/ of the build, or an older install); the build tree is never the install prefix.
+        """
+        uname = ctx['tasks']['global']['host']['os']['uname']
+        library = {'windows': 'torch.dll', 'darwin': 'libtorch.dylib'}.get(uname, 'libtorch.so')
+        target_sub_dir = (getattr(self, 'cdesc', None) or {}).get('build_local', {}).get('target_sub_dir', 'build')
+        target_sub_dir = str(target_sub_dir).replace('{{os_sep}}', os.sep)
+        install = os.path.join(os.getcwd(), target_sub_dir, 'install')
+        path = os.path.join(install, 'lib', library)
+        if not os.path.isfile(path):
+            return {'return': 1, 'error': f'the build of LibTorch did not install {path} (see the build log in '
+                                          f'{os.path.join(os.getcwd(), target_sub_dir)})'}
+        return {'return': 0, 'found_path': path}
 
 
     ############################################################
@@ -61,34 +113,26 @@ class CTool(InitCTool):
                        params: dict = {},
     ):
         """
-        Expose libtorch install prefix, include dir, and lib dir from the
-        cmake --install output of program/build-torch-cpp.
+        Expose the libtorch prefix, include dir and lib dir (the lib dir also for the run-time
+        library path), from the cmake --install output of program/build-torch-cpp or from the
+        archive of tool/torch-cpp-prebuilt.
 
         path = {prefix}/lib/torch.dll   (Windows)
              = {prefix}/lib/libtorch.so (Linux)
              = {prefix}/lib/libtorch.dylib (macOS)
         """
-        new_paths = []
+        paths = add_path_features(self, paths)
+
+        # How this libtorch was made: "source" (a local build) or "prebuilt" (PyTorch's archive,
+        # built with MSVC on Windows)
+        build = 'prebuilt' if params.get('with', {}).get('build') == 'prebuilt' else 'source'
 
         for p in paths:
-            features = p.setdefault('features', {})
-            path_features = features.setdefault('paths', {})
-            path = p['path']
+            p['features']['build'] = build
+            path_features = p['features']['paths']
+            path_features['found_dynamic_lib_paths'] = [path_features['lib']]
 
-            path_lib = os.path.dirname(path)   # {prefix}/lib/
-            path_home = os.path.dirname(path_lib)  # {prefix}/
-            path_include = os.path.join(path_home, 'include')
-
-            path_features['home']     = path_home
-            path_features['qhome']    = self.cm.q(path_home)
-            path_features['lib']      = path_lib
-            path_features['qlib']     = self.cm.q(path_lib)
-            path_features['include']  = path_include
-            path_features['qinclude'] = self.cm.q(path_include)
-
-            new_paths.append(p)
-
-        return {'return': 0, 'paths': new_paths}
+        return {'return': 0, 'paths': paths}
 
 
     ############################################################
@@ -97,29 +141,12 @@ class CTool(InitCTool):
                         paths: list,
                         params: dict = {},
     ):
-        found_paths_info = {}
-        _with = params.get('with', {})
-
-        for path in paths:
-            if not os.path.isfile(path):
-                continue
-
-            path_lib  = os.path.dirname(path)
-            path_home = os.path.dirname(path_lib)
-            path_include = os.path.join(path_home, 'include')
-
-            found_paths_info[path] = {
-                'features': {
-                    'paths': {
-                        'home':     path_home,
-                        'lib':      path_lib,
-                        'include':  path_include,
-                    },
-                    'with': _with,
-                },
-            }
+        """
+        The version of each found libtorch, from its headers (include/torch/.../version.h).
+        """
+        found = found_paths_with_versions(paths, params.get('with', {}))
 
         result = {'return': 0}
-        if found_paths_info:
-            result['found_paths_info'] = found_paths_info
+        if found:
+            result['found_paths_with_versions'] = found
         return result

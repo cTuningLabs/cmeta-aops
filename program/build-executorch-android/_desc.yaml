@@ -1,0 +1,103 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+###################################################################################################
+# ExecuTorch's executor_runner for Android, built from source with the XNNPACK (CPU) and Vulkan
+# (GPU) backends: the prebuilt runtime (tool/executorch-android) has XNNPACK only. Cross-compiled
+# on the host with the NDK (tool/google.android-ndk); the Vulkan shaders need the glslc of the
+# LunarG Vulkan SDK (tool/vulkan-sdk; NDK r29's glslc lacks GL_KHR_cooperative_matrix); the
+# build's code generation needs Python with torch (CPU). Sources: --checkout=<tag|branch|commit>.
+#
+#   cx program run build-executorch-android
+#   cx program run build-executorch-android --checkout=main --target_tmp=tmp-main --recompile \
+#       --use.clone-git-to-cache-src-executorch.update
+#   cx program run build-executorch-android --vulkan=OFF --android_abi=x86_64
+#
+# The runner is build-folder/executor_runner (stripped); push it with a .pte and run
+#   executor_runner --model_path=m.pte --inputs=input.bin --num_executions=50 --cpu_threads=4
+###################################################################################################
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  lang: cpp
+  target_file_name: 'executor_runner'
+  # The build is the cmd step below: not the template's compile of src/
+  skip_template_compile: True
+
+params:
+  skip_run: True
+
+updates:
+  compile:
+    uses:
+      - match:
+          internal_func: customize2
+        append:
+          - task: setup,a2f9b61079ce4333
+            name: cmake,e26c11ebb3dd40ca
+
+          - task: setup,a2f9b61079ce4333
+            name: ninja,a3df3c45e9b04830
+
+          - task: setup,a2f9b61079ce4333
+            name: google.android-ndk,ce4e80d6d26240c0
+
+          - task: setup,a2f9b61079ce4333
+            name: vulkan-sdk,f7097a132e3349ba
+
+          # The build's code generation (torchgen) needs torch: the CPU wheel, in its own venv next
+          # to the build folder (outside it, so --clean keeps it)
+          - task: setup,a2f9b61079ce4333
+            name: python,c00fb574d8ca4463
+            version: '{{params.python_version|>=3.10,<3.15}}'
+            with:
+              venv_path: '{{local.target_path}}-venv'
+
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            with:
+              package: torch
+              post_flags: '--index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple'
+            version: '{{params.torch_version|$None}}'
+
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            with:
+              package: pyyaml
+
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            with:
+              package: ruamel.yaml
+
+          # The release the exporter wheel and tool/executorch-android use, with its submodules
+          - task: clone-git-to-cache,86919b3cfdd443d2
+            name: src-executorch
+            url: 'https://github.com/pytorch/executorch'
+            checkout: '{{params.checkout|v1.5.1}}'
+            update_submodules: True
+
+          - task: cmd,c9ba0a88df394d7f
+            storage_key: compile-program
+            save_script: '{{local.target_path}}//tmp-cmeta-compile-program{{global.host.vars.file_ext_bat}}'
+            chdir: '{{local.target_path}}'
+            # ninja on PATH: nested CMake builds (XNNPACK's) look for it there, not CMAKE_MAKE_PROGRAM
+            set_env:
+              +PATH:
+                - '{{global.ninja.path_bin}}'
+            cmds:
+              - >-
+                {{global.cmake.qpath}} -S "{{global.clone-git-to-cache-src-executorch.path_to_git_repo}}" -B . -G Ninja
+                -DCMAKE_MAKE_PROGRAM={{global.ninja.qpath}}
+                -DCMAKE_TOOLCHAIN_FILE="{{global.google-android-ndk.path_home}}/build/cmake/android.toolchain.cmake"
+                -DANDROID_ABI={{params.android_abi|arm64-v8a}} -DANDROID_PLATFORM=android-{{params.android_api|28}}
+                -DCMAKE_BUILD_TYPE={{params.build_type|Release}} -DCMAKE_EXE_LINKER_FLAGS=-s
+                -DPYTHON_EXECUTABLE={{global.python.qpath}}
+                -DEXECUTORCH_BUILD_XNNPACK=ON
+                -DEXECUTORCH_BUILD_VULKAN={{params.vulkan|ON}} -DGLSLC_PATH={{global.vulkan-sdk.qpath}}
+                -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+                -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON
+                -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON
+                -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON
+                {{params.cmake_flags|}}
+              - '{{global.cmake.qpath}} --build . --target executor_runner'

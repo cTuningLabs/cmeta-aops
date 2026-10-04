@@ -1,0 +1,9 @@
+# Disk space of an Ollama install in GB (the release archive with its GPU libraries); models are not counted.
+sizes:
+  - if: {method: install, os: linux}
+    peak: 5
+    kept: 3
+  - if: {method: install}
+    peak: 4
+    kept: 2.5
+  - peak: 5

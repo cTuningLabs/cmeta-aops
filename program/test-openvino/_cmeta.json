@@ -1,0 +1,38 @@
+{
+  "artifact": "f2ab756049da41f1",
+  "authors": "Grigori Fursin",
+  "category": "program,22788f3c30d04e6d",
+  "constraints": {
+    "supported_compute": [
+      "cpu",
+      "npu-intel",
+      "xpu",
+      "openvino"
+    ]
+  },
+  "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",
+  "creation_timestamp": "2026-10-02T09:22:13.865631+00:00",
+  "desc": "Run a small matmul + ReLU model with OpenVINO on the Intel NPU, GPU or CPU, each device named explicitly (no AUTO, so no silent CPU fallback); compare with NumPy and record the device, driver, compile time and latency.",
+  "generator": {
+    "agent": "Claude Code 2.1.286",
+    "by": "Grigori Fursin",
+    "effort": "max",
+    "method": "agent",
+    "model": "claude-opus-5-5"
+  },
+  "last_generator": {
+    "agent": "Claude Code 2.1.286",
+    "by": "Grigori Fursin",
+    "date": "2026-10-02",
+    "effort": "max",
+    "method": "agent",
+    "model": "claude-opus-5-5"
+  },
+  "last_update_timestamp": "2026-10-02T09:24:46.151276+00:00",
+  "tags": [
+    "test",
+    "openvino",
+    "npu",
+    "intel"
+  ]
+}

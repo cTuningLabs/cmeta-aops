@@ -7,8 +7,10 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 
 import os
 import platform
+import time
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api import deadlines
 
 class CTask(InitCTask):
     """
@@ -48,10 +50,17 @@ class CTask(InitCTask):
     ):
 
         """
+        Args:
+            timeout (int): Seconds after which the command and all its subprocesses are stopped
+                (a process group on Linux and macOS, a Job Object on Windows); each command of
+                `cmds` gets the full time. None, 0 or "" (the default): no limit.
+
         Returns:
             dict: A cMeta dictionary with the following keys:
                 - **return** (int): 0 if success, >0 if error.
                 - **error** (str): Error message if `return > 0`.
+                - **timed_out** (bool): True if the timeout stopped the command (with
+                  `fail_if_nonzero_return_code=False`; otherwise the task fails).
 
 
         """
@@ -122,6 +131,25 @@ class CTask(InitCTask):
         if con and verbose and print_line_in_verbose:
             print ('='*80)
 
+        # No limit for None, 0 or "" (from the command line the value comes as a string)
+        timeout = deadlines.seconds(timeout)
+
+        # A deadline of the phase this command runs in (the compile phase with --compile_timeout,
+        # also for the builds that tools run inside it): the time left to it caps the timeout
+        deadline = deadlines.nearest(ctx)
+        by_deadline = False
+        if deadline is not None:
+            left = deadlines.time_left(deadline)
+            if left <= 0:
+                if chdir:
+                    os.chdir(cur_dir)
+                return self.cm.error(f'CMD "{cmd}" was not started: {deadlines.describe(deadline)} passed', 99)
+            if timeout is None or left < timeout:
+                timeout = left
+                by_deadline = True
+
+        started = time.time()
+
         result = self.cm.utils.sys.run(
             cmd, 
             cmds = cmds,
@@ -147,30 +175,35 @@ class CTask(InitCTask):
             skip_print_env = skip_print_env,
         )
 
-        if self.cm.catch_error(result, fail16=True): return result
-
-        returncode = result['returncode']
-
-        if fail_if_nonzero_return_code and returncode>0:
-            cmd = result['cmd']
-            return self.cm.error(f'CMD "{cmd}" failed with return code {returncode}', 99)
+        elapsed = time.time() - started
 
         if chdir:
-#            if con and verbose:
-#                print ('')
-#                print (f'{space}INFO: cd "{cur_dir}"')
             os.chdir(cur_dir)
 
-        if self.cm.catch_error(result, fail16=True): 
-            return result
+        if self.cm.catch_error(result, fail16=True): return result
 
-        returncode = result['returncode']
+        returncode = result.get('returncode', 0)
+
+        # utils.sys.run stops a command that runs past the timeout, with its subprocesses, and
+        # returns -1, the code it also returns at once when a command cannot be started
+        timed_out = timeout is not None and returncode == -1 and elapsed >= timeout
+        if timed_out:
+            result['timed_out'] = True
+
+        # Any code but 0 fails: a negative one is a signal on Linux and macOS
+        if fail_if_nonzero_return_code and returncode != 0:
+            failed_cmd = result.get('cmd', cmd)
+            if timed_out:
+                if by_deadline:
+                    return self.cm.error(f'CMD "{failed_cmd}" stopped after {timeout} s (with its subprocesses): '
+                                         f'{deadlines.describe(deadline)} passed', 99)
+                return self.cm.error(f'CMD "{failed_cmd}" timed out after {timeout} s (stopped with its subprocesses)', 99)
+            stderr = result.get('stderr')
+            reason = f': {stderr.strip()[-500:]}' if returncode == -1 and isinstance(stderr, str) and stderr.strip() else ''
+            return self.cm.error(f'CMD "{failed_cmd}" failed with return code {returncode}{reason}', 99)
 
         result['env'] = env
         result['cmd'] = cmd
-
-        if fail_if_nonzero_return_code and returncode>0:
-            return self.cm.error(f'CMD "{cmd}" failed with return code {returncode}', 99)
 
         return result
 

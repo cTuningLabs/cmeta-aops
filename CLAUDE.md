@@ -49,6 +49,15 @@ only.
 
 - Run the tests with `uv run python -m pytest tests` (see `AGENTS.md` §7). They are
   hermetic — own temporary `CMETA_HOME`, no network.
+- **Run every real test, build or benchmark in a test session**
+  (`cx task run test-session --start --type=<type> --title="…"`): work in its sandbox
+  (`tmp::cmeta-aops-test-sessions/<YYYYMMDD>/<HHMM>.<type>/` in the local repo), record
+  notes, results and attachments in its log (`log::cmeta-aops-test-sessions/` at the same
+  path: `session.md`), and `--finish` it (passed or failed). Never make sandbox folders in
+  random places.
+  The log records the model, effort, Claude Code session and its token use; on remote
+  machines pass `--agent --model --effort --session`. See `AGENTS.md` §7.1 and
+  [`task/test-session/README.md`](task/test-session/README.md).
 - **Adding a `tool`? Work down the install ladder:** ① download a prebuilt binary
   (`download-file` from an `install()` hook) → ② non-sudo package manager
   (`winget`, `brew`) → ③ sudo package manager (`apt`/`dnf`/… via

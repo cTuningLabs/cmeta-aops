@@ -1,0 +1,41 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# The Vulkan runtime: the loader (vulkan-1.dll, libvulkan.so.1, libvulkan.1.dylib) and the
+# drivers (ICDs) of the GPUs. api_v1.py detect() runs vulkan_probe.py, which asks the loader
+# itself for the devices (ctypes, no SDK or vulkaninfo needed); the tool's path is the loader,
+# its version the loader's Vulkan version and features.devices the devices:
+#
+#   cx tool setup vulkan -j                 # loader, version, devices
+#   cx tool setup vulkan --tool_path=<loader library>
+#
+# Building Vulkan programs needs headers and glslc as well: tool/vulkan-sdk.
+
+storage_key: vulkan
+
+# Vulkan comes with the GPU drivers on Windows, so there is nothing to install there.
+# Linux: the loader and Mesa's drivers (llvmpipe, a CPU device, works in any container);
+# macOS: the loader and MoltenVK, Vulkan on top of Metal.
+package_name: 'libvulkan1 mesa-vulkan-drivers'
+package_name_os_id:
+  fedora: 'vulkan-loader mesa-vulkan-drivers'
+  rhel: 'vulkan-loader mesa-vulkan-drivers'
+  rocky: 'vulkan-loader mesa-vulkan-drivers'
+  almalinux: 'vulkan-loader mesa-vulkan-drivers'
+  centos: 'vulkan-loader mesa-vulkan-drivers'
+  amzn: 'vulkan-loader mesa-vulkan-drivers'
+  azurelinux: 'vulkan-loader mesa-vulkan-drivers'
+  alpine: 'vulkan-loader mesa-vulkan-swrast'
+  arch: 'vulkan-icd-loader vulkan-swrast'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+  darwin: '{{global.brew.qpath}} install vulkan-loader molten-vk'
+
+requires_sudo:
+  linux: True
+
+install_help_text: |
+  Vulkan comes with the GPU driver: install or update the driver of your GPU
+  (NVIDIA, AMD, Intel; Mesa on Linux, MoltenVK through Homebrew on macOS) and run
+  "cx tool setup vulkan" again. https://vulkan.lunarg.com/doc/sdk/latest/

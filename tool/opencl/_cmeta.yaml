@@ -1,0 +1,22 @@
+artifact: 14ea96800e2841cc
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
+  files in the project root for details.
+creation_timestamp: '2026-10-02T19:19:13.035265+00:00'
+desc: 'OpenCL runtime: the ICD loader and the platforms and devices of the drivers
+  (name, type, vendor, version, compute units, memory), detected without an SDK; installs
+  the loader on Linux when a GPU can use it.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+note: The runtime for running OpenCL programs; the opencl target (task/target--opencl)
+  uses it.
+tags:
+- opencl
+- gpu
+- runtime
+- driver

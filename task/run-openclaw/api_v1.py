@@ -2,8 +2,8 @@
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 
-This task is the OpenClaw (https://openclaw.ai) sibling of the "run-claude2",
-"run-codex2" and "run-opencode2" tasks.
+This task is the OpenClaw (https://openclaw.ai) sibling of the "run-claude",
+"run-codex" and "run-opencode" tasks.
 """
 
 import json
@@ -122,7 +122,7 @@ class CTask(InitCTask):
         Assemble a prompt and run one OpenClaw agent turn headless ("openclaw agent --local
         --message <prompt>"), or open the OpenClaw terminal UI.
 
-        This is the OpenClaw sister of the "run-claude2", "run-codex2" and "run-opencode2"
+        This is the OpenClaw sister of the "run-claude", "run-codex" and "run-opencode"
         tasks and takes the same flags. The prompt is the text of "prompt_file" (when given),
         then a new line, then "prompt".
 
@@ -211,7 +211,7 @@ class CTask(InitCTask):
         if full_prompt and len(full_prompt) > MAX_PROMPT_ARG_CHARS and con:
             print ('')
             print (f'{space}WARNING: the prompt is {len(full_prompt)} chars long - openclaw takes it as a command line '
-                   f'argument, which the OS may refuse (use run-claude2 or run-codex2 for a very long prompt)')
+                   f'argument, which the OS may refuse (use run-claude or run-codex for a very long prompt)')
 
         ###########################################################################################
         # Output and statistics files (an interactive session keeps the terminal: nothing to collect)

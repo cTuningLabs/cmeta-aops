@@ -1,0 +1,20 @@
+artifact: ca41aa6b8313427b
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+desc: 'The Intel NPU user-space driver for Linux (Level Zero NPU driver, compiler in driver, Level
+  Zero loader, oneTBB): the system''s, else Intel''s release packages unpacked into the cache without
+  root and exported through LD_LIBRARY_PATH.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+note: What OpenVINO's NPU plugin needs on Linux; the npu-intel target sets it up once it finds the NPU.
+tags:
+- intel
+- npu
+- runtime
+- driver
+- level-zero

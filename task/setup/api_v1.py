@@ -14,6 +14,7 @@ from . import build
 from . import common
 from . import detect
 from . import install
+from . import upgrade
 
 class CTask(InitCTask):
     """
@@ -26,6 +27,20 @@ class CTask(InitCTask):
     build_tool = build.build_tool
     read_tool = common.read_tool
     detect_existing_tool = detect.detect_existing_tool
+
+    # --status / --upgrade (task/setup/upgrade.py)
+    status_tool = upgrade.status_tool
+    upgrade_tool = upgrade.upgrade_tool
+    prepare_upgrade_version = upgrade.prepare_upgrade_version
+    describe_channels = upgrade.describe_channels
+    find_latest = upgrade.find_latest
+    list_versions = upgrade.list_versions
+    resolve_package_name = upgrade.resolve_package_name
+    _detect_kwargs = upgrade._detect_kwargs
+    _install_uses = upgrade._install_uses
+    cached_tools = upgrade.cached_tools
+    _run_capture = upgrade._run_capture
+    _use = upgrade._use
 
     x = None
 
@@ -46,11 +61,13 @@ class CTask(InitCTask):
 
         r = self.cm.check_params(params, [
                 'detect','install', 'build', 'versions',
+                'status', 'upgrade',
                 'skip_detect', 'skip_install', 'skip_build',
                 'skip_install_uses', 'skip_build_uses',
                 'skip_cache_version_check',
-                'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 
-                'version', 'env', 'timeout', 'with', 'arg3', 
+                'skip_size_check', 'sizes',
+                'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths',
+                'version', 'env', 'timeout', 'with', 'arg3',
                 'version_check',
                 'ignore_install_errors', 'ignore_build_errors',
                 'custom_install', 'custom_build',
@@ -182,6 +199,8 @@ class CTask(InitCTask):
             r['return'] = 1
             return r
 
+        tool_read = r
+
         desc = r['desc']
         tool_api_code = r['tool_api_code']
         tool_api_code2 = r.get('tool_api_code2')
@@ -215,87 +234,12 @@ class CTask(InitCTask):
         ###########################################################################################
         # Checking versions
         if params.get('versions', False):
-            cmd_versions = desc.get('cmd_get_versions')
-
-            r = self.cm.utils.common.expand_string(cmd_versions, ctx_tasks)
-            if self.cm.catch_error(r): return r
-            cmd_versions = r['string']
-
-            _con = _verbose = True if self.cm.debug else False
-
-            env = params.get('env')
-            timeout = params.get('timeout')
-
-            ii = {'category': self.category_alias + ',' + self.category_uid,
-                  'command': 'run',
-                  'ctx': ctx,
-                  'arg1': 'cmd,c9ba0a88df394d7f',
-                  'cmd': cmd_versions,
-                  'env': env,
-                  'timeout': timeout,
-                  'con': _con, 
-                  'verbose': _verbose, 
-                  'text_cmd': 'RUN:', 
-                  'fail_if_nonzero_return_code': False,
-                  'capture_output': True,
-            }
-
-            rx = self.cm.access(ii)
-            if self.cm.debug:
-                print ('='*60)
-                print ('Output of versions detection:')
-                print ('')
-                self.cm.j(rx)
-                print ('='*60)
-
-            if self.cm.catch_error(rx): return rx
-
-            versions = []
-            returncode = rx['returncode']
-            output = ''
-            if returncode >0:
-                err = rx['stderr'] + '\n' + rx['stdout']
+            r = self.list_versions(ctx, desc, params)
+            if r['return'] > 0:
+                err = r.get('error', '')
                 return self.cm.error(f'failed to get versions for tool "{artifact_print_name}" in "{__file__}":\n{err}')
 
-            output = rx['stdout'] + '\n' + rx['stderr']
-
-            # Attempt to detect versions (pip, git, etc)
-            j = output.find('Available versions:')
-            if j>=0:
-                # Attempt to decode as pip
-                sversions = output[j+19:].strip()
-                j = sversions.find('\n')
-                if j>0:
-                    sversions = sversions[:j].strip()
-                versions = self.cm.utils.common.split_clean(sversions, ',')
-            elif desc.get('cmd_get_versions_regex'):
-                # Attempt to decode with regex
-                cmd_get_versions_regex = desc['cmd_get_versions_regex']
-                cmd_get_versions_regex_group = desc.get('cmd_get_versions_regex_group')
-                if not cmd_get_versions_regex_group:
-                    cmd_get_versions_regex_group = 1
-                import re
-                for s in output.splitlines():
-                    match = re.search(cmd_get_versions_regex, s)
-                    if match:
-                        v = match.group(cmd_get_versions_regex_group)
-                        if v not in versions:
-                            versions.append(v)
-            else:
-                versions = output.splitlines()
-
-            # Sort 
-            if versions:
-                dversions = [{'version': x} for x in versions]
-
-                sort_keys = ['@version-']
-
-                dversions = sorted(
-                   dversions,
-                   key=lambda v: self.cm.utils.common.build_sort_key(v, sort_keys),
-                )
-
-                versions = [dv['version'] for dv in dversions]
+            versions = r['versions']
 
             result['stop'] = True
             result['versions'] = versions
@@ -307,6 +251,33 @@ class CTask(InitCTask):
 
                 if versions:
                     print (', '.join(versions))
+
+            return result
+
+        ###########################################################################################
+        # --sizes: the disk sizes that finished setups of this tool recorded, and the rules of a
+        # _desc_sizes.yaml to suggest from them; stops (nothing is installed or cached)
+        if params.get('sizes', False):
+            r = self.report_sizes(ctx, params, tool_read)
+            if self.cm.catch_error(r): return r
+
+            r['stop'] = True
+            return r
+
+        ###########################################################################################
+        # --status: report installed vs newest versions and stop (nothing is installed or cached)
+        if params.get('status', False):
+            r = self.status_tool(ctx, params, tool_read)
+            if self.cm.catch_error(r): return r
+
+            r['stop'] = True
+            return r
+
+        ###########################################################################################
+        # --upgrade: the cached result must not be replayed, and the cache entry must record
+        # the new version afterwards - both are what the engine's "update" switch does
+        if params.get('upgrade', False):
+            cparams['update'] = True
 
         return result
 
@@ -454,6 +425,200 @@ class CTask(InitCTask):
         return result
 
     ############################################################
+    def filter_cache_artifacts(self,
+                               ctx,
+                               artifacts,
+                               tmp_artifacts,
+                               params,
+                               **extra,
+        ):
+        """
+        Called by the task engine with the cache entries that match the cache query (artifacts) and the
+        unfinished or broken ones (tmp_artifacts): the tool may drop entries that are not meant for this
+        request (filter_tool_cache_artifacts in its api_v1.py, e.g. tool/python). Without that function
+        every entry is kept.
+        """
+
+        r = self.read_tool(
+            ctx = ctx,
+            name = params.get('name'),
+            tool_tags = params.get('tool_tags'),
+            tool_api_ver = params.get('tool_api_ver'),
+            params = params,
+        )
+        if self.cm.catch_error(r, fail16=True):
+            r['return'] = 1
+            return r
+
+        tool_api_code = r['tool_api_code']
+
+        if hasattr(tool_api_code, 'filter_tool_cache_artifacts') and callable(getattr(tool_api_code, 'filter_tool_cache_artifacts')):
+            return tool_api_code.filter_tool_cache_artifacts(ctx, artifacts, tmp_artifacts, params, **extra)
+
+        return {'return':0}
+
+    ############################################################
+    def check_disk_space(self,
+                         ctx: dict,
+                         method: str,        # install or build
+                         kwargs: dict,       # the setup's parameters (tool_read, version, with, ...)
+    ):
+        """
+        Before an install or a build: the rule of the tool's _desc_sizes.yaml for this request (version,
+        OS, CPU, method, with) gives the space it needs during the setup (peak); the configured minimum
+        of free space (cx config set task --meta.min_free_gb=<GB>) applies to every tool. The folder
+        that receives the data is the cache entry (the current folder) or --path. Below that: a quiet
+        run (-q) stops before downloading anything, else a warning and the question whether to go on.
+        --skip_size_check skips it. Tools without _desc_sizes.yaml and no minimum: no check, no output.
+        """
+
+        from tool_c393ba5c6fa14f66.api import common_sizes as sizes
+
+        kwargs['_disk_method'] = method
+
+        if kwargs.get('skip_size_check', False):
+            return {'return': 0}
+
+        ctx_tasks = ctx['tasks']
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
+        space = '  ' * ctx_tasks.get('nested_call', 0) if verbose else ''
+
+        tool_read = kwargs.get('tool_read', {})
+        tool_path = tool_read.get('artifact_path')
+        rules = sizes.load_sizes(tool_path) if tool_path else []
+
+        floor = ctx_tasks.get('global', {}).get('init', {}).get('min_free_gb')
+        try:
+            floor = float(floor) if floor not in (None, '', False) else None
+        except (TypeError, ValueError):
+            return self.cm.error(f'the configured minimum of free space "min_free_gb" is not a number: {floor}')
+
+        if not rules and floor is None:
+            return {'return': 0}
+
+        host = ctx_tasks['global']['host']['os']
+        facts = sizes.request_facts(version = kwargs.get('version_simple') or kwargs.get('version') or None,
+                                    os_name = host['uname'], arch = host.get('uarch'), method = method,
+                                    compute = kwargs.get('with', {}).get('compute'), with_ = kwargs.get('with'))
+        rule = sizes.select_rule(rules, facts, self.cm.utils.common.matches_query,
+                                 match_version_func = self.cm.repos.match_version_func)
+        needed = rule.get('peak') if rule else None
+        if needed is not None:
+            kwargs['_disk_rule'] = rule
+
+        folder = os.getcwd()
+        ok, free, required = sizes.check_space(needed, folder, floor_gb = floor)
+        if ok:
+            if verbose and con and required is not None:
+                print (f'{space}INFO: disk space for the {method}: {free:.1f} GB free in {folder}, about {required:g} GB needed')
+            return {'return': 0}
+
+        tool_name = tool_read.get('artifact_print_name') or kwargs.get('name')
+        message = sizes.shortage_message(tool_name, facts.get('version'), method, host['uname'], required, free, folder,
+                                         rule_based = needed is not None and needed >= (floor or 0))
+
+        if quiet or not con:
+            return self.cm.error(message)
+
+        print ('')
+        print (f'{space}WARNING: {message}')
+        x = input(f'{space}Continue anyway (y/N)? ').strip().lower()
+        if x not in ['y', 'yes']:
+            return self.cm.error(f'{method} of "{tool_name}" cancelled: not enough disk space')
+
+        return {'return': 0}
+
+    ############################################################
+    def record_disk_size(self,
+                         ctx: dict,
+                         result: dict,
+                         method: str,
+                         kwargs: dict,
+    ):
+        """
+        After a successful install or build in the cache: the size of the cache entry (and of --path
+        when the data went there) as result["_impact"]["disk_gb"], with the method, OS and CPU, so
+        that "cx tool setup <tool> --sizes" can suggest the rules of _desc_sizes.yaml. The peak
+        (peak_gb) is what a custom install measured right after unpacking, when it reports one.
+        """
+
+        from tool_c393ba5c6fa14f66.api import common_sizes as sizes
+
+        if not ctx['tasks']['run_control'].get('cache', False):
+            return {'return': 0}
+
+        host = ctx['tasks']['global']['host']['os']
+        folder = os.getcwd()
+        impact = result.setdefault('_impact', {})
+        impact['disk_gb'] = round(sizes.folder_gb(folder), 6)
+        impact['disk_method'] = method
+        impact['disk_os'] = host['uname']
+        impact['disk_arch'] = host.get('uarch')
+
+        # The peak: the largest of what install() reported, what the downloads into this entry took at
+        # their peak (archive + unpacked tree, recorded by download-file) and the entry's size now
+        peaks = [impact['disk_gb']]
+        if kwargs.get('_disk_peak_gb') is not None:
+            peaks.append(float(kwargs['_disk_peak_gb']))
+        downloads = sizes.read_download_sizes(folder)
+        if downloads:
+            peaks.append(sizes.peak_of_downloads(downloads) / sizes.GB)
+            impact['download_gb'] = round(sum(d.get('download_bytes') or 0 for d in downloads) / sizes.GB, 6)
+        if len(peaks) > 1:
+            impact['peak_gb'] = round(max(peaks), 6)
+
+        return {'return': 0}
+
+    ############################################################
+    def report_sizes(self,
+                     ctx: dict,
+                     params: dict,
+                     tool_read: dict,
+    ):
+        """
+        "cx tool setup <tool> --sizes": the sizes that finished installs and builds of the tool recorded
+        in their cache entries (_impact.disk_gb, peak_gb), the rules of its _desc_sizes.yaml, and the
+        rules to suggest from the records (about 20% above the largest sizes seen).
+        """
+
+        from tool_c393ba5c6fa14f66.api import common_sizes as sizes
+
+        con = ctx['control'].get('con', False)
+        name = tool_read['artifact_au'].split(',')[0]
+
+        r = self.cm.access({'category': upgrade.CACHE_CATEGORY, 'command': 'find',
+                            'tags': ['task', self.category_uid, 'setup', self.artifact_uid],
+                            'match': {'params': {'name': name}}})
+        if r['return'] > 0 and r['return'] != 16: return r
+
+        entries = [a['path'] for a in r.get('artifacts', [])]
+        records = sizes.records_from_cache(entries)
+        rules = sizes.load_sizes(tool_read['artifact_path'])
+        suggested = sizes.suggest_rules(records)
+
+        if con:
+            print ('')
+            print (f'Disk sizes recorded for "{name}" ({len(records)} of {len(entries)} cache entries):')
+            print ('')
+            for rec in sorted(records, key = lambda x: -(x['peak_gb'] or x['kept_gb'])):
+                peak = f', peak {rec["peak_gb"]:.3g} GB' if rec.get('peak_gb') else ''
+                print (f'  {rec["version"] or "-":12} {rec["method"] or "-":8} {rec["os"] or "-":8} {rec["arch"] or "-":6} '
+                       f'kept {rec["kept_gb"]:.3g} GB{peak}  {rec["entry"]}')
+            if not records:
+                print ('  (none: installs and builds record their size since this feature; detected tools have none)')
+            print ('')
+            print (f'Rules in _desc_sizes.yaml: {len(rules)}')
+            if suggested:
+                print ('')
+                print ('Suggested _desc_sizes.yaml (about 20% above the largest sizes seen; adjust and paste):')
+                print ('')
+                print (sizes.rules_to_yaml(suggested))
+
+        return {'return': 0, 'records': records, 'rules': rules, 'suggested': suggested}
+
+    ############################################################
     def run(self, ctx, **kwargs):
         """
         Setup a tool with possible install and build
@@ -486,6 +651,11 @@ class CTask(InitCTask):
         skip_build_uses = kwargs_copy.get('skip_build_uses', False)
         skip_cache_version_check = kwargs_copy.get('skip_cache_version_check')
 
+        # --upgrade: detect, then upgrade (or install) through the tool's channel, then detect
+        # again - see task/setup/upgrade.py. --status stops earlier, in check_params.
+        upgrade_requested = kwargs_copy.pop('upgrade', False)
+        kwargs_copy.pop('status', None)
+
         result = {'return': 0}
 
         ctx_tasks = ctx['tasks']
@@ -505,7 +675,8 @@ class CTask(InitCTask):
 
         if name == 'pip' and update:
             # Usually update happens for new pip features while package can be only one
-            # so force install/build ...
+            # so force install/build ... (--upgrade switches "update" on too, so pip packages
+            # are upgraded by pip's own uninstall + install logic in customize_install_cmd)
             skip_detect = True
 
         # TBD: add better support for clean, update and new in tools
@@ -574,6 +745,19 @@ class CTask(InitCTask):
                 if detect is None: detect = False
                 if install is None: install = False
 
+        if upgrade_requested:
+            # The user asked for the upgrade: no "install (Y/n)?" prompt, and the
+            # not-installed case installs the newest version
+            detect = True
+            install = True
+
+            # The engine has already picked this run's cache entry (the one "cx tool setup"
+            # replays): the tool it points to is the one to upgrade, wherever the PATH leads
+            if not kwargs_copy.get('tool_path') and ctx_tasks['run_control'].get('cache', False):
+                cached_path = upgrade.cached_tool_path(os.getcwd())
+                if cached_path:
+                    kwargs_copy['tool_path'] = cached_path
+
         success = False
 
         warning = ''
@@ -624,20 +808,44 @@ class CTask(InitCTask):
                     if x != '': x += ' and'
                     x += f' with cache params "{cache_params}"'
 
-                err = r['error'] + x 
+                err = r['error'] + x
 
                 if con:
                     print ('')
                     print (f'{space}WARNING: {err} !')
 
         ##############################################################################
+        if upgrade_requested and success:
+            # Upgrade the detected tool through its channel and detect it again
+            r = self.upgrade_tool(ctx, result, **kwargs_copy)
+            if self.cm.catch_error(r): return r
+
+            result = r
+
+        elif upgrade_requested and install and not skip_install:
+            # Not installed: release downloads get the newest release instead of the pinned default
+            r = self.prepare_upgrade_version(ctx, kwargs_copy)
+            if self.cm.catch_error(r): return r
+
+            if r.get('version'):
+                version = r['version']
+
+        ##############################################################################
         if not success and install and not skip_install:
+            # Enough disk space for the install? (the tool's _desc_sizes.yaml, the configured minimum)
+            r = self.check_disk_space(ctx, 'install', kwargs_copy)
+            if self.cm.catch_error(r): return r
+
             # Attempt to install tool
 
             r = self.install_tool(ctx, result, **kwargs_copy)
             if not ignore_install_errors and self.cm.catch_error(r): return r
 
             _update_params = r.get('_update_params')
+
+            # A custom install may report the space it took at its peak (archive + unpacked tree)
+            if r.get('peak_gb') is not None:
+                kwargs_copy['_disk_peak_gb'] = r['peak_gb']
 
             if r['return'] == 0 or ignore_install_errors:
                 if ignore_install_errors or not r.get('failed', False):
@@ -679,6 +887,10 @@ class CTask(InitCTask):
 
         ##############################################################################
         if not success and build and not skip_build:
+            # Enough disk space for the build?
+            r = self.check_disk_space(ctx, 'build', kwargs_copy)
+            if self.cm.catch_error(r): return r
+
             # Attempt to build tool
 
             r = self.build_tool(ctx, result, **kwargs_copy)
@@ -750,12 +962,32 @@ class CTask(InitCTask):
             return self.cm.error(f'failed to setup tool "{artifact_print_name}"{x} in "{__file__}"', 32, extra = extra)
 
         ##############################################################################
+        if upgrade_requested and 'last_upgrade' not in result:
+            # --upgrade of a tool that was not installed: record the fresh install
+            result['last_upgrade'] = {'from': None,
+                                      'to': result.get('version'),
+                                      'path': result.get('path'),
+                                      'changed': True,
+                                      'installed': True,
+                                      'timestamp': upgrade.now_iso()}
+
+            if con:
+                print ('')
+                print (f'{space}UPGRADE: "{artifact_print_name}" was not installed - installed {result.get("version")} ({result.get("path")})')
+
+        ##############################################################################
         # Add cache path if in cache
         in_cache = ctx_tasks['run_control'].get('cache', False)
         if in_cache:
             path_cmeta_cache = os.getcwd()
             result['path_cmeta_cache'] = path_cmeta_cache
             result['qpath_cmeta_cache'] = self.cm.utils.files.quote_path(path_cmeta_cache)
+
+        # What this install or build took on disk (learning for _desc_sizes.yaml: "cx tool setup <tool> --sizes")
+        method = kwargs_copy.get('_disk_method')
+        if method:
+            r = self.record_disk_size(ctx, result, method, kwargs_copy)
+            if self.cm.catch_error(r): return r
 
         ##############################################################################
         # Check path to tool
@@ -814,12 +1046,28 @@ class CTask(InitCTask):
             return r
 
         tool_api_code = r['tool_api_code']
+        desc = r.get('desc') or {}
+
+        # The features of a reused result are completed from the tool's current _desc.yaml: a key the
+        # meta gained after the entry was cached (a compiler flag, for example) is there on every use,
+        # without --update; what was detected keeps its value, and the cache entry is not written
+        added = common.layer_desc_features(desc, result, ctx['tasks']['global']['host']['os']['uname'],
+                                           self.cm.utils.common.deep_merge)
+        if added:
+            _result['result'] = result
+
+            if self.cm.debug:
+                self.logger.debug(f'task setup: features of "{name}" completed from its _desc.yaml: {added}')
+
+            if ctx['control'].get('con', False) and ctx['control'].get('verbose', False):
+                space = '  ' * ctx['tasks'].setdefault('nested_call', 0)
+                print (f'{space}INFO: features of "{name}" completed from its current _desc.yaml: {", ".join(added)}')
 
         if hasattr(tool_api_code, 'finish_dynamic_result') and callable(getattr(tool_api_code, 'finish_dynamic_result')):
             r = tool_api_code.finish_dynamic_result(
-                 ctx, 
-                 result, 
-                 params, 
+                 ctx,
+                 result,
+                 params,
             )
             if self.cm.catch_error(r): return r
 

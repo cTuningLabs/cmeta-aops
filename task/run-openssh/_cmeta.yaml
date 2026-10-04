@@ -1,0 +1,30 @@
+artifact: 9216be02930b41f8
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
+  files in the project root for details.
+creation_timestamp: '2026-10-03T15:04:43.347214+00:00'
+desc: Start, stop or show an OpenSSH server run as the user (no service, no administrator)
+  on its own port, with key-only logins, on the Tailscale address by default.
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  date: '2026-10-03'
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_update_timestamp: '2026-10-03T15:06:35.492638+00:00'
+tags:
+- run
+- ssh
+- sshd
+- openssh
+- server
+uses_categories:
+  cache: cache,1ebdcc1cc30c4022

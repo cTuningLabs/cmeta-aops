@@ -1,7 +1,7 @@
 authors: Grigori Fursin
 
 # Run the OpenClaw agent (https://openclaw.ai) on an assembled prompt and exit, or open its
-# terminal UI. The same flags as the sister tasks "run-claude2", "run-codex2" and "run-opencode2":
+# terminal UI. The same flags as the sister tasks "run-claude", "run-codex" and "run-opencode":
 #
 #   cx task run run-openclaw --prompt="{prompt text}"
 #   cx task run run-openclaw --prompt_file={file}

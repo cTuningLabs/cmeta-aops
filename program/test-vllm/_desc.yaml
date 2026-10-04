@@ -4,6 +4,24 @@ inherits:
   - template-c-cpu,649899ef3f004e4a
 
 local_vars:
+  run_time_env:
+    CMETA_TARGETS: '{{global.target.cmeta_targets}}'
+    # The venv's console scripts (ninja, nvcc of nvidia-cuda-nvcc) for FlashInfer's JIT kernels:
+    # the venv's python runs without the venv being activated
+    +PATH:
+      - '{{global.python.path_bin}}'
+    CMETA_VLLM_MODEL: '{{local.params.model|Qwen/Qwen2.5-0.5B-Instruct}}'
+    CMETA_VLLM_MAX_TOKENS: '{{local.params.n|64}}'
+    CMETA_VLLM_GPU_MEM: '{{local.params.gpu_mem|0.8}}'
+    CMETA_VLLM_MAX_LEN: '{{local.params.max_len|4096}}'
+    CMETA_VLLM_ENFORCE_EAGER: '{{local.params.enforce_eager|1}}'
+    CMETA_VLLM_CPU_OFFLOAD_GB: '{{local.params.cpu_offload_gb|}}'
+    CMETA_VLLM_DTYPE: '{{local.params.dtype|}}'
+    CMETA_VLLM_TP: '{{local.params.tp|}}'
+    # CPU: the KV cache in GiB (unset, vLLM reserves 92% of the RAM and may refuse to start)
+    VLLM_CPU_KVCACHE_SPACE: '{{local.params.cpu_kv_cache_gib|4}}'
+    PYTHONUNBUFFERED: 1
+
   run_src_file_names: 
     - 'program.py'
 
@@ -26,24 +44,40 @@ updates:
            task: setup-run,148f6c1fdb4247df
 
          prepend:
+           # vLLM supports Python 3.10-3.14; its only macOS wheel is for 3.12 (a matching venv
+           # is created with uv when none exists)
            - task: setup,a2f9b61079ce4333
              name: python,c00fb574d8ca4463
+             if_os: linux,windows
+             version: '{{params.python_version|>=3.10,<3.15}}'
+             # Its own venv per set of targets: another program's packages, or the CPU and the
+             # CUDA builds of torch, must not mix in
+             with:
+               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+             if_os: darwin
+             version: '{{params.python_version|3.12}}'
+             with:
+               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+           # vLLM's CPU kernels link against libnuma (Linux)
+           - task: setup,a2f9b61079ce4333
+             name: lib-numa,d81f892278524cfa
+             if_os: linux
+             if: '"cpu" in {{global.target.compute|$[]}} and "cuda" not in {{global.target.compute|$[]}}'
 
            - task: setup,a2f9b61079ce4333
              name: pip
              with:
                package: numpy
 
-           - task: setup,a2f9b61079ce4333
-             name: pip
-             with:
-               package: torch
-
+           # vLLM pins its torch and brings it (tool/pip-vllm picks the wheel index for the
+           # compute and the driver): no separate torch step, which would install another build
            - task: setup,a2f9b61079ce4333
              name: pip
              with:
                package: vllm
-               flags: -v
+             version: '{{params.vllm_version|$None}}'
              env:
                 PYTHONUNBUFFERED: 1
 

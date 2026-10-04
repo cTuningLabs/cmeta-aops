@@ -6,6 +6,8 @@
 // Developed with the help of GitHub Copilot.
 
 use std::env;
+use std::fs::File;
+use std::io::Write;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::thread;
@@ -213,6 +215,29 @@ fn print_usage(prog: &str) {
     println!("  seed   : non-negative integer for RNG, default time");
 }
 
+// One timing of tmp-cmeta-program-stats.json: min, max and all repeats in seconds
+fn timing_json(name: &str, min: f64, max: f64, all: &[Duration], last: bool) -> String {
+    let all: Vec<String> = all.iter().map(|d| format!("{:.12}", d.as_secs_f64())).collect();
+    format!("    \"{}\": {{\n      \"min\": {:.12},\n      \"max\": {:.12},\n      \"all\": [{}]\n    }}{}\n",
+            name, min, max, all.join(", "), if last { "" } else { "," })
+}
+
+// The statistics for cMeta (the same layout as the C and Go versions of this program)
+fn write_stats_json(dtype: &str, m: usize, n: usize, k: usize, repeat: usize, clean: bool, seed: u64,
+                    aggregated_value: f64, timings: &[(&str, f64, f64, &[Duration])]) -> std::io::Result<()> {
+    let mut out = String::from("{\n  \"input\": {\n");
+    out += &format!("    \"dtype\": \"{}\",\n", dtype);
+    out += &format!("    \"M\": {},\n    \"N\": {},\n    \"K\": {},\n", m, n, k);
+    out += &format!("    \"repeat\": {},\n    \"clean\": {},\n    \"seed\": {}\n  }},\n",
+                    repeat, if clean { 1 } else { 0 }, seed);
+    out += &format!("  \"aggregated_value\": {:.12},\n  \"timing\": {{\n", aggregated_value);
+    for (i, (name, min, max, all)) in timings.iter().enumerate() {
+        out += &timing_json(name, *min, *max, all, i + 1 == timings.len());
+    }
+    out += "  }\n}\n";
+    File::create("tmp-cmeta-program-stats.json")?.write_all(out.as_bytes())
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let mut dtype = "float32";
@@ -268,13 +293,14 @@ fn main() {
     let a_count = m * n;
     let b_count = n * k;
     let c_count = m * k;
-    let mut rng = SimpleRng::new(seed.unwrap_or_else(|| {
+    let seed_value: u64 = seed.unwrap_or_else(|| {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0)
             ^ 0x6a09e667f3bcc909
-    }));
+    });
+    let mut rng = SimpleRng::new(seed_value);
     println!("==================================================================");
     println!("Testing naive matmul ...");
     println!("");
@@ -523,4 +549,19 @@ fn main() {
     println!("  data_prep   min = {:.9}, max = {:.9}", min_data_prep_time, max_data_prep_time);
     println!("  sum         min = {:.9}, max = {:.9}", min_sum_time, max_sum_time);
     println!("  total       min = {:.9}, max = {:.9}", min_total_time, max_total_time);
+    println!("");
+
+    println!("==================================================================");
+    println!("Writing stats for cMeta ...");
+    println!("");
+    let timings: [(&str, f64, f64, &[Duration]); 4] = [
+        ("matmul_time", min_matmul_time, max_matmul_time, &times_matmul),
+        ("data_prep", min_data_prep_time, max_data_prep_time, &times_data_prep),
+        ("sum", min_sum_time, max_sum_time, &times_sum),
+        ("total", min_total_time, max_total_time, &times_total),
+    ];
+    match write_stats_json(dtype, m, n, k, repeat, clean, seed_value, aggregated_value, &timings) {
+        Ok(()) => println!("Wrote tmp-cmeta-program-stats.json"),
+        Err(_) => eprintln!("Warning: could not write tmp-cmeta-program-stats.json"),
+    }
 }

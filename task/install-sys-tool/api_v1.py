@@ -34,6 +34,7 @@ class CTask(InitCTask):
                 'sudo',
                 'version',
                 'flags',
+                'check_binary',
             ], __name__)
         if self.cm.catch_error(r): return r
 
@@ -66,6 +67,13 @@ class CTask(InitCTask):
             if fail_if_wrong_host_os:
                 return self.cm.error(f'host OS ID "{os_id}" is not supported for sys-tool "{package}" "{__file__}"')
             else:
+                return {'return':0, 'skip_run': True}
+
+        # Installed already: nothing to do (an install with sudo would need a password for nothing)
+        check_binary = params.get('check_binary')
+        if check_binary and not params.get('version'):
+            import shutil
+            if shutil.which(check_binary):
                 return {'return':0, 'skip_run': True}
 
         sudo = params.get('sudo', False)

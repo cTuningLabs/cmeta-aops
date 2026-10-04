@@ -7,8 +7,12 @@ match_version:
   - regex: '^.*$'
     group: 0
 
+# A cuDNN installed on the system is detected when its CUDA version matches the toolkit of tool/nvcc;
+# otherwise api_v1.py downloads NVIDIA's public redistributable archive for this OS, CPU and CUDA
+# major version (12, 13) into the cache. Where NVIDIA publishes none (macOS, CUDA 11), this text:
 install_help_text:
-  Please install cuDNN from https://developer.nvidia.com/cudnn !
+  Please install cuDNN from https://developer.nvidia.com/cudnn (NVIDIA publishes archives for
+  Linux x86_64/arm64 and Windows x64/arm64, for CUDA 12 and 13) and run "cx tool setup lib-cudnn" again.
 
 extra_paths:
   windows:

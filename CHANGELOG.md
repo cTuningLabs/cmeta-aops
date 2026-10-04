@@ -2,6 +2,699 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.42.0
+- **A reused tool entry is completed from its tool's current `_desc.yaml`** (`task/setup`): a cached entry
+  carries the features of the time it was detected, so a key the meta gained afterwards (a compiler flag
+  such as `openmp_static_archive`, nvcc's `linker_option_prefix`) was missing on every reuse until `--update`.
+  Now `finish_dynamic_result` lays the meta's declarative `features` block (the `all` / host-OS / `linux`
+  block the detection starts from) under the cached features on every use: the keys the entry lacks come
+  from the meta, what was detected keeps its value, lists are not appended, and the entry's files are not
+  rewritten (they stay the record of what was detected; `--update` re-detects). `-v` names the keys added.
+  `task/setup-compile` no longer reads the archive flag from the tool's meta itself.
+- **One Visual Studio, no question** (`tool/microsoft.visual-studio`): a request that names no exact
+  version - clang's dependency `msvc` asks for none, nvcc asks for a range - takes the newest installation
+  among the cached ones that match, with an INFO line that names the others and
+  `--use.microsoft-visual-studio.version=<version>`. Before, two installations meant "More than 1 cache
+  entry found" in every such run, and `-q` took the first - the newest, now the answer without the
+  question. An exact version matches or fails as before; the entries of one version (one per Windows SDK)
+  stay for the engine's own choice.
+- **`task/host` no longer waits for a hostname nobody resolves:** `get_hostname_info()` resolved the
+  hostname with `getaddrinfo()` to add its addresses; on a machine whose name no resolver knows (a CI
+  runner, a host without a DNS entry) that waited for the resolver's timeouts - half a minute on some
+  macOS machines - on every task run, since the host task is not cached on disk. The lookup now runs in
+  a daemon thread, is given one second and is asked once per process; afterwards the task goes on with
+  the addresses it found without DNS (the outbound ones).
+- **A static build links GCC's OpenMP runtime statically too** (`task/setup-compile`, `tool/gcc`, `tool/gcc-cpp`,
+  `tool/nvcc`): with `with.static` and OpenMP, the static runtime of the compiler that provides it - `libgomp.a`,
+  which the compiler reports with `-print-file-name` (`openmp_static_archive` in the compiler's meta; the host
+  compiler's when nvcc runs the link) - goes to the linker by its path, with `-lpthread -ldl` and `--as-needed`
+  after it, so that the `-lgomp` gcc appends for `-fopenmp` adds no shared library: a static CUDA binary no
+  longer loads `libgomp.so`. A compiler without the archive stops the static build with what provides it (the
+  archive comes with gcc itself on Debian, Ubuntu, Fedora, RHEL-likes, openSUSE and Alpine; Arch Linux ships
+  none), as the static OpenSSL rule does. clang keeps `lib-openmp`'s `libomp.a`; Windows keeps its DLL note.
+- **The compiler of every build is chosen without a prompt** (`task/compiler`): when several compilers
+  suit a request that names none - several compiler tools on the machine, or several cached compilers of
+  a CPU build - the preferred compiler of the OS is taken (`preferred_compilers` in
+  `task/compiler/_desc.yaml`: MSVC on Windows, GCC on Linux, clang on macOS), then the tool the
+  repository ranks first, then the newest version; of several cached versions of one compiler, the
+  newest. An INFO line names the others and the option that picks one of them
+  (`--use.compiler-<lang>.name=<tool>`, `--use.compiler-<lang>.version=<version>`). Before, such a build
+  asked "Select tool" or "More than 1 cache entry", and `-q` took the newest version - clang over MSVC or
+  GCC on a machine with both; the rule the CUDA host compiler got below now holds for every compiler
+  choice (the CUDA polybench's CPU part was the last to ask). Android targets are unaffected: only the
+  NDK's clang builds them.
+- **The compilers of a CUDA run are chosen without a prompt** (`task/compiler`, `tool/nvcc`): among
+  the cached C++ compilers that match a CUDA run, those the toolkit rejects (the limits of its
+  `host_config.h`, which `tool/nvcc` sets as version limits of the compiler tools) or that lack the
+  request's `extra_tags` / `extra_match` are no longer offered; of the rest, the compiler the
+  repository ranks first (MSVC, GCC, clang: the compiler of the OS) is taken, then the newest version -
+  the order of a machine without cached compilers - said in an INFO line. Cache entries of one
+  compiler and version made for different compute lists (`cuda`, then `cuda,vulkan`) count as one
+  compiler, for every language; and the entry of nvcc itself follows the toolkit set up for the `cuda`
+  target in the run. Before, a CUDA run on a machine with such entries asked "More than 1 cache entry"
+  up to three times, and `-q` took the newest version: a clang the toolkit rejects on some machines,
+  after which the setup tried to install an older one. `--use.compiler-cpp.name=<tool>` still picks
+  another compiler; a `--use.compiler-cpp.version` the toolkit rejects now stops the run with the
+  toolkit's message (before, the version was quietly replaced by one within the limits). Once a
+  compiler is decided, the version range set for its tool narrows to that version, and `tool/msvc`
+  passes the version asked of it on to the Visual Studio installation it sets up, as `gcc-cpp` and
+  `clang-cpp` do with theirs: a machine with two Visual Studios is not asked which one once the MSVC
+  version is known. Choices between different compilers for other targets are asked as before.
+- **`tool/mpi`: Intel MPI on Linux hosts.** `--with.mpi=intel` on Linux puts the environment's `lib`
+  folder on `LD_LIBRARY_PATH` as well (the impi-rt wheel's `mpiexec`, Hydra proxies and `IMB-MPI1`
+  carry no RPATH, so `cx tool run mpi -- -n 2 IMB-MPI1 PingPong` failed to load `libmpi.so.12`);
+  `features.lib` names it. An Intel MPI job spans Linux hosts or Windows hosts, not both: the
+  Windows launchers are PowerShell and the Hydra service, the Linux bootstrap servers ssh and the
+  schedulers, and no `-hostos` exists in the 2021 references. Verified across two Linux hosts over ssh.
+- **Tests:** the hermetic suite passes on Linux as on Windows (the Windows-path cases of
+  `test_tool_upgrade` run on Windows only; the Intel NPU install tests pin the glibc version they
+  assume). `task/compiler` accepts `version` (its `run()` read it, `init()` rejected it: a static C++
+  build that had to build a static dependency failed with `unknown input parameter "version"`).
+- **The tool search never recurses from a filesystem root** (`category/tool/api/v1.py`): a search
+  pattern with `**` whose fixed part is `/`, a drive root or a pseudo file system (`/proc`, `/sys`,
+  `/dev`, `/run`) is skipped (said in verbose mode). On Debian, `/usr/bin/clang` is a link into
+  `/usr/lib/llvm-<N>`; `tool/llvm` gave it the home `/` and `tool/lib-openmp`'s `<home>/**` walked
+  `/proc` for ever. `tool/llvm` now takes the folders of the real binary behind a link, and
+  `tool/lib-openmp` searches the LLVM's `lib` folders and the usual places, not a whole home.
+- **`tool/llvm`, `tool/clang`, `tool/clang-cpp`: a Swift toolchain's clang ranks last.** The clang of
+  swiftly or of a Swift toolchain (its `--version` names swiftlang) is often first on `PATH` but has no
+  OpenMP headers or runtime; detection now places every other clang before it, whatever the version,
+  and warns when it is the only one (`cx tool setup llvm` installs LLVM). Before, an OpenMP program
+  built with it failed on `omp.h`. Debian's and Ubuntu's `/usr/lib/llvm-<N>/bin` are searched too.
+- **`tool/lib-cudnn` installs cuDNN** from NVIDIA's public redistributable site when no cuDNN matching
+  the CUDA toolkit is installed: the archive for the OS, CPU (Linux x86_64/arm64, Windows x64/arm64)
+  and CUDA major version (12, 13), cuDNN 9.27.0.42 pinned with NVIDIA's SHA-256 digests, unpacked
+  into the cache; `--version=9.x.y` takes another release from NVIDIA's index. It refuses a cuDNN too
+  new for the machine's GPU (cuDNN 9.11 and later need compute capability 7.5; the earlier releases
+  run on Maxwell) with the releases that still run there; `--with.any_gpu` overrides. README,
+  `_desc_sizes.yaml`.
+- **A build folder is used only for what it was built for** (`task/compile-and-run-program`,
+  `task/setup-compile`, `category/task/api/build_stamp.py`): after a compile the build folder gets
+  `.cmeta-build-stamp.json` (targets, host, compiler, the compile parameters that change the output,
+  the Android device). A run that asks for other targets, another compiler (`--use.compiler-<lang>.name`),
+  a static instead of a dynamic build, or another device in that folder is refused with "was built
+  for …; use --target_tmp=<name>, --recompile or --clean"; before, the folder was silently reused (on
+  macOS a host build of llama.cpp was pushed to an Android device, CMake having kept its cache).
+  Optimization, debug and profiling flags are recorded, not refused for. `--recompile` and `--clean`
+  go on; a folder made before the stamps is used as before and gets one.
+- **Disk space of program builds:** `program/<name>/_desc_sizes.yaml` (the rules of tools) is checked
+  against the free space of the build folder's volume before the compile phase (`min_free_gb`,
+  `--skip_size_check` as for tools); the size of the build folder is recorded after a successful
+  compile (`_impact.disk_gb`). Rules for `build-pytorch`, `build-vllm`, `build-llama-cpp`,
+  `build-executorch-android`, `build-torch-cpp`, `build-pytorchvision`.
+- **A static build links OpenSSL's static archives, or stops** (`tool/lib-openssl`, `task/setup-compile`):
+  on Linux and macOS `libssl.a` and `libcrypto.a` go to the linker by their paths - named, a link
+  without `-static` (nvcc's host link of a CUDA program) took `libcrypto.so` of the same folder, so a
+  "static" CUDA binary loaded the shared OpenSSL; the libraries they need come by the paths of their
+  archives too (the system's, or the one `lib-zlib`, `lib-zstd` or `lib-jitterentropy` builds). Without
+  the archives (Fedora's `openssl-devel`, Arch Linux, macOS without Homebrew's OpenSSL) a request with
+  `with.static` fails at the setup, and any static build stops in `setup-compile`
+  (`features.static_unavailable`), with what gives them on this system (`libssl-dev` on Debian and
+  Ubuntu, `openssl-libs-static` on Alpine, Homebrew's `openssl@3`, the OpenSSL developer package on
+  Windows; Fedora, RHEL-likes, Arch Linux and openSUSE package none: how to build and register one):
+  a static build never falls back to a shared library. `setup-compile` passes a library given
+  as the path of a file to the linker as it is, so any lib tool can hand archives that way (the `lib-*`
+  tools of `common_static_lib.py` do). On macOS "static" means static third-party libraries with the
+  dynamic system library, `libSystem` (README); the copies of Homebrew's archives in a `static` folder
+  of the cache entry are no longer made. `test-nmm-c-cpu`, `test-nmm-cpp-cpu` and `test-nmm-nvcc-cuda`
+  pass `with.static` to `lib-openssl` on macOS as on Linux.
+- **OpenMP runtime for clang on every OS** (`tool/lib-openmp`): on Windows the folder of clang's
+  `libomp.dll` goes on the program's run-time path (before, a clang build with OpenMP started only when
+  Visual Studio's own LLVM folder happened to be on the path); a distribution's `libomp-dev`
+  (`/usr/lib/llvm-<N>/lib`) is detected. The matmul and polybench programs ask for it on every OS when
+  clang is the compiler. README.
+- **No static OpenMP runtime exists on Windows** (LLVM's build refuses one, MSVC's vcomp is a DLL):
+  `setup-compile` says so for a static build with OpenMP, which keeps the runtime as a DLL next to its
+  static C run time and libraries.
+- **`polybench-cpu-gemm`, `polybench-gemm-cpu-cuda`:** pass `compile.static` to `lib-polybench` and
+  `lib-xopenme`, so a static build uses the static entries, as the matmul programs do.
+- **Disk space of tools** (`task/setup`, `category/tool/api/common_sizes.py`, new; `_desc_sizes.yaml`
+  of 16 tools, new):
+  - **`tool/<name>/_desc_sizes.yaml`** declares what a setup needs: a list of rules (first match
+    wins) with `peak` and `kept` GB, matched by `version` (fuzzy), `os`, `arch`, `method`
+    (`install`, `build`), `compute` and `with.*`. `_desc.yaml` is not involved.
+  - **The check:** before an install or a build, `task/setup` compares the free space of the
+    folder that receives the data (the cache entry or `--path`) with the rule's `peak` and with
+    the configured minimum (`cx config set task --meta.min_free_gb=<GB>`, off by default). A
+    quiet run stops before downloading anything, with the sizes and the ways out (free space,
+    `--path`, `--skip_size_check`); an interactive run warns and asks. Tools without a size file
+    behave as before.
+  - **Learning:** every install or build records its size (`_impact.disk_gb`, with method, OS and
+    CPU; `peak_gb` when the tool's `install()` reports it). `cx tool setup <tool> --sizes` lists
+    the records and suggests the rules to paste.
+  - Rules for llvm, nvcc, vulkan-sdk, ollama, google.android-ndk, rustup, go, openjdk and the
+    `jdk-*` tools, pytorch, mpi and executorch-android. Documentation: `docs/cmeta-aops/tool-sizes.md`.
+  - **Real peaks:** `task/download-file` measures every download it unpacks — the archive, the
+    files the unpacking added and their sum, taken before the archive is removed — returns them as
+    `download_sizes` and records them in `.cmeta-download-sizes.json` of the folder it fills. In a
+    tool's cache entry `task/setup` takes the largest of that peak, what `install()` reports and
+    the entry's size as `_impact.peak_gb` (and the archives' total as `download_gb`), so the rules
+    `--sizes` suggests carry the peak of every tool that downloads a release, not only what it keeps.
+- **Static and dynamic library variants keep their own cache entries** (`tool/lib-xopenme`,
+  `lib-polybench`, `lib-milepost`): a request's `with.static` and `with.debug_info` always carry a
+  value, so a dynamic build no longer matches the static entry as well (a program's
+  `'{{params.compile.static|$None}}'` left the key out of the query, and quiet mode could reuse the
+  static entry). Existing entries keep matching.
+- **Static builds with clang get a static OpenMP runtime** (`tool/lib-openmp`): `libomp.a` in the
+  library's cache entry, the archive shipped with Homebrew's libomp on macOS, else built from the
+  pinned OpenMP 21.1.8 source release (SHA-256 checked) with cMeta's cmake and ninja on Linux; before,
+  `-static -fopenmp` failed on `-lomp`. `test-nmm-c-cpu`, `test-nmm-cpp-cpu`, `polybench-cpu-gemm`
+  and `polybench-gemm-cpu-cuda` pass `compile.static` to it.
+- **`test-nmm-nvcc-cuda`:** a static build uses the static xopenme and, on Linux, lib-openssl's
+  static libraries, like the C programs (static for CUDA is `-cudart=static` with static third-party
+  libraries: a fully static host binary cannot load the CUDA driver).
+- **`test-nmm-c-cpu`:** links the math library on Linux; before, the dynamic build linked only with
+  `--compile.fastest`.
+- **`--compile_timeout` is a deadline for the whole compile phase** (`task/compile-and-run-program`,
+  `task/cmd`, `category/task/api/deadlines.py`): every command that runs before it ends gets at most
+  the time left, the builds that tools run inside the phase included (a LibTorch or llama.cpp built
+  from source by a dependency); a command stopped by it fails with "stopped after N s: the compile
+  deadline of M s (--compile_timeout) passed", one that would start after it is not started. Before,
+  only the program's own compile command was limited. The deadline ends with the compile phase, so
+  `--timeout` alone governs the run phase; without the option nothing is limited.
+- **LibTorch source build:** `cmake --install` installs into `<entry>/build/install`, apart from the
+  build tree (`program/build-torch-cpp`); before, the prefix was the build tree itself and CMake
+  deleted `protoc` while installing it onto itself (its RPATH check), so the install never finished
+  on Linux. `tool/torch-cpp` hands the installed library to the detection. The test programs of
+  `build-torch-cpp` and `test-nmm-torch-cpp` take the C++ standard LibTorch's CMake config asks for
+  (17 up to 2.8, 20 from 2.9, whose headers use `requires`); `--cxx_standard` overrides it.
+  - **Two defaults, one per way:** a source build checks out `default_checkout` of `tool/torch-cpp`
+    (`v2.14.1`, the tag built and tested) when no `--version` is given; before, the clone step took
+    whatever PyTorch clone the machine had, or PyTorch's default branch. The prebuilt archives keep
+    `default_version` (2.7.1). README of `tool/torch-cpp`.
+- **A program's Python venv stays its own** (`category/task/api/v2.py`, `task/setup`, `tool/python`):
+  - **A request without a venv of its own** (no `with.venv_path`, `with.venv_here`, `tool_path`,
+    `with.here` or `--path`) no longer reuses the venv that a program or a tool made inside its own
+    cache entry (`venv_path` under `task--program--<name>/`). Before, such a venv matched too, and in
+    quiet mode its higher version often won, so it received the packages of unrelated tasks. The
+    rest is as before: detected Pythons (the venv cMeta runs from, an activated venv), venvs made in
+    their own cache entry (plain requests, `--version`) and venvs at places the user chose (`--path`,
+    `--use.venv.path`, `venv_here`) are shared by version. README with the rules.
+  - **A request with its own venv path** looks for a python only in that venv: an existing venv
+    there is reused, else it is made. Before, a venv found on `PATH` (an activated one, or the one
+    cMeta runs from) could be recorded as that request's venv, and in quiet mode an existing venv
+    at that path without a cache entry was wiped and made again.
+  - **Task engine:** a task can drop cache entries that match the cache query but are not meant
+    for the request (`filter_cache_artifacts`); `task/setup` passes it on to the tool
+    (`filter_tool_cache_artifacts`). Tasks and tools without it behave as before.
+  - **`task/venv`:** an error message used an undefined name; `qpath_to_python` held the activate
+    script.
+- **Static Linux links of OpenSSL** (`tool/lib-zlib`, `tool/lib-zstd`, `tool/lib-jitterentropy`,
+  new; `category/tool/api/common_static_lib.py`; `tool/lib-openssl`):
+  - **New tools:** zlib, Zstandard and the Jitter RNG as static libraries built from their pinned
+    source releases (SHA-256 checked) with the C compiler of cMeta, into the cache: no root, no
+    system package. Linux and macOS.
+  - **`tool/lib-openssl`:** a static link on Linux links only the libraries that the
+    distribution's `libssl.a`/`libcrypto.a` need (`nm -u`), each from the system's static archive,
+    else from its tool; `--with.static_deps=cmeta` always uses the tools. Before, `-lz -lzstd` were
+    always added and the link failed where those archives were missing. Dynamic links and
+    macOS/Windows are unchanged.
+  - **`test-nmm-c-cpu`, `test-nmm-cpp-cpu`:** pass `with.static` to `lib-openssl` for static builds
+    on Linux.
+- **Go and Rust programs on Android** (`tool/go-android`, `tool/rustc-android`, new):
+  - **`cx program run test-nmm-go-cpu android-cpu`** builds with the host's Go for the device's ABI
+    (`GOOS=android`, `GOARCH`, `CGO_ENABLED=0`, `-buildmode=pie`; no NDK needed) and runs it over adb.
+  - **`cx program run test-nmm-rust-cpu android-cpu`** builds with the host's rustc for the device's
+    Rust target, whose standard library rustup adds the first time, linked by the Android NDK's clang
+    for the device's API level.
+  - Host builds keep `tool/go` and `tool/rustc`: the new tools support only `android-cpu`.
+  - **`task/setup-compile`:** the compile command also gets the compiler tool's `features.env` (the
+    program's own env wins); no other tool sets one.
+- **`test-nmm-rust-cpu`:** writes `tmp-cmeta-program-stats.json` like the C and Go versions; before,
+  the file its description declares was missing.
+- **`test-nmm-swift-cpu`:** no longer declares `android-cpu`, which no Swift compiler tool supports,
+  so a run for it stops at once.
+- **`tool/openjdk`:** on musl Linux (Alpine) the default JDK is Temurin's `alpine-linux` build;
+  before, the glibc build was downloaded and did not run there.
+- **LibTorch for C++ programs** (`tool/torch-cpp`, `program/build-torch-cpp`, `program/test-nmm-torch-cpp`;
+  `tool/torch-cpp-prebuilt`, new; `category/tool/api/common_libtorch.py`, new):
+  - **Prebuilt LibTorch:** `--with.build=prebuilt` (`--setup_torch_cpp.build=prebuilt` for
+    `test-nmm-torch-cpp`) uses PyTorch's official archive instead of a source build: 2.7.1 for Linux
+    x86_64 and Windows x64 (cpu, cu118, cu126, cu128), Windows ARM64 (cpu) and macOS arm64 (cpu, with
+    MPS), SHA-256 pinned. For CUDA the newest build with code for every GPU that the driver supports is
+    chosen; `--with.variant` picks one. `tool/torch-cpp-prebuilt` caches the archive; the setup of
+    `tool/torch-cpp` with it is not cached, so its source-build entries keep their cache identity.
+  - **Source builds enable only the target's backends by default:** CUDA, cuDNN, ROCm, MPS and XPU are
+    off unless the target asks for them; before, PyTorch's CMake enabled what it found (a CPU build on
+    a machine with CUDA tried to build CUDA). `--with.strict_compute=False` restores that. Existing
+    cache entries keep matching. On Linux, programs linked with LibTorch find LLVM's libomp.
+  - **`tool/torch-cpp`:** detects the LibTorch a build installed (its library, its version from the
+    headers).
+  - **`test-nmm-torch-cpp`:** compiles (`customize_compile` failed) and runs its program (the run step
+    had no command); the compile and run steps get the same `--setup_torch_cpp.*` options; `Torch_DIR`
+    is set; CUDA builds of LibTorch get `nvcc` and `USE_SYSTEM_NVTX`; on Windows the MSVC-built archive
+    is compiled with `clang-cl` when cMeta chose `clang++`. README with the options.
+- **An OpenSSH server run as the user** (`tool/openssh-server`, `task/run-openssh`, new):
+  - **`cx task run run-openssh --keys=<public key file>`** starts sshd on a port of its own (2222)
+    with key-only logins, as the user: no service, no administrator. `status` shows it, and `stop`
+    ends it together with its logins.
+  - **Address:** the machine's Tailscale address (`tailscale ip -4`) by default, else 127.0.0.1;
+    `--listen` picks another.
+  - **Keys:** `--keys` takes public key files, `authorized_keys` files or keys; without it, the
+    user's `~/.ssh/authorized_keys`.
+  - **The server:** Windows gets the portable Win32-OpenSSH release (x64, ARM64, SHA-256 pinned) in
+    the cache, and logins get cmd.exe; Linux and macOS use the system sshd. Its host key,
+    configuration and log stay in a cache entry, one per `--name` and port.
+- **JDKs of five vendors** (`tool/jdk-temurin`, `jdk-microsoft`, `jdk-corretto`, `jdk-zulu`,
+  `jdk-oracle`, new; `category/tool/api/common_jdk.py`):
+  - **Install:** the latest release of `--with.feature` (the major version, default 25) for this OS
+    and CPU (x64, aarch64), from the vendor's API or download site, checked against the vendor's
+    SHA-256. Temurin also has a musl (Alpine) build. `--version` pins a release (Temurin, Microsoft,
+    Zulu). Oracle's license applies to the Oracle JDK.
+  - **Separate tools, so nothing changes for `tool/openjdk`:** its detection of an installed JDK,
+    its Temurin download and its cache entries stay as they were. The vendor tools store their
+    result as `openjdk` too.
+  - **`tool/javac`, `tool/java`:** `--with.vendor=<vendor>` (and `--with.feature`) uses that vendor's
+    JDK; without it, `tool/openjdk` as before.
+  - **`test-nmm-java-cpu --jdk=<vendor>`** (and `--jdk_feature`) compiles and runs with it.
+  - **`task/compiler`:** `tool_with` passes `with` to the setup of the compiler tool (the javac of a
+    vendor); without it nothing changes.
+- **`tool/java`:** the version is read from `openjdk version "…"` and `java version "…"` (Oracle
+  JDK); before, the word "version" was taken as the version, and Oracle's output was not read.
+- **`task/setup-compile`:** the program's target name is also used with an explicit target extension
+  (Java's `Program.class`); before, `program.class` was expected, which only file systems that ignore
+  case found.
+- **`tool/rustup`:** runs `rustup-init` by its full path; it failed where cmd.exe does not search the
+  current directory (`NoDefaultCurrentDirectoryInExePath`).
+- **`polybench-gemm-cpu-cuda`:** sets up `lib-cuda` for CUDA targets, so a CUDA runtime from the
+  cMeta cache (CUDA 12 for an older GPU) is on the run-time library path.
+- **`tool/mpi`:** `--with.build=source|pip`. The source build compiles Open MPI from its release
+  tarball (SHA-256 pinned) into the tool's environment, with mpi4py built against it, so that macOS
+  and Linux nodes can run one job; it is the default on macOS (it needs the Xcode Command Line
+  Tools). The build is part of the cache identity, so the first setup after this change installs the
+  wheel again into a new entry.
+- **Timeouts for program runs:** `cx program run <program> --timeout=<seconds>` limits each run
+  command, `--compile_timeout=<seconds>` each compile command (the template passes them to its
+  `cmd` steps). The default stays without a limit.
+- **`task/cmd`:**
+  - **Timeouts:** a command that runs past `--timeout` is stopped with all its subprocesses (a
+    process group on Linux and macOS, a Job Object on Windows), and the task fails with "timed
+    out". Before, the stopped command's return code (-1) counted as a success. With
+    `fail_if_nonzero_return_code=False` the result has `timed_out: True`.
+  - **Any return code but 0 fails:** a negative code (a command ended by a signal on Linux and
+    macOS) passed as a success before.
+  - The working directory is restored when the command fails, too.
+- **LiteRT for Android from its official releases** (`tool/lib-litert-android`, new):
+  - **Contents:** the AAR from Google Maven (`libLiteRt.so` with its C API and the GPU
+    accelerator, per ABI; Maven's SHA-256), the C/C++ SDK headers (with the `build_config.h` that
+    CMake would generate), the NPU dispatch libraries (Google Tensor; Qualcomm HTP v69-v81) and
+    the release's MobileNet v2 test model. GitHub's SHA-256 digests come from the release API,
+    pinned for the default release (2.2.0).
+  - **As a `lib-*` tool:** an NDK build links `-lLiteRt` with its headers, and setup-run pushes
+    the arm64-v8a runtime, GPU accelerator and Google Tensor NPU libraries to the device.
+- **ExecuTorch for Android from source** (`program/build-executorch-android`, new): builds
+  `executor_runner` with the XNNPACK (CPU) and Vulkan (GPU) backends, which the prebuilt runtime
+  lacks. It cross-compiles with the NDK and uses the LunarG `glslc` for the shaders (NDK r29's
+  lacks `GL_KHR_cooperative_matrix`). A CPU torch, in a venv next to the build folder, does the
+  code generation.
+  - **Options:** `--checkout=<tag|branch|commit>` (default v1.5.1, cloned with its submodules),
+    `--vulkan=OFF`, `--android_abi`, `--android_api` and `--cmake_flags`.
+  - **The binary** is stripped (15 MB).
+  - **Build environment:** ninja goes on PATH, because XNNPACK's nested CMake builds look for it
+    there.
+- **`tool/pip-mlx`:** refuses CUDA for GPUs older than Volta (7.0) before the install, because
+  MLX's CUDA kernels need `__grid_constant__`.
+- **Apple MLX for every target** (`tool/pip-mlx`, new): `cx tool setup pip mlx` picks the
+  backend from the targets.
+  - **Backends:** Metal on Apple silicon, `mlx[cuda13]` or `mlx[cuda12]` on Linux with NVIDIA
+    GPUs (from the driver and the oldest GPU), and `mlx[cpu]` on Linux and Windows.
+  - **Windows:** MLX 0.32 declares its `cpu` extra for Linux only, although `mlx-cpu` has Windows
+    wheels. The setup names `mlx-cpu` there; before, `import mlx.core` failed with "DLL load
+    failed".
+- **The Android NDK without Java** (`tool/google.android-ndk`):
+  - **Install:** the setup downloads the NDK zip for this host OS from Google's repository, checks
+    it against the SHA-1 of Google's repository index, and unpacks it with its file modes and
+    symlinks. It needs no Java, no sdkmanager and no administrator rights. Before, it always went
+    through the SDK command-line tools, so a machine without Java (a container, a fresh Linux)
+    could not get an NDK.
+  - **Fallback:** sdkmanager is still used on Linux ARM, for which Google publishes no zip.
+  - **Detection:** it now also looks in Android Studio's SDK folders, and detecting an installed
+    NDK no longer sets up the command-line tools first.
+- **Tools for distributed runs:**
+  - **`tool/ray`:** Ray `ray[default]` 2.59.0 in its own Python environment. Every node of a Ray
+    cluster needs the same Python down to the patch release (3.12.3 and 3.12.14 refuse each
+    other), so the tool pins Python 3.12.14 and uv installs that same build everywhere.
+  - **`tool/mpi`:** `mpiexec` and the MPI library. The setup uses a system MPI when it has one
+    (Open MPI, MPICH, Intel MPI, MS-MPI). Otherwise it installs one from PyPI, without root,
+    with mpi4py in the same environment: Open MPI 5.0.11 (Linux, macOS), MPICH 5.0.2 (Linux,
+    macOS) or the Intel MPI runtime 2021.18.1 (Linux, Windows; the default on Windows).
+    `--with.mpi=openmpi|mpich|intel` picks one, and the choice is part of the cache identity.
+    The launcher's folder goes on PATH (`mpicc` is next to it), and `features.python` is the
+    environment's Python.
+  - **`common_pyvenv`:** the spec key `bin` names the folder that holds the command, for packages
+    whose programs are data files rather than console scripts (`impi-rt` on Windows:
+    `Library/bin`).
+- **ExecuTorch on Android, with no app and no source build** (`tool/executorch-android` and
+  `tool/android-d8`, new):
+  - **`executorch-android`:** the official runtime, PyTorch's AAR on Maven Central. The tool
+    reads the dependencies from the POMs (fbjni, nativeloader, kotlin-stdlib), checks every file
+    against Maven Central's SHA-256 (SHA-1 for old artifacts) and unpacks the native libraries per
+    ABI and the Java classes.
+    - Its library registers XNNPACK (CPU) only and exports only JNI. Programs use its Java API,
+      from the adb shell through `app_process`.
+  - **`android-d8`:** Android's dexer. It uses the `d8.jar` of an installed SDK, else downloads
+    the pinned r8 jar from Google's Maven and checks its SHA-256.
+  - **`setup-run`:** `run_on_host: True` runs a program with an Android target on the host, so it
+    can drive the device itself: export models with the host's Python, then push and run them
+    with adb.
+- **Fixes:**
+  - `clone-git-to-cache` now passes `branch`, `new_branch` and `update_submodules` to `clone-git`.
+    They were part of its cache identity but never reached git.
+  - `tool/pytorch` names `build-pytorch` by its current UID. Its build path had failed since that
+    UID changed.
+- **flatc, the FlatBuffers compiler** (`tool/flatc`, new). The setup uses an installed flatc when
+  it finds one. Otherwise it downloads the pinned GitHub release for Windows, macOS (arm64 and
+  x86_64) or Linux x86_64, whose static binary runs on every distribution, Alpine included. It
+  checks the download against the SHA-256 that GitHub lists for it. Linux on other CPUs gets the
+  distribution's package. ExecuTorch's exporter needs flatc on Windows: point `FLATC_EXECUTABLE`
+  at it.
+  - `common_release` specs can pin digests per version and asset (`checksum: {'sha256': ...}`),
+    for releases that publish no checksum file.
+- **setup:** the "this installation requires SUDO" warning now appears only when the sudo command
+  runs. Before, it also appeared before a release download that needs no root (rclone, zstd,
+  flatc).
+- **JAX for every target** (`tool/pip-jax`, new; see its [README.tech.md](tool/pip-jax/README.tech.md)):
+  `cx tool setup pip jax` picks JAX's plugin from the targets.
+  - **Plugins:** `jax[cuda13]` or `jax[cuda12]` (from the driver and the oldest GPU),
+    `jax[rocm7-local]`, `jax[oneapi]` for Intel GPUs, and `jax-metal` with JAX 0.5.0 (the newest
+    JAX that Apple's last plugin runs).
+  - **Refused before any download:** platforms without a plugin (Windows: CUDA runs in WSL2) and
+    the integrated Intel GPUs that the oneAPI plugin cannot compute on (`--with.any_intel_gpu`
+    tries anyway).
+- **The Intel NPU user-space driver for Linux, without root** (`tool/intel-npu-runtime`, new; see its
+  [README.tech.md](tool/intel-npu-runtime/README.tech.md)):
+  - **The driver:** the kernel's `intel_vpu` driver does not bring the NPU's Level Zero driver or
+    the compiler in driver that OpenVINO's NPU plugin needs.
+  - **Detection:** the setup uses the system's driver (`intel-level-zero-npu`) when it has one.
+  - **Install:** otherwise it unpacks Intel's release packages for the Ubuntu release (24.04 or
+    26.04) into the cache, with the Level Zero loader and, when missing, oneTBB. Every archive is
+    checked against its sha256.
+  - **What it refuses or skips:** a glibc older than 2.38 fails before any download. The
+    firmware package, which needs root, is left out.
+  - **The npu-intel target:** on Linux x86_64 it sets the driver up once it finds the NPU
+    (`--use.target--npu-intel.skip_runtime` skips it). When the NPU is on the PCI bus but has no
+    accel device, the error says the kernel lacks its `intel_vpu` driver or its firmware.
+  - **Shared helpers:** the `.deb` helpers of `tool/intel-gpu-runtime` moved to
+    `category/tool/api/common_deb.py`, which both tools use.
+- **The opencl, android-gpu and android-npu targets** (see [tool/opencl/README.tech.md](tool/opencl/README.tech.md)
+  and [task/target/README.tech.md](task/target/README.tech.md)):
+  - **opencl** (`tool/opencl`, new):
+    - The OpenCL platforms and devices come from the ICD loader itself (ctypes, no SDK, no
+      clinfo), on Windows, Linux and macOS.
+    - On Linux, the ICD loader is installed (with sudo) only when a GPU can use it, and an Intel
+      GPU gets `tool/intel-gpu-runtime` first.
+    - CPU-only OpenCL fails unless `--use.target--opencl.allow_cpu`.
+    - gcc, g++, clang, clang++ and MSVC now declare `supports_compute: opencl`.
+  - **android-gpu** and **android-npu** cover the Android device that android-cpu selects:
+    - android-gpu records the GPU: its Vulkan devices, GLES driver and OpenCL library;
+    - android-npu records the NPU: the NNAPI accelerators and the vendor stack (Samsung ENN,
+      MediaTek APU, Google TPU, Qualcomm);
+    - programs built for them with the NDK are pushed and run over adb, like Android CPU
+      programs: `setup-run` and `compile-and-run-program` treat every Android target alike, and
+      the NDK clang tools declare both targets.
+- **Vulkan needs a GPU** (`target--vulkan`, `tool/vulkan`, see its
+  [README.tech.md](tool/vulkan/README.tech.md)):
+  - **Target:** a vulkan run on a machine where Vulkan sees only CPU devices (Mesa's llvmpipe) now
+    fails, instead of warning and computing on the CPU. `--use.target--vulkan.allow_cpu` accepts
+    them. A cached target is checked again.
+  - **Tool:** `tool/vulkan` no longer installs Mesa (with sudo) on a Linux machine with no device
+    node to reach a GPU: no DRM render node, no WSL2 `/dev/dxg`, no NVIDIA or AMD node. PCI
+    display devices without a node are named in the message. `--with.allow_cpu` installs it anyway.
+- **CUDA toolkits of any version, without root, with the host compiler they support** (`tool/nvcc`,
+  see its [README.tech.md](tool/nvcc/README.tech.md)). nvcc skips the toolkits whose programs could
+  not run here: those whose oldest architecture is newer than the GPU (CUDA 13 dropped Maxwell to
+  Volta), and those for a newer major CUDA version than the driver's. When none suits, or
+  `--version` asks for another, it installs one from NVIDIA's redistributable archives: the newest
+  release that suits the GPU and the driver, with each archive checked against NVIDIA's sha256 and
+  unpacked into the cMeta cache. `--version` is nvcc's (`12.9`, `12.9.86`, a range); a CUDA release
+  label gets a hint.
+  - **Libraries on demand:** `--with.cuda_libs` and `lib-cuda`'s `lib_names` add cuBLAS, cuFFT and
+    the others to a toolkit made from the archives, once. Without `-q`, it asks first.
+  - **The host compiler** is set up once the toolkit is known: the newest GCC, clang or MSVC that
+    the toolkit's `host_config.h` accepts (Visual Studio 2022 for CUDA 12.x, when Visual Studio
+    2026 is also installed). It is passed to nvcc as `-ccbin`, through the new `host_compiler` flag
+    of `setup-compile`.
+    - `--use.<tool>.version` still decides.
+    - An unsupported compiler set up earlier in the run stops the run, with the option to use.
+    - `--with.any_host_compiler` adds `-allow-unsupported-compiler`.
+  - **`--with.arch_flags`:** a GPU newer than the toolkit gets PTX, which the driver compiles (it
+    got machine code the GPU could not run). A GPU older than the toolkit gets an error, instead of
+    code for another GPU.
+  - One nvcc cache entry per GPU architecture.
+  - **`microsoft.visual-studio`:** a version (cl.exe's, such as `<19.50`) picks the Build Tools
+    release to install. A version that no release has installs nothing; before, it installed the
+    newest.
+- **Agent tasks renamed: `run-claude2` -> `run-claude`, `run-codex2` -> `run-codex`,
+  `run-opencode2` -> `run-opencode`**, and the first `run-claude` prototype is removed. The
+  tasks keep their UIDs, so references by `alias,UID` (`run-claude2,38be73ffceaa4f67`) keep
+  working; commands that name `run-claude2` alone need the new name. Also renamed:
+  - the default output files (`run-claude-output.txt`, `run-codex-output.txt`,
+    `run-opencode-output.txt`);
+  - the `task` field of their statistics;
+  - their key in a pipeline's context: a task that reads `local['run-claude2']` reads
+    `local['run-claude']` now.
+
+  After pulling, run `cx --reindex`, because task folders moved.
+- **xpu on Linux sets up the Intel GPU compute runtime, without root** (`tool/intel-gpu-runtime`, see its
+  [README.tech.md](tool/intel-gpu-runtime/README.tech.md)). An Intel GPU computes through a user-space
+  runtime the kernel driver does not bring: the OpenCL ICD, the Level Zero driver, the graphics compiler,
+  gmmlib and the Level Zero loader. The tool uses the system's when it has one; otherwise it downloads
+  Intel's release packages, checks their sha256 and unpacks them into the cMeta cache. The release line
+  follows the GPU's PCI id: 26.35 for Gen12 and later (also WSL2), legacy1 24.35 for Gen8-Gen11. The
+  result exports `LD_LIBRARY_PATH` and `OCL_ICD_FILENAMES`, so the system's ICD loader adds the Intel GPU
+  next to the others. It warns when the user cannot open `/dev/dri/renderD*` (the render group).
+  - `target --compute=xpu` sets it up on Linux x86_64 once the Intel GPU is found, so every program run
+    on xpu gets the runtime. In WSL2, where lspci sees a virtual adapter, the target asks Windows for
+    its GPUs.
+  - `test-onnxruntime` lists OpenVINO's devices in a separate process: on Linux the `openvino` package
+    and `onnxruntime-openvino` each bring a `libopenvino.so.2541`, and loading both in one process broke
+    the OpenVINO EP.
+  - Tested on Ubuntu with a Gen12 Iris Xe (the 26.35 line) and a Gen9 HD Graphics 630 (legacy1):
+    `test-openvino` and `test-onnxruntime` run on xpu.
+- **LLM stacks on CPU, CUDA, Vulkan and Metal: the newest llama.cpp, vLLM 0.30.0, Ollama 0.35.0 and
+  PyTorch 2.14.1**, installed or built from source with the same commands on Windows, Linux/WSL2 and
+  macOS. The guide is the new [`docs/cmeta-aops/llm-stacks.md`](docs/cmeta-aops/llm-stacks.md).
+  - **llama.cpp** (`tool/llama-cpp`, default build 11324): the asset comes from the release's own list
+    (`releases/expanded_assets/b<N>`; the builds are prereleases and `/releases/latest` has no
+    binaries), for the OS, the CPU and the backend (cpu, cuda, vulkan, rocm, sycl for xpu, openvino,
+    metal). CUDA builds are matched to the driver (minor-version compatibility), the `cudart` bundle
+    is installed next to them, and the Linux CUDA builds explain that they need glibc 2.38+. The
+    version is read from both the new (`version: 0.5.0-dev (build N, ...)`) and the old output.
+  - **llama.cpp programs**: `llama-completion` runs the generation (`llama-cli` is now the chat UI).
+    The timings in `llama.log` become `perf.json` (result `perf`): prompt and generation tokens per
+    second, load and total time, the device used and the layers offloaded to it (the runs pass `-v`,
+    as newer builds log them only then), the build and commit, and the CUDA architectures.
+    `--compute=cpu` keeps the model on the CPU (`-ngl 0 --device none`).
+  - **build-llama-cpp**: Vulkan builds (`GGML_VULKAN`, the loader library from `tool/vulkan-sdk`);
+    OpenSSL is optional (the system library, else `LLAMA_OPENSSL=OFF`, or `--compile.boringssl`);
+    Ninja, CMake and the compilers reach nested CMake projects (`vulkan-shaders-gen`). The default
+    checkout is `b11324`, the build the release tool installs (it was master as of the first clone);
+    `--model` and `--prompt` work as in `program/llama-cpp`; on macOS, builds without `metal` leave
+    Metal out, so a CPU build opens no GPU.
+  - **Vulkan**: `tool/vulkan` lists the devices through the loader itself (ctypes, no SDK and no
+    `vulkaninfo`; MoltenVK through portability enumeration). `tool/vulkan-sdk` detects an SDK in
+    `$VULKAN_SDK`, the LunarG folders, the distribution or Homebrew. Otherwise it installs the pinned
+    LunarG SDK 1.4.363.0 without administrator rights (Linux x86_64: the tarball; Windows: the
+    installer in copy-only mode), or uses Homebrew or the distribution packages. `target--vulkan`
+    is new, and gcc, g++, clang, clang++ and MSVC now declare `supports_compute: vulkan`.
+  - **vLLM**: `tool/pip-vllm` picks the wheel index for the target and driver: PyPI's CUDA 13.0 build
+    for driver R580+, the cu129 build for older drivers, and the CPU, ROCm and XPU indexes. It checks
+    for Python 3.10–3.14 (3.12 on macOS), and on native Windows it tells you to use WSL2.
+    `program/test-vllm` is rewritten (stats JSON, the venv's bin on PATH for FlashInfer's JIT,
+    `libnuma` for the CPU through the new `tool/lib-numa`). The new `program/build-vllm` builds from
+    source with `VLLM_TARGET_DEVICE`, `CUDA_HOME`, `TORCH_CUDA_ARCH_LIST` from the detected GPU and
+    `MAX_JOBS` sized to the RAM.
+  - **PyTorch** (`build-pytorch`, default `v2.14.1`): the scikit-build-core build
+    (`pip install --no-build-isolation -v .` after `requirements-build.txt`), `TORCH_CUDA_ARCH_LIST`
+    from the detected GPUs (without one, CUDA 13 rejects PyTorch's default list), `BUILD_TEST=0`,
+    `PYTORCH_BUILD_VERSION` from the tag, `DISTUTILS_USE_SDK=1` on Windows, and
+    `CMAKE_POLICY_VERSION_MINIMUM=3.5` (CMake 4 refuses the helper projects NNPACK downloads).
+  - **Ollama**: `tool/ollama` installs the pinned portable release into the cMeta cache, with no
+    installer, no service and no administrator rights. The Linux `.tar.zst` is unpacked by a Python
+    3.14 (uv downloads one) before any `sudo` package is tried. `tool/zstd` is new, and
+    `program/test-ollama` runs a private server on its own port and records Ollama's timings and VRAM
+    use, and stops the model runners with it (on Windows they outlived the server, holding RAM and VRAM).
+  - **Source builds size `MAX_JOBS` to the RAM** (`category/program/api/common_build.py`: 4 GiB per
+    CUDA job, 2 GiB per C++ job), because PyTorch's and vLLM's builds start one job per CPU.
+- **Targets: selecting, combining and comparing them on one machine**
+  ([`task/target/README.tech.md`](task/target/README.tech.md)):
+  - `--target` is `--compute` by another name; before, it was ignored and the program ran on the CPU.
+    `cx program targets` lists the targets.
+  - **Fix: a change of targets in the same build folder builds again.** The targets were read before
+    the target task resolved them, so a `--compute=metal` run after a `--compute=cpu` build reused the
+    CPU build and its run flags, and ran on the CPU. `cpu,cuda` -> `cuda` now counts as a change too.
+  - `--target_tmp=auto`, or `cx config set task --meta.compile_and_run_program.target_tmp=auto`, gives
+    every set of targets its own build folder (`tmp-cuda`, `tmp-cpu-cuda`); builds for different
+    targets stay side by side.
+  - `test-vllm`, `build-vllm` and `build-pytorch` set up Python in a venv of their own, one per set of
+    targets (`venv-<targets>`), so the CPU and the CUDA builds of torch never replace each other.
+  - Splitting a model across devices:
+    - llama.cpp: `--ngl`, `--devices`, `--split_mode`, `--tensor_split`, `--main_gpu` and
+      `--threads`. They are set at run time (a reused build brought back the flags of the run that
+      compiled it), and `perf.json` records them with the targets.
+    - Ollama: `--ngl` (its `num_gpu`).
+    - vLLM: `--cpu_offload_gb`, `--tp`, `--dtype`, and `--enforce_eager=0` for CUDA graphs.
+  - A llama.cpp release build refuses two GPU targets, since it has one backend. `nvcc` declares
+    `supports_compute: vulkan`, so `build-llama-cpp --compute=cuda,vulkan` builds both backends.
+  - `README.tech.md` files with every cMeta option: targets (`task/target`), llama.cpp
+    (`tool/llama-cpp`), vLLM (`tool/pip-vllm`), Ollama (`tool/ollama`), PyTorch
+    (`program/build-pytorch`) and Vulkan (`tool/vulkan`). The programs point to them.
+- **The Intel NPU and OpenVINO as targets** (`task/target--npu-intel`, `task/target--openvino`,
+  `program/test-openvino`; every option in
+  [`program/test-openvino/README.tech.md`](program/test-openvino/README.tech.md)):
+  - `npu-intel` finds the NPU without any SDK, by its PCI ID: the PnP `ComputeAccelerator` devices on
+    Windows (with the driver version), the `intel_vpu` accel devices on Linux. It records the platform
+    (Meteor Lake to Nova Lake) and the NPU generation. `openvino` is the stack target.
+  - `test-openvino` runs a matmul and a ReLU on each device the targets name (`npu-intel` -> NPU,
+    `xpu` -> GPU, `cpu` -> CPU; `openvino` alone: every device OpenVINO finds). Each device is named
+    in `compile_model`, never AUTO, and checked against `EXECUTION_DEVICES`, so a failing device
+    cannot pass on the CPU. It records the device's properties, the compile time, the latency and
+    the error against NumPy; `--size` and `--batch` choose a bandwidth- or a compute-bound matmul.
+  - `program/llama-cpp` accepts `xpu` (the SYCL release), `npu-intel` and `openvino` (the OpenVINO
+    release; `npu-intel` sets `GGML_OPENVINO_DEVICE=NPU`). A release has one accelerator backend, now
+    counted by backend, so `npu-intel,openvino` is one. Device names with parentheses
+    (`Intel(R) Graphics`) are recorded whole.
+  - Tested on a Panther Lake laptop: `test-openvino` on the NPU, the Intel iGPU, the NVIDIA GPU
+    (OpenVINO's `GPU.1`) and the CPU; llama.cpp on the iGPU with the SYCL release and with the
+    Vulkan release (`--devices=Vulkan0`). llama.cpp on the NPU is not tested yet.
+- **ONNX Runtime per target** (`tool/pip-onnxruntime`, `program/test-onnxruntime`; see
+  [`program/test-onnxruntime/README.tech.md`](program/test-onnxruntime/README.tech.md)):
+  - `setup pip onnxruntime` installs the build that fits the targets: `onnxruntime-gpu[cuda,cudnn]`
+    for CUDA (CUDA and cuDNN from pip), `onnxruntime-openvino` for the Intel NPU and GPU (with the
+    `openvino` release it was built against), `onnxruntime-migraphx` for AMD, else `onnxruntime`.
+  - `test-onnxruntime` runs a small ONNX model on each target's execution provider alone, with
+    the CPU fallback disabled, and records the provider, latency and error against NumPy
+    (`--size`, `--batch`, `--seconds`).
+  - `image-classification-onnx` uses one venv per set of targets and the OpenVINO device of the
+    target (`npu-intel` -> NPU, `xpu` -> GPU), and warns when its provider is not the active one.
+  - `xpu` runs on the Intel GPU only: OpenVINO's GPU plugin also drives NVIDIA GPUs through
+    OpenCL, so `test-openvino` and `test-onnxruntime` pick the GPU whose name says Intel, and fail
+    when there is none.
+  - `install-sys-tool --check_binary=<binary>` skips the install when the binary is on the PATH:
+    `target--xpu` no longer runs `sudo apt-get install pciutils` when `lspci` is there.
+  - Tested on Windows (the CPU, CUDA, the Intel NPU and GPU) and Ubuntu (the CPU, CUDA; the NPU
+    target reports no NPU on machines without one).
+- **llama.cpp on Android devices** (`--compute=android-cpu`, over adb; see
+  [`tool/llama-cpp/README.tech.md`](tool/llama-cpp/README.tech.md)):
+  - `program/llama-cpp` runs llama.cpp's own Android release (`android-arm64`, every CPU variant,
+    the best one picked on the device). It is downloaded here and never run here; its build is
+    recorded next to it for the version check.
+  - `build-llama-cpp` builds with the NDK's CMake toolchain file and the release's settings
+    (arm64-v8a, android-28, shared libraries with all CPU variants, no OpenMP, no OpenSSL).
+    `--max_jobs=N` limits the parallel compile jobs on any target.
+  - `task/setup-run` keeps folders and large files on the device between runs: the binary with
+    its libraries in `/data/local/tmp/cmeta-llama-cpp/<variant>/` and the model in
+    `/data/local/tmp/cmeta-models/`. They are pushed once, and again only when they change.
+  - **Fix:** a program without a binary of its own made `task/setup-run` run
+    `rm -rf /data/local/tmp/` on the device, emptying its work folder. That command now runs only
+    for a program's own binary.
+  - Tested on a Pixel 10 Pro (Android 17): the release and the NDK r29 source build, with several
+    thread counts.
+- **The Android NDK lists its versions:** `cx tool setup google.android-ndk --status` shows what
+  the SDK offers (`sdkmanager --list`), and `--upgrade` installs the newest one side by side. More
+  generally, `--upgrade` now installs the newest version of every tool whose install command
+  takes a version and whose versions are known, instead of running the pinned install again.
+- **Test sessions: a sandbox and a kept log for every test** (`task/test-session`, see its
+  [README](task/test-session/README.md)). `cx task run test-session --start --type=<type>` gives a
+  sandbox to work in and a record that stays when the sandbox goes, as the folder
+  `<YYYYMMDD>/<HHMM>.<type>/` (the session id) of two artifacts of the local repository:
+  `tmp::cmeta-aops-test-sessions` (the new `category/tmp`, for disposable folders; `cx tmp prune`)
+  and `log::cmeta-aops-test-sessions` (`session.md`, `session.json`, attachments). `--list` filters by
+  date, type, status and host; `--migrate` moves the folders of the first version
+  (`<CMETA_HOME>/tmp|log/cmeta-tests-*`) there. The
+  log records the host, cMeta, the repositories' branch, commit and changed files, and the agent
+  (`CMETA_GENERATOR`, the Claude Code session). Notes, results and attached files are added during the
+  test. The costs are the wall time, the sandbox size, and the tokens the Claude Code session used
+  meanwhile, read from its transcripts (with configured prices, the cost in USD too). Finishing
+  removes a sandbox above 1 GiB; `--list` and `--prune` keep the overview. `AGENTS.md` §7.1 makes
+  test sessions the rule for every real test.
+- **`cx tool setup <tool> --status` and `--upgrade`** - for every tool, with no change to its `_desc.yaml`
+  (`task/setup/upgrade.py`). The tool's install **channel** on this OS is derived from its install command
+  or hook - winget, Homebrew, the distro package manager (`install_cmd_sudo`), an upstream install script,
+  npm, pip, or a release download - and decides which version counts as "latest" and what the upgrade runs:
+  - `--status` lists every copy found (the cMeta cache entries `setup` replays first, then the PATH), the
+    newest version the channel offers (`winget show --versions`, `brew info`, `apt-cache policy` /
+    `dnf info` / `apk policy` / `pacman -Si` / `zypper info`), the newest upstream version (the release
+    GitHub marks as latest, read from the `/releases/latest` redirect - not the newest tag, which can be a
+    pre-release), the command `--upgrade` would run, and a verdict. It installs nothing and writes nothing;
+    Python callers get `result['status']`.
+  - `--upgrade` upgrades a detected tool through its channel (`winget upgrade`, `brew upgrade`,
+    `apt-get install --only-upgrade`, the install script again, `npm install X@latest`, pip's own update,
+    the release download of the newest version into the same cache entry), detects it again and reports
+    `before -> after`; a tool that is not installed gets the newest version. Several copies found: the
+    usual selection prompt, `-q` takes the newest. The cache entry records the new version and a
+    `last_upgrade` entry. `--update` is unchanged (it rebuilds the entry from what is installed).
+  - Two optional `_desc.yaml` keys override the derivation: `upgrade_cmd` (per OS) and
+    `cmd_get_latest_version` (+ `_regex`, `_uses`). `task/host` gained `upgrade_cmd(_sudo)` and
+    `candidate_version_cmd/_regex` per package manager.
+  - Also: a `check_params` stop (`--versions`, `--status`) now returns its data to the caller;
+    `common_release` names checksum files per version (an in-place upgrade reused the old release's
+    checksums) and drops a download whose SHA-256 did not match; `detect` returns every matching copy
+    in `detected`.
+  - apt refreshes its package lists when an install cannot find the package (a fresh container has
+    none), and before an upgrade, since stale lists hold no newer version.
+  - Tested: Windows (winget: uv 0.11.1 -> 0.12.21, opencode and git; release: jq 1.7.1 -> 1.8.2 in place),
+    Debian and Ubuntu containers as root (apt: git, curl; release: jq), Ubuntu as a user (install script:
+    claude; apt status without sudo), macOS arm64 (Homebrew: gh; install script: claude; release: helm).
+    Offline unit tests in `tests/cmeta_aops_basic_tests/test_tool_upgrade.py`.
+- **Visual Studio: every installation, Build Tools included.** `tool/microsoft.visual-studio` lists
+  installations with `vswhere`; before, it searched only `C:` and `D:\Program Files`, and Build Tools
+  live under `Program Files (x86)`. `--version` picks one by its `cl.exe` version. `--install` sets up
+  the newest Build Tools with the C++ workload through winget (`--with.year=2022` for an older line).
+- **Fix: a cached compute target described the machine that created it.** In a `CMETA_HOME` copied or
+  shared between machines, WSL with an RTX PRO 1000 (sm_120) got the RTX A500 (sm_86) of another laptop,
+  and the vLLM build compiled for 8.6. Now `target--cuda`, `target--rocm` and `target--vulkan` take the
+  features of the tool set up in the same call. `target--metal` and `target--xpu` parse the probe that
+  runs in each call, and `target--cpu` probes again when its host fingerprint changes. `target--xpu`
+  also uses PowerShell CIM instead of `wmic`, which current Windows 11 builds no longer have.
+- **Fix: source builds and `test-vllm` use their own Python venv.** On the P14s, `build-pytorch` reused
+  the venv `build-vllm` had filled and replaced vLLM's torch 2.13.0 with the 2.14.1 it had built. The
+  new torch then failed to import ("undefined symbol: cublasLtGroupedMatrixLayoutCreate"): it was built
+  with the CUDA 13.3 toolkit (cuBLAS 13.6), but loaded the pip cuBLAS 13.1 of vLLM's torch. A build
+  made before keeps its venv until `--recompile`. The venv of several targets is named with dashes
+  (`venv-cpu-cuda`, from the new `{{global.target.cmeta_targets_tag}}`): on Windows, a comma in the
+  path split the venv's activation command. Paths with spaces work too now (a Windows user name with a
+  space puts one in the default `CMETA_HOME`): `tool/python` quotes the venv's activation script and
+  its pip check, and `tool/python-pip` checks Python's plain path rather than the quoted one.
+- **Fix: program parameters reach the run-time environment.** `task/setup-run` expands
+  `local_vars.run_time_env` with its own parameters, so `{{params.X|default}}` there always gave the
+  default: `--model`, `--n`, `--max_len` and `--cpu_kv_cache_gib` of `test-vllm` and `build-vllm`, the
+  options of `test-ollama`, and `--repeat` of the milepost codelet. They now read `{{local.params.X}}`,
+  where `compile-and-run-program` keeps the program's parameters, and a test checks every program for it.
+- **Quiet installs never wait at a sudo password prompt.** With `-q` and a `sudo` that needs a password,
+  every `sudo` in an install command runs as `sudo -n`. It fails at once, where an unattended run used
+  to hang (15 minutes in one case), and cMeta prints the command to run by hand.
+- **Engine fixes:** a failed optional sub-task no longer clobbers the caller's context. `detect()` hooks
+  receive `tool_path`/`paths`, and a forced path is checked even when a tool has `find_paths()`.
+  CUDA is detected with NVIDIA drivers 610+ (`nvidia-smi` prints `CUDA UMD version`).
+- **Fix: `tool/ccache` downloads the right release asset.** The macOS branch left `uarch2` unassigned
+  (an `UnboundLocalError` on every Mac) and asked for `ccache-<v>-macos.tar.gz`, which upstream never
+  published - the asset is `ccache-<v>-darwin.tar.gz`, one universal binary. Linux asked for `.tar.gz`,
+  while upstream publishes `.tar.xz`, since 4.13 as `ccache-<v>-linux-<arch>-{glibc,musl-static}.tar.xz`
+  (musl on Alpine); Windows arm64 is `windows-aarch64.zip`. Verified: 4.13.6 installs from its release
+  on Windows x86_64, macOS arm64 and Linux x86_64 (Debian container).
+- **Fix: `cx tool setup <tool> --versions` lists releases only** for the tools whose regex also accepted
+  pre-release or unrelated tags: `kubectl`, `pytorch` and `torch-cpp` (`\b` let `v1.38.0-alpha.0` yield an
+  unreleased `1.38.0`), `go` (`rcN`), `codex` (`-alpha`), `openclaw` (`-beta`), `uv` (every tag), `openjdk`
+  (`jdk-(.+)` matched the nightly `jdk25u-...-beta` tags), `python` (`3.14.0rc3`, `+freethreaded`),
+  `obsidian`, `llvm`/`clang`/`clang-cpp` (`-rc1`, `-init`), and the generic regex of `ccache`, `cmake`,
+  `node-js`, `rclone`, `rustc` and `lib-openssl-android`. `--version=<pre-release>` still installs one.
+- **Fix: versioned installs that could never work are gone**: `tool/gh` asked Homebrew for `gh@2` /
+  `gh2` and `tool/kubectl` for `kubectl@1.37.1` and a snap channel `1.37.1/stable` - no such formulae or
+  channel exist. Without the entries task/setup reuses `install_cmd` (current), as `az` already does.
+
+- **Docs: `--use.<storage key>.<param>=<value>`**, which changes any sub-task of a run from the command line,
+  however deep it sits: a dependency's version, or a control switch such as `update` of one step.
+  - a new section in `docs/cmeta-aops/task-engine.md`, "Changing a dependency anywhere in a pipeline": how it
+    works, the storage keys of `setup`, `clone-git-to-cache`, `runner`, compilers and other tasks, and the control
+    switches that travel with it;
+  - a line in the README;
+  - notes in the `add-task` and `add-tool` skills.
+- **Tested on 2026-10-01 and 2026-10-02:** llama.cpp (release and source builds), vLLM, Ollama and
+  PyTorch on Windows 11, WSL2, Ubuntu and macOS, on the CPU, CUDA, Vulkan and Metal targets each
+  machine has, including several targets at once (`--compute=cpu,cuda --ngl=N`, and a
+  `cuda,vulkan` build run with `--devices`).
+
 ## 0.40.1
 - **`task/rclone-to-ssh`: a plain `bisync` now adds `--resilient --recover`** (turn off with `--no-recover`).
   Without these flags, an interrupted run (a dropped link, a killed shell) leaves its listings as `*.lst-err` or

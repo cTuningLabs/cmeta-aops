@@ -1,0 +1,41 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# D8, Android's dexer (com.android.tools:r8 on Google's Maven, Apache-2.0): Java classes and jars
+# to the .dex files that Android's runtime (ART) runs, for instance a Java program started from
+# the adb shell with app_process. The d8.jar of an Android SDK's build-tools is detected first;
+# otherwise the pinned r8 release jar (D8 is in it) is downloaded into the cache and checked
+# against Google's SHA-256 (install ladder tier 1). It runs on Java 11 or newer (tool/java):
+#
+#   cx tool setup android-d8
+#   {{global.java.qpath}} -cp {{global.android-d8.qpath}} com.android.tools.r8.D8 --release --min-api 28 --output app.zip App.class lib.jar
+
+names:
+  - d8.jar
+  - r8.jar
+
+default_version: '9.4.28'
+
+match_version:
+  - regex: '(?:D8|R8)\s+(\d+\.\d+\.\d+)'
+    group: 1
+
+cmd_get_version: '{{global.java.qpath}} -cp {{tool_path}} com.android.tools.r8.D8 --version'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: java,6c8d509f22c841e8
+
+extra_paths:
+  windows:
+    - '{{global.host.os_env.LOCALAPPDATA}}\Android\Sdk\build-tools\**'
+    - 'C:\Program Files (x86)\Android\android-sdk\build-tools\**'
+  linux:
+    - '{{user_home}}/Android/Sdk/build-tools/**'
+  darwin:
+    - '{{user_home}}/Library/Android/sdk/build-tools/**'
+
+install_help_text: |
+  Could not download D8 automatically. Install the Android SDK build-tools (sdkmanager
+  "build-tools;35.0.0") or put r8.jar from https://maven.google.com (com.android.tools:r8) on a
+  path you give with --tool_path, and run "cx tool setup android-d8" again.

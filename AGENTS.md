@@ -142,6 +142,12 @@ error handling, with the repo's real idioms.
   detection/install: `names:`, `match_version:`/`cmd_get_version:`,
   `install_cmd:`/`install_cmd_version:` (per OS, templated with `{{global....}}`),
   `extra_paths:`, `requires_sudo:`.
+- **`tool setup X --status` / `--upgrade`** (`task/setup/upgrade.py`): the install
+  **channel** is derived from the tool's install command or hook (winget, brew, the
+  distro package manager, an install script, npm, pip, a release download) and decides
+  which version counts as "latest" and what the upgrade runs — no `_desc.yaml` change
+  needed; `upgrade_cmd:` and `cmd_get_latest_version:` override it. Details in
+  `docs/cmeta-aops/tool-abstraction.md`, "Checking for and installing upgrades".
 - **Install strategy — always work down this ladder** (details and worked
   examples in the `add-tool` skill, §1):
   1. **Download a prebuilt binary** (`curl`-style, via task
@@ -209,6 +215,42 @@ Two layers:
   `{ubuntu,windows,macos} × py{3.9,3.14}`. To verify a real change, run the relevant
   recipe locally.
 
+### 7.1 Test sessions — where real tests run and what they record
+
+Run every real test, build or benchmark (anything beyond the hermetic pytest suite)
+inside a **test session** (`task/test-session`), on every machine and for agents as
+for people. Don't create sandbox folders in random places (`~/cmeta-llm-test`,
+`repos/tmp`, `C:\tmp\x`). All sessions live in two artifacts of the `local` repository,
+a folder per day and a subfolder per session:
+
+```bash
+cx task run test-session --start --type=llama-drift --title="llama.cpp release vs source"
+#  sandbox  tmp::cmeta-aops-test-sessions/20261002/0915.llama-drift/   (deletable)
+#  record   log::cmeta-aops-test-sessions/20261002/0915.llama-drift/   (session.md, session.json, attachments/; kept)
+cx task run test-session --id=20261002/0915.llama-drift --note="CUDA release done" --results.cuda_tps=<value>
+cx task run test-session --id=20261002/0915.llama-drift --attach=bench.txt
+cx task run test-session --finish --id=20261002/0915.llama-drift --status=passed --summary="<what was found>"
+cx task run test-session                 # list (--date, --type, --status, --host);
+                                         # --prune [--days=7] removes finished sandboxes
+```
+
+- Work in the sandbox: scripts, outputs, clones, venvs, temporary builds. What cMeta
+  builds and downloads stays in its cache, where the next test reuses it.
+- Record as you go: a note per step or finding, results as `--results.<key>=<value>`,
+  and the files worth keeping with `--attach` (the sandbox may go; the log stays).
+- The record fills itself with the host, the cMeta version, the repositories' branch,
+  commit and changed files, and the agent from `CMETA_GENERATOR` (agent, model,
+  effort) and the Claude Code session. Finishing adds the wall time, the sandbox size
+  and the tokens the session used meanwhile (from its transcripts; the cost too with
+  `test_session.prices.<model>` configured, else `--cost_usd`).
+- Finishing removes a sandbox above 1 GiB (`--keep` keeps it); finish failed runs too
+  (`--status=failed`), with what went wrong in the summary.
+- On a remote machine run the session there and pass `--agent`, `--model`, `--effort`
+  and `--session`; keep a local session for the same work to hold the agent's costs,
+  and attach the remote log to it at the end.
+
+Details: [`task/test-session/README.md`](task/test-session/README.md).
+
 ## 8. Conventions
 
 - **Copyright headers are load-bearing** — copy the Apache header from a sibling
@@ -242,18 +284,32 @@ those an AI agent creates on the author's behalf:
   merge. If one slipped through, repair it *before* pushing:
   `git commit --amend -s --no-edit` for the last commit, or
   `git rebase --signoff <base>` for a range.
-- **Name PR branches `YYYYMMDD-<short-branch-name>`.** Creation date first, then
-  a short kebab-case topic — e.g. `20260808-add-ripgrep-tool`,
+- **The maintainer, and AI agents working for the maintainer, commit on
+  `dev`.** That means every agent session: Claude Code, Codex, OpenCode.
+  - **Workflow:** `git switch dev && git pull --ff-only`, then commit and push to
+    `dev`. One pull request `dev` → `main` carries the work to `main`; after its
+    merge commit, `dev` is fast-forwarded to `main`.
+  - **Agents commit and push only when the maintainer explicitly says so.**
+    Develop and test, leave the changes uncommitted, show what changed, and wait
+    for a go-ahead for that piece of work; one go-ahead does not carry over to
+    the next. The same for anything that changes the remote: pull requests,
+    branch deletions, tags, releases.
+  - **Shared working copy:** several sessions may share one, so stage only your
+    own files and check `git status` before committing.
+  - **Never push to `main`.**
+- **Everyone else names PR branches `YYYYMMDD-<short-branch-name>`** and opens
+  the pull request into `dev`. The name is the creation date first, then a short
+  kebab-case topic, e.g. `20260808-add-ripgrep-tool` or
   `20260808-fix-task-cache-key`. The date prefix keeps branches chronologically
-  sortable and makes a pile of open PRs analyzable. Always branch before
-  committing; don't push work directly to the default branch.
-- **Prefix the PR title the same way: `YYYYMMDD - <Title of PR>`.** The date, a
+  sortable and makes a pile of open PRs analyzable.
+- **Prefix the PR title with the date: `YYYYMMDD - <Title of PR>`.** The date, a
   spaced hyphen, then the normal human-readable title — e.g.
   `20260808 - Add a tool artifact for ripgrep`. This is the subject line visible
-  on GitHub, so the same date ordering that helps on branches also helps when
-  scanning or scripting over the PR list (`gh pr create --title "20260808 - …"`,
-  `gh pr list`). Use the same date as the branch prefix — the day the work was
-  branched, not the day it merges.
+  on GitHub, so the date ordering helps when scanning or scripting over the PR
+  list (`gh pr create --title "20260808 - …"`, `gh pr list`).
+  - **Which date:** for `dev` → `main`, the day the PR is opened; for a dated
+    branch, the same date as its prefix (the day the work was branched, not the
+    day it merges).
 
 ### 8.1 Attribution, provenance and citation
 

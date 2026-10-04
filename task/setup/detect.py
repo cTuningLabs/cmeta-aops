@@ -8,6 +8,8 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 import os
 import re
 
+from . import common
+
 def detect_existing_tool(self,
         ctx: dict,                  # cMeta context
         name: str = None,           # Tool name
@@ -77,14 +79,23 @@ def detect_existing_tool(self,
     tool_name = ctx['tasks']['local'].get('tool_name')
 
     if hasattr(tool_api_code, 'detect') and callable(getattr(tool_api_code, 'detect')):
-        r = tool_api_code.detect(ctx, params)
+        # tool_path and paths are named arguments here: hand them to the hook too, or it cannot
+        # see a forced --tool_path or the path an install() just reported
+        detect_params = dict(params)
+        if tool_path:
+            detect_params['tool_path'] = tool_path
+        if paths:
+            detect_params['paths'] = paths
+        r = tool_api_code.detect(ctx, detect_params)
         if self.cm.catch_error(r): return r
 
         if 'parsed_paths_with_versions' in r:
             parsed_paths_with_versions = r['parsed_paths_with_versions']
 
     else:
-        if hasattr(tool_api_code, 'find_paths') and callable(getattr(tool_api_code, 'find_paths')):
+        # find_paths replaces the search only: a forced path (--tool_path, or the path an
+        # install() just reported) is checked as given
+        if not (path or paths) and hasattr(tool_api_code, 'find_paths') and callable(getattr(tool_api_code, 'find_paths')):
             r = tool_api_code.find_paths(ctx, params)
             if self.cm.catch_error(r): return r
 
@@ -521,19 +532,19 @@ def detect_existing_tool(self,
     detected_version = tool['detected_version']
     cmd_call = tool.get('cmd_call')
 
+    # Every copy that matched, in selection order (--status lists them)
+    result['detected'] = [{'path': x['path'], 'version': x['detected_version']}
+                          for x in sorted_matched_paths_with_versions]
+
     if 'add_to_result' in tool:
         add_to_result = tool['add_to_result']
         result.update(add_to_result)
 
-    features = None
-
-    if 'features' in desc:
-        _features = desc['features']
-
-        for k in ['all', uname, 'linux']:
-            if k in _features:
-                features = _features[k].copy()
-                break
+    # The declarative features of the tool's meta for this OS are the base, what was detected goes on
+    # top (the same block completes a reused result later: task setup finish_dynamic_result)
+    features = common.desc_features_block(desc, uname)
+    if features is not None:
+        features = features.copy()
 
     _features = tool.get('features')
     if _features:

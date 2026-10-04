@@ -1,0 +1,14 @@
+artifact: a2551f6124a34cf3
+authors: Grigori Fursin
+base_category_default_api_versions:
+  '1': 1
+category: category,dd9ea50e7f76467f
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-10-02T13:13:08.300844+00:00'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_api_version: 1

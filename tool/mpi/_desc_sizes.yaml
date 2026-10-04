@@ -1,0 +1,7 @@
+# Disk space of an MPI setup in GB: the pip packages (openmpi, mpich, impi-rt) in the tool's venv, or
+# Open MPI built from its release tarball (--with.build=source).
+sizes:
+  - if: {with: {build: source}}
+    peak: 3
+    kept: 1
+  - peak: 1

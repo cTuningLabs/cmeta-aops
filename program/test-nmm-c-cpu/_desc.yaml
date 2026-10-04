@@ -34,17 +34,30 @@ updates:
           ######################################################################################
           # Prepare Libs for Host CPU
           - task: setup,a2f9b61079ce4333
-            if: '{{global.target.compute|$[]}} == ["cpu"]'
+            if: '{{global.target.compute|$[]}} == ["cpu"] and not ("{{global.host.os.uname}}" in ("linux", "darwin") and "{{params.compile.static|False}}" == "True")'
             name: lib-openssl,903191f1fab74064
 
+          # A static link on Linux or macOS: lib-openssl links the static archives and only what they
+          # need (zlib, zstd, jitterentropy), building those the system has no static library of
+          - task: setup,a2f9b61079ce4333
+            if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.host.os.uname}}" in ("linux", "darwin") and "{{params.compile.static|False}}" == "True"'
+            name: lib-openssl,903191f1fab74064
+            with:
+              static: True
+
+          # The static or the dynamic xopenme, as the build asks (the two have separate cache entries)
           - task: setup,a2f9b61079ce4333
             name: lib-xopenme,c7b96678a7734510
+            with:
+              static: '{{params.compile.static|$None}}'
 
-          # Only for Clang on Linux and MacOS
+          # Only for Clang: its OpenMP runtime (static for a static build on Linux and macOS; on Windows
+          # the DLL, whose folder goes on the run-time path)
           - task: setup,a2f9b61079ce4333
-            if_os: linux,darwin
             if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.llvm.path|None}}" != "None" '
             name: lib-openmp,7958b973fc0d42a9
+            with:
+              static: '{{params.compile.static|$None}}'
 
 
           ######################################################################################

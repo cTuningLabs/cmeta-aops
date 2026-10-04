@@ -451,16 +451,19 @@ class Category(InitCategory):
                 # It's usually done when code should not continue - for example to print versions, help, etc
 
                 # Do not aggregate further - already done!
-                r = self._finish_run(
-                        ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro, 
-                        aggregate = False, 
+                rr = self._finish_run(
+                        ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here, call_repro,
+                        aggregate = False,
                         saved_uparams = saved_uparams,
                         saved_cparams = saved_cparams,
                         saved_local = saved_local,
                         saved_ctx_control = saved_ctx_control,
                         preserve_global = preserve_global,
                 )
-                if self.cm.catch_error(r): return r
+                if self.cm.catch_error(rr): return rr
+
+                # Hand what check_params produced (versions, status, ...) to the caller
+                r.pop('stop', None)
 
                 # !!! Exit from this function
                 return r
@@ -797,6 +800,18 @@ class Category(InitCategory):
                         finished_cache_artifacts.append(cache_artifact)
 
                 cache_artifacts = finished_cache_artifacts
+
+            ###########################################################################################
+            # Let the task drop entries that match the cache query but are not meant for this request
+            # (task/setup asks the tool: a python request without a venv path of its own must not
+            # reuse the venv of a program). Tasks without this hook keep every entry.
+            if (cache_artifacts or tmp_cache_artifacts) and task_api_code is not None and \
+               hasattr(task_api_code, 'filter_cache_artifacts') and callable(getattr(task_api_code, 'filter_cache_artifacts')):
+                r = task_api_code.filter_cache_artifacts(ctx, cache_artifacts, tmp_cache_artifacts, uparams, path = path)
+                if self.cm.catch_error(r): return r
+
+                cache_artifacts = r.get('artifacts', cache_artifacts)
+                tmp_cache_artifacts = r.get('tmp_artifacts', tmp_cache_artifacts)
 
             ###########################################################################################
             # Check if has cache_features

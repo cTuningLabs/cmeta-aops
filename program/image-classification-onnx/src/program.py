@@ -65,27 +65,46 @@ def get_transform(img: Image.Image, image_size: int = 224) -> np.ndarray:
     return np.ascontiguousarray(arr, dtype=np.float32)
 
 
-def select_providers() -> list[str]:
+def select_providers() -> list:
     """
     Pick ONNX Runtime execution providers based on cMeta's selected compute
-    targets, always falling back to the CPU provider.
+    targets, always falling back to the CPU provider. The ONNX Runtime package
+    fits the targets (tool/pip-onnxruntime: onnxruntime-gpu, onnxruntime-openvino ...).
     """
     cmeta_targets = os.environ.get('CMETA_TARGETS', '').split(',')
 
     preferred = []
     if 'cuda' in cmeta_targets:
-        preferred.append('CUDAExecutionProvider')
+        preferred.append(('CUDAExecutionProvider', {}))
     if 'rocm' in cmeta_targets:
-        preferred.append('ROCMExecutionProvider')
-    if 'xpu' in cmeta_targets:
-        preferred.append('OpenVINOExecutionProvider')
+        preferred.append(('MIGraphXExecutionProvider', {}))
+        preferred.append(('ROCMExecutionProvider', {}))
+    if 'npu-intel' in cmeta_targets:
+        preferred.append(('OpenVINOExecutionProvider', {'device_type': 'NPU'}))
+    elif 'xpu' in cmeta_targets:
+        preferred.append(('OpenVINOExecutionProvider', {'device_type': 'GPU'}))
+    elif 'openvino' in cmeta_targets:
+        preferred.append(('OpenVINOExecutionProvider', {'device_type': 'CPU'}))
     if 'metal' in cmeta_targets:
-        preferred.append('CoreMLExecutionProvider')
+        preferred.append(('CoreMLExecutionProvider', {}))
+
+    # Windows: the OpenVINO EP loads openvino.dll from the openvino package
+    if any(p == 'OpenVINOExecutionProvider' for p, _ in preferred) and sys.platform == 'win32':
+        try:
+            from onnxruntime.tools import add_openvino_win_libs
+            add_openvino_win_libs.add_openvino_libs_to_path()
+        except (ImportError, SystemExit, OSError) as e:
+            print(f"[WARNING] The OpenVINO libraries were not added to the DLL path: {e}")
+    if any(p == 'CUDAExecutionProvider' for p, _ in preferred) and hasattr(ort, 'preload_dlls'):
+        try:
+            ort.preload_dlls()
+        except Exception as e:
+            print(f"[WARNING] onnxruntime.preload_dlls() failed: {e}")
 
     available = ort.get_available_providers()
-    providers = [p for p in preferred if p in available]
-    if 'CPUExecutionProvider' not in providers:
-        providers.append('CPUExecutionProvider')
+    providers = [p for p in preferred if p[0] in available]
+    if not any(p[0] == 'CPUExecutionProvider' for p in providers):
+        providers.append(('CPUExecutionProvider', {}))
 
     return providers
 
@@ -118,6 +137,8 @@ def load_model(model_id: str):
     providers = select_providers()
     session = ort.InferenceSession(str(onnx_path), providers=providers)
     print(f"[INFO] Active execution providers: {session.get_providers()}")
+    if providers[0][0] != 'CPUExecutionProvider' and session.get_providers()[0] != providers[0][0]:
+        print(f"[WARNING] {providers[0][0]} is not active: the model runs on {session.get_providers()[0]}")
 
     return session
 

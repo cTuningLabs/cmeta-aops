@@ -1,0 +1,7 @@
+# Disk space of a CUDA toolkit (nvcc) setup in GB: the redistributable parts cMeta downloads into the
+# cache (compiler, runtime, libraries). Read by task/setup before an install (docs/cmeta-aops/tool-sizes.md).
+sizes:
+  - if: {method: install}
+    peak: 6
+    kept: 3
+  - peak: 6

@@ -60,35 +60,33 @@ class CTool(InitCTool):
         env = params.get('env')
         timeout = params.get('timeout')
 
+        # Upstream assets (4.13+): ccache-<v>-windows-{x86_64,aarch64}.zip,
+        # ccache-<v>-linux-{x86_64,aarch64,riscv64}-{glibc,musl-static}.tar.xz and one
+        # universal ccache-<v>-darwin.tar.gz; before 4.13 the Linux names had no libc part.
         url = None
         filename = None
 
-        if uname == 'windows':
-            uos = 'windows'
-            uext = '.zip'
-            if uarch == 'amd64':
-                uarch2 = 'x86_64'
-            elif uarch == 'arm64':
-                uarch2 = 'arm64'
-        elif uname == 'linux':
-            uos = 'linux'
-            uext = '.tar.gz'
-            if uarch == 'amd64':
-                uarch2 = 'x86_64'
-            elif uarch == 'arm64':
-                uarch2 = 'aarch64'
+        uarch2 = {'amd64': 'x86_64', 'arm64': 'aarch64', 'aarch64': 'aarch64', 'riscv64': 'riscv64'}.get(uarch)
+
+        try:
+            new_scheme = [int(x) for x in version_simple.split('.')[:2]] >= [4, 13]
+        except ValueError:
+            new_scheme = True
+
+        if uname == 'windows' and uarch2 in ('x86_64', 'aarch64'):
+            filename = f'ccache-{version_simple}-windows-{uarch2}.zip'
+        elif uname == 'linux' and uarch2:
+            libc = '-musl-static' if _global['host'].get('os_extra', {}).get('id') == 'alpine' else '-glibc'
+            filename = f'ccache-{version_simple}-linux-{uarch2}{libc if new_scheme else ""}.tar.xz'
         elif uname == 'darwin':
-            uos = 'macos'
-            uext = '.tar.gz'
+            filename = f'ccache-{version_simple}-darwin.tar.gz'
 
-        if not uarch2:
+        if not filename:
             return {
-                'return': 16, 
-                'error': f'custom install for ccache could not create download URL',
+                'return': 16,
+                'error': f'ccache publishes no prebuilt binary for {uname}/{uarch}',
+                'install_cmd': cmd, # fall back to the declarative install, if any
             }
-
-        xuarch = f'-{uarch2}' if uarch2 else ''
-        filename = f'ccache-{version_simple}-{uos}{xuarch}{uext}'
 
         url = f'https://github.com/ccache/ccache/releases/download/v{version_simple}/{filename}'
 

@@ -1,0 +1,20 @@
+artifact: 9446fa922c054633
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
+  files in the project root for details.
+creation_timestamp: '2026-10-02T19:19:13.233599+00:00'
+desc: 'Compute target: a GPU through OpenCL (any vendor); records the platforms and
+  devices; on Linux, an Intel GPU gets Intel''s runtime first.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+name: OpenCL
+sort: 0
+tags:
+- target
+- opencl
+- gpu

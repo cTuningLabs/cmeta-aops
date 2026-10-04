@@ -1,0 +1,18 @@
+artifact: a1b4f3c058b84b6b
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+desc: 'MPI (mpiexec and the library): the system''s, else Open MPI, MPICH or the Intel MPI runtime from
+  PyPI with mpi4py in the tool''s own Python environment, without root (Linux, macOS, Windows).'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+tags:
+- mpi
+- openmpi
+- mpich
+- intel-mpi
+- distributed

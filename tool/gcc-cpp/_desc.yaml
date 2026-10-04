@@ -60,6 +60,8 @@ features:
       lib_prefix2: ''
       lib_postfix: ''
       openmp: '-fopenmp'
+      # the static OpenMP runtime (libgomp.a) a static build links by its path (task/setup-compile)
+      openmp_static_archive: 'libgomp.a'
       fast: '-O3'
       fastest: '-Ofast -march=native'
       profile: '-fno-omit-frame-pointer'

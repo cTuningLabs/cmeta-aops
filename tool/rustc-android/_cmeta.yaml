@@ -1,0 +1,34 @@
+artifact: 80c84cba5bd84717
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+constraints:
+  supports_compute:
+  - android-cpu
+  supports_os:
+  - windows
+  - linux
+  - darwin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
+  files in the project root for details.
+creation_timestamp: '2026-10-03T20:58:06.265810+00:00'
+desc: Rust compiler of the host (tool/rustc, rustup) cross-compiling Rust programs
+  for the Android device of the android-cpu target, with the Android target's standard
+  library (added through rustup) and the Android NDK's clang as the linker.
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  date: '2026-10-03'
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_update_timestamp: '2026-10-03T21:00:54.788690+00:00'
+tags:
+- lang-rust
+- rust
+- android

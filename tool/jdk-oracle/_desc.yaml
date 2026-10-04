@@ -1,0 +1,29 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# Oracle JDK: the latest release of --with.feature (the major version, default 25), downloaded into
+# the cache from download.oracle.com and checked against Oracle's SHA-256 (Windows, Linux, macOS; x64, aarch64).
+# Releases are picked by --with.feature only. No detection: an installed JDK is tool/openjdk's. The result is
+# stored as "openjdk" as well, so tool/javac and tool/java (--with.vendor=oracle) use this JDK.
+# Oracle's license applies (its No-Fee Terms and Conditions for the current releases): check it
+# before use.
+#
+#   cx tool setup jdk-oracle
+#   cx tool setup jdk-oracle --with.feature=21
+#   cx tool setup javac --with.vendor=oracle
+#   cx program run test-nmm-java-cpu --jdk=oracle
+
+storage_key: openjdk
+skip_detect: True
+
+cache_params:
+  - with.feature
+
+names:
+  - javac{{global.host.vars.file_ext_exe}}
+
+match_version:
+  - regex: 'javac\s+([^\s]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} -version'

@@ -1,0 +1,20 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# An OpenSSH server run as the user (api_v1.py): on Windows the portable Win32-OpenSSH, elsewhere the
+# system sshd (tool/openssh-server); its own port (2222), key-only logins, the Tailscale address.
+#
+#   cx task run run-openssh --keys=<public key file>[,<file or key>...]
+#   cx task run run-openssh status
+#   cx task run run-openssh stop
+
+cache: False
+
+params_map:
+  arg2: action
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: setup,a2f9b61079ce4333
+    name: openssh-server,6adb356930f8464e

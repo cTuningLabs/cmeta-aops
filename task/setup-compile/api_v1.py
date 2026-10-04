@@ -8,8 +8,106 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 import os
 import platform
 import shutil
+import subprocess
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
+
+# Where a Linux system gets GCC's static OpenMP runtime, libgomp.a, by the ID (or an ID_LIKE) of
+# /etc/os-release. Checked in containers (2026-10): the archive comes with the compiler itself on Debian 12
+# and Ubuntu 24.04 (libgcc-<N>-dev, installed with gcc-<N>), Fedora 42 and Rocky Linux 9 (gcc), openSUSE
+# (gcc<N>) and Alpine 3.21 (gcc); Arch Linux ships none (only its cross compilers do).
+STATIC_OPENMP_PACKAGES = {
+    'debian': 'the archive comes with the compiler (libgcc-<N>-dev, installed with gcc-<N>); this gcc lacks it',
+    'ubuntu': 'the archive comes with the compiler (libgcc-<N>-dev, installed with gcc-<N>); this gcc lacks it',
+    'fedora': 'the archive comes with the gcc package; this gcc lacks it',
+    'rhel': 'the archive comes with the gcc package; this gcc lacks it',
+    'suse': 'the archive comes with the gcc<N> package; this gcc lacks it',
+    'opensuse': 'the archive comes with the gcc<N> package; this gcc lacks it',
+    'alpine': 'the archive comes with the gcc package; this gcc lacks it',
+    'arch': 'Arch Linux packages no libgomp.a (its gcc ships the shared runtime only)',
+}
+
+
+def static_openmp_note(uname, static, openmp):
+    """
+    What a static build with OpenMP cannot do on Windows: neither LLVM nor MSVC has a static OpenMP
+    runtime there (LLVM's build refuses one: "Static libraries requested but not available on
+    Windows"; MSVC's vcomp is a DLL), so the program keeps the runtime as a DLL next to its static
+    C run time and static libraries. None elsewhere, or for other builds.
+    """
+    if uname == 'windows' and static and openmp:
+        return ('the OpenMP runtime stays a DLL in this static build (libomp.dll with clang, vcomp with MSVC): '
+                'Windows has no static OpenMP runtime; the C run time and the other libraries are static')
+    return None
+
+
+def is_library_file(name):
+    """
+    A library given as the path of its file rather than by name: a lib tool's static archive
+    (tool/lib-openssl, lib-zlib), which the linker takes as it is - named with -l, a link without
+    -static (nvcc's host link) would take the shared library of the same name.
+    """
+    return os.path.isabs(name) and os.path.isfile(name)
+
+
+def print_file_name(compiler, name):
+    """
+    What "<compiler> -print-file-name=<name>" prints (gcc, clang): the path of the file when the
+    compiler's installation has it, the bare name when it has not. None when the compiler cannot run.
+    """
+    try:
+        r = subprocess.run([compiler, f'-print-file-name={name}'], capture_output = True, text = True)
+    except OSError:
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def no_static_openmp_runtime(compiler, archive, printed, os_id = None, id_like = None):
+    """
+    Why a static build with OpenMP stops when the compiler has no static OpenMP runtime, and what
+    gives it on this system. As for the other libraries, a static build never falls back to the
+    shared runtime: it must be what it says.
+    """
+    lines = [f'a static build with OpenMP needs the static OpenMP runtime of {compiler} ({archive}), and this '
+             f'compiler has none (-print-file-name={archive}: "{printed}"):']
+    key = next((k for k in [os_id or ''] + (id_like or '').split() if k in STATIC_OPENMP_PACKAGES), None)
+    if key:
+        lines.append(f'  this system ({os_id}): {STATIC_OPENMP_PACKAGES[key]}')
+    lines += ['  Debian, Ubuntu: libgcc-<N>-dev (installed with gcc-<N>); Fedora, RHEL-likes, openSUSE, Alpine: the gcc',
+              '  package itself ships the archive; Arch Linux ships none',
+              '  or use clang (--use.compiler-c.name=clang --use.compiler-cpp.name=clang-cpp: lib-openmp builds libomp.a),',
+              '  or build the program without --compile.static']
+    return '\n'.join(lines)
+
+
+def static_openmp_runtime(compiler, archive, driver_flags, uname, os_id = None, id_like = None, q = None):
+    """
+    The link inputs of a static build with OpenMP for a compiler whose OpenMP runtime has a static
+    archive (`archive`, flags.openmp_static_archive of its meta: gcc's libgomp.a) - the archive by
+    its path, the libraries it needs (pthread, dl) and --as-needed for what the driver appends after
+    them (gcc's -fopenmp appends -lgomp, which a link without -static would otherwise keep as a
+    shared library) - or {'return': 1, 'error': ...} when the compiler has no such archive. None
+    without an archive name (clang: tool/lib-openmp hands its libomp.a) and on Windows (no static
+    OpenMP runtime).
+
+    `compiler` is the entry of the compiler that provides the runtime (the host compiler of a driver
+    such as nvcc), `driver_flags` the flags of the compiler that runs the link (-l and -Wl,/-Xlinker).
+    """
+    if not archive or uname == 'windows':
+        return None
+
+    q = q or (lambda s: s)
+    path = compiler.get('path') or compiler.get('qpath', '').strip('"')
+    printed = print_file_name(path, archive)
+    if not printed or not os.path.isabs(printed) or not os.path.isfile(printed):
+        return {'return': 1, 'error': no_static_openmp_runtime(path, archive, printed, os_id, id_like)}
+
+    found = os.path.normpath(printed)
+    lib_prefix = driver_flags.get('lib_prefix', '-l')
+    linker_option = driver_flags.get('linker_option_prefix', '-Wl,')
+    link = [q(found), lib_prefix + 'pthread', lib_prefix + 'dl', linker_option + '--as-needed']
+    return {'return': 0, 'archive': found, 'link': link}
+
 
 class CTask(InitCTask):
     """
@@ -29,8 +127,8 @@ class CTask(InitCTask):
         return {'return':0}
 
     ############################################################
-    def run(self, 
-            ctx, 
+    def run(self,
+            ctx,
             **params,
     ):
         """
@@ -96,8 +194,25 @@ class CTask(InitCTask):
 
         global_compiler_key = 'compiler-'+lang
 
+        # The stamp of the build folder (compile-and-run-program puts the folder and whether --recompile
+        # asked for a rebuild in ctx['tasks']['build_stamps'], the innermost last): a folder built with
+        # another compiler is not rebuilt in place unless a rebuild was asked for
+        guard = (ctx['tasks'].get('build_stamps') or [None])[-1]
+        if guard and not guard.get('rebuild'):
+            from task_c36be4b9314a45e0.api import build_stamp
+            stamp = build_stamp.read_stamp(guard['target_path'])
+            if stamp and stamp.get('compiler'):
+                diffs = build_stamp.differences(stamp, compiler = build_stamp.compiler_identity(_global[global_compiler_key]))
+                if diffs:
+                    return self.cm.error(build_stamp.refusal_message(guard['target_path'], stamp, diffs))
+
         compiler_features = _global[global_compiler_key].get('features', {})
         flags = compiler_features.get('flags',{})
+
+        # The environment of a cross-compiling tool (GOOS, GOARCH of tool/go-android) for the
+        # compile command; the program's own compile env wins
+        if compiler_features.get('env'):
+            _env = {**compiler_features['env'], **_env}
 
         # Check profile
         if _profile:
@@ -155,6 +270,29 @@ class CTask(InitCTask):
             if link_openmp_flag and link_openmp_flag not in compiler_link_flags:
                 compiler_link_flags.append(link_openmp_flag)
 
+            note = static_openmp_note(_global.get('host', {}).get('os', {}).get('uname'), _static, _openmp)
+            if note and ctx.get('control', {}).get('con', False):
+                print(f'WARNING: {note}')
+
+        # A static build with OpenMP links the compiler's static OpenMP runtime by its path (gcc's
+        # libgomp.a: the runtime of the host compiler when a driver such as nvcc runs the link), or
+        # stops when the compiler has none - never the shared runtime (see static_openmp_runtime)
+        static_openmp = None
+        if _static and _openmp:
+            host = _global.get('host', {})
+            uname = host.get('os', {}).get('uname')
+            runtime_compiler = _global[global_compiler_key]
+            if flags.get('host_compiler') and 'compiler-cpp' in _global:
+                runtime_compiler = _global['compiler-cpp']
+            # The flags of a reused compiler entry are completed from the tool's current meta by task
+            # setup (finish_dynamic_result), so a flag the meta gained after the entry was cached
+            # (openmp_static_archive, linker_option_prefix) is here without --update
+            archive = runtime_compiler.get('features', {}).get('flags', {}).get('openmp_static_archive')
+            static_openmp = static_openmp_runtime(runtime_compiler, archive, flags, uname, host.get('os_extra', {}).get('id'),
+                                                  host.get('os_extra', {}).get('id_like'), q = self.cm.q)
+            if static_openmp is not None and static_openmp['return'] > 0:
+                return self.cm.error(static_openmp['error'])
+
         found_dynamic_libs = []
         found_dynamic_lib_paths = []
 
@@ -162,6 +300,11 @@ class CTask(InitCTask):
         for k in ctx['tasks']['global']:
             if k.startswith('lib-'):
                 features = ctx['tasks']['global'][k].get('features',{})
+
+                # A library that cannot serve a static build says why (tool/lib-openssl without the
+                # static archives): the build stops here rather than linking the shared library
+                if _static and features.get('static_unavailable'):
+                    return self.cm.error(f'{k}: {features["static_unavailable"]}')
 
                 if not _static:
                     if 'found_dynamic_libs' in features['paths']:
@@ -228,14 +371,23 @@ class CTask(InitCTask):
                if os.path.isdir(lib_path):
                    compiler_link_flags.append(flags['lib_path'] + self.cm.q(lib_path))
 
-        # Process libs names
+        # Process libs names (a library file by its path goes to the linker as it is)
         if lib_names:
             for lib in lib_names:
+                if is_library_file(lib):
+                    compiler_link_flags.append(self.cm.q(lib))
+                    continue
                 if lib.startswith('$'):
                     x = lib[1:] + flags.get('lib_postfix','')
                 else:
                     x = flags.get('lib_prefix2','') + lib + flags.get('lib_postfix','')
                 compiler_link_flags.append(flags['lib_prefix'] + self.cm.q(x))
+
+        # The static OpenMP runtime after every library, its --as-needed covering only what the
+        # driver appends after the inputs (gcc's -lgomp from -fopenmp, nvcc's own libraries)
+        if static_openmp is not None:
+            compiler_link_flags += [x for x in static_openmp['link'] if x not in compiler_link_flags]
+            result['static_openmp_runtime'] = static_openmp['archive']
 
         if _profile:
             if flags.get('link_profile'):
@@ -289,8 +441,10 @@ class CTask(InitCTask):
                 target_ext = compiler_features.get('vars', {}).get('file_ext_exe')
                 target_ext2 = '' if target_ext is None else target_ext
 
-            if target_file_name and not target_exe:
-                target_exe = target_file_name + target_ext2
+        # The program's own target name also with an explicit extension (Java's Program.class:
+        # "program.class" was found only on file systems that ignore case)
+        if target_file_name and not target_exe:
+            target_exe = target_file_name + target_ext2
 
         if not target_exe:
             target_exe = 'program' + target_ext2
@@ -400,6 +554,11 @@ class CTask(InitCTask):
         cmd = _global[global_compiler_key]['qpath']
 
         x = compiler_features.get('flags', {}).get('force_build')
+        if x:
+            cmd += ' ' + x
+
+        # The host compiler of a compiler driver (nvcc's -ccbin)
+        x = compiler_features.get('flags', {}).get('host_compiler')
         if x:
             cmd += ' ' + x
 

@@ -1,0 +1,17 @@
+artifact: 541b3c4d823e46b2
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+desc: 'Apple MLX Python package with the backend of the target compute (Metal on Apple silicon,
+  mlx[cuda13] or mlx[cuda12] on Linux NVIDIA GPUs, mlx[cpu] on Linux and Windows), installed with
+  pip: cx tool setup pip mlx.'
+generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+tags:
+- pip
+- mlx
+- apple

@@ -11,7 +11,7 @@ cache_params_use:
 cache_meta_const:
   skip_cache_version_check: True
 
-path: "{{global.python.qpath}}"
+path: "{{global.python.path}}"
 cmd: "{{global.python.qpath}} -m pip"
 cmd_filename: "{{global.python.filename}} -m pip"
 cmd_get_version: "{{global.python.qpath}} -m pip --version"

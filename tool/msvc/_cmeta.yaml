@@ -1,21 +1,32 @@
 artifact: e823256bbbe54b4e
 authors: Grigori Fursin
 category: tool,c393ba5c6fa14f66
-copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
-creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
-desc: "Microsoft Visual C/C++ compiler (cl.exe), detected through Visual Studio, for Windows builds."
-sort: 1000
 constraints:
   supports_compute:
   - cpu
   - cuda
+  - vulkan
+  - opencl
   supports_nvcc_os:
   - windows
   supports_os:
   - windows
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
+  files in the project root for details.
+creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
+desc: Microsoft Visual C/C++ compiler (cl.exe), detected through Visual Studio, for
+  Windows builds.
+last_generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  date: '2026-10-01'
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_update_timestamp: '2026-10-01T20:25:09.830161+00:00'
+sort: 1000
 tags:
 - lang-c
 - lang-cpp
 - msvc
 - msvc-cpp
-

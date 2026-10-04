@@ -1,0 +1,60 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+###################################################################################################
+# One generation with Ollama on a private server - started on its own port (another Ollama on
+# the machine keeps running), stopped at the end - with Ollama's own timings as the result:
+#
+#   cx program run test-ollama --compute=cuda            # cpu, cuda, metal, rocm, vulkan
+#   cx program run test-ollama --model=qwen2.5:0.5b --n=64 --port=11435
+#   cx program run test-ollama --compute=cpu,cuda --ngl=12  # 12 layers on the GPU, the rest on the CPU
+#
+# --compute=cpu keeps the model on the CPU (num_gpu 0); vulkan sets OLLAMA_VULKAN=1.
+# Models go to Ollama's default folder (~/.ollama/models) unless --models_dir is given.
+###################################################################################################
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  run_src_file_names:
+    - 'program.py'
+
+  run_time_env:
+    CMETA_TARGETS: '{{global.target.cmeta_targets}}'
+    CMETA_OLLAMA: '{{global.ollama.path}}'
+    CMETA_OLLAMA_MODEL: '{{local.params.model|qwen2.5:0.5b}}'
+    CMETA_OLLAMA_MAX_TOKENS: '{{local.params.n|64}}'
+    CMETA_OLLAMA_PORT: '{{local.params.port|11435}}'
+    CMETA_OLLAMA_MODELS: '{{local.params.models_dir|}}'
+    CMETA_OLLAMA_NUM_GPU: '{{local.params.ngl|}}'
+    PYTHONUNBUFFERED: 1
+
+  output_files:
+    - tmp-cmeta-program-stats.json
+
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+
+###################################################################################################
+updates:
+  compile:
+    skip: True
+
+  run:
+    uses:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         prepend:
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+           - task: setup,a2f9b61079ce4333
+             name: ollama,ffbd6b12d1ac4c7d
+             _update: '{{ params.setup_ollama|${} }}'
+
+         update:
+           target_exe:
+           run_src_file_names: '{{local.run_src_file_names}}'
+           cmd: >-
+             {{global.python.qpath}}
+             {run_flags_after_exe}
+             {{params.run_flags|}}
+             {run_src_file_names_str_with_path}

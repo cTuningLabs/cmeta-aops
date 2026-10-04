@@ -16,6 +16,36 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 LLVM_RELEASES = 'https://github.com/llvm/llvm-project/releases/download/llvmorg-{version}/{filename}'
 LLVM_TAGS_REPO = 'https://github.com/llvm/llvm-project'
 
+
+def is_swift_toolchain(path, output = ''):
+    """
+    Whether a clang belongs to a Swift toolchain (swift.org's fork of LLVM): its --version names
+    swiftlang, or it lives in swiftly's folder (Linux, macOS), under Swift/Toolchains (Windows) or in a
+    swift-*.xctoolchain (macOS). Such a clang carries no OpenMP headers or runtime.
+    """
+    if 'swiftlang' in (output or '').lower():
+        return True
+    p = path.replace('\\', '/').lower()
+    return '/swiftly/' in p or '/swift/toolchains/' in p or ('.xctoolchain/' in p and '/swift-' in p)
+
+
+def rank_swift_last(paths, sort_key):
+    """
+    The candidates of the detection with every other clang before the Swift toolchain's: the others
+    get the detection's priority mark, in their own order (version, then path), so a newer Swift clang
+    does not win over an LLVM, Apple or distribution clang. Returns (paths, only_swift): only_swift when
+    no other clang was found, so the Swift one is taken (with a warning about OpenMP).
+    """
+    others = [p for p in paths if not p.get('features', {}).get('swift_toolchain')]
+    swift = [p for p in paths if p.get('features', {}).get('swift_toolchain')]
+    if not swift or not others:
+        return paths, bool(swift) and not others
+    others.sort(key = sort_key)
+    for p in others:
+        p['priority'] = True
+    return others + swift, False
+
+
 class CTool(InitCTool):
     """
     """
@@ -48,7 +78,10 @@ class CTool(InitCTool):
 
             path = p['path']
 
-            path_bin = os.path.dirname(path)
+            # The folders of the installation the binary belongs to: a distribution's /usr/bin/clang is
+            # a link into /usr/lib/llvm-<N>/bin, whose parent holds its lib and include (not "/")
+            path_real = os.path.realpath(path)
+            path_bin = os.path.dirname(path_real)
             path_home = os.path.dirname(path_bin)
 
             paths['bin'] = path_bin
@@ -57,7 +90,22 @@ class CTool(InitCTool):
             paths['home'] = path_home
             paths['qhome'] = self.cm.q(path_home)
 
+            if is_swift_toolchain(path, p.get('output', '')):
+                features['swift_toolchain'] = True
+
             new_paths.append(p)
+
+        # A Swift toolchain's clang (swiftly, Swift/Toolchains) is often first on PATH; it has no OpenMP
+        # headers or runtime, so every other clang ranks before it
+        for p in new_paths:
+            p['path_len'] = len(p['path'])
+        new_paths, only_swift = rank_swift_last(
+            new_paths, lambda a: self.cm.utils.common.build_sort_key(a, ['@detected_version-', 'path_len', 'path']))
+
+        if only_swift and con:
+            print ('')
+            print (f"WARNING: the only clang found is a Swift toolchain's ({new_paths[0]['path']}): it has no OpenMP "
+                   f"headers or runtime, so programs with OpenMP fail with it; \"cx tool setup llvm\" installs LLVM")
 
         return {'return':0, 'paths':new_paths}
 

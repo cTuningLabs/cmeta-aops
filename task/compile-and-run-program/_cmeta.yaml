@@ -1,10 +1,19 @@
 artifact: 05437a1aae224270
 authors: Grigori Fursin
 category: task,c36be4b9314a45e0
-copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE
+  files in the project root for details.
 creation_timestamp: '2026-01-19T15:40:51.387488+00:00'
-desc: "Select a program, set up its target and compiler, compile and run it: the engine behind cx program run."
-last_update_timestamp: '2026-06-09T08:08:43.220197+00:00'
+desc: 'Select a program, set up its target and compiler, compile and run it: the engine
+  behind cx program run.'
+last_generator:
+  agent: Claude Code 2.1.286
+  by: Grigori Fursin
+  date: '2026-10-04'
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_update_timestamp: '2026-10-04T12:53:18.134672+00:00'
 min_cmeta_version_api: 0.27.5
 tags:
 - compile-and-run
@@ -12,3 +21,4 @@ tags:
 uses_categories:
   cache: cache,1ebdcc1cc30c4022
   config: config,cc6bfe174be847ed
+  tool: tool,c393ba5c6fa14f66

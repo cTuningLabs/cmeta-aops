@@ -93,6 +93,45 @@ Per-entry modifiers (all optional, all values templated against `ctx['tasks']`):
 `local:` (merge into local ctx), `reuse_all_params: True`, and per-entry
 `store_global`/`storage_key`/`cache` overrides.
 
+## Changing a dependency anywhere in a pipeline
+
+`--use.<storage_key>.<param>=<value>` changes a parameter of **any** sub-task of a run, however deep
+it sits, without editing a `_desc.yaml`:
+
+```bash
+cxt test-mojo-life --use.python.version=3.12.13            # the python that some sub-task sets up
+cxt <task> --use.uv.version=0.12.16                         # the uv that setup,name=uv installs or detects
+cxt <task> --use.clang.version=22.1.7 --use.clang-cpp.version=22.1.7
+cxt <task> --use.get-hf-model.repo=<org>/<model> --use.get-hf-model.update   # a param and a control switch of one sub-task
+```
+
+How it works (`v2.py`: `use` is parsed with the other dotted keys, kept in `ctx['tasks']['use']`, and
+applied in "UPDATE PARAMS FROM USE BASED ON STORAGE KEY"):
+- **One dict for the whole run.** `--use.uv.version=0.12.16` becomes `use: {uv: {version: 0.12.16}}`,
+  deep-merged into `ctx['tasks']['use']`, so it reaches every nesting level.
+- **Matched by storage key.** When a task starts, its params are deep-merged with `use[<its storage
+  key>]`, **overriding** what its parent passed in the `uses:` entry.
+- **Control switches travel too.** `path`, `skip`, `cache`, `cache_repo`, `cache_name`,
+  `cache_extra_alias`, `cache_extra_params`, `cache_extra_tags`, `update`, `clean`, `new` go to that
+  task's control params: `--use.get-hf-model.update` redoes only that step.
+
+The storage key of a sub-task:
+
+| Sub-task | Storage key | Example |
+|---|---|---|
+| `setup` (a tool) | the tool's alias (`{{$params.name}}`): `python`, `uv`, `git`, `clang`, ... | `--use.python.version=3.12.13` |
+| `clone-git-to-cache` | `clone-git-to-cache-<name>` | `--use.clone-git-to-cache-src-<x>.depth=1` |
+| `runner`, `host`, `init` | fixed: `runner`, `host`, `init` | |
+| a compiler | `compiler-<lang>` | `--use.compiler-c.name=gcc,...` |
+| any other task | its `storage_key` in `_desc.yaml`, else its alias | `--use.get-hf-model.repo=<org>/<model>` |
+
+Dots inside a key become `-`. To see the keys of a run, read the names under `tasks.global` in a
+task's `cmeta-task-cached-ctx.json`, or run with `-v`.
+
+**Aim at the key the pipeline actually sets up.** `program/llama-cpp` sets up `clang` and `clang-cpp`,
+so `--use.llvm.version=...` changes nothing there. A version given through `--use` also enters the
+cache identity of that sub-task, so it gets its own cache entry and the default one stays.
+
 ## Two reuse layers
 
 - **In-memory memo (per run):** `store_global: True` + `storage_key: <key>`. A later
@@ -109,6 +148,15 @@ Per-entry modifiers (all optional, all values templated against `ctx['tasks']`):
   - CLI: `--update` (rebuild), `--clean` (wipe), `--new` (fresh entry), `--path=<dir>`
     (distinct path = distinct entry). Unfinished entries carry a `tmp` tag; the
     `check_versions` config re-detects a cached tool's version and invalidates stale ones.
+    `--update` rebuilds an entry from what is installed; upgrading the *tool* itself is
+    `cx tool setup <tool> --upgrade` (see [tool-abstraction.md](tool-abstraction.md)),
+    which switches `update` on for its run so the entry records the new version.
+  - A reused tool entry is completed from the tool's *current* `_desc.yaml`: `task/setup`
+    lays the declarative `features` block of the meta (the `all` / host-OS / `linux` block the
+    detection also starts from) under the cached features in `finish_dynamic_result`, so a key
+    the meta gained after the entry was cached (a compiler flag, for example) is there on every
+    use without `--update`; what was detected keeps its value, and the entry's files are not
+    rewritten — they stay the record of what was detected.
   - Files in an entry: `cmeta-task-cached-result.json`, `cmeta-task-cached-ctx.json`
     (and `cmeta-task-saved-*.json` with `--save`).
 

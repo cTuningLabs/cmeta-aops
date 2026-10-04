@@ -27,6 +27,9 @@ SPEC keys:
   python           Python version of the environment (e.g. '3.12')
   extra            more requirement strings installed alongside (e.g. 'ansible-core==2.21.4')
   unsupported_os   {uname: message} for systems the tool does not run on (e.g. Windows for Ansible)
+  bin              {uname: folder of the environment} holding the command, for packages that install
+                   their programs as data rather than console scripts (impi-rt on Windows: Library/bin);
+                   default bin, or Scripts on Windows
 """
 
 import os
@@ -78,7 +81,9 @@ def install_pyvenv(tool, ctx, params, cmd, spec):
     if r['return'] > 0:
         return r
 
-    found = os.path.join(bindir, spec['name'] + exe)
+    sub = (spec.get('bin') or {}).get(uname)
+    cmddir = os.path.join(venv, *sub.split('/')) if sub else bindir
+    found = os.path.join(cmddir, spec['name'] + exe)
     if not os.path.isfile(found):
-        return tool.cm.error(f'{requirement} was installed but its "{spec["name"]}" command is missing in {bindir}')
+        return tool.cm.error(f'{requirement} was installed but its "{spec["name"]}" command is missing in {cmddir}')
     return {'return': 0, 'install_cmd': None, 'found_path': found}

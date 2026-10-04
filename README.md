@@ -35,11 +35,18 @@ uv tool install "cmeta[server]"                 # the engine (or: pip install cm
 cx repo get ctuninglabs@cmeta-aops              # this repository, from GitHub
 cx tool setup git                               # detect or install a tool into the cache
 cx tool run git -- status                       # run it (arguments go after --)
+cx tool setup git --status                      # installed version vs the newest its install channel offers
+cx tool setup git --upgrade                     # upgrade it there (or install the newest if it is missing)
 cx task list                                    # browse the reusable workflow steps
 cx program run test-nmm-c-cpu cpu               # compile and run a matmul benchmark on CPU
 cx program run test-nmm-nvcc-cuda cuda          # ... or on CUDA, if you have it
 cx task run test-python -j                      # a task with the full trace: every tool and step it reused
 ```
+
+cMeta keeps its repositories, index and caches in one folder, its home: `~/CMETA`
+(`%USERPROFILE%\CMETA` on Windows). There is nothing to set up. To use another folder, set
+`CMETA_HOME`; `cx --version` shows the home in use. Inside an activated Python virtual
+environment (or conda environment) the home is `<env>/CMETA` unless `CMETA_HOME` is set.
 
 **Updating** — the engine and this repository are updated separately:
 
@@ -55,7 +62,10 @@ Every install route, pinning a version, and a zip-fetched copy of this repositor
 Working from a clone instead? Run `cx repo plug .` in the repository root, then
 `cx --reindex`. Handy flags: `-j`/`--verbose` (full step-by-step trace), `--con`,
 `--quiet`, `--version=X` (pin a tool version), `--update`/`--clean`/`--new` (cache
-control). To hand this repository to a coding agent (Claude Code, Codex, OpenCode) as
+control), and `--use.<key>.<param>=<value>` to change any sub-task of a task, however deep:
+for example `--use.python.version=3.12.13` for the Python it sets up
+([how the keys work](docs/cmeta-aops/task-engine.md#changing-a-dependency-anywhere-in-a-pipeline)).
+To hand this repository to a coding agent (Claude Code, Codex, OpenCode) as
 part of its context, see [agent tasks](docs/cmeta-aops/agent-tasks.md).
 
 ## Project status
@@ -145,8 +155,10 @@ subfolder is an **artifact** described by `_cmeta.*` (identity) + `_desc.yaml`
 
 - **`tool` — external programs, made portable.** A tool artifact knows how to **detect,
   install, build and run** one CLI (git, cmake, clang, cuda, python, node-js, …) across
-  OSes, and how to list its available versions. Set one up once and reuse it everywhere.
-  → `cx tool setup <name>` · `cx tool run <name> -- <args>` · `cx tool setup <name> --versions`
+  OSes, how to list its available versions, and how to check for and install upgrades.
+  Set one up once and reuse it everywhere.
+  → `cx tool setup <name>` · `cx tool run <name> -- <args>` · `cx tool setup <name> --versions` ·
+  `cx tool setup <name> --status` · `cx tool setup <name> --upgrade`
 
 - **`program` — build & run benchmarks and apps.** A program is a compilable/runnable
   artifact (matmul micro-benchmarks, PyTorch/llama.cpp builds, image classification, …).
@@ -173,7 +185,8 @@ In-depth developer/agent documentation lives in
 - [The `task` workflow engine](docs/cmeta-aops/task-engine.md)
 - [The `tool` abstraction (detect/install/build/run, version listing)](docs/cmeta-aops/tool-abstraction.md)
 - [The `program` category & the `compute` abstraction](docs/cmeta-aops/program-and-compute.md)
-- [Coding agents and cloud CLIs as tasks (`run-claude2` / `run-codex2` / `run-opencode2`, `run-az`, models and reasoning effort)](docs/cmeta-aops/agent-tasks.md)
+- [LLM inference stacks: llama.cpp, vLLM, Ollama and PyTorch on CPU, CUDA, Vulkan and Metal](docs/cmeta-aops/llm-stacks.md)
+- [Coding agents and cloud CLIs as tasks (`run-claude` / `run-codex` / `run-opencode`, `run-az`, models and reasoning effort)](docs/cmeta-aops/agent-tasks.md)
 
 See also `AGENTS.md` (canonical brief for AI agents), `CLAUDE.md`, and the authoring
 [skills](.claude/skills/) (`add-tool`, `add-task`, `add-program`).

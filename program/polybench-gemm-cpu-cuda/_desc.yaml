@@ -44,15 +44,21 @@ updates:
           # Prepare Libs for Host CPU
           - task: setup,a2f9b61079ce4333
             name: lib-polybench,70349e61a532455d
+            with:
+              static: '{{params.compile.static|$None}}'
 
           - task: setup,a2f9b61079ce4333
             name: lib-xopenme,c7b96678a7734510
+            with:
+              static: '{{params.compile.static|$None}}'
 
-          # Only for Clang on Linux and MacOS
+          # Only for Clang: its OpenMP runtime (static for a static build on Linux and macOS; on Windows
+          # the DLL, whose folder goes on the run-time path)
           - task: setup,a2f9b61079ce4333
-            if_os: linux,darwin
             if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.llvm.path|None}}" != "None" '
             name: lib-openmp,7958b973fc0d42a9
+            with:
+              static: '{{params.compile.static|$None}}'
 
           ######################################################################################
           # Prepare Libs for Android CPU
@@ -71,6 +77,13 @@ updates:
           - task: setup,a2f9b61079ce4333
             if: '"android-cpu" in {{global.target.compute|$[]}}'
             name: lib-openmp-android,4631aca5f3d241b4
+
+          ######################################################################################
+          # The CUDA runtime: its library folder goes on the run-time library path (a CUDA from
+          # the cMeta cache is not on the system's, e.g. CUDA 12 for an older GPU)
+          - task: setup,a2f9b61079ce4333
+            if: '"cuda" in {{global.target.compute|$[]}}'
+            name: lib-cuda,ac9daedec465409e
 
 
   run:

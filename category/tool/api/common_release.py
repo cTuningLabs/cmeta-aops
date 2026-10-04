@@ -37,6 +37,9 @@ SPEC keys:
   checksum         {'list': <url>}          a "<sha256>  <asset>" list (checksums.txt, SHA256SUMS, ...)
                    {'file': <url>}          a per-asset file holding "<sha256>[  <asset>]"
                    {'yq': <url>, 'order': <url>}   yq's table of several hashes per line
+                   {'sha256': {<version>: {<asset>: <sha256>}}}   digests pinned in the spec, for
+                                            releases that list them only in GitHub's API; another
+                                            version is downloaded over HTTPS only
                    omitted: no checksum published upstream (HTTPS only)
   version_tag      tag/version spelling in the URL if it differs, e.g. 'kustomize/v{version}'
   unsupported      [[uname, uarch], ...] pairs upstream publishes nothing for (e.g. ['windows', 'arm64'])
@@ -92,9 +95,15 @@ def _expected_sha256(tool, ctx, params, checksum, v, asset, directory):
     """The SHA-256 upstream publishes for `asset`, or None when it publishes none."""
     if not checksum:
         return {'return': 0, 'sha256': None}
+    if 'sha256' in checksum:
+        digest = (checksum['sha256'].get(v['version']) or {}).get(asset)
+        return {'return': 0, 'sha256': digest.lower() if digest else None}
     kind = 'list' if 'list' in checksum else 'file' if 'file' in checksum else 'yq' if 'yq' in checksum else None
     url = checksum[kind].format(**v)
-    r = _download(tool, ctx, params, url, directory, '_sums_' + os.path.basename(url.split('?')[0]))
+    # The version is part of the file name: download-file keeps a file that already exists, and
+    # "cx tool setup <tool> --upgrade" installs the newer release into the same cache entry, where
+    # the checksums of the old release would otherwise be reused and fail every download
+    r = _download(tool, ctx, params, url, directory, f'_sums_{v["version"]}_' + os.path.basename(url.split('?')[0]))
     if r['return'] > 0:
         return r
     with open(r['path'], encoding='utf-8', errors='replace') as f:
@@ -109,7 +118,7 @@ def _expected_sha256(tool, ctx, params, checksum, v, asset, directory):
                 return {'return': 0, 'sha256': parts[0].lower()}
         return tool.cm.error(f'{asset} is not listed in {url}')
     # yq: "checksums" has one line per asset with several hashes, "checksums_hashes_order" names them
-    ro = _download(tool, ctx, params, checksum['order'].format(**v), directory, '_sums_order')
+    ro = _download(tool, ctx, params, checksum['order'].format(**v), directory, f'_sums_{v["version"]}_order')
     if ro['return'] > 0:
         return ro
     with open(ro['path'], encoding='utf-8', errors='replace') as f:
@@ -163,6 +172,11 @@ def _fetch_one(tool, ctx, params, item, v, directory, con, space):
     if rs['sha256']:
         got = _sha256(r['path'])
         if got != rs['sha256']:
+            # Drop the bad download, or download-file would hand it back on the next attempt
+            try:
+                os.remove(r['path'])
+            except OSError:
+                pass
             return tool.cm.error(f'SHA-256 mismatch for {asset}: expected {rs["sha256"]}, got {got}')
         if con:
             print(f'{space}INFO: SHA-256 verified ({got[:16]}...)')

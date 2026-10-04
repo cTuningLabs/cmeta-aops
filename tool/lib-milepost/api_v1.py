@@ -47,6 +47,19 @@ class CTool(InitCTool):
         _with['compute'] = compute
         ctx['tasks']['local']['compute'] = compute
 
+        # The variants a program asks for: an explicit value for each, so that the cache query has the
+        # key (cache_meta_const records static and debug_info as False when unset; a None value, which a
+        # program passes as '{{params.compile.static|$None}}' for a dynamic build, would leave the key
+        # out of the query and match the static and the dynamic entry alike)
+        for key in ('static', 'debug_info'):
+            value = _with.get(key)
+            if value in (None, ''):
+                _with[key] = False
+            elif isinstance(value, str):
+                _with[key] = value.strip().lower() in ('true', 'yes', '1', 'on')
+            else:
+                _with[key] = bool(value)
+
         if 'android-cpu' in compute:
             name += '.so'
         else:
