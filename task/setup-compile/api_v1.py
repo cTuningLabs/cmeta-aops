@@ -24,6 +24,15 @@ def static_openmp_note(uname, static, openmp):
     return None
 
 
+def is_library_file(name):
+    """
+    A library given as the path of its file rather than by name: a lib tool's static archive
+    (tool/lib-openssl, lib-zlib), which the linker takes as it is - named with -l, a link without
+    -static (nvcc's host link) would take the shared library of the same name.
+    """
+    return os.path.isabs(name) and os.path.isfile(name)
+
+
 class CTask(InitCTask):
     """
     """
@@ -197,6 +206,11 @@ class CTask(InitCTask):
             if k.startswith('lib-'):
                 features = ctx['tasks']['global'][k].get('features',{})
 
+                # A library that cannot serve a static build says why (tool/lib-openssl without the
+                # static archives): the build stops here rather than linking the shared library
+                if _static and features.get('static_unavailable'):
+                    return self.cm.error(f'{k}: {features["static_unavailable"]}')
+
                 if not _static:
                     if 'found_dynamic_libs' in features['paths']:
                         for l in features['paths']['found_dynamic_libs']:
@@ -262,9 +276,12 @@ class CTask(InitCTask):
                if os.path.isdir(lib_path):
                    compiler_link_flags.append(flags['lib_path'] + self.cm.q(lib_path))
 
-        # Process libs names
+        # Process libs names (a library file by its path goes to the linker as it is)
         if lib_names:
             for lib in lib_names:
+                if is_library_file(lib):
+                    compiler_link_flags.append(self.cm.q(lib))
+                    continue
                 if lib.startswith('$'):
                     x = lib[1:] + flags.get('lib_postfix','')
                 else:

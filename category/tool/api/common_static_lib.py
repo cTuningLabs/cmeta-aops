@@ -33,7 +33,8 @@ What install_static_lib does, with no root and no build system:
      (install/lib/lib<lib>.a, install/include/), with the source, its digest and the compiler in
      install/_source.json; the unpacked sources and the objects are removed.
 detect_static_lib reads the version from an installed header and reports the include and lib folders
-and the library name the way the other lib-* tools do, so setup-compile adds -I, -L and -l<lib>.
+and the library name the way the other lib-* tools do, so setup-compile adds -I, -L and -l<lib>; a
+static build gets the archive by its path (lib_names_static), which every linker takes as it is.
 
 Linux and macOS (gcc or clang); on Windows install_static_lib returns a clear error.
 
@@ -303,7 +304,9 @@ def detect_static_lib(tool, ctx, paths, params, spec):
                       'include': include, 'qinclude': tool.cm.q(include), 'includes': [include],
                       'lib': lib_dir, 'qlib': tool.cm.q(lib_dir), 'libs': [lib_dir], 'libs_static': [lib_dir]},
             'lib_names': [spec['lib']],
-            'lib_names_static': [spec['lib']],
+            # a static build gets the archive by its path: named, a link without -static would take a
+            # shared library of that name found first (setup-compile, tool/lib-openssl)
+            'lib_names_static': [archive],
             'static_lib': archive,
         }
         found[path] = {'output': version, 'features': features}

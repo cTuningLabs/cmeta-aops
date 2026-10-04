@@ -123,6 +123,11 @@ libraries, compilers, profilers and run wrapping. Two consumers filter on it:
    `global['lib-*']` entry** for include paths / lib paths / lib names / dynamic-lib
    paths, resolves `target_exe`/`target_path_exe`, and emits `local.compile_cmds`
    (compiler cmd + optional `ar` static-lib cmd). The template's `cmd` step runs it.
+   A lib name that is the path of a library file goes to the linker as it is (the static
+   archives of `lib-openssl` and of the static `lib-*` tools, which a link without `-static`
+   would otherwise resolve to a shared library of that name), and a `lib-*` entry whose
+   `features.static_unavailable` says why it cannot serve a static build stops a static build
+   with that reason (`tool/lib-openssl/README.md`).
 
 ## 6. Run machinery
 

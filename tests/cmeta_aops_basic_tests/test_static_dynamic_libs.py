@@ -273,43 +273,55 @@ def test_openssl_undefined_symbols_macos_format(monkeypatch):
     assert ns["static_deps"]({"compress", "pthread_create"}) == [d for d in ns["STATIC_DEPS"] if d["lib"] == "z"]
 
 
-def test_openssl_static_archive_folder(tmp_path):
+class OpenSSLCM:
+    """A cMeta that sets up a dependency tool and reports its static archive."""
+
+    def __init__(self):
+        self.setups = []
+
+    def access(self, p):
+        self.setups.append(p["name"])
+        name = p["name"].split(",")[0]
+        return {"return": 0, "features": {"static_lib": f"/cache/{name}/install/lib/lib{name[4:]}.a"}}
+
+    def catch_error(self, r, fail16 = False):
+        return r["return"] > 0
+
+    def error(self, text):
+        return {"return": 1, "error": text}
+
+
+def test_openssl_static_archives_and_windows_folder(tmp_path):
     ns = openssl_tool()
-    lib = tmp_path / "homebrew" / "lib"
-    lib.mkdir(parents = True)
-    features = {"paths": {"libs": [str(lib)]}}
-    assert ns["static_archive_folder"](features, str(tmp_path / "entry")) is None          # no archives
-    for a in ["libssl.a", "libcrypto.a", "libssl.dylib"]:
-        (lib / a).write_bytes(b"!<arch>\n" + a.encode())
-    (tmp_path / "entry").mkdir()
-    folder = ns["static_archive_folder"](features, str(tmp_path / "entry"))
-    assert folder == str(tmp_path / "entry" / "static")
-    assert sorted(p.name for p in (tmp_path / "entry" / "static").iterdir()) == ["libcrypto.a", "libssl.a"]
-    assert ns["static_archive_folder"](features, None) is None
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    assert ns["static_archives"]([str(lib)]) == []                                        # no archives
+    (lib / "libssl.a").write_bytes(b"!<arch>\n")
+    assert ns["static_archives"]([str(lib)]) == []                                        # both are needed
+    (lib / "libcrypto.a").write_bytes(b"!<arch>\n")
+    assert ns["static_archives"]([str(tmp_path), str(lib)]) == [str(lib / "libssl.a"), str(lib / "libcrypto.a")]
+    # Windows: the MT folder next to the detected MD folder, with both static libraries
+    vc = tmp_path / "VC" / "x64"
+    (vc / "MD").mkdir(parents = True)
+    assert ns["windows_static_folder"]({"lib": str(vc / "MD")}) == (None, str(vc))
+    (vc / "MT").mkdir()
+    (vc / "MT" / "libssl_static.lib").write_bytes(b"x")
+    assert ns["windows_static_folder"]({"lib": str(vc / "MD")}) == (None, str(vc))
+    (vc / "MT" / "libcrypto_static.lib").write_bytes(b"x")
+    assert ns["windows_static_folder"]({"lib": str(vc / "MD")}) == (str(vc / "MT"), str(vc))
+    assert ns["windows_static_folder"]({"lib": str(vc)}) == (str(vc / "MT"), str(vc))       # no run-time folders detected
+    assert ns["windows_static_folder"]({}) == (None, "")
 
 
 def test_openssl_finish_static_on_macos(tmp_path, monkeypatch):
-    """A static request on macOS: the archives' folder as the only lib folder, the libraries the
-    archives need (zlib from its tool, macOS has no static one), ssl and crypto first."""
+    """with.static on macOS: libssl.a and libcrypto.a by their paths, then the archive of what they
+    need (zlib from its tool: macOS has no static one), then libm; no lib folder is replaced."""
     ns = openssl_tool()
     tool = object.__new__(ns["CTool"])
-    setups = []
-
-    class CM:
-        def access(self, p):
-            setups.append(p["name"])
-            return {"return": 0}
-
-        def catch_error(self, r, fail16 = False):
-            return r["return"] > 0
-
-        def error(self, text):
-            return {"return": 1, "error": text}
-
-    tool.cm = CM()
+    tool.cm = OpenSSLCM()
     lib = tmp_path / "lib"
     lib.mkdir()
-    for a in ["libssl.a", "libcrypto.a"]:
+    for a in ["libssl.a", "libcrypto.a", "libssl.dylib"]:
         (lib / a).write_bytes(b"!<arch>\n")
     entry = tmp_path / "entry"
     entry.mkdir()
@@ -318,15 +330,113 @@ def test_openssl_finish_static_on_macos(tmp_path, monkeypatch):
     monkeypatch.setitem(ns, "find_static_lib", lambda lib, dirs, compiler = None: None)
     ctx = {"control": {}, "tasks": {"nested_call": 0, "global": {"host": {"os": {"uname": "darwin"}},
                                                                    "compiler-c": {"path": "/usr/bin/clang"}}}}
-    result = {"return": 0, "path_cmeta_cache": str(entry), "features": {"paths": {"libs": [str(lib)], "lib": str(lib)}, "lib_names": ["ssl", "crypto"]}}
+    # an entry made before today keeps the copies of the archives in a "static" folder: no longer used
+    result = {"return": 0, "path_cmeta_cache": str(entry),
+              "features": {"paths": {"libs": [str(lib)], "lib": str(lib), "libs_static": [str(entry / "static")]}, "lib_names": ["ssl", "crypto"]}}
     assert tool.finish_dynamic_result(ctx, result, {"with": {"static": True}})["return"] == 0
-    assert result["features"]["paths"]["libs_static"] == [str(entry / "static")]
-    assert result["features"]["lib_names_static"] == ["ssl", "crypto", "z", "m"]
-    assert setups == ["lib-zlib,c46f457c9da347a7"]
-    # A dynamic request is as before: no static folder, no deps
+    assert "libs_static" not in result["features"]["paths"]
+    assert result["features"]["lib_names_static"] == [str(lib / "libssl.a"), str(lib / "libcrypto.a"), "/cache/lib-zlib/install/lib/libzlib.a", "m"]
+    assert tool.cm.setups == ["lib-zlib,c46f457c9da347a7"]
+    # A dynamic request: no tool is set up; the archives (and the system's static archives of what
+    # they may need, none here) are named for a static build that did not ask this tool for one
     result = {"return": 0, "path_cmeta_cache": str(entry), "features": {"paths": {"libs": [str(lib)]}, "lib_names": ["ssl", "crypto"]}}
     assert tool.finish_dynamic_result(ctx, result, {"with": {}})["return"] == 0
-    assert "libs_static" not in result["features"]["paths"] and "lib_names_static" not in result["features"]
+    assert result["features"]["lib_names_static"] == [str(lib / "libssl.a"), str(lib / "libcrypto.a"), "m"]
+    assert "libs_static" not in result["features"]["paths"] and len(tool.cm.setups) == 1
+
+
+def test_openssl_static_build_stops_without_archives(tmp_path):
+    """No static archives: a request with with.static fails with what gives them on this system; a
+    request without it records the reason (features.static_unavailable) for setup-compile."""
+    ns = openssl_tool()
+    tool = object.__new__(ns["CTool"])
+    tool.cm = OpenSSLCM()
+    ctx = {"control": {}, "tasks": {"nested_call": 0, "global": {"host": {"os": {"uname": "linux"}, "os_extra": {"id": "ubuntu", "id_like": "debian"}}}}}
+    result = {"return": 0, "features": {"paths": {"libs": [str(tmp_path)]}, "lib_names": ["ssl", "crypto"]}}
+    r = tool.finish_dynamic_result(ctx, result, {"with": {"static": True}})
+    assert r["return"] == 1 and "libssl.a and libcrypto.a" in r["error"] and "this system (ubuntu): sudo apt-get install libssl-dev" in r["error"]
+    assert "--tool_path=<prefix>/include/openssl/opensslv.h" in r["error"] and "without --compile.static" in r["error"]
+    result = {"return": 0, "features": {"paths": {"libs": [str(tmp_path)]}, "lib_names": ["ssl", "crypto"], "lib_names_static": ["ssl", "crypto"]}}
+    assert tool.finish_dynamic_result(ctx, result, {"with": {}})["return"] == 0
+    assert "libssl.a" in result["features"]["static_unavailable"] and "lib_names_static" not in result["features"]
+    assert tool.cm.setups == []
+    # macOS and Windows name their packages; the strings of with.static are read
+    ctx["tasks"]["global"]["host"] = {"os": {"uname": "darwin"}}
+    r = tool.finish_dynamic_result(ctx, {"return": 0, "features": {"paths": {"libs": [str(tmp_path)]}}}, {"with": {"static": "True"}})
+    assert r["return"] == 1 and "brew install openssl@3" in r["error"]
+    ctx["tasks"]["global"]["host"] = {"os": {"uname": "windows"}}
+    r = tool.finish_dynamic_result(ctx, {"return": 0, "features": {"paths": {"lib": str(tmp_path / "MD")}}}, {"with": {"static": True}})
+    assert r["return"] == 1 and "ShiningLight.OpenSSL.Dev" in r["error"] and "libssl_static.lib" in r["error"]
+    # Windows with the MT libraries: the static folder, nothing unavailable; a dynamic request gets the DLL folder
+    mt = tmp_path / "MT"
+    mt.mkdir()
+    for l in ["libssl_static.lib", "libcrypto_static.lib"]:
+        (mt / l).write_bytes(b"x")
+    (tmp_path / "bin").mkdir()
+    result = {"return": 0, "features": {"paths": {"lib": str(tmp_path / "MD"), "dynamic_lib": str(tmp_path / "bin")}, "static_unavailable": "old"}}
+    assert tool.finish_dynamic_result(ctx, result, {"with": {}})["return"] == 0
+    assert result["features"]["paths"]["libs_static"] == [str(mt)] and "static_unavailable" not in result["features"]
+    assert result["features"]["paths"]["found_dynamic_lib_paths"] == [str(tmp_path / "bin")]
+    result = {"return": 0, "features": {"paths": {"lib": str(tmp_path / "MD"), "dynamic_lib": str(tmp_path / "bin")}}}
+    assert tool.finish_dynamic_result(ctx, result, {"with": {"static": True}})["return"] == 0
+    assert "found_dynamic_lib_paths" not in result["features"]["paths"]
+
+
+# task/setup-compile: a library file by its path, and a library that cannot serve a static build
+
+def setup_compile_task():
+    path = REPO_ROOT / "task/setup-compile/api_v1.py"
+    src = path.read_text(encoding = "utf-8").replace("from task_c36be4b9314a45e0.api.ctask import InitCTask", "class InitCTask: pass")
+    ns = {"__name__": "setup_compile", "__file__": str(path)}
+    exec(compile(src, str(path), "exec"), ns)
+    task = object.__new__(ns["CTask"])
+
+    class CM:
+        @staticmethod
+        def q(p):
+            return f'"{p}"'
+
+        @staticmethod
+        def error(text):
+            return {"return": 1, "error": text}
+
+    task.cm = CM()
+    return ns, task
+
+
+def compile_ctx(tmp_path, openssl_features):
+    gcc = {"qpath": "gcc", "features": {"flags": {"static_build": "-static", "lib_path": "-L", "lib_prefix": "-l", "lib_prefix2": "",
+                                                  "exe_file": "-o ", "include_path": "-I"}, "vars": {"file_ext_exe": ""}}}
+    return {"control": {}, "tasks": {"global": {"host": {"os": {"uname": "linux"}}, "compiler-c": gcc,
+                                                "lib-openssl": {"features": openssl_features}}, "local": {}}}
+
+
+def test_setup_compile_links_library_files(tmp_path):
+    ns, task = setup_compile_task()
+    archive = tmp_path / "libssl.a"
+    archive.write_bytes(b"!<arch>\n")
+    assert ns["is_library_file"](str(archive))
+    assert not ns["is_library_file"]("ssl") and not ns["is_library_file"](str(tmp_path / "missing.a")) and not ns["is_library_file"]("lib/libssl.a")
+    features = {"paths": {"libs": [str(tmp_path)]}, "lib_names": ["ssl", "crypto"], "lib_names_static": [str(archive), "m"]}
+    run = lambda with_: task.run(compile_ctx(tmp_path, features), lang = "c", src_path = str(tmp_path), src_file_names = ["a.c"],
+                                 target_path = str(tmp_path / "build"), **{"with": with_})
+    r = run({"static": True})
+    cmd = r["add_to_local"]["compile_cmds"][0]
+    assert r["return"] == 0 and "-static" in cmd and "-lssl" not in cmd
+    assert f'"{archive}"' in cmd and cmd.index(str(archive)) < cmd.index('-l"m"')          # the archive as it is, then -lm
+    r = run({})
+    cmd = r["add_to_local"]["compile_cmds"][0]
+    assert r["return"] == 0 and '-l"ssl" -l"crypto"' in cmd and str(archive) not in cmd
+
+
+def test_setup_compile_stops_a_static_build_the_library_cannot_serve(tmp_path):
+    ns, task = setup_compile_task()
+    features = {"paths": {"libs": [str(tmp_path)]}, "lib_names": ["ssl", "crypto"], "static_unavailable": "a static build needs libssl.a and libcrypto.a ..."}
+    run = lambda with_: task.run(compile_ctx(tmp_path, features), lang = "c", src_path = str(tmp_path), src_file_names = ["a.c"],
+                                 target_path = str(tmp_path / "build"), **{"with": with_})
+    r = run({"static": True})
+    assert r["return"] == 1 and r["error"].startswith("lib-openssl: a static build needs libssl.a")
+    assert run({})["return"] == 0                                                 # a dynamic build is not concerned
 
 
 def test_static_openmp_note():
@@ -341,5 +451,5 @@ def test_static_openmp_note():
 
 
 def test_lib_readmes_mention_static():
-    assert "## Static links on macOS" in (REPO_ROOT / "tool/lib-openssl/README.md").read_text(encoding = "utf-8")
+    assert "## Static builds" in (REPO_ROOT / "tool/lib-openssl/README.md").read_text(encoding = "utf-8")
     assert "libomp.a" in (REPO_ROOT / "tool/lib-openmp/README.md").read_text(encoding = "utf-8")

@@ -154,7 +154,8 @@ def test_detect(common, specs, tmp_path):
     found = r["found_paths_with_versions"][str(include / "zlib.h")]
     assert found["output"] == "1.3.2"
     f = found["features"]
-    assert f["lib_names"] == f["lib_names_static"] == ["z"]
+    assert f["lib_names"] == ["z"]
+    assert f["lib_names_static"] == [str(lib / "libz.a")] == [f["static_lib"]]        # a static build gets the archive by its path
     assert f["paths"]["includes"] == [str(include)] and f["paths"]["libs_static"] == [str(lib)]
 
 
@@ -164,14 +165,38 @@ UBUNTU_26_04 = {"deflate", "inflateInit_", "ZSTD_compress", "ZSTD_freeCCtx", "je
                 "OPENSSL_cleanse", "memcpy"}
 
 
+ARCHIVES = ["/usr/lib/x86_64-linux-gnu/libssl.a", "/usr/lib/x86_64-linux-gnu/libcrypto.a"]
+
+
 def test_static_deps_and_names(openssl):
+    """The archives by their paths, each needed library by the path of its archive with what it
+    needs, then the system libraries."""
     deps = openssl["static_deps"](UBUNTU_26_04)
     assert [d["lib"] for d in deps] == ["jitterentropy", "z", "zstd"]
-    assert openssl["static_lib_names"](deps) == ["ssl", "crypto", "jitterentropy", "pthread", "z", "zstd", "m"]
-    # Ubuntu 24.04: libcrypto.a needs none of them
+    with_paths = [dict(d, path = f"/a/lib{d['lib']}.a") for d in deps]
+    assert openssl["static_lib_names"](ARCHIVES, with_paths) == \
+        ARCHIVES + ["/a/libjitterentropy.a", "pthread", "/a/libz.a", "/a/libzstd.a", "dl", "m"]
+    # Ubuntu 24.04, Debian: libcrypto.a needs none of them
     assert openssl["static_deps"]({"OPENSSL_cleanse", "memcpy", "pthread_once"}) == []
-    assert openssl["static_lib_names"]([]) == ["ssl", "crypto", "m"]
+    assert openssl["static_lib_names"](ARCHIVES, []) == ARCHIVES + ["pthread", "dl", "m"]
+    assert openssl["static_lib_names"](ARCHIVES, [], "darwin") == ARCHIVES + ["m"]           # libSystem has the rest
     assert [d["lib"] for d in openssl["static_deps"]({"compress2"})] == ["z"]
+    for value, expected in [(None, False), ("", False), (False, False), ("False", False), ("no", False),
+                            (True, True), ("True", True), ("yes", True), (1, True)]:
+        assert openssl["is_true"](value) is expected
+
+
+def test_no_static_archives_messages(openssl):
+    message = openssl["no_static_archives"]
+    linux = message("linux", "fedora", "", "/usr/lib64")
+    assert linux.startswith("a static build needs OpenSSL's static archives libssl.a and libcrypto.a, and the OpenSSL found (/usr/lib64) has none:")
+    assert "this system (fedora): Fedora packages no static OpenSSL" in linux and "cx tool setup lib-openssl --tool_path=" in linux
+    assert "this system (rocky): RHEL-like systems package no static OpenSSL" in message("linux", "rocky", "rhel centos fedora")   # by ID_LIKE
+    assert "this system (ubuntu): sudo apt-get install libssl-dev" in message("linux", "ubuntu", "debian")
+    assert "this system" not in message("linux", "void", "")                                                      # unknown: the general lines
+    assert "brew install openssl@3" in message("darwin") and "libssl.a" in message("darwin")
+    windows = message("windows", where = "C:\\OpenSSL\\lib\\VC\\x64")
+    assert "libssl_static.lib and libcrypto_static.lib" in windows and "ShiningLight.OpenSSL.Dev" in windows and "(C:\\OpenSSL\\lib\\VC\\x64)" in windows
 
 
 def test_static_dep_tools(openssl):
@@ -216,46 +241,75 @@ class FakeCM:
         self.setups = []
 
     def access(self, p):
-        self.setups.append(p["name"].split(",")[0])
-        return {"return": 0}
+        name = p["name"].split(",")[0]
+        self.setups.append(name)
+        return {"return": 0, "features": {"static_lib": f"/cache/{name}/install/lib/lib{TOOLS[name]}.a"}}
 
     @staticmethod
     def catch_error(r, fail16 = False):
         return r["return"] > 0
 
+    @staticmethod
+    def error(text):
+        return {"return": 1, "error": text}
+
+
+def archives_in(folder):
+    paths = [str(folder / a) for a in ["libssl.a", "libcrypto.a"]]
+    for p in paths:
+        pathlib.Path(p).write_bytes(b"!<arch>\n")
+    return paths
+
 
 @pytest.mark.parametrize("mode, built", [(None, ["lib-jitterentropy"]),
                                          ("cmeta", ["lib-jitterentropy", "lib-zlib", "lib-zstd"])])
 def test_static_link_deps(openssl, tmp_path, monkeypatch, mode, built):
-    """The system has libz.a and libzstd.a, not libjitterentropy.a (Ubuntu 26.04 with zlib1g-dev and libzstd-dev)."""
-    for a in ["libssl.a", "libcrypto.a"]:
-        (tmp_path / a).write_bytes(b"!<arch>\n")
-    monkeypatch.setitem(openssl, "undefined_symbols", lambda nm, archives: UBUNTU_26_04)
+    """The system has libz.a and libzstd.a, not libjitterentropy.a (Ubuntu 26.04 with zlib1g-dev and
+    libzstd-dev): each needed library by the path of its archive, the system's or the tool's."""
+    archives = archives_in(tmp_path)
+    monkeypatch.setitem(openssl, "undefined_symbols", lambda nm, archives, darwin = False: UBUNTU_26_04)
     monkeypatch.setitem(openssl, "find_static_lib",
                         lambda lib, dirs, compiler = None: f"/usr/lib/lib{lib}.a" if lib in ("z", "zstd") else None)
     monkeypatch.setattr(openssl["shutil"], "which", lambda name: "/usr/bin/nm" if name == "nm" else None)
     tool = object.__new__(openssl["CTool"])
     tool.cm = FakeCM()
-    features = {"paths": {"libs": [str(tmp_path)]}, "lib_names_static": ["ssl", "crypto", "z", "m", "zstd"]}
+    features = {"paths": {"libs": [str(tmp_path)]}}
     ctx = {"control": {}, "tasks": {"global": {"compiler-c": {"path": "gcc"}}}}
-    r = tool.static_link_deps(ctx, features, {"with": {"static": True, "static_deps": mode}})
+    r = tool.static_link_deps(ctx, features, {"with": {"static": True, "static_deps": mode}}, archives, "linux")
     assert r["return"] == 0 and tool.cm.setups == built
-    assert features["lib_names_static"] == ["ssl", "crypto", "jitterentropy", "pthread", "z", "zstd", "m"]
+    jitter = "/cache/lib-jitterentropy/install/lib/libjitterentropy.a"
+    z, zstd = ("/cache/lib-zlib/install/lib/libz.a", "/cache/lib-zstd/install/lib/libzstd.a") if mode == "cmeta" else ("/usr/lib/libz.a", "/usr/lib/libzstd.a")
+    assert features["lib_names_static"] == archives + [jitter, "pthread", z, zstd, "dl", "m"]
 
 
-def test_static_link_deps_unchanged(openssl, tmp_path, monkeypatch):
-    """Without nm, or without static archives of OpenSSL, the libraries stay as they were."""
+def test_static_libraries_without_archives_or_nm(openssl, tmp_path, monkeypatch):
+    """Without the archives a request with with.static fails with what gives them on this system
+    and a request without it records the reason; without nm the archives are linked with the
+    system's static archives of what they may need."""
     tool = object.__new__(openssl["CTool"])
     tool.cm = FakeCM()
-    ctx = {"control": {}, "tasks": {"global": {}}}
-    original = ["ssl", "crypto", "z", "m", "zstd"]
-    features = {"paths": {"libs": [str(tmp_path)]}, "lib_names_static": list(original)}
-    assert tool.static_link_deps(ctx, features, {})["return"] == 0 and features["lib_names_static"] == original
-    for a in ["libssl.a", "libcrypto.a"]:
-        (tmp_path / a).write_bytes(b"!<arch>\n")
+    ctx = {"control": {}, "tasks": {"global": {"host": {"os": {"uname": "linux"}, "os_extra": {"id": "fedora", "id_like": ""}}}}}
+    features = {"paths": {"libs": [str(tmp_path)]}, "lib_names_static": ["ssl", "crypto"]}
+    r = tool.static_libraries(ctx, features, {"with": {"static": True}}, True)
+    assert r["return"] == 1 and r["error"].startswith("lib-openssl: a static build needs")
+    assert "this system (fedora): Fedora packages no static OpenSSL" in r["error"] and f"({tmp_path})" in r["error"]
+    assert tool.static_libraries(ctx, features, {}, False)["return"] == 0
+    assert "libssl.a" in features["static_unavailable"] and "lib_names_static" not in features
+    archives = archives_in(tmp_path)
     monkeypatch.setattr(openssl["shutil"], "which", lambda name: None)
-    assert tool.static_link_deps(ctx, features, {})["return"] == 0 and features["lib_names_static"] == original
+    monkeypatch.setitem(openssl, "find_static_lib", lambda lib, dirs, compiler = None: "/usr/lib/libz.a" if lib == "z" else None)
+    assert tool.static_libraries(ctx, features, {"with": {"static": True}}, True)["return"] == 0
+    assert features["lib_names_static"] == archives + ["/usr/lib/libz.a", "pthread", "dl", "m"] and "static_unavailable" not in features
+    assert tool.static_libraries(ctx, features, {}, False)["return"] == 0                 # a dynamic request: the same, no tool
+    assert features["lib_names_static"] == archives + ["/usr/lib/libz.a", "pthread", "dl", "m"]
     assert tool.cm.setups == []
+    # a tool that reports no archive
+    tool.cm.access = lambda p: {"return": 0, "features": {}}
+    monkeypatch.setattr(openssl["shutil"], "which", lambda name: "/usr/bin/nm" if name == "nm" else None)
+    monkeypatch.setitem(openssl, "undefined_symbols", lambda nm, archives, darwin = False: {"jent_version"})
+    monkeypatch.setitem(openssl, "find_static_lib", lambda lib, dirs, compiler = None: None)
+    r = tool.static_libraries(ctx, features, {"with": {"static": True}}, True)
+    assert r["return"] == 1 and "lib-jitterentropy reported no static archive" in r["error"]
 
 
 def test_programs_pass_static_on_linux():

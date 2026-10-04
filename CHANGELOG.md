@@ -62,12 +62,22 @@ All notable changes to cMeta AOps are documented here, newest first.
   `--skip_size_check` as for tools); the size of the build folder is recorded after a successful
   compile (`_impact.disk_gb`). Rules for `build-pytorch`, `build-vllm`, `build-llama-cpp`,
   `build-executorch-android`, `build-torch-cpp`, `build-pytorchvision`.
-- **Static builds on macOS embed the static OpenSSL** (`tool/lib-openssl`): for `with.static`, Homebrew's
-  `libssl.a` and `libcrypto.a` are copied into a folder of the tool's cache entry, which replaces the lib
-  folder (Apple's linker takes a dylib over an archive in the same folder); what they need is found as on
-  Linux (`nm -u`, macOS format). A static build loads `libSystem` only: on macOS "static" means static
-  third-party libraries with the dynamic system library (README). `test-nmm-c-cpu`, `test-nmm-cpp-cpu`
-  and `test-nmm-nvcc-cuda` pass `with.static` to `lib-openssl` on macOS as on Linux.
+- **A static build links OpenSSL's static archives, or stops** (`tool/lib-openssl`, `task/setup-compile`):
+  on Linux and macOS `libssl.a` and `libcrypto.a` go to the linker by their paths - named, a link
+  without `-static` (nvcc's host link of a CUDA program) took `libcrypto.so` of the same folder, so a
+  "static" CUDA binary loaded the shared OpenSSL; the libraries they need come by the paths of their
+  archives too (the system's, or the one `lib-zlib`, `lib-zstd` or `lib-jitterentropy` builds). Without
+  the archives (Fedora's `openssl-devel`, Arch Linux, macOS without Homebrew's OpenSSL) a request with
+  `with.static` fails at the setup, and any static build stops in `setup-compile`
+  (`features.static_unavailable`), with what gives them on this system (`libssl-dev` on Debian and
+  Ubuntu, `openssl-libs-static` on Alpine, Homebrew's `openssl@3`, the OpenSSL developer package on
+  Windows; Fedora, RHEL-likes, Arch Linux and openSUSE package none: how to build and register one):
+  a static build never falls back to a shared library. `setup-compile` passes a library given
+  as the path of a file to the linker as it is, so any lib tool can hand archives that way (the `lib-*`
+  tools of `common_static_lib.py` do). On macOS "static" means static third-party libraries with the
+  dynamic system library, `libSystem` (README); the copies of Homebrew's archives in a `static` folder
+  of the cache entry are no longer made. `test-nmm-c-cpu`, `test-nmm-cpp-cpu` and `test-nmm-nvcc-cuda`
+  pass `with.static` to `lib-openssl` on macOS as on Linux.
 - **OpenMP runtime for clang on every OS** (`tool/lib-openmp`): on Windows the folder of clang's
   `libomp.dll` goes on the program's run-time path (before, a clang build with OpenMP started only when
   Visual Studio's own LLVM folder happened to be on the path); a distribution's `libomp-dev`
