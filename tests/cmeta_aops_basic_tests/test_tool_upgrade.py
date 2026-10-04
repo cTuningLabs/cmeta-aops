@@ -224,18 +224,21 @@ def test_parse_candidate_versions(up):
     assert up.parse_candidate_versions(apk, r"^\s+(\d\S*):\s*$") == ["2.45.2-r0"]
 
 
+windows_only = pytest.mark.skipif(os.name != "nt", reason = "a Windows path is an ordinary name elsewhere")
+
+
 @pytest.mark.parametrize("path, channel", [
-    (r"C:\Users\x\AppData\Local\Microsoft\WinGet\Links\uv.exe", "winget"),
+    pytest.param(r"C:\Users\x\AppData\Local\Microsoft\WinGet\Links\uv.exe", "winget", marks = windows_only),
     ("/opt/homebrew/bin/gh", "brew"),
     ("/home/linuxbrew/.linuxbrew/bin/gh", "brew"),
     ("/usr/bin/git", "sudo"),
     ("/bin/tar", "sudo"),
     ("/home/u/.local/bin/claude", "script"),
     ("/home/u/.opencode/bin/opencode", "script"),
-    (r"D:\x\repos\local\cache\task--setup--jq--3bd63d577f9c4bad\content\jq.exe", "release"),
+    pytest.param(r"D:\x\repos\local\cache\task--setup--jq--3bd63d577f9c4bad\content\jq.exe", "release", marks = windows_only),
     ("/home/u/.nvm/versions/node/v22.0.0/lib/node_modules/openclaw/bin/openclaw.mjs", "npm"),
     ("/home/u/project/venv/bin/yamllint", "pip"),
-    (r"C:\Program Files\Git\bin\git.exe", None),
+    pytest.param(r"C:\Program Files\Git\bin\git.exe", None, marks = windows_only),
     ("", None),
     (None, None),
 ])

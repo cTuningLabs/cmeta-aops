@@ -3,6 +3,10 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **Tests:** the hermetic suite passes on Linux as on Windows (the Windows-path cases of
+  `test_tool_upgrade` run on Windows only; the Intel NPU install tests pin the glibc version they
+  assume). `task/compiler` accepts `version` (its `run()` read it, `init()` rejected it: a static C++
+  build that had to build a static dependency failed with `unknown input parameter "version"`).
 - **The tool search never recurses from a filesystem root** (`category/tool/api/v1.py`): a search
   pattern with `**` whose fixed part is `/`, a drive root or a pseudo file system (`/proc`, `/sys`,
   `/dev`, `/run`) is skipped (said in verbose mode). On Debian, `/usr/bin/clang` is a link into

@@ -164,6 +164,7 @@ def test_install_unpacks_the_driver_without_root(npu, server, tmp_path, monkeypa
     entry = tmp_path / "cache-entry"
     entry.mkdir()
     monkeypatch.chdir(entry)
+    monkeypatch.setattr(npu["platform"], "libc_ver", lambda *a, **k: ("glibc", "2.39"))     # not the host's
     t = npu["CTool"].__new__(npu["CTool"])
     t.cm = FakeCM(server)
 
@@ -190,6 +191,7 @@ def test_install_unpacks_the_driver_without_root(npu, server, tmp_path, monkeypa
 
 def test_install_checks_the_sha256(npu, server, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(npu["platform"], "libc_ver", lambda *a, **k: ("glibc", "2.39"))     # not the host's
     monkeypatch.setitem(npu["TARBALLS"], "24.04", (npu["TARBALLS"]["24.04"][0], "0" * 64))
     t = npu["CTool"].__new__(npu["CTool"])
     t.cm = FakeCM(server)
