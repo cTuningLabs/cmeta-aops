@@ -319,3 +319,80 @@ def test_program_options():
         assert e["_update"].replace(" ", "") == "{{params.setup_torch_cpp_task|${}}}"
     [run] = list(find(d, lambda n: "global_keys_with_dynamic_libs" in n))
     assert run["target_exe"].startswith("{{local.target_file_name|program}}")
+
+
+# The install prefix of a source build: apart from the build tree, handed to the detection
+
+def build_torch_cpp():
+    return load("program/build-torch-cpp/api_v1.py",
+                {"from program_22788f3c30d04e6d.api.cprogram import InitCProgram": "class InitCProgram: pass"})
+
+
+def test_install_prefix_of(tmp_path):
+    install_prefix_of = build_torch_cpp()["install_prefix_of"]
+    build = str(tmp_path / "build")
+    assert install_prefix_of(build) == os.path.join(build, "install")
+    assert install_prefix_of(build, {}) == os.path.join(build, "install")
+    # A prefix the build was given (quoted on the command line) wins
+    assert install_prefix_of(build, {"CMAKE_INSTALL_PREFIX": '"/opt/lib torch"'}) == "/opt/lib torch"
+    assert install_prefix_of(build, {"CMAKE_INSTALL_PREFIX": r"D:\x\prefix"}) == r"D:\x\prefix"
+
+
+def test_customize_pytorch_installs_apart_from_the_build(tmp_path):
+    ns = build_torch_cpp()
+    prog = object.__new__(ns["CProgram"])
+    prog.cm = FakeCM()
+    build = tmp_path / "build"
+    ctx = {"tasks": {"local": {"target_path": str(build)},
+                     "run_control": {},
+                     "global": {"target": {"compute": ["cpu"]}, "host": {"os": {"uname": "linux"}},
+                                "ninja": {"qpath": "/n/ninja"}, "compiler-c": {"qpath": "/c/cc"},
+                                "compiler-cpp": {"qpath": "/c/c++", "features": {}},
+                                "python": {"qpath": "/v/.venv/bin/python", "path": "/v/.venv/bin/python"}}}}
+    assert prog.customize_pytorch(ctx, {}, params = {"compile": {}})["return"] == 0
+    local = ctx["tasks"]["local"]
+    install = os.path.join(str(build), "install")
+    assert local["install_prefix"] == install
+    assert f"-DCMAKE_INSTALL_PREFIX={install}" in local["cmake_d_vars"]
+    assert local["target_path_exe"] == os.path.join(install, "lib", "libtorch.so")
+    assert local["run_time_env"]["PYTHONPATH"].startswith(os.path.join(install, "lib", "python"))
+    # The build's own prefix is kept
+    ctx["tasks"]["local"] = {"target_path": str(build)}
+    assert prog.customize_pytorch(ctx, {}, params = {"compile": {"d": {"CMAKE_INSTALL_PREFIX": "/opt/torch"}}})["return"] == 0
+    assert ctx["tasks"]["local"]["install_prefix"] == "/opt/torch"
+    assert ctx["tasks"]["local"]["target_path_exe"] == os.path.join("/opt/torch", "lib", "libtorch.so")
+
+
+def test_customize_test_uses_the_install_prefix(tmp_path):
+    ns = build_torch_cpp()
+    prog = object.__new__(ns["CProgram"])
+    prog.cm = FakeCM()
+    build = tmp_path / "build"
+    torch_dir = build / "install" / "share" / "cmake" / "Torch"
+    torch_dir.mkdir(parents = True)
+    ctx = {"tasks": {"local": {"target_path": str(build)},
+                     "global": {"target": {"compute": ["cpu"]}, "host": {"os": {"uname": "linux"}},
+                                "ninja": {"path": "/n/ninja", "qpath": "/n/ninja"}}}}
+    assert prog.customize_test(ctx, {})["return"] == 0
+    local = ctx["tasks"]["local"]
+    assert f"-DTorch_DIR={torch_dir}" in local["test_cmake_d_vars"]
+    assert local["run_time_env"]["LD_LIBRARY_PATH"].startswith(os.path.join(str(build), "install", "lib"))
+    assert local["test_build_path"] == os.path.join(str(build), "test-build")
+
+
+@pytest.mark.parametrize("uname, library", [("linux", "libtorch.so"), ("darwin", "libtorch.dylib"), ("windows", "torch.dll")])
+def test_tool_build_hands_the_installed_library_to_detection(torch_cpp, tmp_path, monkeypatch, uname, library):
+    tool = torch_cpp_tool(torch_cpp)
+    tool.cdesc = {"build_local": {"target_sub_dir": "build"}}
+    monkeypatch.chdir(tmp_path)
+    ctx = {"tasks": {"global": {"host": {"os": {"uname": uname}}}}}
+    r = tool.build(ctx, {})
+    assert r["return"] == 1 and "did not install" in r["error"]
+    # The library of the build tree does not count: only the installed one
+    (tmp_path / "build" / "lib").mkdir(parents = True)
+    (tmp_path / "build" / "lib" / library).write_bytes(b"")
+    assert tool.build(ctx, {})["return"] == 1
+    (tmp_path / "build" / "install" / "lib").mkdir(parents = True)
+    (tmp_path / "build" / "install" / "lib" / library).write_bytes(b"")
+    r = tool.build(ctx, {})
+    assert r["return"] == 0 and r["found_path"] == str(tmp_path / "build" / "install" / "lib" / library)

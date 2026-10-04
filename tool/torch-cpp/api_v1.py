@@ -78,6 +78,29 @@ class CTool(InitCTool):
 
 
     ############################################################
+    def build(self,
+              ctx: dict,
+              params: dict,
+    ):
+        """
+        After build_uses (program/build-torch-cpp: configure, build, cmake --install), the library
+        that the install put into <entry>/<build sub-dir>/install/lib, as the path to detect. Without
+        it the detection would search the whole build sub-dir and find the library of the build tree
+        too (lib/ of the build, or an older install); the build tree is never the install prefix.
+        """
+        uname = ctx['tasks']['global']['host']['os']['uname']
+        library = {'windows': 'torch.dll', 'darwin': 'libtorch.dylib'}.get(uname, 'libtorch.so')
+        target_sub_dir = (getattr(self, 'cdesc', None) or {}).get('build_local', {}).get('target_sub_dir', 'build')
+        target_sub_dir = str(target_sub_dir).replace('{{os_sep}}', os.sep)
+        install = os.path.join(os.getcwd(), target_sub_dir, 'install')
+        path = os.path.join(install, 'lib', library)
+        if not os.path.isfile(path):
+            return {'return': 1, 'error': f'the build of LibTorch did not install {path} (see the build log in '
+                                          f'{os.path.join(os.getcwd(), target_sub_dir)})'}
+        return {'return': 0, 'found_path': path}
+
+
+    ############################################################
     def check_features(self,
                        ctx: dict,
                        paths: list,

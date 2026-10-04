@@ -25,6 +25,12 @@ All notable changes to cMeta AOps are documented here, newest first.
   deadline of M s (--compile_timeout) passed", one that would start after it is not started. Before,
   only the program's own compile command was limited. The deadline ends with the compile phase, so
   `--timeout` alone governs the run phase; without the option nothing is limited.
+- **LibTorch source build:** `cmake --install` installs into `<entry>/build/install`, apart from the
+  build tree (`program/build-torch-cpp`); before, the prefix was the build tree itself and CMake
+  deleted `protoc` while installing it onto itself (its RPATH check), so the install never finished
+  on Linux. `tool/torch-cpp` hands the installed library to the detection. The test programs of
+  `build-torch-cpp` and `test-nmm-torch-cpp` take the C++ standard LibTorch's CMake config asks for
+  (17 up to 2.8, 20 from 2.9, whose headers use `requires`); `--cxx_standard` overrides it.
 - **A program's Python venv stays its own** (`category/task/api/v2.py`, `task/setup`, `tool/python`):
   - **A request without a venv of its own** (no `with.venv_path`, `with.venv_here`, `tool_path`,
     `with.here` or `--path`) no longer reuses the venv that a program or a tool made inside its own

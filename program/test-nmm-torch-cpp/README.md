@@ -24,7 +24,7 @@ ways; `--setup_torch_cpp.<option>` passes options to it.
 | Time to set up | a long build (hours) | a download |
 | Versions | any release tag | the releases with pinned archives (2.7.1) |
 | Options | static builds, custom CMake options, compilers | the CPU build or a CUDA build; macOS: CPU and MPS |
-| Cache entries | `task--setup--torch-cpp--*` | `task--setup--torch-cpp-prebuilt--*`, one per build |
+| Cache entries | `task--setup--torch-cpp--*`: the build tree in `build/`, the installed LibTorch (`lib`, `include`, `share/cmake/Torch`) in `build/install/` | `task--setup--torch-cpp-prebuilt--*`, one per build |
 
 ```bash
 # PyTorch's prebuilt LibTorch
@@ -73,3 +73,6 @@ then, `--setup_torch_cpp.build=prebuilt` chooses them.
   LibTorch `lib` folder is on the library path of the run.
 - **MPS:** for `metal`, `USE_MPS` is defined for the program, which then selects the `mps` device
   when it is available.
+- **C++ standard:** the one LibTorch's CMake config sets on its `torch` target (17 for the releases
+  up to 2.8, 20 from 2.9 on, whose headers use `requires` clauses), else 17; `--cxx_standard=<n>`
+  overrides it.

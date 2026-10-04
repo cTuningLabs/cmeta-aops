@@ -81,6 +81,11 @@ class CProgram(InitCProgram):
             if _key in compute:
                 d[_define] = 'ON'
 
+        # --cxx_standard=<n>: the C++ standard of the program (default: the one LibTorch's CMake
+        # config asks for, 17 or 20)
+        if params.get('cxx_standard'):
+            d['CMETA_CXX_STANDARD'] = str(params['cxx_standard'])
+
         # A CUDA build of libtorch enables CUDA in its CMake config: the CUDA compiler of cMeta, and
         # NVTX3 from the CUDA toolkit (without USE_SYSTEM_NVTX it looks in its own source tree, then
         # for nvToolsExt, which newer CUDA toolkits no longer have)

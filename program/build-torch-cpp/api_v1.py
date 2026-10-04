@@ -17,6 +17,18 @@ _SEP = {
 }
 
 
+def install_prefix_of(target_path, d = None):
+    """
+    Where cmake --install puts LibTorch: -D CMAKE_INSTALL_PREFIX if the build gives one, else
+    <target_path>/install. The build tree itself is never the prefix: installing a binary onto itself
+    fails (CMake's file(RPATH_CHECK) deletes it before file(INSTALL) finds it, e.g. protoc).
+    """
+    prefix = (d or {}).get('CMAKE_INSTALL_PREFIX')
+    if prefix:
+        return str(prefix).strip().strip('"').strip("'")
+    return os.path.join(target_path, 'install')
+
+
 def is_strict(strict_compute):
     """strict_compute is on unless it is given as False (False, "False", "no", "0", "off")."""
     if strict_compute is None or strict_compute == '':
@@ -180,10 +192,13 @@ class CProgram(InitCProgram):
                 d.setdefault('INTEL_OMP_DIR', self.cm.q(_mkl_dir))
 
         # -----------------------------------------------------------------------
-        # Install prefix: libtorch + Python bindings land under target_path
+        # Install prefix: libtorch + Python bindings land in <target_path>/install, apart from the
+        # build tree (install_prefix_of)
         target_path = _local['target_path']
+        install_prefix = install_prefix_of(target_path, d)
+        _local['install_prefix'] = install_prefix
         if 'CMAKE_INSTALL_PREFIX' not in d:
-            d['CMAKE_INSTALL_PREFIX'] = self.cm.q(target_path)
+            d['CMAKE_INSTALL_PREFIX'] = self.cm.q(install_prefix)
 
         # -----------------------------------------------------------------------
         # Shared vs static
@@ -306,7 +321,7 @@ class CProgram(InitCProgram):
         else:
             libtorch_name = 'torch.dll'
 
-        target_path_lib = os.path.join(target_path, 'lib')
+        target_path_lib = os.path.join(install_prefix, 'lib')
         target_path_libtorch = os.path.join(target_path_lib, libtorch_name)
 
         _local['target_path_lib'] = target_path_lib
@@ -319,10 +334,10 @@ class CProgram(InitCProgram):
         #   Linux   : {prefix}/lib/pythonX.Y/site-packages/torch
         #   macOS   : {prefix}/lib/pythonX.Y/site-packages/torch
         if uname == 'windows':
-            torch_site_packages = os.path.join(target_path, 'Lib', 'site-packages')
+            torch_site_packages = os.path.join(install_prefix, 'Lib', 'site-packages')
         else:
             python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-            torch_site_packages = os.path.join(target_path, 'lib', f'python{python_version}', 'site-packages')
+            torch_site_packages = os.path.join(install_prefix, 'lib', f'python{python_version}', 'site-packages')
         _local.setdefault('run_time_env', {})['PYTHONPATH'] = torch_site_packages
 
         # -----------------------------------------------------------------------
@@ -349,11 +364,14 @@ class CProgram(InitCProgram):
         uname   = _global['host']['os']['uname']
         compute = _global['target']['compute']
 
-        # target_path is the cmake --install prefix set during the compile phase
+        # The compile phase installed LibTorch into install_prefix_of(target_path) (the same -D
+        # CMAKE_INSTALL_PREFIX, if the build was given one)
         target_path = _local['target_path']
+        _compile = params.get('params', {}).get('compile') or params.get('compile') or {}
+        install_prefix = _local.get('install_prefix') or install_prefix_of(target_path, _compile.get('d') or {})
 
         # -----------------------------------------------------------------------
-        # Test build directory (inside the install tree, ignored by libtorch cmake)
+        # Test build directory (in the build folder, apart from the install tree)
         test_build_path = os.path.join(target_path, 'test-build')
         os.makedirs(test_build_path, exist_ok=True)
         _local['test_build_path'] = test_build_path
@@ -406,18 +424,16 @@ class CProgram(InitCProgram):
                 else:
                     d['CMAKE_EXE_LINKER_FLAGS'] = f'-L{_llvm_lib} -Wl,-rpath,{_llvm_lib} -lc++ -lc++abi'
 
-        # Prefer the *installed* TorchConfig.cmake (share/cmake/Torch/ or lib/cmake/Torch/)
-        # over the build-tree TorchConfig.cmake at the prefix root.  cmake's prefix search
-        # includes <prefix>/ so it would otherwise pick up the build-tree version first;
-        # that file has hardcoded build paths (Caffe2Targets.cmake, public/utils.cmake) that
-        # are absent after install.  Setting Torch_DIR bypasses the ambiguous root search.
-        _torch_cmake = os.path.join(target_path, 'share', 'cmake', 'Torch')
+        # The *installed* TorchConfig.cmake (share/cmake/Torch/ or lib/cmake/Torch/): Torch_DIR
+        # points at it, so the TorchConfig.cmake of the build tree (hardcoded build paths) is never
+        # taken
+        _torch_cmake = os.path.join(install_prefix, 'share', 'cmake', 'Torch')
         if not os.path.isdir(_torch_cmake):
-            _torch_cmake = os.path.join(target_path, 'lib', 'cmake', 'Torch')
+            _torch_cmake = os.path.join(install_prefix, 'lib', 'cmake', 'Torch')
         if os.path.isdir(_torch_cmake):
             d['Torch_DIR'] = _torch_cmake
         else:
-            d['CMAKE_PREFIX_PATH'] = target_path
+            d['CMAKE_PREFIX_PATH'] = install_prefix
 
         # Propagate compute backend flags so #ifdef USE_MPS / USE_ROCM / USE_CUDA
         # guards in program.cpp compile the right detection code.
@@ -431,6 +447,12 @@ class CProgram(InitCProgram):
             if _key in compute:
                 d[_define] = 'ON'
 
+        # --cxx_standard=<n>: the C++ standard of the test program (default: the one LibTorch's
+        # CMake config asks for, 17 or 20)
+        _cxx_standard = (params.get('params') or {}).get('cxx_standard') or params.get('cxx_standard')
+        if _cxx_standard:
+            d['CMETA_CXX_STANDARD'] = str(_cxx_standard)
+
         _local['test_cmake_d_vars'] = ' '.join(
             f'-D{k}={self.cm.q(str(v))}' for k, v in d.items()
         )
@@ -443,7 +465,7 @@ class CProgram(InitCProgram):
         # -----------------------------------------------------------------------
         # Add libtorch lib dir to PATH / LD_LIBRARY_PATH / DYLD_LIBRARY_PATH
         # so the test binary can load shared libraries at runtime.
-        lib_dir = os.path.join(target_path, 'lib')
+        lib_dir = os.path.join(install_prefix, 'lib')
         sep = _SEP.get(uname, ':')
         rte = _local.setdefault('run_time_env', {})
 
