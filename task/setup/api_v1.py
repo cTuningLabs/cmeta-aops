@@ -414,6 +414,39 @@ class CTask(InitCTask):
         return result
 
     ############################################################
+    def filter_cache_artifacts(self,
+                               ctx,
+                               artifacts,
+                               tmp_artifacts,
+                               params,
+                               **extra,
+        ):
+        """
+        Called by the task engine with the cache entries that match the cache query (artifacts) and the
+        unfinished or broken ones (tmp_artifacts): the tool may drop entries that are not meant for this
+        request (filter_tool_cache_artifacts in its api_v1.py, e.g. tool/python). Without that function
+        every entry is kept.
+        """
+
+        r = self.read_tool(
+            ctx = ctx,
+            name = params.get('name'),
+            tool_tags = params.get('tool_tags'),
+            tool_api_ver = params.get('tool_api_ver'),
+            params = params,
+        )
+        if self.cm.catch_error(r, fail16=True):
+            r['return'] = 1
+            return r
+
+        tool_api_code = r['tool_api_code']
+
+        if hasattr(tool_api_code, 'filter_tool_cache_artifacts') and callable(getattr(tool_api_code, 'filter_tool_cache_artifacts')):
+            return tool_api_code.filter_tool_cache_artifacts(ctx, artifacts, tmp_artifacts, params, **extra)
+
+        return {'return':0}
+
+    ############################################################
     def run(self, ctx, **kwargs):
         """
         Setup a tool with possible install and build

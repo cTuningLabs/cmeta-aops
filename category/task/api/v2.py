@@ -802,6 +802,18 @@ class Category(InitCategory):
                 cache_artifacts = finished_cache_artifacts
 
             ###########################################################################################
+            # Let the task drop entries that match the cache query but are not meant for this request
+            # (task/setup asks the tool: a python request without a venv path of its own must not
+            # reuse the venv of a program). Tasks without this hook keep every entry.
+            if (cache_artifacts or tmp_cache_artifacts) and task_api_code is not None and \
+               hasattr(task_api_code, 'filter_cache_artifacts') and callable(getattr(task_api_code, 'filter_cache_artifacts')):
+                r = task_api_code.filter_cache_artifacts(ctx, cache_artifacts, tmp_cache_artifacts, uparams, path = path)
+                if self.cm.catch_error(r): return r
+
+                cache_artifacts = r.get('artifacts', cache_artifacts)
+                tmp_cache_artifacts = r.get('tmp_artifacts', tmp_cache_artifacts)
+
+            ###########################################################################################
             # Check if has cache_features
             if cache_features and len(cache_artifacts)>0:
                 # First try to find if there are matching ones

@@ -3,6 +3,23 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **A program's Python venv stays its own** (`category/task/api/v2.py`, `task/setup`, `tool/python`):
+  - **A request without a venv of its own** (no `with.venv_path`, `with.venv_here`, `tool_path`,
+    `with.here` or `--path`) no longer reuses the venv that a program or a tool made inside its own
+    cache entry (`venv_path` under `task--program--<name>/`). Before, such a venv matched too, and in
+    quiet mode its higher version often won, so it received the packages of unrelated tasks. The
+    rest is as before: detected Pythons (the venv cMeta runs from, an activated venv), venvs made in
+    their own cache entry (plain requests, `--version`) and venvs at places the user chose (`--path`,
+    `--use.venv.path`, `venv_here`) are shared by version. README with the rules.
+  - **A request with its own venv path** looks for a python only in that venv: an existing venv
+    there is reused, else it is made. Before, a venv found on `PATH` (an activated one, or the one
+    cMeta runs from) could be recorded as that request's venv, and in quiet mode an existing venv
+    at that path without a cache entry was wiped and made again.
+  - **Task engine:** a task can drop cache entries that match the cache query but are not meant
+    for the request (`filter_cache_artifacts`); `task/setup` passes it on to the tool
+    (`filter_tool_cache_artifacts`). Tasks and tools without it behave as before.
+  - **`task/venv`:** an error message used an undefined name; `qpath_to_python` held the activate
+    script.
 - **Static Linux links of OpenSSL** (`tool/lib-zlib`, `tool/lib-zstd`, `tool/lib-jitterentropy`,
   new; `category/tool/api/common_static_lib.py`; `tool/lib-openssl`):
   - **New tools:** zlib, Zstandard and the Jitter RNG as static libraries built from their pinned

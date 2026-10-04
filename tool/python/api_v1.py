@@ -9,6 +9,45 @@ import os
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 
+
+def same_path(path1, path2):
+    """Whether two paths name the same folder (letter case on Windows, links, separators)."""
+    def norm(p):
+        try:
+            p = os.path.realpath(p)
+        except (OSError, ValueError):
+            pass
+        return os.path.normcase(os.path.normpath(p))
+    return norm(path1) == norm(path2)
+
+
+def cache_entry_of(path):
+    """The cMeta cache entry (<repository>/cache/<entry>) that contains the path, or None."""
+    p = os.path.abspath(path)
+    while True:
+        parent = os.path.dirname(p)
+        if not parent or parent == p:
+            return None
+        if os.path.basename(parent).lower() == 'cache' and            any(os.path.isfile(os.path.join(os.path.dirname(parent), f)) for f in ('_cmr.yaml', '_cmr.json')):
+            return p
+        p = parent
+
+
+def shareable(artifact):
+    """
+    Whether a python request without a venv of its own may reuse this cache entry: yes for a python
+    detected on the system (no venv path recorded: the system python, an activated venv, the venv cMeta
+    runs from), a venv made in the entry itself (a plain request, or one with a version) and a venv at
+    a place the user chose (--path, --use.venv.path, venv_here); no for a venv inside another cache
+    entry, which belongs to the program or tool that made it there with its venv_path.
+    """
+    venv_path = artifact.get('cmeta', {}).get('params', {}).get('venv_path')
+    if not venv_path:
+        return True
+    entry = cache_entry_of(venv_path)
+    return entry is None or same_path(entry, artifact['path'])
+
+
 class CTool(InitCTool):
     """
     """
@@ -75,6 +114,11 @@ class CTool(InitCTool):
             _venv_path = os.path.abspath(_venv_path)
             params['venv_path'] = _venv_path
 
+            # Detect only the venv in venv_path: a venv found elsewhere (on PATH, activated, or the one
+            # cMeta runs from) is not the venv of this request, and was recorded under its venv_path
+            if not _here and not params.get('tool_path') and not params.get('paths'):
+                params['paths'] = [os.path.join(_venv_path, '.venv', 'Scripts' if os.name == 'nt' else 'bin')]
+
         if _venv_path or _venv_here:
             ctx_tasks = ctx.setdefault('tasks', {})
             ctx_tasks_use = ctx_tasks.setdefault('use', {})
@@ -111,6 +155,30 @@ class CTool(InitCTool):
                 return self.cm.error(f'python not found in "{cur_dir}"')
 
         return result
+
+    ############################################################
+    def filter_tool_cache_artifacts(self,
+                                    ctx: dict,
+                                    artifacts: list,
+                                    tmp_artifacts: list,
+                                    params: dict,
+                                    path: str = None,
+                                    **extra,
+    ):
+        """
+        A request that names no venv (venv_path, venv_here), no python (tool_path, here) and no path
+        reuses the entries that shareable() allows: detected pythons, venvs made in their own entry and
+        venvs at places the user chose; not the venv of a program or of another tool inside its cache
+        entry (made with venv_path). Such a venv matched before (its parameters contain the request's),
+        and in quiet mode the highest version won, often such a venv, so its packages got mixed with
+        others. Requests that name a venv, a python or a path match as before.
+        """
+        if params.get('venv_path') or params.get('tool_path') or path:
+            return {'return':0}
+
+        return {'return':0,
+                'artifacts': [a for a in artifacts if shareable(a)],
+                'tmp_artifacts': [a for a in tmp_artifacts if shareable(a)]}
 
     ############################################################
     def update_paths(self,
