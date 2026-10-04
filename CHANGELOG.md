@@ -30,6 +30,24 @@ All notable changes to cMeta AOps are documented here, newest first.
   so a run for it stops at once.
 - **`tool/openjdk`:** on musl Linux (Alpine) the default JDK is Temurin's `alpine-linux` build;
   before, the glibc build was downloaded and did not run there.
+- **LibTorch for C++ programs** (`tool/torch-cpp`, `program/build-torch-cpp`, `program/test-nmm-torch-cpp`;
+  `tool/torch-cpp-prebuilt`, new; `category/tool/api/common_libtorch.py`, new):
+  - **Prebuilt LibTorch:** `--with.build=prebuilt` (`--setup_torch_cpp.build=prebuilt` for
+    `test-nmm-torch-cpp`) uses PyTorch's official archive instead of a source build: 2.7.1 for Linux
+    x86_64 and Windows x64 (cpu, cu118, cu126, cu128), Windows ARM64 (cpu) and macOS arm64 (cpu, with
+    MPS), SHA-256 pinned. For CUDA the newest build with code for every GPU that the driver supports is
+    chosen; `--with.variant` picks one. `tool/torch-cpp-prebuilt` caches the archive; the setup of
+    `tool/torch-cpp` with it is not cached, so its source-build entries keep their cache identity.
+  - **Source builds enable only the target's backends by default:** CUDA, cuDNN, ROCm, MPS and XPU are
+    off unless the target asks for them; before, PyTorch's CMake enabled what it found (a CPU build on
+    a machine with CUDA tried to build CUDA). `--with.strict_compute=False` restores that. Existing
+    cache entries keep matching. On Linux, programs linked with LibTorch find LLVM's libomp.
+  - **`tool/torch-cpp`:** detects the LibTorch a build installed (its library, its version from the
+    headers).
+  - **`test-nmm-torch-cpp`:** compiles (`customize_compile` failed) and runs its program (the run step
+    had no command); the compile and run steps get the same `--setup_torch_cpp.*` options; `Torch_DIR`
+    is set; CUDA builds of LibTorch get `nvcc` and `USE_SYSTEM_NVTX`; on Windows the MSVC-built archive
+    is compiled with `clang-cl` when cMeta chose `clang++`. README with the options.
 - **An OpenSSH server run as the user** (`tool/openssh-server`, `task/run-openssh`, new):
   - **`cx task run run-openssh --keys=<public key file>`** starts sshd on a port of its own (2222)
     with key-only logins, as the user: no service, no administrator. `status` shows it, and `stop`

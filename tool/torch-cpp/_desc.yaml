@@ -5,9 +5,32 @@ storage_key: torch-cpp
 # Default to a recent stable release; override with params.with.ver
 default_version: '2.7.1'
 
+# LibTorch is built here (program/build-torch-cpp) or, with --with.build=prebuilt, taken from
+# PyTorch's prebuilt archives (tool/torch-cpp-prebuilt): a libtorch found in PATH is not used
+skip_detect: True
+
+# The library of a build or of the prebuilt archive; its version comes from its headers (api_v1.py)
+names:
+  - libtorch{{global.host.vars.file_ext_dlib}}
+  - torch.dll
+
+# --with.build=prebuilt: the library that tool/torch-cpp-prebuilt unpacked (see "uses")
+force_tool_path: '{{global.torch-cpp-prebuilt.path|}}'
+
 match_version:
   - regex: '^(\d+\.\d+[\.\d]*)'
     group: 1
+
+# --with.build=prebuilt (and --with.variant=cpu|cu118|cu126|cu128): PyTorch's prebuilt LibTorch
+# instead of a build; this setup is then not cached (api_v1.py, check_params)
+uses:
+  - task: setup,a2f9b61079ce4333
+    if: '"{{params.with.build|}}".strip().lower() == "prebuilt"'
+    name: torch-cpp-prebuilt,91e6b48f3ae5438c
+    version: "{{params.version|$None}}"
+    with:
+      compute: "{{params.with.compute|$None}}"
+      variant: "{{params.with.variant|$None}}"
 
 # Available releases: git tags of the form v2.7.1, v2.12.0, …
 cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/pytorch/pytorch'

@@ -21,12 +21,13 @@ class CProgram(InitCProgram):
     def customize_compile(self,
                           ctx: dict,
                           desc: dict = {},
-                          **params,
+                          **misc,
     ):
         _local  = ctx['tasks']['local']
         _global = ctx['tasks']['global']
 
         uname = _global['host']['os']['uname']
+        compute = _global.get('target', {}).get('compute', [])
 
         params = misc.get('params', {})
         _compile = params.get('compile')
@@ -54,11 +55,39 @@ class CProgram(InitCProgram):
             cxx = _global['compiler-cpp'].get('path') or _global['compiler-cpp']['qpath'].strip('"').strip("'")
             if uname == 'windows' and _global['compiler-cpp'].get('features', {}).get('id') == 'Intel':
                 cxx = d.get('CMAKE_C_COMPILER', cxx)
+            # PyTorch's prebuilt LibTorch for Windows is built with MSVC: its CMake config adds MSVC
+            # options (/EHsc, /bigobj) that the GNU-style clang++ rejects; clang-cl, next to it, takes
+            # them (same ABI)
+            if uname == 'windows' and torch_cpp.get('features', {}).get('build') == 'prebuilt' and \
+               os.path.basename(cxx).lower() in ('clang++.exe', 'clang.exe'):
+                clang_cl = os.path.join(os.path.dirname(cxx), 'clang-cl.exe')
+                if os.path.isfile(clang_cl):
+                    cxx = clang_cl
             d['CMAKE_CXX_COMPILER'] = cxx
 
-        # CMAKE_PREFIX_PATH tells find_package(Torch) where TorchConfig.cmake lives
+        # CMAKE_PREFIX_PATH tells find_package(Torch) where TorchConfig.cmake lives; Torch_DIR too,
+        # since CMake keeps the Torch_DIR it found first in its cache (another libtorch, e.g. a CUDA
+        # build after a CPU one, would otherwise not be seen)
         if torch_home:
             d['CMAKE_PREFIX_PATH'] = torch_home
+            for _sub in (('share', 'cmake', 'Torch'), ('lib', 'cmake', 'Torch')):
+                _torch_dir = os.path.join(torch_home, *_sub)
+                if os.path.isfile(os.path.join(_torch_dir, 'TorchConfig.cmake')):
+                    d['Torch_DIR'] = _torch_dir
+                    break
+
+        # The backend of the target for the #ifdef guards of program.cpp (USE_MPS: Apple GPUs)
+        for _key, _define in (('cuda', 'USE_CUDA'), ('rocm', 'USE_ROCM'), ('metal', 'USE_MPS'), ('xpu', 'USE_XPU')):
+            if _key in compute:
+                d[_define] = 'ON'
+
+        # A CUDA build of libtorch enables CUDA in its CMake config: the CUDA compiler of cMeta, and
+        # NVTX3 from the CUDA toolkit (without USE_SYSTEM_NVTX it looks in its own source tree, then
+        # for nvToolsExt, which newer CUDA toolkits no longer have)
+        if 'cuda' in compute:
+            if 'nvcc' in _global:
+                d['CMAKE_CUDA_COMPILER'] = _global['nvcc'].get('path') or _global['nvcc']['qpath'].strip('"').strip("'")
+            d['USE_SYSTEM_NVTX'] = 'ON'
 
         _local['cmake_d_vars'] = ' '.join(
             f'-D{k}={self.cm.q(str(v))}' for k, v in d.items()

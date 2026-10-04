@@ -16,6 +16,13 @@ _SEP = {
     'darwin':  ':',
 }
 
+
+def is_strict(strict_compute):
+    """strict_compute is on unless it is given as False (False, "False", "no", "0", "off")."""
+    if strict_compute is None or strict_compute == '':
+        return True
+    return str(strict_compute).strip().lower() not in ('false', 'no', '0', 'off')
+
 class CProgram(InitCProgram):
     """
     """
@@ -69,7 +76,10 @@ class CProgram(InitCProgram):
 
         debug_info = _compile.get('debug_info')
         static = _compile.get('static')
-        strict_compute = _compile.get('strict_compute')
+
+        # Only the backends of the target by default: CUDA, ROCm, MPS and XPU are off unless the
+        # target asks for them. strict_compute=False lets PyTorch's CMake enable whatever it finds
+        strict_compute = is_strict(_compile.get('strict_compute'))
 
         d = _compile.get('d')
         if not d:
@@ -221,6 +231,14 @@ class CProgram(InitCProgram):
             d['OpenMP_omp_LIBRARY'] = _global['lib-openmp']['qpath']
             d['OpenMP_C_LIB_NAMES'] = 'omp'
             d['OpenMP_CXX_LIB_NAMES'] = 'omp'
+
+            # Linux: libtorch_cpu needs libomp when programs are linked with it (torch_shm_manager,
+            # tests) and when they run: its folder in the run path of the libraries and programs
+            if uname == 'linux':
+                _omp_path = _global['lib-openmp'].get('path') or _global['lib-openmp']['qpath'].strip('"').strip("'")
+                _omp_dir = os.path.dirname(_omp_path)
+                d.setdefault('CMAKE_SHARED_LINKER_FLAGS', f'-Wl,-rpath,{_omp_dir}')
+                d.setdefault('CMAKE_EXE_LINKER_FLAGS', f'-Wl,-rpath,{_omp_dir} -Wl,-rpath-link,{_omp_dir}')
 
         # -----------------------------------------------------------------------
         # macOS + custom LLVM: LLVM 22+ uses ABI v2 (std:: namespace, no std::__1::).

@@ -34,7 +34,8 @@ int main()
     if (torch::cuda::is_available()) {
         device_type = torch::kCUDA;
         device_name = "cuda";
-        std::cout << "CUDA             : available (" << torch::cuda::device_count() << " device(s))\n";
+        // device_count() is a small integer type that would be printed as a character
+        std::cout << "CUDA             : available (" << static_cast<int>(torch::cuda::device_count()) << " device(s))\n";
     } else {
         std::cout << "CUDA             : not available\n";
     }
