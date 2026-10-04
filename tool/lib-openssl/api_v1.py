@@ -30,8 +30,12 @@ STATIC_DEPS = [
 SYSTEM_LIB_DIRS = ['/usr/lib/*-linux-gnu', '/usr/lib64', '/usr/lib', '/usr/local/lib', '/lib/*-linux-gnu']
 
 
-def undefined_symbols(nm, archives):
-    """The symbols that the objects of the archives refer to and do not define (nm -u), or None."""
+def undefined_symbols(nm, archives, darwin = False):
+    """
+    The symbols that the objects of the archives refer to and do not define (nm -u), or None. GNU nm
+    prints them with a "U" column; macOS nm prints bare names, with the leading underscore of Mach-O
+    C symbols, which is stripped so that the symbol lists of STATIC_DEPS apply.
+    """
     symbols = set()
     for archive in archives:
         try:
@@ -43,8 +47,34 @@ def undefined_symbols(nm, archives):
         for line in r.stdout.splitlines():
             parts = line.split()
             if len(parts) >= 2 and parts[-2] == 'U':
-                symbols.add(parts[-1])
+                symbol = parts[-1]
+            elif darwin and len(parts) == 1 and not line.endswith(':'):
+                symbol = parts[0]
+            else:
+                continue
+            if darwin and symbol.startswith('_'):
+                symbol = symbol[1:]
+            symbols.add(symbol)
     return symbols
+
+
+def static_archive_folder(features, root):
+    """
+    macOS: a folder of this cache entry with copies of libssl.a and libcrypto.a (Homebrew ships them
+    next to the dylibs, and Apple's linker takes a dylib over an archive in the same folder), or None
+    when the lib folder has no archives.
+    """
+    lib_dirs = features.get('paths', {}).get('libs') or []
+    archives = [os.path.join(d, a) for d in lib_dirs for a in ['libssl.a', 'libcrypto.a'] if os.path.isfile(os.path.join(d, a))]
+    if len(archives) < 2 or not root:
+        return None
+    folder = os.path.join(root, 'static')
+    os.makedirs(folder, exist_ok = True)
+    for archive in archives:
+        target = os.path.join(folder, os.path.basename(archive))
+        if not os.path.isfile(target) or os.path.getsize(target) != os.path.getsize(archive):
+            shutil.copy2(archive, target)
+    return folder
 
 
 def static_deps(symbols):
@@ -281,8 +311,17 @@ class CTool(InitCTool):
                     if os.path.isdir(path_dyn_lib):
                         features['paths']['found_dynamic_lib_paths'] = [path_dyn_lib]
 
-            elif ctx['tasks']['global']['host']['os']['uname'] == 'linux':
-                r = self.static_link_deps(ctx, result['features'], params)
+            elif ctx['tasks']['global']['host']['os']['uname'] in ('linux', 'darwin'):
+                features = result['features']
+
+                # macOS: the archives in a folder of their own, so that the linker takes them (the
+                # system libraries, libSystem, stay dynamic: Apple's linker has no -static)
+                if ctx['tasks']['global']['host']['os']['uname'] == 'darwin':
+                    folder = static_archive_folder(features, result.get('path_cmeta_cache'))
+                    if folder:
+                        features['paths']['libs_static'] = [folder]
+
+                r = self.static_link_deps(ctx, features, params)
                 if r['return'] > 0: return r
 
         return {'return':0}
@@ -294,12 +333,13 @@ class CTool(InitCTool):
                          params: dict = {},
     ):
         """
-        A static link on Linux: a distribution's libssl.a and libcrypto.a may refer to zlib, zstd and
-        jitterentropy (Ubuntu 26.04: all three; Ubuntu 24.04: none). Only the libraries they need are
-        linked (lib_names_static); a needed one that the system has no static archive of is built by
-        its tool (lib-zlib, lib-zstd, lib-jitterentropy), whose lib folder setup-compile then adds.
-        --with.static_deps=cmeta builds them even when the system has them. Without nm (binutils), or
-        for an OpenSSL without static archives, the libraries stay as they were.
+        A static link on Linux or macOS: a distribution's (or Homebrew's) libssl.a and libcrypto.a
+        may refer to zlib, zstd and jitterentropy (Ubuntu 26.04: all three; Ubuntu 24.04: none;
+        Homebrew: zlib). Only the libraries they need are linked (lib_names_static); a needed one that
+        the system has no static archive of is built by its tool (lib-zlib, lib-zstd,
+        lib-jitterentropy), whose lib folder setup-compile then adds. --with.static_deps=cmeta builds
+        them even when the system has them. Without nm (binutils, Xcode's command line tools), or for
+        an OpenSSL without static archives, the libraries stay as they were.
         """
 
         c = params.get('control') or ctx.get('control', {})
@@ -319,7 +359,8 @@ class CTool(InitCTool):
         nm = shutil.which('nm')
         if not nm and bin_dir:
             nm = next((os.path.join(bin_dir, n) for n in ['nm', 'llvm-nm'] if os.path.isfile(os.path.join(bin_dir, n))), None)
-        symbols = undefined_symbols(nm, archives) if nm else None
+        darwin = _global.get('host', {}).get('os', {}).get('uname') == 'darwin'
+        symbols = (undefined_symbols(nm, archives, darwin = True) if darwin else undefined_symbols(nm, archives)) if nm else None
         if symbols is None:
             return {'return': 0}
 

@@ -4,9 +4,9 @@ Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 
-LLVM's OpenMP runtime (libomp) for clang on Linux and macOS: detected next to the LLVM or Homebrew
-libomp, and, for a static build (--with.static), its static archive in the "static" folder of the same
-cache entry: a libomp.a shipped next to the detected library (Homebrew's libomp), else one built from
+LLVM's OpenMP runtime (libomp) for clang: detected next to the LLVM or Homebrew libomp (Linux, macOS,
+Windows), its folder put on the run-time library path of the program, and, for a static build
+(--with.static) on Linux and macOS, its static archive in the "static" folder of the same cache entry: a libomp.a shipped next to the detected library (Homebrew's libomp), else one built from
 the pinned OpenMP source release with cmake and ninja. The identity of the cache entry does not change:
 one entry serves dynamic and static builds, as the entries of the libraries cMeta builds itself do.
 """
@@ -149,13 +149,15 @@ class CTool(InitCTool):
             _with = params.get('with', {})
             features = result['features']
 
-            if not is_true(_with.get('static')):
+            # Windows has no static OpenMP runtime (see the README): a static build keeps libomp.dll,
+            # whose folder the program needs on its run-time path like a dynamic build
+            if not is_true(_with.get('static')) or ctx['tasks']['global']['host']['os']['uname'] == 'windows':
                 path_dyn_lib = features['paths']['dynamic_lib']
 
                 if os.path.isdir(path_dyn_lib):
                     features['paths']['found_dynamic_lib_paths'] = [path_dyn_lib]
 
-            elif ctx['tasks']['global']['host']['os']['uname'] != 'windows':
+            else:
                 r = self.static_library(ctx, result, params)
                 if r['return'] > 0: return r
 

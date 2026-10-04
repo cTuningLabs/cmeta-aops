@@ -1,6 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
-# Only for Clang !
+# Only for Clang: the runtime it links with -fopenmp (libomp.so, libomp.dylib, libomp.dll)
 
 names:
   - libomp{{global.host.vars.file_ext_dlib}}
@@ -9,14 +9,28 @@ match_version:
   - regex: '^.*$'
     group: 0
 
+# The library folders of the LLVM that provides clang (its home: the parent of its bin), then the
+# usual places. Never "<home>/**": a distribution's clang has its home at /usr or /, and a recursive
+# search from there never ends.
 extra_paths:
   linux:
-    - "{{global.llvm.features.paths.home|/home/linuxbrew/.linuxbrew}}/**"
-    - "/home/linuxbrew/.linuxbrew/**"
+    - "{{global.llvm.features.paths.home|/home/linuxbrew/.linuxbrew}}/lib"
+    - "{{global.llvm.features.paths.home|/home/linuxbrew/.linuxbrew}}/lib/*"
+    - "/home/linuxbrew/.linuxbrew/lib"
+    # The distribution's libomp-dev (Debian, Ubuntu: /usr/lib/llvm-<N>/lib; Fedora, Arch: /usr/lib64, /usr/lib)
+    - "/usr/lib/llvm-*/lib"
+    - "/usr/lib/*-linux-gnu"
+    - "/usr/lib64"
+    - "/usr/lib"
 
   darwin:
-    - "{{global.llvm.features.paths.home|/opt/homebrew/opt}}/**"
-    - "/opt/homebrew/opt/**"
+    - "{{global.llvm.features.paths.home|/opt/homebrew/opt/llvm}}/lib"
+    - "/opt/homebrew/opt/libomp/lib"
+    - "/opt/homebrew/opt/llvm/lib"
+  windows:
+    - "{{global.llvm.features.paths.home|C:\\Program Files\\LLVM}}\\bin"
+    - "{{global.llvm.features.paths.home|C:\\Program Files\\LLVM}}\\lib"
+    - "C:\\Program Files\\LLVM\\bin"
 
 package_name: 'libomp-dev'
 

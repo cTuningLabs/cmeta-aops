@@ -94,10 +94,13 @@ def lib_entries(program, lib):
 def test_programs_pass_static_to_the_built_libs():
     """The matmul programs pass compile.static to lib-xopenme in the templated form (a dynamic build
     passes None, which the tool reads as False); programs that pass nothing get the dynamic entry."""
-    for program in ["test-nmm-c-cpu", "test-nmm-cpp-cpu", "test-nmm-nvcc-cuda"]:
+    for program in ["test-nmm-c-cpu", "test-nmm-cpp-cpu", "test-nmm-nvcc-cuda", "polybench-cpu-gemm", "polybench-gemm-cpu-cuda"]:
         entries = lib_entries(program, "lib-xopenme")
         assert len(entries) == 1
         assert entries[0]["with"]["static"] == "{{params.compile.static|$None}}"
+    for program in ["polybench-cpu-gemm", "polybench-gemm-cpu-cuda"]:
+        entries = lib_entries(program, "lib-polybench")
+        assert len(entries) == 1 and entries[0]["with"]["static"] == "{{params.compile.static|$None}}"
 
 
 def test_cuda_program_openssl_entries_like_the_c_programs():
@@ -107,7 +110,7 @@ def test_cuda_program_openssl_entries_like_the_c_programs():
     entries = lib_entries("test-nmm-nvcc-cuda", "lib-openssl")
     assert len(entries) == 2
     plain, static = entries
-    assert "with" not in plain and 'not ("{{global.host.os.uname}}" == "linux"' in plain["if"]
+    assert "with" not in plain and 'not ("{{global.host.os.uname}}" in ("linux", "darwin")' in plain["if"]
     assert static["with"] == {"static": True} and '"{{params.compile.static|False}}" == "True"' in static["if"]
 
 
@@ -201,12 +204,18 @@ def test_openmp_finish_static_and_dynamic(tmp_path):
     result = {"return": 0, "path_cmeta_cache": str(entry), "features": {"paths": {"dynamic_lib": str(lib)}}}
     assert tool.finish_dynamic_result(ctx, result, {"with": {"static": None}})["return"] == 0
     assert result["features"]["paths"]["found_dynamic_lib_paths"] == [str(lib)] and "libs_static" not in result["features"]["paths"]
+    # Windows: a static build keeps the DLL's folder on the run-time path (no static runtime exists)
+    ctx["tasks"]["global"]["host"]["os"]["uname"] = "windows"
+    result = {"return": 0, "path_cmeta_cache": str(entry), "features": {"paths": {"dynamic_lib": str(lib)}}}
+    assert tool.finish_dynamic_result(ctx, result, {"with": {"static": True}})["return"] == 0
+    assert result["features"]["paths"]["found_dynamic_lib_paths"] == [str(lib)] and "libs_static" not in result["features"]["paths"]
 
 
 def test_programs_pass_static_to_openmp():
     for program in ["test-nmm-c-cpu", "test-nmm-cpp-cpu", "polybench-cpu-gemm", "polybench-gemm-cpu-cuda"]:
         entries = lib_entries(program, "lib-openmp")
         assert len(entries) == 1 and entries[0]["with"]["static"] == "{{params.compile.static|$None}}"
+        assert "if_os" not in entries[0] and "global.llvm.path" in entries[0]["if"]       # clang on every OS
 
 
 # program/test-nmm-c-cpu: the C math library on Linux
@@ -231,3 +240,106 @@ def test_c_program_links_libm_on_linux():
         c = ctx(uname, compute)
         program.customize2(c)
         assert "lib_names" not in c["tasks"]["local"]["params"]["compile"]
+
+
+# tool/lib-openssl: static links on macOS; task/setup-compile: the OpenMP note on Windows
+
+def openssl_tool():
+    path = REPO_ROOT / "tool/lib-openssl/api_v1.py"
+    src = path.read_text(encoding = "utf-8").replace("from tool_c393ba5c6fa14f66.api.ctool import InitCTool",
+                                                     "class InitCTool: pass")
+    ns = {"__name__": "lib_openssl", "__file__": str(path)}
+    exec(compile(src, str(path), "exec"), ns)
+    return ns
+
+
+def test_openssl_undefined_symbols_macos_format(monkeypatch):
+    """macOS nm prints bare names with the Mach-O underscore; GNU nm a U column. Both are read."""
+    import subprocess
+    ns = openssl_tool()
+    outputs = {"mac": "\n/l/libcrypto.a(c_zlib.o):\n_compress\n_pthread_create\n\n/l/libcrypto.a(bio.o):\n__error\n",
+               "gnu": "\nc_zlib.o:\n                 U deflate\n0000 T BIO_f_zlib\n"}
+    current = {}
+
+    def run(args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, stdout = outputs[current["k"]], stderr = "")
+
+    monkeypatch.setattr(ns["subprocess"], "run", run)
+    current["k"] = "mac"
+    assert ns["undefined_symbols"]("nm", ["/l/libcrypto.a"], darwin = True) == {"compress", "pthread_create", "_error"}
+    assert ns["undefined_symbols"]("nm", ["/l/libcrypto.a"]) == set()           # bare names count only on macOS
+    current["k"] = "gnu"
+    assert ns["undefined_symbols"]("nm", ["/l/libcrypto.a"]) == {"deflate"}
+    assert ns["static_deps"]({"compress", "pthread_create"}) == [d for d in ns["STATIC_DEPS"] if d["lib"] == "z"]
+
+
+def test_openssl_static_archive_folder(tmp_path):
+    ns = openssl_tool()
+    lib = tmp_path / "homebrew" / "lib"
+    lib.mkdir(parents = True)
+    features = {"paths": {"libs": [str(lib)]}}
+    assert ns["static_archive_folder"](features, str(tmp_path / "entry")) is None          # no archives
+    for a in ["libssl.a", "libcrypto.a", "libssl.dylib"]:
+        (lib / a).write_bytes(b"!<arch>\n" + a.encode())
+    (tmp_path / "entry").mkdir()
+    folder = ns["static_archive_folder"](features, str(tmp_path / "entry"))
+    assert folder == str(tmp_path / "entry" / "static")
+    assert sorted(p.name for p in (tmp_path / "entry" / "static").iterdir()) == ["libcrypto.a", "libssl.a"]
+    assert ns["static_archive_folder"](features, None) is None
+
+
+def test_openssl_finish_static_on_macos(tmp_path, monkeypatch):
+    """A static request on macOS: the archives' folder as the only lib folder, the libraries the
+    archives need (zlib from its tool, macOS has no static one), ssl and crypto first."""
+    ns = openssl_tool()
+    tool = object.__new__(ns["CTool"])
+    setups = []
+
+    class CM:
+        def access(self, p):
+            setups.append(p["name"])
+            return {"return": 0}
+
+        def catch_error(self, r, fail16 = False):
+            return r["return"] > 0
+
+        def error(self, text):
+            return {"return": 1, "error": text}
+
+    tool.cm = CM()
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    for a in ["libssl.a", "libcrypto.a"]:
+        (lib / a).write_bytes(b"!<arch>\n")
+    entry = tmp_path / "entry"
+    entry.mkdir()
+    monkeypatch.setattr(ns["shutil"], "which", lambda name: "/usr/bin/nm" if name == "nm" else None)
+    monkeypatch.setitem(ns, "undefined_symbols", lambda nm, archives, darwin = False: {"compress", "pthread_create"} if darwin else set())
+    monkeypatch.setitem(ns, "find_static_lib", lambda lib, dirs, compiler = None: None)
+    ctx = {"control": {}, "tasks": {"nested_call": 0, "global": {"host": {"os": {"uname": "darwin"}},
+                                                                   "compiler-c": {"path": "/usr/bin/clang"}}}}
+    result = {"return": 0, "path_cmeta_cache": str(entry), "features": {"paths": {"libs": [str(lib)], "lib": str(lib)}, "lib_names": ["ssl", "crypto"]}}
+    assert tool.finish_dynamic_result(ctx, result, {"with": {"static": True}})["return"] == 0
+    assert result["features"]["paths"]["libs_static"] == [str(entry / "static")]
+    assert result["features"]["lib_names_static"] == ["ssl", "crypto", "z", "m"]
+    assert setups == ["lib-zlib,c46f457c9da347a7"]
+    # A dynamic request is as before: no static folder, no deps
+    result = {"return": 0, "path_cmeta_cache": str(entry), "features": {"paths": {"libs": [str(lib)]}, "lib_names": ["ssl", "crypto"]}}
+    assert tool.finish_dynamic_result(ctx, result, {"with": {}})["return"] == 0
+    assert "libs_static" not in result["features"]["paths"] and "lib_names_static" not in result["features"]
+
+
+def test_static_openmp_note():
+    path = REPO_ROOT / "task/setup-compile/api_v1.py"
+    src = path.read_text(encoding = "utf-8").replace("from task_c36be4b9314a45e0.api.ctask import InitCTask", "class InitCTask: pass")
+    ns = {"__name__": "setup_compile", "__file__": str(path)}
+    exec(compile(src, str(path), "exec"), ns)
+    note = ns["static_openmp_note"]
+    assert "DLL" in note("windows", True, True)
+    for uname, static, openmp in [("windows", False, True), ("windows", True, False), ("linux", True, True), ("darwin", True, True)]:
+        assert note(uname, static, openmp) is None
+
+
+def test_lib_readmes_mention_static():
+    assert "## Static links on macOS" in (REPO_ROOT / "tool/lib-openssl/README.md").read_text(encoding = "utf-8")
+    assert "libomp.a" in (REPO_ROOT / "tool/lib-openmp/README.md").read_text(encoding = "utf-8")

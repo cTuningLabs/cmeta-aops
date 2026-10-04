@@ -32,8 +32,19 @@ and the Jitter RNG. For a static link on Linux (`with.static`), `lib-openssl`:
 
 `--with.static_deps=cmeta` uses the tools' libraries even when the system has its own, for the
 same versions on every machine. Without `nm`, or for an OpenSSL without static archives, the
-libraries stay `ssl crypto z m zstd`, as before. Dynamic links, and static links on macOS and
-Windows, are not affected.
+libraries stay `ssl crypto z m zstd`, as before. Dynamic links, and static links on Windows, are
+not affected.
+
+## Static links on macOS
+
+On macOS a static build means static third-party libraries with the dynamic system library
+(`libSystem`): Apple's linker has no `-static`, and the system has no static C library. For a
+static link (`with.static`), `lib-openssl` copies Homebrew's `libssl.a` and `libcrypto.a` into a
+folder of its cache entry (`static/`), which `setup-compile` uses instead of Homebrew's lib folder,
+because Apple's linker takes a dylib over an archive in the same folder. The libraries the archives
+need are found as on Linux (`nm -u`, with the leading underscore of Mach-O symbols removed):
+Homebrew's OpenSSL needs zlib, which macOS ships only as a dylib, so `lib-zlib` builds `libz.a`.
+`otool -L` of a static build then lists `libSystem` only.
 
 A program passes `with.static` for its static builds on Linux (see the two `lib-openssl` entries
 in `program/test-nmm-c-cpu/_desc.yaml`):

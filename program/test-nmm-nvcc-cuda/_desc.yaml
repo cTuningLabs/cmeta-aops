@@ -48,14 +48,14 @@ updates:
           ######################################################################################
           # Prepare Libs for Host CPU
           - task: setup,a2f9b61079ce4333
-            if: 'not ("{{global.host.os.uname}}" == "linux" and "{{params.compile.static|False}}" == "True")'
+            if: 'not ("{{global.host.os.uname}}" in ("linux", "darwin") and "{{params.compile.static|False}}" == "True")'
             name: lib-openssl,903191f1fab74064
 
           # A static build on Linux (-cudart=static, static third-party libraries; the host link stays
           # dynamic: the CUDA driver cannot be loaded by a static glibc binary): lib-openssl links only
           # what the distribution's static OpenSSL needs (zlib, zstd, jitterentropy), as test-nmm-c-cpu
           - task: setup,a2f9b61079ce4333
-            if: '"{{global.host.os.uname}}" == "linux" and "{{params.compile.static|False}}" == "True"'
+            if: '"{{global.host.os.uname}}" in ("linux", "darwin") and "{{params.compile.static|False}}" == "True"'
             name: lib-openssl,903191f1fab74064
             with:
               static: True

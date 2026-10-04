@@ -37,6 +37,7 @@ class CTask(InitCTask):
                 'copy_to_storage_key',
                 'with',
                 'tool_with',
+                'version',
             ], __name__)
         if self.cm.catch_error(r): return r
 

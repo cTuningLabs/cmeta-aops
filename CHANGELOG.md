@@ -3,6 +3,22 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **Static builds on macOS embed the static OpenSSL** (`tool/lib-openssl`): for `with.static`, Homebrew's
+  `libssl.a` and `libcrypto.a` are copied into a folder of the tool's cache entry, which replaces the lib
+  folder (Apple's linker takes a dylib over an archive in the same folder); what they need is found as on
+  Linux (`nm -u`, macOS format). A static build loads `libSystem` only: on macOS "static" means static
+  third-party libraries with the dynamic system library (README). `test-nmm-c-cpu`, `test-nmm-cpp-cpu`
+  and `test-nmm-nvcc-cuda` pass `with.static` to `lib-openssl` on macOS as on Linux.
+- **OpenMP runtime for clang on every OS** (`tool/lib-openmp`): on Windows the folder of clang's
+  `libomp.dll` goes on the program's run-time path (before, a clang build with OpenMP started only when
+  Visual Studio's own LLVM folder happened to be on the path); a distribution's `libomp-dev`
+  (`/usr/lib/llvm-<N>/lib`) is detected. The matmul and polybench programs ask for it on every OS when
+  clang is the compiler. README.
+- **No static OpenMP runtime exists on Windows** (LLVM's build refuses one, MSVC's vcomp is a DLL):
+  `setup-compile` says so for a static build with OpenMP, which keeps the runtime as a DLL next to its
+  static C run time and libraries.
+- **`polybench-cpu-gemm`, `polybench-gemm-cpu-cuda`:** pass `compile.static` to `lib-polybench` and
+  `lib-xopenme`, so a static build uses the static entries, as the matmul programs do.
 - **Disk space of tools** (`task/setup`, `category/tool/api/common_sizes.py`, new; `_desc_sizes.yaml`
   of 16 tools, new):
   - **`tool/<name>/_desc_sizes.yaml`** declares what a setup needs: a list of rules (first match

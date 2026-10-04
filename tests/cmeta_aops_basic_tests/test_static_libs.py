@@ -264,5 +264,5 @@ def test_programs_pass_static_on_linux():
         entries = [u for u in uses if u.get("name") == "lib-openssl,903191f1fab74064"]
         assert len(entries) == 2
         plain, static = entries
-        assert "with" not in plain and 'not ("{{global.host.os.uname}}" == "linux"' in plain["if"]
-        assert static["with"] == {"static": True} and '"{{global.host.os.uname}}" == "linux"' in static["if"]
+        assert "with" not in plain and 'not ("{{global.host.os.uname}}" in ("linux", "darwin")' in plain["if"]
+        assert static["with"] == {"static": True} and '"{{global.host.os.uname}}" in ("linux", "darwin")' in static["if"]

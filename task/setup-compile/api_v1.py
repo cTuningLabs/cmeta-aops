@@ -11,6 +11,19 @@ import shutil
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
+def static_openmp_note(uname, static, openmp):
+    """
+    What a static build with OpenMP cannot do on Windows: neither LLVM nor MSVC has a static OpenMP
+    runtime there (LLVM's build refuses one: "Static libraries requested but not available on
+    Windows"; MSVC's vcomp is a DLL), so the program keeps the runtime as a DLL next to its static
+    C run time and static libraries. None elsewhere, or for other builds.
+    """
+    if uname == 'windows' and static and openmp:
+        return ('the OpenMP runtime stays a DLL in this static build (libomp.dll with clang, vcomp with MSVC): '
+                'Windows has no static OpenMP runtime; the C run time and the other libraries are static')
+    return None
+
+
 class CTask(InitCTask):
     """
     """
@@ -172,6 +185,10 @@ class CTask(InitCTask):
                     if 'found_dynamic_libs' in features['paths']:
                         for l in features['paths']['found_dynamic_libs']:
                             if l not in found_dynamic_libs:
+            note = static_openmp_note(_global.get('host', {}).get('os', {}).get('uname'), _static, _openmp)
+            if note and ctx.get('control', {}).get('con', False):
+                print(f'WARNING: {note}')
+
                                 found_dynamic_libs.append(l)
 
                 # Should be here even if static (since libraries may have been compiled as dynamic
