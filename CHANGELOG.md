@@ -3,6 +3,11 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **`tool/llvm`, `tool/clang`, `tool/clang-cpp`: a Swift toolchain's clang ranks last.** The clang of
+  swiftly or of a Swift toolchain (its `--version` names swiftlang) is often first on `PATH` but has no
+  OpenMP headers or runtime; detection now places every other clang before it, whatever the version,
+  and warns when it is the only one (`cx tool setup llvm` installs LLVM). Before, an OpenMP program
+  built with it failed on `omp.h`. Debian's and Ubuntu's `/usr/lib/llvm-<N>/bin` are searched too.
 - **`tool/lib-cudnn` installs cuDNN** from NVIDIA's public redistributable site when no cuDNN matching
   the CUDA toolkit is installed: the archive for the OS, CPU (Linux x86_64/arm64, Windows x64/arm64)
   and CUDA major version (12, 13), cuDNN 9.27.0.42 pinned with NVIDIA's SHA-256 digests, unpacked

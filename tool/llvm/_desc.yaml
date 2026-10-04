@@ -53,6 +53,9 @@ install_help_text:
 extra_paths:
   linux:
     - "/home/linuxbrew/.linuxbrew/**"
+    # A distribution's LLVM packages (clang-18, libomp-18-dev on Debian and Ubuntu) keep the compiler
+    # out of PATH, in /usr/lib/llvm-<N>/bin
+    - "/usr/lib/llvm-*/bin"
   darwin:
     - "/opt/homebrew/opt/llvm*/**"
   windows:
