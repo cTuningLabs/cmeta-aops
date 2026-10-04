@@ -1,0 +1,15 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# Disk space of this program's build (GB, rough upper bounds): the first matching rule wins; compile-and-run-program
+# checks the free space of the build folder's volume before the compile phase (docs/cmeta-aops/tool-sizes.md).
+
+sizes:
+  - if: {compute: cuda}
+    peak: 40          # the CUDA build tree of PyTorch (nvcc objects for several architectures)
+    kept: 40
+  - if: {compute: xpu}
+    peak: 30
+    kept: 30
+  - peak: 20          # a CPU build tree
+    kept: 20

@@ -5,6 +5,7 @@ Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
+import importlib.util
 import os
 import shutil
 import copy
@@ -12,6 +13,7 @@ import time
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 from task_c36be4b9314a45e0.api import deadlines
+from task_c36be4b9314a45e0.api import build_stamp
 
 class CTask(InitCTask):
     """
@@ -21,6 +23,181 @@ class CTask(InitCTask):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
 
+
+    ############################################################
+    def common_sizes(self):
+        """
+        The size rules and the disk measures of the tool category (category/tool/api/common_sizes.py),
+        shared with task/setup. Its package, tool_<uid>.api, exists once the engine has loaded the tool
+        category in this process (any tool setup does that); before that, the module is loaded from
+        the category's folder, found through uses_categories. None when the category is not plugged.
+        """
+        try:
+            from tool_c393ba5c6fa14f66.api import common_sizes
+            return common_sizes
+        except ImportError:
+            pass
+        category = self.cmeta.get('uses_categories', {}).get('tool', 'tool,c393ba5c6fa14f66')
+        r = self.cm.access({'category': 'category', 'command': 'find', 'arg1': category})
+        artifacts = r.get('artifacts') if r.get('return', 1) == 0 else None
+        if not artifacts:
+            return None
+        path = os.path.join(artifacts[0]['path'], 'api', 'common_sizes.py')
+        if not os.path.isfile(path):
+            return None
+        spec = importlib.util.spec_from_file_location('cmeta_aops_common_sizes', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    ############################################################
+    def build_facts(self,
+                    ctx: dict,
+                    params: dict,
+                    compute: list,
+                    compiler_key: str = None,
+                    compiler_from: dict = None,
+    ):
+        """
+        What a build is made for, as the stamp of the build folder records it: the targets, the host,
+        the compiler (from the global context under compiler_key, when resolved), the compile
+        parameters that change the output, the Android device.
+        """
+        _global = ctx['tasks']['global']
+        compiler = None
+        if compiler_key:
+            compiler = build_stamp.compiler_identity((compiler_from or _global).get(compiler_key))
+        android_target = _global.get('target--android-cpu') or {}
+        android = {'serial': android_target.get('serial'),
+                   'abi': (android_target.get('features') or {}).get('ro.product.cpu.abi')} if android_target else None
+        return {'compute': list(compute or []), 'host': _global['host']['os']['uname'], 'compiler': compiler,
+                'compile_params': params.get('compile') or {}, 'android': android}
+
+    ############################################################
+    def requested_compiler(self,
+                           ctx: dict,
+                           compiler_key: str,
+    ):
+        """The compiler a run asks for through --use (--use.compiler-c.name=gcc), as the stamp records
+        one, or None: on a reused build the compiler is not resolved, only what the user asked."""
+        use = ctx['tasks'].get('use') or {}
+        asked = use.get(compiler_key) or use.get('compiler') or {}
+        identity = {'name': asked.get('name'), 'version': asked.get('version')}
+        return identity if any(identity.values()) else None
+
+    ############################################################
+    def refuse_stale_build(self,
+                           ctx: dict,
+                           target_path: str,
+                           facts: dict,
+    ):
+        """
+        The guard of the build folder: when its stamp differs from this run (targets, host, compiler,
+        compile parameters, Android device), the folder is neither reused nor rebuilt in place. A
+        folder configured for one target or compiler was silently reused for another before: on
+        macOS a host build of llama.cpp was pushed to an Android device, since CMake kept its cache.
+        --recompile (explicit) and --clean (the folder is wiped first) go on. Returns the error, or
+        {'return': 0, 'stamp': <the stamp or None>}.
+        """
+        stamp = build_stamp.read_stamp(target_path)
+        if not stamp:
+            return {'return': 0, 'stamp': None}
+        diffs = build_stamp.differences(stamp, **facts)
+        if diffs:
+            return self.cm.error(build_stamp.refusal_message(target_path, stamp, diffs))
+        return {'return': 0, 'stamp': stamp}
+
+    ############################################################
+    def write_build_stamp(self,
+                          ctx: dict,
+                          target_path: str,
+                          artifact_alias: str,
+                          artifact_uid: str,
+                          facts: dict,
+    ):
+        """Records what the build in the folder is made for (after a compile, or for a folder made
+        before the stamps existed); a folder that cannot be written is left alone."""
+        stamp = build_stamp.make_stamp(artifact_alias, artifact_uid, facts['compute'], facts['host'],
+                                       compiler = facts.get('compiler'), compile_params = facts.get('compile_params'),
+                                       android = facts.get('android'))
+        error = build_stamp.write_stamp(target_path, stamp)
+        if error and ctx['control'].get('con', False) and ctx['control'].get('verbose', False):
+            print (f'WARNING: the build stamp of "{target_path}" was not written: {error}')
+        return stamp
+
+    ############################################################
+    def check_program_disk_space(self,
+                                 ctx: dict,
+                                 params: dict,
+                                 program_path: str,
+                                 program_name: str,
+                                 target_path: str,
+                                 compute: list,
+    ):
+        """
+        Before the compile phase: the rule of the program's _desc_sizes.yaml for this run (OS, CPU,
+        method build, the targets, the compile parameters as "with", --version) gives the space the
+        build needs (peak); the configured minimum of free space (cx config set task
+        --meta.min_free_gb=<GB>) applies to every program. The folder checked is the build folder's
+        volume (target_path). Below that: a quiet run stops before compiling, else a warning and the
+        question whether to go on. --skip_size_check skips it. No file and no minimum: no check.
+        """
+        if params.get('skip_size_check', False):
+            return {'return': 0}
+
+        sizes = self.common_sizes()
+        if sizes is None:
+            return {'return': 0}
+
+        ctx_tasks = ctx['tasks']
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
+        space = '  ' * ctx_tasks.get('nested_call', 0) if verbose else ''
+
+        rules = sizes.load_sizes(program_path)
+
+        floor = ctx_tasks.get('global', {}).get('init', {}).get('min_free_gb')
+        try:
+            floor = float(floor) if floor not in (None, '', False) else None
+        except (TypeError, ValueError):
+            return self.cm.error(f'the configured minimum of free space "min_free_gb" is not a number: {floor}')
+
+        if not rules and floor is None:
+            return {'return': 0}
+
+        host = ctx_tasks['global']['host']['os']
+        compile_params = build_stamp.normalize_compile(params.get('compile'))
+        facts = sizes.request_facts(version = params.get('version') or None, os_name = host['uname'],
+                                    arch = host.get('uarch'), method = 'build', compute = list(compute or []),
+                                    with_ = compile_params or None)
+        rule = sizes.select_rule(rules, facts, self.cm.utils.common.matches_query,
+                                 match_version_func = self.cm.repos.match_version_func)
+        needed = rule.get('peak') if rule else None
+
+        ok, free, required = sizes.check_space(needed, target_path, floor_gb = floor)
+        if ok:
+            if verbose and con and required is not None:
+                print (f'{space}INFO: disk space for the build: {free:.1f} GB free in {target_path}, about {required:g} GB needed')
+            return {'return': 0}
+
+        rule_based = needed is not None and needed >= (floor or 0)
+        what = f'{program_name} (build, {host["uname"]}' + (f', {",".join(compute)}' if compute else '') + ')'
+        need = (f'needs about {required:g} GB during the build' if rule_based
+                else f'needs at least {required:g} GB free (the configured minimum)')
+        message = (f'{what} {need}; {free:.1f} GB are free in {target_path}. Free space, give '
+                   f'--target_tmp=<name> or --target_path=<folder on another disk>, or --skip_size_check.')
+
+        if quiet or not con:
+            return self.cm.error(message)
+
+        print ('')
+        print (f'{space}WARNING: {message}')
+        x = input(f'{space}Continue anyway (y/N)? ').strip().lower()
+        if x not in ['y', 'yes']:
+            return self.cm.error(f'build of "{program_name}" cancelled: not enough disk space')
+
+        return {'return': 0}
 
     ############################################################
     def run(self,
@@ -343,6 +520,8 @@ class CTask(InitCTask):
 
         ctx_setup_compile = None
 
+        build_disk_gb = None
+
         if not recompile:
             r = self.cm.utils.files.read_file(path_repro_compile)
             if r['return']>0:
@@ -397,6 +576,21 @@ class CTask(InitCTask):
                         if target_path_exe and not os.path.isfile(target_path_exe):
                             recompile = True
 
+                    # The stamp of the build folder: a build for other targets, another compiler
+                    # (asked for with --use) or other compile parameters is not reused
+                    if not recompile:
+                        _compiler_key = (_compiled_state_local or {}).get('global_compiler_key')
+                        _facts = self.build_facts(ctx, params, selected_compute)
+                        _facts['compiler'] = self.requested_compiler(ctx, _compiler_key) if _compiler_key else None
+                        r = self.refuse_stale_build(ctx, target_path, _facts)
+                        if self.cm.catch_error(r): return r
+                        if r['stamp'] is None and _compiled_state_global:
+                            # A folder made before the stamps, which this run reuses: stamped with this
+                            # run's targets and compile parameters (the saved origin parameters lack the
+                            # program's defaults) and the compiler the saved state resolved
+                            _facts['compiler'] = build_stamp.compiler_identity(_compiled_state_global.get(_compiler_key)) if _compiler_key else None
+                            self.write_build_stamp(ctx, target_path, artifact_alias, artifact_uid, _facts)
+
                 if not recompile:
                     if _compiled_state_global:
                         if con and verbose:
@@ -433,6 +627,7 @@ class CTask(InitCTask):
 
                     if _compiled_state.get('result', {}).get('return') == 0:
                         _compiled = True
+                        build_disk_gb = _compiled_state.get('result', {}).get('_impact', {}).get('disk_gb')
 
             if recompile or not _compiled:
                 if os.path.isfile(path_repro_compile):
@@ -442,6 +637,22 @@ class CTask(InitCTask):
                 compile_uses = compile_desc.get('uses')
                 if compile_uses:
                     self_time_compile_with_cmeta = time.time()
+
+                    # The stamp of the build folder: a rebuild that this run implies (the targets
+                    # changed, the binary is gone) does not go into a folder built for other targets,
+                    # another compiler or other compile parameters; an explicit --recompile does
+                    if not params.get('recompile'):
+                        r = self.refuse_stale_build(ctx, target_path, self.build_facts(ctx, params, selected_compute))
+                        if self.cm.catch_error(r): return r
+
+                    # The free space of the build folder's volume against the program's _desc_sizes.yaml
+                    r = self.check_program_disk_space(ctx, params, path, artifact_alias or artifact_uid, target_path, selected_compute)
+                    if self.cm.catch_error(r): return r
+
+                    # For setup-compile, which resolves the compiler inside the pipeline: the folder to
+                    # compare the compiler with, and whether a rebuild was asked for (--recompile).
+                    # A stack, as a lib built on the way runs its own compile-and-run-program
+                    ctx['tasks'].setdefault('build_stamps', []).append({'target_path': target_path, 'rebuild': bool(params.get('recompile'))})
 
                     # --compile_timeout: a deadline for the whole compile phase, the builds that tools
                     # run inside it included (task/cmd caps every command by the time left); closed
@@ -470,15 +681,33 @@ class CTask(InitCTask):
                         r = self.cm.access(p)
                     finally:
                         deadlines.close_deadline(ctx, compile_deadline)
+                        if ctx['tasks'].get('build_stamps'):
+                            ctx['tasks']['build_stamps'].pop()
+                            if not ctx['tasks']['build_stamps']:
+                                del ctx['tasks']['build_stamps']
 
                     _impact = r.setdefault('_impact', {})
                     _impact['self_time_compile'] = ctx['tasks']['local'].get('compile-program', {}).get('_impact',{}).get('self_time')
                     _impact['self_time_compile_with_cmeta'] = time.time() - self_time_compile_with_cmeta
 
+                    sizes = self.common_sizes() if r.get('return') == 0 else None
+                    if sizes is not None:
+                        # What the build took on disk, for the rules of _desc_sizes.yaml
+                        _impact['disk_gb'] = round(sizes.folder_gb(target_path), 6)
+                        _impact['disk_os'] = uname
+                        _impact['disk_arch'] = host['os'].get('uarch')
+                        _impact['disk_compute'] = list(selected_compute or [])
+                        build_disk_gb = _impact['disk_gb']
+
                     rx = self.cm.utils.files.write_file(path_repro_compile, {'ctx':ctx, 'result':r}, safe_dump = True)
                     if self.cm.catch_error(rx): return rx
 
                     if self.cm.catch_error(r): return r
+
+                    # The stamp: what this folder's build is made for (the compiler is resolved now)
+                    _compiler_key = ctx['tasks']['local'].get('global_compiler_key')
+                    self.write_build_stamp(ctx, target_path, artifact_alias, artifact_uid,
+                                           self.build_facts(ctx, params, selected_compute, compiler_key = _compiler_key))
 
 #                ###########################################################################################
 #                # Check if customization2 after uses_pre (compute, etc)
@@ -560,6 +789,8 @@ class CTask(InitCTask):
 
         result['_impact'] = {'self_time_compile_with_cmeta': self_time_compile,
                              'self_time_run_with_cmeta': time.time() - self_time_run_with_cmeta}
+        if build_disk_gb is not None:
+            result['_impact']['disk_gb'] = build_disk_gb
 
         return result
 

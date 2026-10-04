@@ -1,0 +1,9 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# Disk space of this program's build (GB, rough upper bounds): the first matching rule wins; compile-and-run-program
+# checks the free space of the build folder's volume before the compile phase (docs/cmeta-aops/tool-sizes.md).
+
+sizes:
+  - peak: 4           # the cross build (XNNPACK, Vulkan) and the host environment next to it
+    kept: 4

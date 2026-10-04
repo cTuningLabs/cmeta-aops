@@ -3,6 +3,20 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **A build folder is used only for what it was built for** (`task/compile-and-run-program`,
+  `task/setup-compile`, `category/task/api/build_stamp.py`): after a compile the build folder gets
+  `.cmeta-build-stamp.json` (targets, host, compiler, the compile parameters that change the output,
+  the Android device). A run that asks for other targets, another compiler (`--use.compiler-<lang>.name`),
+  a static instead of a dynamic build, or another device in that folder is refused with "was built
+  for …; use --target_tmp=<name>, --recompile or --clean"; before, the folder was silently reused (on
+  macOS a host build of llama.cpp was pushed to an Android device, CMake having kept its cache).
+  Optimization, debug and profiling flags are recorded, not refused for. `--recompile` and `--clean`
+  go on; a folder made before the stamps is used as before and gets one.
+- **Disk space of program builds:** `program/<name>/_desc_sizes.yaml` (the rules of tools) is checked
+  against the free space of the build folder's volume before the compile phase (`min_free_gb`,
+  `--skip_size_check` as for tools); the size of the build folder is recorded after a successful
+  compile (`_impact.disk_gb`). Rules for `build-pytorch`, `build-vllm`, `build-llama-cpp`,
+  `build-executorch-android`, `build-torch-cpp`, `build-pytorchvision`.
 - **Static builds on macOS embed the static OpenSSL** (`tool/lib-openssl`): for `with.static`, Homebrew's
   `libssl.a` and `libcrypto.a` are copied into a folder of the tool's cache entry, which replaces the lib
   folder (Apple's linker takes a dylib over an archive in the same folder); what they need is found as on

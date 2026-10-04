@@ -109,6 +109,18 @@ class CTask(InitCTask):
 
         global_compiler_key = 'compiler-'+lang
 
+        # The stamp of the build folder (compile-and-run-program puts the folder and whether --recompile
+        # asked for a rebuild in ctx['tasks']['build_stamps'], the innermost last): a folder built with
+        # another compiler is not rebuilt in place unless a rebuild was asked for
+        guard = (ctx['tasks'].get('build_stamps') or [None])[-1]
+        if guard and not guard.get('rebuild'):
+            from task_c36be4b9314a45e0.api import build_stamp
+            stamp = build_stamp.read_stamp(guard['target_path'])
+            if stamp and stamp.get('compiler'):
+                diffs = build_stamp.differences(stamp, compiler = build_stamp.compiler_identity(_global[global_compiler_key]))
+                if diffs:
+                    return self.cm.error(build_stamp.refusal_message(guard['target_path'], stamp, diffs))
+
         compiler_features = _global[global_compiler_key].get('features', {})
         flags = compiler_features.get('flags',{})
 
@@ -173,6 +185,10 @@ class CTask(InitCTask):
             if link_openmp_flag and link_openmp_flag not in compiler_link_flags:
                 compiler_link_flags.append(link_openmp_flag)
 
+            note = static_openmp_note(_global.get('host', {}).get('os', {}).get('uname'), _static, _openmp)
+            if note and ctx.get('control', {}).get('con', False):
+                print(f'WARNING: {note}')
+
         found_dynamic_libs = []
         found_dynamic_lib_paths = []
 
@@ -185,10 +201,6 @@ class CTask(InitCTask):
                     if 'found_dynamic_libs' in features['paths']:
                         for l in features['paths']['found_dynamic_libs']:
                             if l not in found_dynamic_libs:
-            note = static_openmp_note(_global.get('host', {}).get('os', {}).get('uname'), _static, _openmp)
-            if note and ctx.get('control', {}).get('con', False):
-                print(f'WARNING: {note}')
-
                                 found_dynamic_libs.append(l)
 
                 # Should be here even if static (since libraries may have been compiled as dynamic

@@ -113,4 +113,27 @@ sessions, and the rules of the big tools fill in over time.
   the archive is removed) so that the record carries the peak and not only what is kept.
 - The check does not change the cache identity of a tool: `_impact` is not matched by the cache.
 
+## Programs
+
+A program whose build is large may have the same file, `program/<name>/_desc_sizes.yaml`, with the
+same rules; `compile-and-run-program` checks the free space of the **build folder's** volume
+(`target_path`: the program's cache entry, `--target_tmp=<name>` or `--target_path=<folder>`) before
+the compile phase, when a compile is going to run (a reused build is not checked). The facts a rule
+matches are `os`, `arch`, `method: build`, `compute` (the targets, a list: `{compute: cuda}` matches
+a run whose targets include cuda), `version` (the program's `--version`, when it has one) and `with`
+= the compile parameters (`{static: true}`). The configured minimum (`min_free_gb`) applies as for
+tools, `--skip_size_check` skips the check, and the message says what to do:
+
+```
+build-pytorch (build, linux, cuda) needs about 40 GB during the build; 23.1 GB are free in
+/home/x/CMETA/repos/local/cache/task--program--build-pytorch/tmp. Free space, give
+--target_tmp=<name> or --target_path=<folder on another disk>, or --skip_size_check.
+```
+
+After a successful compile the size of the build folder is recorded in the compile state of the
+folder and in the run's result (`_impact.disk_gb`, with `disk_os`, `disk_arch`, `disk_compute`), so
+the rules of the build programs (`build-pytorch`, `build-vllm`, `build-llama-cpp`,
+`build-executorch-android`, `build-torch-cpp`, `build-pytorchvision` have them) can be checked
+against what builds really take. A program without the file and no minimum: no check, no output.
+
 See also [tool-abstraction.md](tool-abstraction.md) and the `add-tool` skill.

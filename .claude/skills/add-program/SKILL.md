@@ -167,6 +167,18 @@ Key ideas:
   `compile-and-run-program` keeps the program's parameters in `local.params`. A plain
   `{{params.n}}` in `run_time_env` always gives the default (a test checks for it).
 
+- **A large build?** Add `program/<name>/_desc_sizes.yaml` (the rule format of
+  `docs/cmeta-aops/tool-sizes.md`, section "Programs"): `compile-and-run-program` then checks
+  the free space of the build folder before compiling and records the folder's size after
+  (`_impact.disk_gb`). Rough upper bounds in GB, by `compute` and the compile parameters;
+  small programs need none.
+- **The build folder is stamped.** After a compile, `.cmeta-build-stamp.json` in the build
+  folder records the targets, host, compiler and the compile parameters; a later run that asks
+  for other targets, another compiler (`--use.compiler-<lang>.name=…`) or other parameters
+  (`--compile.static`) in the same folder is refused with a message, unless `--recompile` or
+  `--clean`. Use `--target_tmp=<name>` (or `target_tmp: auto` in the config) to keep builds for
+  different targets side by side.
+
 ---
 
 ## 5. `src/` — the source
