@@ -147,7 +147,9 @@ def can_symlink(tmp_path):
 
 def add_file(archive, name, data, link = None):
     if isinstance(archive, zipfile.ZipFile):
-        archive.writestr(name, data)
+        # a fixed timestamp: the bytes of an archive, and so its sha256, must not depend on the
+        # 2-second DOS time of the moment it is made
+        archive.writestr(zipfile.ZipInfo(name, date_time = (2020, 1, 1, 0, 0, 0)), data)
         return
     info = tarfile.TarInfo(name)
     if link:
@@ -318,6 +320,9 @@ def server(redist, tmp_path, monkeypatch):
     urls, manifests = {}, {}
     for release, nvcc in (("12.9.2", "12.9.86"), ("13.0.2", "13.0.88")):
         m = {"release_label": release}
+        # one folder per release: the "1.0" component archives of both releases share their file
+        # names, and the sha256 in a release's manifest must be that of the file its URL serves
+        (store / release).mkdir()
         for platform, ext in (("linux-x86_64", "tar.xz"), ("windows-x86_64", "zip")):
             exe = ".exe" if platform.startswith("windows") else ""
             content = {
@@ -332,7 +337,7 @@ def server(redist, tmp_path, monkeypatch):
                 version = nvcc if name == "cuda_nvcc" else "1.0"
                 top = f"{name}-{platform}-{version}-archive"
                 relative_path = f"{name}/{platform}/{top}.{ext}"
-                archive = store / f"{top}.{ext}"
+                archive = store / release / f"{top}.{ext}"
                 make_archive(archive, top, files)
                 data = archive.read_bytes()
                 m.setdefault(name, {"name": name, "version": version})[platform] = {
@@ -400,7 +405,7 @@ def test_install_follows_the_request(nvcc_api, server, tmp_path, monkeypatch):
     assert r["return"] == 1 and "update the NVIDIA driver" in r["error"]
 
     r = t.install(context("windows", arch = 120, driver = "13.0"), {"version": "12.9.86", "with": {"cuda_libs": "cublas"}})
-    assert r["return"] == 0
+    assert r["return"] == 0, r
     assert (tmp_path / "content" / "12.9.2" / "lib" / "libcublas.so.12").is_file()
 
     r = t.install(context("darwin", "arm64"), {"with": {}})
