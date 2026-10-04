@@ -156,3 +156,24 @@ def test_java_version_pattern():
                        ('java version "21.0.5" 2024-10-15 LTS\nJava(TM) SE Runtime Environment', "21.0.5"),
                        ('openjdk version "21.0.7" 2025-04-15 LTS', "21.0.7")):
         assert re.search(pattern, text).group(1) == want
+
+
+def test_openjdk_build_for_the_libc(monkeypatch):
+    """tool/openjdk (the default JDK): Temurin's alpine-linux build on musl Linux, the linux build on glibc."""
+    import types
+    path = REPO_ROOT / "tool" / "openjdk" / "api_v1.py"
+    src = path.read_text(encoding = "utf-8").replace("from tool_c393ba5c6fa14f66.api.ctool import InitCTool",
+                                                     "class InitCTool: pass")
+    ns = {"__name__": "tool_openjdk", "__file__": str(path)}
+    exec(compile(src, str(path), "exec"), ns)
+
+    asked = []
+    tool = object.__new__(ns["CTool"])
+    tool.cm = types.SimpleNamespace(debug = False, access = lambda p: asked.append(p) or {"return": 0},
+                                    catch_error = lambda r: r["return"] > 0)
+    ctx = {"tasks": {"nested_call": 0, "global": {"host": {"os": {"uname": "linux", "uarch": "amd64"},
+                                                           "vars": {"file_ext_exe": ""}}}}}
+    for libc, build in [(("glibc", "2.39"), "_x64_linux_"), (("", ""), "_x64_alpine-linux_"), (("musl", "1.2.5"), "_x64_alpine-linux_")]:
+        monkeypatch.setattr(ns["platform"], "libc_ver", lambda *a, **k: libc)
+        assert tool.install(ctx, {"control": {}})["return"] == 0
+        assert build in asked[-1]["url"]

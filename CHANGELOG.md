@@ -3,6 +3,8 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **`tool/openjdk`:** on musl Linux (Alpine) the default JDK is Temurin's `alpine-linux` build;
+  before, the glibc build was downloaded and did not run there.
 - **An OpenSSH server run as the user** (`tool/openssh-server`, `task/run-openssh`, new):
   - **`cx task run run-openssh --keys=<public key file>`** starts sshd on a port of its own (2222)
     with key-only logins, as the user: no service, no administrator. `status` shows it, and `stop`
