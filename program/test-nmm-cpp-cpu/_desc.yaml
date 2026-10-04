@@ -54,6 +54,8 @@ updates:
             if_os: linux,darwin
             if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.llvm.path|None}}" != "None" '
             name: lib-openmp,7958b973fc0d42a9
+            with:
+              static: '{{params.compile.static|$None}}'
 
 
           ######################################################################################

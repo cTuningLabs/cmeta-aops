@@ -3,6 +3,21 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **Static and dynamic library variants keep their own cache entries** (`tool/lib-xopenme`,
+  `lib-polybench`, `lib-milepost`): a request's `with.static` and `with.debug_info` always carry a
+  value, so a dynamic build no longer matches the static entry as well (a program's
+  `'{{params.compile.static|$None}}'` left the key out of the query, and quiet mode could reuse the
+  static entry). Existing entries keep matching.
+- **Static builds with clang get a static OpenMP runtime** (`tool/lib-openmp`): `libomp.a` in the
+  library's cache entry, the archive shipped with Homebrew's libomp on macOS, else built from the
+  pinned OpenMP 21.1.8 source release (SHA-256 checked) with cMeta's cmake and ninja on Linux; before,
+  `-static -fopenmp` failed on `-lomp`. `test-nmm-c-cpu`, `test-nmm-cpp-cpu`, `polybench-cpu-gemm`
+  and `polybench-gemm-cpu-cuda` pass `compile.static` to it.
+- **`test-nmm-nvcc-cuda`:** a static build uses the static xopenme and, on Linux, lib-openssl's
+  static libraries, like the C programs (static for CUDA is `-cudart=static` with static third-party
+  libraries: a fully static host binary cannot load the CUDA driver).
+- **`test-nmm-c-cpu`:** links the math library on Linux; before, the dynamic build linked only with
+  `--compile.fastest`.
 - **A program's Python venv stays its own** (`category/task/api/v2.py`, `task/setup`, `tool/python`):
   - **A request without a venv of its own** (no `with.venv_path`, `with.venv_here`, `tool_path`,
     `with.here` or `--path`) no longer reuses the venv that a program or a tool made inside its own

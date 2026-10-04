@@ -45,14 +45,19 @@ updates:
             with:
               static: True
 
+          # The static or the dynamic xopenme, as the build asks (the two have separate cache entries)
           - task: setup,a2f9b61079ce4333
             name: lib-xopenme,c7b96678a7734510
+            with:
+              static: '{{params.compile.static|$None}}'
 
           # Only for Clang on Linux and MacOS
           - task: setup,a2f9b61079ce4333
             if_os: linux,darwin
             if: '{{global.target.compute|$[]}} == ["cpu"] and "{{global.llvm.path|None}}" != "None" '
             name: lib-openmp,7958b973fc0d42a9
+            with:
+              static: '{{params.compile.static|$None}}'
 
 
           ######################################################################################
