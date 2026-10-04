@@ -2,6 +2,9 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.43.0
+- *In development.*
+
 ## 0.42.0
 - **A reused tool entry is completed from its tool's current `_desc.yaml`** (`task/setup`): a cached entry
   carries the features of the time it was detected, so a key the meta gained afterwards (a compiler flag
