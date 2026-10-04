@@ -3,6 +3,12 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **`task/host` no longer waits for a hostname nobody resolves:** `get_hostname_info()` resolved the
+  hostname with `getaddrinfo()` to add its addresses; on a machine whose name no resolver knows (a CI
+  runner, a host without a DNS entry) that waited for the resolver's timeouts - half a minute on some
+  macOS machines - on every task run, since the host task is not cached on disk. The lookup now runs in
+  a daemon thread and is given two seconds; afterwards the task goes on with the addresses it found
+  without DNS (the outbound ones).
 - **A static build links GCC's OpenMP runtime statically too** (`task/setup-compile`, `tool/gcc`, `tool/gcc-cpp`,
   `tool/nvcc`): with `with.static` and OpenMP, the static runtime of the compiler that provides it - `libgomp.a`,
   which the compiler reports with `-print-file-name` (`openmp_static_archive` in the compiler's meta; the host

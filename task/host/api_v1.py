@@ -562,6 +562,30 @@ def detect_linux_env():
     }
 
 ###################################################################################################
+def resolve_hostname_addresses(hostname, timeout = 2.0):
+    """
+    The getaddrinfo() entries of a hostname, or [] when the resolver has not answered after
+    `timeout` seconds (the lookup runs in a daemon thread, so the task goes on without it; the
+    outbound addresses found without DNS are kept anyway).
+    """
+
+    import threading
+
+    found = []
+
+    def lookup():
+        try:
+            found.extend(socket.getaddrinfo(hostname, None))
+        except Exception:
+            pass
+
+    thread = threading.Thread(target = lookup, daemon = True)
+    thread.start()
+    thread.join(timeout)
+
+    return [] if thread.is_alive() else list(found)
+
+###################################################################################################
 def get_hostname_info():
     result = {
         "hostname": None,
@@ -604,17 +628,15 @@ def get_hostname_info():
     if ipv6_default:
         ipv6_set.add(ipv6_default)
 
-    # --- Hostname resolution (adds more IPs) ---
-    try:
-        infos = socket.getaddrinfo(socket.gethostname(), None)
-        for family, _, _, _, sockaddr in infos:
+    # --- Hostname resolution (adds more IPs), bounded: a name no resolver knows (a CI runner, a
+    # machine without a DNS entry) can take half a minute of resolver timeouts, on every run ---
+    if result["hostname"]:
+        for family, _, _, _, sockaddr in resolve_hostname_addresses(result["hostname"]):
             ip = sockaddr[0]
             if family == socket.AF_INET:
                 ipv4_set.add(ip)
             elif family == socket.AF_INET6:
                 ipv6_set.add(ip)
-    except Exception:
-        pass
 
     # --- Cleanup helper ---
     def finalize(ip_set):
