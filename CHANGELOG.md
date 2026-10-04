@@ -3,6 +3,12 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **The tool search never recurses from a filesystem root** (`category/tool/api/v1.py`): a search
+  pattern with `**` whose fixed part is `/`, a drive root or a pseudo file system (`/proc`, `/sys`,
+  `/dev`, `/run`) is skipped (said in verbose mode). On Debian, `/usr/bin/clang` is a link into
+  `/usr/lib/llvm-<N>`; `tool/llvm` gave it the home `/` and `tool/lib-openmp`'s `<home>/**` walked
+  `/proc` for ever. `tool/llvm` now takes the folders of the real binary behind a link, and
+  `tool/lib-openmp` searches the LLVM's `lib` folders and the usual places, not a whole home.
 - **`tool/llvm`, `tool/clang`, `tool/clang-cpp`: a Swift toolchain's clang ranks last.** The clang of
   swiftly or of a Swift toolchain (its `--version` names swiftlang) is often first on `PATH` but has no
   OpenMP headers or runtime; detection now places every other clang before it, whatever the version,
