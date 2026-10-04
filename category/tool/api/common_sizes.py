@@ -33,6 +33,7 @@ import os
 import shutil
 
 SIZES_FILE = '_desc_sizes.yaml'
+DOWNLOAD_SIZES_FILE = '.cmeta-download-sizes.json'
 GB = 1024 ** 3
 
 
@@ -109,6 +110,55 @@ def folder_gb(path):
             except OSError:
                 pass
     return total / GB
+
+
+def folder_bytes(path, skip = ()):
+    """The size of a folder in bytes (files only, links not followed), without the files in skip."""
+    skip = {os.path.normcase(os.path.abspath(p)) for p in skip}
+    total = 0
+    for root, dirs, files in os.walk(path):
+        for f in files:
+            full = os.path.join(root, f)
+            if os.path.normcase(os.path.abspath(full)) in skip:
+                continue
+            try:
+                total += os.lstat(full).st_size
+            except OSError:
+                pass
+    return total
+
+
+def record_download_sizes(folder, record):
+    """
+    Appends what a download took (download_bytes, unpacked_bytes, peak_bytes, url) to the record file
+    of the folder (the tool's cache entry during an install), for task/setup to read at the end.
+    """
+    path = os.path.join(folder, DOWNLOAD_SIZES_FILE)
+    records = read_download_sizes(folder)
+    records.append(record)
+    try:
+        with open(path, 'w', encoding = 'utf-8') as f:
+            json.dump(records, f, indent = 1)
+    except OSError:
+        pass
+
+
+def read_download_sizes(folder):
+    """The records of the folder's downloads ([] without the file)."""
+    path = os.path.join(folder, DOWNLOAD_SIZES_FILE)
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, encoding = 'utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def peak_of_downloads(records):
+    """The largest peak (archive + unpacked tree, in bytes) among the download records, or 0."""
+    return max([r.get('peak_bytes') or 0 for r in records], default = 0)
 
 
 def check_space(needed_gb, path, floor_gb = None, free = None):

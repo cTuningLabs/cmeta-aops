@@ -73,12 +73,20 @@ entry's result, next to the timings:
 
 ```
 _impact:
-  disk_gb: 11.2          # the size of the cache entry (and of --path) afterwards
+  disk_gb: 11.2          # the size of the cache entry afterwards (what is kept)
   disk_method: install   # install or build
   disk_os: linux
   disk_arch: amd64
-  peak_gb: 12.9          # only when the tool's install() reports its peak (archive + unpacked tree)
+  download_gb: 1.4       # the archives download-file fetched into the entry
+  peak_gb: 12.9          # the largest of: archive + unpacked tree at the end of each unpacking (before
+                         # download-file removes the archive), what install() reported, the entry's size
 ```
+
+`task/download-file` measures every download it unpacks: the archive (`download_bytes`), the files
+it added (`unpacked_bytes`) and their sum (`peak_bytes`), returns them as `download_sizes` and
+appends them to `.cmeta-download-sizes.json` in the folder it works in; during an install that is
+the tool's cache entry, so every tool that downloads a release archive (through `download-file`
+directly, `common_release.py`, `common_jdk.py`, …) gets a real peak without any code of its own.
 
 `cx tool setup <tool> --sizes` lists the records of the tool's cache entries, the rules of its
 `_desc_sizes.yaml`, and the rules it suggests from the records (about 20 % above the largest sizes
@@ -105,14 +113,6 @@ sizes:
 Detected tools (found on the system) record no size. Run it on several machines, or inside test
 sessions, and the rules of the big tools fill in over time.
 
-## For tool authors
-
-- Add `_desc_sizes.yaml` to a tool whose install or build takes more than a few gigabytes; small
-  tools need none.
-- A custom `install()` may return `peak_gb` (the size of the archive plus the unpacked tree, before
-  the archive is removed) so that the record carries the peak and not only what is kept.
-- The check does not change the cache identity of a tool: `_impact` is not matched by the cache.
-
 ## Programs
 
 A program whose build is large may have the same file, `program/<name>/_desc_sizes.yaml`, with the
@@ -135,5 +135,14 @@ folder and in the run's result (`_impact.disk_gb`, with `disk_os`, `disk_arch`, 
 the rules of the build programs (`build-pytorch`, `build-vllm`, `build-llama-cpp`,
 `build-executorch-android`, `build-torch-cpp`, `build-pytorchvision` have them) can be checked
 against what builds really take. A program without the file and no minimum: no check, no output.
+
+## For tool authors
+
+- Add `_desc_sizes.yaml` to a tool whose install or build takes more than a few gigabytes; small
+  tools need none.
+- A tool that fetches its files with `task/download-file` gets the peak of its downloads recorded for
+  free. A custom `install()` that unpacks or builds in its own way may return `peak_gb`; the largest
+  of all these figures is recorded.
+- The check does not change the cache identity of a tool: `_impact` is not matched by the cache.
 
 See also [tool-abstraction.md](tool-abstraction.md) and the `add-tool` skill.

@@ -557,9 +557,17 @@ class CTask(InitCTask):
         impact['disk_os'] = host['uname']
         impact['disk_arch'] = host.get('uarch')
 
-        peak = kwargs.get('_disk_peak_gb')
-        if peak is not None:
-            impact['peak_gb'] = round(max(float(peak), impact['disk_gb']), 6)
+        # The peak: the largest of what install() reported, what the downloads into this entry took at
+        # their peak (archive + unpacked tree, recorded by download-file) and the entry's size now
+        peaks = [impact['disk_gb']]
+        if kwargs.get('_disk_peak_gb') is not None:
+            peaks.append(float(kwargs['_disk_peak_gb']))
+        downloads = sizes.read_download_sizes(folder)
+        if downloads:
+            peaks.append(sizes.peak_of_downloads(downloads) / sizes.GB)
+            impact['download_gb'] = round(sum(d.get('download_bytes') or 0 for d in downloads) / sizes.GB, 6)
+        if len(peaks) > 1:
+            impact['peak_gb'] = round(max(peaks), 6)
 
         return {'return': 0}
 
@@ -595,9 +603,9 @@ class CTask(InitCTask):
             print (f'Disk sizes recorded for "{name}" ({len(records)} of {len(entries)} cache entries):')
             print ('')
             for rec in sorted(records, key = lambda x: -(x['peak_gb'] or x['kept_gb'])):
-                peak = f', peak {rec["peak_gb"]:.2f} GB' if rec.get('peak_gb') else ''
+                peak = f', peak {rec["peak_gb"]:.3g} GB' if rec.get('peak_gb') else ''
                 print (f'  {rec["version"] or "-":12} {rec["method"] or "-":8} {rec["os"] or "-":8} {rec["arch"] or "-":6} '
-                       f'kept {rec["kept_gb"]:.2f} GB{peak}  {rec["entry"]}')
+                       f'kept {rec["kept_gb"]:.3g} GB{peak}  {rec["entry"]}')
             if not records:
                 print ('  (none: installs and builds record their size since this feature; detected tools have none)')
             print ('')

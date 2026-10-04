@@ -232,3 +232,99 @@ def test_floor_from_config(cm, fake_tool):
     finally:
         cm.access({"category": "config", "command": "set", "arg1": "task", "meta": {"min_free_gb": None}})
         (fake_tool / "_desc_sizes.yaml").write_text("sizes:\n  - if: {method: install}\n    peak: 100000\n  - peak: 1\n", encoding = "utf-8")
+
+
+# The real peak through task/download-file: the archive and the unpacked tree, before the archive is removed
+
+def test_folder_bytes_and_download_records(sizes, tmp_path):
+    (tmp_path / "a.zip").write_bytes(b"z" * 1000)
+    (tmp_path / "out").mkdir()
+    (tmp_path / "out" / "b").write_bytes(b"x" * 3000)
+    assert sizes["folder_bytes"](str(tmp_path)) == 4000
+    assert sizes["folder_bytes"](str(tmp_path), skip = [str(tmp_path / "a.zip")]) == 3000
+    assert sizes["read_download_sizes"](str(tmp_path)) == []
+    sizes["record_download_sizes"](str(tmp_path), {"url": "u1", "download_bytes": 1000, "unpacked_bytes": 3000, "peak_bytes": 4000})
+    sizes["record_download_sizes"](str(tmp_path), {"url": "u2", "download_bytes": 10, "unpacked_bytes": 0, "peak_bytes": 10})
+    records = sizes["read_download_sizes"](str(tmp_path))
+    assert [r["url"] for r in records] == ["u1", "u2"] and sizes["peak_of_downloads"](records) == 4000
+    assert sizes["peak_of_downloads"]([]) == 0
+
+
+@pytest.fixture(scope = "module")
+def zip_tool(cm, tmp_path_factory):
+    """A tool whose install downloads a zip from a local HTTP server (the engine's download needs
+    HTTP headers, so no file://) with download-file and unpacks it: the archive is 1 member of 300 KB
+    of zeros (compresses well), so the unpacked tree is much larger than the archive, and the peak is
+    their sum."""
+    import functools
+    import http.server
+    import threading
+    import zipfile
+    work = tmp_path_factory.mktemp("zip")
+    archive = work / "zz-zip-fake-1.0.zip"
+    with zipfile.ZipFile(archive, "w", compression = zipfile.ZIP_DEFLATED) as z:
+        z.writestr("zz-zip-fake-1.0/bin/zz-zip-fake", b"\0" * 300_000)
+        z.writestr("zz-zip-fake-1.0/README", b"fake")
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory = str(work))
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), handler)
+    httpd.RequestHandlerClass.log_message = lambda *a, **k: None
+    threading.Thread(target = httpd.serve_forever, daemon = True).start()
+    url = f"http://127.0.0.1:{httpd.server_address[1]}/zz-zip-fake-1.0.zip"
+    name = "zz-zip-fake"
+    r = cm.access({"category": "tool", "command": "add", "arg1": f"local:{name}", "con": False, "quiet": True, "yaml": True})
+    assert r["return"] == 0, r.get("error")
+    tool = pathlib.Path(r["path"])
+    (tool / "_desc.yaml").write_text(textwrap.dedent(f"""
+        skip_detect: True
+        skip_common_install_uses: True
+        names: ['{name}']
+        match_version:
+          - regex: '([0-9.]+)'
+            group: 1
+        cmd_get_version: 'echo 1.0'
+        """), encoding = "utf-8")
+    (tool / "api_v1.py").write_text(textwrap.dedent(f"""
+        import os
+        from tool_c393ba5c6fa14f66.api.ctool import InitCTool
+
+        class CTool(InitCTool):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, module_file_path = __file__, **kwargs)
+
+            def install(self, ctx, params, cmd = None, *misc):
+                check = os.path.join(os.getcwd(), 'content', 'bin', 'zz-zip-fake')
+                r = self.cm.access({{'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'download-file,03fed13e2e0447cf',
+                                    'ctx': ctx, 'url': {url!r}, 'directory': 'content', 'unzip': True, 'clean': True,
+                                    'clean_after_unzip': True, 'strip_folders': 1, 'check_file': check,
+                                    'con': False, 'quiet': True}})
+                if r['return'] > 0:
+                    return r
+                return {{'return': 0, 'install_cmd': None, 'found_path': check, 'download_sizes': r.get('download_sizes')}}
+        """), encoding = "utf-8")
+    yield {"tool": tool, "name": name, "archive_bytes": archive.stat().st_size}
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def test_download_file_reports_and_records_the_peak(cm, zip_tool):
+    r = cm.access({"category": "task", "command": "run", "arg1": "setup", "name": zip_tool["name"], "con": False, "quiet": True})
+    assert r["return"] == 0, r.get("error")
+    impact = r["_impact"]
+    archive, unpacked = zip_tool["archive_bytes"], 300_000 + 4
+    # download-file reported the archive, the unpacked tree and their sum, and recorded them in the entry
+    # (the _impact figures are GB rounded to 6 decimals, so the bytes are checked in the record)
+    entry = pathlib.Path(r["path_cmeta_cache"])
+    records = json.loads((entry / ".cmeta-download-sizes.json").read_text())
+    assert len(records) == 1 and records[0]["download_bytes"] == archive and records[0]["unpacked_bytes"] == unpacked
+    assert records[0]["peak_bytes"] == archive + unpacked
+    assert impact["download_gb"] == round(archive / GB, 6)
+    assert impact["peak_gb"] == round((archive + unpacked) / GB, 6)
+    # the archive is gone, so what is kept is below the peak by the archive's size (a 600-byte
+    # archive is within the 6-decimal rounding of the GB figures, so the bytes carry the check)
+    assert impact["disk_gb"] <= impact["peak_gb"]
+    assert records[0]["peak_bytes"] - records[0]["unpacked_bytes"] == archive
+    assert not (entry / "content" / "zz-zip-fake-1.0.zip").exists()
+    # the suggestions use the real peak, above what is kept
+    r = cm.access({"category": "task", "command": "run", "arg1": "setup", "name": zip_tool["name"], "sizes": True, "con": False, "quiet": True})
+    assert r["return"] == 0 and r["records"][0]["peak_gb"] == impact["peak_gb"]
+    assert r["suggested"][0]["peak"] >= r["suggested"][0]["kept"]

@@ -5,6 +5,7 @@ Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
+import importlib.util
 import os
 import stat
 
@@ -128,6 +129,31 @@ class CTask(InitCTask):
                     files = [filename]
 
         return files
+
+    ############################################################
+    def common_sizes(self):
+        """
+        The size measures of the tool category (category/tool/api/common_sizes.py), shared with
+        task/setup. Its package, tool_<uid>.api, exists once the engine has loaded the tool category in
+        this process (any tool setup does that); before that, the module is loaded from the category's
+        folder. None when the category is not plugged: the download then records no sizes.
+        """
+        try:
+            from tool_c393ba5c6fa14f66.api import common_sizes
+            return common_sizes
+        except ImportError:
+            pass
+        r = self.cm.access({'category': 'category', 'command': 'find', 'arg1': 'tool,c393ba5c6fa14f66'})
+        artifacts = r.get('artifacts') if r.get('return', 1) == 0 else None
+        if not artifacts:
+            return None
+        path = os.path.join(artifacts[0]['path'], 'api', 'common_sizes.py')
+        if not os.path.isfile(path):
+            return None
+        spec = importlib.util.spec_from_file_location('cmeta_aops_common_sizes', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
     ############################################################
     def run(self,
@@ -343,6 +369,12 @@ class CTask(InitCTask):
 
             filesize = os.path.getsize(filename_with_path)
 
+            # The sizes a setup takes at its peak: the archive and, after unpacking, the unpacked tree
+            # (measured before the archive is removed by clean_after_unzip); task/setup records them.
+            # common_sizes lives in the tool category: None when it cannot be loaded (nothing measured)
+            sizes = self.common_sizes()
+            unpacked_before = sizes.folder_bytes(path_to_files, skip = [filename_with_path]) if (unzip and sizes) else 0
+
             if unzip:
                 if strip_folders and strip_folders != '': 
                     strip_folders = int(strip_folders)
@@ -390,11 +422,22 @@ class CTask(InitCTask):
                 else:
                     return self.cm.error(f'extension is not yet supported for unzip/untar {filename}')
 
+                unpacked_bytes = (sizes.folder_bytes(path_to_files, skip = [filename_with_path]) - unpacked_before) if sizes else 0
+                download_sizes = {'url': urls[0] if urls else url, 'download_bytes': filesize,
+                                  'unpacked_bytes': max(unpacked_bytes, 0), 'peak_bytes': filesize + max(unpacked_bytes, 0)}
+
                 if clean_after_unzip and os.path.isfile(filename_with_path):
                     if verbose:
                         print (f'{space}RUN: rm {filename_with_path}')
 
                     os.remove(filename_with_path)
+            else:
+                download_sizes = {'url': urls[0] if urls else url, 'download_bytes': filesize,
+                                  'unpacked_bytes': 0, 'peak_bytes': filesize}
+
+            result['download_sizes'] = download_sizes
+            if sizes:
+                sizes.record_download_sizes(workdir, download_sizes)
 
         ###################################################################
         # Check file again

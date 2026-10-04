@@ -49,6 +49,12 @@ All notable changes to cMeta AOps are documented here, newest first.
     the records and suggests the rules to paste.
   - Rules for llvm, nvcc, vulkan-sdk, ollama, google.android-ndk, rustup, go, openjdk and the
     `jdk-*` tools, pytorch, mpi and executorch-android. Documentation: `docs/cmeta-aops/tool-sizes.md`.
+  - **Real peaks:** `task/download-file` measures every download it unpacks — the archive, the
+    files the unpacking added and their sum, taken before the archive is removed — returns them as
+    `download_sizes` and records them in `.cmeta-download-sizes.json` of the folder it fills. In a
+    tool's cache entry `task/setup` takes the largest of that peak, what `install()` reports and
+    the entry's size as `_impact.peak_gb` (and the archives' total as `download_gb`), so the rules
+    `--sizes` suggests carry the peak of every tool that downloads a release, not only what it keeps.
 - **Static and dynamic library variants keep their own cache entries** (`tool/lib-xopenme`,
   `lib-polybench`, `lib-milepost`): a request's `with.static` and `with.debug_info` always carry a
   value, so a dynamic build no longer matches the static entry as well (a program's
