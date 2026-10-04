@@ -1046,12 +1046,28 @@ class CTask(InitCTask):
             return r
 
         tool_api_code = r['tool_api_code']
+        desc = r.get('desc') or {}
+
+        # The features of a reused result are completed from the tool's current _desc.yaml: a key the
+        # meta gained after the entry was cached (a compiler flag, for example) is there on every use,
+        # without --update; what was detected keeps its value, and the cache entry is not written
+        added = common.layer_desc_features(desc, result, ctx['tasks']['global']['host']['os']['uname'],
+                                           self.cm.utils.common.deep_merge)
+        if added:
+            _result['result'] = result
+
+            if self.cm.debug:
+                self.logger.debug(f'task setup: features of "{name}" completed from its _desc.yaml: {added}')
+
+            if ctx['control'].get('con', False) and ctx['control'].get('verbose', False):
+                space = '  ' * ctx['tasks'].setdefault('nested_call', 0)
+                print (f'{space}INFO: features of "{name}" completed from its current _desc.yaml: {", ".join(added)}')
 
         if hasattr(tool_api_code, 'finish_dynamic_result') and callable(getattr(tool_api_code, 'finish_dynamic_result')):
             r = tool_api_code.finish_dynamic_result(
-                 ctx, 
-                 result, 
-                 params, 
+                 ctx,
+                 result,
+                 params,
             )
             if self.cm.catch_error(r): return r
 

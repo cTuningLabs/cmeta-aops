@@ -127,34 +127,6 @@ class CTask(InitCTask):
         return {'return':0}
 
     ############################################################
-    def tool_desc_flags(self,
-                        ctx: dict,
-                        compiler: dict,
-                        uname: str,
-    ):
-        """
-        The features.flags of a compiler tool's _desc.yaml for this OS (the "all", "<uname>", "linux"
-        precedence of task/setup), or {}. A cached compiler entry carries the flags of the time it was
-        cached, so a flag added to the tool's meta afterwards (openmp_static_archive, linker_option_prefix)
-        is read from the tool itself; nothing else of the cached entry changes.
-        """
-        name = (compiler.get('tool') or {}).get('name')
-        tool_category = (getattr(self, 'cmeta', None) or {}).get('uses_categories', {}).get('tool')
-        if not name or not tool_category:
-            return {}
-        r = self.cm.access({'category': tool_category, 'command': 'find', 'arg1': name})
-        if r.get('return', 1) > 0 or not r.get('artifacts'):
-            return {}
-        r = self.cm.utils.files.safe_read_file(os.path.join(r['artifacts'][0]['path'], '_desc.yaml'))
-        if r.get('return', 1) > 0 or not isinstance(r.get('data'), dict):
-            return {}
-        features = r['data'].get('features') or {}
-        for k in ['all', uname, 'linux']:
-            if k in features:
-                return (features[k] or {}).get('flags') or {}
-        return {}
-
-    ############################################################
     def run(self,
             ctx,
             **params,
@@ -312,20 +284,11 @@ class CTask(InitCTask):
             runtime_compiler = _global[global_compiler_key]
             if flags.get('host_compiler') and 'compiler-cpp' in _global:
                 runtime_compiler = _global['compiler-cpp']
-            # The flags of a cached compiler entry are those of the time it was cached: a flag the
-            # tool's meta gained since is read from the tool itself
-            desc_flags = None
+            # The flags of a reused compiler entry are completed from the tool's current meta by task
+            # setup (finish_dynamic_result), so a flag the meta gained after the entry was cached
+            # (openmp_static_archive, linker_option_prefix) is here without --update
             archive = runtime_compiler.get('features', {}).get('flags', {}).get('openmp_static_archive')
-            if archive is None:
-                desc_flags = self.tool_desc_flags(ctx, runtime_compiler, uname)
-                archive = desc_flags.get('openmp_static_archive')
-            driver_flags = flags
-            if archive and 'linker_option_prefix' not in flags:
-                driver = _global[global_compiler_key]
-                x = (desc_flags if driver is runtime_compiler and desc_flags is not None else self.tool_desc_flags(ctx, driver, uname)).get('linker_option_prefix')
-                if x:
-                    driver_flags = {**flags, 'linker_option_prefix': x}
-            static_openmp = static_openmp_runtime(runtime_compiler, archive, driver_flags, uname, host.get('os_extra', {}).get('id'),
+            static_openmp = static_openmp_runtime(runtime_compiler, archive, flags, uname, host.get('os_extra', {}).get('id'),
                                                   host.get('os_extra', {}).get('id_like'), q = self.cm.q)
             if static_openmp is not None and static_openmp['return'] > 0:
                 return self.cm.error(static_openmp['error'])

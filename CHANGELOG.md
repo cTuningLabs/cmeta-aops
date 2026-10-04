@@ -3,6 +3,14 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **A reused tool entry is completed from its tool's current `_desc.yaml`** (`task/setup`): a cached entry
+  carries the features of the time it was detected, so a key the meta gained afterwards (a compiler flag
+  such as `openmp_static_archive`, nvcc's `linker_option_prefix`) was missing on every reuse until `--update`.
+  Now `finish_dynamic_result` lays the meta's declarative `features` block (the `all` / host-OS / `linux`
+  block the detection starts from) under the cached features on every use: the keys the entry lacks come
+  from the meta, what was detected keeps its value, lists are not appended, and the entry's files are not
+  rewritten (they stay the record of what was detected; `--update` re-detects). `-v` names the keys added.
+  `task/setup-compile` no longer reads the archive flag from the tool's meta itself.
 - **`task/host` no longer waits for a hostname nobody resolves:** `get_hostname_info()` resolved the
   hostname with `getaddrinfo()` to add its addresses; on a machine whose name no resolver knows (a CI
   runner, a host without a DNS entry) that waited for the resolver's timeouts - half a minute on some

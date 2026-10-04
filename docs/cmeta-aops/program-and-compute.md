@@ -123,7 +123,11 @@ libraries, compilers, profilers and run wrapping. Two consumers filter on it:
    honoured stops the run.
 2. **The compiler tool** carries per-OS `features.flags` (see
    [tool-abstraction.md](tool-abstraction.md)) — the abstraction that makes one template
-   work across toolchains.
+   work across toolchains. A cached compiler entry carries the flags of the time it was
+   detected, so task `setup` lays the tool's *current* `_desc.yaml` features block under the
+   cached features on every reuse: a flag added to the meta afterwards is there without
+   `--update`, a detected value keeps its own, and the cache entry itself is not rewritten
+   (`--update` re-detects).
 3. **`setup-compile` task** (`task/setup-compile/api_v1.py`) is the assembler: reads
    `global['compiler-<lang>'].features.flags`, translates `params.compile`
    (`openmp`/`static`/`debug`/`d:{...}`/`fast`) into concrete flags, **scans every

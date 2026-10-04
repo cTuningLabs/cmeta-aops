@@ -498,26 +498,6 @@ def test_static_openmp_runtime_resolution(tmp_path):
     assert ns["static_openmp_runtime"](gcc, "libgomp.a", gcc["features"]["flags"], "windows", q = q) is None
 
 
-def test_setup_compile_reads_a_flag_a_cached_compiler_entry_lacks(tmp_path):
-    """The flags of a cached compiler entry are those of its time: openmp_static_archive comes from the tool's meta."""
-    ns, task = setup_compile_task()
-    archive = tmp_path / "libgomp.a"
-    archive.write_bytes(b"!<arch>\n")
-    ns["print_file_name"] = lambda compiler, name: str(archive)
-    gcc = gcc_entry(tmp_path)
-    del gcc["features"]["flags"]["openmp_static_archive"]
-    gcc["tool"] = {"name": "gcc"}
-    asked = []
-    task.tool_desc_flags = lambda ctx, compiler, uname: (asked.append(compiler["tool"]["name"]), {"openmp_static_archive": "libgomp.a"})[1]
-    r = task.run(openmp_ctx(tmp_path, "compiler-c", gcc), lang = "c", src_path = str(tmp_path), src_file_names = ["a.c"],
-                 target_path = str(tmp_path / "build"), **{"with": {"static": True, "openmp": True}})
-    assert r["return"] == 0 and r["static_openmp_runtime"] == str(archive) and asked == ["gcc"]
-    assert f'"{archive}" -lpthread -ldl -Wl,--as-needed' in r["add_to_local"]["compile_cmds"][0]
-    # without self.cmeta (no categories to look in) the lookup is simply empty
-    task2 = setup_compile_task()[1]
-    assert task2.tool_desc_flags({}, gcc, "linux") == {}
-
-
 def openmp_ctx(tmp_path, compiler_key, compiler, extra_global = {}):
     g = {"host": {"os": {"uname": "linux"}, "os_extra": {"id": "debian"}}, compiler_key: compiler}
     g.update(extra_global)

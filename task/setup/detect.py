@@ -8,6 +8,8 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 import os
 import re
 
+from . import common
+
 def detect_existing_tool(self,
         ctx: dict,                  # cMeta context
         name: str = None,           # Tool name
@@ -538,15 +540,11 @@ def detect_existing_tool(self,
         add_to_result = tool['add_to_result']
         result.update(add_to_result)
 
-    features = None
-
-    if 'features' in desc:
-        _features = desc['features']
-
-        for k in ['all', uname, 'linux']:
-            if k in _features:
-                features = _features[k].copy()
-                break
+    # The declarative features of the tool's meta for this OS are the base, what was detected goes on
+    # top (the same block completes a reused result later: task setup finish_dynamic_result)
+    features = common.desc_features_block(desc, uname)
+    if features is not None:
+        features = features.copy()
 
     _features = tool.get('features')
     if _features:

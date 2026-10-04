@@ -151,6 +151,12 @@ cache identity of that sub-task, so it gets its own cache entry and the default 
     `--update` rebuilds an entry from what is installed; upgrading the *tool* itself is
     `cx tool setup <tool> --upgrade` (see [tool-abstraction.md](tool-abstraction.md)),
     which switches `update` on for its run so the entry records the new version.
+  - A reused tool entry is completed from the tool's *current* `_desc.yaml`: `task/setup`
+    lays the declarative `features` block of the meta (the `all` / host-OS / `linux` block the
+    detection also starts from) under the cached features in `finish_dynamic_result`, so a key
+    the meta gained after the entry was cached (a compiler flag, for example) is there on every
+    use without `--update`; what was detected keeps its value, and the entry's files are not
+    rewritten — they stay the record of what was detected.
   - Files in an entry: `cmeta-task-cached-result.json`, `cmeta-task-cached-ctx.json`
     (and `cmeta-task-saved-*.json` with `--save`).
 
