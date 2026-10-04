@@ -7,10 +7,11 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 task/compiler's choice among cached compilers (filter_cache_artifacts, called by the task engine before it
 offers the matching cache entries or takes the first in quiet mode): a cached compiler whose version is
 outside the limit the run sets for its tool (tool/nvcc's host-compiler limits, --use.<tool>.version) or whose
-tool lacks the request's extra_tags or fails its extra_match is dropped; for the host compiler of nvcc the
-tool the repository ranks first (msvc, gcc, clang) wins, then the newest version, with no prompt; other
-requests keep the engine's choice among the remaining entries. The tool metas come from this repository,
-plugged into the isolated CMETA_HOME.
+tool lacks the request's extra_tags or fails its extra_match is dropped; of the rest, the preferred compiler
+of the OS (task/compiler/_desc.yaml: msvc on Windows, gcc on Linux, clang on macOS) wins, then the tool the
+repository ranks first, then the newest version, with no prompt - for the host compiler of nvcc and for any
+other request alike; run() chooses among the compiler tools of a machine without cached compilers the same
+way. The tool metas come from this repository, plugged into the isolated CMETA_HOME.
 """
 
 import pathlib
@@ -100,20 +101,24 @@ def test_extra_tags_and_extra_match_check_the_tool_of_a_cached_compiler(compiler
     assert chosen(r) == ['msvc 19.44.35207']
 
 
-def test_the_compiler_set_up_in_this_run_wins(compiler):
+def test_the_compiler_set_up_in_this_run_wins(compiler, capsys):
     """The cuda target set up nvcc 13.3 in this run: the lang=cuda compiler entry of 12.9 is not offered."""
+    capsys_out = lambda: capsys.readouterr().out
     c = ctx()
     c['tasks']['global']['nvcc'] = {'version': '13.3.73', 'tool': {'name': 'nvcc'}}
     entries = [entry('nvcc', '12.9.86', lang = 'cuda'), entry('nvcc', '13.3.73', lang = 'cuda')]
     r = compiler.filter_cache_artifacts(c, entries, [], {'lang': 'cuda', 'compute': 'cuda'})
     assert chosen(r) == ['nvcc 13.3.73']
-    # nothing set up yet: both stay (the engine asks, or takes the newest in quiet mode)
-    r = compiler.filter_cache_artifacts(ctx(), entries, [], {'lang': 'cuda', 'compute': 'cuda'})
-    assert len(r['artifacts']) == 2
-    # a version named in the request is matched by the cache query, not overruled here
+    # nothing set up yet: the newest toolkit, said in an INFO line
+    r = compiler.filter_cache_artifacts(ctx(con = True), entries, [], {'lang': 'cuda', 'compute': 'cuda'})
+    assert chosen(r) == ['nvcc 13.3.73']
+    out = capsys_out()
+    assert 'cached versions of nvcc: taking 13.3.73' in out and '--use.compiler-cuda.version' in out
+    # a version named in the request is matched by the cache query (the limits are not applied here);
+    # of several entries within it the newest is taken
     c['tasks']['global']['nvcc'] = {'version': '13.3.73'}
     r = compiler.filter_cache_artifacts(c, entries, [], {'lang': 'cuda', 'compute': 'cuda', 'version': '12.9'})
-    assert len(r['artifacts']) == 2
+    assert chosen(r) == ['nvcc 13.3.73']
 
 
 def test_entries_of_one_compiler_are_one_choice(compiler, capsys):
@@ -136,16 +141,96 @@ def test_entries_of_one_compiler_are_one_choice(compiler, capsys):
     assert len(compiler.filter_cache_artifacts(ctx(), [g1, g2], [], {'lang': 'c', 'compute': 'cpu'})['artifacts']) == 1
 
 
-def test_other_requests_keep_the_engines_choice(compiler):
-    """No nvcc constraint: both suitable compilers stay (the engine asks, or takes the newest in quiet mode)."""
-    r = compiler.filter_cache_artifacts(ctx(), [entry('gcc-cpp', '13.3.0', 'cpu'), entry('clang-cpp', '18.1.3', 'cpu')], [],
-                                        {'lang': 'cpp', 'compute': 'cpu'})
-    assert chosen(r) == ['gcc-cpp 13.3.0', 'clang-cpp 18.1.3']
-    # a limit of the run still applies (--use.clang-cpp.version=<18 asks for another clang)
-    r = compiler.filter_cache_artifacts(ctx(use = {'clang-cpp': {'version': '<18'}}),
-                                        [entry('gcc-cpp', '13.3.0', 'cpu'), entry('clang-cpp', '18.1.3', 'cpu')], [],
-                                        {'lang': 'cpp', 'compute': 'cpu'})
+def test_a_cpu_request_takes_the_compiler_of_the_os(compiler, capsys):
+    """No nvcc constraint, two different compilers cached: the preferred one of the OS, not the newest."""
+    cpu = [entry('gcc-cpp', '13.3.0', 'cpu'), entry('clang-cpp', '18.1.3', 'cpu')]
+    r = compiler.filter_cache_artifacts(ctx(con = True), cpu, [], {'lang': 'cpp', 'compute': 'cpu'})
     assert chosen(r) == ['gcc-cpp 13.3.0']
+    out = capsys.readouterr().out
+    assert 'suit this run: taking gcc-cpp 13.3.0' in out and 'clang-cpp 18.1.3' in out and '--use.compiler-cpp.name' in out
+    # Windows: MSVC before a newer clang; macOS: clang before gcc although the repository ranks gcc first
+    r = compiler.filter_cache_artifacts(ctx('windows'), [entry('clang', '22.1.7', 'cpu', 'c'), entry('msvc', '19.50.35726', 'cpu', 'c')], [],
+                                        {'lang': 'c', 'compute': 'cpu'})
+    assert chosen(r) == ['msvc 19.50.35726']
+    r = compiler.filter_cache_artifacts(ctx('darwin'), [entry('gcc-cpp', '15.2.0', 'cpu'), entry('clang-cpp', '21.0.0', 'cpu')], [],
+                                        {'lang': 'cpp', 'compute': 'cpu'})
+    assert chosen(r) == ['clang-cpp 21.0.0']
+    # a limit of the run still applies (--use.clang-cpp.version=<18 asks for another clang)
+    r = compiler.filter_cache_artifacts(ctx(use = {'clang-cpp': {'version': '<18'}}), cpu, [], {'lang': 'cpp', 'compute': 'cpu'})
+    assert chosen(r) == ['gcc-cpp 13.3.0']
+
+
+def test_several_versions_of_one_compiler_take_the_newest(compiler, capsys):
+    r = compiler.filter_cache_artifacts(ctx(con = True), [entry('gcc-cpp', '13.3.0', 'cpu'), entry('gcc-cpp', '14.2.0', 'cpu')], [],
+                                        {'lang': 'cpp', 'compute': 'cpu', 'name': 'gcc-cpp'})
+    assert chosen(r) == ['gcc-cpp 14.2.0']
+    out = capsys.readouterr().out
+    assert 'cached versions of gcc-cpp: taking 14.2.0' in out and 'gcc-cpp 13.3.0' in out and '--use.compiler-cpp.version' in out
+
+
+def test_preferred_compilers_agree_with_the_tools_rank():
+    """The per-OS order of _desc.yaml and the sort keys of the tools (the order of a fresh selection) agree."""
+    import yaml
+    desc = yaml.safe_load((REPO_ROOT / 'task' / 'compiler' / '_desc.yaml').read_text(encoding = 'utf-8'))
+    table = desc['preferred_compilers']
+    assert set(table) == {'windows', 'linux', 'darwin'}
+    for uname, families in table.items():
+        sorts = []
+        for family in families:
+            meta = yaml.safe_load((REPO_ROOT / 'tool' / family / '_cmeta.yaml').read_text(encoding = 'utf-8'))
+            if uname in meta.get('constraints', {}).get('supports_os', []):
+                sorts.append(meta['sort'])
+        assert sorts == sorted(sorts), (uname, families, sorts)
+    # the system compiler of each OS comes first
+    assert table['windows'][0] == 'msvc' and table['linux'][0] == 'gcc' and table['darwin'][0] == 'clang'
+
+
+def test_run_takes_the_preferred_tool_without_a_question(compiler, cm, capsys):
+    """Two compiler tools suit a request on a machine without cached compilers: run() takes the OS one."""
+    calls = []
+
+    def tool(alias, sort):
+        return {'cmeta_ref_parts': {'artifact_alias': alias}, 'cmeta': {'sort': sort}, 'path': '/tool/' + alias}
+
+    class FakeCM:
+        repos = cm.repos
+        utils = cm.utils
+        found = []
+
+        def access(self, p):
+            calls.append(p)
+            if p.get('command') == 'find':
+                return {'return': 0, 'artifacts': list(self.found)} if self.found else {'return': 16, 'error': 'not found'}
+            return {'return': 0, 'version': '1.0', 'constraints': {'supports_compute': ['cpu']}}
+
+        def catch_error(self, r, fail16 = False):
+            return r['return'] > 0 and (r['return'] != 16 or fail16)
+
+        def error(self, text, code = 1):
+            return {'return': code, 'error': text}
+
+    t = object.__new__(type(compiler))
+    t.cm, t.cmeta, t.category_alias, t.category_uid = FakeCM(), compiler.cmeta, 'task', 'c36be4b9314a45e0'
+
+    def run(uname, found):
+        FakeCM.found = found
+        c = ctx(uname, con = True)
+        c['tasks']['nested_call'] = 0
+        return t.run(c, lang = 'cpp', compute = 'cpu')
+
+    r = run('linux', [tool('clang-cpp', 3000), tool('gcc-cpp', 2000)])
+    assert r['return'] == 0 and r['tool']['name'] == 'gcc-cpp' and calls[-1]['name'] == 'gcc-cpp'
+    out = capsys.readouterr().out
+    assert 'compiler tools suit this run: taking gcc-cpp' in out and 'clang-cpp' in out and '--use.compiler-cpp.name' in out
+
+    r = run('darwin', [tool('gcc-cpp', 2000), tool('clang-cpp', 3000)])
+    assert r['tool']['name'] == 'clang-cpp' and 'taking clang-cpp' in capsys.readouterr().out
+
+    r = run('linux', [tool('gcc-cpp', 2000)])
+    assert r['tool']['name'] == 'gcc-cpp' and 'suit this run' not in capsys.readouterr().out   # one tool: nothing to say
+
+    r = run('linux', [])
+    assert r['return'] == 99 and 'constraints' in r['error']
 
 
 def test_unfinished_entries_follow_the_limits_not_the_preference(compiler):

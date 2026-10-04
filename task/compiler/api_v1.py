@@ -124,6 +124,58 @@ class CTask(InitCTask):
             use[name]['version'] = version
 
     ############################################################
+    def _preferred_compilers(self, uname):
+        """
+        The order of the compiler families for a request that names none, per host OS
+        (task/compiler/_desc.yaml, preferred_compilers): the system compiler of the OS first. A family
+        stands for its C and C++ tools (gcc: gcc, gcc-cpp). Families not listed come after the listed
+        ones, in the repository's order of their tools.
+        """
+
+        table = getattr(self, '_preferred_compilers_table', None)
+
+        if table is None:
+            table = {}
+
+            desc_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml')
+            if os.path.isfile(desc_file):
+                r = self.cm.utils.files.safe_read_file(desc_file)
+                if r.get('return', 1) == 0 and isinstance(r.get('data'), dict):
+                    table = r['data'].get('preferred_compilers') or {}
+
+            self._preferred_compilers_table = table
+
+        order = table.get(uname) if isinstance(table, dict) else None
+
+        return [str(x) for x in order] if isinstance(order, list) else []
+
+    ############################################################
+    @staticmethod
+    def _family(tool_name):
+        """The compiler family of a tool alias: gcc-cpp -> gcc, clang-cpp -> clang, msvc -> msvc."""
+
+        name = str(tool_name or '')
+
+        return name[:-4] if name.endswith('-cpp') else name
+
+    ############################################################
+    def _rank(self, uname, tool_name, sort, version = None):
+        """
+        The sort key of one compiler among several that suit a request without a name: the preferred
+        family of the OS first (_preferred_compilers), then the repository's rank of the tool (sort in
+        its _cmeta.yaml - the order of a choice among tools on a machine without cached compilers),
+        then the newest version, then the alias.
+        """
+
+        order = self._preferred_compilers(uname)
+        family = self._family(tool_name)
+
+        return (order.index(family) if family in order else len(order),
+                sort if isinstance(sort, (int, float)) else 10**9,
+                [-x for x in version_numbers(version)],
+                str(tool_name))
+
+    ############################################################
     def _tool_meta(self, name):
         """The meta (_cmeta) of the compiler tool with this alias, or None when the index has none."""
 
@@ -154,18 +206,18 @@ class CTask(InitCTask):
             limit is then reported where it comes from, with the way out;
           * a compiler whose tool lacks the request's extra_tags or fails its extra_match (neither is
             part of the cache identity, so such entries matched before).
-        Then the choice among the rest, without a prompt where there is nothing to ask:
+        Then the choice among the rest, without a question:
           * a compiler tool already set up in this run (the toolkit of the cuda target, a C compiler of
             the same family) keeps the entries of its version only: the run stays consistent;
           * entries of one compiler and version (made for different compute lists: cuda, then
             cuda+vulkan) are the same compiler: the one made for this request's compute, else the
             most specific one, is taken;
-          * for the host compiler of nvcc (extra_match carries supports_nvcc_os), the compiler whose
-            tool the repository ranks first (sort in _cmeta.yaml: msvc, gcc, clang - the compiler of
-            the OS) is taken, then the newest version, said in an INFO line: the order of a selection
-            among the tools on a machine without cached compilers.
-        Other requests with several different compilers left keep the engine's choice (a question, or
-        the newest in quiet mode).
+          * of several different compilers, the one of the preferred family of the OS is taken
+            (task/compiler/_desc.yaml, preferred_compilers: the system compiler first), then the one
+            whose tool the repository ranks first (sort in _cmeta.yaml), then the newest version -
+            the order of a choice among the tools on a machine without cached compilers; of several
+            versions of one compiler, the newest. An INFO line names the others and the --use option
+            that picks one of them.
         """
 
         control = ctx.get('control', {})
@@ -251,15 +303,10 @@ class CTask(InitCTask):
 
             kept = kept[:1]
 
-        host_of_nvcc = 'supports_nvcc_os' in (extra_match.get('constraints') or {})
-
-        if host_of_nvcc and len(kept) > 1:
+        if len(kept) > 1:
             def rank(a):
                 p = params_of(a)
-                sort = (meta_of(p.get('name')) or {}).get('sort')
-                return (sort if isinstance(sort, (int, float)) else 10**9,
-                        [-x for x in version_numbers(p.get('version'))],
-                        str(p.get('name')))
+                return self._rank(uname, p.get('name'), (meta_of(p.get('name')) or {}).get('sort'), p.get('version'))
 
             kept = sorted(kept, key = rank)
 
@@ -270,8 +317,14 @@ class CTask(InitCTask):
                     x = ' '.join(compiler_of(a))
                     if x not in others and x != f'{name} {v}':
                         others.append(x)
-                print (f"{space}INFO: {len(kept)} cached {lang} compilers suit nvcc: taking {name} {v} "
-                       f"({', '.join(others)} also would; --use.compiler-{lang}.name=<tool> picks another)")
+
+                if len({compiler_of(a)[0] for a in kept}) == 1:
+                    print (f"{space}INFO: {len(kept)} cached versions of {name}: taking {v} "
+                           f"({', '.join(others)} also would; --use.compiler-{lang}.version=<version> picks another)")
+                else:
+                    what = 'suit nvcc' if 'supports_nvcc_os' in (extra_match.get('constraints') or {}) else 'suit this run'
+                    print (f"{space}INFO: {len(kept)} cached {lang} compilers {what}: taking {name} {v} "
+                           f"({', '.join(others)} also would; --use.compiler-{lang}.name=<tool> picks another)")
 
             kept = kept[:1]
 
@@ -318,31 +371,36 @@ class CTask(InitCTask):
             print (f'{space}{text}')
 
         ###########################################################################################
-        # SELECT TOOL ARTIFACT
+        # SELECT TOOL ARTIFACT: of several tools that suit the request, the preferred compiler of the OS
+        # (see _rank and _desc.yaml) - no question asked; --use.compiler-<lang>.name=<tool> picks another
         if not name:
-            p = {'category': self.cmeta['uses_categories']['utils'],
-                 'command': 'select_artifact',
-                 'select_category': self.cmeta['uses_categories']['tool'],
-                 'select_tags': tool_tags,
-                 'select_match': tool_match,
-                 'con': con,
-                 'quiet': quiet,
-                 'verbose': verbose,
-                 'space': space,
-                 'print_extra_line': True,
-            }
+            tool_category = self.cmeta['uses_categories']['tool']
 
-            r = self.cm.access(p)
-            if self.cm.catch_error(r, fail16=True): 
-                if r['return'] == 16:
-                    if tool_constraints:
-                        r['error'] += f' and constraints "{tool_constraints}"'
-                    r['return'] = 99
-                return r
+            r = self.cm.access({'category': tool_category,
+                                'command': 'find',
+                                'tags': tool_tags,
+                                'match': tool_match})
+            if r['return'] > 0 and r['return'] != 16: return r
 
-            artifact = r['artifact']
+            candidates = r.get('artifacts') or [] if r['return'] == 0 else []
 
-            name = artifact['cmeta_ref_parts']['artifact_alias']
+            if not candidates:
+                error = f'couldn\'t find "{str(tool_category).split(",")[0]}" artifact(s) with tags "{tool_tags}"'
+                if tool_constraints:
+                    error += f' and constraints "{tool_constraints}"'
+                return {'return': 99, 'error': error}
+
+            def rank_tool(a):
+                return self._rank(uname, a['cmeta_ref_parts']['artifact_alias'], a.get('cmeta', {}).get('sort'))
+
+            candidates = sorted(candidates, key = rank_tool)
+
+            name = candidates[0]['cmeta_ref_parts']['artifact_alias']
+
+            if len(candidates) > 1 and con:
+                others = [a['cmeta_ref_parts']['artifact_alias'] for a in candidates[1:]]
+                print (f"{space}INFO: {len(candidates)} {lang} compiler tools suit this run: taking {name} "
+                       f"({', '.join(others)} also would; --use.compiler-{lang}.name=<tool> picks another)")
 
         # Setup compiler (note that there is duplicate in finish_dynamic_result too!) to update cache params
         # Don't forget CXT here to update global context for further tasks and tools in a higher level pipeline

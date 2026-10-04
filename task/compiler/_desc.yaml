@@ -18,6 +18,19 @@ cache_extra_params:
 
 cache_extra_alias: '{{params.lang}}'
 
+# The compiler taken when a request names none and several suit it (several compiler tools on the
+# machine, or several cached compilers): the system compiler of the host OS first, then the others in
+# this order, then by the repository's rank of the tools (sort in their _cmeta.yaml), then the newest
+# version - said in an INFO line, no question asked. A family stands for its C and C++ tools (gcc: gcc
+# and gcc-cpp). Android targets are built by the NDK's clang alone (no other tool supports them), so
+# they need no entry. These orders agree with the tools' sort keys (a test checks it).
+# --use.compiler-<lang>.name=<tool> picks another compiler, --use.compiler-<lang>.version=<version>
+# another version.
+preferred_compilers:
+  windows: [msvc, clang, icx]
+  linux: [gcc, clang, icx]
+  darwin: [clang]
+
 uses_before_init:
   - task: runner,1e48cc0c5f6041a5
 

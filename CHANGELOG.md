@@ -3,6 +3,17 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **The compiler of every build is chosen without a prompt** (`task/compiler`): when several compilers
+  suit a request that names none - several compiler tools on the machine, or several cached compilers of
+  a CPU build - the preferred compiler of the OS is taken (`preferred_compilers` in
+  `task/compiler/_desc.yaml`: MSVC on Windows, GCC on Linux, clang on macOS), then the tool the
+  repository ranks first, then the newest version; of several cached versions of one compiler, the
+  newest. An INFO line names the others and the option that picks one of them
+  (`--use.compiler-<lang>.name=<tool>`, `--use.compiler-<lang>.version=<version>`). Before, such a build
+  asked "Select tool" or "More than 1 cache entry", and `-q` took the newest version - clang over MSVC or
+  GCC on a machine with both; the rule the CUDA host compiler got below now holds for every compiler
+  choice (the CUDA polybench's CPU part was the last to ask). Android targets are unaffected: only the
+  NDK's clang builds them.
 - **The compilers of a CUDA run are chosen without a prompt** (`task/compiler`, `tool/nvcc`): among
   the cached C++ compilers that match a CUDA run, those the toolkit rejects (the limits of its
   `host_config.h`, which `tool/nvcc` sets as version limits of the compiler tools) or that lack the

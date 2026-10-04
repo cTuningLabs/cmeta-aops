@@ -85,11 +85,13 @@ to 15. Once the toolkit is found, `finish_dynamic_result` sets up the host compi
 3. It sets up `task compiler --lang=cpp`, which picks the newest compiler in those ranges: for
    CUDA 12.8 on a machine with Visual Studio 2026 and 2022, it picks 2022. Cached compilers
    outside the ranges, or without the tags and constraints of the request, are not offered; when
-   several cached compilers remain, the one whose tool the repository ranks first (MSVC, GCC,
-   clang) is taken, then the newest version, without a prompt (an INFO line names the others).
-   `--use.compiler-cpp.name=<tool>` picks another. The same task selects the cached entry of nvcc
-   itself (`--lang=cuda`): it follows the toolkit set up for the `cuda` target in this run, so the
-   toolkit is chosen once.
+   several cached compilers remain, the preferred compiler of the OS is taken (MSVC on Windows,
+   GCC on Linux, clang on macOS: `preferred_compilers` in `task/compiler/_desc.yaml`), then the
+   one whose tool the repository ranks first, then the newest version, without a prompt (an INFO
+   line names the others) - the rule of every compiler choice in `task compiler`, for CPU builds
+   too. `--use.compiler-cpp.name=<tool>` picks another. The same task selects the cached entry of
+   nvcc itself (`--lang=cuda`): it follows the toolkit set up for the `cuda` target in this run,
+   so the toolkit is chosen once.
 4. It passes the compiler to nvcc as `-ccbin <path>` (the `host_compiler` flag that
    `setup-compile` adds), so every build records which compiler it used.
 

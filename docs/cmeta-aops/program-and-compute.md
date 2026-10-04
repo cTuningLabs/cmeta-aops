@@ -113,7 +113,14 @@ libraries, compilers, profilers and run wrapping. Two consumers filter on it:
 1. **`compiler` task** selects a tool tagged `lang-<lang>` supporting the current
    OS+compute (gcc / clang / msvc / nvcc / icx / android-ndk clang), sets it up, stores
    it under `global.compiler-<lang>`. Its `finish_dynamic_result` derives `compiler_flags`
-   from the tool's `features.flags`.
+   from the tool's `features.flags`. When several compilers suit a request that names none
+   (several tools on the machine, or several cached compilers), it takes the preferred
+   compiler of the OS (`preferred_compilers` in `task/compiler/_desc.yaml`: MSVC on
+   Windows, GCC on Linux, clang on macOS), then the tool the repository ranks first, then
+   the newest version - no question asked, an INFO line names the others;
+   `--use.compiler-<lang>.name=<tool>` picks another compiler,
+   `--use.compiler-<lang>.version=<version>` another version, and a choice that cannot be
+   honoured stops the run.
 2. **The compiler tool** carries per-OS `features.flags` (see
    [tool-abstraction.md](tool-abstraction.md)) — the abstraction that makes one template
    work across toolchains.
