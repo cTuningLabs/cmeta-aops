@@ -11,6 +11,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #   cx tool setup mpi --with.mpi=mpich
 #   cx tool setup mpi --with.build=source       # Open MPI from its release tarball (the default on macOS)
 #   cx tool setup mpi --with.build=pip          # the wheel, on macOS too
+#   cx tool setup mpi --with.mpi=intel          # the Intel MPI runtime on Linux too (its lib folder goes on LD_LIBRARY_PATH)
 #   cx tool run mpi -- -n 4 hostname
 #   {{global.mpi.qpath}} -n 4 {{global.mpi.features.python}} program.py       # mpi4py
 #

@@ -20,6 +20,12 @@ All notable changes to cMeta AOps are documented here, newest first.
   passes the version asked of it on to the Visual Studio installation it sets up, as `gcc-cpp` and
   `clang-cpp` do with theirs: a machine with two Visual Studios is not asked which one once the MSVC
   version is known. Choices between different compilers for other targets are asked as before.
+- **`tool/mpi`: Intel MPI on Linux hosts.** `--with.mpi=intel` on Linux puts the environment's `lib`
+  folder on `LD_LIBRARY_PATH` as well (the impi-rt wheel's `mpiexec`, Hydra proxies and `IMB-MPI1`
+  carry no RPATH, so `cx tool run mpi -- -n 2 IMB-MPI1 PingPong` failed to load `libmpi.so.12`);
+  `features.lib` names it. An Intel MPI job spans Linux hosts or Windows hosts, not both: the
+  Windows launchers are PowerShell and the Hydra service, the Linux bootstrap servers ssh and the
+  schedulers, and no `-hostos` exists in the 2021 references. Verified across two Linux hosts over ssh.
 - **Tests:** the hermetic suite passes on Linux as on Windows (the Windows-path cases of
   `test_tool_upgrade` run on Windows only; the Intel NPU install tests pin the glibc version they
   assume). `task/compiler` accepts `version` (its `run()` read it, `init()` rejected it: a static C++

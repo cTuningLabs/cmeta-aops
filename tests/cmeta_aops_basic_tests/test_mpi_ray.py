@@ -119,6 +119,27 @@ def test_the_environment_of_a_launcher(mpi, tmp_path):
     assert mpi["venv_root"](str(tmp_path / "usr" / "bin" / "mpiexec")) is None
 
 
+def test_intel_mpi_on_linux_exports_its_lib_folder(mpi, tmp_path):
+    """The impi-rt wheel's programs have no RPATH: the environment's lib goes on LD_LIBRARY_PATH on
+    Linux only (Windows keeps the DLLs next to mpiexec), and only for Intel MPI."""
+    venv = tmp_path / "venv"
+    (venv / "bin").mkdir(parents = True)
+    (venv / "lib").mkdir()
+    (venv / "pyvenv.cfg").write_text("home = x")
+    mpiexec = str(venv / "bin" / "mpiexec")
+    t = mpi["CTool"].__new__(mpi["CTool"])
+    host = lambda uname: {"tasks": {"global": {"host": {"os": {"uname": uname}}}}}
+    r = t.finish_dynamic_result(host("linux"), {"path": mpiexec}, {"with": {"mpi": "intel", "build": "pip"}})["result"]
+    assert r["_aggregate"]["env"]["+LD_LIBRARY_PATH"] == [str(venv / "lib")] and r["features"]["lib"] == str(venv / "lib")
+    assert r["_aggregate"]["env"]["+PATH"] == [str(venv / "bin")] and r["features"]["mpi"] == "intel"
+    r = t.finish_dynamic_result(host("linux"), {"path": mpiexec}, {"with": {"mpi": "openmpi", "build": "pip"}})["result"]
+    assert "+LD_LIBRARY_PATH" not in r["_aggregate"]["env"] and "lib" not in r["features"]
+    r = t.finish_dynamic_result(host("windows"), {"path": mpiexec}, {"with": {"mpi": "intel", "build": "pip"}})["result"]
+    assert "+LD_LIBRARY_PATH" not in r["_aggregate"]["env"]
+    r = t.finish_dynamic_result(host("linux"), {"path": str(tmp_path / "usr" / "bin" / "mpiexec")}, {})["result"]
+    assert r["_aggregate"]["env"] == {"+PATH": [str(tmp_path / "usr" / "bin")]} and "features" in r
+
+
 def test_ray_pins_the_python_patch():
     ray = load("tool/ray/api_v1.py", [PYVENV_IMPORT])
     assert len(ray["SPEC"]["python"].split(".")) == 3          # 3.12.3 and 3.12.14 cannot share a cluster

@@ -11,7 +11,11 @@ the tool's own Python environment, without root, with mpi4py for MPI programs in
   --with.mpi=openmpi   Open MPI 5.0.11 (Linux, macOS; the default there): mpiexec, mpicc, mpi.h
   --with.mpi=mpich     MPICH 5.0.2 (Linux, macOS): mpiexec (Hydra), mpicc, mpi.h
   --with.mpi=intel     the Intel MPI runtime 2021.18.1 (Linux, Windows; the default on Windows):
-                       mpiexec and the Intel MPI Benchmarks (IMB-MPI1), no compiler wrappers
+                       mpiexec and the Intel MPI Benchmarks (IMB-MPI1), no compiler wrappers. On
+                       Linux the environment's lib folder goes on LD_LIBRARY_PATH as well: the
+                       wheel's programs carry no RPATH. Intel MPI jobs span Linux hosts or Windows
+                       hosts, not both (its Windows launchers are powershell and the Hydra service,
+                       its Linux bootstrap servers ssh and the schedulers)
 
 Open MPI can also be built from its release tarball (--with.build=source; the default on macOS)
 into the same kind of environment, with mpi4py built against it. The source build has PRRTE take
@@ -273,11 +277,14 @@ class CTool(InitCTool):
     ):
         """
         The launcher's folder on PATH (mpicc and the other MPI programs are next to it) and, for
-        an MPI in a Python environment, that Python (with mpi4py) as features.python.
+        an MPI in a Python environment, that Python (with mpi4py) as features.python. The Intel
+        MPI wheel's programs (mpiexec, the Hydra proxies, IMB-MPI1) carry no RPATH on Linux: the
+        environment's lib folder goes on LD_LIBRARY_PATH there.
         """
         path = result.get('path')
         if path:
             features = result.setdefault('features', {})
+            env = result.setdefault('_aggregate', {}).setdefault('env', {})
             root = venv_root(path)
             if root:
                 exe = '.exe' if os.name == 'nt' else ''
@@ -286,5 +293,10 @@ class CTool(InitCTool):
                     features['python'] = python
                 features['mpi'] = params.get('with', {}).get('mpi')
                 features['build'] = params.get('with', {}).get('build') or 'pip'
-            result.setdefault('_aggregate', {}).setdefault('env', {}).setdefault('+PATH', []).append(os.path.dirname(path))
+                uname = ctx.get('tasks', {}).get('global', {}).get('host', {}).get('os', {}).get('uname')
+                lib = os.path.join(root, 'lib')
+                if features['mpi'] == 'intel' and uname == 'linux' and os.path.isdir(lib):
+                    features['lib'] = lib
+                    env.setdefault('+LD_LIBRARY_PATH', []).append(lib)
+            env.setdefault('+PATH', []).append(os.path.dirname(path))
         return {'return': 0, 'result': result}
