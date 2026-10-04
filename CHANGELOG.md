@@ -3,6 +3,13 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **`tool/lib-cudnn` installs cuDNN** from NVIDIA's public redistributable site when no cuDNN matching
+  the CUDA toolkit is installed: the archive for the OS, CPU (Linux x86_64/arm64, Windows x64/arm64)
+  and CUDA major version (12, 13), cuDNN 9.27.0.42 pinned with NVIDIA's SHA-256 digests, unpacked
+  into the cache; `--version=9.x.y` takes another release from NVIDIA's index. It refuses a cuDNN too
+  new for the machine's GPU (cuDNN 9.11 and later need compute capability 7.5; the earlier releases
+  run on Maxwell) with the releases that still run there; `--with.any_gpu` overrides. README,
+  `_desc_sizes.yaml`.
 - **A build folder is used only for what it was built for** (`task/compile-and-run-program`,
   `task/setup-compile`, `category/task/api/build_stamp.py`): after a compile the build folder gets
   `.cmeta-build-stamp.json` (targets, host, compiler, the compile parameters that change the output,
