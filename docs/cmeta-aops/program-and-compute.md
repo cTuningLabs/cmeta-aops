@@ -133,13 +133,25 @@ var, and wires profiling (perf/WPR/xctrace CPU, nsys/ncu CUDA, cProfile python) 
 Android remote path (deep dive #2). **`finish-run`** collects declared `result_files`
 into the result and prints `print_files`.
 
-**Timeouts.** `cx program run <program> --timeout=<seconds>` limits each run command and
-`--compile_timeout=<seconds>` each compile command (the template passes them to its `cmd`
-steps, `run-program` and `compile-program`). A command that runs past the limit is stopped with
-all its subprocesses (a process group on Linux and macOS, a Job Object on Windows) and the run
-fails with "timed out". The default is no limit. On an Android target the limit stops the local
-`adb` command, not necessarily the process on the device. `cx task run cmd --timeout=<seconds>`
-and `cx tool run <tool> --timeout=<seconds> -- <args>` work the same way.
+**Timeouts.** `cx program run <program> --timeout=<seconds>` limits each run command (the
+template passes it to its `cmd` step `run-program`). A command that runs past the limit is
+stopped with all its subprocesses (a process group on Linux and macOS, a Job Object on Windows)
+and the run fails with "timed out". The default is no limit. On an Android target the limit
+stops the local `adb` command, not necessarily the process on the device.
+`cx task run cmd --timeout=<seconds>` and `cx tool run <tool> --timeout=<seconds> -- <args>`
+work the same way.
+
+`--compile_timeout=<seconds>` is a **deadline for the whole compile phase**: from the start of
+the compile pipeline, every command that runs before it ends gets at most the time left, the
+builds that tools run inside the phase included (a LibTorch or OpenMPI built from source by a
+`tool` the program sets up). The program's own compile command is also limited to that many
+seconds, as before. A command stopped by the deadline fails with "stopped after N s: the compile
+deadline of M s (--compile_timeout) passed"; a command that would start after the deadline is not
+started. The deadline ends with the compile phase, so the run phase is governed by `--timeout`
+only, and a reused build is not affected. Without the option nothing is limited: a long build is
+never stopped by default, so the option is for automations that know how long a build may take
+(`compile-and-run-program` opens the deadline in `ctx['tasks']['deadlines']`, `task/cmd` reads it;
+pure Python, no external tools).
 
 ## 7. Libraries are programs too (`lib-*`)
 

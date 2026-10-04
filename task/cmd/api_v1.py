@@ -10,6 +10,7 @@ import platform
 import time
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api import deadlines
 
 class CTask(InitCTask):
     """
@@ -131,10 +132,21 @@ class CTask(InitCTask):
             print ('='*80)
 
         # No limit for None, 0 or "" (from the command line the value comes as a string)
-        if timeout in (None, '', 0, '0', False):
-            timeout = None
-        else:
-            timeout = max(1, int(float(timeout)))
+        timeout = deadlines.seconds(timeout)
+
+        # A deadline of the phase this command runs in (the compile phase with --compile_timeout,
+        # also for the builds that tools run inside it): the time left to it caps the timeout
+        deadline = deadlines.nearest(ctx)
+        by_deadline = False
+        if deadline is not None:
+            left = deadlines.time_left(deadline)
+            if left <= 0:
+                if chdir:
+                    os.chdir(cur_dir)
+                return self.cm.error(f'CMD "{cmd}" was not started: {deadlines.describe(deadline)} passed', 99)
+            if timeout is None or left < timeout:
+                timeout = left
+                by_deadline = True
 
         started = time.time()
 
@@ -182,6 +194,9 @@ class CTask(InitCTask):
         if fail_if_nonzero_return_code and returncode != 0:
             failed_cmd = result.get('cmd', cmd)
             if timed_out:
+                if by_deadline:
+                    return self.cm.error(f'CMD "{failed_cmd}" stopped after {timeout} s (with its subprocesses): '
+                                         f'{deadlines.describe(deadline)} passed', 99)
                 return self.cm.error(f'CMD "{failed_cmd}" timed out after {timeout} s (stopped with its subprocesses)', 99)
             stderr = result.get('stderr')
             reason = f': {stderr.strip()[-500:]}' if returncode == -1 and isinstance(stderr, str) and stderr.strip() else ''

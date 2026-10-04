@@ -18,6 +18,13 @@ All notable changes to cMeta AOps are documented here, newest first.
   libraries: a fully static host binary cannot load the CUDA driver).
 - **`test-nmm-c-cpu`:** links the math library on Linux; before, the dynamic build linked only with
   `--compile.fastest`.
+- **`--compile_timeout` is a deadline for the whole compile phase** (`task/compile-and-run-program`,
+  `task/cmd`, `category/task/api/deadlines.py`): every command that runs before it ends gets at most
+  the time left, the builds that tools run inside the phase included (a LibTorch or llama.cpp built
+  from source by a dependency); a command stopped by it fails with "stopped after N s: the compile
+  deadline of M s (--compile_timeout) passed", one that would start after it is not started. Before,
+  only the program's own compile command was limited. The deadline ends with the compile phase, so
+  `--timeout` alone governs the run phase; without the option nothing is limited.
 - **A program's Python venv stays its own** (`category/task/api/v2.py`, `task/setup`, `tool/python`):
   - **A request without a venv of its own** (no `with.venv_path`, `with.venv_here`, `tool_path`,
     `with.here` or `--path`) no longer reuses the venv that a program or a tool made inside its own

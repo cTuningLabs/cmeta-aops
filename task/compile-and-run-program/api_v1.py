@@ -11,6 +11,7 @@ import copy
 import time
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api import deadlines
 
 class CTask(InitCTask):
     """
@@ -442,6 +443,11 @@ class CTask(InitCTask):
                 if compile_uses:
                     self_time_compile_with_cmeta = time.time()
 
+                    # --compile_timeout: a deadline for the whole compile phase, the builds that tools
+                    # run inside it included (task/cmd caps every command by the time left); closed
+                    # before the state is saved, so it never reaches the repro file or the run phase
+                    compile_deadline = deadlines.open_deadline(ctx, 'compile', params.get('compile_timeout'), '--compile_timeout')
+
                     p = {'category': self.category_alias + ',' + self.category_uid,
                          'command': 'use',
                          'con': con,
@@ -460,7 +466,10 @@ class CTask(InitCTask):
 #                    if _compile_params:
 #                        p['uparams'] = {'compile':_compile_params}
 
-                    r = self.cm.access(p)
+                    try:
+                        r = self.cm.access(p)
+                    finally:
+                        deadlines.close_deadline(ctx, compile_deadline)
 
                     _impact = r.setdefault('_impact', {})
                     _impact['self_time_compile'] = ctx['tasks']['local'].get('compile-program', {}).get('_impact',{}).get('self_time')
