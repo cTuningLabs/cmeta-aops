@@ -1,0 +1,93 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# The models and reasoning efforts of OpenAI Codex CLI, for the run-ai task:
+#
+#   cxt run-ai --harness=codex --list_models
+#   cxt run-ai --harness=codex --model=gpt-6.1-sol,high "..."
+#
+# Codex takes the model with -m / --model and the reasoning effort through a config override
+# ("-c model_reasoning_effort=<effort>"; there is no --effort flag), which is what "flags:" below produces. The
+# levels a model takes "depend on the model and client" (config reference), so each model lists its own. Same file
+# conventions as tool/claude/_desc_models.yaml (updated, disabled, legacy, unverified, until).
+
+updated: '2026-10-04'
+checked_with: 'codex-cli 0.159.3 (codex --help, codex exec --help); the models from the Codex models page of 2026-10-04'
+list_cmd: '/model inside an interactive codex session'
+sources:
+  - https://developers.openai.com/codex/models
+  - https://developers.openai.com/codex/config-reference (model_reasoning_effort)
+  - docs/cmeta-aops/agent-tasks.md ("run-codex")
+
+flags:
+  model: ['--model', '{{model}}']
+  effort: ['-c', 'model_reasoning_effort={{effort}}']
+
+# model_reasoning_effort: "low, medium, high, xhigh, max, or ultra; available levels depend on the model and client".
+# "minimal" belonged to the 5.x generation.
+efforts:
+  - name: minimal
+    desc: 5.x generation only
+  - name: low
+    desc: 'the "Light" level of the GPT-6 pickers; start here, Codex is "highly capable at lower reasoning efforts"'
+  - name: medium
+  - name: high
+  - name: xhigh
+    desc: '"Extra High": the hardest problems'
+  - name: max
+    desc: GPT-6 generation
+  - name: ultra
+    desc: 'GPT-6 Astra (GPT-6.1 Sol: "coming later")'
+
+models:
+  # ---- current line-up (Codex models page, 2026-10-04)
+  - name: gpt-6.1-sol
+    default: true
+    desc: 'GPT-6.1 Sol: near-Astra quality at a lower cost, for repeated and long-running work; the default pick for complex coding'
+    efforts: [low, medium, high, xhigh, max]
+    note: 'ultra announced as "coming later"'
+  - name: gpt-6-astra
+    desc: 'GPT-6 Astra: the most capable, for the hardest end-to-end work across code, apps and research'
+    efforts: [low, medium, high, xhigh, max, ultra]
+  - name: gpt-6-luna
+    desc: 'GPT-6 Luna: the most efficient, for focused high-volume tasks (summaries, extraction, subagents)'
+    efforts: [low, medium, high, xhigh, max]
+  - name: gpt-5.5
+    legacy: true
+    until: '2026-10-14'
+    desc: 'GPT-5.5: the previous flagship; retires from ChatGPT and Codex on 2026-10-14 (stays on the API)'
+    efforts: [minimal, low, medium, high, xhigh]
+
+  # ---- the 5.6 line of docs/cmeta-aops/agent-tasks.md (2026-08-21): not on the models page of 2026-10-04
+  - name: gpt-5.6-sol
+    legacy: true
+    unverified: true
+    desc: 'GPT-5.6 Sol (the August 2026 default pick); check /model before relying on it'
+    efforts: [low, medium, high, xhigh]
+  - name: gpt-5.6-terra
+    legacy: true
+    unverified: true
+    desc: 'GPT-5.6 Terra (mid tier, the successor of gpt-5.4)'
+    efforts: [low, medium, high, xhigh]
+  - name: gpt-5.6-luna
+    legacy: true
+    unverified: true
+    desc: 'GPT-5.6 Luna (light tier, the successor of gpt-5.4-mini)'
+    efforts: [low, medium, high, xhigh]
+
+  # ---- retired: kept so that old records (generator.model) stay readable
+  - name: gpt-5.4
+    disabled: true
+    note: 'retired 2026-08-31'
+  - name: gpt-5.4-mini
+    disabled: true
+    note: 'retired 2026-08-31 (it took minimal..high, no xhigh)'
+  - name: gpt-5.3-codex-spark
+    disabled: true
+    note: 'retired 2026-09-14 (research preview, Pro only)'
+  - name: gpt-5.3-codex
+    disabled: true
+    note: 'deprecated (models page, 2026-10-04)'
+  - name: gpt-5.2
+    disabled: true
+    note: 'deprecated (models page, 2026-10-04)'

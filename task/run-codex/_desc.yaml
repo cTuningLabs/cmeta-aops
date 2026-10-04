@@ -7,6 +7,7 @@ authors: Grigori Fursin
 #   cx task run run-codex --prompt_file={file}
 #   cx task run run-codex --prompt_file={file} --prompt="{extra text}" --output_file={file}
 #   cx task run run-codex --prompt_file={file} --yes --stats
+#   cx task run run-codex --resume={session id} --prompt="..."   # continue a recorded session (codex exec resume <id>)
 #
 # The prompt sent to codex is the text of --prompt_file (when given), then "\n",
 # then the text of --prompt. The full output is streamed to the console and

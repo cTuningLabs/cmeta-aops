@@ -164,6 +164,14 @@ and the limit is a rate limit, not a bill.
 > Verified on **2026-08-21** with `claude` 2.1.238, `codex` 0.148.0 and
 > `opencode` 1.18.19. Model line-ups move fast — re-check with `/model` (claude,
 > codex) or `opencode models` before trusting a table.
+>
+> **The maintained list is `tool/<name>/_desc_models.yaml`** (`tool/claude`, `tool/codex`,
+> `tool/opencode`, `tool/openclaw`; since 2026-10-04): the models with a description,
+> context, price and the efforts each takes, the harness's flags for a model and an
+> effort, and the bookkeeping (`updated`, `checked_with`, `sources`). Retired models stay
+> with `disabled: true`, so that a `generator.model` of an old artifact can still be read.
+> A task that offers `--model=<model>,<effort>` across harnesses reads it; the tables below
+> are the snapshot of 2026-08-21.
 
 ### `run-claude` → Claude Code
 

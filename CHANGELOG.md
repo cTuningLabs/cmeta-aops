@@ -3,7 +3,17 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.43.0
-- *In development.*
+- **`_desc_models.yaml` in `tool/claude`, `tool/codex`, `tool/opencode`, `tool/openclaw`:** the models and
+  efforts of each coding-agent harness as data next to the tool - the flags that select them (`flags.model`,
+  `flags.effort`, with `{{model}}` / `{{effort}}`), the effort vocabulary with a line of advice each, and one
+  entry per model (description, context window, default effort, API price, plans, aliases, the efforts it takes).
+  Retired models stay with `disabled: true` so that an old `generator.model` can still be read; `legacy`, `until`
+  and `unverified` mark the rest; `updated`, `checked_with` and `sources` say when and against what the list was
+  checked. A task that offers `--model=<model>,<effort>` across harnesses reads it (cMeta's `run-ai`);
+  `docs/cmeta-aops/agent-tasks.md` points at the files.
+- **`run-codex --resume=<session id>`** continues a recorded Codex session instead of starting one:
+  `codex exec resume <id> -` with the prompt on stdin, `codex resume <id> [prompt]` for an interactive session
+  (the picker is never shown); the model and effort flags apply as to a new session.
 
 ## 0.42.0
 - **A reused tool entry is completed from its tool's current `_desc.yaml`** (`task/setup`): a cached entry

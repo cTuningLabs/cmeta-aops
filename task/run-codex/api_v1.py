@@ -133,6 +133,7 @@ class CTask(InitCTask):
             skip_output_file: bool = False, # do not record the output at all
             append_output_file: bool = False, # append to the output file instead of overwriting it
             skip_output_header: bool = False, # do not add the summary header to the output file
+            resume: str = '',               # continue this codex session (its id): "codex resume <id>" / "codex exec resume <id>"
             unparsed: list = None,          # extra flags for codex (everything after "--")
     ):
 
@@ -140,6 +141,11 @@ class CTask(InitCTask):
         Assemble a prompt, run the "codex" CLI non-interactively (codex exec) and exit.
 
         This is the codex sister of the "run-claude" task and takes the same flags.
+
+        With "resume" (a session id), the session is continued instead of started:
+        "codex exec resume <id> -" with the prompt on stdin, or "codex resume <id> [prompt]"
+        for an interactive session (the picker is never shown). The model and effort
+        flags apply to the continued session as to a new one.
 
         The prompt is the text of "prompt_file" (when given), then a new line,
         then "prompt".
@@ -309,7 +315,12 @@ class CTask(InitCTask):
         # Interactive: codex owns stdin, so the prompt can only travel as the trailing
         # positional argument ("codex [options] [prompt]").
 
-        base_cmd = [codex_path] if interactive else [codex_path, 'exec', '-']
+        if resume:
+            # continue a recorded session: "codex resume <id>" keeps the terminal, "codex exec resume <id> -" reads
+            # the prompt from stdin; both take the same model/config flags as a new session
+            base_cmd = [codex_path, 'resume', resume] if interactive else [codex_path, 'exec', 'resume', resume, '-']
+        else:
+            base_cmd = [codex_path] if interactive else [codex_path, 'exec', '-']
 
         # Flags added on top of base_cmd - kept apart so that they can be reported as they are
         flags = []

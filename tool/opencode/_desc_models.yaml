@@ -1,0 +1,137 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# The models and reasoning efforts of OpenCode, for the run-ai task:
+#
+#   cxt run-ai --harness=opencode --list_models
+#   cxt run-ai --harness=opencode --model=anthropic/claude-opus-5-5,high "..."
+#
+# OpenCode is provider-agnostic: a model is "provider/model", and the effort is the provider's "variant"
+# (--variant), so the vocabulary below depends on the provider; "efforts" on each model says what it takes.
+# "opencode models" prints exactly what the current logins can reach, which is the list to trust: without a login
+# it is only the bundled free tier (rotating community models). Same file conventions as tool/claude/_desc_models.yaml
+# (updated, disabled, legacy, unverified, until).
+
+updated: '2026-10-04'
+checked_with: 'opencode 1.18.33 (opencode run --help; opencode models on this machine, 2026-10-04: the bundled free tier, no provider login)'
+list_cmd: 'opencode models'
+sources:
+  - https://opencode.ai/docs/models/
+  - 'opencode run --help (--model, --variant)'
+  - 'opencode models (2026-10-04)'
+  - docs/cmeta-aops/agent-tasks.md ("run-opencode")
+
+flags:
+  model: ['--model', '{{model}}']
+  effort: ['--variant', '{{effort}}']
+
+# The union of the providers' variants; each model below lists the ones its provider takes
+efforts:
+  - name: none
+    desc: no reasoning (OpenAI)
+  - name: minimal
+    desc: minimal reasoning (OpenAI)
+  - name: low
+    desc: low (OpenAI, Google)
+  - name: medium
+    desc: medium (OpenAI)
+  - name: high
+    desc: high (OpenAI, Google; the Anthropic default)
+  - name: xhigh
+    desc: extra high (OpenAI)
+  - name: max
+    desc: the maximum thinking budget (Anthropic)
+
+models:
+  # ---- Anthropic, after "opencode auth login" (a Claude subscription or an API key); the Claude Code line-up
+  - name: anthropic/claude-opus-5-5
+    desc: 'Opus 5.5 through OpenCode; variants high (default) and max'
+    efforts: [high, max]
+    auth: 'opencode auth login -> Anthropic'
+  - name: anthropic/claude-sonnet-5-5
+    desc: 'Sonnet 5.5 through OpenCode'
+    efforts: [high, max]
+    auth: 'opencode auth login -> Anthropic'
+  - name: anthropic/claude-haiku-4-5
+    desc: 'Haiku 4.5 through OpenCode; no thinking variant'
+    efforts: []
+    auth: 'opencode auth login -> Anthropic'
+  - name: anthropic/claude-fable-5-1
+    unverified: true
+    desc: 'Fable 5.1 through OpenCode, if the Anthropic provider of models.dev lists it'
+    efforts: [high, max]
+    auth: 'opencode auth login -> Anthropic'
+
+  # ---- OpenAI, after "opencode auth login"; the Codex line-up (see tool/codex/_desc_models.yaml)
+  - name: openai/gpt-6.1-sol
+    unverified: true
+    desc: 'GPT-6.1 Sol through OpenCode'
+    efforts: [none, minimal, low, medium, high, xhigh]
+    auth: 'opencode auth login -> OpenAI'
+  - name: openai/gpt-6-astra
+    unverified: true
+    desc: 'GPT-6 Astra through OpenCode'
+    efforts: [none, minimal, low, medium, high, xhigh]
+    auth: 'opencode auth login -> OpenAI'
+  - name: openai/gpt-6-luna
+    unverified: true
+    desc: 'GPT-6 Luna through OpenCode'
+    efforts: [none, minimal, low, medium, high, xhigh]
+    auth: 'opencode auth login -> OpenAI'
+
+  # ---- the bundled free tier ("opencode/*", no login): what "opencode models" printed on 2026-10-04. Preview and
+  #      community models that come and go with releases; rate-limited; variants provider-dependent (try without)
+  - name: opencode/big-pickle
+    free: true
+    efforts: []
+    desc: 'bundled free model'
+  - name: opencode/fledge-alpha-free
+    free: true
+    efforts: []
+    desc: 'bundled free model'
+  - name: opencode/ling-3.0-flash-fin-free
+    free: true
+    efforts: []
+    desc: 'bundled free model'
+  - name: opencode/ling-3.1-flash-free
+    free: true
+    efforts: []
+    desc: 'bundled free model'
+  - name: opencode/longcat-2.5-preview-free
+    free: true
+    efforts: []
+    desc: 'bundled free model'
+  - name: opencode/mimo-v2.6-flash-free
+    free: true
+    efforts: []
+    desc: 'bundled free model'
+  - name: opencode/muse-spark-1.3-contributor-free
+    free: true
+    efforts: []
+    desc: 'bundled free model'
+  - name: opencode/nemotron-3-ultra-free
+    free: true
+    efforts: []
+    desc: 'bundled free model'
+  - name: opencode/nemotron-3.5-lightning-free
+    free: true
+    efforts: []
+    desc: 'bundled free model'
+  - name: opencode/space-bunny-free
+    free: true
+    efforts: []
+    desc: 'bundled free model'
+
+  # ---- gone from the bundled tier between 2026-08-21 (docs/cmeta-aops/agent-tasks.md) and 2026-10-04
+  - name: opencode/hy3-free
+    disabled: true
+    note: 'not in "opencode models" on 2026-10-04'
+  - name: opencode/mimo-v2.5-free
+    disabled: true
+    note: 'not in "opencode models" on 2026-10-04 (mimo-v2.6-flash-free is there)'
+  - name: opencode/muse-spark-1.2-contributor-free
+    disabled: true
+    note: 'not in "opencode models" on 2026-10-04 (1.3 is there)'
+  - name: opencode/x-preview-f-free
+    disabled: true
+    note: 'not in "opencode models" on 2026-10-04'
