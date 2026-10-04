@@ -146,6 +146,10 @@ libraries, compilers, profilers and run wrapping. Two consumers filter on it:
    `tool/gcc`/`tool/gcc-cpp` - the host compiler's when nvcc runs the link), with `-lpthread -ldl`
    and `--as-needed` after it so that the `-lgomp` gcc appends adds no shared library; a compiler
    without the archive stops the static build with what provides it (`tool/lib-openmp/README.md`).
+   `libstdc++` and `libgcc_s` stay shared in a static CUDA build on purpose: the shared libraries
+   NVIDIA ships (cuBLAS, cuDNN, the dynamic runtime) depend on the shared `libstdc++`, and a second,
+   static copy in the executable would put two C++ runtimes in one process; a static CPU build
+   (`-static`) links them statically.
 
 ## 6. Run machinery
 
