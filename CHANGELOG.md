@@ -83,6 +83,10 @@ All notable changes to cMeta AOps are documented here, newest first.
   on Linux. `tool/torch-cpp` hands the installed library to the detection. The test programs of
   `build-torch-cpp` and `test-nmm-torch-cpp` take the C++ standard LibTorch's CMake config asks for
   (17 up to 2.8, 20 from 2.9, whose headers use `requires`); `--cxx_standard` overrides it.
+  - **Two defaults, one per way:** a source build checks out `default_checkout` of `tool/torch-cpp`
+    (`v2.14.1`, the tag built and tested) when no `--version` is given; before, the clone step took
+    whatever PyTorch clone the machine had, or PyTorch's default branch. The prebuilt archives keep
+    `default_version` (2.7.1). README of `tool/torch-cpp`.
 - **A program's Python venv stays its own** (`category/task/api/v2.py`, `task/setup`, `tool/python`):
   - **A request without a venv of its own** (no `with.venv_path`, `with.venv_here`, `tool_path`,
     `with.here` or `--path`) no longer reuses the venv that a program or a tool made inside its own

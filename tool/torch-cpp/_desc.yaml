@@ -2,8 +2,13 @@ authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 storage_key: torch-cpp
 
-# Default to a recent stable release; override with params.with.ver
+# Two defaults, one per way of getting LibTorch (README.md):
+# - --with.build=prebuilt: the release whose archives are pinned in tool/torch-cpp-prebuilt (2.7.1);
+# - a source build: the git tag of PyTorch that program/build-torch-cpp checks out when no version
+#   is asked for (--version=<x.y.z> checks out v<x.y.z>). Without it, the clone step would take
+#   PyTorch's default branch on a machine without a clone, and any clone it finds on another
 default_version: '2.7.1'
+default_checkout: 'v2.14.1'
 
 # LibTorch is built here (program/build-torch-cpp) or, with --with.build=prebuilt, taken from
 # PyTorch's prebuilt archives (tool/torch-cpp-prebuilt): a libtorch found in PATH is not used

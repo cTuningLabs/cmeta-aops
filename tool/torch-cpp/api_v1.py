@@ -69,10 +69,16 @@ class CTool(InitCTool):
     ):
         result = {'return': 0}
 
+        # The git tag to build: v<version> for a requested version (PyTorch's tags are v2.7.1,
+        # v2.12.0, ...), else the default_checkout of _desc.yaml, so that the source build of a
+        # machine without a PyTorch clone is the tested release and not PyTorch's default branch
         version = misc.get('version')
         if version:
-            # PyTorch git tags are v2.7.1, v2.12.0, etc.
             result['add_to_local'] = {'checkout': f'v{version}'}
+        else:
+            checkout = (getattr(self, 'cdesc', None) or {}).get('default_checkout')
+            if checkout:
+                result['add_to_local'] = {'checkout': str(checkout)}
 
         return result
 

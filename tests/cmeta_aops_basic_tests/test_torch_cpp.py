@@ -396,3 +396,18 @@ def test_tool_build_hands_the_installed_library_to_detection(torch_cpp, tmp_path
     (tmp_path / "build" / "install" / "lib" / library).write_bytes(b"")
     r = tool.build(ctx, {})
     assert r["return"] == 0 and r["found_path"] == str(tmp_path / "build" / "install" / "lib" / library)
+
+
+# The default checkout of a source build (apart from the default version of the prebuilt archives)
+
+def test_default_checkout_of_source_builds(torch_cpp):
+    d = desc("tool/torch-cpp/_desc.yaml")
+    assert re.fullmatch(r"v\d+\.\d+\.\d+", d["default_checkout"])
+    assert re.fullmatch(r"\d+\.\d+\.\d+", d["default_version"])   # the prebuilt archives' release
+    tool = torch_cpp_tool(torch_cpp)
+    tool.cdesc = d
+    assert tool.customize_build({}, {"version": "2.7.1"})["add_to_local"] == {"checkout": "v2.7.1"}
+    assert tool.customize_build({}, {"version": None})["add_to_local"] == {"checkout": d["default_checkout"]}
+    assert tool.customize_build({}, {})["add_to_local"] == {"checkout": d["default_checkout"]}
+    tool.cdesc = {}
+    assert "add_to_local" not in tool.customize_build({}, {})
