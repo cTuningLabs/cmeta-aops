@@ -1,0 +1,19 @@
+# Disk space of an LLVM setup in GB (read by task/setup before an install or a build, and by
+# "cx tool setup llvm --sizes"; see docs/cmeta-aops/tool-sizes.md). peak = during the setup,
+# kept = what stays in the cache. The first matching rule wins.
+sizes:
+  # The prebuilt release archive of LLVM 22 on Linux unpacks to more than 11 GB
+  - if: {method: install, os: linux, version: '>=22'}
+    peak: 15
+    kept: 12
+  - if: {method: install, os: linux}
+    peak: 12
+    kept: 10
+  # Windows and macOS releases are much smaller (the installer and the Homebrew bottle)
+  - if: {method: install}
+    peak: 4
+    kept: 3
+  - if: {method: build}
+    peak: 60
+    kept: 10
+  - peak: 4

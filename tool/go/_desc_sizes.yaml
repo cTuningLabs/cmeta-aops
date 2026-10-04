@@ -1,0 +1,6 @@
+# Disk space of a Go install in GB (the release archive and its unpacked tree).
+sizes:
+  - if: {method: install}
+    peak: 0.8
+    kept: 0.4
+  - peak: 0.8

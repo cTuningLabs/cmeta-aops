@@ -65,8 +65,9 @@ class CTask(InitCTask):
                 'skip_detect', 'skip_install', 'skip_build',
                 'skip_install_uses', 'skip_build_uses',
                 'skip_cache_version_check',
-                'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths', 
-                'version', 'env', 'timeout', 'with', 'arg3', 
+                'skip_size_check', 'sizes',
+                'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths',
+                'version', 'env', 'timeout', 'with', 'arg3',
                 'version_check',
                 'ignore_install_errors', 'ignore_build_errors',
                 'custom_install', 'custom_build',
@@ -252,6 +253,16 @@ class CTask(InitCTask):
                     print (', '.join(versions))
 
             return result
+
+        ###########################################################################################
+        # --sizes: the disk sizes that finished setups of this tool recorded, and the rules of a
+        # _desc_sizes.yaml to suggest from them; stops (nothing is installed or cached)
+        if params.get('sizes', False):
+            r = self.report_sizes(ctx, params, tool_read)
+            if self.cm.catch_error(r): return r
+
+            r['stop'] = True
+            return r
 
         ###########################################################################################
         # --status: report installed vs newest versions and stop (nothing is installed or cached)
@@ -445,6 +456,159 @@ class CTask(InitCTask):
             return tool_api_code.filter_tool_cache_artifacts(ctx, artifacts, tmp_artifacts, params, **extra)
 
         return {'return':0}
+
+    ############################################################
+    def check_disk_space(self,
+                         ctx: dict,
+                         method: str,        # install or build
+                         kwargs: dict,       # the setup's parameters (tool_read, version, with, ...)
+    ):
+        """
+        Before an install or a build: the rule of the tool's _desc_sizes.yaml for this request (version,
+        OS, CPU, method, with) gives the space it needs during the setup (peak); the configured minimum
+        of free space (cx config set task --meta.min_free_gb=<GB>) applies to every tool. The folder
+        that receives the data is the cache entry (the current folder) or --path. Below that: a quiet
+        run (-q) stops before downloading anything, else a warning and the question whether to go on.
+        --skip_size_check skips it. Tools without _desc_sizes.yaml and no minimum: no check, no output.
+        """
+
+        from tool_c393ba5c6fa14f66.api import common_sizes as sizes
+
+        kwargs['_disk_method'] = method
+
+        if kwargs.get('skip_size_check', False):
+            return {'return': 0}
+
+        ctx_tasks = ctx['tasks']
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+        verbose = ctx['control'].get('verbose', False)
+        space = '  ' * ctx_tasks.get('nested_call', 0) if verbose else ''
+
+        tool_read = kwargs.get('tool_read', {})
+        tool_path = tool_read.get('artifact_path')
+        rules = sizes.load_sizes(tool_path) if tool_path else []
+
+        floor = ctx_tasks.get('global', {}).get('init', {}).get('min_free_gb')
+        try:
+            floor = float(floor) if floor not in (None, '', False) else None
+        except (TypeError, ValueError):
+            return self.cm.error(f'the configured minimum of free space "min_free_gb" is not a number: {floor}')
+
+        if not rules and floor is None:
+            return {'return': 0}
+
+        host = ctx_tasks['global']['host']['os']
+        facts = sizes.request_facts(version = kwargs.get('version_simple') or kwargs.get('version') or None,
+                                    os_name = host['uname'], arch = host.get('uarch'), method = method,
+                                    compute = kwargs.get('with', {}).get('compute'), with_ = kwargs.get('with'))
+        rule = sizes.select_rule(rules, facts, self.cm.utils.common.matches_query,
+                                 match_version_func = self.cm.repos.match_version_func)
+        needed = rule.get('peak') if rule else None
+        if needed is not None:
+            kwargs['_disk_rule'] = rule
+
+        folder = os.getcwd()
+        ok, free, required = sizes.check_space(needed, folder, floor_gb = floor)
+        if ok:
+            if verbose and con and required is not None:
+                print (f'{space}INFO: disk space for the {method}: {free:.1f} GB free in {folder}, about {required:g} GB needed')
+            return {'return': 0}
+
+        tool_name = tool_read.get('artifact_print_name') or kwargs.get('name')
+        message = sizes.shortage_message(tool_name, facts.get('version'), method, host['uname'], required, free, folder,
+                                         rule_based = needed is not None and needed >= (floor or 0))
+
+        if quiet or not con:
+            return self.cm.error(message)
+
+        print ('')
+        print (f'{space}WARNING: {message}')
+        x = input(f'{space}Continue anyway (y/N)? ').strip().lower()
+        if x not in ['y', 'yes']:
+            return self.cm.error(f'{method} of "{tool_name}" cancelled: not enough disk space')
+
+        return {'return': 0}
+
+    ############################################################
+    def record_disk_size(self,
+                         ctx: dict,
+                         result: dict,
+                         method: str,
+                         kwargs: dict,
+    ):
+        """
+        After a successful install or build in the cache: the size of the cache entry (and of --path
+        when the data went there) as result["_impact"]["disk_gb"], with the method, OS and CPU, so
+        that "cx tool setup <tool> --sizes" can suggest the rules of _desc_sizes.yaml. The peak
+        (peak_gb) is what a custom install measured right after unpacking, when it reports one.
+        """
+
+        from tool_c393ba5c6fa14f66.api import common_sizes as sizes
+
+        if not ctx['tasks']['run_control'].get('cache', False):
+            return {'return': 0}
+
+        host = ctx['tasks']['global']['host']['os']
+        folder = os.getcwd()
+        impact = result.setdefault('_impact', {})
+        impact['disk_gb'] = round(sizes.folder_gb(folder), 6)
+        impact['disk_method'] = method
+        impact['disk_os'] = host['uname']
+        impact['disk_arch'] = host.get('uarch')
+
+        peak = kwargs.get('_disk_peak_gb')
+        if peak is not None:
+            impact['peak_gb'] = round(max(float(peak), impact['disk_gb']), 6)
+
+        return {'return': 0}
+
+    ############################################################
+    def report_sizes(self,
+                     ctx: dict,
+                     params: dict,
+                     tool_read: dict,
+    ):
+        """
+        "cx tool setup <tool> --sizes": the sizes that finished installs and builds of the tool recorded
+        in their cache entries (_impact.disk_gb, peak_gb), the rules of its _desc_sizes.yaml, and the
+        rules to suggest from the records (about 20% above the largest sizes seen).
+        """
+
+        from tool_c393ba5c6fa14f66.api import common_sizes as sizes
+
+        con = ctx['control'].get('con', False)
+        name = tool_read['artifact_au'].split(',')[0]
+
+        r = self.cm.access({'category': upgrade.CACHE_CATEGORY, 'command': 'find',
+                            'tags': ['task', self.category_uid, 'setup', self.artifact_uid],
+                            'match': {'params': {'name': name}}})
+        if r['return'] > 0 and r['return'] != 16: return r
+
+        entries = [a['path'] for a in r.get('artifacts', [])]
+        records = sizes.records_from_cache(entries)
+        rules = sizes.load_sizes(tool_read['artifact_path'])
+        suggested = sizes.suggest_rules(records)
+
+        if con:
+            print ('')
+            print (f'Disk sizes recorded for "{name}" ({len(records)} of {len(entries)} cache entries):')
+            print ('')
+            for rec in sorted(records, key = lambda x: -(x['peak_gb'] or x['kept_gb'])):
+                peak = f', peak {rec["peak_gb"]:.2f} GB' if rec.get('peak_gb') else ''
+                print (f'  {rec["version"] or "-":12} {rec["method"] or "-":8} {rec["os"] or "-":8} {rec["arch"] or "-":6} '
+                       f'kept {rec["kept_gb"]:.2f} GB{peak}  {rec["entry"]}')
+            if not records:
+                print ('  (none: installs and builds record their size since this feature; detected tools have none)')
+            print ('')
+            print (f'Rules in _desc_sizes.yaml: {len(rules)}')
+            if suggested:
+                print ('')
+                print ('Suggested _desc_sizes.yaml (about 20% above the largest sizes seen; adjust and paste):')
+                print ('')
+                print (sizes.rules_to_yaml(suggested))
+
+        return {'return': 0, 'records': records, 'rules': rules, 'suggested': suggested}
 
     ############################################################
     def run(self, ctx, **kwargs):
@@ -660,12 +824,20 @@ class CTask(InitCTask):
 
         ##############################################################################
         if not success and install and not skip_install:
+            # Enough disk space for the install? (the tool's _desc_sizes.yaml, the configured minimum)
+            r = self.check_disk_space(ctx, 'install', kwargs_copy)
+            if self.cm.catch_error(r): return r
+
             # Attempt to install tool
 
             r = self.install_tool(ctx, result, **kwargs_copy)
             if not ignore_install_errors and self.cm.catch_error(r): return r
 
             _update_params = r.get('_update_params')
+
+            # A custom install may report the space it took at its peak (archive + unpacked tree)
+            if r.get('peak_gb') is not None:
+                kwargs_copy['_disk_peak_gb'] = r['peak_gb']
 
             if r['return'] == 0 or ignore_install_errors:
                 if ignore_install_errors or not r.get('failed', False):
@@ -707,6 +879,10 @@ class CTask(InitCTask):
 
         ##############################################################################
         if not success and build and not skip_build:
+            # Enough disk space for the build?
+            r = self.check_disk_space(ctx, 'build', kwargs_copy)
+            if self.cm.catch_error(r): return r
+
             # Attempt to build tool
 
             r = self.build_tool(ctx, result, **kwargs_copy)
@@ -798,6 +974,12 @@ class CTask(InitCTask):
             path_cmeta_cache = os.getcwd()
             result['path_cmeta_cache'] = path_cmeta_cache
             result['qpath_cmeta_cache'] = self.cm.utils.files.quote_path(path_cmeta_cache)
+
+        # What this install or build took on disk (learning for _desc_sizes.yaml: "cx tool setup <tool> --sizes")
+        method = kwargs_copy.get('_disk_method')
+        if method:
+            r = self.record_disk_size(ctx, result, method, kwargs_copy)
+            if self.cm.catch_error(r): return r
 
         ##############################################################################
         # Check path to tool

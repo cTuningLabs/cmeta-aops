@@ -1,0 +1,9 @@
+# Disk space of a LunarG Vulkan SDK install in GB (the SDK archive and its unpacked tree).
+sizes:
+  - if: {method: install, os: linux}
+    peak: 5
+    kept: 2.5
+  - if: {method: install}
+    peak: 3
+    kept: 2
+  - peak: 5

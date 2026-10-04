@@ -1,0 +1,3 @@
+# Disk space of the ExecuTorch Android runtime (the AAR from Maven Central) in GB.
+sizes:
+  - peak: 0.5

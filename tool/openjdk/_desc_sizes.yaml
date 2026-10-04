@@ -1,0 +1,6 @@
+# Disk space of a JDK install in GB (the release archive and its unpacked tree).
+sizes:
+  - if: {method: install}
+    peak: 1
+    kept: 0.6
+  - peak: 1

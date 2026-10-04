@@ -161,6 +161,7 @@ def read_tool(self,
         'tool_api_code2': tool_api_code2,
         'artifact_au': artifact_au,
         'artifact_print_name': artifact_print_name,
+        'artifact_path': artifact['path'],
         '_update_params': _update_params,
     }
 

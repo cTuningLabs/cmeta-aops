@@ -1,0 +1,6 @@
+# Disk space of a Rust toolchain installed by rustup in GB (RUSTUP_HOME and CARGO_HOME in the cache entry).
+sizes:
+  - if: {method: install}
+    peak: 3
+    kept: 2.5
+  - peak: 3

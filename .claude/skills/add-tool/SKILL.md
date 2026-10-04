@@ -561,6 +561,28 @@ Cache notes: each setup result + downloaded binary lands in a `cache` entry
 `task/setup/_desc.yaml` `cache_params`). Force a fresh entry with `--new`,
 rebuild with `--update`, wipe with `--clean`.
 
+### 7.1 Big tools: declare the disk space in `_desc_sizes.yaml`
+
+A tool whose install or build takes more than a few GB gets a `tool/<name>/_desc_sizes.yaml`
+(a separate file: `_desc.yaml` stays small). `task/setup` then checks the free space of the
+cache entry (or `--path`) **before** downloading or building; a quiet run stops with a clear
+message, an interactive one warns and asks. Rules, first match wins, sizes in GB:
+
+```yaml
+sizes:
+  - if: {method: install, os: linux, version: '>=22'}
+    peak: 15      # during the setup (download + unpacked + build tree)
+    kept: 12      # what stays in the cache
+  - if: {method: build}
+    peak: 60
+  - peak: 4       # anything else
+```
+
+`if` keys: `version` (fuzzy, as `--version`), `os`, `arch`, `method` (`install`|`build`),
+`compute`, any `with.*` key. Finished setups record their size (`_impact.disk_gb`); `cx tool
+setup <name> --sizes` prints the records and a suggested file. A custom `install()` may return
+`peak_gb`. Full text: `docs/cmeta-aops/tool-sizes.md`.
+
 ---
 
 ## 8. Checklist / gotchas

@@ -1,0 +1,10 @@
+# Disk space of PyTorch built from source by program/build-pytorch in GB: the source clone, the build
+# tree and the venv it installs into. A source build with CUDA is far larger than a CPU one.
+sizes:
+  - if: {method: build, compute: cuda}
+    peak: 60
+    kept: 25
+  - if: {method: build}
+    peak: 30
+    kept: 10
+  - peak: 30

@@ -3,6 +3,22 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.42.0
+- **Disk space of tools** (`task/setup`, `category/tool/api/common_sizes.py`, new; `_desc_sizes.yaml`
+  of 16 tools, new):
+  - **`tool/<name>/_desc_sizes.yaml`** declares what a setup needs: a list of rules (first match
+    wins) with `peak` and `kept` GB, matched by `version` (fuzzy), `os`, `arch`, `method`
+    (`install`, `build`), `compute` and `with.*`. `_desc.yaml` is not involved.
+  - **The check:** before an install or a build, `task/setup` compares the free space of the
+    folder that receives the data (the cache entry or `--path`) with the rule's `peak` and with
+    the configured minimum (`cx config set task --meta.min_free_gb=<GB>`, off by default). A
+    quiet run stops before downloading anything, with the sizes and the ways out (free space,
+    `--path`, `--skip_size_check`); an interactive run warns and asks. Tools without a size file
+    behave as before.
+  - **Learning:** every install or build records its size (`_impact.disk_gb`, with method, OS and
+    CPU; `peak_gb` when the tool's `install()` reports it). `cx tool setup <tool> --sizes` lists
+    the records and suggests the rules to paste.
+  - Rules for llvm, nvcc, vulkan-sdk, ollama, google.android-ndk, rustup, go, openjdk and the
+    `jdk-*` tools, pytorch, mpi and executorch-android. Documentation: `docs/cmeta-aops/tool-sizes.md`.
 - **Static and dynamic library variants keep their own cache entries** (`tool/lib-xopenme`,
   `lib-polybench`, `lib-milepost`): a request's `with.static` and `with.debug_info` always carry a
   value, so a dynamic build no longer matches the static entry as well (a program's
