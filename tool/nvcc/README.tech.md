@@ -81,7 +81,9 @@ to 15. Once the toolkit is found, `finish_dynamic_result` sets up the host compi
    is: when the toolkit rejects it, the run stops with the message below instead of quietly using
    another version. Once the compiler is decided, `task compiler` narrows the range of its tool to
    that version, so the later setups of the same run (and the Visual Studio of `msvc`) follow it
-   without a question.
+   without a question. When no version decides the installation (clang's dependency `msvc` asks
+   for none), `tool/microsoft.visual-studio` takes the newest one itself, with an INFO line
+   (`--use.microsoft-visual-studio.version=<version>` picks another).
 3. It sets up `task compiler --lang=cpp`, which picks the newest compiler in those ranges: for
    CUDA 12.8 on a machine with Visual Studio 2026 and 2022, it picks 2022. Cached compilers
    outside the ranges, or without the tags and constraints of the request, are not offered; when

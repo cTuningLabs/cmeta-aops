@@ -11,6 +11,13 @@ All notable changes to cMeta AOps are documented here, newest first.
   from the meta, what was detected keeps its value, lists are not appended, and the entry's files are not
   rewritten (they stay the record of what was detected; `--update` re-detects). `-v` names the keys added.
   `task/setup-compile` no longer reads the archive flag from the tool's meta itself.
+- **One Visual Studio, no question** (`tool/microsoft.visual-studio`): a request that names no exact
+  version - clang's dependency `msvc` asks for none, nvcc asks for a range - takes the newest installation
+  among the cached ones that match, with an INFO line that names the others and
+  `--use.microsoft-visual-studio.version=<version>`. Before, two installations meant "More than 1 cache
+  entry found" in every such run, and `-q` took the first - the newest, now the answer without the
+  question. An exact version matches or fails as before; the entries of one version (one per Windows SDK)
+  stay for the engine's own choice.
 - **`task/host` no longer waits for a hostname nobody resolves:** `get_hostname_info()` resolved the
   hostname with `getaddrinfo()` to add its addresses; on a machine whose name no resolver knows (a CI
   runner, a host without a DNS entry) that waited for the resolver's timeouts - half a minute on some

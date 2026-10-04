@@ -45,6 +45,28 @@ def year_for(version, matches):
     return None
 
 
+def version_of(artifact):
+    """The cl.exe version a cache entry of this tool was made for ('' when it has none)."""
+    return str(artifact.get('cmeta', {}).get('params', {}).get('version') or '')
+
+
+def version_numbers(version):
+    """19.50.35726 -> (19, 50, 35726): the key that orders cl.exe versions (a part that is no number counts 0)."""
+    return tuple(int(p) if p.isdigit() else 0 for p in str(version or '').strip().lstrip('=').split('.'))
+
+
+def is_exact_version(version):
+    """True for one plain version (19.44, 19.44.35211, ==19.44); a range (<19.50, >=19.10,<19.50) or nothing is not."""
+    v = str(version or '').strip().lstrip('=')
+    return v != '' and all(p.isdigit() for p in v.split('.'))
+
+
+def describe(version):
+    """A cl.exe version with its Visual Studio release: '19.50.35726 (2026)'."""
+    year = year_for(version, lambda *a: False)
+    return f'{version} ({year})' if year else version
+
+
 def vswhere_installations():
     """
     The installation folders of every Visual Studio 2017+ (any edition, Build Tools included,
@@ -148,3 +170,44 @@ class CTool(InitCTool):
                                  f'(--with.year: {", ".join(BUILD_TOOLS_WINGET_IDS)})')
 
         return {'return': 0, 'install_cmd': (install_cmd or '').replace('@VS_BUILD_TOOLS@', winget_id)}
+
+    ############################################################
+    def filter_tool_cache_artifacts(self,
+                                    ctx: dict,
+                                    artifacts: list,
+                                    tmp_artifacts: list,
+                                    params: dict,
+                                    path: str = None,
+                                    **extra,
+    ):
+        """
+        A request that names no exact version (none at all, or a range such as nvcc's host-compiler
+        limits), no vcvars script (tool_path) and no path takes the newest installation among the
+        cached entries that match: the Visual Studio is the environment of a compiler whose version
+        is decided already (msvc passes its version on, clang asks for none), not a choice to put to
+        the user. The entries of that version all stay (one per Windows SDK). Before, two
+        installations meant the question "More than 1 cache entry found" in every such run, and -q
+        took the first - the newest, which this rule makes the answer without the question.
+        """
+
+        version = str(params.get('version') or '').strip()
+
+        if is_exact_version(version) or params.get('tool_path') or path or len(artifacts) < 2:
+            return {'return': 0}
+
+        newest = max((version_of(a) for a in artifacts), key = version_numbers)
+        kept = [a for a in artifacts if version_of(a) == newest]
+
+        if len(kept) == len(artifacts):
+            return {'return': 0}
+
+        control = ctx.get('control', {})
+        if control.get('con', False):
+            space = '  ' * ctx.get('tasks', {}).get('nested_call', 0) if control.get('verbose', False) else ''
+            others = sorted({version_of(a) for a in artifacts if version_of(a) != newest}, key = version_numbers, reverse = True)
+            within = f' within {version}' if version else ''
+            print (f"{space}INFO: {len(artifacts)} cached Visual Studio installations{within}: taking cl.exe {describe(newest)} "
+                   f"({', '.join(describe(v) for v in others)} also would; "
+                   f"--use.microsoft-visual-studio.version=<version> picks another)")
+
+        return {'return': 0, 'artifacts': kept}

@@ -120,7 +120,9 @@ libraries, compilers, profilers and run wrapping. Two consumers filter on it:
    the newest version - no question asked, an INFO line names the others;
    `--use.compiler-<lang>.name=<tool>` picks another compiler,
    `--use.compiler-<lang>.version=<version>` another version, and a choice that cannot be
-   honoured stops the run.
+   honoured stops the run. With two Visual Studios installed, the installation follows the
+   compiler's version; when none decides it (clang's dependency `msvc`), the newest is taken
+   without a question (`--use.microsoft-visual-studio.version=<version>` picks another).
 2. **The compiler tool** carries per-OS `features.flags` (see
    [tool-abstraction.md](tool-abstraction.md)) — the abstraction that makes one template
    work across toolchains. A cached compiler entry carries the flags of the time it was
