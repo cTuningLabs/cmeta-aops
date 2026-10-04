@@ -99,6 +99,11 @@ class CTask(InitCTask):
         compiler_features = _global[global_compiler_key].get('features', {})
         flags = compiler_features.get('flags',{})
 
+        # The environment of a cross-compiling tool (GOOS, GOARCH of tool/go-android) for the
+        # compile command; the program's own compile env wins
+        if compiler_features.get('env'):
+            _env = {**compiler_features['env'], **_env}
+
         # Check profile
         if _profile:
             _debug = True

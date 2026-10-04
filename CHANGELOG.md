@@ -15,6 +15,19 @@ All notable changes to cMeta AOps are documented here, newest first.
     macOS/Windows are unchanged.
   - **`test-nmm-c-cpu`, `test-nmm-cpp-cpu`:** pass `with.static` to `lib-openssl` for static builds
     on Linux.
+- **Go and Rust programs on Android** (`tool/go-android`, `tool/rustc-android`, new):
+  - **`cx program run test-nmm-go-cpu android-cpu`** builds with the host's Go for the device's ABI
+    (`GOOS=android`, `GOARCH`, `CGO_ENABLED=0`, `-buildmode=pie`; no NDK needed) and runs it over adb.
+  - **`cx program run test-nmm-rust-cpu android-cpu`** builds with the host's rustc for the device's
+    Rust target, whose standard library rustup adds the first time, linked by the Android NDK's clang
+    for the device's API level.
+  - Host builds keep `tool/go` and `tool/rustc`: the new tools support only `android-cpu`.
+  - **`task/setup-compile`:** the compile command also gets the compiler tool's `features.env` (the
+    program's own env wins); no other tool sets one.
+- **`test-nmm-rust-cpu`:** writes `tmp-cmeta-program-stats.json` like the C and Go versions; before,
+  the file its description declares was missing.
+- **`test-nmm-swift-cpu`:** no longer declares `android-cpu`, which no Swift compiler tool supports,
+  so a run for it stops at once.
 - **`tool/openjdk`:** on musl Linux (Alpine) the default JDK is Temurin's `alpine-linux` build;
   before, the glibc build was downloaded and did not run there.
 - **An OpenSSH server run as the user** (`tool/openssh-server`, `task/run-openssh`, new):
