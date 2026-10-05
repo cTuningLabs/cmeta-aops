@@ -695,6 +695,13 @@ class CTask(InitCTask):
             usage = claude_usage(session, started, t)
             if usage is not None:
                 costs['agent_usage'] = usage
+                # A session started with the harness's default model records no model: take the
+                # one that did most of the work (subagents may run a smaller one)
+                models = {m: c for m, c in (usage.get('by_model') or {}).items()
+                          if m and m != 'unknown' and not m.startswith('<')}
+                if models and not rec['agent'].get('model'):
+                    rec['agent']['model'] = max(models, key = lambda m: models[m]['output_tokens'])
+                    rec['agent']['model_from'] = 'transcript'
                 cost = usage_cost(usage, self.cfg.get('prices'))
                 if cost is not None:
                     costs['agent_cost_usd_estimate'] = cost

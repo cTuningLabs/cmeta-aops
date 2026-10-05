@@ -314,4 +314,28 @@ def test_finish_records_the_agent_usage(session, tmp_path):
     assert usage["requests"] == 2 and usage["output_tokens"] == 150
     md = open(r["log"], encoding="utf-8").read()
     assert "Agent: 2 requests; 150 output, 4 input, 20 cache-write and 2,000 cache-read tokens" in md
+    # the model the agent was started with is kept
+    assert r["record"]["agent"]["model"] == "claude-opus-5-5" and "model_from" not in r["record"]["agent"]
+
+
+def test_finish_takes_the_model_from_the_transcript_when_none_was_given(session, tmp_path, monkeypatch):
+    """A session started with the harness's default model: CMETA_GENERATOR names the agent only."""
+    monkeypatch.setenv("CMETA_GENERATOR", json.dumps({"method": "agent", "agent": "Claude Code 2.1.286"}))
+    r = session(start=True, type="default-model-" + session.unique)
+    assert r["return"] == 0, r.get("error")
+    assert "model" not in r["record"]["agent"]
+    started = datetime.datetime.fromisoformat(r["record"]["started"])
+    # the main transcript writes more output (opus, 100) than the subagent's (haiku, 50)
+    write_transcripts(tmp_path, "0000-test-session", started, minutes_before=30, minutes_inside=0)
+    r = session(finish=True, id=r["id"])
+    assert r["return"] == 0, r.get("error")
+    assert r["record"]["agent"]["model"] == "claude-opus-5-5"
+    assert r["record"]["agent"]["model_from"] == "transcript"
+
+    # a session without transcripts on this machine: nothing is guessed
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "0000-another-session")
+    r = session(start=True, type="no-transcript-" + session.unique)
+    r = session(finish=True, id=r["id"])
+    assert r["return"] == 0, r.get("error")
+    assert "model" not in r["record"]["agent"]
 

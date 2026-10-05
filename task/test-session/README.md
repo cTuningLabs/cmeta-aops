@@ -84,7 +84,7 @@ $ID = (cx task run test-session --start --type=build --print=id | Select-Object 
 | `host` | name, OS, release, architecture, CPUs, RAM, Python |
 | `cmeta` | version, `CMETA_HOME`, the engine's path, and its branch and commit for a checkout |
 | `repositories` | this repository and each `--repos`: branch, commit, changed tracked files |
-| `agent` | from `CMETA_GENERATOR` (agent, model, effort), the Claude Code session (`CLAUDE_CODE_SESSION_ID`), or `--agent`, `--model`, `--effort`, `--session` |
+| `agent` | from `CMETA_GENERATOR` (agent, model, effort), the Claude Code session (`CLAUDE_CODE_SESSION_ID`), or `--agent`, `--model`, `--effort`, `--session`; a session started with the default model gets its `model` at `--finish` from the transcript (the model that wrote the most output; `model_from: transcript`) |
 | `command` | `--cmd` |
 | `notes`, `results`, `attachments` | `--note`; `--results.<key>=<value>` and `--results_file`; `--attach` (files up to 20 MiB, `--attach_max_mib`) |
 | `costs` | `wall_time_s`, `sandbox_mib`, `agent_usage`, `--tokens` (`agent_tokens`), `--cost_usd` (`agent_cost_usd`), `--costs.<key>=<value>` |

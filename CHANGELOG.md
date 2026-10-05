@@ -86,6 +86,10 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **`run-codex --resume=<session id>`** continues a recorded Codex session instead of starting one:
   `codex exec resume <id> -` with the prompt on stdin, `codex resume <id> [prompt]` for an interactive session
   (the picker is never shown); the model and effort flags apply as to a new session.
+- **A test session names the model of a Claude Code session started with its default model**
+  (`task/test-session`): `CMETA_GENERATOR` then carries no model, so `--finish` takes it from the session's
+  transcript - the model that wrote the most output (subagents may run a smaller one) - and records
+  `agent.model` with `model_from: transcript`. A model given by `CMETA_GENERATOR` or `--model` is kept.
 
 ## 0.42.0
 - **A reused tool entry is completed from its tool's current `_desc.yaml`** (`task/setup`): a cached entry
