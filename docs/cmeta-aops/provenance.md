@@ -113,14 +113,22 @@ declares as a dependency in its meta: after pulling the version that introduced 
 (`cx category update <repo>:program`, or `cx --reindex`), or the command stops with a message saying so.
 
 ```bash
-cx program provenance test-nmm-nvcc-cuda                        # the default build folder (tmp)
+cx program provenance test-nmm-nvcc-cuda                        # the newest record (tmp of a single entry first)
 cx program provenance test-nmm-nvcc-cuda --target_tmp=tmp-static
-cx program provenance test-nmm-nvcc-cuda --all                  # one line per build folder with a record
+cx program provenance test-nmm-nvcc-cuda --all                  # every build entry (one per request) and folder with a record
+cx program provenance test-nmm-nvcc-cuda --entry=3f9a2c1e8b7d6a54            # one entry: its alias, UID or request digest
 cx program provenance test-nmm-nvcc-cuda --target_tmp=tmp-static --diff=tmp-dynamic
+cx program provenance test-nmm-nvcc-cuda --entry=3f9a2c1e8b7d6a54 --diff=task--program--test-nmm-nvcc-cuda:tmp
 cx program provenance test-nmm-nvcc-cuda --target_tmp=tmp-static --diff=/path/from/another/machine/provenance.json
 cx program provenance test-nmm-nvcc-cuda --target_tmp=tmp-static --as_flags
 cx program provenance test-nmm-nvcc-cuda --as_json
 ```
+
+A program's builds live in **one cache entry per request** (`task--program--<program>` for the plain
+request, `task--program--<program>--<uid>` for the others; see `program-and-compute.md`): the entry of
+`--use.nvcc.version=12.9` and the entry of `--use.nvcc.version=13.3` coexist, each with its build
+folders. `--all` groups the records by entry and names each entry's request; `--entry` picks one by its
+alias, UID or request digest; `--diff=<entry>:<folder>` compares across entries.
 
 The view prints the header (program, folder, date, compute, host, the binary's format and whether it is
 static, the result), then one row per tool — what was requested (or `(auto)`), what was resolved and
@@ -201,6 +209,7 @@ attached by hand: `cx task run test-session --id=<id> --attach=<build folder>/pr
 - **Plugins and `dlopen`:** visible only with `--provenance=loaded`.
 - **Python programs:** the binary is the interpreter; the interesting libraries (a wheel's CUDA runtime)
   appear with `--provenance=loaded`, or in `runtime` when the framework reports its own versions.
-- The record describes **one run** in one build folder; the build's cache identity does not yet include
-  the resolved toolchain (planned as the next step), so a changed `--use.<tool>.version` without
-  `--recompile` is refused by the build-folder stamp rather than rebuilt.
+- The record describes **one run** in one build folder. The folder's entry is named by the request, so a
+  changed `--use.<tool>.version` builds in its own entry; a changed resolution of the *same* request (a
+  toolkit upgraded underneath an auto choice) is refused by the build-folder stamp and rebuilt with
+  `--recompile` or `--clean`.

@@ -3,6 +3,19 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.43.0
+- **A program's builds live in one cache entry per request** (`category/task/api/build_identity.py`,
+  `task/compile-and-run-program`): the entry is found by its params like every other task entry - the program,
+  the explicit choices of the request (the `--use` tree with tool names, versions and variants, `--compile.*`,
+  `--with.*`) and the compute targets the run resolved - so `--use.nvcc.version=12.9` and `--use.nvcc.version=13.3`
+  build side by side and compare, and the same request comes back to its own entry, whose build-folder
+  stamp guards against a changed resolution. The plain request (no explicit choice, cpu) keeps the entry
+  name `task--program--<program>` every program had before and adopts such an entry when it exists without
+  params, so the builds made before stay where they are; the others are `task--program--<program>--<uid>`.
+  The entry's params hold the request, its digest (the key the lookup matches) and, after a run, the
+  resolved toolchain (name, version and path of every tool). `cx program provenance --all` groups the
+  records by entry and names each entry's request, `--entry=<alias|uid|digest>` picks one,
+  `--diff=<entry>:<folder>` compares across entries, and the default is the newest record;
+  `cx program clean` works over every entry (`--entry` for one).
 - **Every program run leaves its provenance record** (`task/compile-and-run-program`,
   `category/task/api/provenance.py`): `provenance.json` in the build folder, next to the build stamp - what the
   request made explicit (`--use.<tool>.*`, `--compile.static`, `--compute`, `--with.*`, the program parameters,

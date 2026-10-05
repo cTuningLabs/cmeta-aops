@@ -399,9 +399,12 @@ def driver(prov):
     """The driver's CTask with the engine base class stubbed, and the provenance module under test."""
     src = driver_source().replace("from task_c36be4b9314a45e0.api.ctask import InitCTask", "class InitCTask: pass")
     src = src.replace("from task_c36be4b9314a45e0.api import deadlines", "").replace("from task_c36be4b9314a45e0.api import build_stamp", "")
-    src = src.replace("from task_c36be4b9314a45e0.api import provenance", "")
+    src = src.replace("from task_c36be4b9314a45e0.api import provenance", "").replace("from task_c36be4b9314a45e0.api import build_identity", "")
+    spec = importlib.util.spec_from_file_location("build_identity_for_the_driver", REPO_ROOT / "category" / "task" / "api" / "build_identity.py")
+    build_identity = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_identity)
     ns = {"__name__": "driver_under_test", "__file__": str(REPO_ROOT / "task" / "compile-and-run-program" / "api_v1.py"),
-          "provenance": prov, "deadlines": None, "build_stamp": None}
+          "provenance": prov, "deadlines": None, "build_stamp": None, "build_identity": build_identity}
     exec(compile(src, ns["__file__"], "exec"), ns)
     task = object.__new__(ns["CTask"])
     task.cm = FakeCM()

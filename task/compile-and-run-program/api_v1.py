@@ -14,6 +14,7 @@ import time
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 from task_c36be4b9314a45e0.api import deadlines
 from task_c36be4b9314a45e0.api import build_stamp
+from task_c36be4b9314a45e0.api import build_identity
 from task_c36be4b9314a45e0.api import provenance
 
 class CTask(InitCTask):
@@ -228,12 +229,13 @@ class CTask(InitCTask):
 
         try:
             static_effective = provenance.is_true((params.get('compile') or {}).get('static'))
+            entry = ctx['tasks']['local'].get('build_entry')
             record = provenance.build_record(
                 mode, {'alias': artifact_alias, 'uid': artifact_uid}, target_tmp, target_path, compute,
                 ctx['tasks']['global'], ctx['tasks']['local'], request_params, request_use, static_effective,
                 result_data = ctx['tasks']['local'].get('result_files_data'),
                 match_version = lambda spec, version: self.cm.packages.match_version(spec, version).get('matched'),
-                run_skipped = run_skipped)
+                run_skipped = run_skipped, entry = entry)
             error = provenance.write_record(target_path, record)
             if error:
                 raise OSError(error)
@@ -245,6 +247,16 @@ class CTask(InitCTask):
 
         summary = provenance.summary(record)
         summary['path'] = os.path.join(target_path, provenance.RECORD_FILE)
+
+        # The resolved toolchain goes into the build entry's params (cx cache find reads it)
+        if entry:
+            try:
+                r = build_identity.update_entry(self.cm, self.cmeta['uses_categories']['cache'], entry, record.get('resolved'))
+                if r['return'] > 0:
+                    raise RuntimeError(r.get('error') or f'return code {r["return"]}')
+            except Exception as e:
+                if con and verbose:
+                    print (f'{space}WARNING: the build entry was not updated with the resolved toolchain: {e}')
 
         failed = provenance.failed_lines(record)
         if con and failed:
@@ -431,22 +443,21 @@ class CTask(InitCTask):
                 if skip_cache:
                     target_path = os.path.join(path, x)
                 else:
-                    # Check if in current path or cache
-                    artifact_au = artifact_alias if artifact_alias else artifact_uid
-                    r = self.cm.access({
-                      'category':self.cmeta['uses_categories']['cache'],
-                      'command':'get', 
-                      'arg1':f'task--program--{artifact_au}',
-                      'tags': [
-                         "task",
-                         "c36be4b9314a45e0",
-                         "compile-and-run-program",
-                         "05437a1aae224270",
-                      ]
-                    })
+                    # The build entry of this request (category/task/api/build_identity.py): the explicit
+                    # choices of the request and the resolved targets name it, so two requests that
+                    # differ build side by side and the same request comes back to its own entry
+                    identity = build_identity.request_identity(request_params, request_use, selected_compute)
+                    r = build_identity.find_or_create_entry(self.cm, self.cmeta['uses_categories']['cache'],
+                                                            artifact_alias, artifact_uid, identity)
                     if self.cm.catch_error(r): return r
 
-                    target_path = os.path.join(r['artifact']['path'], x)
+                    ctx_tasks['local']['build_entry'] = {'path': r['path'], 'alias': r['alias'], 'uid': r['uid'],
+                                                         'request': identity, 'request_digest': build_identity.digest(identity)}
+                    if con and verbose and (r.get('created') or r.get('adopted')):
+                        what = 'New build entry' if r.get('created') else 'Build entry adopted'
+                        print (f'{space}{what} for this request ({build_identity.describe(identity)}): {r["path"]}')
+
+                    target_path = os.path.join(r['path'], x)
 
         target_path = target_path.replace('//', os.sep)
 

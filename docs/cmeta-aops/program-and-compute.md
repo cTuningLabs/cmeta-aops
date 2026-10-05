@@ -243,10 +243,20 @@ stays clean: by default every build goes to the program's cache entry. Resolutio
 - `--target_path=<folder>` ⇒ that folder, as given.
 - else `config task` → `compile_and_run_program.skip_cache: True` (the layout before 2026-06, kept
   for old setups) ⇒ `target_path = <program_dir>/<target_tmp>`.
-- else ⇒ a dedicated `cache` entry `task--program--<name>` (tags `[task,
-  c36be4b9314a45e0, compile-and-run-program, 05437a1aae224270]`), `target_path =
-  <cache_entry>/<target_tmp>`. Another `--target_tmp` (or `--target_path`) gives another build;
-  `--path` is an engine control parameter and does not.
+- else ⇒ the **build entry of the request**: a `cache` entry of the task (tags `[task,
+  c36be4b9314a45e0, compile-and-run-program, 05437a1aae224270]`) found by its params, like every
+  other task entry — the program and the request: the explicit `--use` choices (tool names, versions,
+  variants), `--compile.*`, `--with.*`, and the compute targets the run resolved
+  (`category/task/api/build_identity.py`). Two requests that differ build in two entries, so
+  `--use.nvcc.version=12.9` and `--use.nvcc.version=13.3` coexist and compare; the same request
+  comes back to its entry, where the build stamp guards the folder against a changed resolution.
+  The plain request (no explicit choice, cpu) keeps the name `task--program--<name>` every program had
+  before and adopts such an entry when it exists without params; the others are
+  `task--program--<name>--<uid>`. The folder name says nothing: the entry's `_cmeta` does —
+  `params.request`, `params.request_digest` (the key the lookup matches) and, after a run,
+  `params.resolved` (name, version and path of every tool). `target_path = <entry>/<target_tmp>`.
+  Another `--target_tmp` (or `--target_path`) gives another build in the same entry; `--path` is an
+  engine control parameter and does not.
 - The folder `tmp` is `--target_tmp=<name>` when given, else the config default
   (`cx config set task --meta.compile_and_run_program.target_tmp=<name>`). `auto` makes it
   `tmp-<targets>` (`tmp-cuda`, `tmp-cpu-cuda`): one build per set of targets, side by side.
@@ -256,9 +266,10 @@ the current directory. A program's `local_vars: work_path: '{pwd}'` (llama-cpp) 
 `<cur_dir>/<target_tmp>`, so a run started inside the program's own folder writes its outputs into
 `program/<name>/<target_tmp>` — the one way a run still writes into an artifact.
 
-**Cleaning:** `cx program clean <name> [--target_tmp=<name>]` removes the build folders of the cache
-entry (`--all`: every program); `cx program run <name> --clean` wipes one build folder before
-rebuilding; `cx cache delete task--program--<name>` removes the whole entry, with any venv inside it.
+**Cleaning:** `cx program clean <name> [--target_tmp=<name>] [--entry=<alias|uid|digest>]` removes the
+build folders of the program's entries (`--all`: every program); `cx program run <name> --clean` wipes
+one build folder before rebuilding; `cx cache delete <entry>` removes a whole entry, with any venv
+inside it; `cx program provenance <name> --all` lists the entries with their requests and records.
 Folders that runs before 2026-06 left inside program artifacts are listed by `clean` and left alone.
 
 **The Python of a program.** A program's `setup` step for `python` (see `tool/python/README.md`)

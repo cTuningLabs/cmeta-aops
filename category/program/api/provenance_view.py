@@ -51,6 +51,77 @@ def find_records(entry_path):
     return found
 
 
+def _build_identity():
+    """The task api module of the build entries (category/task/api/build_identity.py), loaded by its path."""
+    import importlib.util
+    path = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'task', 'api', 'build_identity.py'))
+    spec = importlib.util.spec_from_file_location('cmeta_aops_build_identity', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def program_entries(cm, cache_category, alias, uid = None):
+    """The build entries of a program, one per request (plus the one made before the entries per request), read only."""
+    return _build_identity().find_entries(cm, cache_category, alias, uid)
+
+
+def describe_request(entry):
+    """The request an entry holds the builds of, in one line."""
+    params = entry.get('params') or {}
+    if not params:
+        return 'builds made before the entries per request (no request recorded)'
+    return _build_identity().describe(params.get('request') or {})
+
+
+def entry_line(entry):
+    return f"entry {entry.get('alias') or entry.get('uid') or '?'}: {describe_request(entry)}"
+
+
+def entry_matches(entry, text):
+    """Whether --entry names this entry: its alias, its UID, the request digest, or the end of the alias."""
+    text = str(text or '').strip().lower()
+    if not text:
+        return False
+    alias = str(entry.get('alias') or '').lower()
+    digest = str((entry.get('params') or {}).get('request_digest') or '').lower()
+    return text in (alias, str(entry.get('uid') or '').lower(), digest) or (alias and alias.endswith('--' + text))
+
+
+def find_records_in(entries):
+    """The records of every build folder of the entries: [(entry, target_tmp, path)], entries in order."""
+    out = []
+    for entry in entries:
+        for name, path in find_records(entry.get('path')):
+            out.append((entry, name, path))
+    return out
+
+
+def newest(items):
+    """The (entry, target_tmp, path) with the latest record; the first on a tie."""
+    best, best_created = None, None
+    for item in items:
+        r = load_record(item[2])
+        created = str((r.get('record') or {}).get('created') or '') if r['return'] == 0 else ''
+        if best is None or created > best_created:
+            best, best_created = item, created
+    return best
+
+
+def other_record_path(other, entry, entries):
+    """--diff=<x>: a record file, <entry>:<folder> (an entry by alias, UID or digest), or a folder of the same entry."""
+    other = str(other)
+    if os.path.isfile(other):
+        return other
+    which, sep, folder = other.rpartition(':')
+    if sep and which and not (len(which) == 1 and which.isalpha()):           # not a Windows drive letter
+        found = [e for e in entries if entry_matches(e, which)]
+        if not found:
+            return None
+        return os.path.join(found[0]['path'], folder, RECORD_FILENAME)
+    return os.path.join(entry['path'], other, RECORD_FILENAME)
+
+
 def missing_message(program, folder, target_tmp = None):
     """What to say when a build folder has no record."""
     where = f'the build folder {folder}' if folder else f'the build folder "{target_tmp or "tmp"}" of program "{program}"'

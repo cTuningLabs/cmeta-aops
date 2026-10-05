@@ -245,9 +245,10 @@ def test_command_end_to_end(cm):
     with open(os.path.join(entry, "tmp-old", "provenance.json"), "w") as f:
         json.dump(failed, f)
 
-    # tmp has no record: the folders that have one are listed
+    # tmp has no record: the newest record of the program is shown, with the count of records and entries
     r = provenance(cm)
-    assert r["return"] == 0 and [x["target_tmp"] for x in r["records"]] == ["tmp-old", "tmp-static"]
+    assert r["return"] == 0 and r["target_tmp"] == "tmp-static" and r["records"] == 2 and r["entries"] == 1
+    assert r["entry"] == "task--program--test-nmm-c-cpu" and r["entry_path"] == entry
 
     r = provenance(cm, target_tmp = "tmp-static")
     assert r["return"] == 0 and r["record"]["ok"] is True and r["path"].endswith(os.path.join("tmp-static", "provenance.json"))
@@ -281,6 +282,76 @@ def test_command_end_to_end(cm):
     assert r["return"] > 0 and "name the program" in r["error"]
 
 
+def build_identity():
+    path = REPO_ROOT / "category" / "task" / "api" / "build_identity.py"
+    spec = importlib.util.spec_from_file_location("build_identity_for_the_view", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_command_over_several_build_entries(cm):
+    # a second entry of the program: the request nvcc 13.3 on cuda (the first is the one made before, without params)
+    bi = build_identity()
+    cuda = bi.request_identity({}, {"nvcc": {"version": "13.3"}}, ["cuda"])
+    r = bi.find_or_create_entry(cm, "cache,1ebdcc1cc30c4022", "test-nmm-c-cpu", "edd1c97bbe534ca3", cuda)
+    assert r["return"] == 0 and r["created"], r
+    second = r["path"]
+    os.makedirs(os.path.join(second, "tmp"))
+    rec = record_ok()
+    rec["program"]["alias"] = "test-nmm-c-cpu"
+    rec["created"] = "2026-10-05T10:00:00Z"                                   # the newest record of the program
+    with open(os.path.join(second, "tmp", "provenance.json"), "w") as f:
+        json.dump(rec, f)
+
+    r = provenance(cm, all = True)
+    assert r["return"] == 0 and len(r["entries"]) == 2
+    assert [e["alias"] for e in r["entries"]][0].startswith("task--program--test-nmm-c-cpu--")    # the entry with params first, the one without last
+    assert r["entries"][1]["alias"] == "task--program--test-nmm-c-cpu" and r["entries"][1]["params"] is None
+    by_entry = {(x["entry"], x["target_tmp"]) for x in r["records"]}
+    assert (r["entries"][0]["alias"], "tmp") in by_entry and (r["entries"][1]["alias"], "tmp-static") in by_entry
+    assert next(x for x in r["records"] if x["target_tmp"] == "tmp")["request"] == cuda
+
+    # the default is the newest record, whichever entry holds it
+    r = provenance(cm)
+    assert r["return"] == 0 and r["entry_path"] == second and r["target_tmp"] == "tmp" and r["entries"] == 2 and r["records"] == 3
+
+    # --entry picks an entry by its alias, its UID, its digest or the end of its alias; --target_tmp within it
+    digest = bi.digest(cuda)
+    for which in ("task--program--test-nmm-c-cpu", "test-nmm-c-cpu"):
+        r = provenance(cm, entry = which, target_tmp = "tmp-static")
+        assert r["return"] == 0 and r["entry"] == "task--program--test-nmm-c-cpu" and r["target_tmp"] == "tmp-static"
+    uid = os.path.basename(second).rsplit("--", 1)[-1]
+    for which in (digest, uid, os.path.basename(second)):
+        r = provenance(cm, entry = which)
+        assert r["return"] == 0 and r["entry_path"] == second, which
+    r = provenance(cm, entry = "nothing")
+    assert r["return"] > 0 and 'no build entry "nothing"' in r["error"] and "plain" not in r["error"]
+    r = provenance(cm, entry = "task--program--test-nmm-c-cpu", target_tmp = "tmp")
+    assert r["return"] > 0 and "tmp" in r["error"]                                  # that entry has no tmp record
+
+    # --diff across entries: <entry>:<folder>
+    r = provenance(cm, entry = digest, diff = "task--program--test-nmm-c-cpu:tmp-old")
+    assert r["return"] == 0 and r["diff_path"] == os.path.join(entry_path_of(cm), "tmp-old", "provenance.json")
+    assert ("nvcc", "version", "13.3.1", "12.9.86") in [tuple(x) for x in r["diff"]["resolved"]]
+    r = provenance(cm, entry = digest, diff = "nowhere:tmp")
+    assert r["return"] > 0 and "no build entry for --diff" in r["error"]
+
+    # clean one entry only, then the folder of the other
+    clean = lambda **extra: cm.access(dict({"category": "program", "command": "clean", "arg1": "test-nmm-c-cpu", "con": False}, **extra))
+    r = clean(entry = digest)
+    assert r["return"] == 0 and r["removed"] == [os.path.join(second, "tmp")]
+    r = clean(target_tmp = "tmp-old")
+    assert r["return"] == 0 and r["removed"] == [os.path.join(entry_path_of(cm), "tmp-old")]
+
+
+def entry_path_of(cm):
+    r = cm.access({"category": "cache", "command": "read", "arg1": "task--program--test-nmm-c-cpu",
+                   "tags": ["task", "c36be4b9314a45e0", "compile-and-run-program", "05437a1aae224270"]})
+    assert r["return"] == 0, r.get("error")
+    return r["artifact"]["path"]
+
+
 def test_clean_removes_the_build_folders_of_the_cache_entry(cm):
     # the entry made by the view test above, with the folders tmp-static and tmp-old; two more here
     r = cm.access({"category": "cache", "command": "read", "arg1": "task--program--test-nmm-c-cpu",
@@ -302,8 +373,8 @@ def test_clean_removes_the_build_folders_of_the_cache_entry(cm):
     assert r["return"] == 0 and r["removed"] == [os.path.join(entry, "tmp-cuda")]
     assert not os.path.exists(os.path.join(entry, "tmp-cuda")) and os.path.isdir(os.path.join(entry, "tmp"))
 
-    r = clean(arg1 = "test-nmm-c-cpu")                                                 # every build folder; the entry stays
-    assert r["return"] == 0 and sorted(os.path.basename(x) for x in r["removed"]) == ["tmp", "tmp-old", "tmp-static"]
+    r = clean(arg1 = "test-nmm-c-cpu")                                                 # every build folder of every entry; the entries stay
+    assert r["return"] == 0 and sorted(os.path.basename(x) for x in r["removed"]) == ["tmp", "tmp-static"]   # tmp-old went in the test above
     assert os.path.isdir(entry) and not any(x.startswith("tmp") for x in os.listdir(entry))
     assert r["without_entry"] == [] and r["legacy"] == []                               # the program artifact holds no tmp* folder
 

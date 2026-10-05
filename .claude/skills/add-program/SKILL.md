@@ -261,10 +261,13 @@ cx program provenance test-hello-c-cpu                      # what the last run 
 - `-j`/`--verbose` prints which tasks reused global/cache and the resolved compile/run
   commands (also saved as `tmp-cmeta-compile-program{ext}` / `tmp-cmeta-run-program{ext}`
   scripts in the build dir).
-- The build lives in a `cache` entry `task--program--<name>` (unless
+- The build lives in a `cache` entry per request — `task--program--<name>` for the plain request,
+  `task--program--<name>--<uid>` when the request made explicit choices (`--use.*`, `--compile.*`,
+  `--with.*`) or resolved other targets — found by its params (unless
   `cx config set task --meta.compile_and_run_program.skip_cache=True`), in the folder `tmp`
   or `--target_tmp=<name>` (`auto`: one folder per set of targets, `tmp-cuda`; also the
   default with `cx config set task --meta.compile_and_run_program.target_tmp=auto`).
+  `cx program provenance <name> --all` lists the entries and their records.
   Re-running reuses the compiled binary via the **repro cache** (`_repro_ctx_compile.json`)
   unless the targets, host, serial or binary changed — use `--recompile` or `--clean` to force.
   The program artifact itself stays clean: nothing is built or created in it.

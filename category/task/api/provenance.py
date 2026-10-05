@@ -840,10 +840,11 @@ def inspect_binary(path, env, cwd, uname):
 
 
 def build_record(mode, program, target_tmp, target_path, compute, global_ctx, local, request_params, request_use,
-                 static_effective, result_data = None, match_version = None, note = None, run_skipped = False):
+                 static_effective, result_data = None, match_version = None, note = None, run_skipped = False, entry = None):
     """
     The record of a run. `global_ctx`/`local` are ctx['tasks']['global'] and ['local'] after the run,
-    `request_params`/`request_use` the request before the program's defaults were merged.
+    `request_params`/`request_use` the request before the program's defaults were merged, `entry` the
+    build entry of the request (alias, uid, request, request_digest; build_identity.py).
     """
     host = (global_ctx or {}).get('host') or {}
     os_info = host.get('os') or {}
@@ -863,6 +864,8 @@ def build_record(mode, program, target_tmp, target_path, compute, global_ctx, lo
         'effective': {'static': bool(static_effective)},
         'resolved': collect_resolved(global_ctx),
     }
+    if isinstance(entry, dict) and (entry.get('uid') or entry.get('alias')):
+        record['program']['entry'] = {k: entry.get(k) for k in ('alias', 'uid', 'request', 'request_digest') if entry.get(k) is not None}
     if note:
         record['note'] = note
 
