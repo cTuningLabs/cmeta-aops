@@ -19,6 +19,14 @@ All notable changes to cMeta AOps are documented here, newest first.
   also records what the processes really loaded (Linux: the dynamic loader's log into a file per process,
   macOS: dyld's log; elsewhere the resolution stands in); `--provenance=strict` fails the run (99) on a failed
   error-level check, after writing the record.
+- **`cx program provenance <program>`** shows the provenance record of a run (`provenance.json` in the
+  program's build folder): the header, one row per tool with what was requested, what was resolved and where,
+  and the libraries the process loaded from that tool's entry, the checks and the libraries loaded from
+  outside any tool; `--target_tmp=<name>` picks a build folder, `--all` lists every folder with a record,
+  `--diff=<other folder | record file>` prints the differences between two records (request, resolved
+  versions and paths, libraries added and removed, checks that changed), `--as_flags` prints the options
+  that reproduce the resolved configuration, `--as_json` the record. The program category declares the
+  `cache` category it reads the build folders from. Documented in `docs/cmeta-aops/provenance.md`.
 - **A compiler's runtime library is attributed to the compiler of the run** in the provenance record: GCC's
   `libgomp`, `libstdc++` and `libgcc_s`, LLVM's `libomp` and `libc++`, Intel's `libiomp5`, MSVC's `vcomp140`
   live in the shared system folders, where no tool names them. The record asks the compiler itself

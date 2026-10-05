@@ -134,6 +134,157 @@ class Category(InitCategory):
         return {'return': 0, 'targets': targets}
 
     ############################################################
+    def provenance(self, params):
+        """
+        Show the provenance record of a program run (provenance.json in the program's build folder,
+        written by "cx program run"): what was requested, what was resolved, what the binary loads,
+        and the checks between them.
+
+            cx program provenance <program> [--target_tmp=<name>]   # one build folder (default: tmp)
+            cx program provenance <program> --all                   # every build folder with a record
+            cx program provenance <program> --diff=<other target_tmp | path to a provenance.json>
+            cx program provenance <program> --as_flags              # the options that reproduce the run
+            cx program provenance <program> --as_json               # the record itself
+        """
+
+        from . import provenance_view as view
+
+        ctx = params['ctx']
+        con = ctx['control'].get('con', False)
+
+        p = self._prepare_input_from_params(params, base = True)
+        if not p.get('arg1'):
+            return self.cm.error('name the program: cx program provenance <program> [--target_tmp=<name>] [--all] [--diff=...] [--as_flags] [--as_json]')
+
+        target_tmp = params.get('target_tmp')
+        show_all = bool(params.get('all', False))
+        other = params.get('diff')
+        as_flags = bool(params.get('as_flags', False))
+        as_json = bool(params.get('as_json', params.get('json', False)))
+
+        # The program (this command's own options are not the find command's)
+        for key in ('target_tmp', 'all', 'diff', 'as_flags', 'as_json', 'json'):
+            p.pop(key, None)
+        p['command'] = 'find'
+        p['con'] = False
+        r = self.cm.access(p)
+        if self.cm.catch_error(r): return r
+
+        artifacts = r.get('artifacts', [])
+        if len(artifacts) != 1:
+            return self.cm.error(f'"{p["arg1"]}" names {len(artifacts)} programs; name exactly one')
+
+        parts = artifacts[0].get('cmeta_ref_parts', {})
+        alias = parts.get('artifact_alias') or p['arg1']
+        uid = parts.get('artifact_uid')
+
+        # Its build folders: the cache entry of task compile-and-run-program for this program
+        # (read only: a program that never ran has no entry, and this command creates none)
+        cache_category = self.cmeta.get('uses_categories', {}).get('cache')
+        if not cache_category:
+            # the dependency is declared in the category's meta, which the index reads
+            return self.cm.error('the program category\'s dependency on the cache category is not in the index yet: '
+                                 'run "cx category update <repo>:program" or "cx --reindex" and retry')
+        r = self.cm.access({
+            'category': cache_category,
+            'command': 'read',
+            'arg1': f'task--program--{alias or uid}',
+            'tags': ['task', 'c36be4b9314a45e0', 'compile-and-run-program', '05437a1aae224270'],
+        })
+        if r['return'] == 16:
+            return self.cm.error(view.missing_message(alias, None, target_tmp))
+        if self.cm.catch_error(r): return r
+
+        entry_path = r['artifact']['path']
+        records = view.find_records(entry_path)
+
+        if show_all:
+            if con:
+                print ('')
+                print (f'Provenance records of program {alias} ({entry_path}):')
+                print ('')
+                if not records:
+                    print ('  (none)')
+            summaries = []
+            for name, path in records:
+                rx = view.load_record(path)
+                if rx['return'] > 0:
+                    if con:
+                        print (f'  {name:14}  {rx["error"]}')
+                    continue
+                summaries.append({'target_tmp': name, 'path': path, 'ok': rx['record'].get('ok'),
+                                  'created': rx['record'].get('created'), 'compute': rx['record'].get('compute')})
+                if con:
+                    print (view.summary_line(name, rx['record']))
+            if con:
+                print ('')
+            return {'return': 0, 'records': summaries, 'entry_path': entry_path}
+
+        # One record: the folder asked for, else tmp; when tmp has none but others do, list them
+        if not target_tmp:
+            if os.path.isfile(os.path.join(entry_path, 'tmp', view.RECORD_FILENAME)) or not records:
+                target_tmp = 'tmp'
+            else:
+                if con:
+                    print ('')
+                    print (f'No record in the default build folder "tmp"; the build folders of {alias} with a record:')
+                    print ('')
+                    for name, path in records:
+                        rx = view.load_record(path)
+                        if rx['return'] == 0:
+                            print (view.summary_line(name, rx['record']))
+                    print ('')
+                    print (f'Pick one: cx program provenance {alias} --target_tmp=<name>')
+                return {'return': 0, 'records': [{'target_tmp': n, 'path': pth} for n, pth in records], 'entry_path': entry_path}
+
+        folder = os.path.join(entry_path, target_tmp)
+        path = os.path.join(folder, view.RECORD_FILENAME)
+        rx = view.load_record(path)
+        if rx['return'] == 16:
+            return self.cm.error(view.missing_message(alias, folder, target_tmp))
+        if self.cm.catch_error(rx): return rx
+        record = rx['record']
+
+        result = {'return': 0, 'record': record, 'path': path, 'entry_path': entry_path, 'target_tmp': target_tmp}
+
+        if other:
+            # Another build folder of the same program, or a record file (from another machine)
+            other_path = other if os.path.isfile(other) else os.path.join(entry_path, other, view.RECORD_FILENAME)
+            ry = view.load_record(other_path)
+            if ry['return'] == 16:
+                return self.cm.error(f'no provenance record for --diff: {other_path}')
+            if self.cm.catch_error(ry): return ry
+            d = view.diff(record, ry['record'])
+            result['diff'] = d
+            result['diff_path'] = other_path
+            if con:
+                print ('')
+                print (view.render_diff(d, f'{alias} ({target_tmp})', other if os.path.isfile(other) else f'{alias} ({other})'))
+                print ('')
+            return result
+
+        if as_flags:
+            flags = view.as_flags(record)
+            result['flags'] = flags
+            if con:
+                print (flags)
+            return result
+
+        if as_json:
+            import json
+            if con:
+                print (json.dumps(record, indent = 2))
+            return result
+
+        text = view.render(record, program = alias)
+        result['text'] = text
+        if con:
+            print ('')
+            print (text)
+            print ('')
+        return result
+
+    ############################################################
     def clean(self, params):
         """
         Clean all tmp directories in all programs
