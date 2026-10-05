@@ -3,6 +3,49 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.43.0
+- **`run-ai`: a coding agent on a cMeta artifact, with its memory in the artifact** (`task/run-ai`). One front
+  door to the agent tasks - `--harness=claude|codex|opencode|openclaw|antigravity|gemini`, or any `<x>` with a
+  task `run-<x>` - that keeps what the agent learns and produces inside the artifact it works on, in a folder
+  named `!AI`: `memory/` (Claude Code reads and writes it through its `autoMemoryDirectory` setting; the other
+  agents are given the index), `skills/` (loaded as a Claude plugin, listed for the others), `log/` (the run
+  record, the output and the token counts of every run) and the conversations. A run continues the
+  conversation with the latest activity through the agent's own session; `--new` starts another,
+  `--conversation=<id>` picks one, `--conversations` lists them; when the agent changes, the new one is handed
+  the transcript `!AI/log/<id>.transcript.md`, rewritten after every run from the agents' own session stores.
+  The project is `--project=<cref>`, else the artifact the current directory is in, else the directory itself.
+  `--model=<model>,<effort>` and `--effort` are given in the agent's own names and turned into its flags from
+  `tool/<agent>/_desc_models.yaml`; `--list_models` prints the lists. `--dry_run` shows what the agent would
+  be given and runs nothing. The first run of a project copies the memory Claude Code keeps for that folder
+  into an empty `!AI/memory` (`--no_seed`: not). Reference: `task/run-ai/README.md`; overview in
+  `docs/cmeta-aops/agent-tasks.md`.
+- **`ai_uses`: whose memory the AI sessions of an artifact read** (`task/run-ai`). A list of cRefs in the
+  artifact's `_desc.yaml` - or in its repository's `_cmr.yaml`, as the default of all its artifacts - names the
+  artifacts whose `!AI/memory` and `!AI/skills` a session is given as read-only context; `--context=<cref>;<cref>`
+  adds some for one run, `--context_depth` follows the lists further, `--skip_ai_uses` reads none. A mapping in
+  the config artifact `task-run-ai` of the local repository (`local_ai_uses`, by repository or by artifact) lets
+  the sessions of a shared repository read a private artifact on one machine without the repository naming it.
+  The context is estimated in tokens before the run and compared with `--max_context_tokens` (or
+  `max_context_tokens` of that config). The used artifacts stay read-only for a run, for every agent and
+  permission mode alike: a session stages a change under the project's `!AI/pending/<alias>--<UID>/`,
+  `--pending` lists the proposals with their differences, `--apply_pending` applies them on the user's word,
+  and after every run `--context_guard` (`ask`, `restore`, `report`, `off`) deals with what was changed there
+  directly.
+- **`import-ai`** (`task/import-ai`) copies memories (Claude Code memory files or folders of them;
+  `--claude_folder=<folder>` for the memory Claude Code keeps for a folder) and skills (a repository's
+  `.claude/skills`) into the `!AI` folder of an artifact: identical files are skipped, the newer one wins,
+  `--overwrite` forces; `MEMORY.md` keeps its lines, their order and its headings and gains an entry per new
+  memory, and an import of skills only leaves it alone; the plugin manifest and a record of what came from
+  where are written.
+- **Antigravity CLI and Gemini CLI as tools and tasks** (`tool/agy` + `task/run-agy`, `tool/gemini` +
+  `task/run-gemini`): Google's two terminal agents with the flags of `run-claude`, `run-codex` and
+  `run-opencode`. `agy` - for personal Google accounts - is installed as the release binary from GitHub;
+  `gemini` - for Gemini Code Assist Standard/Enterprise licences, API keys and Vertex AI, since it refuses
+  personal accounts - as the release bundle over the `node-js` tool, with npm as the fallback. Both carry a
+  `_desc_models.yaml`. `run-gemini` never opens a browser in a headless run and tells a failed run which case
+  it is: nothing configured, a personal account that is refused, or a key the API does not accept.
+  Tests of the four items above: `tests/cmeta_aops_basic_tests/test_run_ai_pending.py`,
+  `test_run_ai_context.py`, `test_run_ai_conversations.py`, `test_run_ai_engine.py` (the task through the
+  engine with a stand-in harness that calls no model), `test_run_agy_gemini.py`, `test_import_ai.py`.
 - **`--use.init.default_cache_repo=<repo>` takes effect** (`task/init`): the run-wide cache repo given on the
   command line was stored under a key named after the repo, so the task engine never saw it and every entry
   still went to `local`. It is now stored as `default_cache_repo`, the key the engine reads and `config::task`
@@ -81,7 +124,7 @@ All notable changes to cMeta AOps are documented here, newest first.
   entry per model (description, context window, default effort, API price, plans, aliases, the efforts it takes).
   Retired models stay with `disabled: true` so that an old `generator.model` can still be read; `legacy`, `until`
   and `unverified` mark the rest; `updated`, `checked_with` and `sources` say when and against what the list was
-  checked. A task that offers `--model=<model>,<effort>` across harnesses reads it (cMeta's `run-ai`);
+  checked. `run-ai` reads it for `--model=<model>,<effort>` and prints it with `--list_models`;
   `docs/cmeta-aops/agent-tasks.md` points at the files.
 - **`run-codex --resume=<session id>`** continues a recorded Codex session instead of starting one:
   `codex exec resume <id> -` with the prompt on stdin, `codex resume <id> [prompt]` for an interactive session

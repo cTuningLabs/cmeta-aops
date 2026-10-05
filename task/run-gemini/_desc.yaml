@@ -1,0 +1,61 @@
+authors: Grigori Fursin
+
+# Run Google's Gemini CLI non-interactively on an assembled prompt and exit, or open
+# an interactive session. Same flags as the sister tasks "run-claude", "run-codex"
+# and "run-opencode":
+#
+#   cx task run run-gemini --prompt="{prompt text}"
+#   cx task run run-gemini --prompt_file={file}
+#   cx task run run-gemini --prompt_file={file} --prompt="{extra text}" --output_file={file}
+#   cx task run run-gemini --prompt_file={file} --yes --stats
+#
+# Who can use it: since 2026-06-18 Gemini CLI serves Gemini Code Assist
+# Standard/Enterprise licences, paid API keys (GEMINI_API_KEY) and Vertex AI. A
+# personal Google account (free, Google AI Pro, Google AI Ultra) is refused -
+# use Antigravity CLI for those: "cx task run run-agy".
+#
+# With no prompt at all, this task opens an interactive gemini session instead of
+# failing (same default as the sister tasks):
+#
+#   cx task run run-gemini                          # just open a gemini session
+#
+# --interactive (short: --i or -i) asks for that session explicitly: the assembled
+# prompt is run first and gemini keeps the terminal afterwards ("gemini -i <prompt>"),
+# so a preset prompt can be followed up on by hand:
+#
+#   cx task run run-gemini --prompt_file=review.txt --interactive
+#
+# --yes runs gemini unattended: every tool call is auto-approved ("--yolo").
+# --stats asks gemini for its JSON event stream ("--output-format stream-json"),
+# turned back into text, so that the token counters can be printed and recorded.
+# --reproducible drops the per-machine extensions ("--extensions none") - pin the
+# model too: "-- --model gemini-3.1-pro-preview" (the default, "auto", routes
+# between models).
+#
+# The prompt sent to gemini is the text of --prompt_file (when given), then "\n",
+# then the text of --prompt. A headless run sends it on stdin ("gemini -p ''"
+# appends its -p text to what arrives there), so no command line carries it: on
+# Windows the tool is a gemini.cmd launcher, and cmd.exe would cut an argument at
+# its first new line. An interactive session takes its first prompt as an
+# argument; through the launcher, a prompt of several lines is written to a file
+# and the session is asked to read it. Anything after "--" is appended to the
+# gemini command line, e.g.
+#
+#   cx task run run-gemini --prompt_file=p.txt -- --model gemini-3.1-pro-preview
+#
+# The sign-in is done once by hand in an interactive session ("cx tool run gemini"),
+# or with GEMINI_API_KEY. A headless run never opens a browser (NO_BROWSER=true is
+# set for it): without a usable login it fails with a hint that says what to do.
+
+# This task launches gemini and changes files - never memoize it on disk
+cache: False
+
+uses:
+  # Bootstrap host (OS detection, env, vars) - normally already resolved from global
+  - task: runner,1e48cc0c5f6041a5
+
+  # Detect / install the "gemini" tool and expose {{global.gemini.path}}: the tool
+  # downloads the release bundle and writes a launcher over Node.js, with npm as
+  # the fallback.
+  - task: setup,a2f9b61079ce4333
+    name: gemini,40a20e8dca604ece

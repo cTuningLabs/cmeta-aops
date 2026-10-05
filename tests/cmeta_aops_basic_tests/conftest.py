@@ -35,6 +35,30 @@ def repo_root() -> pathlib.Path:
 
 
 @pytest.fixture(scope="session")
+def task_namespace():
+    """A loader for the hook file of a task (task/<name>/api_v1.py), for offline tests of its helpers and of the
+    methods of its CTask class that need no engine: the source is executed in a namespace of its own with a
+    stand-in for the task engine's base class (the real one needs cMeta), and nothing is registered in
+    sys.modules, so the tests that run tasks through the engine are not disturbed.
+
+        ns = task_namespace("run-ai");  CTask = ns["CTask"];  task = CTask.__new__(CTask)
+    """
+    loaded = {}
+
+    def load(task: str) -> dict:
+        if task not in loaded:
+            path = REPO_ROOT / "task" / task / "api_v1.py"
+            source = path.read_text(encoding="utf-8").replace(
+                "from task_c36be4b9314a45e0.api.ctask import InitCTask", "InitCTask = object")
+            namespace = {"__file__": str(path), "__name__": "task_" + task.replace("-", "_") + "_under_test"}
+            exec(compile(source, str(path), "exec"), namespace)
+            loaded[task] = namespace
+        return loaded[task]
+
+    return load
+
+
+@pytest.fixture(scope="session")
 def cm():
     """A CMeta engine instance with this repo plugged into an isolated CMETA_HOME."""
     from cmeta import CMeta

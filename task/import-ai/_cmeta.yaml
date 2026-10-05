@@ -1,0 +1,25 @@
+artifact: 273e22dabecf424c
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-10-04T16:30:00+00:00'
+desc: "Import memories and skills (Claude Code memory files, repositories' .claude/skills) into the !AI folder of a cMeta artifact, for run-ai."
+generator:
+  agent: Claude Code 2.1.289
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-fable-5-1
+last_update_timestamp: '2026-10-05T19:00:58.388926+00:00'
+note: Import memories and skills from the AI tools' own folders (Claude Code, repositories'
+  .claude/skills, ...) into the !AI folder of a cMeta artifact, for run-ai.
+tags:
+- ai
+- memory
+- skills
+- import
+- run-ai
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.289
+  by: Grigori Fursin
+  date: '2026-10-05'

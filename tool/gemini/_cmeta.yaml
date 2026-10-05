@@ -1,0 +1,20 @@
+artifact: 40a20e8dca604ece
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-08-21T14:56:02.152532+00:00'
+desc: "Gemini CLI from Google: the release bundle downloaded from GitHub and run through Node.js on Windows, Linux and macOS (npm as the fallback); for Gemini Code Assist licences and API keys; run-gemini launches it."
+last_update_timestamp: '2026-10-05T19:00:58.891254+00:00'
+note: Google Gemini CLI (https://github.com/google-gemini/gemini-cli) - downloaded
+  as the release bundle via curl (no package manager) and run through the "node-js"
+  tool; "npm install -g @google/gemini-cli" is only the fallback.
+tags:
+- gemini
+- google
+- ai
+- agent
+- cli
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.289
+  by: Grigori Fursin
+  date: '2026-10-05'

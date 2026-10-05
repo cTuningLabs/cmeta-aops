@@ -56,7 +56,8 @@ citation expectations that apply when you use what you find here.
 - [docs/cmeta-aops/task-engine.md](docs/cmeta-aops/task-engine.md): the `task` workflow engine — `run()` lifecycle, `uses` pipelines, `ctx`, caching, hooks.
 - [docs/cmeta-aops/tool-abstraction.md](docs/cmeta-aops/tool-abstraction.md): detecting, installing, building and running external tools portably.
 - [docs/cmeta-aops/program-and-compute.md](docs/cmeta-aops/program-and-compute.md): the `program` category and the compute abstraction (CPU/CUDA/Android/Metal).
-- [docs/cmeta-aops/agent-tasks.md](docs/cmeta-aops/agent-tasks.md): launching Claude Code, OpenAI Codex, OpenCode.AI and the Azure CLI as tasks — headless prompts with transcripts and token statistics, the repositories added to the agent's context (`--add_repos`, the `agent_add_repos` config key), model and reasoning-effort flags.
+- [docs/cmeta-aops/agent-tasks.md](docs/cmeta-aops/agent-tasks.md): launching Claude Code, OpenAI Codex, OpenCode.AI, Antigravity CLI, Gemini CLI and the Azure CLI as tasks — headless prompts with transcripts and token statistics, the repositories added to the agent's context (`--add_repos`, the `agent_add_repos` config key), model and reasoning-effort flags.
+- [task/run-ai/README.md](task/run-ai/README.md): `run-ai` — one front door to those agents on a cMeta artifact, with the agent's memory, skills, logs and conversations kept in the artifact's `!AI` folder: conversations that continue across agents and models, read-only context from other artifacts (`ai_uses`), proposals for changes to them (`--pending`, `--apply_pending`); `import-ai` brings memories and skills in.
 
 ## Authoring artifacts
 

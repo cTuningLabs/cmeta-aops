@@ -1,0 +1,29 @@
+authors: Grigori Fursin
+
+# Import memories and skills into the !AI folder of a cMeta artifact, so that "cxt run-ai" finds them there
+# (the sister task of run-ai):
+#
+#   cxt import-ai --project="project::my-app" --plan=import-plan.yaml            # a curated plan: memories + skills
+#   cxt import-ai --project="project::my-app" --memories="<file or folder>;<file>" --skills="<skill dir or folder of skills>"
+#   cxt import-ai --project="project::my-app" --claude_folder="<folder>"          # the memory Claude Code keeps for a folder
+#   cxt import-ai ... --dry_run                                                        # show what would be copied
+#
+# Without --project the target is the current directory.
+#
+# Memories: Markdown files with the Claude Code front matter (name, description, metadata.type). A file is copied into
+# <project>/!AI/memory/ unless the same file is already there (identical: skipped; different: the newer wins, or
+# --overwrite). MEMORY.md (the index run-ai's harnesses read first) keeps its lines, their order and its headings: a
+# memory without an entry gets one at the end (the line of the source index when it has one, else one made from the
+# front matter), the entry of a memory replaced with --overwrite is renewed where it stands, and a run that imports
+# skills only does not touch the file. Skills: a folder with SKILL.md, or a folder of such folders (.claude/skills of
+# a repository), copied into <project>/!AI/skills/<name>/ (a skill that is there and differs is replaced with
+# --overwrite only); !AI/.claude-plugin/plugin.json is written so that claude loads them as a plugin. Paths are
+# separated by ";" (folder names may contain commas). Every import leaves a record:
+# <project>/!AI/log/<stamp>.import.md (what came from where, what was skipped).
+#
+# Nothing is deleted or changed at the source.
+
+cache: False
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
