@@ -3,6 +3,13 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.43.0
+- **`--use.init.default_cache_repo=<repo>` takes effect** (`task/init`): the run-wide cache repo given on the
+  command line was stored under a key named after the repo, so the task engine never saw it and every entry
+  still went to `local`. It is now stored as `default_cache_repo`, the key the engine reads and `config::task`
+  may set: every task of such a run, dependencies included, finds and creates its cache entries in that repo,
+  an unknown repo is an error, and a repo whose name equals a key of `config::task` (or `return`) no longer
+  replaces that key. Described in `docs/cmeta-aops/task-engine.md`; tests in
+  `tests/cmeta_aops_basic_tests/test_init_default_cache_repo.py`.
 - **A program's builds live in one cache entry per request** (`category/task/api/build_identity.py`,
   `task/compile-and-run-program`): the entry is found by its params like every other task entry - the program,
   the explicit choices of the request (the `--use` tree with tool names, versions and variants, `--compile.*`,

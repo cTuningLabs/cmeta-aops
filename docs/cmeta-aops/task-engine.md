@@ -114,6 +114,11 @@ applied in "UPDATE PARAMS FROM USE BASED ON STORAGE KEY"):
 - **Control switches travel too.** `path`, `skip`, `cache`, `cache_repo`, `cache_name`,
   `cache_extra_alias`, `cache_extra_params`, `cache_extra_tags`, `update`, `clean`, `new` go to that
   task's control params: `--use.get-hf-model.update` redoes only that step.
+- **The cache repo of a whole run.** `--use.init.default_cache_repo=<repo>` (or the key
+  `default_cache_repo` of `config::task`, for every run) makes every task of the run, dependencies
+  included, find and create its cache entries in that repo instead of `local`; an unknown repo is an
+  error. `--cache_repo=<repo>` on a task (`--use.<key>.cache_repo=<repo>` on a sub-task) does it for
+  that task alone, and the run-wide repo wins over it.
 
 The storage key of a sub-task:
 
