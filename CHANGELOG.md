@@ -3,6 +3,33 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.43.0
+- **Every program run leaves its provenance record** (`task/compile-and-run-program`,
+  `category/task/api/provenance.py`): `provenance.json` in the build folder, next to the build stamp - what the
+  request made explicit (`--use.<tool>.*`, `--compile.static`, `--compute`, `--with.*`, the program parameters,
+  taken before the program's defaults join), every tool the run resolved (name, version, path, cache entry,
+  library names), the binary's dependencies as the loader would resolve them under the run's environment
+  (the pure-Python inspector), the driver and GPU, Python, and the checks: a static build loads no shared
+  library beyond the documented set for its targets (CPU: fully static, or the OS runtime and the OpenMP DLL
+  on Windows; CUDA: also the C++ runtime, the driver and NVIDIA's shared libraries - `libcudart`, `libgomp`,
+  `libcrypto` present are violations), a library of a resolved tool comes from that tool's folders, every
+  `--use.<tool>.version` matches the resolved version, an accelerator the program required was available. A
+  failed check is an error when its configuration was requested explicitly and a warning when it came from a
+  default; failed checks are printed as `PROVENANCE: ...`. The record is passive: it changes no command and no
+  environment, and a problem writing it is a warning. `--provenance=off` writes nothing; `--provenance=loaded`
+  also records what the processes really loaded (Linux: the dynamic loader's log into a file per process,
+  macOS: dyld's log; elsewhere the resolution stands in); `--provenance=strict` fails the run (99) on a failed
+  error-level check, after writing the record.
+- **A compiler's runtime library is attributed to the compiler of the run** in the provenance record: GCC's
+  `libgomp`, `libstdc++` and `libgcc_s`, LLVM's `libomp` and `libc++`, Intel's `libiomp5`, MSVC's `vcomp140`
+  live in the shared system folders, where no tool names them. The record asks the compiler itself
+  (`-print-file-name`) and attributes the library when the compiler links against the same file; MSVC's DLLs
+  are known by name and must lie in the Visual Studio installation or in `System32`; a compiler installed in
+  a folder of its own (LLVM on Windows, MinGW, a Homebrew GCC, an Android NDK) owns the runtime-named
+  libraries under it. The library then shows under the compiler's row with `(runtime)` and carries
+  `role: runtime`; a `libgomp` loaded from elsewhere stays unattributed.
+- **`CMETA_PROVENANCE`** sets the provenance mode of every `cx program run` that names none: a test session
+  or a CI job exports `CMETA_PROVENANCE=strict`, an interactive shell keeps the passive default
+  (`--provenance=<mode>` always wins).
 - **`_desc_models.yaml` in `tool/claude`, `tool/codex`, `tool/opencode`, `tool/openclaw`:** the models and
   efforts of each coding-agent harness as data next to the tool - the flags that select them (`flags.model`,
   `flags.effort`, with `{{model}}` / `{{effort}}`), the effort vocabulary with a line of advice each, and one

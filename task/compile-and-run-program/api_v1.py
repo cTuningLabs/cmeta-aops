@@ -14,6 +14,7 @@ import time
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 from task_c36be4b9314a45e0.api import deadlines
 from task_c36be4b9314a45e0.api import build_stamp
+from task_c36be4b9314a45e0.api import provenance
 
 class CTask(InitCTask):
     """
@@ -200,6 +201,66 @@ class CTask(InitCTask):
         return {'return': 0}
 
     ############################################################
+    def write_provenance(self,
+                         ctx: dict,
+                         params: dict,
+                         mode: str,
+                         request_params: dict,
+                         request_use: dict,
+                         target_path: str,
+                         target_tmp: str,
+                         artifact_alias: str,
+                         artifact_uid: str,
+                         compute: list,
+                         run_skipped: bool = False,
+    ):
+        """
+        After a run: provenance.json in the build folder (category/task/api/provenance.py) - the
+        request, the resolved tools, the binary's dependencies (or what the loader logged with
+        --provenance=loaded), the checks. Returns {'return': 0, 'provenance': {path, ok, errors,
+        warnings}}; a problem building or writing the record is a WARNING and leaves the run's
+        result as it is; with mode `strict`, a failed error-level check fails the run (99).
+        """
+
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
+        space = '  ' * ctx['tasks']['nested_call'] if verbose else ''
+
+        try:
+            static_effective = provenance.is_true((params.get('compile') or {}).get('static'))
+            record = provenance.build_record(
+                mode, {'alias': artifact_alias, 'uid': artifact_uid}, target_tmp, target_path, compute,
+                ctx['tasks']['global'], ctx['tasks']['local'], request_params, request_use, static_effective,
+                result_data = ctx['tasks']['local'].get('result_files_data'),
+                match_version = lambda spec, version: self.cm.packages.match_version(spec, version).get('matched'),
+                run_skipped = run_skipped)
+            error = provenance.write_record(target_path, record)
+            if error:
+                raise OSError(error)
+        except Exception as e:
+            if con:
+                print ('')
+                print (f'{space}WARNING: provenance record not written: {e}')
+            return {'return': 0, 'provenance': {'path': None, 'ok': None, 'error': str(e)}}
+
+        summary = provenance.summary(record)
+        summary['path'] = os.path.join(target_path, provenance.RECORD_FILE)
+
+        failed = provenance.failed_lines(record)
+        if con and failed:
+            print ('')
+            for level, text in failed:
+                print (f'{space}PROVENANCE' + (' (warning)' if level == 'warning' else '') + f': {text}')
+            if verbose:
+                print (f'{space}  (the record: {summary["path"]})')
+
+        if mode == 'strict' and not record.get('ok', True):
+            errors = [text for level, text in failed if level == 'error']
+            return self.cm.error(f'PROVENANCE: {len(errors)} check(s) failed: ' + '; '.join(errors), 99)
+
+        return {'return': 0, 'provenance': summary}
+
+    ############################################################
     def run(self,
             ctx: dict,
             **params,
@@ -235,6 +296,11 @@ class CTask(InitCTask):
 
         ###########################################################################################
         params = copy.deepcopy(params)
+
+        # The request as given, before the program's defaults are merged in: what the provenance
+        # record of the run calls "requested" (the program's `use` defaults join ctx use below)
+        request_params = copy.deepcopy(params)
+        request_use = copy.deepcopy(ctx['tasks'].get('use') or {})
 
         if 'params' in desc:
             params_desc = copy.deepcopy(desc['params'])
@@ -282,6 +348,12 @@ class CTask(InitCTask):
         run = params.get('run')
         env = params.get('env', {})
         unparsed = params.get('unparsed')
+
+        # --provenance=on|off|loaded|strict: the record of the run (category/task/api/provenance.py)
+        try:
+            provenance_mode = provenance.mode_of(params.get('provenance'))
+        except ValueError as e:
+            return self.cm.error(str(e))
 
         ###########################################################################################
         con = ctx['control'].get('con', False)
@@ -749,6 +821,19 @@ class CTask(InitCTask):
             if os.path.isfile(path_repro_run):
                 os.remove(path_repro_run)
 
+            # --provenance=loaded: the dynamic loader logs what the run's processes load (a file per
+            # process in the build folder); nothing is added to the environment in the other modes
+            if provenance_mode == 'loaded' and uname in ('linux', 'darwin') \
+                    and not any(str(c).startswith('android') for c in selected_compute):
+                provenance.clear_loader_logs(target_path)
+                if uname == 'darwin':
+                    # macOS strips DYLD_* from the environment of the system shell that runs the
+                    # command: the variables go into the command line, through setup-run's prefix
+                    ctx_tasks.setdefault('use', {}).setdefault('setup-run', {})['prefix_cmd'] = \
+                        provenance.loader_prefix(uname, target_path)
+                else:
+                    ctx_tasks['local'].setdefault('run_time_env', {}).update(provenance.loader_env(uname, target_path))
+
             if unparsed:
                 x = ''
                 for u in unparsed:
@@ -784,6 +869,17 @@ class CTask(InitCTask):
 
             if result_files_data:
                 result.update(result_files_data)
+
+        ###########################################################################################
+        # The provenance record of this run: provenance.json in the build folder. Passive by
+        # default (nothing of the run changes); a problem writing it is a warning; only
+        # --provenance=strict fails the run, on a failed error-level check
+        if provenance_mode != 'off':
+            r = self.write_provenance(ctx, params, provenance_mode, request_params, request_use,
+                                      target_path, target_tmp, artifact_alias, artifact_uid, selected_compute,
+                                      run_skipped = bool(run_desc.get('skip', False) or skip_run))
+            if self.cm.catch_error(r): return r
+            result['provenance'] = r['provenance']
 
         self_time_compile = ctx_tasks['local'].get('compile-program', {}).get('_impact', {}).get('self_time')
 
