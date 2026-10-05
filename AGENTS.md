@@ -168,7 +168,8 @@ error handling, with the repo's real idioms.
   plain HTTPS as a Tier-1 download instead of depending on its client.
 - **`program` (`category/program/api/v1.py`)**: `run` → task
   `compile-and-run-program,05437a1aae224270`; `compile` = run with `skip_run`;
-  `clean` removes all `tmp*` dirs across programs. A **program artifact's `_desc.yaml`**
+  `clean` removes the build folders of a program from its cache entry (`--target_tmp` for one,
+  `--all` for every program); `provenance` shows the record of a run. A **program artifact's `_desc.yaml`**
   uses `inherits: [template-...]` + `updates:` to patch the inherited `uses` pipeline
   (match a sub-task by `task:`/`internal_func:`, then `update`/`append`/`prepend`/
   `substitute`). Programs pull compilers/libs **by tag** via `setup` sub-tasks gated

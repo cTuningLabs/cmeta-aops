@@ -49,6 +49,12 @@ All notable changes to cMeta AOps are documented here, newest first.
   first, a clang build of an OpenMP program linked the distribution's `libomp` instead of the one
   `lib-openmp` had resolved in the LLVM entry, and loaded it at run time; the provenance record's origin
   check found it.
+- **`cx program clean <program>`** removes the build folders of the program's cache entry
+  (`task--program--<program>`), where `cx program run` builds and runs since 2026-06 (`--target_tmp=<name>`
+  for one folder, `--all` for every program); before, it deleted `tmp*` folders inside the program artifacts,
+  where nothing is built any more. Folders left inside artifacts are listed, not removed. The docs now
+  describe the build folder, `--target_path`, `--work_path`, `--here` and `{pwd}`, the cleanup commands and
+  the Python venv policy of programs (`docs/cmeta-aops/program-and-compute.md`).
 - **`_desc_models.yaml` in `tool/claude`, `tool/codex`, `tool/opencode`, `tool/openclaw`:** the models and
   efforts of each coding-agent harness as data next to the tool - the flags that select them (`flags.model`,
   `flags.effort`, with `{{model}}` / `{{effort}}`), the effort vocabulary with a line of advice each, and one

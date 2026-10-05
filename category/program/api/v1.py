@@ -287,49 +287,85 @@ class Category(InitCategory):
     ############################################################
     def clean(self, params):
         """
-        Clean all tmp directories in all programs
+        Remove the build folders of a program: the tmp* folders of its cache entry
+        (task--program--<program>), where "cx program run" builds and runs, or the one named by
+        --target_tmp. The cache entry and the program artifact stay ("cx cache delete
+        task--program--<program>" removes the entry, with any venv inside it). Build folders that
+        runs before 2026-06 left inside a program artifact are listed, not removed.
+
+            cx program clean <program>                            every build folder of the program
+            cx program clean <program> --target_tmp=tmp-static    one build folder
+            cx program clean --all                                every program that has a cache entry
         """
 
         if self.cm.debug:
             self.logger.debug("RUNNING program api v1 clean")
 
         ctx = params['ctx']
-
         con = ctx['control'].get('con', False)
-        quiet = ctx['control'].get('quiet', False)
-        verbose = ctx['control'].get('verbose', False)
 
-        ctx_tasks = ctx.setdefault('tasks', {})
-        nested_call = ctx_tasks.setdefault('nested_call', 0)
-        space = '  ' * nested_call if verbose else ''
+        target_tmp = params.get('target_tmp')
+        every_program = bool(params.get('all', False))
 
-        # p will be deep copied from params
         p = self._prepare_input_from_params(params, base = True)
-
+        for key in ('target_tmp', 'all'):
+            p.pop(key, None)
+        if not p.get('arg1') and not every_program:
+            return self.cm.error('name the program (cx program clean <program> [--target_tmp=<name>]), or --all for every program')
         p['command'] = 'find'
         p['con'] = False
-
         r = self.cm.access(p)
         if self.cm.catch_error(r): return r
 
+        cache_category = self.cmeta.get('uses_categories', {}).get('cache')
+        if not cache_category:
+            return self.cm.error('the program category\'s dependency on the cache category is not in the index yet: '
+                                 'run "cx category update <repo>:program" or "cx --reindex" and retry')
+
+        removed, legacy, without_entry = [], [], []
         for a in r['artifacts']:
-            path = a['path']
+            parts = a.get('cmeta_ref_parts', {})
+            alias = parts.get('artifact_alias') or parts.get('artifact_uid')
 
-            for entry in os.listdir(path):
-                if entry.startswith('tmp'):
-                    path_tmp = os.path.join(path, entry)
-                    if os.path.isdir(path_tmp):
-                        if con:
-                            print (f'{space}Removing "{path_tmp}" ...')
+            # The program's cache entry (read only: a program that never ran has none, and this makes none)
+            rx = self.cm.access({'category': cache_category, 'command': 'read', 'arg1': f'task--program--{alias}',
+                                 'tags': ['task', 'c36be4b9314a45e0', 'compile-and-run-program', '05437a1aae224270']})
+            if rx['return'] == 16:
+                without_entry.append(alias)
+            elif self.cm.catch_error(rx):
+                return rx
+            else:
+                entry_path = rx['artifact']['path']
+                names = [target_tmp] if target_tmp else sorted(x for x in os.listdir(entry_path) if x.startswith('tmp'))
+                for name in names:
+                    folder = os.path.join(entry_path, name)
+                    if not os.path.isdir(folder):
+                        if target_tmp:
+                            return self.cm.error(f'{alias}: no build folder "{name}" in {entry_path}')
+                        continue
+                    try:
+                        shutil.rmtree(folder)
+                    except Exception as e:
+                        return self.cm.error(f'{alias}: can\'t remove {folder}: {e}')
+                    removed.append(folder)
+                    if con:
+                        print (f'Removed {folder}')
 
-                        try:
-                            shutil.rmtree(path_tmp)
-                        except Exception as e:
-                            if con and verbose:
-                                print (f'{space}  Problem removing directory: {e}')
- 
+            # Builds that runs before 2026-06 left inside the artifact (or the author's scratch): reported, kept
+            for x in sorted(os.listdir(a['path'])):
+                if x.startswith('tmp') and os.path.isdir(os.path.join(a['path'], x)):
+                    legacy.append(os.path.join(a['path'], x))
 
-        return r
+        if con:
+            if not removed:
+                print ('No build folder to remove' + (f' ({len(without_entry)} program(s) without a cache entry)' if without_entry else ''))
+            if legacy:
+                print ('')
+                print ('Folders inside program artifacts, left in place (builds before 2026-06, or scratch):')
+                for folder in legacy:
+                    print (f'  {folder}')
+
+        return {'return': 0, 'removed': removed, 'legacy': legacy, 'without_entry': without_entry}
 
     ############################################################
     def update_desc_(

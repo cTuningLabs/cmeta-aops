@@ -279,3 +279,33 @@ def test_command_end_to_end(cm):
 
     r = cm.access({"category": "program", "command": "provenance", "con": False})
     assert r["return"] > 0 and "name the program" in r["error"]
+
+
+def test_clean_removes_the_build_folders_of_the_cache_entry(cm):
+    # the entry made by the view test above, with the folders tmp-static and tmp-old; two more here
+    r = cm.access({"category": "cache", "command": "read", "arg1": "task--program--test-nmm-c-cpu",
+                   "tags": ["task", "c36be4b9314a45e0", "compile-and-run-program", "05437a1aae224270"]})
+    assert r["return"] == 0, r.get("error")
+    entry = r["artifact"]["path"]
+    for name in ("tmp", "tmp-cuda"):
+        os.makedirs(os.path.join(entry, name), exist_ok = True)
+        with open(os.path.join(entry, name, "program"), "w") as f:
+            f.write("binary")
+    clean = lambda **extra: cm.access(dict({"category": "program", "command": "clean", "con": False}, **extra))
+
+    r = clean()
+    assert r["return"] > 0 and "name the program" in r["error"]                       # no program, no --all: nothing happens
+    r = clean(arg1 = "test-nmm-c-cpu", target_tmp = "tmp-none")
+    assert r["return"] > 0 and 'no build folder "tmp-none"' in r["error"]
+
+    r = clean(arg1 = "test-nmm-c-cpu", target_tmp = "tmp-cuda")                        # one folder
+    assert r["return"] == 0 and r["removed"] == [os.path.join(entry, "tmp-cuda")]
+    assert not os.path.exists(os.path.join(entry, "tmp-cuda")) and os.path.isdir(os.path.join(entry, "tmp"))
+
+    r = clean(arg1 = "test-nmm-c-cpu")                                                 # every build folder; the entry stays
+    assert r["return"] == 0 and sorted(os.path.basename(x) for x in r["removed"]) == ["tmp", "tmp-old", "tmp-static"]
+    assert os.path.isdir(entry) and not any(x.startswith("tmp") for x in os.listdir(entry))
+    assert r["without_entry"] == [] and r["legacy"] == []                               # the program artifact holds no tmp* folder
+
+    r = clean(arg1 = "test-nmm-c-cpu")                                                 # nothing left: fine
+    assert r["return"] == 0 and r["removed"] == []

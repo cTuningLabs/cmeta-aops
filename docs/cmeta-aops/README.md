@@ -80,7 +80,8 @@ cx tool setup <name> --versions     # list available versions (from GitHub/npm)
 cx tool run <name> -- <args>        # set up then run a tool (args after --)
 cx program run <name> <compute>     # compile + run a program for a compute target
 cx program compile <name> <compute> # compile only (skip_run)
-cx program clean                    # remove all tmp*/ dirs across programs
+cx program clean <name>             # remove the program's build folders (its cache entry; --all: every program)
+cx program provenance <name>        # what a run requested, resolved and loaded (--all, --diff, --as_flags)
 
 # Global flags: -j/--verbose (full nested trace), --con, --quiet, --install,
 #               --update / --clean / --new (cache control), --save.
