@@ -180,15 +180,19 @@ default folder has none but others do, they are listed.
 
 ## In a test session
 
-A record belongs with the test it came from:
+A record belongs with the test it came from. `cx task run test-session --start` prints the line that
+makes the session the shell's current one (`export CMETA_TEST_SESSION=<YYYYMMDD/HHMM.type>`; `set` on
+cmd, `$env:` on PowerShell; `--print=export` prints only that line). With the variable set, every
+`cx program run`:
 
-```bash
-cx task run test-session --id=<YYYYMMDD/HHMM.type> --attach=<build folder>/provenance.json
-```
+- attaches its record to the session, as `attachments/provenance--<program>--<build folder>--<HHMMSS>.json`,
+  with a note `provenance: <program> (<folder>) ok, 0 failed, 1 warnings; compute cpu` in `session.md`;
+- runs with `--provenance=strict` unless the run names a mode or `CMETA_PROVENANCE` is set, so a run
+  whose explicit configuration was not honoured fails the test instead of producing a mislabelled result.
 
-The attachment stays with the session's log (`log::cmeta-aops-test-sessions`), so a result in a
-summary can always be taken back to the toolchain and the libraries that produced it. Attaching
-automatically is planned.
+The attachments stay with the session's log (`log::cmeta-aops-test-sessions`), so a result in a summary
+can always be taken back to the toolchain and the libraries that produced it. A record can still be
+attached by hand: `cx task run test-session --id=<id> --attach=<build folder>/provenance.json --attach_as=<name>`.
 
 ## Limits
 

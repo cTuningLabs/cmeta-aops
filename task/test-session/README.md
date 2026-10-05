@@ -48,6 +48,21 @@ cx tmp find cmeta-aops-test-sessions        # the sandboxes
 
 The id is also the first argument: `cx task run test-session 20261002/0915.llama-drift --note=...`.
 
+## The session of a shell
+
+`--start` also prints the line that makes the session the shell's current one, in the shell's
+syntax (`--shell=bash|cmd|powershell`; `--print=export` prints only that line):
+
+```bash
+export CMETA_TEST_SESSION=20261002/0915.llama-drift      # cmd: set CMETA_TEST_SESSION=...   powershell: $env:CMETA_TEST_SESSION = "..."
+```
+
+With the variable set, every `cx program run` attaches its provenance record to the session
+(`attachments/provenance--<program>--<build folder>--<HHMMSS>.json`, with a note) and runs with
+`--provenance=strict`, so a run whose explicit configuration was not honoured fails the test
+([provenance.md](../../docs/cmeta-aops/provenance.md)). A remote test script exports the id of the
+session it runs in. `--attach_as=<name>` stores a single attached file under another name.
+
 Capturing the id in a script (the task banner comes first when `CMETA_VERBOSE` is on):
 
 ```bash

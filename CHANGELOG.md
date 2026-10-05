@@ -38,6 +38,12 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **`CMETA_PROVENANCE`** sets the provenance mode of every `cx program run` that names none: a test session
   or a CI job exports `CMETA_PROVENANCE=strict`, an interactive shell keeps the passive default
   (`--provenance=<mode>` always wins).
+- **The test session of a shell:** `cx task run test-session --start` prints the line that makes the new
+  session the shell's current one (`export CMETA_TEST_SESSION=<id>`; `set` on cmd, `$env:` on PowerShell;
+  `--shell=`, `--print=export`). With the variable set, every `cx program run` attaches its provenance
+  record to the session (`attachments/provenance--<program>--<build folder>--<HHMMSS>.json`, with a note)
+  and runs with `--provenance=strict` unless the run names a mode or `CMETA_PROVENANCE` is set.
+  `--attach_as=<name>` stores a single attached file under another name.
 - **`_desc_models.yaml` in `tool/claude`, `tool/codex`, `tool/opencode`, `tool/openclaw`:** the models and
   efforts of each coding-agent harness as data next to the tool - the flags that select them (`flags.model`,
   `flags.effort`, with `{{model}}` / `{{effort}}`), the effort vocabulary with a line of advice each, and one

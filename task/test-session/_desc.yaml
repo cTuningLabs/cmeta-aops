@@ -27,9 +27,11 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 # cache_read in USD per million tokens, the cost too); --tokens, --cost_usd and
 # --costs.<key>=<value> for what is reported otherwise.
 #
-# Finish removes a sandbox above --max_keep_mib (1024) unless --keep. --print=sandbox|log|id|json
-# prints only that, on the last line (for scripts). Defaults: cx config set task
-# --meta.test_session.max_keep_mib=4096 (also .repo and .artifact).
+# Finish removes a sandbox above --max_keep_mib (1024) unless --keep. --print=sandbox|log|id|json|export
+# prints only that, on the last line (for scripts); export is the line that makes the session the
+# shell's current one (CMETA_TEST_SESSION, in the syntax of --shell=bash|cmd|powershell): every
+# "cx program run" then attaches its provenance record to the session and runs --provenance=strict.
+# Defaults: cx config set task --meta.test_session.max_keep_mib=4096 (also .repo and .artifact).
 ###################################################################################################
 cache: False
 

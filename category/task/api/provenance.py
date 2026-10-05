@@ -17,8 +17,10 @@ Modes (`cx program run <program> --provenance=<mode>`):
   loaded  also what the process really loaded - Linux: LD_DEBUG=libs into a file per process,
           macOS: DYLD_PRINT_LIBRARIES into a file; Windows and Android: the resolution only
   strict  as `on`, and a failed error-level check fails the run
-  When the run names no mode, the environment variable CMETA_PROVENANCE sets it (a test session or
-  a CI job exports CMETA_PROVENANCE=strict); unset, the default is `on`.
+  When the run names no mode, the environment sets it: CMETA_PROVENANCE when set (a CI job exports
+  CMETA_PROVENANCE=strict), else `strict` inside a test session (CMETA_TEST_SESSION, which
+  "cx task run test-session --start" prints for the shell), else `on`. Inside a test session the
+  record also joins the session's attachments, with a note (session_attachment_name, session_note).
 
 A loaded library that no tool claims but that is a compiler's own runtime (libgomp, libstdc++,
 libgcc_s; libomp, libc++; libiomp5; vcomp140, msvcp140) is attributed to the compiler of the run
@@ -64,6 +66,8 @@ LD_DEBUG_FILE = 'tmp-cmeta-ld-debug'        # glibc appends .<pid>
 DYLD_LOG_FILE = 'tmp-cmeta-dyld.log'
 MODES = ('on', 'off', 'loaded', 'strict')
 MODE_ENV = 'CMETA_PROVENANCE'                # the default mode when a run names none
+SESSION_ENV = 'CMETA_TEST_SESSION'           # the test session of this shell (cx task run test-session --start prints it):
+                                             # the record joins its attachments, and the default mode is strict
 
 # The policy of a static build, by the normalized library name (library_key): what may stay shared
 CXX_RUNTIME = ('stdc++', 'gcc_s', 'c++', 'c++abi', 'unwind')
@@ -82,15 +86,17 @@ NOT_TOOLS = ('host', 'init', 'runner', 'target', 'enable-long-paths-win')
 def mode_of(value, env = None):
     """
     'on' (the default; also None, True, yes), 'off' (False, no, none), 'loaded' or 'strict'.
-    When the run names no mode (None), the environment variable CMETA_PROVENANCE sets it - a test
-    session or a CI job exports CMETA_PROVENANCE=strict; unset or empty, the default is 'on'.
+    When the run names no mode (None), the environment sets it: CMETA_PROVENANCE when it is set
+    (a CI job exports CMETA_PROVENANCE=strict), else 'strict' inside a test session
+    (CMETA_TEST_SESSION, exported by "cx task run test-session --start"), else 'on'.
     Anything else raises ValueError with the accepted values (`env` replaces os.environ in tests).
     """
     source = f'--provenance={value}'
     if value is None:
-        value = (os.environ if env is None else env).get(MODE_ENV)
+        environment = os.environ if env is None else env
+        value = environment.get(MODE_ENV)
         if value is None or str(value).strip() == '':
-            return 'on'
+            return 'strict' if str(environment.get(SESSION_ENV) or '').strip() else 'on'
         source = f'{MODE_ENV}={value}'
     if value is True:
         return 'on'
@@ -462,6 +468,11 @@ def _native_path(text):
     return (os.name == 'nt') == bool(re.match(r'^([A-Za-z]:[\\/]|\\\\)', text))
 
 
+def _basename_any(path):
+    """The last component of a path with either separator (a Windows record read on Linux, and the tests)."""
+    return re.split(r'[\\/]', str(path or ''))[-1]
+
+
 def _norm_any(path):
     """A path as lower-case forward-slash text, links resolved when it is a path of this host: comparable across separators."""
     text = str(path)
@@ -596,7 +607,7 @@ def attribute_runtime(libraries, global_ctx, uname, probe = None):
         if not isinstance(lib, dict) or lib.get('tool') or lib.get('system'):
             continue
         path = lib.get('path')
-        name = os.path.basename(str(path or lib.get('name') or '')).strip()
+        name = _basename_any(path or lib.get('name') or '').strip()
         if not path or not name:
             continue
         stem = library_key(name)
@@ -935,3 +946,26 @@ def summary(record):
 def failed_lines(record):
     """The lines to print for failed checks: ('error' | 'warning', text)."""
     return [(c['level'], c['detail']) for c in record.get('checks') or [] if c['ok'] is False and c['level'] in ('error', 'warning')]
+
+
+def session_attachment_name(record):
+    """
+    The record's name among a test session's attachments: provenance--<program>--<build folder>--<HHMMSS>.json
+    (the time from the record, UTC), so the records of several programs, folders and runs stay apart.
+    """
+    prog = record.get('program') or {}
+    created = str(record.get('created') or '')
+    digits = re.sub(r'\D', '', created.split('T', 1)[1]) if 'T' in created else ''
+    hhmmss = digits[:6] if len(digits) >= 6 else time.strftime('%H%M%S', time.gmtime())
+    alias = re.sub(r'[^\w.-]+', '-', str(prog.get('alias') or prog.get('uid') or 'program'))
+    folder = re.sub(r'[^\w.-]+', '-', str(prog.get('target_tmp') or 'tmp'))
+    return f'provenance--{alias}--{folder}--{hhmmss}.json'
+
+
+def session_note(record):
+    """One line for a test session's notes: the program, its build folder, the checks, the compute targets."""
+    s = summary(record)
+    prog = record.get('program') or {}
+    compute = ','.join(str(c) for c in record.get('compute') or []) or '?'
+    return (f"provenance: {prog.get('alias') or prog.get('uid') or '?'} ({prog.get('target_tmp') or 'tmp'}) "
+            f"{'ok' if s['ok'] else 'FAILED'}, {s['errors']} failed, {s['warnings']} warnings; compute {compute}")

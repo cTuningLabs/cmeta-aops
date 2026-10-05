@@ -254,6 +254,22 @@ class CTask(InitCTask):
             if verbose:
                 print (f'{space}  (the record: {summary["path"]})')
 
+        # In a test session (CMETA_TEST_SESSION, which "cx task run test-session --start" prints for the
+        # shell) the record joins the session's attachments with a note; a problem there is a warning
+        session = os.environ.get(provenance.SESSION_ENV, '').strip()
+        if session:
+            try:
+                r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'test-session,33b25e8340de4d8e',
+                                    'id': session, 'attach': summary['path'], 'attach_as': provenance.session_attachment_name(record),
+                                    'note': provenance.session_note(record), 'con': False, 'quiet': True})
+                if r['return'] > 0:
+                    raise RuntimeError(r.get('error') or f'return code {r["return"]}')
+                summary['session'] = session
+            except Exception as e:
+                if con:
+                    print ('')
+                    print (f'{space}WARNING: provenance record not attached to test session {session}: {e}')
+
         if mode == 'strict' and not record.get('ok', True):
             errors = [text for level, text in failed if level == 'error']
             return self.cm.error(f'PROVENANCE: {len(errors)} check(s) failed: ' + '; '.join(errors), 99)

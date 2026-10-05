@@ -692,4 +692,54 @@ def test_mode_from_the_environment(prov):
     assert prov.mode_of("off", env = {"CMETA_PROVENANCE": "strict"}) == "off"     # the run's own choice wins
     with pytest.raises(ValueError, match = "CMETA_PROVENANCE=sometimes"):
         prov.mode_of(None, env = {"CMETA_PROVENANCE": "sometimes"})
+    # inside a test session the default is strict; CMETA_PROVENANCE and the run's own choice still win
+    assert prov.mode_of(None, env = {"CMETA_TEST_SESSION": "20261005/0952.prov-runtime"}) == "strict"
+    assert prov.mode_of(None, env = {"CMETA_TEST_SESSION": "20261005/0952.prov-runtime", "CMETA_PROVENANCE": "on"}) == "on"
+    assert prov.mode_of("loaded", env = {"CMETA_TEST_SESSION": "20261005/0952.prov-runtime"}) == "loaded"
+    assert prov.mode_of(None, env = {"CMETA_TEST_SESSION": " "}) == "on"
     assert "provenance.mode_of(params.get('provenance'))" in driver_source()     # the driver passes None when the run names no mode
+
+
+def test_session_attachment_name_and_note(prov):
+    record = {"created": "2026-10-05T07:54:12Z", "program": {"alias": "test-nmm-c-cpu", "target_tmp": "tmp-prov-clang"},
+              "compute": ["cpu"], "ok": False,
+              "checks": [{"rule": "origin", "level": "warning", "ok": False, "detail": "x"},
+                         {"rule": "version", "level": "error", "ok": False, "detail": "y"},
+                         {"rule": "info", "level": "info", "ok": True, "detail": "z"}]}
+    assert prov.session_attachment_name(record) == "provenance--test-nmm-c-cpu--tmp-prov-clang--075412.json"
+    assert prov.session_note(record) == "provenance: test-nmm-c-cpu (tmp-prov-clang) FAILED, 1 failed, 1 warnings; compute cpu"
+    bare = prov.session_attachment_name({"program": {"uid": "0123456789abcdef"}})
+    assert bare.startswith("provenance--0123456789abcdef--tmp--") and bare.endswith(".json") and len(bare) == len("provenance--0123456789abcdef--tmp--HHMMSS.json")
+    assert prov.session_note({"program": {"alias": "p"}, "checks": []}) == "provenance: p (tmp) ok, 0 failed, 0 warnings; compute ?"
+
+
+def test_hook_attaches_the_record_to_the_test_session(driver, prov, tmp_path, monkeypatch, capsys):
+    calls = []
+
+    def access(p):
+        calls.append(p)
+        return {"return": 0}
+
+    driver.cm.access = access
+    monkeypatch.setenv("CMETA_TEST_SESSION", "20261005/0952.prov-runtime")
+    prov.binary_deps = fake_inspector(SYSTEM_DEPS)
+    ctx = hook_ctx(tmp_path)
+    r = driver.write_provenance(ctx, {}, "on", {"name": "prog"}, {}, str(tmp_path), "tmp", "prog", "0" * 16, ["cpu"])
+    assert r["return"] == 0 and r["provenance"]["session"] == "20261005/0952.prov-runtime"
+    assert len(calls) == 1
+    p = calls[0]
+    assert p["category"] == "task,c36be4b9314a45e0" and p["arg1"] == "test-session,33b25e8340de4d8e" and p["command"] == "run"
+    assert p["id"] == "20261005/0952.prov-runtime" and p["attach"] == os.path.join(str(tmp_path), "provenance.json")
+    assert p["attach_as"].startswith("provenance--prog--tmp--") and p["note"].startswith("provenance: prog (tmp) ok, 0 failed")
+    assert p["con"] is False
+    # the session cannot be reached: a warning, the run's result stands
+    driver.cm.access = lambda p: {"return": 1, "error": "no session"}
+    r = driver.write_provenance(ctx, {}, "on", {"name": "prog"}, {}, str(tmp_path), "tmp", "prog", "0" * 16, ["cpu"])
+    assert r["return"] == 0 and "session" not in r["provenance"]
+    assert "WARNING: provenance record not attached to test session 20261005/0952.prov-runtime: no session" in capsys.readouterr().out
+    # no session: nothing is called
+    monkeypatch.delenv("CMETA_TEST_SESSION")
+    calls.clear()
+    driver.cm.access = access
+    r = driver.write_provenance(ctx, {}, "on", {"name": "prog"}, {}, str(tmp_path), "tmp", "prog", "0" * 16, ["cpu"])
+    assert r["return"] == 0 and calls == []
