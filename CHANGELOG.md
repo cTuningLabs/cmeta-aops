@@ -44,6 +44,11 @@ All notable changes to cMeta AOps are documented here, newest first.
   record to the session (`attachments/provenance--<program>--<build folder>--<HHMMSS>.json`, with a note)
   and runs with `--provenance=strict` unless the run names a mode or `CMETA_PROVENANCE` is set.
   `--attach_as=<name>` stores a single attached file under another name.
+- **The library folders of the tools from cMeta's cache come before the shared system folders on the link
+  line** (`task/setup-compile`), and in the run's library path. With OpenSSL's `/usr/lib/x86_64-linux-gnu`
+  first, a clang build of an OpenMP program linked the distribution's `libomp` instead of the one
+  `lib-openmp` had resolved in the LLVM entry, and loaded it at run time; the provenance record's origin
+  check found it.
 - **`_desc_models.yaml` in `tool/claude`, `tool/codex`, `tool/opencode`, `tool/openclaw`:** the models and
   efforts of each coding-agent harness as data next to the tool - the flags that select them (`flags.model`,
   `flags.effort`, with `{{model}}` / `{{effort}}`), the effort vocabulary with a line of advice each, and one
