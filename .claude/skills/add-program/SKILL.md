@@ -248,7 +248,8 @@ cx program compile test-hello-c-cpu cpu -j --quiet         # compile only (skip_
 cx program run     test-hello-c-cpu cpu -j --quiet         # compile + run
 cx program run     test-hello-c-cpu cpu --recompile --quiet # force a rebuild (ignore repro cache)
 cx program run     test-hello-c-cpu cpu --quiet -- --extra-arg  # args after -- reach the program (unparsed)
-cx program clean                                           # remove all tmp*/ build dirs across programs
+cx program clean   test-hello-c-cpu                         # remove its build folders (the cache entry task--program--<name>)
+cx program provenance test-hello-c-cpu                      # what the last run requested, resolved and loaded
 ```
 
 - **Use `--quiet` (or `--con`) for the first build in a non-interactive shell.** When the
@@ -260,12 +261,20 @@ cx program clean                                           # remove all tmp*/ bu
 - `-j`/`--verbose` prints which tasks reused global/cache and the resolved compile/run
   commands (also saved as `tmp-cmeta-compile-program{ext}` / `tmp-cmeta-run-program{ext}`
   scripts in the build dir).
-- The build lives in a `cache` entry `task--program--<name>` (unless
+- The build lives in a `cache` entry per request — `task--program--<name>` for the plain request,
+  `task--program--<name>--<uid>` when the request made explicit choices (`--use.*`, `--compile.*`,
+  `--with.*`) or resolved other targets — found by its params (unless
   `cx config set task --meta.compile_and_run_program.skip_cache=True`), in the folder `tmp`
   or `--target_tmp=<name>` (`auto`: one folder per set of targets, `tmp-cuda`; also the
   default with `cx config set task --meta.compile_and_run_program.target_tmp=auto`).
+  `cx program provenance <name> --all` lists the entries and their records.
   Re-running reuses the compiled binary via the **repro cache** (`_repro_ctx_compile.json`)
   unless the targets, host, serial or binary changed — use `--recompile` or `--clean` to force.
+  The program artifact itself stays clean: nothing is built or created in it.
+- A Python program's `setup` step for `python` reuses cx's own venv or a shared venv per version
+  from the cache; a program that needs packages of its own asks for a private venv inside its build
+  folder with `with: venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'`
+  (see `tool/python/README.md` and `program/test-onnxruntime/_desc.yaml`).
 - Run-time choices (flags of the program's command line) belong in `customize_run`, not
   in `customize1`: a reused build restores the context it was compiled with, so values set
   before the compile step come back from the cache.

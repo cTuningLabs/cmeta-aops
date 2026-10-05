@@ -1,0 +1,34 @@
+authors: Grigori Fursin
+
+# run-ai: one front door to the coding-agent harnesses cMeta runs (run-claude, run-codex, run-opencode, run-openclaw,
+# run-agy, run-gemini), with the agent's memory, skills, logs and conversations kept inside the artifact it works
+# on, in a folder named !AI (README.md has the whole story):
+#
+#   cxt run-ai                                      # continue the latest conversation of the project around the cwd
+#   cxt run-ai "one prompt"                         # one more turn of it, then exit
+#   cxt run-ai --harness=codex --model=<m>,<e>      # the same conversation with another harness and model
+#   cxt run-ai --new / --conversation=<id> / --conversations
+#   cxt run-ai --dry_run                            # everything that would be given to the harness; nothing runs
+#
+# The sub-task is chosen at run time from --harness (the old --agent still works), so it is called from api_v1.py,
+# not listed here. --model=<model>[,<effort>] and --effort are turned into the harness flags from the tool's
+# _desc_models.yaml; --list_models prints that list. A run continues the project's latest conversation (the native
+# session of the harness, or the transcript handed over when the harness changes); --new starts another;
+# --conversation=<id> picks one; --conversations lists them (conversations.py). !AI/skills is loaded as a claude
+# plugin and listed in the prompt for the other harnesses. The sister task import-ai brings memories and skills in;
+# --no_seed skips copying Claude Code's own memory of the folder into an empty !AI/memory.
+#
+# Context, read-only: --context (";"-separated cRefs or claude:<folder>), the project's ai_uses (_desc.yaml), the
+# repository default (_cmr.yaml), this machine's mapping (config task-run-ai, key local_ai_uses). The memory and skills
+# of those artifacts are read-only for a run, for every harness alike (pending.py): a change is staged under the
+# project's !AI/pending/<alias>--<UID>/, --pending lists the proposals, --apply_pending applies them on the user's
+# word, and after every run --context_guard (ask | restore | report | off) deals with what was changed there directly.
+
+# This task launches a coding agent - never memoize it on disk
+cache: False
+
+params_map:
+  arg2: prompt       # cxt run-ai [--project=...] "the prompt" -- <harness flags>
+
+uses:
+  - task: runner,1e48cc0c5f6041a5

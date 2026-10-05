@@ -1,0 +1,29 @@
+artifact: 433f36c666ce47f1
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-10-03T20:58:12.893923+00:00'
+desc: "Antigravity CLI (agy) from Google, the successor of Gemini CLI for personal accounts: the release binary downloaded from GitHub on Windows, Linux and macOS; run-agy launches it."
+generator:
+  agent: Claude Code 2.1.287
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.289
+  by: Grigori Fursin
+  date: '2026-10-05'
+last_update_timestamp: '2026-10-05T19:00:58.618309+00:00'
+note: 'Antigravity CLI (agy, https://antigravity.google/docs/cli): Google''s terminal
+  coding agent, the successor of Gemini CLI for personal Google accounts since 2026-06-18.
+  Downloaded as the release archive from GitHub (one binary, renamed to agy); winget
+  / the official install script are the fallbacks.'
+tags:
+- antigravity
+- antigravity-cli
+- agy
+- google
+- ai
+- agent
+- cli

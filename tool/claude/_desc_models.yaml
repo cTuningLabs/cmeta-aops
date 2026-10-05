@@ -1,0 +1,123 @@
+authors: Grigori Fursin
+
+# The models and reasoning efforts of Claude Code, for the run-ai task (and anything else that wants the list):
+#
+#   cxt run-ai --harness=claude --list_models                          every combination below, ready to copy
+#   cxt run-ai --harness=claude --model=claude-opus-5-5,high "..."     or --model=claude-opus-5-5 --effort=high
+#
+# run-ai turns --model / --effort into the command-line flags under "flags:" (so the run task records them as
+# generator.model / generator.effort, and --reproducible sees a pinned model). The file is hand-maintained from the
+# vendor's pages and the tool's own help; "updated" is the date of the last check. A model that went away keeps its
+# entry with "disabled: true", so that an old record can still be read and a run repeated on purpose (run-ai warns,
+# the harness decides). "legacy: true" = a previous generation that is still served. "until" = the announced end.
+# "unverified: true" = a name not yet confirmed with the tool itself. "efforts" on a model restricts the list below
+# to what that model takes ([] = no effort dial).
+
+updated: '2026-10-04'
+checked_with: 'Claude Code 2.1.289 (claude --help: --model, --effort; 2026-10-04)'
+list_cmd: '/model inside an interactive claude session (no CLI listing)'
+sources:
+  - https://platform.claude.com/docs/en/models/overview
+  - https://code.claude.com/docs/en/cli-reference
+  - docs/cmeta-aops/agent-tasks.md ("Which model, which reasoning effort")
+
+flags:
+  model: ['--model', '{{model}}']
+  effort: ['--effort', '{{effort}}']
+
+# The effort dial of Claude Code (--effort): how much the model thinks before and while it works. The harness's own
+# default is "high" on the models that take it, except Opus 5.5 ("medium"); a per-model default is given below.
+efforts:
+  - name: low
+    desc: quick, mechanical work; subagents
+  - name: medium
+    desc: everyday coding
+  - name: high
+    desc: the usual default
+  - name: xhigh
+    desc: hard coding and agentic work; the sweet spot when correctness matters more than speed
+  - name: max
+    desc: the deepest reasoning; slow and expensive
+
+models:
+  # ---- current line-up (platform.claude.com, 2026-10-04); 1M context, 128K output, adaptive thinking
+  - name: claude-fable-5-1
+    aliases: [fable]
+    desc: 'Fable 5.1 (Mythos class): the most capable, for demanding reasoning and long-horizon agentic work; slow'
+    default_effort: high
+    context: 1M
+    max_output: 128K
+    price_usd_per_mtok: {input: 10, output: 50}
+    retirement: not sooner than 2027-09-01
+  - name: claude-opus-5-5
+    aliases: [opus]
+    desc: 'Opus 5.5: long-running agentic coding and knowledge work; the recommended start for most workloads'
+    default_effort: medium
+    context: 1M
+    max_output: 128K
+    price_usd_per_mtok: {input: 4, output: 20}
+    retirement: not sooner than 2027-09-22
+  - name: claude-sonnet-5-5
+    aliases: [sonnet]
+    desc: 'Sonnet 5.5: the best combination of speed and intelligence'
+    default_effort: high
+    context: 1M
+    max_output: 128K
+    price_usd_per_mtok: {input: 2, output: 10}
+    retirement: not sooner than 2027-09-28
+  - name: claude-haiku-4-5-20251001
+    aliases: [haiku, claude-haiku-4-5]
+    desc: 'Haiku 4.5: the fastest, near-frontier; light and high-volume work'
+    efforts: []
+    context: 200K
+    max_output: 64K
+    price_usd_per_mtok: {input: 1, output: 5}
+    retirement: not sooner than 2026-10-15
+    note: 'no effort dial (extended thinking only); the only dated ID of the current line-up'
+
+  # ---- previous generations, still served ("Legacy models (still available)" on 2026-10-04)
+  - name: claude-fable-5
+    legacy: true
+    desc: 'Fable 5: the first Mythos-class model'
+    price_usd_per_mtok: {input: 10, output: 50}
+  - name: claude-opus-5
+    legacy: true
+    desc: 'Opus 5'
+    price_usd_per_mtok: {input: 5, output: 25}
+  - name: claude-sonnet-5
+    legacy: true
+    desc: 'Sonnet 5'
+    price_usd_per_mtok: {input: 3, output: 15}
+  - name: claude-opus-4-8
+    legacy: true
+    desc: 'Opus 4.8'
+    price_usd_per_mtok: {input: 5, output: 25}
+  - name: claude-opus-4-7
+    legacy: true
+    desc: 'Opus 4.7 (its Claude Code default effort was xhigh)'
+    price_usd_per_mtok: {input: 5, output: 25}
+  - name: claude-opus-4-6
+    legacy: true
+    desc: 'Opus 4.6'
+    efforts: [low, medium, high, max]
+    price_usd_per_mtok: {input: 5, output: 25}
+    note: 'no xhigh in the 4.6 generation'
+  - name: claude-sonnet-4-6
+    legacy: true
+    desc: 'Sonnet 4.6'
+    efforts: [low, medium, high, max]
+    price_usd_per_mtok: {input: 3, output: 15}
+    note: 'no xhigh in the 4.6 generation'
+  - name: claude-opus-4-5
+    legacy: true
+    desc: 'Opus 4.5: the first model with the effort parameter'
+    efforts: [low, medium, high]
+    price_usd_per_mtok: {input: 5, output: 25}
+
+  # ---- retired: kept so that old records (generator.model) stay readable
+  - name: claude-sonnet-4-5
+    disabled: true
+    note: 'not in the "still available" list of the models overview on 2026-10-04'
+  - name: claude-opus-4-1
+    disabled: true
+    note: 'not in the "still available" list of the models overview on 2026-10-04'

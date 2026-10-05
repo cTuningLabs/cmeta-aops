@@ -1,0 +1,69 @@
+authors: Grigori Fursin
+
+# The models of Gemini CLI, for the run-ai task:
+#
+#   cxt run-ai --harness=gemini --list_models
+#   cxt run-ai --harness=gemini --model=gemini-3.1-pro-preview "..."
+#
+# Gemini CLI has no reasoning-effort flag (the router and the model decide), so there is no "effort" entry under
+# "flags:" and run-ai drops an --effort with a note.
+#
+# Who can use it: since 2026-06-18 Gemini CLI serves Gemini Code Assist Standard/Enterprise licences, paid API keys
+# (GEMINI_API_KEY) and Vertex AI; personal Google accounts (free, Google AI Pro, Google AI Ultra) are refused and use
+# Antigravity CLI instead (tool/agy, "cxt run-ai --harness=antigravity").
+#
+# The names below are the ones in the CLI's own code (0.62.0); a headless run reports "auto" as its default model.
+# They are not confirmed with a licensed account: "/model" inside a session shows what an account is offered.
+# Same file conventions as tool/claude/_desc_models.yaml (updated, disabled, legacy, unverified).
+
+updated: '2026-10-05'
+checked_with: 'Gemini CLI 0.62.0: the model names and aliases in its own code, "gemini --help", and the model a headless run reports at start ("auto"); not confirmed with a licensed account'
+list_cmd: '/model inside an interactive gemini session'
+sources:
+  - https://github.com/google-gemini/gemini-cli/blob/main/docs/get-started/gemini-3.md
+  - https://developers.googleblog.com/gemini-3-flash-is-now-available-in-gemini-cli/
+  - 'the release bundle of Gemini CLI 0.62.0 (its model constants)'
+
+flags:
+  model: ['--model', '{{model}}']
+
+efforts: []
+
+models:
+  - name: auto
+    default: true
+    desc: 'the default router: a Pro model for complex prompts, a Flash model for the rest'
+  - name: auto-gemini-3
+    desc: 'the router over the Gemini 3 family (what "auto" stands for when the preview models are enabled)'
+  - name: gemini-3.1-pro-preview
+    desc: 'Gemini 3.1 Pro (preview): the most capable'
+    aliases: ['pro']
+  - name: gemini-3.8-flash
+    desc: 'Gemini 3.8 Flash: the latest Flash model'
+    aliases: ['flash']
+  - name: gemini-3.5-flash
+    desc: 'Gemini 3.5 Flash'
+  - name: gemini-3.5-flash-lite
+    desc: 'Gemini 3.5 Flash-Lite: the lightest and cheapest'
+    aliases: ['flash-lite']
+  - name: gemini-3-pro-preview
+    legacy: true
+    desc: 'Gemini 3 Pro (preview)'
+  - name: gemini-3-flash-preview
+    legacy: true
+    desc: 'Gemini 3 Flash (preview)'
+  - name: gemini-3.1-flash-lite
+    legacy: true
+    desc: 'Gemini 3.1 Flash-Lite'
+  - name: auto-gemini-2.5
+    legacy: true
+    desc: 'the router over the Gemini 2.5 family'
+  - name: gemini-2.5-pro
+    legacy: true
+    desc: 'Gemini 2.5 Pro'
+  - name: gemini-2.5-flash
+    legacy: true
+    desc: 'Gemini 2.5 Flash'
+  - name: gemini-2.5-flash-lite
+    legacy: true
+    desc: 'Gemini 2.5 Flash-Lite'

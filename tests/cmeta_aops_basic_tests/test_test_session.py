@@ -108,6 +108,28 @@ def test_notes_results_costs_and_attachments(session, tmp_path):
     assert "(attachments/bench.txt)" in md
 
 
+def test_export_line_and_attach_as(session, helpers, tmp_path):
+    sid = session(start=True, type="shell-" + session.unique)["id"]
+    assert helpers["export_line"](sid, "bash") == f"export CMETA_TEST_SESSION={sid}"
+    assert helpers["export_line"](sid, "cmd") == f"set CMETA_TEST_SESSION={sid}"
+    assert helpers["export_line"](sid, "powershell") == f'$env:CMETA_TEST_SESSION = "{sid}"'
+    assert helpers["export_line"](sid) == (f"set CMETA_TEST_SESSION={sid}" if os.name == "nt" else f"export CMETA_TEST_SESSION={sid}")
+    assert helpers["SESSION_ENV"] == "CMETA_TEST_SESSION"
+    # a single attachment stored under another name: the records of several runs are all called provenance.json
+    record = tmp_path / "provenance.json"
+    record.write_text("{}", encoding="utf-8")
+    r = session(id=sid, attach=str(record), attach_as="provenance--prog--tmp--120000.json", note="provenance: prog (tmp) ok")
+    assert r["return"] == 0, r.get("error")
+    folder = os.path.join(os.path.dirname(r["log"]), "attachments")
+    assert os.path.isfile(os.path.join(folder, "provenance--prog--tmp--120000.json")) and not os.path.exists(os.path.join(folder, "provenance.json"))
+    assert [a["name"] for a in r["record"]["attachments"]] == ["provenance--prog--tmp--120000.json"]
+    # several files: their own names, attach_as is not applied
+    other = tmp_path / "other.txt"
+    other.write_text("x", encoding="utf-8")
+    r = session(id=sid, attach=f"{record},{other}", attach_as="ignored.json")
+    assert sorted(a["name"] for a in r["record"]["attachments"]) == ["other.txt", "provenance--prog--tmp--120000.json", "provenance.json"]
+
+
 def test_two_artifacts_hold_every_session_and_list_filters(session, cm):
     u = session.unique
     a = session(start=True, type="filter-a-" + u, title="first")
@@ -292,4 +314,28 @@ def test_finish_records_the_agent_usage(session, tmp_path):
     assert usage["requests"] == 2 and usage["output_tokens"] == 150
     md = open(r["log"], encoding="utf-8").read()
     assert "Agent: 2 requests; 150 output, 4 input, 20 cache-write and 2,000 cache-read tokens" in md
+    # the model the agent was started with is kept
+    assert r["record"]["agent"]["model"] == "claude-opus-5-5" and "model_from" not in r["record"]["agent"]
+
+
+def test_finish_takes_the_model_from_the_transcript_when_none_was_given(session, tmp_path, monkeypatch):
+    """A session started with the harness's default model: CMETA_GENERATOR names the agent only."""
+    monkeypatch.setenv("CMETA_GENERATOR", json.dumps({"method": "agent", "agent": "Claude Code 2.1.286"}))
+    r = session(start=True, type="default-model-" + session.unique)
+    assert r["return"] == 0, r.get("error")
+    assert "model" not in r["record"]["agent"]
+    started = datetime.datetime.fromisoformat(r["record"]["started"])
+    # the main transcript writes more output (opus, 100) than the subagent's (haiku, 50)
+    write_transcripts(tmp_path, "0000-test-session", started, minutes_before=30, minutes_inside=0)
+    r = session(finish=True, id=r["id"])
+    assert r["return"] == 0, r.get("error")
+    assert r["record"]["agent"]["model"] == "claude-opus-5-5"
+    assert r["record"]["agent"]["model_from"] == "transcript"
+
+    # a session without transcripts on this machine: nothing is guessed
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "0000-another-session")
+    r = session(start=True, type="no-transcript-" + session.unique)
+    r = session(finish=True, id=r["id"])
+    assert r["return"] == 0, r.get("error")
+    assert "model" not in r["record"]["agent"]
 

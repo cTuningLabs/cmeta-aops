@@ -41,6 +41,27 @@ def static_openmp_note(uname, static, openmp):
     return None
 
 
+def order_lib_paths(lib_paths, cache_roots):
+    """
+    The library folders in the order the linker (and the loader) should search them: the folders
+    of the tools cMeta set up in its cache first, the shared system folders after them, the order
+    within each group kept. A distribution keeps its own copy of many libraries in one folder
+    (/usr/lib/<triplet>): with that folder first on the link line, because another library (OpenSSL)
+    came from it, a clang build of an OpenMP program linked the distribution's libomp instead of the
+    LLVM's that lib-openmp had resolved, and loaded it at run time.
+    """
+    roots = []
+    for root in cache_roots or []:
+        if isinstance(root, str) and root:
+            roots.append(os.path.normcase(os.path.normpath(root)))
+
+    def managed(path):
+        p = os.path.normcase(os.path.normpath(str(path)))
+        return any(p == r or p.startswith(r + os.sep) or p.startswith(r + '/') for r in roots)
+
+    return [p for p in lib_paths if managed(p)] + [p for p in lib_paths if not managed(p)]
+
+
 def is_library_file(name):
     """
     A library given as the path of its file rather than by name: a lib tool's static archive
@@ -355,6 +376,12 @@ class CTask(InitCTask):
 
                     if _lib_paths:
                         lib_paths += _lib_paths
+
+        # The folders of the tools from cMeta's cache before the shared system folders (order_lib_paths)
+        cache_roots = [v.get('path_cmeta_cache') for v in ctx['tasks']['global'].values()
+                       if isinstance(v, dict) and v.get('path_cmeta_cache')]
+        lib_paths = order_lib_paths(lib_paths, cache_roots)
+        found_dynamic_lib_paths = order_lib_paths(found_dynamic_lib_paths, cache_roots)
 
         # Process includes paths
         for include_path in include_paths:

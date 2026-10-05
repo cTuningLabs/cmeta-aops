@@ -1,0 +1,81 @@
+authors: Grigori Fursin
+
+# Google Gemini CLI (https://github.com/google-gemini/gemini-cli) - the Gemini
+# sibling of the "claude", "codex" and "opencode" tools.
+#
+# Who can use it: since 2026-06-18 Gemini CLI serves Gemini Code Assist
+# Standard/Enterprise licences, paid API keys (GEMINI_API_KEY) and Vertex AI.
+# Personal Google accounts (free, Google AI Pro, Google AI Ultra) are refused
+# ("IneligibleTierError ... migrate to the Antigravity suite"): they use
+# Antigravity CLI instead - the "agy" tool and the "run-agy" task.
+#
+# Install strategy (see api_v1.py): Google publishes NO standalone binary for
+# Linux/Windows - the GitHub releases carry only "gemini-cli-bundle.zip" (a
+# self-contained JS bundle) plus unsigned macOS binaries, and the documented
+# install routes are all package managers (npm / brew / MacPorts / conda).
+# So Tier 1 here = curl the release zip directly, unpack it and write a tiny
+# launcher that runs "node gemini.js". That pins an exact version, needs no
+# root and behaves the same on every host - the only host requirement is
+# Node.js, which is itself a cMeta tool (node-js,238f15e1d6184359).
+# "npm install -g @google/gemini-cli" stays as the declarative fallback.
+names:
+  - gemini{{global.host.vars.file_ext_exe}}   # our launcher / brew / npm shim on Linux+macOS
+  - gemini.cmd                                # our launcher / npm shim on Windows
+
+# "gemini --version" prints a bare semver, i.e. "0.56.0"
+match_version:
+  - regex: '([\d.]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+# No --version given => api_v1.py downloads GitHub's "latest release" asset, so
+# there is no version to pin here (verified against 0.56.0 on 2026-08-21).
+
+cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/google-gemini/gemini-cli'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: git,959d8c0fbc004bd0
+# Only plain "vX.Y.Z" tags are stable releases - the repo is also full of
+# "v0.56.0-nightly.20260821.g30573d2e4" and "v0.57.0-preview.0" tags
+cmd_get_versions_regex: 'refs/tags/v([\d.]+)(?:\^\{\})?$'
+
+install_help_text: |
+  Could not download the Gemini CLI bundle automatically.
+  Install it manually per https://www.geminicli.com/docs/get-started/installation
+  (or run "npm install -g @google/gemini-cli") and retry "cx tool setup gemini".
+
+# Declarative fallback, used only when api_v1.py returns 16 (unknown host, a
+# version with no published bundle, ...). npm ships with node-js, which is set
+# up below - no untracked package manager is introduced.
+install_cmd:
+  all: 'npm install -g @google/gemini-cli'
+
+install_cmd_version:
+  all: 'npm install -g @google/gemini-cli@{{simple_version}}'
+
+# The bundle is plain JavaScript - Node.js runs it (and npm is the fallback
+# installer), so set it up first and put node on PATH.
+install_uses:
+  all:
+    - task: setup,a2f9b61079ce4333
+      name: node-js,238f15e1d6184359
+      with:
+        add_tool_path_to_env: True
+    - task: setup,a2f9b61079ce4333
+      name: curl,bfbb8526694d4f21
+
+# Where an already-installed gemini may live (npm global bin / brew / MacPorts)
+extra_paths:
+  linux:
+    - "{{user_home}}/.npm-global/bin"
+    - "{{user_home}}/.local/bin"
+    - "/usr/local/bin"
+    - "/home/linuxbrew/.linuxbrew/bin"
+  darwin:
+    - "{{user_home}}/.npm-global/bin"
+    - "/usr/local/bin"
+    - "/opt/homebrew/bin"
+    - "/opt/local/bin"
+  windows:
+    - '{{global.host.os_env.APPDATA}}\npm'

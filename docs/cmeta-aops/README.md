@@ -28,8 +28,9 @@ targets together across OSes (Linux / Windows / macOS / Android; CPU / CUDA / �
 | [tool-abstraction.md](tool-abstraction.md) | The `tool` category — detect / install / build / run an external CLI portably; version listing; `install_cmd_version`. |
 | [tool-sizes.md](tool-sizes.md) | Disk sizes of tools: `_desc_sizes.yaml` rules, the free-space check before an install or build, `min_free_gb`, `cx tool setup <tool> --sizes`. |
 | [program-and-compute.md](program-and-compute.md) | The `program` category — template inheritance, the **compute** abstraction, the compile/run task machinery, libraries, and 4 deep dives (repro-cache recompile, Android remote exec, `updates_cmd`, `build-*` vs template). |
+| [provenance.md](provenance.md) | **Provenance of a program run** — the `provenance.json` record (requested / resolved / loaded, the checks between them), the modes `--provenance=on|off|loaded|strict`, the per-target static policy, and `cx program provenance` (`--all`, `--diff`, `--as_flags`). |
 | [llm-stacks.md](llm-stacks.md) | **LLM inference stacks** — install, build from source and run llama.cpp, vLLM, Ollama and PyTorch on CPU, CUDA, Vulkan and Metal (Windows, Linux/WSL2, macOS): the commands, how each picks its build for the target and driver, the build variables (`TORCH_CUDA_ARCH_LIST`, `MAX_JOBS`, …), and the build tools per OS. |
-| [agent-tasks.md](agent-tasks.md) | **Coding agents and cloud CLIs as tasks** — `run-claude` / `run-codex` / `run-opencode` (headless or interactive, transcript + token statistics), the repositories they add to the agent's context (`--add_repos`, the `agent_add_repos` config key), `tool/az` + `run-az`, and which model / reasoning effort to pass to each agent. |
+| [agent-tasks.md](agent-tasks.md) | **Coding agents and cloud CLIs as tasks** — `run-ai` (one front door to the agents on a cMeta artifact: memory, skills and conversations kept in the artifact's `!AI` folder; `import-ai`), `run-claude` / `run-codex` / `run-opencode` / `run-agy` / `run-gemini` (headless or interactive, transcript + token statistics), the repositories they add to the agent's context (`--add_repos`, the `agent_add_repos` config key), `tool/az` + `run-az`, and which model / reasoning effort to pass to each agent. The reference of `run-ai` is [`task/run-ai/README.md`](../../task/run-ai/README.md). |
 
 ## One-paragraph mental model
 
@@ -79,7 +80,8 @@ cx tool setup <name> --versions     # list available versions (from GitHub/npm)
 cx tool run <name> -- <args>        # set up then run a tool (args after --)
 cx program run <name> <compute>     # compile + run a program for a compute target
 cx program compile <name> <compute> # compile only (skip_run)
-cx program clean                    # remove all tmp*/ dirs across programs
+cx program clean <name>             # remove the program's build folders (its cache entry; --all: every program)
+cx program provenance <name>        # what a run requested, resolved and loaded (--all, --diff, --as_flags)
 
 # Global flags: -j/--verbose (full nested trace), --con, --quiet, --install,
 #               --update / --clean / --new (cache control), --save.

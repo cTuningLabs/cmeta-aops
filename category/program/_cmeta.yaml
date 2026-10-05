@@ -6,9 +6,17 @@ category: category,dd9ea50e7f76467f
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 creation_timestamp: '2026-04-02T09:57:21.604315+00:00'
 last_api_version: 1
-last_update_timestamp: '2026-05-04T15:28:44.701068+00:00'
+last_update_timestamp: '2026-10-04T21:25:42.698943+00:00'
 uses_artifacts:
   task::compile-and-run-program: compile-and-run-program,05437a1aae224270
 uses_categories:
+  cache: cache,1ebdcc1cc30c4022
   task: task,c36be4b9314a45e0
 
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.286
+  model: claude-opus-5-5
+  effort: max
+  by: Grigori Fursin
+  date: '2026-10-04'

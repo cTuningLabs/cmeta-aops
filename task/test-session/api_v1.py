@@ -33,6 +33,7 @@ from task_c36be4b9314a45e0.api.ctask import InitCTask
 
 ARTIFACT = 'cmeta-aops-test-sessions'  # the log artifact (records) and the tmp artifact (sandboxes)
 TAG = 'test-session'
+SESSION_ENV = 'CMETA_TEST_SESSION'     # the session of a shell: "cx program run" attaches its provenance record there and runs strict
 OLD_PREFIX = 'cmeta-tests-'            # the folders before 0.42.0: <CMETA_HOME>/{tmp,log}/cmeta-tests-<YYYYMMDD>/
 MAX_KEEP_MIB = 1024                    # finish removes a larger sandbox (--keep keeps it)
 MAX_ATTACH_MIB = 20                    # a larger file is not copied into the log
@@ -62,6 +63,19 @@ def name_of(session_id):
 def tag_of(text):
     """A type or a host name as a short key: lowercase letters, digits, '.', '_' and '-'."""
     return re.sub(r'[^a-z0-9._-]+', '-', str(text or '').lower()).strip('-.')
+
+
+def export_line(session_id, shell = None):
+    """
+    The line that makes a session the shell's current one (CMETA_TEST_SESSION), in the syntax of
+    bash (the default off Windows), cmd (the default on Windows) or powershell.
+    """
+    shell = str(shell or ('cmd' if os.name == 'nt' else 'bash')).strip().lower()
+    if shell in ('cmd', 'bat', 'batch'):
+        return f'set {SESSION_ENV}={session_id}'
+    if shell in ('powershell', 'pwsh', 'ps', 'ps1'):
+        return f'$env:{SESSION_ENV} = "{session_id}"'
+    return f'export {SESSION_ENV}={session_id}'
 
 
 def stamp(t, date = True):
@@ -404,7 +418,8 @@ class CTask(InitCTask):
             note (str): add a note to the session --id (also with --finish).
             results (dict): --results.<key>=<value> adds results (also --results_file=<json>).
             costs (dict): --costs.<key>=<value> adds costs; --tokens and --cost_usd are shortcuts.
-            attach (str): files to copy into the log: <file>[,<file>], globs allowed.
+            attach (str): files to copy into the log: <file>[,<file>], globs allowed
+                (--attach_as=<name> stores a single file under that name).
             finish (bool): finish the session --id (--status, default passed; --summary;
                 --keep, or --max_keep_mib: a larger sandbox is removed, default 1024 MiB).
                 With a Claude Code session, the tokens it used meanwhile come from its
@@ -419,7 +434,10 @@ class CTask(InitCTask):
             repo (str): the repository of the two artifacts (default local, or the config
                 test_session.repo); artifact (str): their name (default cmeta-aops-test-sessions,
                 or test_session.artifact).
-            print (str): sandbox, log, id or json - print only that, on the last line.
+            print (str): sandbox, log, id, json or export - print only that, on the last line
+                (export: the line that makes the session the shell's current one, in the
+                syntax of --shell=bash|cmd|powershell; "cx program run" then attaches its
+                provenance record to the session and runs with --provenance=strict).
 
         Returns:
             dict: return, id, sandbox, log, record (sessions for --list, pruned for --prune,
@@ -467,6 +485,8 @@ class CTask(InitCTask):
             print (r[what])
         elif con and what == 'json':
             print (json.dumps(r['record'], indent = 2))
+        elif con and what == 'export':
+            print (export_line(r['id'], params.get('shell')))
 
         return r
 
@@ -553,6 +573,9 @@ class CTask(InitCTask):
             items = attach if isinstance(attach, list) else str(attach).split(',')
             folder = self._files(rec)['attachments']
             max_mib = float(params.get('attach_max_mib') or MAX_ATTACH_MIB)
+            # --attach_as=<name>: the name of a single attached file in the log (the records of several
+            # program runs are all called provenance.json)
+            as_name = str(params.get('attach_as') or '').strip()
             for item in items:
                 files = sorted(glob.glob(os.path.expanduser(item.strip()))) or [item.strip()]
                 for path in files:
@@ -564,7 +587,7 @@ class CTask(InitCTask):
                             'text': f'not attached ({size_text(round(size / 2**20, 1))} > {max_mib} MiB): {path}'})
                         continue
                     os.makedirs(folder, exist_ok = True)
-                    name = os.path.basename(path)
+                    name = os.path.basename(as_name) if as_name and len(items) == 1 and len(files) == 1 else os.path.basename(path)
                     shutil.copy2(path, os.path.join(folder, name))
                     attachments = [a for a in rec.setdefault('attachments', []) if a['name'] != name]
                     attachments.append({'name': name, 'bytes': size, 'from': os.path.abspath(path)})
@@ -625,6 +648,8 @@ class CTask(InitCTask):
             print (f'Test session {name} started')
             print (f'  sandbox: {sandbox}')
             print (f'  log:     {self._files(rec)["md"]}')
+            print (f'  shell:   {export_line(name, params.get("shell"))}')
+            print ('           (then every "cx program run" attaches its provenance record here and runs --provenance=strict)')
         return self._result(rec)
 
     ############################################################
@@ -670,6 +695,13 @@ class CTask(InitCTask):
             usage = claude_usage(session, started, t)
             if usage is not None:
                 costs['agent_usage'] = usage
+                # A session started with the harness's default model records no model: take the
+                # one that did most of the work (subagents may run a smaller one)
+                models = {m: c for m, c in (usage.get('by_model') or {}).items()
+                          if m and m != 'unknown' and not m.startswith('<')}
+                if models and not rec['agent'].get('model'):
+                    rec['agent']['model'] = max(models, key = lambda m: models[m]['output_tokens'])
+                    rec['agent']['model_from'] = 'transcript'
                 cost = usage_cost(usage, self.cfg.get('prices'))
                 if cost is not None:
                     costs['agent_cost_usd_estimate'] = cost

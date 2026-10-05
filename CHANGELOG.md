@@ -2,6 +2,140 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.43.0
+- **`run-ai`: a coding agent on a cMeta artifact, with its memory in the artifact** (`task/run-ai`). One front
+  door to the agent tasks - `--harness=claude|codex|opencode|openclaw|antigravity|gemini`, or any `<x>` with a
+  task `run-<x>` - that keeps what the agent learns and produces inside the artifact it works on, in a folder
+  named `!AI`: `memory/` (Claude Code reads and writes it through its `autoMemoryDirectory` setting; the other
+  agents are given the index), `skills/` (loaded as a Claude plugin, listed for the others), `log/` (the run
+  record, the output and the token counts of every run) and the conversations. A run continues the
+  conversation with the latest activity through the agent's own session; `--new` starts another,
+  `--conversation=<id>` picks one, `--conversations` lists them; when the agent changes, the new one is handed
+  the transcript `!AI/log/<id>.transcript.md`, rewritten after every run from the agents' own session stores.
+  The project is `--project=<cref>`, else the artifact the current directory is in, else the directory itself.
+  `--model=<model>,<effort>` and `--effort` are given in the agent's own names and turned into its flags from
+  `tool/<agent>/_desc_models.yaml`; `--list_models` prints the lists. `--dry_run` shows what the agent would
+  be given and runs nothing. The first run of a project copies the memory Claude Code keeps for that folder
+  into an empty `!AI/memory` (`--no_seed`: not). Reference: `task/run-ai/README.md`; overview in
+  `docs/cmeta-aops/agent-tasks.md`.
+- **`ai_uses`: whose memory the AI sessions of an artifact read** (`task/run-ai`). A list of cRefs in the
+  artifact's `_desc.yaml` - or in its repository's `_cmr.yaml`, as the default of all its artifacts - names the
+  artifacts whose `!AI/memory` and `!AI/skills` a session is given as read-only context; `--context=<cref>;<cref>`
+  adds some for one run, `--context_depth` follows the lists further, `--skip_ai_uses` reads none. A mapping in
+  the config artifact `task-run-ai` of the local repository (`local_ai_uses`, by repository or by artifact) lets
+  the sessions of a shared repository read a private artifact on one machine without the repository naming it.
+  The context is estimated in tokens before the run and compared with `--max_context_tokens` (or
+  `max_context_tokens` of that config). The used artifacts stay read-only for a run, for every agent and
+  permission mode alike: a session stages a change under the project's `!AI/pending/<alias>--<UID>/`,
+  `--pending` lists the proposals with their differences, `--apply_pending` applies them on the user's word,
+  and after every run `--context_guard` (`ask`, `restore`, `report`, `off`) deals with what was changed there
+  directly.
+- **`import-ai`** (`task/import-ai`) copies memories (Claude Code memory files or folders of them;
+  `--claude_folder=<folder>` for the memory Claude Code keeps for a folder) and skills (a repository's
+  `.claude/skills`) into the `!AI` folder of an artifact: identical files are skipped, the newer one wins,
+  `--overwrite` forces; `MEMORY.md` keeps its lines, their order and its headings and gains an entry per new
+  memory, and an import of skills only leaves it alone; the plugin manifest and a record of what came from
+  where are written.
+- **Antigravity CLI and Gemini CLI as tools and tasks** (`tool/agy` + `task/run-agy`, `tool/gemini` +
+  `task/run-gemini`): Google's two terminal agents with the flags of `run-claude`, `run-codex` and
+  `run-opencode`. `agy` - for personal Google accounts - is installed as the release binary from GitHub;
+  `gemini` - for Gemini Code Assist Standard/Enterprise licences, API keys and Vertex AI, since it refuses
+  personal accounts - as the release bundle over the `node-js` tool, with npm as the fallback. Both carry a
+  `_desc_models.yaml`. `run-gemini` never opens a browser in a headless run and tells a failed run which case
+  it is: nothing configured, a personal account that is refused, or a key the API does not accept.
+  Tests of the four items above: `tests/cmeta_aops_basic_tests/test_run_ai_pending.py`,
+  `test_run_ai_context.py`, `test_run_ai_conversations.py`, `test_run_ai_engine.py` (the task through the
+  engine with a stand-in harness that calls no model), `test_run_agy_gemini.py`, `test_import_ai.py`.
+- **`--use.init.default_cache_repo=<repo>` takes effect** (`task/init`): the run-wide cache repo given on the
+  command line was stored under a key named after the repo, so the task engine never saw it and every entry
+  still went to `local`. It is now stored as `default_cache_repo`, the key the engine reads and `config::task`
+  may set: every task of such a run, dependencies included, finds and creates its cache entries in that repo,
+  an unknown repo is an error, and a repo whose name equals a key of `config::task` (or `return`) no longer
+  replaces that key. Described in `docs/cmeta-aops/task-engine.md`; tests in
+  `tests/cmeta_aops_basic_tests/test_init_default_cache_repo.py`.
+- **A program's builds live in one cache entry per request** (`category/task/api/build_identity.py`,
+  `task/compile-and-run-program`): the entry is found by its params like every other task entry - the program,
+  the explicit choices of the request (the `--use` tree with tool names, versions and variants, `--compile.*`,
+  `--with.*`) and the compute targets the run resolved - so `--use.nvcc.version=12.9` and `--use.nvcc.version=13.3`
+  build side by side and compare, and the same request comes back to its own entry, whose build-folder
+  stamp guards against a changed resolution. The plain request (no explicit choice, cpu) keeps the entry
+  name `task--program--<program>` every program had before and adopts such an entry when it exists without
+  params, so the builds made before stay where they are; the others are `task--program--<program>--<uid>`.
+  The entry's params hold the request, its digest (the key the lookup matches) and, after a run, the
+  resolved toolchain (name, version and path of every tool). `cx program provenance --all` groups the
+  records by entry and names each entry's request, `--entry=<alias|uid|digest>` picks one,
+  `--diff=<entry>:<folder>` compares across entries, and the default is the newest record;
+  `cx program clean` works over every entry (`--entry` for one).
+- **Every program run leaves its provenance record** (`task/compile-and-run-program`,
+  `category/task/api/provenance.py`): `provenance.json` in the build folder, next to the build stamp - what the
+  request made explicit (`--use.<tool>.*`, `--compile.static`, `--compute`, `--with.*`, the program parameters,
+  taken before the program's defaults join), every tool the run resolved (name, version, path, cache entry,
+  library names), the binary's dependencies as the loader would resolve them under the run's environment
+  (the pure-Python inspector), the driver and GPU, Python, and the checks: a static build loads no shared
+  library beyond the documented set for its targets (CPU: fully static, or the OS runtime and the OpenMP DLL
+  on Windows; CUDA: also the C++ runtime, the driver and NVIDIA's shared libraries - `libcudart`, `libgomp`,
+  `libcrypto` present are violations), a library of a resolved tool comes from that tool's folders, every
+  `--use.<tool>.version` matches the resolved version, an accelerator the program required was available. A
+  failed check is an error when its configuration was requested explicitly and a warning when it came from a
+  default; failed checks are printed as `PROVENANCE: ...`. The record is passive: it changes no command and no
+  environment, and a problem writing it is a warning. `--provenance=off` writes nothing; `--provenance=loaded`
+  also records what the processes really loaded (Linux: the dynamic loader's log into a file per process,
+  macOS: dyld's log; elsewhere the resolution stands in); `--provenance=strict` fails the run (99) on a failed
+  error-level check, after writing the record.
+- **`cx program provenance <program>`** shows the provenance record of a run (`provenance.json` in the
+  program's build folder): the header, one row per tool with what was requested, what was resolved and where,
+  and the libraries the process loaded from that tool's entry, the checks and the libraries loaded from
+  outside any tool; `--target_tmp=<name>` picks a build folder, `--all` lists every folder with a record,
+  `--diff=<other folder | record file>` prints the differences between two records (request, resolved
+  versions and paths, libraries added and removed, checks that changed), `--as_flags` prints the options
+  that reproduce the resolved configuration, `--as_json` the record. The program category declares the
+  `cache` category it reads the build folders from. Documented in `docs/cmeta-aops/provenance.md`.
+- **A compiler's runtime library is attributed to the compiler of the run** in the provenance record: GCC's
+  `libgomp`, `libstdc++` and `libgcc_s`, LLVM's `libomp` and `libc++`, Intel's `libiomp5`, MSVC's `vcomp140`
+  live in the shared system folders, where no tool names them. The record asks the compiler itself
+  (`-print-file-name`) and attributes the library when the compiler links against the same file; MSVC's DLLs
+  are known by name and must lie in the Visual Studio installation or in `System32`; a compiler installed in
+  a folder of its own (LLVM on Windows, MinGW, a Homebrew GCC, an Android NDK) owns the runtime-named
+  libraries under it. The library then shows under the compiler's row with `(runtime)` and carries
+  `role: runtime`; a `libgomp` loaded from elsewhere stays unattributed.
+- **`CMETA_PROVENANCE`** sets the provenance mode of every `cx program run` that names none: a test session
+  or a CI job exports `CMETA_PROVENANCE=strict`, an interactive shell keeps the passive default
+  (`--provenance=<mode>` always wins).
+- **The test session of a shell:** `cx task run test-session --start` prints the line that makes the new
+  session the shell's current one (`export CMETA_TEST_SESSION=<id>`; `set` on cmd, `$env:` on PowerShell;
+  `--shell=`, `--print=export`). With the variable set, every `cx program run` attaches its provenance
+  record to the session (`attachments/provenance--<program>--<build folder>--<HHMMSS>.json`, with a note)
+  and runs with `--provenance=strict` unless the run names a mode or `CMETA_PROVENANCE` is set.
+  `--attach_as=<name>` stores a single attached file under another name.
+- **The library folders of the tools from cMeta's cache come before the shared system folders on the link
+  line** (`task/setup-compile`), and in the run's library path. With OpenSSL's `/usr/lib/x86_64-linux-gnu`
+  first, a clang build of an OpenMP program linked the distribution's `libomp` instead of the one
+  `lib-openmp` had resolved in the LLVM entry, and loaded it at run time; the provenance record's origin
+  check found it.
+- **`cx program clean <program>`** removes the build folders of the program's cache entry
+  (`task--program--<program>`), where `cx program run` builds and runs since 2026-06 (`--target_tmp=<name>`
+  for one folder, `--all` for every program); before, it deleted `tmp*` folders inside the program artifacts,
+  where nothing is built any more. Folders left inside artifacts are listed, not removed. The docs now
+  describe the build folder, `--target_path`, `--work_path`, `--here` and `{pwd}`, the cleanup commands and
+  the Python venv policy of programs (`docs/cmeta-aops/program-and-compute.md`).
+- **`_desc_models.yaml` in `tool/claude`, `tool/codex`, `tool/opencode`, `tool/openclaw`:** the models and
+  efforts of each coding-agent harness as data next to the tool - the flags that select them (`flags.model`,
+  `flags.effort`, with `{{model}}` / `{{effort}}`), the effort vocabulary with a line of advice each, and one
+  entry per model (description, context window, default effort, API price, plans, aliases, the efforts it takes).
+  Retired models stay with `disabled: true` so that an old `generator.model` can still be read; `legacy`, `until`
+  and `unverified` mark the rest; `updated`, `checked_with` and `sources` say when and against what the list was
+  checked. `run-ai` reads it for `--model=<model>,<effort>` and prints it with `--list_models`;
+  `docs/cmeta-aops/agent-tasks.md` points at the files.
+- **`run-codex --resume=<session id>`** continues a recorded Codex session instead of starting one:
+  `codex exec resume <id> -` with the prompt on stdin, `codex resume <id> [prompt]` for an interactive session
+  (the picker is never shown); the model and effort flags apply as to a new session.
+- **A test session names the model of a Claude Code session started with its default model**
+  (`task/test-session`): `CMETA_GENERATOR` then carries no model, so `--finish` takes it from the session's
+  transcript - the model that wrote the most output (subagents may run a smaller one) - and records
+  `agent.model` with `model_from: transcript`. A model given by `CMETA_GENERATOR` or `--model` is kept.
+- **`.gitignore` ignores `!AI/`**: the folder in which AI sessions run through cMeta keep their memory, skills,
+  conversations and logs inside the artifact they work on (written `\!AI/`, since a leading `!` negates).
+
 ## 0.42.0
 - **A reused tool entry is completed from its tool's current `_desc.yaml`** (`task/setup`): a cached entry
   carries the features of the time it was detected, so a key the meta gained afterwards (a compiler flag

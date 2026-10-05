@@ -1,0 +1,30 @@
+artifact: ac2c5007033a467a
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-10-03T10:12:43.546099+00:00'
+desc: "Run a coding agent (Claude Code, Codex, OpenCode, OpenClaw, Antigravity CLI, Gemini CLI) on a cMeta artifact, with its memory, skills, logs and conversations kept in the artifact's !AI folder; continues the last conversation with any harness and model."
+generator:
+  agent: Claude Code 2.1.287
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+tags:
+- run
+- ai
+- agent
+- memory
+- skills
+- conversations
+- claude
+- codex
+- opencode
+- openclaw
+- agy
+- gemini
+last_update_timestamp: '2026-10-05T19:00:58.132256+00:00'
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.289
+  by: Grigori Fursin
+  date: '2026-10-05'

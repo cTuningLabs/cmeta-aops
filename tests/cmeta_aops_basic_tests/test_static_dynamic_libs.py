@@ -522,6 +522,35 @@ def test_setup_compile_static_openmp_with_gcc(tmp_path):
         assert r["return"] == 0 and str(archive) not in cmd and "--as-needed" not in cmd and "static_openmp_runtime" not in r
 
 
+def test_lib_paths_of_cmeta_tools_come_before_the_system_folders(tmp_path):
+    """
+    OpenSSL's /usr/lib/x86_64-linux-gnu came first on the link line and the linker took the distribution's
+    libomp from it instead of the one lib-openmp had resolved in the LLVM entry: the folders of the tools
+    from cMeta's cache go first, the shared system folders after them, each group in its order.
+    """
+    ns, task = setup_compile_task()
+    cache = "/home/u/CMETA/repos/local/cache"
+    system, xopenme, llvm = "/usr/lib/x86_64-linux-gnu", f"{cache}/task--setup--lib-xopenme--1111/build/lib/static", f"{cache}/task--setup--llvm--2222/content/lib/x86_64-unknown-linux-gnu"
+    roots = [f"{cache}/task--setup--lib-xopenme--1111", f"{cache}/task--setup--llvm--2222", f"{cache}/task--setup--lib-openssl--3333"]
+    assert ns["order_lib_paths"]([system, xopenme, llvm], roots) == [xopenme, llvm, system]
+    assert ns["order_lib_paths"]([system, xopenme, llvm], []) == [system, xopenme, llvm]
+    assert ns["order_lib_paths"]([], roots) == []
+    # through the task: the -L of the cache entries before the system's, the -l order untouched
+    for d in (system, xopenme, llvm):
+        (tmp_path / d.lstrip("/")).mkdir(parents = True)
+    at = lambda d: str(tmp_path / d.lstrip("/"))
+    gcc = gcc_entry(tmp_path, path = "/usr/bin/clang")
+    g = {"lib-openssl": {"path_cmeta_cache": at(roots[2]), "features": {"lib_names": ["ssl", "crypto"], "paths": {"libs": [at(system)], "found_dynamic_lib_paths": [at(system)]}}},
+         "lib-xopenme": {"path_cmeta_cache": at(roots[0]), "features": {"lib_names": ["xopenme"], "paths": {"libs": [at(xopenme)]}}},
+         "lib-openmp": {"path_cmeta_cache": at(roots[1]), "features": {"paths": {"libs": [at(llvm)], "found_dynamic_lib_paths": [at(llvm)]}}}}
+    r = task.run(openmp_ctx(tmp_path, "compiler-c", gcc, g), lang = "c", src_path = str(tmp_path), src_file_names = ["a.c"],
+                 target_path = str(tmp_path / "build"), **{"with": {"openmp": True}})
+    cmd = r["add_to_local"]["compile_cmds"][0]
+    assert r["return"] == 0
+    assert cmd.index(f'-L"{at(xopenme)}"') < cmd.index(f'-L"{at(llvm)}"') < cmd.index(f'-L"{at(system)}"') < cmd.index('-l"ssl"')
+    assert r["found_dynamic_lib_paths"] == [at(llvm), at(system)]
+
+
 def test_setup_compile_static_openmp_with_nvcc_and_its_host_gcc(tmp_path):
     """nvcc runs the host link without -static: the runtime of the host compiler (compiler-cpp), the -Xlinker form."""
     ns, task = setup_compile_task()

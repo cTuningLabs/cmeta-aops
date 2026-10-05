@@ -563,7 +563,7 @@ class Category(InitCategory):
         cache = cparams.get('cache')
 
         cache_repo = cparams.get('cache_repo')
-        # Check if was forced by ctx --use.host.init.cache_repo ...
+        # Check if was forced for the whole run: --use.init.default_cache_repo=<repo> or config::task (task init)
         x_cache_repo = ctx_tasks.get('global', {}).get('init', {}).get('default_cache_repo')
         if x_cache_repo:
             cache_repo = x_cache_repo

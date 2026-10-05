@@ -68,6 +68,20 @@ for example `--use.python.version=3.12.13` for the Python it sets up
 To hand this repository to a coding agent (Claude Code, Codex, OpenCode) as
 part of its context, see [agent tasks](docs/cmeta-aops/agent-tasks.md).
 
+**A coding agent on an artifact, with its memory in the artifact.** `cxt run-ai` runs
+Claude Code, Codex, OpenCode, Antigravity CLI or Gemini CLI on the cMeta artifact around
+the current directory and keeps the agent's memory, skills, logs and conversations
+inside it, in a folder named `!AI` - so the next run continues where the last one
+stopped, with any agent and any model, and the knowledge travels with the project:
+
+```bash
+cxt run-ai                                      # continue the latest conversation of this artifact (cxt = cx task run)
+cxt run-ai --harness=codex "one prompt"         # one more turn of it, with another agent
+cxt run-ai --dry_run                            # what the agent would be given; nothing runs
+```
+
+The reference is [`task/run-ai/README.md`](task/run-ai/README.md).
+
 ## Project status
 
 **An experimental plugin repository and prototyping playground for reusable cMeta
@@ -186,7 +200,8 @@ In-depth developer/agent documentation lives in
 - [The `tool` abstraction (detect/install/build/run, version listing)](docs/cmeta-aops/tool-abstraction.md)
 - [The `program` category & the `compute` abstraction](docs/cmeta-aops/program-and-compute.md)
 - [LLM inference stacks: llama.cpp, vLLM, Ollama and PyTorch on CPU, CUDA, Vulkan and Metal](docs/cmeta-aops/llm-stacks.md)
-- [Coding agents and cloud CLIs as tasks (`run-claude` / `run-codex` / `run-opencode`, `run-az`, models and reasoning effort)](docs/cmeta-aops/agent-tasks.md)
+- [Coding agents and cloud CLIs as tasks (`run-ai`, `run-claude` / `run-codex` / `run-opencode` / `run-agy` / `run-gemini`, `run-az`, models and reasoning effort)](docs/cmeta-aops/agent-tasks.md)
+- [`run-ai`: a coding agent on a cMeta artifact, with its memory, skills and conversations kept in the artifact](task/run-ai/README.md)
 
 See also `AGENTS.md` (canonical brief for AI agents), `CLAUDE.md`, and the authoring
 [skills](.claude/skills/) (`add-tool`, `add-task`, `add-program`).

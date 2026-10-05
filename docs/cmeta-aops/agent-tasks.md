@@ -4,23 +4,75 @@ Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. Licensed under Apache-2
 
 # Coding agents and cloud CLIs as tasks
 
-How to launch **Claude Code**, **OpenAI Codex**, **OpenCode.AI** and the **Azure CLI**
-through cMeta, so that the same command works on every machine, the agent starts
-with the right context, and a headless run leaves a transcript and its token
-statistics next to the prompt file.
+How to launch **Claude Code**, **OpenAI Codex**, **OpenCode.AI**, Google's
+**Antigravity CLI** and **Gemini CLI**, and the **Azure CLI** through cMeta, so that
+the same command works on every machine, the agent starts with the right context,
+and a headless run leaves a transcript and its token statistics next to the prompt
+file - and, with **`run-ai`**, how to run any of these agents on a cMeta artifact so
+that its memory, skills and conversations stay inside that artifact.
 
 | Artifact | What it does |
 |---|---|
-| [`tool/claude`](../../tool/claude/_desc.yaml), [`tool/codex`](../../tool/codex/_desc.yaml), [`tool/opencode`](../../tool/opencode/_desc.yaml) | Detect or install the three agent CLIs, pin a release, list the published versions. |
-| [`task/run-claude`](../../task/run-claude/_desc.yaml), [`task/run-codex`](../../task/run-codex/_desc.yaml), [`task/run-opencode`](../../task/run-opencode/_desc.yaml) | Run an agent on an assembled prompt — headless or interactive — and record the output and the token statistics. `run-claude` also adds cMeta repositories to the agent's context. |
+| [`task/run-ai`](../../task/run-ai/README.md), [`task/import-ai`](../../task/import-ai/_desc.yaml) | One front door to the agents below, on a cMeta artifact: the agent's memory, skills, logs and conversations are kept in the artifact's `!AI` folder, a run continues the last conversation with any agent and model, and other artifacts' memory is read-only context. `import-ai` brings existing memories and skills in. |
+| [`tool/claude`](../../tool/claude/_desc.yaml), [`tool/codex`](../../tool/codex/_desc.yaml), [`tool/opencode`](../../tool/opencode/_desc.yaml), [`tool/agy`](../../tool/agy/_desc.yaml), [`tool/gemini`](../../tool/gemini/_desc.yaml) | Detect or install the agent CLIs, pin a release, list the published versions. |
+| [`task/run-claude`](../../task/run-claude/_desc.yaml), [`task/run-codex`](../../task/run-codex/_desc.yaml), [`task/run-opencode`](../../task/run-opencode/_desc.yaml), [`task/run-agy`](../../task/run-agy/_desc.yaml), [`task/run-gemini`](../../task/run-gemini/_desc.yaml) | Run an agent on an assembled prompt — headless or interactive — and record the output and the token statistics. `run-claude` also adds cMeta repositories to the agent's context. |
 | [`tool/az`](../../tool/az/_desc.yaml), [`task/run-az`](../../task/run-az/_desc.yaml) | Detect or install the Azure CLI and run it with the terminal attached (`az login` works). |
 
-The three `run-*2` tasks share one design: the prompt is the text of
+The `run-<agent>` tasks share one design: the prompt is the text of
 `--prompt_file` (when given), then a new line, then `--prompt`; the full output is
 streamed to the console and recorded into `<prompt_file without extension>-output.txt`
 unless `--output_file` says otherwise; with no prompt at all the task opens an
 interactive session instead of failing. Their `_desc.yaml` files carry the full
 per-agent reasoning (which CLI flags implement `--yes`, `--reproducible`, `--stats`).
+
+## One front door, with the memory in the project — `task/run-ai`
+
+`run-ai` runs any of the agents on this page **on a cMeta artifact** and keeps what
+the agent learns and produces inside that artifact, in a folder named `!AI`: its
+memory, its skills, the log and the token counts of every run, and the
+conversations. The knowledge travels with the project - another folder, another
+machine, an archive - and nothing has to be installed in the user's home.
+
+```bash
+cxt run-ai                                           # continue the latest conversation of the artifact around the current directory
+cxt run-ai "one prompt"                              # one more turn of it, then exit
+cxt run-ai --project="project::my-app" -i            # the artifact named explicitly (category::artifact)
+cxt run-ai --harness=codex --model=gpt-6.1-sol,high  # the same conversation with another agent: the transcript is handed over
+cxt run-ai --new "..."                               # a new conversation; --conversations lists them
+cxt run-ai --list_models                             # the models and efforts of every agent, ready to copy
+cxt run-ai --dry_run                                 # everything that would be given to the agent; nothing runs
+cxt import-ai --project="project::my-app" --skills="<repo>/.claude/skills"   # bring memories and skills into !AI
+```
+
+(`cxt <task>` is short for `cx task run <task>`.)
+
+- **The agent** (`--harness`): `claude` (the default), `codex`, `opencode`, `openclaw`,
+  `antigravity` (also `agy`), `gemini`, or any `<x>` for which a task `run-<x>` exists.
+  The model and the effort are given in the agent's own names -
+  `--model=<model>,<effort>` - and turned into its flags from
+  `tool/<agent>/_desc_models.yaml`.
+- **The project:** `--project=<cref>`, else the artifact the current directory is in,
+  else the current directory. The agent works in the artifact's root folder.
+- **Memory and skills:** Claude Code reads and writes `!AI/memory` (its
+  `autoMemoryDirectory` is set for the run) and loads `!AI/skills` as a plugin; the
+  other agents are given the memory index and the list of skills, and write there by
+  the convention they are told. Codex keeps its threads in `!AI/codex`.
+- **Conversations:** a run continues the conversation with the latest activity
+  through the agent's own session (`claude --resume`, `codex resume`, ...). When the
+  agent changes, the new one is handed the transcript `!AI/log/<id>.transcript.md`,
+  which is rewritten after every run.
+- **Context from other artifacts:** `ai_uses` in the artifact's `_desc.yaml` (or in
+  its repository's `_cmr.yaml`, for all its artifacts) names the artifacts whose memory
+  and skills the sessions read; `--context=<cref>;<cref>` adds some for one run. Those
+  stay read-only for a run: a session proposes a change under `!AI/pending`, and
+  `cxt run-ai --apply_pending` shows each difference and applies it on your word.
+- **Git:** `run-ai` never runs git. This repository ignores `!AI` (the `.gitignore`
+  line is `\!AI/`, since a leading `!` negates); in a repository of your own, commit
+  it or ignore it.
+
+The full reference - every flag, the layout of `!AI`, what each agent is given, the
+proposals and the guard, the settings - is
+[`task/run-ai/README.md`](../../task/run-ai/README.md).
 
 ## Claude Code — `task/run-claude`
 
@@ -60,6 +112,53 @@ cx task run run-opencode --prompt_file=review.txt --interactive
 cx task run run-opencode --prompt="fix the tests" -- -m anthropic/claude-opus-5 --variant high
 ```
 
+## Google Antigravity CLI — `tool/agy` + `task/run-agy`
+
+Antigravity CLI (`agy`) is Google's terminal coding agent for **personal Google
+accounts** (free, Google AI Pro, Google AI Ultra), which Gemini CLI no longer serves.
+
+```bash
+cx tool setup agy --install             # the release binary from GitHub, into the cMeta cache
+cx tool run agy                         # sign in once (the browser opens), then /quit
+cx tool run agy -- --version
+cx tool run agy -- models               # what the signed-in account can use
+
+cx task run run-agy                                         # open an interactive session
+cx task run run-agy --prompt="explain this repo"             # headless, one prompt
+cx task run run-agy --prompt_file=review.txt --yes --stats
+cx task run run-agy --prompt="fix the tests" -- --model gemini-3.1-pro-high
+```
+
+The effort is part of the model name here (`gemini-3.8-flash-high`,
+`gemini-3.1-pro-low`); `tool/agy/_desc_models.yaml` has the list. Sign in **before**
+the first headless run: without a stored login a headless `agy` prints the login
+URL, may open it in the browser, waits and fails, and `run-agy` then stops with a
+sign-in hint. The binary is kept in the cMeta cache and is not put on `PATH`;
+`run-agy` switches its self-update off for the run.
+
+## Google Gemini CLI — `tool/gemini` + `task/run-gemini`
+
+Gemini CLI serves **Gemini Code Assist Standard/Enterprise licences, paid API keys
+(`GEMINI_API_KEY`) and Vertex AI**. Since 2026-06-18 it refuses personal Google
+accounts - use Antigravity CLI above for those.
+
+```bash
+cx tool setup gemini --install          # the release bundle from GitHub, run through Node.js (itself a cMeta tool)
+cx tool run gemini                      # sign in once - or set GEMINI_API_KEY instead
+cx tool run gemini -- --version
+
+cx task run run-gemini                                       # open an interactive session
+cx task run run-gemini --prompt="explain this repo"           # headless, one prompt
+cx task run run-gemini --prompt_file=review.txt --yes --stats
+cx task run run-gemini --prompt="fix the tests" -- --model gemini-3.1-pro-preview
+```
+
+A headless run trusts the current folder for that run (`--skip-trust`) and never
+opens a browser (`NO_BROWSER=true`). Without a usable login it fails with a hint
+that names the case: nothing configured, a personal account that is refused, or a
+key the API does not accept. Gemini CLI has no reasoning-effort flag: the default
+model, `auto`, routes between a Pro and a Flash model.
+
 ## Azure CLI — `tool/az` + `task/run-az`
 
 ```bash
@@ -85,7 +184,7 @@ in its `_desc.yaml` and `api_v1.py` carry the full reasoning:
 | **macOS** | **Download** — the official `macos` tarball from the GitHub release | Relocatable, but *not* self-contained: the upstream launcher demands `AZ_PYTHON`, so a small `bin/az` wrapper supplies it. Falls back to `brew` when the host has no matching CPython. |
 | **Linux** | Package manager | Upstream publishes **no** portable download (the `.deb`/`.rpm` bundle a venv wired to `/opt/az`). apt-based distros get the Microsoft repo script — plain `apt install azure-cli` fails on stock Debian/Ubuntu — everything else the generic sudo package manager. |
 
-## Flags shared by `run-claude` / `run-codex` / `run-opencode`
+## Flags shared by `run-claude` / `run-codex` / `run-opencode` / `run-agy` / `run-gemini`
 
 | Flag | Effect |
 |---|---|
@@ -132,8 +231,8 @@ passed after `--` as `--add-dir <path>` is never added twice.
 
 ## How the artifacts of a session record who made them
 
-`run-claude`, `run-codex` and `run-opencode` set `CMETA_GENERATOR` for the
-agent process, unless a task that runs the agent has set it already (an import task keeps its
+`run-claude`, `run-codex`, `run-opencode`, `run-agy` and `run-gemini` set
+`CMETA_GENERATOR` for the agent process, unless a task that runs the agent has set it already (an import task keeps its
 own `task` record):
 
 ```json
@@ -145,9 +244,12 @@ own `task` record):
 | `run-claude` | `Claude Code <version>` | `--model` | `--effort`; else `thinking_budget` = `MAX_THINKING_TOKENS` |
 | `run-codex` | `OpenAI Codex <version>` | `-m` / `--model` | `-c model_reasoning_effort=...` |
 | `run-opencode` | `OpenCode <version>` | `--model` / `-m` | `--variant` |
+| `run-agy` | `Antigravity CLI <version>` | `--model` | `--effort` |
+| `run-gemini` | `Gemini CLI <version>` | `--model` / `-m` | - (no effort flag) |
 
-The model and effort are recorded only when they are passed after `--`: a model or effort
-chosen in the agent's own config file, or switched inside an interactive session, is not seen.
+The model and effort are recorded only when they are passed after `--` (`run-ai` passes its
+`--model` and `--effort` that way): a model or effort chosen in the agent's own config file, or
+switched inside an interactive session, is not seen.
 cMeta writes the record as `generator` into each artifact the agent creates through `cx`, and as
 `last_generator` (with the date) into each one it updates - see the engine's
 `docs/using-cmeta.md` §7.6 (`artifact_defaults` of `_cmr.yaml`, `CMETA_GENERATOR`).
@@ -164,6 +266,16 @@ and the limit is a rate limit, not a bill.
 > Verified on **2026-08-21** with `claude` 2.1.238, `codex` 0.148.0 and
 > `opencode` 1.18.19. Model line-ups move fast — re-check with `/model` (claude,
 > codex) or `opencode models` before trusting a table.
+>
+> **The maintained list is `tool/<name>/_desc_models.yaml`** (`tool/claude`, `tool/codex`,
+> `tool/opencode`, `tool/openclaw`, `tool/agy`, `tool/gemini`; since 2026-10-04) -
+> `cxt run-ai --list_models` prints it, one `--model=<model>,<effort>` line per
+> combination: the models with a description,
+> context, price and the efforts each takes, the harness's flags for a model and an
+> effort, and the bookkeeping (`updated`, `checked_with`, `sources`). Retired models stay
+> with `disabled: true`, so that a `generator.model` of an old artifact can still be read.
+> `run-ai` reads it for its `--model=<model>,<effort>`; the tables below are the snapshot
+> of 2026-08-21.
 
 ### `run-claude` → Claude Code
 

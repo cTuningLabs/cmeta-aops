@@ -1,0 +1,61 @@
+authors: Grigori Fursin
+
+# Run Google's Antigravity CLI ("agy", https://antigravity.google/docs/cli) non-interactively on an assembled
+# prompt and exit, or open an interactive session. Same flags as the sister tasks "run-claude", "run-codex",
+# "run-opencode" and "run-gemini":
+#
+#   cx task run run-agy --prompt="{prompt text}"
+#   cx task run run-agy "{prompt text}"                      # the first positional is the prompt
+#   cx task run run-agy --prompt_file={file}
+#   cx task run run-agy --prompt_file={file} --prompt="{extra text}" --output_file={file}
+#   cx task run run-agy --prompt_file={file} --yes --stats
+#
+# With no prompt at all, this task opens an interactive agy session instead of failing (same default as the
+# sister tasks):
+#
+#   cx task run run-agy                                      # just open an agy session
+#
+# --interactive (short: --i or -i) asks for that session explicitly: the assembled prompt is run first and agy
+# keeps the terminal afterwards ("agy --prompt-interactive=<prompt>"), so a preset prompt can be followed up on
+# by hand:
+#
+#   cx task run run-agy --prompt_file=review.txt --interactive
+#
+# --yes runs agy unattended: every tool call is auto-approved ("--dangerously-skip-permissions"). Without it, a
+# headless agy "soft-denies" the tools that need an approval (writes, commands, network), unless the settings
+# allow them ("permissions": {"allow": [...]} in ~/.gemini/antigravity-cli/settings.json).
+# --stats asks agy for its JSON event stream ("--output-format stream-json"), turned back into text, so that the
+# token counters of the final "result" event can be printed and recorded.
+# --reproducible pins nothing by itself (agy has no extension switch): pin the model and the effort after "--",
+# e.g. "-- --model <slug> --effort medium" ("agy models" lists the slugs of the account).
+#
+# The prompt sent to agy is the text of --prompt_file (when given), then "\n", then the text of --prompt. It goes
+# in as one argument ("--print=<prompt>"); a prompt longer than ~30000 characters goes through stdin instead
+# (one NDJSON message, "--print= --input-format stream-json"). Anything after "--" is appended to the agy command
+# line, e.g.
+#
+#   cx task run run-agy --prompt_file=p.txt -- --model gemini-3.1-pro --effort high
+#
+# agy signs in with a Google account the first time it is started by hand ("agy", then "Login with Google": a
+# personal Google account, with or without Google AI Pro/Ultra, or a Gemini Enterprise licence). A headless run
+# without a stored login prints the login URL, waits 60 s and fails. A GEMINI_API_KEY works too, with
+# {"modelProvider": "gemini"} in ~/.gemini/antigravity-cli/settings.json.
+#
+# The task sets AGY_CLI_DISABLE_AUTO_UPDATE=true for the run: cMeta installed a known version of the binary and the
+# self-updater would overwrite it in place.
+
+# This task launches agy and changes files - never memoize it on disk
+cache: False
+
+# The first positional argument after the task name is the prompt
+params_map:
+  arg2: prompt
+
+uses:
+  # Bootstrap host (OS detection, env, vars) - normally already resolved from global
+  - task: runner,1e48cc0c5f6041a5
+
+  # Detect / install the "agy" tool and expose {{global.agy.path}}.
+  # The tool downloads the release archive from GitHub.
+  - task: setup,a2f9b61079ce4333
+    name: agy,433f36c666ce47f1

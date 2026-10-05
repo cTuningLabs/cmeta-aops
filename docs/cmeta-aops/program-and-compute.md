@@ -17,7 +17,8 @@ shared template) executed by the `task` engine.
 |---------|-----------|
 | `run`     | → task `compile-and-run-program,05437a1aae224270`, mapping `arg1→name`, `arg2→compute` |
 | `compile` | `run` + `skip_run: True` |
-| `clean`   | find every program, `rmtree` each `tmp*` dir |
+| `clean`   | remove the build folders of a program from its cache entry (`--target_tmp=<name>` for one, `--all` for every program); folders left inside artifacts before 2026-06 are listed, not removed |
+| `provenance` | the provenance record of a run (`--target_tmp`, `--all`, `--diff`, `--as_flags`, `--as_json`): [provenance.md](provenance.md) |
 | `update_desc_` | the **inheritance patcher** (the engine behind `inherits`/`updates`) |
 
 So `cx program run test-nmm-c-cpu cpu` = `cx task run compile-and-run-program
@@ -237,16 +238,48 @@ The driver persists three JSON snapshots in `target_path` and reuses them to ski
 `_repro_ctx_all.json`, `_repro_ctx_compile.json`, `_repro_ctx_run.json` — each is
 `{'ctx': <full ctx>, 'result': <r>}` (written `safe_dump`).
 
-**target_path** is where compile+run happen and where these files live. Resolution:
-- `config task` → `compile_and_run_program.skip_cache: True` ⇒ `target_path =
-  <program_dir>/tmp`.
-- else ⇒ a dedicated `cache` entry `task--program--<name>` (tags `[task,
-  c36be4b9314a45e0, compile-and-run-program, 05437a1aae224270]`), `target_path =
-  <cache_entry>/tmp`. A distinct `--path`/`work_path` gives a distinct build.
+**target_path** is where compile+run happen and where these files live. The program artifact
+stays clean: by default every build goes to the program's cache entry. Resolution:
+- `--target_path=<folder>` ⇒ that folder, as given.
+- else `config task` → `compile_and_run_program.skip_cache: True` (the layout before 2026-06, kept
+  for old setups) ⇒ `target_path = <program_dir>/<target_tmp>`.
+- else ⇒ the **build entry of the request**: a `cache` entry of the task (tags `[task,
+  c36be4b9314a45e0, compile-and-run-program, 05437a1aae224270]`) found by its params, like every
+  other task entry — the program and the request: the explicit `--use` choices (tool names, versions,
+  variants), `--compile.*`, `--with.*`, and the compute targets the run resolved
+  (`category/task/api/build_identity.py`). Two requests that differ build in two entries, so
+  `--use.nvcc.version=12.9` and `--use.nvcc.version=13.3` coexist and compare; the same request
+  comes back to its entry, where the build stamp guards the folder against a changed resolution.
+  The plain request (no explicit choice, cpu) keeps the name `task--program--<name>` every program had
+  before and adopts such an entry when it exists without params; the others are
+  `task--program--<name>--<uid>`. The folder name says nothing: the entry's `_cmeta` does —
+  `params.request`, `params.request_digest` (the key the lookup matches) and, after a run,
+  `params.resolved` (name, version and path of every tool). `target_path = <entry>/<target_tmp>`.
+  Another `--target_tmp` (or `--target_path`) gives another build in the same entry; `--path` is an
+  engine control parameter and does not.
 - The folder `tmp` is `--target_tmp=<name>` when given, else the config default
   (`cx config set task --meta.compile_and_run_program.target_tmp=<name>`). `auto` makes it
   `tmp-<targets>` (`tmp-cuda`, `tmp-cpu-cuda`): one build per set of targets, side by side.
-`work_path` (run cwd) defaults to `target_path`; `{pwd}` maps to `<cur_dir>/<that folder>`.
+
+`work_path` (the run's cwd) defaults to `target_path`; `--work_path=<folder>` runs there, `--here` in
+the current directory. A program's `local_vars: work_path: '{pwd}'` (llama-cpp) maps to
+`<cur_dir>/<target_tmp>`, so a run started inside the program's own folder writes its outputs into
+`program/<name>/<target_tmp>` — the one way a run still writes into an artifact.
+
+**Cleaning:** `cx program clean <name> [--target_tmp=<name>] [--entry=<alias|uid|digest>]` removes the
+build folders of the program's entries (`--all`: every program); `cx program run <name> --clean` wipes
+one build folder before rebuilding; `cx cache delete <entry>` removes a whole entry, with any venv
+inside it; `cx program provenance <name> --all` lists the entries with their requests and records.
+Folders that runs before 2026-06 left inside program artifacts are listed by `clean` and left alone.
+
+**The Python of a program.** A program's `setup` step for `python` (see `tool/python/README.md`)
+gets, in this order: cx's own interpreter when it is a venv with pip (extended by design), else a
+shared venv per Python version in the cache (`task--setup--python--<uid>/.venv`, made by uv), or,
+when the step asks for it with `with: venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'`,
+a private venv inside the program's own build folder (`task--program--<name>/<target_tmp>/venv-<targets>/.venv`;
+test-vllm, build-vllm, build-pytorch, test-onnxruntime, image-classification-onnx, test-openvino) that no
+other run picks up. No venv is ever created inside a program artifact. `--clean` wipes a venv that
+lives in the build folder (build-executorch-android keeps its venv in a sibling folder for that reason).
 
 **Compile reuse decision** (`recompile` starts False unless `--recompile`):
 1. Read `_repro_ctx_compile.json`. Missing ⇒ `recompile=True`. Present but

@@ -48,6 +48,21 @@ cx tmp find cmeta-aops-test-sessions        # the sandboxes
 
 The id is also the first argument: `cx task run test-session 20261002/0915.llama-drift --note=...`.
 
+## The session of a shell
+
+`--start` also prints the line that makes the session the shell's current one, in the shell's
+syntax (`--shell=bash|cmd|powershell`; `--print=export` prints only that line):
+
+```bash
+export CMETA_TEST_SESSION=20261002/0915.llama-drift      # cmd: set CMETA_TEST_SESSION=...   powershell: $env:CMETA_TEST_SESSION = "..."
+```
+
+With the variable set, every `cx program run` attaches its provenance record to the session
+(`attachments/provenance--<program>--<build folder>--<HHMMSS>.json`, with a note) and runs with
+`--provenance=strict`, so a run whose explicit configuration was not honoured fails the test
+([provenance.md](../../docs/cmeta-aops/provenance.md)). A remote test script exports the id of the
+session it runs in. `--attach_as=<name>` stores a single attached file under another name.
+
 Capturing the id in a script (the task banner comes first when `CMETA_VERBOSE` is on):
 
 ```bash
@@ -69,7 +84,7 @@ $ID = (cx task run test-session --start --type=build --print=id | Select-Object 
 | `host` | name, OS, release, architecture, CPUs, RAM, Python |
 | `cmeta` | version, `CMETA_HOME`, the engine's path, and its branch and commit for a checkout |
 | `repositories` | this repository and each `--repos`: branch, commit, changed tracked files |
-| `agent` | from `CMETA_GENERATOR` (agent, model, effort), the Claude Code session (`CLAUDE_CODE_SESSION_ID`), or `--agent`, `--model`, `--effort`, `--session` |
+| `agent` | from `CMETA_GENERATOR` (agent, model, effort), the Claude Code session (`CLAUDE_CODE_SESSION_ID`), or `--agent`, `--model`, `--effort`, `--session`; a session started with the default model gets its `model` at `--finish` from the transcript (the model that wrote the most output; `model_from: transcript`) |
 | `command` | `--cmd` |
 | `notes`, `results`, `attachments` | `--note`; `--results.<key>=<value>` and `--results_file`; `--attach` (files up to 20 MiB, `--attach_max_mib`) |
 | `costs` | `wall_time_s`, `sandbox_mib`, `agent_usage`, `--tokens` (`agent_tokens`), `--cost_usd` (`agent_cost_usd`), `--costs.<key>=<value>` |

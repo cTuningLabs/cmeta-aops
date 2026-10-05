@@ -52,9 +52,10 @@ class CTask(InitCTask):
         if cfg:
             result.update(cfg)
 
-        # Update from API/CLI
+        # Update from API/CLI (--use.init.default_cache_repo=<repo>): the key the task engine reads,
+        # the same one config::task may set
         if default_cache_repo:
-            result[default_cache_repo] = default_cache_repo
+            result['default_cache_repo'] = default_cache_repo
 
         return result
 

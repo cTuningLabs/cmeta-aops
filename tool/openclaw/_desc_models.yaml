@@ -1,0 +1,74 @@
+authors: Grigori Fursin
+
+# The models and thinking levels of OpenClaw, for the run-ai task:
+#
+#   cxt run-ai --harness=openclaw --list_models
+#   cxt run-ai --harness=openclaw --model=claude-cli/claude-opus-4-8,medium "..."
+#
+# OpenClaw names a model "provider/model" (--model) and calls the effort a thinking level (--thinking). Its catalog is
+# per machine: "openclaw models list" prints what is configured and which providers are authenticated; the entries
+# below are that list on the author's machine on 2026-10-04 (OpenClaw 2026.6.10). Same file conventions as
+# tool/claude/_desc_models.yaml (updated, disabled, legacy, unverified, until).
+
+updated: '2026-10-04'
+checked_with: 'OpenClaw 2026.6.10 (openclaw agent --help; openclaw models list)'
+list_cmd: 'openclaw models list'
+sources:
+  - https://docs.openclaw.ai/cli/models
+  - 'openclaw agent --help (--model, --thinking)'
+  - 'openclaw models list (2026-10-04)'
+
+flags:
+  model: ['--model', '{{model}}']
+  effort: ['--thinking', '{{effort}}']
+
+# --thinking: "off | minimal | low | medium | high | xhigh | adaptive | max where supported"
+efforts:
+  - name: 'off'
+    desc: no thinking
+  - name: minimal
+  - name: low
+  - name: medium
+  - name: high
+  - name: xhigh
+    desc: where the model supports it
+  - name: adaptive
+    desc: the model decides (Claude 4.6 and later)
+  - name: max
+    desc: where the model supports it
+
+models:
+  - name: openai/gpt-5.5
+    default: true
+    desc: 'GPT-5.5 (OpenClaw default); needs an OpenAI key in the shell or in OpenClaw auth (not set on this machine)'
+    context: 195k
+    auth: 'no (on this machine)'
+    note: 'retires from ChatGPT and Codex on 2026-10-14; stays on the API'
+  - name: claude-cli/claude-opus-4-8
+    desc: 'Opus 4.8 through the local Claude Code login (the claude-cli provider)'
+    context: 1024k
+    auth: 'yes (the Claude Code login)'
+  - name: claude-cli/claude-opus-4-7
+    desc: 'Opus 4.7 through the local Claude Code login'
+    context: 195k
+    auth: 'yes (the Claude Code login)'
+  - name: claude-cli/claude-opus-4-6
+    desc: 'Opus 4.6 through the local Claude Code login'
+    context: 195k
+    auth: 'yes (the Claude Code login)'
+  - name: claude-cli/claude-sonnet-4-6
+    desc: 'Sonnet 4.6 through the local Claude Code login'
+    context: 195k
+    auth: 'yes (the Claude Code login)'
+
+  # ---- not in this machine's catalog: a newer OpenClaw (or "openclaw models set") may add them
+  - name: claude-cli/claude-opus-5-5
+    unverified: true
+    desc: 'Opus 5.5 through the Claude Code login, if the catalog lists it'
+  - name: claude-cli/claude-sonnet-5-5
+    unverified: true
+    desc: 'Sonnet 5.5 through the Claude Code login, if the catalog lists it'
+  - name: anthropic/claude-opus-5-5
+    unverified: true
+    desc: 'Opus 5.5 with an Anthropic API key'
+    auth: 'an Anthropic key in the shell or in OpenClaw auth'

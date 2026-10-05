@@ -1,0 +1,118 @@
+authors: Grigori Fursin
+
+# The models of Antigravity CLI (agy), for the run-ai task:
+#
+#   cxt run-ai --harness=antigravity --list_models
+#   cxt run-ai --harness=antigravity --model=gemini-3.8-flash-high "..."
+#
+# "agy models" prints what the signed-in account can use, and that is the list below, verified on 2026-10-04 with
+# a personal Google account: the EFFORT IS PART OF THE NAME (gemini-3.8-flash-high, gemini-3.1-pro-low),
+# so --model takes one of these names as it is and --effort is not needed (agy accepts --effort low|medium|high|xhigh|
+# max as well, but what the account offers are the baked names). The Claude 5.5 models of the documentation need
+# Google AI Pro (non-trial) or Ultra, per the plans page; they were not in the list checked and stay below as
+# unverified. Same file conventions as tool/claude/_desc_models.yaml (updated, disabled, legacy, unverified, until).
+
+updated: '2026-10-04'
+checked_with: 'agy 1.2.16, "agy models" on 2026-10-04 with a signed-in personal account: 14 names, effort baked in'
+list_cmd: 'agy models'
+sources:
+  - 'agy models (2026-10-04)'
+  - https://antigravity.google/docs/models
+  - https://antigravity.google/docs/plans
+  - 'agy --help (1.2.16)'
+
+flags:
+  model: ['--model', '{{model}}']
+  effort: ['--effort', '{{effort}}']
+
+# agy --help accepts low|medium|high|xhigh|max; the names below already carry low, medium or high, so an --effort is
+# only for an experiment with a bare name
+efforts:
+  - name: low
+  - name: medium
+  - name: high
+  - name: xhigh
+    desc: accepted by the flag; no listed model carries it
+  - name: max
+    desc: accepted by the flag; no listed model carries it
+
+models:
+  # ---- Gemini (every plan), as "agy models" names them: the effort is in the name
+  - name: gemini-3.8-flash-high
+    default: true
+    desc: 'Gemini 3.8 Flash (High): the default of agy ("Propagating selected model override: Gemini 3.8 Flash (High)")'
+    efforts: []
+    plans: all
+  - name: gemini-3.8-flash-medium
+    desc: 'Gemini 3.8 Flash (Medium)'
+    efforts: []
+    plans: all
+  - name: gemini-3.8-flash-low
+    desc: 'Gemini 3.8 Flash (Low): mechanical edits, fast'
+    efforts: []
+    plans: all
+  - name: gemini-3.7-flash-high
+    desc: 'Gemini 3.7 Flash (High)'
+    efforts: []
+    plans: all
+  - name: gemini-3.7-flash-medium
+    desc: 'Gemini 3.7 Flash (Medium)'
+    efforts: []
+    plans: all
+  - name: gemini-3.7-flash-low
+    desc: 'Gemini 3.7 Flash (Low)'
+    efforts: []
+    plans: all
+  - name: gemini-3.6-flash-high
+    legacy: true
+    desc: 'Gemini 3.6 Flash (High)'
+    efforts: []
+    plans: all
+  - name: gemini-3.6-flash-medium
+    legacy: true
+    desc: 'Gemini 3.6 Flash (Medium)'
+    efforts: []
+    plans: all
+  - name: gemini-3.6-flash-low
+    legacy: true
+    desc: 'Gemini 3.6 Flash (Low)'
+    efforts: []
+    plans: all
+  - name: gemini-3.1-pro-high
+    desc: 'Gemini 3.1 Pro (High): the most capable Gemini, hard problems'
+    efforts: []
+    plans: all
+  - name: gemini-3.1-pro-low
+    desc: 'Gemini 3.1 Pro (Low)'
+    efforts: []
+    plans: all
+
+  # ---- Claude (thinking) and open-weight, as listed on 2026-10-04
+  - name: claude-sonnet-4-6
+    until: '2026-11-02'
+    desc: 'Claude Sonnet 4.6 (Thinking), as agy names it (no -thinking suffix); deprecated on 2026-11-02 per the models page'
+    efforts: []
+    plans: 'free, Google AI Pro'
+  - name: claude-opus-4-6-thinking
+    until: '2026-11-02'
+    desc: 'Claude Opus 4.6 (Thinking); deprecated on 2026-11-02 per the models page'
+    efforts: []
+    plans: 'free, Google AI Pro'
+  - name: gpt-oss-120b-medium
+    until: '2026-11-02'
+    desc: 'GPT-OSS 120B (Medium); deprecated on 2026-11-02 per the models page'
+    efforts: []
+    plans: 'free, Google AI Pro, Google AI Ultra'
+
+  # ---- documented, not in the list checked on 2026-10-04 (plan gate): kept as the names the documentation uses
+  - name: claude-opus-5-5-thinking
+    unverified: true
+    desc: 'Claude Opus 5.5 (thinking) per the models page; not in the "agy models" list checked on 2026-10-04'
+    efforts: []
+    plans: 'Google AI Pro (non-trial), Google AI Ultra'
+  - name: claude-sonnet-5-5-thinking
+    unverified: true
+    desc: 'Claude Sonnet 5.5 (thinking) per the models page; not in the "agy models" list checked on 2026-10-04'
+    efforts: []
+    plans: 'Google AI Pro (non-trial), Google AI Ultra'
+
