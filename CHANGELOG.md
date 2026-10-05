@@ -90,6 +90,8 @@ All notable changes to cMeta AOps are documented here, newest first.
   (`task/test-session`): `CMETA_GENERATOR` then carries no model, so `--finish` takes it from the session's
   transcript - the model that wrote the most output (subagents may run a smaller one) - and records
   `agent.model` with `model_from: transcript`. A model given by `CMETA_GENERATOR` or `--model` is kept.
+- **`.gitignore` ignores `!AI/`**: the folder in which AI sessions run through cMeta keep their memory, skills,
+  conversations and logs inside the artifact they work on (written `\!AI/`, since a leading `!` negates).
 
 ## 0.42.0
 - **A reused tool entry is completed from its tool's current `_desc.yaml`** (`task/setup`): a cached entry
