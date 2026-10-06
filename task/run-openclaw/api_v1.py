@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done
 
 # Suffix appended to the prompt file name (without extension) when --output_file is not given
 OUTPUT_FILE_SUFFIX = '-output.txt'
@@ -34,10 +34,10 @@ SESSION_FLAGS = ['--agent', '--session-id', '--session-key', '--to', '-t']
 MODEL_FLAGS = ['--model']
 THINKING_FLAGS = ['--thinking']
 
-# Longest prompt that travels without a warning: "openclaw agent" takes the prompt as the value
-# of --message (there is no stdin mode), and an OS caps a whole command line (32767 chars on
-# Windows, ~2MB of argv on Linux)
-MAX_PROMPT_ARG_CHARS = 30000
+# "openclaw agent" and the terminal UI take the prompt as the value of --message (there is no stdin
+# mode), and an OS caps a whole command line (32767 chars on Windows, 128 KB per argument on Linux).
+# A longer prompt is written to a file and openclaw is asked to read it first: see prompt_via_file()
+# in the task category API (MAX_PROMPT_ARG_CHARS there).
 
 
 def _flag_value(flags, names):
@@ -164,6 +164,7 @@ class CTask(InitCTask):
             ctx: dict,                      # cMeta context
             prompt: str = '',               # prompt text
             prompt_file: str = '',          # file with the prompt text
+            long_prompt_file: str = '',     # where a prompt too long for the command line is written for openclaw to read
             interactive: bool = False,      # open the terminal UI with the prompt as the first message
             i: bool = False,                # short alias of "interactive" (--i / -i)
             gateway: bool = False,          # run the turn through a running OpenClaw Gateway instead of --local
@@ -201,10 +202,18 @@ class CTask(InitCTask):
         recorded as usual, and the token usage and cost found in the result are printed at the end.
         "stats_file" records the same statistics and turns "stats" on.
 
+        The prompt is the value of "--message" in both modes (openclaw has no stdin mode), which
+        the OS caps (32767 characters for the whole command line on Windows). A prompt longer than
+        MAX_PROMPT_ARG_CHARS of the task category API (30000) is therefore written to a file -
+        "long_prompt_file" when given, else next to the prompt file, else a temporary file removed
+        after the run - and openclaw is asked to read it first: it then follows it, and the terminal
+        UI stays open as before.
+
         Args:
             ctx (dict): cMeta context.
             prompt (str): Prompt text (appended after the prompt file text).
             prompt_file (str): File with the prompt text (read as UTF-8).
+            long_prompt_file (str): Where a prompt too long for the command line is written for openclaw to read.
             interactive (bool): If True, open the terminal UI with the prompt as the first message.
             i (bool): Short alias of "interactive".
             gateway (bool): If True, run through a running OpenClaw Gateway instead of "--local".
@@ -226,6 +235,7 @@ class CTask(InitCTask):
                 - **output** (str): The output of openclaw ('' if `interactive`).
                 - **output_file** (str): Where the output was recorded ('' if skipped).
                 - **prompt** (str): The assembled prompt.
+                - **long_prompt_file** (str): The file the prompt was written to when it was too long for the command line ('' if none).
                 - **cmd** (list): The openclaw command line (the prompt shortened).
                 - **returncode** (int): Return code of openclaw.
                 - **duration** (float): Run time in seconds.
@@ -269,10 +279,13 @@ class CTask(InitCTask):
                 print ('')
                 print (f'{space}INFO: no prompt was given (--prompt / --prompt_file) - opening the OpenClaw terminal UI')
 
-        if full_prompt and len(full_prompt) > MAX_PROMPT_ARG_CHARS and con:
-            print ('')
-            print (f'{space}WARNING: the prompt is {len(full_prompt)} chars long - openclaw takes it as a command line '
-                   f'argument, which the OS may refuse (use run-claude or run-codex for a very long prompt)')
+        # The prompt is the value of --message in both modes (openclaw has no stdin mode), which the OS caps:
+        # a long one is written to a file and openclaw is asked to read it first (the terminal UI then goes on
+        # as before)
+        pr = prompt_via_file(full_prompt, 'openclaw', path=long_prompt_file, prompt_file=prompt_file,
+                             con=con, space=space)
+        if pr['return'] > 0:
+            return pr
 
         ###########################################################################################
         # Output and statistics files (an interactive session keeps the terminal: nothing to collect)
@@ -315,12 +328,15 @@ class CTask(InitCTask):
                     parse_json = True
 
         flags += extra_flags
-        cmd = base + flags + (['--message', full_prompt] if full_prompt else [])
-        shown = base + flags + (['--message', f'<prompt: {len(full_prompt)} chars>'] if full_prompt else [])
+        cmd = base + flags + (['--message', pr['text']] if full_prompt else [])
+        shown = base + flags + (['--message', f'<prompt: {len(full_prompt)} chars>' if not pr['file']
+                                 else f'<the request to read {pr["file"]}>'] if full_prompt else [])
 
         if con:
             print ('')
             print (f'{space}RUN: {" ".join(shown)}')
+            if pr['file']:
+                print (f'{space}     (prompt: {len(full_prompt)} chars in a file openclaw is asked to read first: {pr["file"]})')
             if interactive:
                 print (f'{space}     (terminal UI - openclaw keeps this terminal)')
             if output_file:
@@ -328,8 +344,9 @@ class CTask(InitCTask):
             print ('')
 
         if dry_run:
-            return {'return': 0, 'cmd': shown, 'prompt': full_prompt, 'output': '', 'output_file': '',
-                    'interactive': interactive, 'dry_run': True}
+            prompt_via_file_done(pr)
+            return {'return': 0, 'cmd': shown, 'prompt': full_prompt, 'long_prompt_file': pr['file'], 'output': '',
+                    'output_file': '', 'interactive': interactive, 'dry_run': True}
 
         # Provenance: artifacts created through cMeta during the run record how they were made
         # (unless a task that runs openclaw set CMETA_GENERATOR already)
@@ -347,15 +364,17 @@ class CTask(InitCTask):
             except KeyboardInterrupt:
                 returncode = 1
             except Exception as e:
+                prompt_via_file_done(pr)
                 return self.cm.error(f'cannot run "{openclaw_path}": {e}', 1)
+            prompt_via_file_done(pr)
             duration = time.time() - start_time
             if con:
                 print ('')
                 if returncode != 0:
                     print (f'{space}INFO: openclaw exited with return code {returncode}')
                 print (f'{space}Duration: {duration:.1f} sec')
-            return {'return': 0, 'output': '', 'output_file': '', 'prompt': full_prompt, 'cmd': shown,
-                    'returncode': returncode, 'duration': duration, 'interactive': True, 'stats_file': ''}
+            return {'return': 0, 'output': '', 'output_file': '', 'prompt': full_prompt, 'long_prompt_file': pr['file'],
+                    'cmd': shown, 'returncode': returncode, 'duration': duration, 'interactive': True, 'stats_file': ''}
 
         ###########################################################################################
         # Headless: one agent turn, output streamed and collected
@@ -364,6 +383,7 @@ class CTask(InitCTask):
             process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                        text=True, encoding='utf-8', errors='replace', bufsize=1)
         except Exception as e:
+            prompt_via_file_done(pr)
             return self.cm.error(f'cannot run "{openclaw_path}": {e}', 1)
 
         lines = []
@@ -375,9 +395,11 @@ class CTask(InitCTask):
         except KeyboardInterrupt:
             process.kill()
             process.wait()
+            prompt_via_file_done(pr)
             return self.cm.error('interrupted by the user', 1)
 
         returncode = process.wait()
+        prompt_via_file_done(pr)
         duration = time.time() - start_time
         output = ''.join(lines)
 
@@ -437,8 +459,8 @@ class CTask(InitCTask):
                         'authenticated (the Auth column); --model=claude-cli/<model> runs through the local Claude Code login')
             return self.cm.error(f'openclaw failed with return code {returncode}{hint}', 99)
 
-        result = {'return': 0, 'output': output, 'output_file': output_file, 'prompt': full_prompt, 'cmd': shown,
-                  'returncode': returncode, 'duration': duration, 'interactive': False, 'stats_file': stats_file}
+        result = {'return': 0, 'output': output, 'output_file': output_file, 'prompt': full_prompt, 'long_prompt_file': pr['file'],
+                  'cmd': shown, 'returncode': returncode, 'duration': duration, 'interactive': False, 'stats_file': stats_file}
         if tokens:
             result['tokens'] = tokens
         return result

@@ -26,8 +26,11 @@ authors: Grigori Fursin
 #
 # IMPORTANT difference from run-claude / run-codex: "opencode run" has no stdin
 # mode, so the prompt always travels as a command line argument - in both modes.
-# The OS caps a command line (~32K chars on Windows, ~2MB argv on Linux), so a
-# very long prompt file is warned about and may be refused by the OS.
+# The OS caps a command line (32767 chars on Windows, 128 KB per argument on
+# Linux), so a prompt longer than 30000 characters is written to a file -
+# --long_prompt_file={file}, else {prompt_file without extension}-prompt.md, else
+# a temporary file removed afterwards - and opencode is given a one-line request
+# to read it first; it follows it, and an interactive session stays interactive.
 #
 # --yes runs opencode unattended: permissions that are not explicitly denied are
 # auto-approved via "--auto".

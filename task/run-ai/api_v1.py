@@ -222,6 +222,11 @@ READ_ONLY_FLAGS = {
 # none - OpenClaw follows its own settings. A task run-<x> that is not listed gets it only from --yes itself.
 YES_HARNESSES = ('claude', 'codex', 'opencode', 'agy', 'gemini')
 
+# The harness tasks that take "long_prompt_file": where they write a prompt too long for a command line argument (an
+# interactive session preloads its first prompt that way; opencode and openclaw have no stdin mode at all) and ask the
+# agent to read it first. run-ai names that file in !AI/log; a task run-<x> that is not listed is not given it.
+LONG_PROMPT_HARNESSES = ('claude', 'codex', 'opencode', 'openclaw', 'agy', 'gemini')
+
 
 class CTask(InitCTask):
     """run-ai: run a coding agent on a cMeta artifact, with its memory, skills and conversations in the artifact's !AI folder."""
@@ -1568,8 +1573,13 @@ class CTask(InitCTask):
             params['output_file'] = os.path.join(log_dir, '%s.%s.output.txt' % (stamp, harness))
             if stats and not interactive:
                 params['stats_file'] = os.path.join(log_dir, '%s.%s.stats.json' % (stamp, harness))
+            # a prompt too long for a command line argument (an interactive session preloads it that way; opencode and
+            # openclaw have no stdin mode) is written here by the run task, and the harness is asked to read it first
+            if hk in LONG_PROMPT_HARNESSES:
+                params['long_prompt_file'] = os.path.join(log_dir, '%s.%s.prompt.md' % (stamp, harness))
         else:
             params['skip_output_file'] = True       # else the run task writes run-<harness>-output.txt into the project
+            # (and a long prompt goes to a temporary file the run task removes afterwards)
 
         # 3. how this harness reads (and, for claude, writes) the project's memory and skills
         env = {}
@@ -1870,6 +1880,9 @@ class CTask(InitCTask):
         #    and the transcript, re-exported from the harnesses' own stores
         after_notes = []
         transcript = ''
+        if rr.get('long_prompt_file') and os.path.isfile(rr['long_prompt_file']):
+            after_notes.append('the prompt was too long for a command line argument: written to %s, %s was asked to read it first' % (
+                os.path.basename(rr['long_prompt_file']), hk))
         if conv is not None and run_entry is not None:
             sid = native_sid or new_sid
             if not sid:

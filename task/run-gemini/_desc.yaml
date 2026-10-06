@@ -37,9 +37,11 @@ authors: Grigori Fursin
 # appends its -p text to what arrives there), so no command line carries it: on
 # Windows the tool is a gemini.cmd launcher, and cmd.exe would cut an argument at
 # its first new line. An interactive session takes its first prompt as an
-# argument; through the launcher, a prompt of several lines is written to a file
-# and the session is asked to read it. Anything after "--" is appended to the
-# gemini command line, e.g.
+# argument: a prompt longer than 30000 characters (7000 through the launcher, or
+# one of several lines there) is written to a file - --long_prompt_file={file},
+# else {prompt_file without extension}-prompt.md, else a temporary file removed
+# afterwards - and the session is asked to read it first; it follows it and stays
+# interactive. Anything after "--" is appended to the gemini command line, e.g.
 #
 #   cx task run run-gemini --prompt_file=p.txt -- --model gemini-3.1-pro-preview
 #

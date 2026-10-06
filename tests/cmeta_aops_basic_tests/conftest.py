@@ -12,10 +12,12 @@ global cMeta state and never require network access.
 """
 
 import os
+import re
 import atexit
 import shutil
 import pathlib
 import tempfile
+import importlib.util
 
 import pytest
 
@@ -39,18 +41,38 @@ def task_namespace():
     """A loader for the hook file of a task (task/<name>/api_v1.py), for offline tests of its helpers and of the
     methods of its CTask class that need no engine: the source is executed in a namespace of its own with a
     stand-in for the task engine's base class (the real one needs cMeta), and nothing is registered in
-    sys.modules, so the tests that run tasks through the engine are not disturbed.
+    sys.modules, so the tests that run tasks through the engine are not disturbed. The other names a task
+    imports from the task category API (prompt_via_file, ...) are the real ones, loaded from the repo.
 
         ns = task_namespace("run-ai");  CTask = ns["CTask"];  task = CTask.__new__(CTask)
     """
     loaded = {}
+    ctask = []
+
+    def ctask_names(*names):
+        """The real helpers of category/task/api/ctask.py (it needs no cMeta to load), by name."""
+        if not ctask:
+            spec = importlib.util.spec_from_file_location("ctask_under_test", str(REPO_ROOT / "category" / "task" / "api" / "ctask.py"))
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            ctask.append(module)
+        return tuple(getattr(ctask[0], n) for n in names)
 
     def load(task: str) -> dict:
         if task not in loaded:
             path = REPO_ROOT / "task" / task / "api_v1.py"
-            source = path.read_text(encoding="utf-8").replace(
-                "from task_c36be4b9314a45e0.api.ctask import InitCTask", "InitCTask = object")
-            namespace = {"__file__": str(path), "__name__": "task_" + task.replace("-", "_") + "_under_test"}
+            source = path.read_text(encoding="utf-8")
+            # the one import line of the task category API becomes one line again (the line numbers of the file
+            # are kept for tracebacks): the base class a stand-in, the helpers the real ones
+            m = re.search(r"^from task_c36be4b9314a45e0\.api\.ctask import ([^\n]+)$", source, re.M)
+            if m:
+                names = [n.strip() for n in m.group(1).split(",") if n.strip() and n.strip() != "InitCTask"]
+                stand_in = "InitCTask = object"
+                if names:
+                    stand_in += "; %s, = _ctask_names(%s)" % (", ".join(names), ", ".join(repr(n) for n in names))
+                source = source[:m.start()] + stand_in + source[m.end():]
+            namespace = {"__file__": str(path), "__name__": "task_" + task.replace("-", "_") + "_under_test",
+                         "_ctask_names": ctask_names}
             exec(compile(source, str(path), "exec"), namespace)
             loaded[task] = namespace
         return loaded[task]

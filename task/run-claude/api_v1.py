@@ -9,7 +9,7 @@ import re
 import subprocess
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done
 
 # Suffix appended to the prompt file name (without extension) when
 # --output_file is not given
@@ -59,10 +59,10 @@ REPRODUCIBLE_FLAGS = ['--exclude-dynamic-system-prompt-sections', '--strict-mcp-
 MODEL_FLAGS = ['--model']
 EXACT_MODEL_PATTERN = r'-\d{8}$'
 
-# Longest prompt that --interactive preloads without a warning. An interactive
-# session owns stdin, so the prompt cannot be piped in and travels as a command
-# line argument instead - and Windows caps a whole command line at 32767 chars.
-MAX_INTERACTIVE_PROMPT_CHARS = 30000
+# An interactive session owns stdin, so its first prompt travels as a command line
+# argument - which the OS caps (32767 chars for the whole line on Windows). A longer
+# prompt is written to a file and the session is asked to read it first: see
+# prompt_via_file() in the task category API (MAX_PROMPT_ARG_CHARS there).
 
 
 def _flag_value(flags, name):
@@ -113,6 +113,7 @@ class CTask(InitCTask):
             ctx: dict,                      # cMeta context
             prompt: str = '',               # prompt text
             prompt_file: str = '',          # file with the prompt text
+            long_prompt_file: str = '',     # where a prompt too long for the command line is written for the session to read
             interactive: bool = False,      # preload the prompt, then stay in the interactive claude session
             i: bool = False,                # short alias of "interactive" (--i / -i)
             yes: bool = False,              # answer "yes" to all claude questions (edits, Bash, ...)
@@ -169,10 +170,18 @@ class CTask(InitCTask):
         statistics to a file (as JSON when its extension is ".json", otherwise as
         the printed text) and turns "stats" on by itself.
 
+        An interactive session preloads the prompt as a command line argument, which
+        the OS caps (32767 characters for the whole line on Windows). A prompt longer
+        than MAX_PROMPT_ARG_CHARS of the task category API (30000) is therefore
+        written to a file - "long_prompt_file" when given, else next to the prompt
+        file, else a temporary file removed after the run - and the session is asked
+        to read it first: it then follows it and stays interactive as before.
+
         Args:
             ctx (dict): cMeta context.
             prompt (str): Prompt text (appended after the prompt file text).
             prompt_file (str): File with the prompt text (read as UTF-8).
+            long_prompt_file (str): Where a prompt too long for the command line is written for the session to read.
             interactive (bool): If True, preload the prompt (optional here) and stay in the claude session.
             i (bool): Short alias of "interactive".
             yes (bool): If True, answer "yes" to all claude questions and never prompt.
@@ -196,6 +205,7 @@ class CTask(InitCTask):
                 - **output** (str): Full output of claude ('' if `interactive`).
                 - **output_file** (str): Where the output was recorded ('' if skipped).
                 - **prompt** (str): The assembled prompt sent to claude.
+                - **long_prompt_file** (str): The file the prompt was written to when it was too long for the command line ('' if none).
                 - **returncode** (int): Return code of the claude CLI.
                 - **duration** (float): Run time in seconds.
                 - **interactive** (bool): True if claude was run as an interactive session.
@@ -256,11 +266,13 @@ class CTask(InitCTask):
                 print (f'{space}INFO: no prompt was given (--prompt / --prompt_file) - '
                        f'opening an interactive claude session')
 
-        if interactive and len(full_prompt) > MAX_INTERACTIVE_PROMPT_CHARS and con:
-            print ('')
-            print (f'{space}WARNING: the prompt is {len(full_prompt)} chars long - an interactive '
-                   f'session takes it as a command line argument, which the OS may refuse')
-            print (f'{space}         drop --interactive to send it through stdin instead')
+        # An interactive session preloads the prompt as a command line argument, which the OS caps:
+        # a long one is written to a file and the session is asked to read it first (it then goes on
+        # interactively as before). A non-interactive run sends the prompt through stdin.
+        pr = prompt_via_file(full_prompt, 'claude', when=interactive, path=long_prompt_file,
+                             prompt_file=prompt_file, con=con, space=space)
+        if pr['return'] > 0:
+            return pr
 
         ###########################################################################################
         # Pick the output and statistics files.
@@ -392,15 +404,16 @@ class CTask(InitCTask):
 
         cmd = base_cmd + flags
 
-        # In an interactive session the prompt is the trailing positional argument
+        # In an interactive session the prompt (or the request to read its file) is the trailing positional argument
         if interactive and full_prompt:
-            cmd.append(full_prompt)
+            cmd.append(pr['text'])
 
         if con:
             print ('')
             print (f'{space}RUN: {" ".join(base_cmd + flags)}')
             if full_prompt:
-                where = 'as an argument' if interactive else 'via stdin'
+                where = f'in a file the session is asked to read first: {pr["file"]}' if pr['file'] \
+                    else ('as an argument' if interactive else 'via stdin')
                 print (f'{space}     (prompt: {len(full_prompt)} chars {where})')
             if interactive:
                 print (f'{space}     (interactive session - claude keeps this terminal)')
@@ -428,7 +441,10 @@ class CTask(InitCTask):
             except KeyboardInterrupt:
                 returncode = 1
             except Exception as e:
+                prompt_via_file_done(pr)
                 return self.cm.error(f'cannot run "{claude_path}": {e}', 1)
+
+            prompt_via_file_done(pr)
 
             duration = time.time() - start_time
 
@@ -443,6 +459,7 @@ class CTask(InitCTask):
                     'output': '',
                     'output_file': '',
                     'prompt': full_prompt,
+                    'long_prompt_file': pr['file'],
                     'returncode': returncode,
                     'duration': duration,
                     'interactive': True,

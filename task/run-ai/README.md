@@ -77,6 +77,8 @@ as if it had been started there. A plain `claude` or `codex` started in a folder
     log/<stamp>.<harness>.stats.json   token use and cost (one-prompt runs)
     log/<stamp>.claude.settings.json   the settings file given to claude for this run (the memory folder)
     log/<stamp>.<harness>.context.md   what the agent was told first: the orientation and the context (other artifacts' memory and skills)
+    log/<stamp>.<harness>.prompt.md    the prompt, when it was too long for a command line argument (an interactive session; opencode and
+                                       openclaw always): the harness is asked to read it first, then goes on as before
     log/<id>.conversation.json         a conversation: its runs and, per harness, the native session it continues
     log/<id>.transcript.md             the whole conversation, re-exported from the harnesses' own stores after every run
     log/<id>.summary.md                its summary, written on request (--summarize) and read first at a hand-over
