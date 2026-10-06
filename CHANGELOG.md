@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## 0.43.0.1
+## 0.43.1
 - **`run-ai --write=ask|project|all|none`, `-w`: what a run may write, in one switch.** It sets the harness's own
   approvals and the guard of the used artifacts together: `ask` (the default) as before; `project` lifts the
   harness's questions (what `--yes` does); `all` (`-w`) also lets a session change the memory and skills of the used

@@ -670,9 +670,9 @@ source, the estimate and the limit, the flags, the notes.
   machine had no key. Antigravity's transcript is a best
   effort (protobuf store). Gemini CLI's flags, event stream and session files are checked against the CLI itself and
   runs that fail on purpose, not against a session with a licensed account.
-- The write modes are checked live with Claude Code (`ask`, `project`, `all`, `none`), OpenCode and Antigravity
-  (`all`, `none`). Codex's read-only override and Gemini's plan mode are taken from the CLIs' own help and not run in
-  these modes; OpenClaw has no switch. In its plan mode a one-prompt Antigravity run writes nothing but may also give
+- The write modes are checked live with Claude Code (`ask`, `project`, `all`, `none`), Codex (`ask`, `all`, `none`),
+  OpenCode and Antigravity (`all`, `none`). Gemini's plan mode is taken from the CLI's own help and not run;
+  OpenClaw has no switch. In its plan mode a one-prompt Antigravity run writes nothing but may also give
   no answer (it stops at the first tool it cannot ask about).
 - Only Claude writes `!AI/memory` by itself; the other harnesses write memories there by following the orientation.
 - No check yet that a used artifact's layer allows it to be read from the project (a shared repository reading a
