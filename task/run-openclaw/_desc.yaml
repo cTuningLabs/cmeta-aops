@@ -30,6 +30,12 @@ authors: Grigori Fursin
 #
 # --stats asks OpenClaw for JSON output ("--json") and prints the reply text plus the token usage and
 # cost it reports. --stats_file={file} records the same statistics ("*.json" = JSON, otherwise text).
+# With the claude-cli provider (--model claude-cli/<model>: the local Claude Code login) OpenClaw
+# reports only the last model call of a turn, so the counts are taken from Claude Code's own session
+# file of the turn instead (every model call, each once).
+#
+# OpenClaw works in its own workspace (~/.openclaw/workspace, from its config) whatever the current
+# directory is: give it absolute paths (run-ai tells it where the project is).
 #
 # The prompt sent is the text of --prompt_file (when given), then "\n", then the text of --prompt.
 # The full output is streamed to the console and recorded into "{prompt_file without extension}-output.txt"

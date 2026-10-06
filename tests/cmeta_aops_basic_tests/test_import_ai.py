@@ -10,6 +10,7 @@ through the engine on folders of a temporary directory (the project is the curre
 import json
 import os
 import pathlib
+import re
 
 import pytest
 
@@ -159,6 +160,34 @@ def test_a_skill_that_changed_below_its_top_folder_is_not_identical(world):
     assert world(skills = str(world.skills / "deploy"))["skills"] == {"copied": 0, "replaced": 0, "skipped": 1}     # identical now
 
 
+def test_the_source_of_each_skill_is_recorded_and_run_ai_sees_a_copy_go_apart(world, task_namespace):
+    drift = task_namespace("run-ai")["CTask"]._skill_drift
+    skills = world.ai / "skills"
+    assert world(skills = str(world.skills))["skills"]["copied"] == 2
+    sources = json.loads(read(skills / ".sources.json"))
+    assert sorted(sources) == ["deploy", "review"]
+    assert os.path.normcase(sources["deploy"]["source"]) == os.path.normcase(str(world.skills / "deploy"))
+    assert len(sources["deploy"]["hash"]) == 64 and sources["deploy"]["imported"]
+    assert drift(str(skills)) == []
+
+    # the source changes: the copy is older
+    put(world.skills / "deploy" / "files" / "check.sh", "echo ok, and more\n")
+    assert [(n, c) for n, c, s in drift(str(skills))] == [("deploy", "source")]
+    assert world(skills = str(world.skills / "deploy"), overwrite = True)["skills"]["replaced"] == 1
+    assert drift(str(skills)) == []
+    # the copy changes here: said so, differently; then both
+    put(skills / "review" / "SKILL.md", SKILL.format(name = "review") + "A local step.\n")
+    assert [(n, c) for n, c, s in drift(str(skills))] == [("review", "copy")]
+    put(world.skills / "review" / "SKILL.md", SKILL.format(name = "review") + "Another step.\n")
+    assert [(n, c) for n, c, s in drift(str(skills))] == [("review", "both")]
+    # a source that is not on this machine says nothing; a cache folder is no change
+    import shutil
+    shutil.rmtree(str(world.skills / "review"))
+    put(skills / "deploy" / "__pycache__" / "x.pyc", "cache")
+    assert drift(str(skills)) == []
+    assert drift(str(world.tmp / "no-skills-here")) == []
+
+
 def test_an_index_with_a_byte_order_mark_and_overwrite_of_unchanged_memories(world):
     memory = world.ai / "memory"
     put(memory / "build.md", read(world.source / "build.md"))                        # the same file as the source
@@ -197,6 +226,19 @@ def test_the_memory_claude_code_keeps_for_a_folder(world, task_namespace):
 
     r = world(claude_folder = str(world.tmp / "a folder claude never saw"))
     assert r["return"] > 0 and "no native Claude memory" in r["error"]
+
+    # a path whose slug is longer than 200 characters: Claude Code cut it and appended a hash
+    deep = world.tmp / ("d" * 120) / ("e" * 90)
+    r = world(claude_folder = str(deep))
+    assert r["return"] > 0 and "shortened slug" in r["error"]
+    slug = re.sub(r"[^A-Za-z0-9]", "-", os.path.normpath(str(deep)))
+    native = world.tmp / "claude" / "projects" / (slug[:200] + "-a1b2c3") / "memory"
+    try:
+        put(native / "deep.md", MEMORY.format(name = "deep", description = "d", body = "n"))
+    except OSError:
+        pytest.skip("this file system does not take paths this long (Windows without LongPathsEnabled)")
+    r = world(claude_folder = str(deep))
+    assert r["return"] == 0 and r["memories"]["copied"] == 1 and (world.ai / "memory" / "deep.md").is_file()
 
 
 def test_errors(world):

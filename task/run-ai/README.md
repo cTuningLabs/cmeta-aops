@@ -24,6 +24,7 @@ cxt run-ai --harness=antigravity "..."               # Google's agy (also --harn
 cxt run-ai --harness=gemini "..."                    # Gemini CLI: a Code Assist Standard/Enterprise licence or an API key
 cxt run-ai --context="organization::my-org" "..."    # read one more artifact's memory and skills for this run
 cxt run-ai --dry_run                                 # the project, its !AI, the context, the conversation and the command - nothing runs
+cxt run-ai -w "..."                                  # no questions, write anywhere (--write=all); --write=project|none|ask; the config sets the default
 cxt run-ai --pending                                 # the changes staged for the artifacts this project uses
 cxt run-ai --apply_pending                           # show each of them and apply it on your word
 cxt run-ai --info                                    # every flag of this task, one line each
@@ -69,6 +70,7 @@ as if it had been started there. A plain `claude` or `codex` started in a folder
     memory/MEMORY.md                   the index the agent loads first
     memory/<name>.md                   one file per memory, as the agent writes it
     skills/<name>/SKILL.md             the project's skills (import-ai brings them; claude loads them as a plugin)
+    skills/.sources.json               where import-ai copied each skill from (run-ai warns when a copy and its source went apart)
     .claude-plugin/plugin.json         the manifest that makes !AI a claude plugin (written by run-ai or import-ai)
     log/<stamp>.<harness>.run.md       how this run was made: harness, task, project, model, effort, conversation, session, flags, result
     log/<stamp>.<harness>.output.txt   the agent's output (the header names the prompt and the command)
@@ -77,6 +79,7 @@ as if it had been started there. A plain `claude` or `codex` started in a folder
     log/<stamp>.<harness>.context.md   what the agent was told first: the orientation and the context (other artifacts' memory and skills)
     log/<id>.conversation.json         a conversation: its runs and, per harness, the native session it continues
     log/<id>.transcript.md             the whole conversation, re-exported from the harnesses' own stores after every run
+    log/<id>.summary.md                its summary, written on request (--summarize) and read first at a hand-over
     log/<stamp>.import.md              what import-ai brought in, from where
     log/<stamp>.apply_pending.md       what --apply_pending applied to the artifacts this project uses
     log/<stamp>.applied.json           what was applied to THIS artifact from a project that uses it (or kept by the guard)
@@ -91,7 +94,9 @@ settings file then goes to the temp directory, and no conversation is recorded o
 
 A **conversation** is a thread of runs on one project. Without a flag, a run continues the conversation with the
 latest activity; `--new` starts another; `--conversation=<id or prefix>` picks one (`--resume=` is the same flag);
-`--conversations` lists them. The id is the stamp of the first run (`20261004-181659`).
+`--conversations` lists them. The id is the stamp of the first run (`20261004-181659`; a run started within the
+same second as another of the same project gets `-2`, `-3`, ...: the stamp is reserved with an exclusive
+`log/<stamp>.lock`, removed once the run record holds it).
 
 Each harness keeps its own **native session** for a conversation, and `run-ai` remembers it in
 `!AI/log/<id>.conversation.json`:
@@ -102,7 +107,7 @@ Each harness keeps its own **native session** for a conversation, and `run-ai` r
 | `codex` | - | `run-codex --resume=<id>` -> `codex resume <id>` (interactive) / `codex exec resume <id> -` (one prompt) | the `thread.started` event, else `state_*.sqlite` (the newest thread of the folder) in the project's `!AI/codex` - Codex's SQLite state lives there (`CODEX_SQLITE_HOME`; `--codex_state=home` keeps it in `CODEX_HOME`); the rollout files stay in `CODEX_HOME` |
 | `antigravity` (`agy`) | - | `--conversation <id>` | the `result` event's `conversation_id`, else `~/.gemini/antigravity-cli/cache/last_conversations.json` (the folder's entry), else the newest `conversations/*.db` |
 | `opencode` | - | `--session <id>` | `~/.local/share/opencode/opencode.db` (the newest session of the folder) |
-| `openclaw` | `--session-id <uuid>` (run-ai chooses it) | `--session-id <uuid>` | run-ai |
+| `openclaw` | `--session-id <uuid>` (run-ai chooses it); the terminal UI: `--session agent:main:explicit:<uuid>` | `--session-id <uuid>`; the UI: `--session <key>` | run-ai; for a new session of the UI, OpenClaw's `sessions.json` (the id it filed the key under) |
 | `gemini` | `--session-id <uuid>` (run-ai chooses it) | `--resume <uuid>` (a session of the project folder) | run-ai |
 
 So `cxt run-ai` after `cxt run-ai` is `claude --resume` of the same session, with the memory folder and the records as
@@ -116,11 +121,22 @@ words of an old request read like an instruction.) A conversation
 whose earlier runs left nothing to hand over (a session quit before its first message) gets a fresh session and no
 hand-over text.
 
+A long conversation can be **summarized**: `cxt run-ai --summarize` (the latest conversation, or
+`--conversation=<id>`) gives the transcript to the harness in one prompt - claude with its `haiku` unless `--model`
+says otherwise; a transcript over 120,000 characters is read by the agent from its file - and writes the answer to
+`!AI/log/<id>.summary.md` (goal, what was done, the state, open items, facts to keep). The conversation itself is not
+continued and keeps its place in the list. From then on a hand-over says "read its summary ... (written after run N of
+M), then its transcript as far as you need", and `--conversations` marks it `[summary after run N]`. Run it again
+when the conversation has gone on.
+
 The **transcript** `!AI/log/<id>.transcript.md` is re-exported after every run from the harnesses' own stores
 (Claude's `~/.claude/projects/<slug>/<id>.jsonl`; Codex's `thread_history_*.sqlite`, the rollout files for older
-versions; OpenCode's database; Gemini's `~/.gemini/tmp/<project>/chats/session-*.jsonl`; OpenClaw's session files,
-best effort): one segment per harness session, the user and assistant texts, tool calls as one line each, tool
-results and thinking left out. Antigravity keeps protobuf blobs:
+versions; OpenCode's database; Gemini's `~/.gemini/tmp/<project>/chats/session-*.jsonl`; OpenClaw's
+`~/.openclaw/agents/<agent>/sessions/<id>.jsonl`): one segment per harness session, the user and assistant texts,
+tool calls as one line each, tool results and thinking left out. What run-ai puts in front of a request for the
+harnesses that take it in the prompt (a hand-over, the orientation, the context) ends with the line
+`<!-- run-ai: the request of this run follows -->`; the transcript keeps what follows it and says that the rest is
+in the run's records. Antigravity keeps protobuf blobs:
 the readable runs are recovered as a best effort (the prompts, the model's reasoning, the tool calls with their
 arguments; a short final answer may be lost), and run-ai's own record of each run (the prompt and the output) follows.
 A segment whose store is gone keeps the text of the previous export. The transcript is the portable record: it is
@@ -202,7 +218,10 @@ prompt, and read a skill when they need it. The skills of the **context** artifa
 `--plugin-dir` on each `!AI` that has a manifest, the list in the context text otherwise.
 
 A skill copied into `!AI/skills` from a repository is a copy: when the repository's skill changes, import it again
-with `--overwrite`.
+with `--overwrite`. `import-ai` records where each skill came from, when, and a hash of what it copied in
+`!AI/skills/.sources.json`; every run compares each copy with its source when that source is on this machine and
+says which side changed since the import - the source (a WARNING with the `import-ai ... --overwrite` command that
+renews the copy), the copy (a note: carry the change over to the source if it should stay), or both.
 
 ## How each harness is pointed at `!AI` - the tool's own settings, no API keys
 
@@ -213,7 +232,8 @@ with `--overwrite`.
 | `codex` | the `!AI/memory` index and the skills are prepended to the prompt; one-prompt runs get `--skip-git-repo-check`, because `codex exec` refuses a folder that is neither a git repository nor a trusted project; `CODEX_SQLITE_HOME=<project>/!AI/codex` keeps Codex's threads, their history and its memories inside the project (`--codex_state=home` keeps `CODEX_HOME`) | read only through the prompt; Codex's own memory store lives in the project's `!AI/codex` |
 | `antigravity` (also `agy`) | `task/run-agy` with `tool/agy`: the index and the skills are prepended to the prompt; context folders join the workspace with `--add-dir`. agy is Google's successor of Gemini CLI for personal Google accounts. The `stream-json` events give the answer, the token counters and the conversation id, and `--conversation <id>` resumes it. Without a login agy prints the login URL and waits; `run-agy` then fails with a sign-in hint - sign in once with `cx tool run agy` | read only; agy has no memory of its own, only conversations (`~/.gemini/antigravity-cli`) |
 | `gemini` | `task/run-gemini` with `tool/gemini`: the index and the skills are prepended to the prompt; context folders join the workspace with `--include-directories`; headless runs get `--skip-trust` and never open a browser (`NO_BROWSER`). Gemini CLI serves Gemini Code Assist Standard/Enterprise licences, paid API keys (`GEMINI_API_KEY`) and Vertex AI; a personal Google account is refused, and the run then fails with a hint that says so - use `--harness=antigravity` for those | read only; Gemini's own memory is its global `GEMINI.md` |
-| `openclaw`, others | the task `run-<harness>` with the shared parameters (`--yes` and `--reproducible` are forwarded only when given: `run-openclaw` has neither); the index is prepended to the prompt | - |
+| `openclaw` | `task/run-openclaw` (`openclaw agent --local --json`): the index and the skills are prepended to the prompt; `--session-id` names the session and resumes it. OpenClaw works in its own workspace (`~/.openclaw/workspace`, from its config, with its persona files `AGENTS.md`, `SOUL.md`, ...) whatever the current directory is, so the orientation tells it the project folder and it uses absolute paths there. Its default model (`openai/gpt-5.5`) needs an OpenAI key; `--model=claude-cli/<model>` runs through the local Claude Code login, and the token counts of such a turn are read from Claude Code's own session (OpenClaw reports only the last model call). The terminal UI (`--interactive`) takes the session's key, `--session agent:main:explicit:<id>`, and no `--model`: run-ai leaves it out and says so - type `/model <provider/model>` in the UI, or set the default once with `openclaw models set <provider/model>`. The UI files a new session under an id of its own; run-ai reads it from OpenClaw's index afterwards, so that the next turn continues that session | read only; OpenClaw's own memory lives in its workspace |
+| others | the task `run-<harness>` with the shared parameters (`--yes` and `--reproducible` are forwarded only when given); the index is prepended to the prompt | - |
 
 A prompt that tells the agent to *search* for something makes OpenCode and Codex reach for tools, and a tool that
 needs a permission then hangs a one-prompt run until the timeout. Ask them to answer from the prompt or their
@@ -270,7 +290,9 @@ note. The old name `--agent` of `--harness` still works and says so.
 
 When `!AI/memory` holds no memory yet and Claude Code's own memory folder for this path
 (`~/.claude/projects/<slug>/memory`, the slug being the path with every non-alphanumeric character turned into `-`,
-both spellings of the drive letter tried; `CLAUDE_CONFIG_DIR` moves `~/.claude`) does, the files are **copied** in.
+both spellings of the drive letter tried; a slug longer than 200 characters is cut there by Claude Code and followed
+by a hash, so the folders with that prefix are taken whose sessions ran in this path; `CLAUDE_CONFIG_DIR` moves
+`~/.claude`) does, the files are **copied** in.
 Nothing is lost, the original folder is left as it is, and the project starts with the memories it already had. A
 folder that holds only a `MEMORY.md` index (a pointer left behind when the memories moved elsewhere) has nothing to
 copy. From then on `run-ai` reads and writes `!AI/memory` only; a plain `claude` started in the same folder still uses
@@ -325,6 +347,7 @@ cxt run-ai --context_depth=2                                      # follow ai_us
 cxt run-ai --skip_ai_uses                                         # this run reads none of the ai_uses sources (the project's, the repository's, this machine's)
 cxt run-ai --context_limit=5                                      # at most 5 sources (default 20)
 cxt run-ai --max_context_tokens=20000                             # the limit of the estimate below (default: the config, else 30,000)
+cxt run-ai --trim_context                                         # over that limit, leave sources out (the last first) instead of stopping
 ```
 
 - **`ai_uses`** is the directed counterpart of `connections`: `connections` say "these two have something to do with
@@ -344,7 +367,11 @@ cxt run-ai --max_context_tokens=20000                             # the limit of
   as skipped, with the reason (no `!AI` yet, not found, not a cRef, over `--context_limit`).
 - **The estimate:** before the run, the orientation, the memory index, the skills, the context sources, the hand-over
   and the prompt are counted (chars / 4, within about 25%) and printed with the limit; over the limit the run fails
-  under `-q`, `--yes` or without a terminal, and asks otherwise. The estimate goes into the run record and the
+  under `-q`, `--yes` or without a terminal, and asks otherwise. With `--trim_context` (or `trim_context: true` in the
+  config, for every run of this machine) the context sources are left out instead, from the last - this machine's
+  mapping, the repository default and the deeper levels come after the project's own list and `--context` - until
+  the estimate fits; the notes and the skipped sources name them. When the project's own part alone is over the
+  limit, the run stops or asks as before. The estimate goes into the run record and the
   conversation file, next to the harness's own counters afterwards; "last turn N min ago" says whether the harness's
   prompt cache (Claude: 5 min, 60 with extended caching) is probably still warm.
 - **What the agent gets:** one rendered file, `!AI/log/<stamp>.<harness>.context.md` (always written: the orientation,
@@ -400,16 +427,68 @@ cxt run-ai --project=<an artifact of that repository> --dry_run   # the source s
 |---|---|
 | `local_ai_uses` | this machine's mapping (the section above) |
 | `max_context_tokens` | the limit of the context estimate when `--max_context_tokens` is not given (default 30,000); the older key `run_ai_max_context_tokens` of the config `default` is still read |
+| `trim_context` | `true`: every run leaves context sources out to fit the limit, as `--trim_context` does |
+| `write` | what a run may write when no flag says so: `ask` (the default), `project`, `all` or `none` (the next section) |
 
 ```bash
 cx config set task-run-ai --meta.max_context_tokens=40000
+cx config set task-run-ai --meta.trim_context=true
+cx config set task-run-ai --meta.write=all
 cx config show task-run-ai
 ```
 
+## What a run may write: `--write`, `-w`, and the config
+
+Two things decide what a session can change: the harness's own approvals and sandbox, and run-ai's guard of the
+artifacts the project uses. One switch sets both:
+
+```bash
+cxt run-ai -w "..."                           # --write=all: no questions, write anywhere, the used artifacts' memory too
+cxt run-ai --write=project "..."              # no questions; the used artifacts still take proposals only (what --yes does)
+cxt run-ai --write=none "..."                 # read-only
+cx config set task-run-ai --meta.write=all    # this machine's default, for every run and harness
+cxt run-ai --write=ask "..."                  # one careful run on a machine whose default is all
+```
+
+| `--write=` | The harness | The project | Memory and skills of the used artifacts |
+|---|---|---|---|
+| `ask` (default) | asks before it edits a file or runs a command; a one-prompt run has nobody to ask, so there it mostly cannot write | after your approval | proposals only; you are asked about a direct change |
+| `project` (also `--yes`) | asks nothing | free | proposals only; a direct change is put back and staged |
+| `all` (also `-w`) | asks nothing | free | may be changed directly: kept, recorded, the versions before the run saved |
+| `none` | runs in its plan / read-only mode | no writes | no writes; a direct change is put back and staged |
+
+A flag wins over the config, and the config is read only when neither `--write`, `-w` nor `--yes` is given. The config
+artifact lives in the `local` repository, so the default of one machine travels nowhere: whoever clones a repository
+starts from `ask`.
+
+| Harness | `project` and `all` (its task's `--yes`) | `none` |
+|---|---|---|
+| `claude` | `--permission-mode bypassPermissions` | `--permission-mode plan` |
+| `codex` | `--dangerously-bypass-approvals-and-sandbox` | `-c sandbox_mode="read-only"` |
+| `opencode` | `--auto` | `--agent plan` |
+| `antigravity` | `--dangerously-skip-permissions` | `--mode plan` |
+| `gemini` | `--yolo` | `--approval-mode plan` |
+| `openclaw`, others | none that run-ai knows: the harness follows its own settings (a task `run-<x>` gets `yes` from `--yes` itself) | told to change nothing; nothing enforces it |
+
+The same setting given after `--` (`-- --permission-mode acceptEdits`) is your own choice for that run and is left
+alone.
+
+**With `all`**, the session is told that it may change the memory and skills of the used artifacts where they are.
+After the run, run-ai lists what changed there, writes `<artifact>/!AI/log/<stamp>.applied.json` (what, when, from
+which project - the same record an applied proposal leaves) and saves the version every changed or deleted file had
+before the run under the project's `!AI/log/<stamp>.before/<alias>--<UID>/`. To take a change back, copy the file from
+there. This is the guard's mode `keep`; `--context_guard=<mode>` still overrides it (`--write=all
+--context_guard=restore` lifts the harness's questions and keeps the proposals).
+
+**What it means.** With `project` and `all` nothing technical stands between the session and any command the harness
+can run - a push, a delete outside the project, an installation - and with `all` a weak model can spoil a memory that
+many projects read (the saved versions are the way back). Rules such as "commit only on my word" then hold as
+instructions in the memory, not as a barrier. `none` relies on the harness's own read-only mode where it has one.
+
 ## Changing a used artifact: proposals in `!AI/pending`, `--apply_pending`, the context guard
 
-The memory and skills of the artifacts a project uses stay **read-only for a run** and are changed **only on the
-user's word**. run-ai does this itself, with plain files and the standard library, so it is the same for every
+Unless a run is given write access to them (`--write=all`, the section above), the memory and skills of the artifacts
+a project uses stay **read-only for a run** and are changed **only on the user's word**. run-ai does this itself, with plain files and the standard library, so it is the same for every
 harness, platform and permission mode and for whoever runs the project on another machine - no setting of a harness
 or of one PC is involved (a harness's own permission rule covers one harness, its path syntax one OS).
 
@@ -445,7 +524,7 @@ Only `memory/` and `skills/` can be proposed; anything else is listed as refused
 
 ```bash
 cxt run-ai --pending            # what is staged, with the difference each proposal would make; nothing changes
-cxt run-ai --apply_pending      # the same, then one question per artifact: Apply N change(s) to <artifact>? [y/N]
+cxt run-ai --apply_pending      # the same, then one question per artifact: Apply N change(s) to <artifact>? [y]es, all / [e]ach, one by one / [N]o
 cxt run-ai --apply_pending -q   # without the question (also --yes); with nobody to ask and neither flag, nothing is applied
 ```
 
@@ -458,9 +537,10 @@ snapshotted; when it is back they are compared. For what changed without going t
 
 | `--context_guard=` | A direct change |
 |---|---|
-| `ask` (default) | you are asked, per artifact: *Keep them? [y/N]*. Yes: kept, and recorded like an applied proposal. No - or nobody to ask (`-q`, `--yes`, no terminal, an API call): as `restore` |
-| `restore` | is turned into a proposal under `!AI/pending` (nothing is lost) and the file is put back as it was before the run |
+| `ask` (default with `--write=ask`) | you are asked, per artifact: *Keep them? [y/N]*. Yes: kept, and recorded like an applied proposal. No - or nobody to ask (`-q`, `--yes`, no terminal, an API call): as `restore` |
+| `restore` (default with `--write=project` and `none`) | is turned into a proposal under `!AI/pending` (nothing is lost) and the file is put back as it was before the run |
 | `report` | is listed in the run record and on the console; nothing is touched |
+| `keep` (default with `--write=all`) | stays: listed, recorded in the artifact like an applied proposal, the version before the run saved in the project's `!AI/log/<stamp>.before/` |
 | `off` | is not looked for |
 
 Why a question and not a silent restore: a run cannot tell *who* changed a file. A `git pull`, a sync or your own edit
@@ -497,9 +577,10 @@ RUN-AI: changes staged for the artifacts this project uses (<my-app>/!AI/pending
   "cxt run-ai --apply_pending" shows them again and applies them on your word
 ```
 
-`cxt run-ai --apply_pending` shows the same, asks *Apply 2 change(s) to ...shared-rules...? [y/N]* and applies on "y":
-the memory and the index line are in `shared-rules`, an `applied.json` is in its `!AI/log`, an `apply_pending.md` in
-the project's, and the staging folder is gone.
+`cxt run-ai --apply_pending` shows the same, asks *Apply 2 change(s) to ...shared-rules...? [y]es, all / [e]ach, one
+by one / [N]o* and applies on "y": the memory and the index line are in `shared-rules`, an `applied.json` is in its
+`!AI/log`, an `apply_pending.md` in the project's, and the staging folder is gone. "e" asks for each change
+(*NEW memory/two.md? [y/N]*), and what is not applied stays staged.
 
 **The words of a listing:** `NEW` a file the artifact does not have; `CHANGE` a replacement, shown as a unified
 difference; `APPEND` the lines that would be added; `DELETE` a removal; `SAME` the artifact has it already (cleared
@@ -513,6 +594,8 @@ when applying); `REFUSED` a path outside `memory/` and `skills/`.
 | `<stamp>.apply_pending.md` | `!AI/log` of the project that proposed | which artifact got which change |
 | the lines "context guard: ..." | the run record `!AI/log/<stamp>.<harness>.run.md` and the console | the guard's mode at the start; after the run every direct change and what was done about it; how many proposals wait |
 | `context_guard`, `context_changes`, `pending` | the task's result (`-j`) | the mode, the direct changes found, the number of waiting proposals |
+| `write`, `write_from` | the task's result (`-j`) and the row "write" of the run record | what the run could write, and whether a flag, `--yes` or the config said so |
+| `<stamp>.before/<alias>--<UID>/` | `!AI/log` of the project | with `--write=all`: the version each directly changed or deleted file of a used artifact had before the run |
 
 **Questions that come up:**
 
@@ -559,7 +642,7 @@ is neither a git repository nor a trusted project, so `run-ai` adds `--skip-git-
 ## Tests
 
 ```bash
-python -m pytest tests -q -p no:cacheprovider -k "run_ai or import_ai or run_agy"
+python -m pytest tests -q -p no:cacheprovider -k "run_ai or import_ai or run_agy or run_openclaw"
 ```
 
 In the repository's hermetic suite (`tests/cmeta_aops_basic_tests/`; no network, no harness, a throwaway
@@ -570,8 +653,9 @@ In the repository's hermetic suite (`tests/cmeta_aops_basic_tests/`; no network,
 | `test_run_ai_pending.py` | the proposals and the guard, on plain folders |
 | `test_run_ai_context.py` | the `--context` entries, cRef matching, the `ai_uses` values, this machine's mapping, the seed, folder names with brackets, the harnesses and their model lists |
 | `test_run_ai_conversations.py` | the conversation files, how each harness starts and resumes a session, the Claude and Gemini session readers, the transcript, the hand-over |
-| `test_run_ai_engine.py` | the task through the engine with a stand-in harness that calls no model: records, conversations, context sources, the config artifact, the seed, proposals and the guard end to end |
+| `test_run_ai_engine.py` | the task through the engine with a stand-in harness that calls no model: records, conversations, context sources, the config artifact, the seed, the write modes, proposals and the guard end to end |
 | `test_run_agy_gemini.py` | the event streams of Antigravity CLI and Gemini CLI turned into text and token counts; what a failed Gemini run is told |
+| `test_run_openclaw.py` | OpenClaw's `--json` result turned into the reply and the token counts (from Claude Code's own session for the `claude-cli` provider) |
 | `test_import_ai.py` | import-ai: what is copied, skipped and replaced, the index, the manifest, the record |
 
 A dry run (`--dry_run -j`) shows a real setup without starting a harness: the context with the kind of each
@@ -579,9 +663,17 @@ source, the estimate and the limit, the flags, the notes.
 
 ## Not covered
 
-- OpenClaw's session flags and transcript reader are written from its file layout; Antigravity's transcript is a best
+- OpenClaw is checked live with the `claude-cli` provider (OpenClaw 2026.6.10: new sessions, resume, the
+  transcript, hand-overs both ways), not with an API-key provider, whose tool calls may be written differently in
+  its session file. Its terminal UI (`--interactive`) was started on a run-ai session key (it attaches to that
+  session) but not used for a whole conversation, since it takes no `--model` and the default model of the test
+  machine had no key. Antigravity's transcript is a best
   effort (protobuf store). Gemini CLI's flags, event stream and session files are checked against the CLI itself and
   runs that fail on purpose, not against a session with a licensed account.
+- The write modes are checked live with Claude Code (`ask`, `project`, `all`, `none`), Codex (`ask`, `all`, `none`),
+  OpenCode and Antigravity (`all`, `none`). Gemini's plan mode is taken from the CLI's own help and not run;
+  OpenClaw has no switch. In its plan mode a one-prompt Antigravity run writes nothing but may also give
+  no answer (it stops at the first tool it cannot ask about).
 - Only Claude writes `!AI/memory` by itself; the other harnesses write memories there by following the orientation.
 - No check yet that a used artifact's layer allows it to be read from the project (a shared repository reading a
   private artifact through its own files is prevented by convention and by the mapping living on one machine).

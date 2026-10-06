@@ -13,11 +13,13 @@ where the last run stopped, with any harness and any model.
     cxt run-ai --new "..."                                 # start a new conversation (the memory and skills stay)
     cxt run-ai --conversation=20261004-18 "..."            # continue a given conversation (id or prefix)
     cxt run-ai --conversations                             # list the conversations of the project
+    cxt run-ai --summarize                                 # a summary of the latest conversation (claude: haiku), read first at a hand-over
     cxt run-ai --harness=codex --model=gpt-6.1-sol,high    # the same conversation, now with codex: the transcript is handed over
     cxt run-ai --harness=codex --list_models               # the models and efforts of a harness, every combination ready to copy
     cxt run-ai --list_models                               # the same for every harness, compact
     cxt run-ai --dry_run                                   # the project, its !AI, the conversation and the command - nothing runs
-    cxt run-ai --pending                                   # the changes staged for the artifacts this project uses (ai_uses)
+    cxt run-ai -w "..."                                    # no questions, write anywhere - also the used artifacts' memory (--write=all)
+    cxt run-ai --pending                                  # the changes staged for the artifacts this project uses (ai_uses)
     cxt run-ai --apply_pending                             # show each of them and apply it on your word
 
 The harness (--harness; the old name --agent is still accepted) is the CLI that runs the model: claude, codex,
@@ -43,6 +45,7 @@ The !AI folder of the project (created on the first run):
     !AI/log/<stamp>.<harness>.output.txt / .stats.json      the agent's output and its token use and cost
     !AI/log/<id>.conversation.json     a conversation: its runs and, per harness, the native session it continues
     !AI/log/<id>.transcript.md         the whole conversation, re-exported from the harnesses' own stores after every run
+    !AI/log/<id>.summary.md            its summary, on request (--summarize)
 
 Conversations (conversations.py): a run continues the conversation with the latest run unless --new or
 --conversation=<id> says otherwise. The harness that holds a native session for it resumes it natively (claude
@@ -79,7 +82,15 @@ what is staged and "cxt run-ai --apply_pending" shows each difference and applie
 without one). After every run the used artifacts' memory/ and skills/ are compared with a snapshot taken before it:
 for a direct change the user is asked whether to keep it (--context_guard=ask, the default); if not - or with nobody
 to ask: -q, --yes, no terminal - it is turned into such a proposal and the file is put back ("restore" does that
-without asking, "report" only reports, "off" does not look).
+without asking, "report" only reports, "keep" keeps and records it, "off" does not look).
+
+What a run may write is one switch: --write=ask|project|all|none, -w for "all", and the key "write" of the config
+"task-run-ai" as this machine's default (cx config set task-run-ai --meta.write=all); a flag wins over the config.
+    ask      (the default) the harness asks before it edits or runs a command; the used artifacts take proposals
+    project  the harness asks nothing (what --yes does); the used artifacts still take proposals only
+    all      the same, and the memory and skills of the used artifacts may be changed directly - run-ai lists the
+             changes, records them in the artifact and keeps the versions before the run in !AI/log/<stamp>.before/
+    none     read-only: the harness runs in its plan / read-only mode (claude, codex, opencode, agy, gemini)
 
 Everything else - the prompt, --prompt_file, -i, --yes, --stats, --reproducible, --add_repos (claude) and the
 flags after "--" - goes to run-<harness> unchanged. The task engine changes into the project folder for the
@@ -88,6 +99,7 @@ sub-task (its "path" control parameter), so the agent also finds the project's o
 
 import datetime
 import glob
+import hashlib
 import importlib.util
 import json
 import os
@@ -121,6 +133,8 @@ AI_DIR = '!AI'
 MEMORY_DIR = 'memory'
 SKILLS_DIR = 'skills'
 LOG_DIR = 'log'
+STAMP_LOCK = '.lock'        # <stamp>.lock in !AI/log: the stamp of a run that is starting (see _new_stamp)
+SKILL_SOURCES_FILE = '.sources.json'    # !AI/skills/.sources.json: where import-ai copied each skill from (see _skill_drift)
 INDEX_FILE = 'MEMORY.md'
 PLUGIN_DIR = '.claude-plugin'
 PLUGIN_FILE = 'plugin.json'
@@ -140,6 +154,9 @@ CONFIG_CATEGORY = 'config,cc6bfe174be847ed'
 CONFIG_ARTIFACT = 'task-run-ai'
 LOCAL_AI_USES_KEY = 'local_ai_uses'
 CONFIG_TOKENS_KEY = 'max_context_tokens'
+CONFIG_TRIM_KEY = 'trim_context'        # true: --trim_context on every run of this machine
+SUMMARY_CLAUDE_MODEL = 'haiku'          # --summarize with claude and no --model: Claude Code's alias of its current Haiku
+SUMMARY_INLINE_CHARS = 120000           # a longer transcript is read by the agent from its file instead of in the prompt
 
 # The context estimate before a run: chars / TOKEN_CHARS (within about 25% for English and Markdown), compared with
 # --max_context_tokens, else the config key above (or the older key below in the config "default"), else the default;
@@ -152,6 +169,11 @@ CONFIG_MAX_TOKENS_KEY = 'run_ai_max_context_tokens'
 # still warm (Claude: 5 minutes by default, 60 with extended caching; OpenAI's prompt cache for Codex: typically 5 to
 # 10 minutes, up to an hour off-peak - 10 taken; the others when known)
 CACHE_TTL_MINUTES = {'claude': 5, 'codex': 10}
+
+
+def _truthy(value):
+    """A flag or a config value as it arrives (True, "true", "1", "yes", "on"; a missing value is False)."""
+    return value is True or str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def _glob(directory, *pattern):
@@ -170,7 +192,35 @@ CONV = _load_module('run_ai_conversations', 'conversations.py')
 PEND = _load_module('run_ai_pending', 'pending.py')
 
 # What a run does about direct changes in the memory and skills of the artifacts it uses (pending.py)
-GUARD_MODES = ('ask', 'restore', 'report', 'off')
+GUARD_MODES = ('ask', 'restore', 'report', 'keep', 'off')
+
+# What a run may write - one switch (--write=<mode>, -w = all; the config key "write" is this machine's default; a
+# flag wins over the config) over the two things that decide it: the harness's own approvals and sandbox, and the
+# guard of the artifacts the project uses.
+#   ask      the harness's own default: it asks before it edits or runs a command (a one-prompt run has nobody to
+#            ask, so it mostly cannot write); the used artifacts take proposals only
+#   project  the harness asks nothing and may write (what --yes does); the used artifacts take proposals only
+#   all      the same, and the memory and skills of the used artifacts may be changed directly: kept, recorded in
+#            the artifact, the versions before the run saved in the project's !AI/log
+#   none     read-only: the harness runs in its plan / read-only mode and is told to change nothing
+WRITE_MODES = ('ask', 'project', 'all', 'none')
+CONFIG_WRITE_KEY = 'write'
+WRITE_GUARD = {'ask': 'ask', 'project': 'restore', 'all': 'keep', 'none': 'restore'}    # unless --context_guard says otherwise
+WRITE_WORDS = {'all': ('all', 'true', 'yes', 'on', '1', 'everywhere', 'full'), 'project': ('project',), 'ask': ('ask', 'default'),
+               'none': ('none', 'no', 'false', 'off', '0', 'read-only', 'readonly', 'read_only', 'ro')}
+# The flags that put a harness into its read-only mode (--write=none), from each CLI's own help; a harness that is
+# not listed (OpenClaw, any run-<x>) has no such switch run-ai knows and is only told to change nothing. Codex takes
+# the setting as a config override because "codex exec resume" has no --sandbox.
+READ_ONLY_FLAGS = {
+    'claude': ['--permission-mode', 'plan'],
+    'codex': ['-c', 'sandbox_mode="read-only"'],
+    'opencode': ['--agent', 'plan'],
+    'agy': ['--mode', 'plan'],
+    'gemini': ['--approval-mode', 'plan'],
+}
+# The harness tasks that take "yes" (their own flags that stop the questions and lift the sandbox); run-openclaw has
+# none - OpenClaw follows its own settings. A task run-<x> that is not listed gets it only from --yes itself.
+YES_HARNESSES = ('claude', 'codex', 'opencode', 'agy', 'gemini')
 
 
 class CTask(InitCTask):
@@ -229,6 +279,55 @@ class CTask(InitCTask):
             alias = os.path.basename(os.path.normpath(project_path))
         return alias or 'project'
 
+    @staticmethod
+    def _new_stamp(log_dir, reserve):
+        """The stamp that names the records of a run and, for a new conversation, the conversation: YYYYMMDD-HHMMSS,
+        then -2, -3, ... when taken. Two runs of one project started within the same second (a script, two terminals)
+        must not share it, so a run that writes records reserves it (reserve=True) by creating <stamp>.lock
+        exclusively - one atomic step, which looking for the files first is not - and releases the lock once its run
+        record holds the stamp. A lock left by a run that died is harmless (no later run takes a past second) and the
+        next run clears it. -> (stamp, lock file or '')."""
+        base = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+        if reserve:
+            for old in _glob(log_dir, '*' + STAMP_LOCK):
+                try:
+                    if time.time() - os.path.getmtime(old) > 600:
+                        os.remove(old)
+                except OSError:
+                    pass
+        n = 1
+        while True:
+            stamp = base if n == 1 else '%s-%d' % (base, n)
+            n += 1
+            if _glob(log_dir, stamp + '.*'):
+                continue
+            if not reserve:
+                return stamp, ''
+            lock = os.path.join(log_dir, stamp + STAMP_LOCK)
+            try:
+                os.makedirs(log_dir, exist_ok=True)
+                os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            except FileExistsError:
+                continue
+            except OSError:
+                return stamp, ''        # a log folder that cannot be written: the run says so when it writes there
+            return stamp, lock
+
+    @staticmethod
+    def _release_stamp(lock, made=()):
+        """Removes the lock of _new_stamp and, for a run that stops before writing anything, the folders the
+        reservation created (made: the deepest first), when they are still empty."""
+        if lock:
+            try:
+                os.remove(lock)
+            except OSError:
+                pass
+        for d in made:
+            try:
+                os.rmdir(d)
+            except OSError:
+                pass
+
     # ------------------------------------------------------------------ the memory index
     @staticmethod
     def _memory_text(ai_root, limit=12000):
@@ -248,6 +347,45 @@ class CTask(InitCTask):
         return ''
 
     # ------------------------------------------------------------------ skills
+    @staticmethod
+    def _tree_hash(root):
+        """A sha256 of a folder's files (their paths and contents, caches left out) - the same as import-ai's."""
+        files = []
+        for d, dirs, names in os.walk(root):
+            dirs[:] = [x for x in dirs if x != '__pycache__']
+            files += [os.path.join(d, n) for n in names if not n.endswith('.pyc')]
+        h = hashlib.sha256()
+        for fp in sorted(files, key=lambda x: os.path.relpath(x, root).replace('\\', '/')):
+            h.update(os.path.relpath(fp, root).replace('\\', '/').encode('utf-8') + b'\0')
+            with open(fp, 'rb') as f:
+                h.update(f.read())
+            h.update(b'\0')
+        return h.hexdigest()
+
+    @classmethod
+    def _skill_drift(cls, skills_dir):
+        """The copies in !AI/skills that went apart from the skill import-ai copied them from (its record
+        !AI/skills/.sources.json), when that source is on this machine -> [(name, which changed since the import:
+        'source', 'copy' or 'both', the source folder)]."""
+        try:
+            with open(os.path.join(skills_dir, SKILL_SOURCES_FILE), encoding='utf-8-sig') as f:
+                sources = json.load(f)
+        except (OSError, ValueError):
+            return []
+        out = []
+        for name, rec in sorted(sources.items() if isinstance(sources, dict) else []):
+            copy, src = os.path.join(skills_dir, name), str((rec or {}).get('source') or '')
+            if not (src and os.path.isdir(copy) and os.path.isdir(src)):
+                continue
+            try:
+                h_copy, h_src = cls._tree_hash(copy), cls._tree_hash(src)
+            except OSError:
+                continue
+            if h_copy == h_src:
+                continue
+            out.append((name, 'source' if h_copy == rec.get('hash') else ('copy' if h_src == rec.get('hash') else 'both'), src))
+        return out
+
     @staticmethod
     def _list_skills(skills_dir):
         """[(name, description, path of SKILL.md)] from <skills_dir>/<name>/SKILL.md (name and description from the
@@ -574,10 +712,19 @@ class CTask(InitCTask):
             guarded.append({'label': s['label'], 'key': key, 'ai': os.path.join(s['root'], AI_DIR)})
         return guarded
 
+    @staticmethod
+    def _ask(question):
+        """The user's answer to a question on the terminal, lower case ('' when there is none or on Ctrl+C)."""
+        try:
+            return input(question).strip().lower()
+        except (Exception, KeyboardInterrupt):
+            return ''
+
     def _pending(self, ai_root, log_dir, project, guarded, apply, no_question, con, space, stamp):
         """--pending / --apply_pending: the changes staged under the project's !AI/pending for the artifacts it uses.
-        Listing shows every difference; applying asks once per artifact (no question with -q or --yes; without a
-        terminal and without them nothing is applied) and leaves a record in the artifact's !AI/log."""
+        Listing shows every difference; applying asks once per artifact - all its changes, or one question per change
+        ("e") - (no question with -q or --yes; without a terminal and without them nothing is applied) and leaves a
+        record in the artifact's !AI/log."""
         pending_root = os.path.join(ai_root, PEND.PENDING_DIR)
         targets, unknown = PEND.staged(pending_root, guarded)
         text = []
@@ -612,21 +759,26 @@ class CTask(InitCTask):
                     PEND.clear(item, t['dir'])              # the artifact has it already
             if todo:
                 if no_question:
-                    ok = True
+                    chosen = todo
                 elif not (con and terminal):
-                    ok = False
+                    chosen = []
                     say('    not applied: there is nobody to ask (-q or --yes applies without a question)')
                 else:
-                    try:
-                        ok = input('%s    Apply %d change(s) to %s? [y/N] ' % (space, len(todo), t['label'])).strip().lower() in ('y', 'yes')
-                    except Exception:
-                        ok = False
-                if not ok:
-                    left += [{'label': t['label'], 'rel': i['rel'], 'action': i['action']} for i in todo]
-                    say('    left staged')
+                    # all of an artifact's changes at once, or one question per change
+                    answer = self._ask('%s    Apply %d change(s) to %s? [y]es, all / [e]ach, one by one / [N]o ' % (space, len(todo), t['label']))
+                    if answer in ('e', 'each'):
+                        chosen = [i for i in todo if self._ask('%s      %s %s? [y/N] ' % (space, i['action'].upper(), i['rel'])) in ('y', 'yes')]
+                    else:
+                        chosen = todo if answer in ('y', 'yes') else []
+                kept = [i for i in todo if i not in chosen]
+                if kept:
+                    left += [{'label': t['label'], 'rel': i['rel'], 'action': i['action']} for i in kept]
+                    say('    left staged: %s' % ('all' if not chosen else ', '.join(i['rel'] for i in kept)))
+                if not chosen:
+                    PEND.finish_target(t['dir'], pending_root)
                     continue
                 records = []
-                for item in todo:
+                for item in chosen:
                     try:
                         r = PEND.apply(item)
                     except OSError as e:
@@ -702,14 +854,15 @@ class CTask(InitCTask):
         return text
 
     @staticmethod
-    def _render_context(sources, skills_too):
+    def _render_context(sources, skills_too, writable=False):
         """One Markdown text: per source its memory index, the links turned into absolute paths so that a memory can
         be read from the project (the agent is given access to those folders); the skills of the sources whose plugin
-        is not loaded natively (skills_too: all sources)."""
-        lines = ["# Context from other cMeta artifacts (read-only). This project's own memory is in %s/%s/." % (AI_DIR, MEMORY_DIR), '']
+        is not loaded natively (skills_too: all sources). writable: this run may change them directly (--write=all)."""
+        lines = ["# Context from other cMeta artifacts (%s). This project's own memory is in %s/%s/." % (
+            'this run may change their memory and skills directly' if writable else 'read-only', AI_DIR, MEMORY_DIR), '']
         for s in sources:
             lines += ['## %s' % s['label']]
-            if s.get('stage_dir'):
+            if s.get('stage_dir') and not writable:
                 lines += ['read-only; a change to it is proposed under: %s/' % s['stage_dir'].replace('\\', '/')]
             if s['has_memory']:
                 lines += ['memory folder: %s' % s['memory_dir'].replace('\\', '/'), '']
@@ -729,19 +882,37 @@ class CTask(InitCTask):
         return '\n'.join(lines) + '\n'
 
     @staticmethod
-    def _orientation(ai_root, conv, conv_how, log_dir, own_skills, sources=(), guard='ask'):
+    def _orientation(ai_root, conv, conv_how, log_dir, own_skills, sources=(), guard='ask', own_workspace='', write='ask'):
         """What every harness is told first: where this project keeps its memory, skills and conversations, and which
         conversation this run is - so that "what was our last conversation?" is answered from !AI/log and not from the
-        harness's own history (~/.claude/projects, CODEX_HOME, ...) - and how a change to a used artifact is proposed."""
+        harness's own history (~/.claude/projects, CODEX_HOME, ...) - and how a change to a used artifact is proposed
+        (guard "keep": that it may be made directly). own_workspace: the harness works in a folder of its own, not in
+        the project (OpenClaw), and is told where the project is. write "none": the run is read-only."""
         posix = ai_root.replace('\\', '/')
-        lines = ['# This project is run through cMeta run-ai',
-                 '- Its memory is %s/%s/ (MEMORY.md is the index)%s.' % (
-                     posix, MEMORY_DIR, ('; its skills are in %s/%s/' % (posix, SKILLS_DIR)) if own_skills else '')]
+        lines = ['# This project is run through cMeta run-ai']
+        if write == 'none':
+            lines.append('- This run is read-only (--write=none): change no file - not in the project, not in its %s folder, nowhere '
+                         'else - and run no command that changes anything. Answer from what you read, and say what you would change.' % AI_DIR)
+        if own_workspace:
+            lines.append('- The project folder is %s. You work in a workspace of your own (%s), not in it: read and write the '
+                         'files of the project by their absolute paths in that folder, and keep nothing of the project in your '
+                         'workspace.' % (os.path.dirname(posix), own_workspace))
+        lines.append('- Its memory is %s/%s/ (MEMORY.md is the index)%s.' % (
+            posix, MEMORY_DIR, ('; its skills are in %s/%s/' % (posix, SKILLS_DIR)) if own_skills else ''))
         if sources:
-            lines.append('- It also reads, read-only, the memory and skills of the artifacts it uses (its `%s`: the list of its _desc, '
+            lines.append('- It also reads%s the memory and skills of the artifacts it uses (its `%s`: the list of its _desc, '
                          'its repository\'s default, this machine\'s mapping; and --context; their indexes follow below): %s.' % (
+                             ' - and in this run may change -' if guard == 'keep' else ', read-only,',
                              AI_USES_KEY, '; '.join(s['label'] for s in sources)))
-            if any(s.get('stage_dir') for s in sources):
+            if guard == 'keep':
+                lines.append('- This run has write access to those artifacts (--write=all): change their memory and skills where they '
+                             'are, when it serves the request. Keep the format of the files (a memory is one fact in a Markdown file '
+                             'with its front matter; a skill is a folder with a SKILL.md) and keep each %s index in step with its '
+                             'files. run-ai lists what changed after the run, records it in the artifact\'s %s/%s and keeps the '
+                             'versions before the run.' % (INDEX_FILE, AI_DIR, LOG_DIR))
+            elif write == 'none':
+                pass        # a read-only run stages no proposal either: it says what it would change
+            elif any(s.get('stage_dir') for s in sources):
                 lines.append('- Read-only means: never create, edit or delete a file in those artifacts, with any tool. To change their '
                              'memory or skills, write the new version under this project\'s own %s/%s/<the folder named for that '
                              'artifact below>/, with the path the file has under the artifact\'s %s: memory/<name>.md or '
@@ -1019,6 +1190,93 @@ class CTask(InitCTask):
                 notes.append('session of the run %s recovered: %s %s' % (r.get('stamp'), hk, sid))
         return notes
 
+    # ------------------------------------------------------------------ what a run may write
+    def _write_mode(self, write, w, yes):
+        """--write=<mode> or -w (all), else --yes (project: what it has always meant), else the key "write" of the
+        config task-run-ai (this machine's default), else "ask" -> (mode, where it came from, error)."""
+        def mode_of(value):
+            word = 'all' if value is True else str(value).strip().lower()
+            return next((mode for mode, words in WRITE_WORDS.items() if word in words), '')
+
+        if _truthy(w):
+            return 'all', '-w', ''
+        if write not in ('', None, False):
+            mode = mode_of(write)
+            if not mode:
+                return '', '', '--write must be one of %s (got "%s")' % (', '.join(WRITE_MODES), write)
+            if mode == 'ask' and yes:
+                return 'project', '--yes', ''
+            return mode, '--write=%s' % mode, ''
+        if yes:
+            return 'project', '--yes', ''
+        value = self._run_ai_config().get(CONFIG_WRITE_KEY)
+        if value not in ('', None):
+            mode = mode_of(value)
+            if not mode:
+                return '', '', 'the key "%s" of the config %s must be one of %s (got "%s"; cx config show %s)' % (
+                    CONFIG_WRITE_KEY, CONFIG_ARTIFACT, ', '.join(WRITE_MODES), value, CONFIG_ARTIFACT)
+            return mode, 'the config %s, key %s' % (CONFIG_ARTIFACT, CONFIG_WRITE_KEY), ''
+        return 'ask', 'default', ''
+
+    # ------------------------------------------------------------------ --summarize
+    def _summarize(self, ctx, log_dir, conversation, harness, task_ref, extra, model_name, project_path, con, verbose, space):
+        """--summarize: one prompt to the harness (claude: its "haiku" unless --model says otherwise) writes a summary of
+        a conversation's transcript into !AI/log/<id>.summary.md; a later hand-over points to it first. The
+        conversation itself is not continued: no native session of it is used, and its order is kept."""
+        hk = CONV.harness_key(harness)
+        if conversation:
+            conv, err = CONV.find_conversation(log_dir, conversation)
+            if err:
+                return self.cm.error(err)
+        else:
+            convs = CONV.list_conversations(log_dir)
+            conv = convs[0] if convs else None
+            if conv is None:
+                return self.cm.error('--summarize: there is no conversation in %s yet' % log_dir)
+        tp = CONV.transcript_path(conv)
+        if not os.path.isfile(tp):
+            return self.cm.error('--summarize: the conversation %s has no transcript yet (%s)' % (conv['id'], tp))
+        with open(tp, encoding='utf-8', errors='replace') as f:
+            transcript = f.read()
+        flags = list(extra or [])
+        if not model_name and hk == 'claude':
+            flags = ['--model', SUMMARY_CLAUDE_MODEL] + flags
+        if hk == 'codex' and '--skip-git-repo-check' not in flags:
+            flags = ['--skip-git-repo-check'] + flags
+        ask = ('Summarize conversation %s of this project for whoever continues it - a person or another agent. Its '
+               'transcript was written by cMeta run-ai. Write Markdown with these sections: Goal; Done (the decisions and '
+               'results, with the file paths and commands that matter); State now; Open items and next steps; Facts to keep '
+               '(names, ids, paths, numbers agreed on). At most about 60 lines, in the language of the conversation, and '
+               'nothing that is not in it. Change no file.' % conv['id'])
+        if len(transcript) <= SUMMARY_INLINE_CHARS:
+            prompt = ask + ' Use no tool: the transcript follows.\n\n<transcript>\n' + transcript.rstrip() + '\n</transcript>\n'
+        else:
+            prompt = ask + ' The transcript is long (%d characters): read the file %s, in parts.\n' % (len(transcript), tp.replace('\\', '/'))
+        if con:
+            print('%sRUN-AI: summarizing conversation %s with %s (%s)' % (space, conv['id'], harness, ' '.join(flags) or 'its default model'))
+        rr = self.cm.access({'category': TASK_CATEGORY, 'command': 'run', 'arg1': task_ref, 'ctx': ctx, 'path': project_path,
+                             'prompt': prompt, 'interactive': False, 'stats': False, 'skip_output_file': True,
+                             'unparsed': flags, 'con': con, 'verbose': verbose})
+        text = str(rr.get('output') or '').strip()
+        if text.startswith('# '):
+            text = text.split('\n', 1)[1].strip() if '\n' in text else ''     # the file has its own title
+        if rr.get('return', 1) > 0 or not text:
+            return self.cm.error('--summarize: %s gave no summary (%s)' % (harness, rr.get('error') or 'empty output'))
+        runs = conv.get('runs') or []
+        written = CONV.now_iso()
+        model_used = model_name or (SUMMARY_CLAUDE_MODEL if hk == 'claude' else 'the default model')
+        sp = CONV.summary_path(conv)
+        with open(sp, 'w', encoding='utf-8', newline='\n') as f:
+            f.write('# Summary of conversation %s\n\n> Written by `cxt run-ai --summarize` on %s with %s (%s) from the transcript '
+                    'as of run %d; the transcript `%s` stays the record.\n\n%s\n' % (
+                        conv['id'], written[:16].replace('T', ' '), harness, model_used, len(runs), os.path.basename(tp), text))
+        conv['summary'] = {'file': os.path.basename(sp), 'written': written, 'runs': len(runs), 'harness': harness, 'model': model_used}
+        CONV.save_conversation(conv, touch=False)
+        if con:
+            print('%sRUN-AI: summary of conversation %s (%d run(s)): %s' % (space, conv['id'], len(runs), sp))
+        return {'return': 0, 'conversation': conv['id'], 'summary': sp, 'runs': len(runs), 'harness': harness, 'model': model_used,
+                'inline': len(transcript) <= SUMMARY_INLINE_CHARS, 'text': text}
+
     # ------------------------------------------------------------------ run
     def run(self,
             ctx: dict,                      # cMeta context
@@ -1034,6 +1292,7 @@ class CTask(InitCTask):
             conversation: str = '',         # continue this conversation (its id or a prefix; --conversations lists them)
             resume: str = '',               # alias of "conversation"
             conversations: bool = False,    # list the conversations of the project and stop
+            summarize: bool = False,        # write !AI/log/<id>.summary.md for the latest (or --conversation=) conversation and stop
             prompt: str = '',               # prompt text
             prompt_file: str = '',          # file with the prompt text
             interactive: bool = False,      # preload the prompt, then stay in the interactive session
@@ -1050,10 +1309,13 @@ class CTask(InitCTask):
             context_depth: int = 1,         # follow ai_uses transitively this many levels (1: the list itself)
             context_limit: int = 20,        # at most this many context sources
             max_context_tokens: int = 0,    # fail (-q, --yes, no terminal) or ask when the estimated context is over this; 0 = config or 30000
-            dry_run: bool = False,          # show the project, its !AI, the conversation and the command; run nothing
+            trim_context: bool = False,     # over that limit, leave context sources out (the last first) until it fits; config: trim_context
+            dry_run: bool = False,         # show the project, its !AI, the conversation and the command; run nothing
             pending: bool = False,          # list the changes staged for the artifacts this project uses (!AI/pending) and stop
             apply_pending: bool = False,    # show them and apply them on the user's word (-q or --yes: without a question), then stop
-            context_guard: str = 'ask',     # a direct change in a used artifact's memory or skills, after the run: ask (keep it? else, and with nobody to ask, as restore) | restore (kept as a proposal, the file put back) | report | off
+            write: str = '',                # what the run may write: ask (the harness asks; the default) | project (no questions) | all (also the used artifacts' memory, directly) | none (read-only); the config key "write" is the default
+            w: bool = False,                # short alias of "write=all" (-w)
+            context_guard: str = '',        # a direct change in a used artifact's memory or skills, after the run: ask (keep it? else, and with nobody to ask, as restore) | restore (kept as a proposal, the file put back) | report | keep (kept and recorded) | off; the default follows --write (ask, restore, keep, restore)
             unparsed: list = None,          # extra flags for the harness (everything after "--")
     ):
         """Run a coding agent on a cMeta artifact; its memory, skills, logs and conversations live in the artifact's !AI folder."""
@@ -1105,6 +1367,12 @@ class CTask(InitCTask):
                     if old is not None:
                         notes.append('the %s given after "--" (%s %s) is replaced by --%s=%s' % (
                             what, tmpl[0], old, what, model_name if what == 'model' else effort_name))
+            if hk == 'openclaw' and interactive and '--model' in model_flags:
+                # OpenClaw's terminal UI refuses --model (only "openclaw agent" takes it): the model is chosen in it
+                k = model_flags.index('--model')
+                model_flags = model_flags[:k] + model_flags[k + 2:]
+                notes.append('openclaw: its terminal UI takes no --model - type "/model %s" in it, or make it the default '
+                             'once with "openclaw models set %s"' % (model_name, model_name))
             extra = model_flags + extra
             if model_flags:
                 notes.append('model flags: %s' % ' '.join(model_flags))
@@ -1119,19 +1387,22 @@ class CTask(InitCTask):
         mem_dir = os.path.join(ai_root, MEMORY_DIR)
         skills_dir = os.path.join(ai_root, SKILLS_DIR)
         log_dir = os.path.join(ai_root, LOG_DIR)
-        # the stamp names the records of this run and, for a new conversation, the conversation: two runs of one
-        # project started within the same second (a script, two terminals) must not share them
-        stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-        if _glob(log_dir, stamp + '.*'):
-            n = 2
-            while _glob(log_dir, '%s-%d.*' % (stamp, n)):
-                n += 1
-            stamp = '%s-%d' % (stamp, n)
+        # the stamp names the records of this run and, for a new conversation, the conversation (reserved below for a
+        # run that writes records)
+        stamp, stamp_lock = self._new_stamp(log_dir, False)
+        stamp_made = []
 
         if conversations:
             return self._list_conversations(log_dir, project_path, con)
+        if _truthy(summarize):
+            return self._summarize(ctx, log_dir, conversation, harness, task_ref, extra, model_name, project_path, con, verbose, space)
 
-        guard_mode = str(context_guard or 'ask').strip().lower()
+        # what the run may write: --write / -w, else --yes (project), else this machine's config, else "ask"; the guard
+        # of the used artifacts follows it unless --context_guard names one
+        write_mode, write_from, err = self._write_mode(write, w, yes)
+        if err:
+            return self.cm.error(err)
+        guard_mode = str(context_guard or WRITE_GUARD[write_mode]).strip().lower()
         if guard_mode not in GUARD_MODES:
             return self.cm.error('--context_guard must be one of %s (got "%s")' % (', '.join(GUARD_MODES), context_guard))
 
@@ -1139,6 +1410,34 @@ class CTask(InitCTask):
             sources, skipped = self._context_sources(project_path, context, max(1, int(context_depth or 1)), context_limit, skip_ai_uses, cref)
             return self._pending(ai_root, '' if no_log else log_dir, cref or project_path, self._stage_sources(sources, ai_root),
                                  bool(apply_pending), bool(yes or ctx['control'].get('quiet', False)), con, space, stamp)
+
+        # the harness's side of the write mode: "yes" for its task (its own flags that stop the questions and lift the
+        # sandbox), or its read-only mode
+        forward_yes = False
+        if write_mode in ('project', 'all'):
+            forward_yes = bool(yes) or hk in YES_HARNESSES
+            notes.append('write: %s (%s) - %s; the memory and skills of the used artifacts %s' % (
+                write_mode, write_from,
+                ('%s asks nothing and may write' % harness) if forward_yes else
+                ('%s has no switch for its questions that run-ai knows: it follows its own settings' % harness),
+                'may be changed directly (kept, recorded there, the versions before the run saved)' if guard_mode == 'keep' else
+                {'restore': 'take proposals only (a direct change is put back and staged)', 'ask': 'take proposals (you are asked about a direct change)',
+                 'report': 'are compared after the run (a direct change is reported)', 'off': 'are not looked at after the run'}[guard_mode]))
+        elif write_mode == 'none':
+            read_only = READ_ONLY_FLAGS.get(hk)
+            # the same setting given after "--" is the user's own choice for this run
+            names = ('--sandbox', '-s') if hk == 'codex' else ((read_only[0],) if read_only else ())
+            own = [x for x in extra if x.split('=')[0] in names or (hk == 'codex' and 'sandbox_mode' in x)]
+            if read_only and not own:
+                extra = read_only + extra
+            notes.append('write: none (%s) - read-only: %s%s' % (
+                write_from,
+                ('%s runs with %s' % (harness, ' '.join(read_only))) if (read_only and not own) else
+                ('the flags after "--" decide (%s)' % ' '.join(own)) if own else
+                ('%s has no read-only mode that run-ai knows - it is told to change nothing, and nothing enforces that' % harness),
+                '; --yes is left out' if yes else ''))
+        elif write_from != 'default':
+            notes.append('write: ask (%s) - %s asks before it edits or runs a command' % (write_from, harness))
 
         # codex keeps its SQLite state (threads, thread history, memories) INSIDE the project: CODEX_SQLITE_HOME, which
         # Codex 0.160 honours (the thread lands there and "codex exec resume" finds it; the rollout
@@ -1158,9 +1457,13 @@ class CTask(InitCTask):
         if no_log:
             notes.append('--no_log: no conversation is recorded or continued (the harness starts a fresh session)')
         else:
+            if not dry_run:
+                stamp_made = [d for d in (log_dir, ai_root) if not os.path.isdir(d)]
+                stamp, stamp_lock = self._new_stamp(log_dir, True)
             if conversation:
                 conv, err = CONV.find_conversation(log_dir, conversation)
                 if err:
+                    self._release_stamp(stamp_lock, stamp_made)
                     return self.cm.error(err)
             elif not new:
                 convs = CONV.list_conversations(log_dir)
@@ -1180,7 +1483,7 @@ class CTask(InitCTask):
                 if hk == 'codex':
                     pass        # run-codex --resume=<id> (a sub-command, not a flag)
                 else:
-                    extra = CONV.resume_flags(harness, native_sid) + extra
+                    extra = CONV.resume_flags(harness, native_sid, interactive) + extra
             else:
                 if conv_how == 'continued' and conv.get('runs'):
                     # a hand-over needs something to hand over: a session that was quit before its first message
@@ -1195,16 +1498,52 @@ class CTask(InitCTask):
                                      'a fresh %s session, nothing to hand over' % hk)
                 if CONV.chooses_id(harness):
                     new_sid = CONV.new_id()
-                    extra = CONV.new_session_flags(harness, new_sid, conv['id'], alias) + extra
+                    extra = CONV.new_session_flags(harness, new_sid, conv['id'], alias, interactive) + extra
 
         # 1b. the context: other artifacts' memory and skills, read-only (--context, then ai_uses), after the
         #     orientation every harness gets first (where this project keeps its memory, skills and conversations)
         sources, skipped = self._context_sources(project_path, context, max(1, int(context_depth or 1)), context_limit, skip_ai_uses, cref)
         own_skills = self._list_skills(skills_dir)
+        for name, changed, src in self._skill_drift(skills_dir):
+            again = 'cxt import-ai "--project=%s" "--skills=%s" --overwrite' % (cref or project_path, src)
+            notes.append({'source': 'WARNING: the skill %s is older than the one it was imported from, %s, which changed since: %s renews the copy',
+                          'copy': 'the skill %s was changed here since it was imported from %s (which was not): carry the change over there '
+                                  'if it should stay - %s would drop it',
+                          'both': 'WARNING: the skill %s and the one it was imported from, %s, both changed since the import: compare them; '
+                                  '%s takes the source\'s'}[changed] % (name, src, again))
         # the used artifacts are read-only for the run: each gets its staging folder under this project's !AI/pending
         guarded = self._stage_sources(sources, ai_root)
+        # a budget, on request: over the token limit, the context sources are left out from the last - the lowest
+        # priority: this machine's mapping, the repository's default, the deeper levels - until the estimate fits
+        if sources and (_truthy(trim_context) or _truthy(self._run_ai_config().get(CONFIG_TRIM_KEY))):
+            limit_now, limit_now_from = self._token_limit(max_context_tokens)
+            index_fp = os.path.join(mem_dir, INDEX_FILE)
+            index_now = ''
+            if os.path.isfile(index_fp):
+                with open(index_fp, encoding='utf-8', errors='replace') as f:
+                    index_now = f.read()
+
+            def estimate(kept):
+                return self._estimate([
+                    ('orientation', self._orientation(ai_root, conv, conv_how, log_dir, own_skills, kept, guard_mode,
+                                                      own_workspace='~/.openclaw/workspace' if hk == 'openclaw' else '', write=write_mode), ''),
+                    ('memory index', index_now, ''), ('skills', ' '.join('%s %s' % (n, d) for n, d, fp in own_skills), ''),
+                    ('context sources', self._render_context(kept, True, guard_mode == 'keep') if kept else '', ''),
+                    ('hand-over', handover, ''), ('prompt', prompt or '', '')])[1]
+            left_out = []
+            while sources and estimate(sources) > limit_now:
+                left_out.insert(0, sources.pop())
+            if left_out:
+                notes.append('context trimmed to the limit of %s tokens (%s; --trim_context): left out %s' % (
+                    '{:,}'.format(limit_now), limit_now_from, '; '.join(s['label'] for s in left_out)))
+                skipped += [(s['label'], 'left out to fit the token limit (--trim_context)') for s in left_out]
+                guarded = self._stage_sources(sources, ai_root)
         pending_root = os.path.join(ai_root, PEND.PENDING_DIR)
-        orientation = self._orientation(ai_root, conv, conv_how, log_dir, own_skills, sources, guard_mode)
+        # OpenClaw runs a turn in its own workspace (~/.openclaw/workspace, from its config), whatever the current
+        # directory: it is told where the project is. Its workspace is not moved to the project, since OpenClaw keeps
+        # its persona files there (AGENTS.md, SOUL.md, ...)
+        orientation = self._orientation(ai_root, conv, conv_how, log_dir, own_skills, sources, guard_mode,
+                                        own_workspace='~/.openclaw/workspace' if hk == 'openclaw' else '', write=write_mode)
         context_text = ''
         # with --no_log the files of the run go to the temp directory under names nobody can guess, and are removed after it
         temp_tag = 'run-ai-%s-%s' % (stamp, CONV.new_id()[:8])
@@ -1217,7 +1556,7 @@ class CTask(InitCTask):
         # 2. the sub-task's parameters: everything the user gave, plus the records in !AI/log
         params = {'prompt': prompt, 'prompt_file': prompt_file, 'interactive': interactive, 'stats': stats}
         # only when asked for: not every run-<harness> task has them (run-openclaw has neither)
-        if yes:
+        if forward_yes:
             params['yes'] = True
         if reproducible:
             params['reproducible'] = True
@@ -1267,7 +1606,7 @@ class CTask(InitCTask):
                     extra += ['--plugin-dir', d]
             # the orientation and the context go into the system prompt; a --append-system-prompt[-file] of the user's is
             # kept in front of them
-            context_text = orientation + (self._render_context(sources, skills_too=False) if sources else '')
+            context_text = orientation + (self._render_context(sources, False, guard_mode == 'keep') if sources else '')
             user_file, extra = self._pull_flag(extra, '--append-system-prompt-file')
             user_text, extra = self._pull_flag(extra, '--append-system-prompt')
             if user_file and os.path.isfile(user_file):
@@ -1286,7 +1625,7 @@ class CTask(InitCTask):
             if own_skills:
                 own += self._skills_text('this project (%s/%s)' % (AI_DIR, SKILLS_DIR), own_skills)
                 notes.append('skills: %d in %s, listed for the harness in the prompt' % (len(own_skills), skills_dir))
-            context_text = orientation + (self._render_context(sources, skills_too=True) if sources else '')
+            context_text = orientation + (self._render_context(sources, True, guard_mode == 'keep') if sources else '')
             if hk == 'codex' and not interactive and '--skip-git-repo-check' not in extra:
                 # "codex exec" refuses a folder that is neither a git repository nor a trusted project without it
                 extra = ['--skip-git-repo-check'] + extra
@@ -1331,9 +1670,11 @@ class CTask(InitCTask):
                 else:
                     notes.append('memory: %s has nothing yet; %s keeps its own memory in its home (v1)' % (mem_dir, harness))
             if text.strip():
-                params['prompt'] = text + '\n' + (prompt or '')
+                params['prompt'] = text + '\n' + CONV.REQUEST_MARK + '\n' + (prompt or '')
         if handover:
-            params['prompt'] = handover + '\n' + (params.get('prompt') or '')
+            if CONV.REQUEST_MARK not in (params.get('prompt') or ''):
+                params['prompt'] = CONV.REQUEST_MARK + '\n' + (params.get('prompt') or '')
+            params['prompt'] = handover + '\n' + params['prompt']
         for s in sources:
             notes.append('context: %s (%s) <- %s%s' % (s['label'], s['kind'], s['memory_dir'] if s['has_memory'] else 'no memory',
                                                      (', %d skill(s)%s' % (len(s['skills']), ' as a plugin' if (s['plugin'] and harness == 'claude') else ' listed')) if s['skills'] else ''))
@@ -1343,6 +1684,9 @@ class CTask(InitCTask):
             notes.append('context guard: %s' % {'ask': 'after the run you are asked about any direct change in a used artifact\'s memory or skills; not kept (or nobody to ask), it becomes a proposal in %s and the file is put back' % pending_root,
                                                 'restore': 'a direct change in a used artifact\'s memory or skills becomes a proposal in %s and the file is put back' % pending_root,
                                                 'report': 'direct changes in the used artifacts\' memory and skills are reported after the run',
+                                                'keep': 'direct changes in the used artifacts\' memory and skills are kept: listed after the run, recorded in the '
+                                                        'artifact\'s %s/%s, the versions before the run saved in %s' % (
+                                                            AI_DIR, LOG_DIR, ('%s/%s.before' % (log_dir, stamp)) if not no_log else 'no folder (--no_log)'),
                                                 'off': 'off (--context_guard=off)'}[guard_mode])
             staged_now = PEND.count(pending_root, guarded)
             if staged_now:
@@ -1358,7 +1702,7 @@ class CTask(InitCTask):
                  ('memory index', index_text, '%d entries%s' % (index_text.count('\n- ') + (1 if index_text.lstrip().startswith('- ') else 0),
                                                               ', read by claude at start' if harness == 'claude' else ', in the prompt')),
                  ('skills', ' '.join('%s %s' % (n, d) for n, d, fp in own_skills), '%d skill(s)' % len(own_skills)),
-                 ('context sources', self._render_context(sources, skills_too=True) if sources else '', '%d source(s): their indexes and skills' % len(sources)),
+                 ('context sources', self._render_context(sources, True, guard_mode == 'keep') if sources else '', '%d source(s): their indexes and skills' % len(sources)),
                  ('hand-over', handover, ''),
                  ('prompt', prompt or '', ('file ' + os.path.basename(prompt_file)) if prompt_file else '')]
         est_rows, est_total = self._estimate(parts)
@@ -1420,13 +1764,14 @@ class CTask(InitCTask):
                     'new_session': new_sid, 'handover': handover, 'skills': [s[0] for s in own_skills], 'plugin_dirs': plugin_dirs,
                     'tokens_estimated': est_total, 'token_limit': limit, 'token_limit_from': limit_from, 'context_depth': context_depth,
                     'params': params, 'flags': extra, 'env': env, 'settings': settings, 'context': sources, 'context_skipped': skipped,
-                    'notes': notes}
+                    'write': write_mode, 'write_from': write_from, 'context_guard': guard_mode, 'notes': notes}
 
         if over:
             quiet = bool(ctx['control'].get('quiet', False))
             interactive_terminal = bool(getattr(sys.stdin, 'isatty', lambda: False)())
             what = 'the estimated context is %s tokens, over the limit of %s (%s)' % ('{:,}'.format(est_total), '{:,}'.format(limit), limit_from)
             if quiet or yes or not con or not interactive_terminal:
+                self._release_stamp(stamp_lock, stamp_made)
                 return self.cm.error('%s - lower --context_depth / --context_limit, use --skip_ai_uses, trim the memory index, or raise '
                                      '--max_context_tokens (or cx config set %s --meta.%s=<n>)' % (what, CONFIG_ARTIFACT, CONFIG_TOKENS_KEY))
             try:
@@ -1434,6 +1779,7 @@ class CTask(InitCTask):
             except Exception:
                 answer = ''
             if answer not in ('y', 'yes'):
+                self._release_stamp(stamp_lock, stamp_made)
                 return self.cm.error('stopped: %s' % what)
             notes.append('the context estimate (%s tokens) is over the limit (%s); continued on the user\'s word' % ('{:,}'.format(est_total), '{:,}'.format(limit)))
 
@@ -1483,6 +1829,7 @@ class CTask(InitCTask):
                      '| mode | %s |' % ('interactive' if interactive else 'one prompt (-p)'),
                      '| model | %s |' % (('`%s`' % model_name) if model_name else 'the harness default'),
                      '| effort | %s |' % (('`%s`' % effort_name) if effort_name else 'the harness default'),
+                     '| write | `%s` (%s); context guard `%s` |' % (write_mode, write_from, guard_mode),
                      '| conversation | %s |' % (('`%s` - %s' % (conv['id'], conv_how + (', native resume' if native_sid else (', hand-over' if handover else '')))) if conv else 'none (--no_log)'),
                      '| session | %s |' % (('%s `%s`' % (hk, native_sid or new_sid)) if (native_sid or new_sid) else ('%s: read from its store after the run' % hk if conv else '')),
                      '| prompt | %d chars%s |' % (len(params.get('prompt') or ''), (' + file `%s`' % prompt_file) if prompt_file else ''),
@@ -1499,6 +1846,7 @@ class CTask(InitCTask):
                 lines += ['', '> hand-over: ' + handover.strip()]
             with open(record, 'w', encoding='utf-8', newline='\n') as f:
                 f.write('\n'.join(lines) + '\n')
+        self._release_stamp(stamp_lock)     # the stamp is taken by the records now
 
         # 5. run the harness's task inside the project folder (the engine's "path" control: cd there, back afterwards)
         before = CONV.capture_before(harness, project_path)
@@ -1565,6 +1913,16 @@ class CTask(InitCTask):
                             conv['sessions'].pop(hk, None)
                     run_entry['session'] = ''
                     after_notes.append('%s did not get as far as a session: the next run with %s starts one and is handed the transcript' % (hk, hk))
+            if hk == 'openclaw' and interactive and new_sid and run_entry.get('session') == new_sid:
+                # OpenClaw's terminal UI files a new session under an id of its own (the key it was given names
+                # run-ai's): that id is the one a later headless turn must name, or the turn would start a file of its own
+                real = CONV.openclaw_session_id(new_sid)
+                if real and real != new_sid:
+                    s = conv['sessions'].get(hk) or {}
+                    if s.get('id') == new_sid:
+                        s['id'] = real
+                    run_entry['session'] = real
+                    after_notes.append('openclaw session %s (the id its terminal UI chose)' % real)
             run_entry['finished'] = CONV.now_iso()
             run_entry['seconds'] = round(seconds, 1)
             run_entry['return'] = rr.get('return', 1)
@@ -1583,7 +1941,8 @@ class CTask(InitCTask):
 
         # 6b. the used artifacts are read-only for a run: about what changed in their memory and skills without the
         #     user's word the user is asked; not kept - or with nobody to ask - it becomes a proposal and is put back
-        #     (or is only reported), for every harness alike
+        #     (or is only reported), for every harness alike. A run with --write=all has that word beforehand: its
+        #     changes are kept and recorded, and the versions before the run saved ("keep")
         guard_notes, guard_records = [], []
         if snaps:
             def ask_user(source, ch):
@@ -1603,7 +1962,8 @@ class CTask(InitCTask):
                                and bool(getattr(sys.stdin, 'isatty', lambda: False)())) else None
             try:
                 guard_notes, guard_records = PEND.guard(guarded, snaps, t0, time.time(), guard_mode, pending_root, stamp,
-                                                        ask, cref or project_path)
+                                                        ask, cref or project_path,
+                                                        keep_root=os.path.join(log_dir, '%s.before' % stamp) if not no_log else '')
             except Exception as e:
                 guard_notes = ['context guard: the used artifacts could not be compared with their state before the run: %s' % e]
         staged_now = PEND.count(pending_root, guarded) if guarded else 0
@@ -1646,6 +2006,7 @@ class CTask(InitCTask):
                'project': project_path, 'cref': cref, 'ai_root': ai_root, 'record': record, 'seconds': round(seconds, 1),
                'conversation': conv['id'] if conv else '', 'session': (run_entry or {}).get('session', ''), 'transcript': transcript,
                'codex_state': codex_dir or ('home' if hk == 'codex' else ''),
+               'write': write_mode, 'write_from': write_from,
                'context_guard': guard_mode, 'context_changes': guard_records, 'pending': staged_now}
         if rr.get('return', 0) > 0:
             out['error'] = rr.get('error', 'the harness task failed')

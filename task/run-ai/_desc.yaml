@@ -8,6 +8,7 @@ authors: Grigori Fursin
 #   cxt run-ai "one prompt"                         # one more turn of it, then exit
 #   cxt run-ai --harness=codex --model=<m>,<e>      # the same conversation with another harness and model
 #   cxt run-ai --new / --conversation=<id> / --conversations
+#   cxt run-ai --summarize                          # !AI/log/<id>.summary.md, read first at the next hand-over
 #   cxt run-ai --dry_run                            # everything that would be given to the harness; nothing runs
 #
 # The sub-task is chosen at run time from --harness (the old --agent still works), so it is called from api_v1.py,
@@ -23,6 +24,11 @@ authors: Grigori Fursin
 # of those artifacts are read-only for a run, for every harness alike (pending.py): a change is staged under the
 # project's !AI/pending/<alias>--<UID>/, --pending lists the proposals, --apply_pending applies them on the user's
 # word, and after every run --context_guard (ask | restore | report | off) deals with what was changed there directly.
+# The context is estimated in tokens against --max_context_tokens; --trim_context leaves sources out to fit it.
+#
+# What a run may write: --write=ask (default) | project (no questions, like --yes) | all (-w: also the used artifacts'
+# memory, directly - listed, recorded, the versions before the run saved) | none (the harness's read-only mode); the
+# key "write" of the config task-run-ai is this machine's default (cx config set task-run-ai --meta.write=all).
 
 # This task launches a coding agent - never memoize it on disk
 cache: False

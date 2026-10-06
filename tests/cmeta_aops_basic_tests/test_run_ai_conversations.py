@@ -12,6 +12,8 @@ import json
 import os
 import pathlib
 
+import pytest
+
 # the module is plain Python (standard library only), loaded by its path and not registered in sys.modules
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("run_ai_conversations_under_test", str(REPO_ROOT / "task" / "run-ai" / "conversations.py"))
@@ -80,6 +82,10 @@ def test_how_each_harness_starts_and_resumes_a_session():
     assert C.resume_flags("openclaw", "ID") == ["--session-id", "ID"]
     assert C.resume_flags("gemini", "ID") == ["--resume", "ID"]
     assert C.resume_flags("codex", "ID") == []           # a sub-command of codex: run-codex --resume=<id>
+    # OpenClaw's terminal UI takes the key of the session, not its id
+    assert C.new_session_flags("openclaw", "ID", "c", "a", interactive = True) == ["--session", "agent:main:explicit:ID"]
+    assert C.resume_flags("openclaw", "ID", interactive = True) == ["--session", "agent:main:explicit:ID"]
+    assert C.resume_flags("claude", "ID", interactive = True) == ["--resume", "ID"]
     for h in ("claude", "codex", "agy", "opencode", "openclaw", "gemini"):
         assert C.native_store_hint(h)
     assert C.session_exists("some-new-harness", "ID", ".") is True      # unknown harness: let it try
@@ -113,6 +119,81 @@ def test_claude_sessions_are_found_and_exported(tmp_path, monkeypatch):
         ("assistant", [("text", "One file: a.txt.")])]
     assert messages[0][1]            # the UTC stamp, as local time
     assert C.export_session("claude", "other", str(project)) is None
+
+
+def test_a_long_project_path_finds_the_folder_claude_code_shortened(tmp_path, monkeypatch):
+    # Claude Code cuts a slug longer than 200 characters to 200 and appends "-<hash of the path>"; the hash depends on
+    # its runtime, so run-ai takes the folders with the prefix - not one whose sessions ran in another folder
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    deep = tmp_path / ("d" * 120) / ("e" * 90)
+    other = tmp_path / ("d" * 120) / ("e" * 90 + "-other")
+    projects = tmp_path / "claude" / "projects"
+    slug = C.re.sub(r"[^A-Za-z0-9]", "-", os.path.normpath(str(deep)))
+    assert len(slug) > C.CLAUDE_SLUG_MAX
+    assert C.claude_project_dirs(str(deep)) == []                       # nothing yet: no folder made up
+    mine = projects / (slug[:C.CLAUDE_SLUG_MAX] + "-a1b2c3")
+    theirs = projects / (slug[:C.CLAUDE_SLUG_MAX] + "-x0abcd")
+    try:
+        put(mine / "sess-1.jsonl", [{"type": "user", "cwd": str(deep), "message": {"content": "hello from deep"}}])
+    except OSError:
+        pytest.skip("this file system does not take paths this long (Windows without LongPathsEnabled)")
+    put(theirs / "sess-2.jsonl", [{"type": "user", "cwd": str(other), "message": {"content": "hello from other"}}])
+    (projects / slug[:C.CLAUDE_SLUG_MAX]).mkdir()                       # the bare prefix is no shortened slug
+    found = [pathlib.Path(d) for d in C.claude_project_dirs(str(deep))]
+    assert found == [mine]
+    assert C.claude_session_file(str(deep), "sess-1") == str(mine / "sess-1.jsonl")
+    assert C.claude_session_file(str(deep), "sess-2") == ""
+    assert [b for role, ts, b in C.export_session("claude", "sess-1", str(deep))] == [[("text", "hello from deep")]]
+    # a folder whose sessions say nothing about their directory (only a memory) is taken
+    (mine / "sess-1.jsonl").unlink()
+    (mine / "memory").mkdir()
+    assert [pathlib.Path(d) for d in C.claude_project_dirs(str(deep))] == [mine]
+    # a short path keeps its plain slug
+    short = tmp_path / "short"
+    assert C.claude_project_dirs(str(short))[0].endswith(C.re.sub(r"[^A-Za-z0-9]", "-", os.path.normpath(str(short))))
+
+
+def test_openclaw_sessions_are_found_through_its_index_and_exported(tmp_path, monkeypatch):
+    # OpenClaw 2026.6: <state>/agents/<agent>/sessions/<file>.jsonl and the index sessions.json (key -> session id);
+    # a headless turn names the file after the id run-ai chose, its terminal UI after an id of its own
+    monkeypatch.setenv("OPENCLAW_STATE_DIR", str(tmp_path / "oc"))
+    sessions = tmp_path / "oc" / "agents" / "main" / "sessions"
+    headless, tui_key, tui_real = SID, "11111111-2222-4333-8444-555555555555", "99999999-8888-4777-8666-555555555555"
+    put(sessions / (headless + ".jsonl"), [
+        {"type": "session", "version": 3, "id": headless, "timestamp": "2026-10-05T21:17:24.445Z", "cwd": "C:\\ws"},
+        {"type": "message", "timestamp": "2026-10-05T21:17:24.445Z", "message": {"role": "user", "content": "<!-- the context -->\n" + C.REQUEST_MARK + "\nRead notes.txt"}},
+        {"type": "message", "timestamp": "2026-10-05T21:17:30.000Z", "message": {"role": "assistant", "content": [
+            {"type": "text", "text": "Let me read it."}, {"type": "toolCall", "name": "read", "arguments": {"path": "D:/p/notes.txt"}}]}},
+        {"type": "message", "message": {"role": "toolResult", "content": [{"type": "text", "text": "The mascot is a heron."}]}},
+        {"type": "message", "timestamp": "2026-10-05T21:17:35.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "Heron."}]}},
+        "not json\n"])
+    put(sessions / (headless + ".trajectory.jsonl"), [{"traceSchema": "openclaw-trajectory", "type": "model.fallback_step"}])
+    put(sessions / (tui_real + ".jsonl"), [{"type": "message", "message": {"role": "user", "content": "hello from the UI"}}])
+    (sessions / "sessions.json").write_text(json.dumps({
+        "agent:main:explicit:" + headless: {"sessionId": headless, "sessionFile": str(sessions / (headless + ".jsonl"))},
+        "agent:main:explicit:" + tui_key: {"sessionId": tui_real}}), encoding = "utf-8")
+
+    assert C.session_exists("openclaw", headless, ".") and not C.session_exists("openclaw", "nope", ".")
+    messages = C.export_session("openclaw", headless, ".")
+    assert [(role, blocks) for role, ts, blocks in messages] == [
+        ("user", [("text", "<!-- the context -->\n" + C.REQUEST_MARK + "\nRead notes.txt")]),
+        ("assistant", [("text", "Let me read it."), ("tool", "read D:/p/notes.txt")]),
+        ("assistant", [("text", "Heron.")])]
+    assert messages[0][1] and not messages[0][1].endswith("Z")         # local time
+    # the key run-ai gave the terminal UI leads to the session it filed under its own id
+    assert C.openclaw_session_id(tui_key) == tui_real
+    assert C.openclaw_session_file(tui_key).endswith(tui_real + ".jsonl")
+    assert C.export_session("openclaw", tui_key, ".")[0][2] == [("text", "hello from the UI")]
+    assert C.openclaw_session_id("nope") == "" and C.export_session("openclaw", "nope", ".") is None
+
+
+def test_the_transcript_keeps_the_request_not_what_run_ai_put_before_it():
+    lines = C._render_messages([("user", "2026-10-05 23:00:00", [("text", "the hand-over\n# the orientation\n" + C.REQUEST_MARK + "\nwhich word?")]),
+                                ("assistant", "", [("text", "Heron. " + C.REQUEST_MARK)])], {"user": "User", "assistant": "OpenClaw"})
+    text = "\n".join(lines)
+    assert "which word?" in text and "the hand-over" not in text and "# the orientation" not in text
+    assert C.PREPENDED_NOTE in text
+    assert "Heron. " + C.REQUEST_MARK in text           # an answer is kept as it is
 
 
 def gemini_session(home, sid = SID, project = "my-app"):
@@ -149,7 +230,7 @@ def test_gemini_sessions_are_found_by_id_and_exported_once_per_message(tmp_path,
         ("user", [("text", "Which file is the largest?")]),
         ("assistant", [("text", "Let me check."), ("tool", "run_shell_command du -a .")]),      # the last version of g1
         ("assistant", [("text", "It is data.bin.")])]
-    assert messages[0][1] == "2026-10-05 18:38:50"
+    assert messages[0][1] == C.local_ts("2026-10-05T18:38:50.156Z")        # the UTC stamp, as local time
     assert C.export_session("gemini", "ffffffff-1234-4abc-8def-0123456789ab", ".") is None
 
 

@@ -17,7 +17,9 @@ authors: Grigori Fursin
 # front matter), the entry of a memory replaced with --overwrite is renewed where it stands, and a run that imports
 # skills only does not touch the file. Skills: a folder with SKILL.md, or a folder of such folders (.claude/skills of
 # a repository), copied into <project>/!AI/skills/<name>/ (a skill that is there and differs is replaced with
-# --overwrite only); !AI/.claude-plugin/plugin.json is written so that claude loads them as a plugin. Paths are
+# --overwrite only); !AI/.claude-plugin/plugin.json is written so that claude loads them as a plugin, and
+# !AI/skills/.sources.json records where each skill came from and a hash of what was copied (run-ai then warns when a
+# copy and its source go apart). Paths are
 # separated by ";" (folder names may contain commas). Every import leaves a record:
 # <project>/!AI/log/<stamp>.import.md (what came from where, what was skipped).
 #

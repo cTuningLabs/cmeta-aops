@@ -16,13 +16,15 @@ as they are (the content is never edited; the provenance goes into the import re
 lines, their order and its headings: a memory without an entry gets one at the end - the line of the source index when
 that index has it, else one made from the front matter - and the entry of a memory replaced with --overwrite is
 renewed where it stands; a run that imports skills only does not touch the index. Skills are folders with a SKILL.md;
-they are copied whole into !AI/skills/<name>/ and !AI/.claude-plugin/plugin.json is written for claude.
+they are copied whole into !AI/skills/<name>/, !AI/.claude-plugin/plugin.json is written for claude, and
+!AI/skills/.sources.json records the source of each (run-ai compares the copies with it).
 Paths are separated by ";" since folder names may contain commas.
 """
 
 import datetime
 import filecmp
 import glob
+import hashlib
 import io
 import json
 import os
@@ -41,11 +43,36 @@ INDEX_FILE = 'MEMORY.md'
 PLUGIN_DIR = '.claude-plugin'
 PLUGIN_FILE = 'plugin.json'
 SEP = ';'
+# !AI/skills/.sources.json: where each skill was copied from, when, and the hash of what was copied - run-ai compares the
+# copy with its source on every run and says when they went apart
+SOURCES_FILE = '.sources.json'
+CLAUDE_SLUG_MAX = 200     # Claude Code cuts a longer project slug to 200 characters and appends "-<hash of the path>"
 
 
 def _glob(directory, *pattern):
     """glob.glob in a directory whose own name is taken as it is: a folder called "notes [draft]" is not a pattern."""
     return glob.glob(os.path.join(glob.escape(directory), *pattern))
+
+
+def _claude_session_cwd(folder):
+    """The working directory a session of a Claude project folder recorded ('' when none says)."""
+    for fp in sorted(_glob(folder, '*.jsonl')):
+        try:
+            with io.open(fp, encoding='utf-8', errors='replace') as f:
+                for n, line in enumerate(f):
+                    if n >= 50:
+                        break
+                    if '"cwd"' not in line:
+                        continue
+                    try:
+                        cwd = json.loads(line).get('cwd')
+                    except (ValueError, AttributeError):
+                        continue
+                    if cwd:
+                        return cwd
+        except OSError:
+            continue
+    return ''
 
 
 def _front_matter(path):
@@ -79,6 +106,21 @@ def _same_tree(a, b):
         return out
     fa, fb = files(a), files(b)
     return set(fa) == set(fb) and all(filecmp.cmp(fa[k], fb[k], shallow=False) for k in fa)
+
+
+def _tree_hash(root):
+    """A sha256 of a folder's files (their paths and contents, caches left out) - the same as run-ai's."""
+    files = []
+    for d, dirs, names in os.walk(root):
+        dirs[:] = [x for x in dirs if x != '__pycache__']
+        files += [os.path.join(d, n) for n in names if not n.endswith('.pyc')]
+    h = hashlib.sha256()
+    for fp in sorted(files, key=lambda x: os.path.relpath(x, root).replace('\\', '/')):
+        h.update(os.path.relpath(fp, root).replace('\\', '/').encode('utf-8') + b'\0')
+        with open(fp, 'rb') as f:
+            h.update(f.read())
+        h.update(b'\0')
+    return h.hexdigest()
 
 
 def _index_lines(index_path):
@@ -120,12 +162,29 @@ class CTask(InitCTask):
 
     @staticmethod
     def _claude_memory_dirs(folder):
+        """The same rule as claude_project_dirs in run-ai's conversations.py: a slug longer than 200 characters is
+        cut to 200 and followed by "-<hash>", so the folders with that prefix are taken, less those whose sessions
+        recorded another working directory."""
         base = os.environ.get('CLAUDE_CONFIG_DIR') or os.path.join(os.path.expanduser('~'), '.claude')
         p = os.path.normpath(folder)
         variants = {p}
         if len(p) > 1 and p[1] == ':':
             variants |= {p[0].lower() + p[1:], p[0].upper() + p[1:]}
-        return [os.path.join(base, 'projects', re.sub(r'[^A-Za-z0-9]', '-', v), MEMORY_DIR) for v in sorted(variants)]
+        out = []
+        for v in sorted(variants):
+            slug = re.sub(r'[^A-Za-z0-9]', '-', v)
+            if len(slug) <= CLAUDE_SLUG_MAX:
+                out.append(os.path.join(base, 'projects', slug, MEMORY_DIR))
+                continue
+            for d in sorted(_glob(os.path.join(base, 'projects'), slug[:CLAUDE_SLUG_MAX] + '-*')):
+                m = os.path.join(d, MEMORY_DIR)
+                if m in out or not os.path.isdir(d) or len(os.path.basename(d)) <= CLAUDE_SLUG_MAX + 1:
+                    continue
+                cwd = _claude_session_cwd(d)
+                if cwd and os.path.normcase(os.path.normpath(cwd)) != os.path.normcase(p):
+                    continue
+                out.append(m)
+        return out
 
     @staticmethod
     def _split(value):
@@ -168,7 +227,7 @@ class CTask(InitCTask):
             if dirs:
                 mem_items.append(dirs[0])
             else:
-                return self.cm.error('no native Claude memory for the folder "%s" (looked in %s)' % (folder, ', '.join(self._claude_memory_dirs(folder))))
+                return self.cm.error('no native Claude memory for the folder "%s" (looked in %s)' % (folder, ', '.join(self._claude_memory_dirs(folder)) or 'the folders of ~/.claude/projects for its shortened slug'))
         if plan:
             try:
                 with io.open(plan, encoding='utf-8') as f:
@@ -279,6 +338,20 @@ class CTask(InitCTask):
             else:
                 missing.append(item)
         s_copied = s_skipped = s_replaced = 0
+        sources_path = os.path.join(skills_dir, SOURCES_FILE)
+        sources = {}
+        if os.path.isfile(sources_path):
+            try:
+                with io.open(sources_path, encoding='utf-8-sig') as f:
+                    sources = json.load(f)
+            except (OSError, ValueError):
+                sources = {}
+        sources_before = json.dumps(sources, sort_keys=True)
+
+        def remember(name, src):
+            sources[name] = {'source': os.path.abspath(src), 'imported': datetime.datetime.now().isoformat(timespec='seconds'),
+                             'hash': _tree_hash(src)}
+
         for name in sorted(skill_dirs):
             src = skill_dirs[name]
             dst = os.path.join(skills_dir, name)
@@ -286,6 +359,8 @@ class CTask(InitCTask):
                 if _same_tree(src, dst):
                     rows.append(('skill', name, src, 'skipped: identical'))
                     s_skipped += 1
+                    if (sources.get(name) or {}).get('source') != os.path.abspath(src):
+                        remember(name, src)         # a copy made before the sources were recorded, or from elsewhere
                     continue
                 if not overwrite:
                     rows.append(('skill', name, src, 'skipped: already there and different (--overwrite replaces it)'))
@@ -300,7 +375,13 @@ class CTask(InitCTask):
                 s_copied += 1
             if not dry_run:
                 shutil.copytree(src, dst, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+            remember(name, src)
             rows.append(('skill', name, src, decision))
+        if json.dumps(sources, sort_keys=True) != sources_before and not dry_run:
+            os.makedirs(skills_dir, exist_ok=True)
+            with io.open(sources_path, 'w', encoding='utf-8', newline='\n') as f:
+                json.dump(sources, f, indent=1, sort_keys=True)
+                f.write('\n')
         plugin_written = False
         if (skill_dirs or _glob(skills_dir, '*', 'SKILL.md')) and not os.path.isfile(os.path.join(ai_root, PLUGIN_DIR, PLUGIN_FILE)):
             plugin_written = True

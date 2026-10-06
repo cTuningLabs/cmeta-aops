@@ -6,8 +6,11 @@ This task is the OpenClaw (https://openclaw.ai) sibling of the "run-claude",
 "run-codex" and "run-opencode" tasks.
 """
 
+import datetime
+import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -46,6 +49,64 @@ def _flag_value(flags, names):
             if index + 1 < len(flags):
                 return flags[index + 1]
     return ''
+
+
+def _sums(tokens):
+    """The counters as run-claude reports them: sent = new input + cache write + cache read, total = sent + output."""
+    if not tokens:
+        return {}
+    out = dict(tokens)
+    for key in ('input', 'cache_write', 'cache_read', 'output'):
+        out.setdefault(key, 0)
+    out['sent'] = out['input'] + out['cache_write'] + out['cache_read']
+    out['total'] = max(out['sent'] + out['output'], tokens.get('total', 0))
+    return out
+
+
+def _claude_session_usage(session_id, since):
+    """
+    The token counts of the model calls Claude Code made for one OpenClaw turn (the claude-cli
+    provider): the assistant messages of its session file <claude config>/projects/<slug>/<id>.jsonl
+    written since the turn started, each message once (Claude Code writes a line per content block,
+    all with the message's usage). {} when the file is not found.
+    """
+    base = os.environ.get('CLAUDE_CONFIG_DIR') or os.path.join(os.path.expanduser('~'), '.claude')
+    files = glob.glob(os.path.join(glob.escape(os.path.join(base, 'projects')), '*', glob.escape(str(session_id)) + '.jsonl'))
+    if not files:
+        return {}
+    usage_by_message = {}
+    try:
+        with open(files[0], encoding='utf-8', errors='replace') as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                message = d.get('message') if isinstance(d, dict) else None
+                if d.get('type') != 'assistant' or not isinstance(message, dict) or not isinstance(message.get('usage'), dict):
+                    continue
+                stamp = str(d.get('timestamp') or '')
+                try:
+                    when = datetime.datetime.fromisoformat(stamp.replace('Z', '+00:00')).timestamp()
+                except ValueError:
+                    continue
+                if when < since - 2:
+                    continue
+                usage_by_message[message.get('id') or len(usage_by_message)] = message['usage']
+    except OSError:
+        return {}
+    if not usage_by_message:
+        return {}
+    tokens = {'input': 0, 'cache_write': 0, 'cache_read': 0, 'output': 0}
+    for usage in usage_by_message.values():
+        for src, dst in (('input_tokens', 'input'), ('cache_creation_input_tokens', 'cache_write'),
+                         ('cache_read_input_tokens', 'cache_read'), ('output_tokens', 'output')):
+            if isinstance(usage.get(src), (int, float)):
+                tokens[dst] += usage[src]
+    tokens = _sums(tokens)
+    tokens['model_calls'] = len(usage_by_message)
+    tokens['from'] = "Claude Code's session %s (the claude-cli provider)" % session_id
+    return tokens
 
 
 def _openclaw_argv(openclaw_path):
@@ -322,7 +383,7 @@ class CTask(InitCTask):
 
         tokens = {}
         if parse_json:
-            reply, tokens = self._from_json(output)
+            reply, tokens = self._from_json(output, start_time)
             if reply is not None:
                 output = reply if reply.endswith('\n') else reply + '\n'
             if con:
@@ -370,7 +431,11 @@ class CTask(InitCTask):
             print (f'{space}Duration: {duration:.1f} sec')
 
         if returncode != 0:
-            return self.cm.error(f'openclaw failed with return code {returncode}', 99)
+            hint = ''
+            if 'No API key found for provider' in output:
+                hint = (' - the model\'s provider has no key on this machine: "openclaw models list" shows which are '
+                        'authenticated (the Auth column); --model=claude-cli/<model> runs through the local Claude Code login')
+            return self.cm.error(f'openclaw failed with return code {returncode}{hint}', 99)
 
         result = {'return': 0, 'output': output, 'output_file': output_file, 'prompt': full_prompt, 'cmd': shown,
                   'returncode': returncode, 'duration': duration, 'interactive': False, 'stats_file': stats_file}
@@ -380,25 +445,38 @@ class CTask(InitCTask):
 
 
     ############################################################
-    def _from_json(self, output):
+    def _from_json(self, output, since=0):
         """
         The reply text and the token usage in OpenClaw's "--json" result.
 
-        The JSON schema of a young, fast-moving CLI is not frozen, so this walks the result for the
-        interesting parts instead of hard-coding one shape: the reply text ("reply", "text",
-        "content", "output", "message") and the usage ("usage"/"tokens" with input/output/prompt/
-        completion counters, "cost"). Anything unrecognized leaves the raw output in place.
+        OpenClaw 2026.6 prints its log lines ("[agent/cli-backend] ...") and then one JSON object:
+        the reply in "payloads" (a list of {"text": ...}) and "meta.finalAssistantVisibleText", the
+        usage of the turn in "meta.agentMeta.usage" (input, output, cacheRead, cacheWrite). The schema
+        of a young, fast-moving CLI is not frozen, so other shapes are still looked for: the reply
+        text ("reply", "text", "content", "output", "message") and the usage ("usage"/"tokens" with
+        input/output/prompt/completion counters, "cost") anywhere in the result. Anything
+        unrecognized leaves the raw output in place.
         """
-        start = output.find('{')
+        match = re.search(r'(?m)^\{', output)
         try:
-            data = json.loads(output[start:]) if start >= 0 else None
-        except Exception:
+            data = json.JSONDecoder().raw_decode(output[match.start():])[0] if match else None
+        except ValueError:
             data = None
         if not isinstance(data, dict):
             return None, {}
 
         reply = None
+        meta = data.get('meta') if isinstance(data.get('meta'), dict) else {}
+        payloads = data.get('payloads')
+        if isinstance(payloads, list):
+            texts = [p['text'] for p in payloads if isinstance(p, dict) and isinstance(p.get('text'), str) and p['text'].strip()]
+            if texts:
+                reply = '\n\n'.join(texts)
+        if reply is None and isinstance(meta.get('finalAssistantVisibleText'), str) and meta['finalAssistantVisibleText'].strip():
+            reply = meta['finalAssistantVisibleText']
         for key in ('reply', 'text', 'output', 'content', 'message', 'result'):
+            if reply:
+                break
             v = data.get(key)
             if isinstance(v, str) and v.strip():
                 reply = v
@@ -412,6 +490,14 @@ class CTask(InitCTask):
                 break
 
         tokens = {}
+        agent_meta = meta.get('agentMeta') if isinstance(meta.get('agentMeta'), dict) else {}
+        binding = agent_meta.get('cliSessionBinding') if isinstance(agent_meta.get('cliSessionBinding'), dict) else {}
+        if agent_meta.get('provider') == 'claude-cli' and binding.get('sessionId'):
+            # the claude-cli provider runs Claude Code, whose own session has the real counts of every model call
+            # of the turn; OpenClaw's "usage" is that of the last call only, with too few output tokens
+            tokens = _claude_session_usage(binding['sessionId'], since)
+            if tokens:
+                return reply, tokens
 
         def walk(d, depth=0):
             if depth > 6 or not isinstance(d, dict):
@@ -436,10 +522,15 @@ class CTask(InitCTask):
                     for x in v:
                         walk(x, depth + 1)
 
-        walk(data)
-        if tokens and 'total' not in tokens:
-            tokens['total'] = tokens.get('input', 0) + tokens.get('output', 0)
-        return reply, tokens
+        usage = agent_meta.get('usage')
+        if isinstance(usage, dict):
+            walk({'usage': usage})          # the turn's usage; "lastCallUsage" beside it is a part of it
+            cost = usage.get('cost')
+            if isinstance(cost, dict) and isinstance(cost.get('total'), (int, float)) and cost['total'] > 0:
+                tokens['cost_usd'] = cost['total']
+        else:
+            walk(data)
+        return reply, _sums(tokens)
 
 
     ############################################################
@@ -448,9 +539,13 @@ class CTask(InitCTask):
         if not tokens:
             return []
         lines = ['Statistics for this prompt:',
-                 f'  Tokens sent:     {tokens.get("input", 0)}',
+                 f'  Tokens sent:     {tokens.get("sent", tokens.get("input", 0))}'
+                 f' (new: {tokens.get("input", 0)}, cache write: {tokens.get("cache_write", 0)},'
+                 f' cache read: {tokens.get("cache_read", 0)})',
                  f'  Tokens received: {tokens.get("output", 0)}',
                  f'  Tokens total:    {tokens.get("total", 0)}']
+        if tokens.get('from'):
+            lines.append(f'  Counted from:    {tokens["from"]}')
         if 'cost_usd' in tokens:
             lines.append(f'  Cost:            {tokens["cost_usd"]:.4f} USD')
         return lines
