@@ -191,6 +191,7 @@ in its `_desc.yaml` and `api_v1.py` carry the full reasoning:
 | Flag | Effect |
 |---|---|
 | `--prompt="…"` / `--prompt_file=<file>` | The prompt: file text, then `\n`, then `--prompt` text. |
+| `--long_prompt_file=<file>` | Where a prompt too long for a command line argument is written for the agent to read first (default: `<prompt_file>-prompt.md`, else a temporary file) — see below. |
 | *(none of the above)* | **Opens an interactive session** instead of failing. |
 | `--interactive`, `--i`, `-i` | Preload the prompt, then keep the terminal (follow up by hand). |
 | `--yes` | Run unattended (auto-approve every permission question). |
@@ -204,6 +205,19 @@ in its `_desc.yaml` and `api_v1.py` carry the full reasoning:
 An interactive session owns the terminal, so `--stats`, `--stats_file` and
 `--output_file` are switched off there, and a non-zero exit code is reported but
 does not fail the task (quitting a session is normal).
+
+A prompt longer than 30,000 characters cannot travel as a command line argument
+(Windows caps a whole command line at 32,767 characters — `[WinError 206] The
+filename or extension is too long` — and Linux an argument at 128 KB). Where it
+has to — an interactive session preloads its first prompt that way, and
+`opencode run` / `openclaw agent` have no stdin mode at all — the task writes the
+prompt to a file and passes a one-line request to read it first: the agent reads
+the file, follows it, and an interactive session stays interactive. The file is
+`--long_prompt_file` when given (`run-ai` names `!AI/log/<stamp>.<harness>.prompt.md`
+and keeps it as the record of the run), else `<prompt_file>-prompt.md` next to the
+prompt file, else a temporary file removed after the run. Headless `run-claude`,
+`run-codex`, `run-gemini` and `run-agy` send the prompt through stdin and never
+need it. The shared code is `prompt_via_file()` in the task category API.
 
 ## Repositories in the agent's context (`run-claude`)
 
@@ -359,9 +373,9 @@ expressed as `--variant` instead of `--effort` / `model_reasoning_effort`.
 
 - **`opencode run` has no stdin mode.** Unlike `claude -p` and `codex exec -`,
   the prompt always travels as a command line argument — in both interactive and
-  headless mode. The OS caps a command line (~32K chars on Windows, ~2MB of argv
-  on Linux), so `run-opencode` warns above 30K chars. Use `run-claude` or
-  `run-codex` for a very long prompt file.
+  headless mode. The OS caps a command line (~32K chars on Windows, 128 KB per
+  argument on Linux), so above 30K chars `run-opencode` writes the prompt to a
+  file and asks opencode to read it first (see the shared flags above).
 - **Windows installs `opencode` through winget** (`SST.opencode`), because
   upstream publishes no `.cmd`/`.ps1` installer — `https://opencode.ai/install.ps1`
   is a 404. Linux/macOS use the official install script, which drops a prebuilt

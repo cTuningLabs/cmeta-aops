@@ -23,6 +23,13 @@ authors: Grigori Fursin
 # can be captured: --stats, --stats_file and --output_file are switched off, and a
 # non-zero exit code is reported but does not fail the task (quitting is normal).
 #
+# A prompt longer than 30000 characters cannot be a command line argument (Windows
+# caps a whole command line at 32767 characters): an interactive session is then
+# given a file with it - --long_prompt_file={file}, else {prompt_file without
+# extension}-prompt.md, else a temporary file removed afterwards - and a one-line
+# request to read it first; it follows it and stays interactive. A non-interactive
+# run sends the prompt on stdin and never needs this.
+#
 # --yes runs claude fully unattended: all questions (file edits, Bash, ...) are
 # answered "yes" via "--permission-mode bypassPermissions". The workspace trust
 # question is skipped by claude itself in non-interactive mode ("-p").

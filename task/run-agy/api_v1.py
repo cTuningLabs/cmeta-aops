@@ -23,7 +23,9 @@ What is specific to agy (1.2.16, checked with "agy --help" and probes on 2026-10
 - "--model <slug>" and "--effort low|medium|high|xhigh|max" pin the model; there is no extension switch
   (plugins are enabled in the settings), so --reproducible only warns when nothing is pinned;
 - "--add-dir <folder>" (repeatable) mounts more folders into the workspace; "--continue" / "--conversation <id>" resume;
-- the interactive form is "agy --prompt-interactive=<prompt>" ("-i"; run it, then stay), or plain "agy";
+- the interactive form is "agy --prompt-interactive=<prompt>" ("-i"; run it, then stay), or plain "agy"; a long prompt
+  (over MAX_PROMPT_ARG_CHARS of the task category API, 30000 characters - or, headless, one with an output format other
+  than stream-json) is written to a file and agy is asked to read it first; the session then goes on as before;
 - a headless run without a stored login prints the login URL, waits 60 s for the code and exits 1 with a JSON error
   ("authentication failed or timed out"); the login is done once by hand ("agy", Login with Google) and kept in the
   OS keyring; GEMINI_API_KEY + {"modelProvider": "gemini"} in ~/.gemini/antigravity-cli/settings.json is the other way;
@@ -40,7 +42,7 @@ import os
 import subprocess
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, MAX_PROMPT_ARG_CHARS, prompt_via_file, prompt_via_file_done
 
 OUTPUT_FILE_SUFFIX = '-output.txt'
 DEFAULT_OUTPUT_FILE = 'run-agy-output.txt'
@@ -57,8 +59,8 @@ EFFORT_FLAGS = ['--effort']
 # These make sense in headless mode only; an interactive session is text
 RUN_ONLY_FLAGS = ['--output-format', '--input-format', '--json-schema', '--print-timeout', '--disable-slash-commands']
 
-# Above this a prompt goes through stdin (the OS caps a command line; Windows at 32 K characters)
-MAX_PROMPT_ARG_CHARS = 30000
+# Above MAX_PROMPT_ARG_CHARS (the task category API: the OS caps a command line; Windows at 32 K characters) a
+# headless prompt goes through stdin with these flags; an interactive one is written to a file agy is asked to read
 STDIN_FLAGS = ['--print=', '--input-format', 'stream-json']
 
 NO_AUTO_UPDATE_ENV = 'AGY_CLI_DISABLE_AUTO_UPDATE'
@@ -108,6 +110,7 @@ class CTask(InitCTask):
             ctx: dict,                      # cMeta context
             prompt: str = '',               # prompt text
             prompt_file: str = '',          # file with the prompt text
+            long_prompt_file: str = '',     # where a prompt too long for the command line is written for agy to read
             interactive: bool = False,      # run the prompt, then stay in the interactive agy session
             i: bool = False,                # short alias of "interactive" (--i / -i)
             yes: bool = False,              # auto-approve every tool call (--dangerously-skip-permissions)
@@ -210,19 +213,19 @@ class CTask(InitCTask):
 
         flags += extra_flags
 
-        # a long prompt goes through stdin as one NDJSON message; that protocol needs the stream-json output
+        # a long headless prompt goes through stdin as one NDJSON message; that protocol needs the stream-json output.
+        # Otherwise - an interactive session, or another output format asked for - a long prompt is written to a file
+        # and agy is asked to read it first (an interactive session then goes on as before)
         prompt_on_stdin = False
-        if not interactive and len(full_prompt) > MAX_PROMPT_ARG_CHARS:
-            if user_format and user_format != 'stream-json':
-                if con:
-                    print('')
-                    print(f'{space}WARNING: the prompt is {len(full_prompt)} chars long and would go through stdin, but that needs '
-                          f'"--output-format stream-json" (given: {user_format}) - it is passed as an argument, which the OS may refuse')
-            else:
-                prompt_on_stdin = True
-                if not parse_stream and not user_format:
-                    flags += STATS_FLAGS
-                parse_stream = True
+        if not interactive and len(full_prompt) > MAX_PROMPT_ARG_CHARS and (not user_format or user_format == 'stream-json'):
+            prompt_on_stdin = True
+            if not parse_stream and not user_format:
+                flags += STATS_FLAGS
+            parse_stream = True
+        pr = prompt_via_file(full_prompt, 'agy', when=not prompt_on_stdin, path=long_prompt_file, prompt_file=prompt_file,
+                             con=con, space=space)
+        if pr['return'] > 0:
+            return pr
 
         if interactive:
             dropped = [x for x in flags if x.split('=')[0] in RUN_ONLY_FLAGS]
@@ -231,11 +234,11 @@ class CTask(InitCTask):
                 if con:
                     print('')
                     print(f'{space}INFO: agy takes these in headless mode only, so they are dropped from the session: {" ".join(dropped)}')
-            cmd = base_cmd + flags + (['--prompt-interactive=' + full_prompt] if full_prompt else [])
+            cmd = base_cmd + flags + (['--prompt-interactive=' + pr['text']] if full_prompt else [])
         elif prompt_on_stdin:
             cmd = base_cmd + flags + STDIN_FLAGS
         else:
-            cmd = base_cmd + flags + ['--print=' + full_prompt]
+            cmd = base_cmd + flags + ['--print=' + pr['text']]
 
         if con:
             print('')
@@ -248,7 +251,9 @@ class CTask(InitCTask):
                 shown += ' --print=<prompt>'
             print(f'{space}RUN: {shown}')
             if full_prompt:
-                print(f'{space}     (prompt: {len(full_prompt)} chars {"through stdin" if prompt_on_stdin else "as an argument"})')
+                where = f'in a file agy is asked to read first: {pr["file"]}' if pr['file'] \
+                    else ('through stdin' if prompt_on_stdin else 'as an argument')
+                print(f'{space}     (prompt: {len(full_prompt)} chars {where})')
             if interactive:
                 print(f'{space}     (interactive session - agy keeps this terminal)')
             if output_file:
@@ -267,15 +272,17 @@ class CTask(InitCTask):
             except KeyboardInterrupt:
                 returncode = 1
             except Exception as e:
+                prompt_via_file_done(pr)
                 return self.cm.error(f'cannot run "{agy_path}": {e}', 1)
+            prompt_via_file_done(pr)
             duration = time.time() - start_time
             if con:
                 print('')
                 if returncode != 0:
                     print(f'{space}INFO: agy exited with return code {returncode}')
                 print(f'{space}Duration: {duration:.1f} sec')
-            return {'return': 0, 'output': '', 'output_file': '', 'prompt': full_prompt, 'returncode': returncode,
-                    'duration': duration, 'interactive': True, 'stats_file': ''}
+            return {'return': 0, 'output': '', 'output_file': '', 'prompt': full_prompt, 'long_prompt_file': pr['file'],
+                    'returncode': returncode, 'duration': duration, 'interactive': True, 'stats_file': ''}
 
         # ---- headless: run and collect everything
         try:
@@ -283,6 +290,7 @@ class CTask(InitCTask):
                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                        text=True, encoding='utf-8', errors='replace', bufsize=1, env=env)
         except Exception as e:
+            prompt_via_file_done(pr)
             return self.cm.error(f'cannot run "{agy_path}": {e}', 1)
 
         if prompt_on_stdin:
@@ -306,8 +314,10 @@ class CTask(InitCTask):
         except KeyboardInterrupt:
             process.kill()
             process.wait()
+            prompt_via_file_done(pr)
             return self.cm.error('interrupted by the user', 1)
         returncode = process.wait()
+        prompt_via_file_done(pr)
         duration = time.time() - start_time
         output = ''.join(lines)
 
@@ -385,8 +395,8 @@ class CTask(InitCTask):
             what = f'return code {returncode}' if returncode != 0 else f'status {run_stats.get("status")}'
             return self.cm.error(f'agy failed with {what}{hint}', 99)
 
-        result = {'return': 0, 'output': output, 'output_file': output_file, 'prompt': full_prompt, 'returncode': returncode,
-                  'duration': duration, 'interactive': False}
+        result = {'return': 0, 'output': output, 'output_file': output_file, 'prompt': full_prompt, 'long_prompt_file': pr['file'],
+                  'returncode': returncode, 'duration': duration, 'interactive': False}
         if run_stats:
             result['stats'] = run_stats
             result['tokens'] = self._get_tokens(run_stats)

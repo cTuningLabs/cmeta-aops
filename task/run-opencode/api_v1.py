@@ -11,7 +11,7 @@ import os
 import subprocess
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done
 
 # Suffix appended to the prompt file name (without extension) when
 # --output_file is not given
@@ -53,11 +53,11 @@ MODEL_FLAGS = ['--model', '-m']
 # accepted in both modes, so only the output format has to be dropped.
 RUN_ONLY_FLAGS = OUTPUT_FORMAT_FLAGS
 
-# Longest prompt that travels without a warning. Unlike claude ("claude -p") and
-# codex ("codex exec -"), "opencode run" has no stdin mode at all - the prompt is
-# always a command line argument, and an OS caps a whole command line (32767
-# chars on Windows, ~2MB of argv on Linux).
-MAX_PROMPT_ARG_CHARS = 30000
+# Unlike claude ("claude -p") and codex ("codex exec -"), "opencode run" has no
+# stdin mode at all - the prompt is always a command line argument, in both modes,
+# and an OS caps a whole command line (32767 chars on Windows, 128 KB per argument
+# on Linux). A longer prompt is written to a file and opencode is asked to read it
+# first: see prompt_via_file() in the task category API (MAX_PROMPT_ARG_CHARS there).
 
 
 def _flag_value(flags, names):
@@ -108,6 +108,7 @@ class CTask(InitCTask):
             ctx: dict,                      # cMeta context
             prompt: str = '',               # prompt text
             prompt_file: str = '',          # file with the prompt text
+            long_prompt_file: str = '',     # where a prompt too long for the command line is written for opencode to read
             interactive: bool = False,      # preload the prompt, then stay in the interactive opencode session
             i: bool = False,                # short alias of "interactive" (--i / -i)
             yes: bool = False,              # answer "yes" to all opencode questions (auto-approve permissions)
@@ -143,8 +144,12 @@ class CTask(InitCTask):
 
         Unlike claude ("claude -p") and codex ("codex exec -"), "opencode run" has
         no stdin mode - the prompt is always passed as a command line argument, in
-        both modes. A prompt longer than MAX_PROMPT_ARG_CHARS is therefore warned
-        about and may be refused by the OS.
+        both modes, which the OS caps (32767 characters for the whole line on
+        Windows). A prompt longer than MAX_PROMPT_ARG_CHARS of the task category API
+        (30000) is therefore written to a file - "long_prompt_file" when given, else
+        next to the prompt file, else a temporary file removed after the run - and
+        opencode is asked to read it first: it then follows it, and an interactive
+        session stays interactive as before.
 
         The output is streamed to the console while opencode runs and is recorded
         into "output_file". When "output_file" is not given, it defaults to the
@@ -173,6 +178,7 @@ class CTask(InitCTask):
             ctx (dict): cMeta context.
             prompt (str): Prompt text (appended after the prompt file text).
             prompt_file (str): File with the prompt text (read as UTF-8).
+            long_prompt_file (str): Where a prompt too long for the command line is written for opencode to read.
             interactive (bool): If True, preload the prompt (optional here) and stay in the opencode session.
             i (bool): Short alias of "interactive".
             yes (bool): If True, auto-approve all opencode permissions and never prompt.
@@ -192,6 +198,7 @@ class CTask(InitCTask):
                 - **output** (str): Full output of opencode ('' if `interactive`).
                 - **output_file** (str): Where the output was recorded ('' if skipped).
                 - **prompt** (str): The assembled prompt sent to opencode.
+                - **long_prompt_file** (str): The file the prompt was written to when it was too long for the command line ('' if none).
                 - **returncode** (int): Return code of the opencode CLI.
                 - **duration** (float): Run time in seconds.
                 - **interactive** (bool): True if opencode was run as an interactive session.
@@ -252,13 +259,13 @@ class CTask(InitCTask):
                 print (f'{space}INFO: no prompt was given (--prompt / --prompt_file) - '
                        f'opening an interactive opencode session')
 
-        # "opencode run" has no stdin mode, so the prompt is an argument in both modes
-        if full_prompt != '' and len(full_prompt) > MAX_PROMPT_ARG_CHARS and con:
-            print ('')
-            print (f'{space}WARNING: the prompt is {len(full_prompt)} chars long - opencode takes it '
-                   f'as a command line argument, which the OS may refuse')
-            print (f'{space}         (opencode has no stdin mode - use run-claude or run-codex '
-                   f'for a very long prompt)')
+        # "opencode run" has no stdin mode, so the prompt is a command line argument in both modes,
+        # which the OS caps: a long one is written to a file and opencode is asked to read it first
+        # (an interactive session then goes on as before)
+        pr = prompt_via_file(full_prompt, 'opencode', path=long_prompt_file, prompt_file=prompt_file,
+                             con=con, space=space)
+        if pr['return'] > 0:
+            return pr
 
         ###########################################################################################
         # Pick the output and statistics files.
@@ -366,15 +373,16 @@ class CTask(InitCTask):
 
         cmd = base_cmd + flags
 
-        # The prompt is the trailing positional argument in both modes
+        # The prompt (or the request to read its file) is the trailing positional argument in both modes
         if full_prompt:
-            cmd.append(full_prompt)
+            cmd.append(pr['text'])
 
         if con:
             print ('')
             print (f'{space}RUN: {" ".join(base_cmd + flags)}')
             if full_prompt:
-                print (f'{space}     (prompt: {len(full_prompt)} chars as an argument)')
+                where = f'in a file opencode is asked to read first: {pr["file"]}' if pr['file'] else 'as an argument'
+                print (f'{space}     (prompt: {len(full_prompt)} chars {where})')
             if interactive:
                 print (f'{space}     (interactive session - opencode keeps this terminal)')
             if output_file:
@@ -401,7 +409,10 @@ class CTask(InitCTask):
             except KeyboardInterrupt:
                 returncode = 1
             except Exception as e:
+                prompt_via_file_done(pr)
                 return self.cm.error(f'cannot run "{opencode_path}": {e}', 1)
+
+            prompt_via_file_done(pr)
 
             duration = time.time() - start_time
 
@@ -416,6 +427,7 @@ class CTask(InitCTask):
                     'output': '',
                     'output_file': '',
                     'prompt': full_prompt,
+                    'long_prompt_file': pr['file'],
                     'returncode': returncode,
                     'duration': duration,
                     'interactive': True,
@@ -438,6 +450,7 @@ class CTask(InitCTask):
                 bufsize = 1,
             )
         except Exception as e:
+            prompt_via_file_done(pr)
             return self.cm.error(f'cannot run "{opencode_path}": {e}', 1)
 
         # Stream the output while opencode works and keep it for the output file
@@ -455,9 +468,12 @@ class CTask(InitCTask):
         except KeyboardInterrupt:
             process.kill()
             process.wait()
+            prompt_via_file_done(pr)
             return self.cm.error('interrupted by the user', 1)
 
         returncode = process.wait()
+
+        prompt_via_file_done(pr)
 
         duration = time.time() - start_time
 
@@ -565,6 +581,7 @@ class CTask(InitCTask):
                   'output': output,
                   'output_file': output_file,
                   'prompt': full_prompt,
+                  'long_prompt_file': pr['file'],
                   'returncode': returncode,
                   'duration': duration,
                   'interactive': False}

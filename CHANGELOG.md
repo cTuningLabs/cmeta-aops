@@ -2,6 +2,18 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.43.2
+- **Long prompts for every agent task: a file instead of a command line argument.** An interactive session
+  preloads its first prompt as a command line argument, and `opencode run` / `openclaw agent` have no stdin mode at
+  all - but Windows caps a whole command line at 32767 characters (`[WinError 206] The filename or extension is too
+  long`: `cxt run-ai --harness=codex`, whose context alone is ~57K characters, could not start an interactive codex).
+  `run-claude`, `run-codex`, `run-opencode`, `run-openclaw`, `run-agy` and `run-gemini` now write a prompt longer
+  than 30000 characters to a file and pass a one-line request to read it first (the shared `prompt_via_file()` of
+  the task category API, which also replaces run-gemini's own launcher-script fallback); the agent reads it, follows
+  it and stays interactive. The file is `--long_prompt_file=<file>` - run-ai names `!AI/log/<stamp>.<harness>.prompt.md`
+  and keeps it as the record of the run - else `<prompt_file>-prompt.md`, else a temporary file removed after the
+  run. Headless runs of claude, codex, gemini and agy still send the prompt on stdin.
+
 ## 0.43.1
 - **`run-ai --write=ask|project|all|none`, `-w`: what a run may write, in one switch.** It sets the harness's own
   approvals and the guard of the used artifacts together: `ask` (the default) as before; `project` lifts the

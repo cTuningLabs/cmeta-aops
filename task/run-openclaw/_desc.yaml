@@ -26,7 +26,10 @@ authors: Grigori Fursin
 # --output_file are switched off, and a non-zero exit code is reported but does not fail the task.
 #
 # "openclaw agent" has no stdin mode, so the prompt always travels as a command-line argument: the OS
-# caps a command line (~32K chars on Windows, ~2MB argv on Linux), so a very long prompt is warned about.
+# caps a command line (32767 chars on Windows, 128 KB per argument on Linux), so a prompt longer than
+# 30000 characters is written to a file - --long_prompt_file={file}, else {prompt_file without
+# extension}-prompt.md, else a temporary file removed afterwards - and openclaw is given a one-line
+# request to read it first; it follows it, and the terminal UI stays open as before.
 #
 # --stats asks OpenClaw for JSON output ("--json") and prints the reply text plus the token usage and
 # cost it reports. --stats_file={file} records the same statistics ("*.json" = JSON, otherwise text).

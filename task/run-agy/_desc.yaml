@@ -30,9 +30,12 @@ authors: Grigori Fursin
 # e.g. "-- --model <slug> --effort medium" ("agy models" lists the slugs of the account).
 #
 # The prompt sent to agy is the text of --prompt_file (when given), then "\n", then the text of --prompt. It goes
-# in as one argument ("--print=<prompt>"); a prompt longer than ~30000 characters goes through stdin instead
-# (one NDJSON message, "--print= --input-format stream-json"). Anything after "--" is appended to the agy command
-# line, e.g.
+# in as one argument ("--print=<prompt>"); a prompt longer than 30000 characters goes through stdin instead
+# (one NDJSON message, "--print= --input-format stream-json"). An interactive session (or a headless run with
+# another output format) cannot do that: such a long prompt is written to a file - --long_prompt_file={file},
+# else {prompt_file without extension}-prompt.md, else a temporary file removed afterwards - and agy is given
+# a one-line request to read it first; it follows it and stays interactive. Anything after "--" is appended to
+# the agy command line, e.g.
 #
 #   cx task run run-agy --prompt_file=p.txt -- --model gemini-3.1-pro --effort high
 #

@@ -14,9 +14,9 @@ purpose - no account, a refused account, an invalid API key):
 - headless mode is "gemini -p <prompt>", whose text is appended to what arrives on stdin: this task sends the prompt
   on stdin with an empty "-p", so that no command line carries it (on Windows the tool is a gemini.cmd launcher, and
   cmd.exe would cut an argument at its first new line, expand %VAR% in it and cap the line at 8191 characters);
-- the interactive form "gemini -i <prompt>" takes the prompt as an argument; with a launcher script, a prompt of
-  several lines (or with "%" or '"', or a long one) is written to a file next to the output and the session is given
-  a one-line request to read it;
+- the interactive form "gemini -i <prompt>" takes the prompt as an argument; a long one (over MAX_PROMPT_ARG_CHARS of
+  the task category API, 30000 characters - 7000 through the gemini.cmd launcher, or any with a new line, "%" or '"'
+  there) is written to a file and the session is given a one-line request to read it first; it then goes on as before;
 - a headless run refuses a folder that is not a trusted workspace unless "--skip-trust" is given (or
   GEMINI_CLI_TRUST_WORKSPACE=true): this task adds the flag in headless mode;
 - "--yolo" auto-approves every tool call (--yes); "-e none" loads no extensions (--reproducible);
@@ -35,11 +35,10 @@ purpose - no account, a refused account, an invalid API key):
 import json
 import os
 import subprocess
-import tempfile
 import threading
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, MAX_PROMPT_ARG_CHARS, prompt_via_file, prompt_via_file_done
 
 OUTPUT_FILE_SUFFIX = '-output.txt'
 DEFAULT_OUTPUT_FILE = 'run-gemini-output.txt'
@@ -63,9 +62,10 @@ TRUST_ENV = 'GEMINI_CLI_TRUST_WORKSPACE'
 # The output format is for headless runs; an interactive session is text
 RUN_ONLY_FLAGS = OUTPUT_FORMAT_FLAGS
 
-MAX_PROMPT_ARG_CHARS = 30000
-# A launcher script (gemini.cmd on Windows) runs through cmd.exe: an argument with these, or longer than this, does
-# not arrive as it was written
+# An interactive session takes its first prompt as a command line argument, which the OS caps (MAX_PROMPT_ARG_CHARS
+# of the task category API): a longer prompt is written to a file the session is asked to read first. A launcher
+# script (gemini.cmd on Windows) runs through cmd.exe, where an argument with these, or longer than this, does not
+# arrive as it was written: the same file then
 SCRIPT_UNSAFE = ('\n', '\r', '%', '"')
 SCRIPT_MAX_ARG_CHARS = 7000
 
@@ -159,6 +159,7 @@ class CTask(InitCTask):
             ctx: dict,                      # cMeta context
             prompt: str = '',               # prompt text
             prompt_file: str = '',          # file with the prompt text
+            long_prompt_file: str = '',     # where a prompt too long for the command line is written for the session to read
             interactive: bool = False,      # run the prompt, then stay in the interactive gemini session
             i: bool = False,                # short alias of "interactive" (--i / -i)
             yes: bool = False,              # auto-approve every tool call (--yolo)
@@ -204,10 +205,16 @@ class CTask(InitCTask):
                 print('')
                 print(f'{space}INFO: no prompt was given (--prompt / --prompt_file) - opening an interactive gemini session')
 
-        if full_prompt != '' and interactive and len(full_prompt) > MAX_PROMPT_ARG_CHARS and con:
-            print('')
-            print(f'{space}WARNING: the prompt is {len(full_prompt)} chars long - an interactive gemini takes it as a command line '
-                  f'argument, which the OS may refuse')
+        # An interactive session takes its first prompt as a command line argument: a long one - or, through the
+        # gemini.cmd launcher, one that cmd.exe would mangle - is written to a file and the session is asked to read
+        # it first (it then goes on interactively as before). A headless run sends the prompt on stdin.
+        launcher = os.path.splitext(gemini_path)[1].lower() in ('.cmd', '.bat')
+        pr = prompt_via_file(full_prompt, 'gemini', when=interactive, path=long_prompt_file, prompt_file=prompt_file,
+                             force=launcher and any(c in full_prompt for c in SCRIPT_UNSAFE),
+                             why='one the launcher script %s would mangle as a command line argument' % os.path.basename(gemini_path),
+                             limit=SCRIPT_MAX_ARG_CHARS if launcher else MAX_PROMPT_ARG_CHARS, con=con, space=space)
+        if pr['return'] > 0:
+            return pr
 
         # ---- the output and statistics files
         if interactive:
@@ -274,19 +281,8 @@ class CTask(InitCTask):
                 if con:
                     print('')
                     print(f'{space}INFO: gemini takes the output format in headless mode only, so it is dropped from the session: {" ".join(dropped)}')
-            pointer = ''
-            if full_prompt and os.path.splitext(gemini_path)[1].lower() in ('.cmd', '.bat') and \
-               (any(c in full_prompt for c in SCRIPT_UNSAFE) or len(full_prompt) > SCRIPT_MAX_ARG_CHARS):
-                # the launcher script would mangle the prompt: it goes into a file, the session gets one line about it
-                base = os.path.splitext(prompt_file)[0] if prompt_file else os.path.join(tempfile.gettempdir(), 'run-gemini-%d' % os.getpid())
-                pointer = base + '-interactive-prompt.md'
-                try:
-                    with open(pointer, 'w', encoding='utf-8', newline='\n') as f:
-                        f.write(full_prompt + '\n')
-                except Exception as e:
-                    return self.cm.error(f'cannot write the prompt file {pointer}: {e}', 1)
-            first = ('Read the file %s - it holds the first request of this session - and follow it.' % pointer.replace('\\', '/')) if pointer else full_prompt
-            cmd = base_cmd + flags + (['-i', first] if full_prompt else [])
+            # the prompt, or the one-line request to read its file (see prompt_via_file above)
+            cmd = base_cmd + flags + (['-i', pr['text']] if full_prompt else [])
         else:
             # the prompt goes on stdin; "-p" (empty) only switches to headless mode
             cmd = base_cmd + flags + ['-p', '']
@@ -295,7 +291,7 @@ class CTask(InitCTask):
             print('')
             print(f'{space}RUN: {" ".join(base_cmd + flags)}' + (' -i <prompt>' if interactive and full_prompt else (' -p "" < <prompt>' if not interactive else '')))
             if full_prompt:
-                print(f'{space}     (prompt: {len(full_prompt)} chars ' + ('in a file the session is asked to read: %s)' % pointer if interactive and pointer
+                print(f'{space}     (prompt: {len(full_prompt)} chars ' + ('in a file the session is asked to read first: %s)' % pr['file'] if pr['file']
                                                                            else ('as an argument)' if interactive else 'on stdin)')))
             if interactive:
                 print(f'{space}     (interactive session - gemini keeps this terminal)')
@@ -315,15 +311,17 @@ class CTask(InitCTask):
             except KeyboardInterrupt:
                 returncode = 1
             except Exception as e:
+                prompt_via_file_done(pr)
                 return self.cm.error(f'cannot run "{gemini_path}": {e}', 1)
+            prompt_via_file_done(pr)
             duration = time.time() - start_time
             if con:
                 print('')
                 if returncode != 0:
                     print(f'{space}INFO: gemini exited with return code {returncode}')
                 print(f'{space}Duration: {duration:.1f} sec')
-            return {'return': 0, 'output': '', 'output_file': '', 'prompt': full_prompt, 'returncode': returncode,
-                    'duration': duration, 'interactive': True, 'stats_file': ''}
+            return {'return': 0, 'output': '', 'output_file': '', 'prompt': full_prompt, 'long_prompt_file': pr['file'],
+                    'returncode': returncode, 'duration': duration, 'interactive': True, 'stats_file': ''}
 
         # ---- headless: run and collect everything; nobody is there to finish a sign-in, so no browser is opened
         run_env = dict(os.environ)
