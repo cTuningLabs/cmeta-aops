@@ -15,6 +15,8 @@ remembers them per conversation:
     !AI/log/<id>.transcript.md         the whole conversation, re-exported from the native stores after every run
                                        (one segment per harness session; what cannot be exported is kept from
                                        run-ai's own records)
+    !AI/log/<id>.summary.md            on request (--summarize): a summary of the transcript, which a hand-over
+                                       points to first
 
 The default run continues the conversation with the latest run; --new starts another; --conversation=<id or prefix>
 picks one; --conversations lists them. Continuing with the harness that holds a native session resumes it natively
@@ -39,6 +41,7 @@ import uuid
 
 CONVERSATION_SUFFIX = '.conversation.json'
 TRANSCRIPT_SUFFIX = '.transcript.md'
+SUMMARY_SUFFIX = '.summary.md'
 MAX_TEXT = 40000          # longest single message kept in a transcript
 MAX_TRANSCRIPT = 6000000  # bytes; beyond it the oldest segments are summarised to their headers
 
@@ -137,14 +140,21 @@ def new_conversation(log_dir, cid, project_path, cref, title):
             'title': title, 'runs': [], 'sessions': {}, '_path': os.path.join(log_dir, cid + CONVERSATION_SUFFIX)}
 
 
-def save_conversation(conv):
-    conv['updated'] = now_iso()
+def save_conversation(conv, touch=True):
+    """touch=False keeps "updated" (the order of the conversations): a summary is no activity of the conversation."""
+    if touch:
+        conv['updated'] = now_iso()
     data = {k: v for k, v in conv.items() if not k.startswith('_')}
     _write_json(conv['_path'], data)
 
 
 def transcript_path(conv):
     return os.path.join(os.path.dirname(conv['_path']), conv['id'] + TRANSCRIPT_SUFFIX)
+
+
+def summary_path(conv):
+    """!AI/log/<id>.summary.md: what --summarize wrote from the transcript."""
+    return os.path.join(os.path.dirname(conv['_path']), conv['id'] + SUMMARY_SUFFIX)
 
 
 def title_from_prompt(prompt, interactive, stamp):
@@ -165,6 +175,8 @@ def describe(conv, short=True):
     s = '%s  %d run(s), %s, last %s%s' % (conv['id'], len(runs), '/'.join(harnesses) or 'no run yet',
                                           (last.get('finished') or last.get('started') or conv.get('updated') or '?')[:16],
                                           (' with ' + last['harness']) if last.get('harness') else '')
+    if (conv.get('summary') or {}).get('runs'):
+        s += '  [summary after run %d]' % int(conv['summary']['runs'])
     if conv.get('title'):
         s += '  - %s' % conv['title']
     return s
@@ -172,15 +184,55 @@ def describe(conv, short=True):
 
 # ====================================================================== the adapters
 # claude --------------------------------------------------------------------------------------------------------
+CLAUDE_SLUG_MAX = 200     # Claude Code cuts a longer slug to 200 characters and appends "-<hash of the path>"
+
+
+def claude_session_cwd(folder):
+    """The working directory a session of a Claude project folder recorded ('' when none says)."""
+    for fp in sorted(_glob(folder, '*.jsonl')):
+        try:
+            with io.open(fp, encoding='utf-8', errors='replace') as f:
+                for n, line in enumerate(f):
+                    if n >= 50:
+                        break
+                    if '"cwd"' not in line:
+                        continue
+                    try:
+                        cwd = json.loads(line).get('cwd')
+                    except (ValueError, AttributeError):
+                        continue
+                    if cwd:
+                        return cwd
+        except OSError:
+            continue
+    return ''
+
+
 def claude_project_dirs(project_path):
     """<config dir>/projects/<slug>: the slug is the path with every non-alphanumeric turned into "-"; the drive
-    letter follows the shell's spelling, so both cases are tried."""
+    letter follows the shell's spelling, so both cases are tried. A slug longer than 200 characters is cut to 200
+    and followed by "-" and a hash of the path that depends on Claude Code's runtime (Bun or Node), so it is not
+    computed here: the existing folders with that prefix are taken, less those whose sessions recorded another
+    working directory (two long paths can share the first 200 characters of their slugs)."""
     base = os.environ.get('CLAUDE_CONFIG_DIR') or os.path.join(os.path.expanduser('~'), '.claude')
     p = os.path.normpath(project_path)
     variants = {p}
     if len(p) > 1 and p[1] == ':':
         variants |= {p[0].lower() + p[1:], p[0].upper() + p[1:]}
-    return [os.path.join(base, 'projects', re.sub(r'[^A-Za-z0-9]', '-', v)) for v in sorted(variants)]
+    out = []
+    for v in sorted(variants):
+        slug = re.sub(r'[^A-Za-z0-9]', '-', v)
+        if len(slug) <= CLAUDE_SLUG_MAX:
+            out.append(os.path.join(base, 'projects', slug))
+            continue
+        for d in sorted(_glob(os.path.join(base, 'projects'), slug[:CLAUDE_SLUG_MAX] + '-*')):
+            if d in out or not os.path.isdir(d) or len(os.path.basename(d)) <= CLAUDE_SLUG_MAX + 1:
+                continue
+            cwd = claude_session_cwd(d)
+            if cwd and os.path.normcase(os.path.normpath(cwd)) != os.path.normcase(p):
+                continue
+            out.append(d)
+    return out
 
 
 def claude_session_file(project_path, sid):
@@ -510,42 +562,88 @@ def opencode_export(sid):
 
 
 # openclaw ------------------------------------------------------------------------------------------------------
-def openclaw_sessions_dir():
-    return os.path.join(os.path.expanduser('~'), '.openclaw', 'agents', 'main', 'sessions')
+def openclaw_state_dir():
+    """OpenClaw's state: OPENCLAW_STATE_DIR, else <OPENCLAW_HOME or the home>/.openclaw (OpenClaw 2026.6)."""
+    if os.environ.get('OPENCLAW_STATE_DIR', '').strip():
+        return os.path.expanduser(os.environ['OPENCLAW_STATE_DIR'].strip())
+    home = os.environ.get('OPENCLAW_HOME', '').strip()
+    return os.path.join(os.path.expanduser(home) if home else os.path.expanduser('~'), '.openclaw')
+
+
+def _openclaw_entry(sid):
+    """(the entry of OpenClaw's session index filed under the key agent:<agent>:explicit:<sid>, its sessions folder)."""
+    for index in sorted(_glob(openclaw_state_dir(), 'agents', '*', 'sessions', 'sessions.json')):
+        entries = _read_json(index)
+        if not isinstance(entries, dict):
+            continue
+        for key, entry in entries.items():
+            if isinstance(entry, dict) and key.endswith(':explicit:%s' % sid):
+                return entry, os.path.dirname(index)
+    return None, ''
+
+
+def openclaw_session_id(sid):
+    """The id of the session OpenClaw keeps under the key named after sid ('' when there is none)."""
+    entry, folder = _openclaw_entry(sid)
+    return str((entry or {}).get('sessionId') or '')
+
+
+def openclaw_session_file(sid):
+    """<state>/agents/<agent>/sessions/<file>.jsonl ("main" unless the turn was routed to another agent). A headless
+    turn names its file after the id run-ai chose; the terminal UI, given the key agent:<agent>:explicit:<id>, files a
+    new session under an id of its own - the index sessions.json beside the files says which. The <id>.trajectory.jsonl
+    there is OpenClaw's runtime trace, not the conversation."""
+    entry, folder = _openclaw_entry(sid)
+    if entry:
+        for fp in (entry.get('sessionFile') or '', os.path.join(folder, '%s.jsonl' % entry.get('sessionId'))):
+            if fp and os.path.isfile(fp):
+                return fp
+    for fp in sorted(_glob(openclaw_state_dir(), 'agents', '*', 'sessions', '%s.jsonl' % sid)):
+        return fp
+    return ''
 
 
 def openclaw_exists(sid):
-    return bool(_glob(openclaw_sessions_dir(), '%s*.jsonl' % sid))
+    return bool(openclaw_session_file(sid))
 
 
-def _generic_jsonl_export(fp):
-    """Best effort for a session file whose lines carry role/content or type/text."""
+def openclaw_export(sid):
+    """OpenClaw's session file (version 3): a "session" line (id, cwd), then "message" lines whose message has a role
+    (user, assistant, toolResult) and a content - a string or a list of text and tool-call parts. Tool results are
+    left out; a tool call becomes one line."""
+    fp = openclaw_session_file(sid)
+    if not fp:
+        return None
     out = []
     with io.open(fp, encoding='utf-8', errors='replace') as f:
         for line in f:
             try:
                 d = json.loads(line)
-            except Exception:
+            except ValueError:
                 continue
-            msg = d.get('message') if isinstance(d.get('message'), dict) else d
-            role = msg.get('role') or msg.get('type')
-            if role not in ('user', 'assistant', 'gemini', 'model'):
+            msg = d.get('message') if isinstance(d, dict) else None
+            if d.get('type') != 'message' or not isinstance(msg, dict) or msg.get('role') not in ('user', 'assistant'):
                 continue
-            content = msg.get('content') or msg.get('text')
-            if isinstance(content, list):
-                text = '\n'.join(str(c.get('text') or '') for c in content if isinstance(c, dict))
-            else:
-                text = str(content or '')
-            if text.strip():
-                out.append(('user' if role == 'user' else 'assistant', str(d.get('timestamp') or d.get('ts') or '')[:19].replace('T', ' '), [('text', text)]))
+            content = msg.get('content')
+            blocks = []
+            for part in ([{'type': 'text', 'text': content}] if isinstance(content, str) else (content or [])):
+                if not isinstance(part, dict):
+                    continue
+                kind = part.get('type')
+                if kind == 'text' and str(part.get('text') or '').strip():
+                    blocks.append(('text', str(part['text'])))
+                elif kind in ('toolCall', 'tool_call', 'tool_use'):
+                    args = part.get('arguments') or part.get('input') or part.get('args') or {}
+                    hint = ''
+                    if isinstance(args, dict):
+                        for key in ('command', 'path', 'file_path', 'url', 'query', 'pattern'):
+                            if args.get(key):
+                                hint = ' '.join(str(args[key]).split())[:200]
+                                break
+                    blocks.append(('tool', ('%s %s' % (part.get('name') or 'tool', hint)).strip()))
+            if blocks:
+                out.append((msg['role'], local_ts(d.get('timestamp') or ''), blocks))
     return out
-
-
-def openclaw_export(sid):
-    files = [fp for fp in _glob(openclaw_sessions_dir(), '%s*.jsonl' % sid) if 'trajectory' not in os.path.basename(fp)]
-    if not files:
-        return None
-    return _generic_jsonl_export(files[0])
 
 
 # gemini --------------------------------------------------------------------------------------------------------
@@ -619,16 +717,24 @@ def gemini_export(sid):
             hint = next((str(args[k]) for k in ('command', 'file_path', 'path', 'pattern', 'query', 'url', 'description', 'prompt') if args.get(k)), '')
             blocks.append(('tool', '%s %s' % (call.get('name') or '?', ' '.join(hint.split())[:160])))
         if blocks:
-            out.append(('user' if m['type'] == 'user' else 'assistant', str(m.get('timestamp') or '')[:19].replace('T', ' '), blocks))
+            out.append(('user' if m['type'] == 'user' else 'assistant', local_ts(m.get('timestamp') or ''), blocks))
     return out
 
 
 # ====================================================================== the adapter table
-def new_session_flags(harness, sid, cid, alias):
+def openclaw_session_key(sid):
+    """The key OpenClaw files a session under when a headless turn names it (--session-id <id>); its terminal UI takes
+    the key (--session <key>), so a conversation can go on in either."""
+    return 'agent:main:explicit:%s' % sid
+
+
+def new_session_flags(harness, sid, cid, alias, interactive=False):
     """The flags that start a NEW native session under the id run-ai chose (harnesses that let it choose)."""
     h = harness_key(harness)
     if h == 'claude':
         return ['--session-id', sid, '--name', 'run-ai %s %s' % (cid, alias or '')]
+    if h == 'openclaw' and interactive:
+        return ['--session', openclaw_session_key(sid)]
     if h in ('openclaw', 'gemini'):
         return ['--session-id', sid]
     return []
@@ -638,9 +744,11 @@ def chooses_id(harness):
     return harness_key(harness) in ('claude', 'openclaw', 'gemini')
 
 
-def resume_flags(harness, sid):
+def resume_flags(harness, sid, interactive=False):
     """The flags that RESUME a native session (codex needs a sub-command instead: run-codex --resume=<id>)."""
     h = harness_key(harness)
+    if h == 'openclaw' and interactive:
+        return ['--session', openclaw_session_key(sid)]
     return {'claude': ['--resume', sid], 'agy': ['--conversation', sid], 'opencode': ['--session', sid],
             'openclaw': ['--session-id', sid], 'gemini': ['--resume', sid]}.get(h, [])
 
@@ -718,16 +826,26 @@ def native_store_hint(harness):
     h = harness_key(harness)
     return {'claude': '~/.claude/projects/<slug>/<id>.jsonl', 'codex': 'state_*.sqlite + thread_history_*.sqlite in CODEX_SQLITE_HOME (run-ai: <project>/!AI/codex) or CODEX_HOME; rollout-*.jsonl in CODEX_HOME',
             'agy': '~/.gemini/antigravity-cli/conversations/<id>.db (protobuf blobs; the readable runs are recovered)', 'opencode': '~/.local/share/opencode/opencode.db',
-            'openclaw': '~/.openclaw/agents/main/sessions/<id>.jsonl', 'gemini': '~/.gemini/tmp/<project>/chats/session-*.jsonl'}.get(h, '')
+            'openclaw': '~/.openclaw/agents/<agent>/sessions/<id>.jsonl (OPENCLAW_STATE_DIR moves ~/.openclaw)', 'gemini': '~/.gemini/tmp/<project>/chats/session-*.jsonl'}.get(h, '')
 
 
 # ====================================================================== the transcript
+# The line run-ai puts between what it prepends to a prompt (the hand-over, the orientation, the context) and the
+# request itself: the harnesses without a system-prompt file get all of it as the user's message, and the transcript
+# keeps the request only
+REQUEST_MARK = '<!-- run-ai: the request of this run follows -->'
+PREPENDED_NOTE = '_(what run-ai put before the request - a hand-over, the orientation, the context - is left out here; the run\'s records in !AI/log keep it)_'
+
+
 def _render_messages(messages, names):
     lines = []
     for role, ts, blocks in messages:
         lines += ['### %s%s' % (names.get(role, role), ('  (%s)' % ts) if ts else ''), '']
         for kind, text in blocks:
             text = str(text or '')
+            if role == 'user' and kind == 'text' and REQUEST_MARK in text:
+                lines += [PREPENDED_NOTE, '']
+                text = text.split(REQUEST_MARK)[-1].lstrip('\r\n')
             if not text.strip():
                 continue
             if kind == 'tool':
@@ -862,14 +980,21 @@ def handover_text(conv, harness, log_dir, why):
             harnesses.append(r['harness'])
     last = runs[-1] if runs else {}
     tp = transcript_path(conv).replace('\\', '/')
+    # a summary written by --summarize is read first when there is one; the transcript stays the record
+    summary = conv.get('summary') or {}
+    sp = summary_path(conv)
+    read_first = ''
+    if summary and os.path.isfile(sp):
+        read_first = ('read its summary %s (written after run %d of %d), then its transcript as far as you need: %s' % (
+            sp.replace('\\', '/'), int(summary.get('runs') or 0), len(runs), tp))
     # the title (the first words of the first request) is left out on purpose: quoted here, in front of the prompt,
     # it reads like an instruction of this run to a model that has not seen the conversation yet
     return ('You continue conversation %s of this project%s: %d run(s) so far with %s, the last on %s. Before anything '
-            'else, read its transcript: %s (the end is the most recent part). Then go on from where the conversation '
+            'else, %s (the end is the most recent part). Then go on from where the conversation '
             'stopped and answer the request at the end of this message. The project\'s memory and files are where they '
             'always are.\n' % (
                 conv['id'], (' (' + why + ')') if why else '', len(runs), ', '.join(harnesses) or 'no harness',
-                (last.get('finished') or last.get('started') or '?')[:16], tp))
+                (last.get('finished') or last.get('started') or '?')[:16], read_first or ('read its transcript: %s' % tp)))
 
 
 def new_id():

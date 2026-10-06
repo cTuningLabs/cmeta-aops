@@ -39,6 +39,8 @@ cxt run-ai "one prompt"                              # one more turn of it, then
 cxt run-ai --project="project::my-app" -i            # the artifact named explicitly (category::artifact)
 cxt run-ai --harness=codex --model=gpt-6.1-sol,high  # the same conversation with another agent: the transcript is handed over
 cxt run-ai --new "..."                               # a new conversation; --conversations lists them
+cxt run-ai --summarize                               # a summary of the latest conversation, read first at the next hand-over
+cxt run-ai -w "..."                                  # no questions, write anywhere (--write=all); --write=project|none; the config sets the default
 cxt run-ai --list_models                             # the models and efforts of every agent, ready to copy
 cxt run-ai --dry_run                                 # everything that would be given to the agent; nothing runs
 cxt import-ai --project="project::my-app" --skills="<repo>/.claude/skills"   # bring memories and skills into !AI

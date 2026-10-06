@@ -17,6 +17,7 @@ import os
 import pathlib
 import re
 import textwrap
+import threading
 import time
 import uuid
 
@@ -45,7 +46,7 @@ class CTask(InitCTask):
         if output_file and not interactive:     # like the real run tasks: an interactive session owns the terminal
             with open(output_file, 'w', encoding = 'utf-8') as f:
                 f.write('# the stand-in harness\\n\\nan answer\\n')
-        return {'return': 0, 'flags': list(unparsed or []), 'cwd': os.getcwd()}
+        return {'return': 0, 'flags': list(unparsed or []), 'cwd': os.getcwd(), 'output': 'an answer\\n'}
 '''
 
 
@@ -200,11 +201,107 @@ def test_new_conversations_and_picking_one(fresh):
 
     r = fresh.run(prompt = "x", conversation = "19990101")
     assert r["return"] > 0 and "no conversation" in r["error"]
+    assert not list((fresh.project / "!AI" / "log").glob("*.lock")), "the stamp reservations are released"
 
     before = sorted(p.name for p in (fresh.project / "!AI" / "log").iterdir())
     r = fresh.run(prompt = "not recorded", no_log = True)
     assert r["return"] == 0 and r["conversation"] == "" and r["record"] == ""
     assert sorted(p.name for p in (fresh.project / "!AI" / "log").iterdir()) == before
+
+
+def test_openclaw_is_told_where_the_project_is_and_its_terminal_ui_gets_its_own_flags(fresh):
+    # a one-prompt turn: "openclaw agent" takes the session id and the model
+    r = fresh.run(dry_run = True, harness = "openclaw", model = "claude-cli/claude-sonnet-4-6,low", prompt = "read notes.txt")
+    assert r["return"] == 0, r.get("error")
+    flags = r["flags"]
+    assert flags[flags.index("--session-id") + 1] == r["new_session"] and flags[flags.index("--model") + 1] == "claude-cli/claude-sonnet-4-6"
+    assert flags[flags.index("--thinking") + 1] == "low"
+    prompt = r["params"]["prompt"]
+    # OpenClaw works in a workspace of its own: the orientation names the project folder; the request follows the mark
+    assert "The project folder is %s" % str(fresh.project).replace("\\", "/") in prompt
+    assert prompt.endswith("\n<!-- run-ai: the request of this run follows -->\nread notes.txt")
+    # its terminal UI takes the session's key and no --model
+    r = fresh.run(dry_run = True, harness = "openclaw", model = "claude-cli/claude-sonnet-4-6,low", interactive = True, prompt = "hi")
+    assert r["return"] == 0, r.get("error")
+    flags = r["flags"]
+    assert flags[flags.index("--session") + 1] == "agent:main:explicit:" + r["new_session"]
+    assert "--model" not in flags and "--session-id" not in flags and flags[flags.index("--thinking") + 1] == "low"
+    assert any('"/model claude-cli/claude-sonnet-4-6"' in n for n in r["notes"])
+    # other harnesses are not told about a workspace
+    r = fresh.run(dry_run = True, prompt = "hi")
+    assert "The project folder is" not in r["params"]["prompt"]
+
+
+def test_summarize_writes_a_summary_that_the_next_hand_over_points_to(fresh):
+    r = fresh.run(summarize = True)
+    assert r["return"] > 0 and "no conversation" in r["error"]
+    first = fresh.run(prompt = "remember the word heron")
+    conversation, log = first["conversation"], fresh.project / "!AI" / "log"
+    before = json.loads(read(log / (conversation + ".conversation.json")))
+
+    r = fresh.run(summarize = True)
+    assert r["return"] == 0, r.get("error")
+    assert r["conversation"] == conversation and r["inline"] and r["runs"] == 1
+    summary = read(r["summary"])
+    assert pathlib.Path(r["summary"]).name == conversation + ".summary.md" and summary.rstrip().endswith("an answer")
+    assert "run-ai --summarize" in summary and "as of run 1" in summary
+    # the harness was given the transcript itself, and the conversation was not continued (nor moved up the list)
+    prompt = read(fresh.scratch / "prompt.txt")
+    assert prompt.startswith("Summarize conversation " + conversation) and "<transcript>" in prompt and "remember the word heron" in prompt
+    after = json.loads(read(log / (conversation + ".conversation.json")))
+    assert after["runs"] == before["runs"] and after["updated"] == before["updated"] and after["summary"]["runs"] == 1
+
+    # this harness keeps no session: the next run is handed the summary first, then the transcript
+    fresh.run(prompt = "which word?")
+    prompt = read(fresh.scratch / "prompt.txt")
+    assert "read its summary " in prompt and conversation + ".summary.md" in prompt and conversation + ".transcript.md" in prompt
+    assert fresh.run(summarize = True, conversation = "19990101")["return"] > 0
+
+
+def test_a_skill_copy_older_than_its_source_is_warned_about(fresh, task_namespace):
+    tree_hash = task_namespace("run-ai")["CTask"]._tree_hash
+    copy = put(fresh.project / "!AI" / "skills" / "deploy" / "SKILL.md", "---\nname: deploy\ndescription: d\n---\nold steps\n").parent
+    source = put(fresh.scratch / "skill-source" / "deploy" / "SKILL.md", "---\nname: deploy\ndescription: d\n---\nnew steps\n").parent
+    put(copy.parent / ".sources.json", json.dumps({"deploy": {"source": str(source), "imported": "2026-01-01T10:00:00", "hash": tree_hash(str(copy))}}))
+    r = fresh.run(dry_run = True)
+    warning = [n for n in r["notes"] if "deploy" in n and "WARNING" in n]
+    assert len(warning) == 1 and "older than the one it was imported from" in warning[0] and "--overwrite" in warning[0]
+
+
+def test_runs_started_at_once_reserve_distinct_stamps(tmp_path, task_namespace):
+    # two terminals, or a script, start runs of one project within the same second: each reserves its stamp with an
+    # exclusive file, so none shares another's records even when they all look before any of them has written
+    CTask = task_namespace("run-ai")["CTask"]
+    log = tmp_path / "!AI" / "log"
+    gate = threading.Barrier(8)
+    got = []
+
+    def start():
+        gate.wait()
+        got.append(CTask._new_stamp(str(log), True))
+
+    workers = [threading.Thread(target = start) for _ in range(8)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    stamps = [s for s, lock in got]
+    assert len(set(stamps)) == 8 and all(pathlib.Path(lock).is_file() for s, lock in got)
+    for s, lock in got:
+        CTask._release_stamp(lock)
+    assert not list(log.glob("*.lock"))
+
+    # a lock left by a run that died long ago is cleared; a fresh one keeps its stamp taken
+    put(log / "20000101-000000.lock", "")
+    os.utime(str(log / "20000101-000000.lock"), (1, 1))
+    stamp, lock = CTask._new_stamp(str(log), True)
+    assert not (log / "20000101-000000.lock").exists() and pathlib.Path(lock).name == stamp + ".lock"
+    again, lock2 = CTask._new_stamp(str(log), True)
+    assert again != stamp
+    assert CTask._new_stamp(str(log), False)[1] == ""          # no reservation: nothing written
+    for one in (lock, lock2):
+        CTask._release_stamp(one)
+    assert not list(log.iterdir())
 
 
 def test_after_an_interactive_run_the_next_harness_is_handed_the_conversation(fresh):
@@ -294,6 +391,19 @@ def test_ai_uses_of_the_project_and_its_depth(fresh):
         assert r["token_limit"] == 5 and r["tokens_estimated"] > 5
         r = fresh.run(max_context_tokens = 5)                           # nobody to ask: the run is refused
         assert r["return"] > 0 and "over the limit" in r["error"] and not (fresh.project / "!AI").exists()
+
+        # --trim_context: the sources are left out from the last (the deeper level first) until the estimate fits
+        both = fresh.run(dry_run = True, context_depth = 2)
+        one = fresh.run(dry_run = True)
+        assert both["tokens_estimated"] > one["tokens_estimated"]
+        r = fresh.run(dry_run = True, context_depth = 2, max_context_tokens = one["tokens_estimated"], trim_context = True)
+        assert kinds(r) == [(fresh.used.name, "ai_uses")] and r["tokens_estimated"] <= one["tokens_estimated"]
+        assert "left out to fit the token limit (--trim_context)" in dict(r["context_skipped"]).values()
+        assert any("left out " + fresh.cref(fresh.other) in n or fresh.other.name in n for n in r["notes"] if "--trim_context" in n)
+        r = fresh.run(dry_run = True, context_depth = 2, max_context_tokens = both["tokens_estimated"], trim_context = True)
+        assert len(r["context"]) == 2 and not any("--trim_context" in n for n in r["notes"])      # it fits: nothing left out
+        r = fresh.run(context_depth = 2, max_context_tokens = 5, trim_context = "true")           # even without sources too much
+        assert r["return"] > 0 and "over the limit" in r["error"]
     finally:
         (fresh.used / "_desc.yaml").unlink()
 
@@ -325,6 +435,11 @@ def test_this_machines_mapping_in_the_config_artifact(fresh, task_namespace):
     fresh.config({"max_context_tokens": 12345})
     r = fresh.run(dry_run = True)
     assert r["token_limit"] == 12345 and "task-run-ai" in r["token_limit_from"]
+
+    # trim_context in the config: every run of this machine leaves sources out to fit the limit
+    fresh.config({"local_ai_uses": {fresh.cref(fresh.project): fresh.cref(fresh.other)}, "max_context_tokens": 5, "trim_context": True})
+    r = fresh.run(dry_run = True)
+    assert r["context"] == [] and any("--trim_context" in n and fresh.other.name in n for n in r["notes"])
 
 
 def test_the_seed_and_no_seed(fresh):
@@ -441,3 +556,130 @@ def test_the_artifacts_a_project_uses_are_read_only_for_a_run(fresh, monkeypatch
         shutil.rmtree(used_ai)
         for path, text in original.items():
             put(used_ai / path, text)
+
+
+def test_the_write_mode_comes_from_the_flags_then_the_config_and_reaches_each_harness(fresh):
+    lab = fresh
+    lab.uses(lab.used)
+    # the default: the harness asks, the used artifacts take proposals (and the user is asked about a direct change)
+    r = lab.run(dry_run = True)
+    assert (r["write"], r["write_from"], r["context_guard"]) == ("ask", "default", "ask") and "yes" not in r["params"]
+    assert "Read-only means" in r["params"]["prompt"] and not any(n.startswith("write:") for n in r["notes"])
+    # --yes is what it has always been: no questions, proposals for the used artifacts
+    r = lab.run(dry_run = True, yes = True)
+    assert (r["write"], r["write_from"], r["context_guard"]) == ("project", "--yes", "restore") and r["params"]["yes"] is True
+    assert "Read-only means" in r["params"]["prompt"]
+    # -w = --write=all: the used artifacts may be changed directly; the harness is told so
+    for flags in ({"w": True}, {"write": "all"}, {"write": True}, {"write": "true"}):
+        r = lab.run(dry_run = True, harness = "claude", **flags)
+        assert (r["write"], r["context_guard"]) == ("all", "keep") and r["params"]["yes"] is True, flags
+    r = lab.run(dry_run = True, w = True)                       # the stand-in harness gets the text in its prompt
+    assert r["write_from"] == "-w" and "write access to those artifacts (--write=all)" in r["params"]["prompt"]
+    assert "Read-only means" not in r["params"]["prompt"] and "a change to it is proposed under" not in r["params"]["prompt"]
+    assert "yes" not in r["params"] and any("has no switch for its questions" in n for n in r["notes"])      # a harness run-ai does not know
+    assert lab.run(dry_run = True, w = True, yes = True)["params"]["yes"] is True
+    # an explicit guard wins over the mode's
+    r = lab.run(dry_run = True, w = True, context_guard = "restore")
+    assert (r["write"], r["context_guard"]) == ("all", "restore") and "Read-only means" in r["params"]["prompt"]
+
+    # --write=none: each harness in its own read-only mode, --yes left out
+    expected = {"claude": ["--permission-mode", "plan"], "codex": ["-c", 'sandbox_mode="read-only"'], "opencode": ["--agent", "plan"],
+                "antigravity": ["--mode", "plan"], "gemini": ["--approval-mode", "plan"]}
+    for harness, flags in expected.items():
+        r = lab.run(dry_run = True, harness = harness, write = "none", yes = True)
+        assert r["return"] == 0, r.get("error")
+        k = r["flags"].index(flags[0])
+        assert r["flags"][k:k + 2] == flags and "yes" not in r["params"] and r["context_guard"] == "restore", harness
+        assert any(n.startswith("write: none") and "--yes is left out" in n for n in r["notes"])
+    r = lab.run(dry_run = True, harness = "claude", write = "read-only", unparsed = ["--permission-mode", "acceptEdits"])
+    assert r["flags"].count("--permission-mode") == 1 and any('the flags after "--" decide' in n for n in r["notes"])
+    r = lab.run(dry_run = True, harness = "openclaw", write = "none")
+    assert any("no read-only mode that run-ai knows" in n for n in r["notes"])
+    assert "This run is read-only (--write=none)" in r["params"]["prompt"]
+    assert "Read-only means" not in r["params"]["prompt"], "a read-only run stages no proposal either"
+    r = lab.run(dry_run = True, write = "sometimes")
+    assert r["return"] > 0 and "--write must be one of" in r["error"]
+
+    # this machine's default is the config; a flag wins over it
+    r = lab.cm.access({"category": "config", "command": "set", "arg1": "task-run-ai", "con": False, "meta": {"write": "all"}})
+    assert r["return"] == 0, r.get("error")
+    try:
+        r = lab.run(dry_run = True)
+        assert (r["write"], r["context_guard"]) == ("all", "keep") and "config task-run-ai" in r["write_from"]
+        r = lab.run(dry_run = True, write = "ask")
+        assert (r["write"], r["write_from"], r["context_guard"]) == ("ask", "--write=ask", "ask")
+        assert lab.run(dry_run = True, write = "none")["write"] == "none"
+        lab.config({"write": "now and then"})
+        r = lab.run(dry_run = True)
+        assert r["return"] > 0 and 'the key "write" of the config task-run-ai' in r["error"]
+    finally:
+        lab.config()
+
+
+def test_write_all_keeps_a_direct_change_records_it_and_saves_the_version_before(fresh, monkeypatch):
+    lab = fresh
+    lab.uses(lab.used)
+    used_ai, project_ai = lab.used / "!AI", lab.project / "!AI"
+    original = {p: read(p) for p in used_ai.rglob("*") if p.is_file()}
+    try:
+        session(lab, monkeypatch, '''
+            m = r"%s"
+            open(os.path.join(m, 'memory', 'one.md'), 'w', encoding = 'utf-8').write('one, improved by the session\\n')
+            open(os.path.join(m, 'memory', 'three.md'), 'w', encoding = 'utf-8').write('a new fact\\n')
+            os.remove(os.path.join(m, 'skills', 's1', 'SKILL.md'))
+        ''' % used_ai)
+        r = lab.run(prompt = "tidy the shared memory", w = True)
+        assert r["return"] == 0 and (r["write"], r["context_guard"]) == ("all", "keep") and r["pending"] == 0
+        # the changes stay ...
+        assert read(used_ai / "memory" / "one.md") == "one, improved by the session\n" and (used_ai / "memory" / "three.md").is_file()
+        assert not (used_ai / "skills" / "s1" / "SKILL.md").exists() and not (project_ai / "pending").exists()
+        changes = {c["rel"]: c for c in r["context_changes"]}
+        assert sorted(changes) == ["memory/one.md", "memory/three.md", "skills/s1/SKILL.md"]
+        assert all(c["outcome"].startswith("kept") for c in changes.values())
+        # ... the versions before the run are in the project's log (nothing for a new file) ...
+        stamp = pathlib.Path(r["record"]).name.split(".")[0]
+        before = project_ai / "log" / (stamp + ".before") / ("%s--%s" % (lab.used.name, lab.uid(lab.used)))
+        assert read(before / "memory" / "one.md") == "one\n" and (before / "skills" / "s1" / "SKILL.md").is_file()
+        assert not (before / "memory" / "three.md").exists() and changes["memory/three.md"]["before"] == ""
+        assert pathlib.Path(changes["memory/one.md"]["before"]) == before / "memory" / "one.md"
+        # ... and the artifact has its own record of what was changed, from which project
+        applied = [json.loads(read(p)) for p in (used_ai / "log").glob("*.applied.json")]
+        assert len(applied) == 1 and sorted(a["rel"] for a in applied[0]["applied"]) == sorted(changes)
+        record = read(r["record"])
+        assert "| write | `all` (-w); context guard `keep` |" in record and "as --write=all allows" in record
+    finally:
+        import shutil
+        shutil.rmtree(used_ai)
+        for path, text in original.items():
+            put(path, text)
+
+
+def test_apply_pending_asks_for_all_changes_or_one_by_one(fresh, monkeypatch):
+    lab = fresh
+    lab.uses(lab.used)
+    used_ai = lab.used / "!AI"
+    original = {p: read(p) for p in used_ai.rglob("*") if p.is_file()}
+    stage = pathlib.Path(lab.run(dry_run = True)["context"][0]["stage_dir"])
+    try:
+        put(stage / "memory" / "two.md", "two\n")
+        put(stage / "memory" / "three.md", "three\n")
+        # a terminal, and a user who answers "each", then yes to the first change and no to the second
+        answers = iter(["e", "n", "y"])
+        monkeypatch.setattr("builtins.input", lambda prompt = "": next(answers))
+        monkeypatch.setattr("sys.stdin", type("Terminal", (), {"isatty": lambda self: True})())
+        with contextlib.redirect_stdout(io.StringIO()):
+            r = lab.run(apply_pending = True, con = True)
+        assert r["return"] == 0, r.get("error")
+        assert [a["rel"] for a in r["applied"]] == ["memory/two.md"] and [x["rel"] for x in r["left"]] == ["memory/three.md"]
+        assert read(used_ai / "memory" / "two.md") == "two\n" and not (used_ai / "memory" / "three.md").exists()
+        assert (stage / "memory" / "three.md").is_file() and not (stage / "memory" / "two.md").exists()
+        # "yes" takes the rest at once; nothing left, the staging folder goes
+        answers = iter(["y"])
+        with contextlib.redirect_stdout(io.StringIO()):
+            r = lab.run(apply_pending = True, con = True)
+        assert [a["rel"] for a in r["applied"]] == ["memory/three.md"] and r["left"] == [] and not stage.exists()
+    finally:
+        import shutil
+        shutil.rmtree(used_ai)
+        for path, text in original.items():
+            put(path, text)

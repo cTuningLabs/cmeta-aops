@@ -23,7 +23,10 @@ both plain files and the standard library, so they behave the same for whoever r
    changed there without the user's word, the user is asked (--context_guard=ask, the default): keep it - recorded
    like an applied proposal - or not: then it is turned into a proposal (as above) and the file is put back. With
    nobody to ask (-q, --yes, no terminal, an API call) it is turned into a proposal and put back; "restore" does that
-   without asking, "report" only reports, "off" does not look. A run cannot tell who changed a file - a pull, a sync
+   without asking, "report" only reports, "off" does not look. A run the user gave write access everywhere
+   (--write=all) has the user's word beforehand: "keep" leaves the changes, records them in the artifact like an
+   applied proposal and saves the version each file had before the run in the project's !AI/log/<stamp>.before/.
+   A run cannot tell who changed a file - a pull, a sync
    or the user's own edit during a long session looks like the session's - hence the question. Not a direct change:
    what "--apply_pending" wrote in the meantime (its record says so), and the changes of an artifact that was itself
    run as a project during that time - its own session writes its own memory.
@@ -188,13 +191,16 @@ def own_session_ran(ai_dir, t0, t1):
     return False
 
 
-def guard(sources, snaps, t0, t1, mode, pending_root, stamp, ask=None, project=''):
+def guard(sources, snaps, t0, t1, mode, pending_root, stamp, ask=None, project='', keep_root=''):
     """After a run: the direct changes in the used artifacts. sources: [{label, key, ai}] ("ai" = the artifact's
     !AI folder), snaps: {ai: snapshot}. mode "restore": every direct change becomes a proposal under
     pending_root/<key>/ and the file is put back; "report": listed only; "ask": ask(source, changes) -> True keeps
     them (the user's word, recorded like an applied proposal) and False does what "restore" does - as does "ask"
     with nobody to ask (ask=None). A run cannot tell who changed a file: a pull, a sync or the user's own edit
     during a long session looks the same as the session's, which is why the user is asked when there is one.
+    mode "keep" (a run the user gave write access everywhere, --write=all): the changes stay, are recorded in the
+    artifact like an applied proposal, and the version each changed or deleted file had before the run is saved
+    under keep_root/<key>/ (when keep_root is given), so that a change can be taken back.
     -> (lines for the user, [{label, rel, what, outcome, staged}])."""
     notes, records = [], []
     for s in sources:
@@ -219,6 +225,33 @@ def guard(sources, snaps, t0, t1, mode, pending_root, stamp, ask=None, project='
                 records.append({'label': s['label'], 'rel': rel, 'what': what, 'outcome': 'reported', 'staged': ''})
             notes.append('context guard: %d file(s) of %s were changed directly during the run (reported only, --context_guard=report): %s' % (
                 len(ch), s['label'], ', '.join('%s (%s)' % (c[0], c[1]) for c in ch[:8])))
+            continue
+        if mode == 'keep':
+            before_dir, saved, unsaved = os.path.join(keep_root, s['key']) if keep_root else '', 0, []
+            for rel, what, sha in ch:
+                before = ''
+                if what != 'added':
+                    old = snap[rel][1]
+                    if before_dir and old is not None:
+                        try:
+                            before = _join(before_dir, rel)
+                            _write(before, old)
+                            saved += 1
+                        except OSError:
+                            before = ''
+                    if not before:
+                        unsaved.append(rel)
+                records.append({'label': s['label'], 'rel': rel, 'what': what, 'outcome': 'kept (write access to the used artifacts)',
+                                'staged': '', 'before': before})
+            fp = record_applied(s['ai'], stamp, project, [{'rel': rel, 'action': 'kept (%s during a run with write access)' % what, 'sha1': sha}
+                                                           for rel, what, sha in ch], by='run-ai --write=all: direct changes allowed for the run')
+            notes.append('context guard: %d file(s) of %s were changed directly during the run, as --write=all allows: %s' % (
+                len(ch), s['label'], ', '.join('%s (%s)' % (c[0], c[1]) for c in ch[:8])))
+            notes.append('               the record: %s; %s' % (fp, ('the versions before the run: %s' % before_dir) if saved else
+                                                                'no earlier version to keep (new files only)' if not unsaved else
+                                                                'the versions before the run were not kept'))
+            if unsaved and saved:
+                notes.append('               not kept (too large, or --no_log): %s' % ', '.join(unsaved[:8]))
             continue
         if mode == 'ask' and ask is not None and ask(s, ch):
             for rel, what, sha in ch:

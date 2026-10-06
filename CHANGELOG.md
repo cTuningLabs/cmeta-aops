@@ -2,6 +2,48 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.43.0.1
+- **`run-ai --write=ask|project|all|none`, `-w`: what a run may write, in one switch.** It sets the harness's own
+  approvals and the guard of the used artifacts together: `ask` (the default) as before; `project` lifts the
+  harness's questions (what `--yes` does); `all` (`-w`) also lets a session change the memory and skills of the used
+  artifacts directly - the changes are listed, recorded in the artifact and the versions before the run saved in
+  the project's `!AI/log/<stamp>.before/` (the guard's new mode `keep`); `none` runs the harness in its plan or
+  read-only mode (Claude Code, Codex, OpenCode, Antigravity, Gemini CLI). The key `write` of the config
+  `task-run-ai` is the default of a machine; a flag wins over it.
+- **`run-ai`, `import-ai`: long project paths.** Claude Code cuts a project slug longer than 200 characters and
+  appends a hash of the path; the conversations, the transcript export, the seed and `import-ai --claude_folder`
+  now find such a folder (by its prefix, checked against the working directory its sessions recorded) instead of
+  reporting nothing exported.
+- **`run-ai`: runs started within the same second.** A run that writes records reserves its stamp with an
+  exclusive `!AI/log/<stamp>.lock` (released once the run record holds it), so two terminals or a script starting
+  runs of one project at once never share a conversation or records.
+- **`run-ai` with OpenClaw, checked live** (OpenClaw 2026.6.10, `claude-cli` models: new sessions, resume,
+  transcript, hand-overs both ways). OpenClaw works in its own workspace whatever the current directory is, so the
+  orientation now names the project folder. Its terminal UI gets `--session agent:main:explicit:<id>` instead of
+  the flags of `openclaw agent` it refuses (`--session-id`, `--model`: run-ai says to pick the model with `/model`),
+  and the id the UI gives a new session is read back from OpenClaw's index. Session files are found under any agent
+  and `OPENCLAW_STATE_DIR`; tool calls are kept in the transcript as one line.
+- **`run-openclaw`: the reply and the token counts.** The reply is the result's `payloads` (it was the whole JSON);
+  the usage is the turn's (`meta.agentMeta.usage`), counted like run-claude (sent = new + cache write + cache read);
+  for the `claude-cli` provider, whose usage OpenClaw reports for the last model call only, the counts come from
+  Claude Code's own session of the turn. A provider without a key fails with a hint to `openclaw models list` and
+  `--model=claude-cli/<model>`.
+- **`import-ai` / `run-ai`: skill copies that went apart from their source.** `import-ai` records where each skill
+  came from and a hash of what it copied (`!AI/skills/.sources.json`); every run compares the copies with their
+  sources on this machine and says which side changed - a warning with the `import-ai ... --overwrite` command when
+  the source is newer, a note when the copy was changed in the project.
+- **`run-ai --summarize`.** One prompt to the harness (claude: its `haiku` unless `--model` says otherwise) writes a
+  summary of a conversation's transcript to `!AI/log/<id>.summary.md`; a later hand-over points to it first, then to
+  the transcript, and `--conversations` marks it. The conversation is not continued by it.
+- **`run-ai --trim_context`: a token budget.** Over the limit of the context estimate, the context sources are left
+  out from the last (this machine's mapping, the repository default, the deeper levels) until the estimate fits,
+  instead of stopping; `trim_context: true` in the config `task-run-ai` makes it the default of a machine.
+- **`run-ai --apply_pending`: one question per change.** Besides "yes" (all of an artifact's changes) and "no",
+  "e" asks for each change; what is not applied stays staged.
+- **`run-ai`: the transcript keeps the request.** For the harnesses that get the hand-over, the orientation and the
+  context in the prompt, a mark line ends them; the transcript shows what follows it, with a note. Gemini and
+  OpenClaw times are shown in local time like the others.
+
 ## 0.43.0
 - **`run-ai`: a coding agent on a cMeta artifact, with its memory in the artifact** (`task/run-ai`). One front
   door to the agent tasks - `--harness=claude|codex|opencode|openclaw|antigravity|gemini`, or any `<x>` with a
