@@ -92,7 +92,8 @@ def _agent_generator(codex_path, flags):
     reasoning effort it was started with (-m / -c model_reasoning_effort=...). A model or effort set
     only in the codex config file, or switched inside the session, is not seen.
     """
-    rec = {'method': 'agent', 'agent': 'OpenAI Codex'}
+    from task_c36be4b9314a45e0.api.ctask import GENERATOR_VIA_KEY, generator_via
+    rec = {'method': 'agent', 'agent': 'OpenAI Codex', GENERATOR_VIA_KEY: generator_via()}
     try:
         out = subprocess.run([codex_path or 'codex', '--version'], capture_output=True, text=True,
                              timeout=30).stdout.strip()

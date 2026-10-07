@@ -91,6 +91,21 @@ def prompt_via_file_done(result):
     return {'return': 0}
 
 
+# The key of the generator record that names what launched the agent or the task: "via: cmeta <engine version>".
+# A record {"method": "agent", "agent": "Claude Code 2.1.292", "by": ..., "model": ...} then says that the agent ran
+# through a cMeta task (run-ai, run-claude, ...) rather than by hand. One constant, so the word can change in one place.
+GENERATOR_VIA_KEY = 'via'
+
+
+def generator_via():
+    """'cmeta <version>' of the engine this task runs in ('cmeta' when the version cannot be read)."""
+    try:
+        from cmeta.version import __version__
+        return 'cmeta ' + str(__version__)
+    except Exception:
+        return 'cmeta'
+
+
 class InitCTask:
     """
     """

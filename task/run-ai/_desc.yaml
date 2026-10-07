@@ -1,7 +1,7 @@
 authors: Grigori Fursin
 
 # run-ai: one front door to the coding-agent harnesses cMeta runs (run-claude, run-codex, run-opencode, run-openclaw,
-# run-agy, run-gemini), with the agent's memory, skills, logs and conversations kept inside the artifact it works
+# run-agy, run-gemini, run-hermes), with the agent's memory, skills, logs and conversations kept inside the artifact it works
 # on, in a folder named !AI (README.md has the whole story):
 #
 #   cxt run-ai                                      # continue the latest conversation of the project around the cwd

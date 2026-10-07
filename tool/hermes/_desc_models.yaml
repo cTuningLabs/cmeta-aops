@@ -1,0 +1,77 @@
+authors: Grigori Fursin
+
+# The models of Hermes Agent, for the run-ai task:
+#
+#   cxt run-ai --harness=hermes --list_models
+#   cxt run-ai --harness=hermes --model=anthropic/claude-sonnet-4.6,high "..."
+#
+# Hermes names a model "<provider>/<model>" ("hermes chat -m anthropic/claude-sonnet-4", from its --help) and takes
+# the provider from the prefix or from "--provider <name>" (default: auto - the provider set with "hermes model"
+# or in config.yaml, "model: {provider, default, base_url}"). Which models exist depends on the provider the user
+# signed in to: Nous Portal lists over 300, Anthropic needs a Claude Max login or an API key, OpenRouter an API key,
+# a local endpoint (llama.cpp, Ollama, vLLM) is "custom" with whatever it serves. There is no command that prints the
+# models of the signed-in provider as a list: "hermes model" is the interactive picker, so the names below are the
+# ones the documentation and the default configuration use, all unverified against a provider. --effort maps to
+# "--reasoning <level>" (none, minimal, low, medium, high, xhigh, max, ultra), for the models that reason.
+# Same file conventions as tool/claude/_desc_models.yaml (updated, disabled, legacy, unverified, until).
+
+updated: '2026-10-07'
+checked_with: 'hermes v0.21.5 (release 2026.9.24) --help on 2026-10-07; no provider was signed in, so no name was verified against a provider'
+list_cmd: 'hermes model'
+sources:
+  - 'hermes chat --help (v0.21.5, 2026-10-07)'
+  - https://hermes-agent.nousresearch.com/docs/integrations/providers
+  - https://hermes-agent.nousresearch.com/docs/user-guide/configuration/
+  - '~/.hermes/config.yaml as the installer writes it (model.default: anthropic/claude-opus-4.6)'
+
+flags:
+  model: ['--model', '{{model}}']
+  effort: ['--reasoning', '{{effort}}']
+
+efforts:
+  - name: none
+  - name: minimal
+  - name: low
+  - name: medium
+  - name: high
+  - name: xhigh
+  - name: max
+  - name: ultra
+    desc: 'the highest level of --reasoning'
+
+models:
+  # ---- Anthropic: a Claude Code login (Claude Max) or ANTHROPIC_API_KEY; the names as the providers page writes them
+  - name: anthropic/claude-opus-4.6
+    default: true
+    unverified: true
+    desc: 'Claude Opus 4.6 - the model.default the installer writes into config.yaml'
+    auth: 'Anthropic OAuth (Claude Max) or ANTHROPIC_API_KEY'
+  - name: anthropic/claude-sonnet-4.6
+    unverified: true
+    desc: 'Claude Sonnet 4.6'
+    auth: 'Anthropic OAuth (Claude Max) or ANTHROPIC_API_KEY'
+
+  # ---- Nous Portal (hermes setup --portal / hermes portal): one subscription, many models; the picker lists them
+  - name: nous/anthropic/claude-sonnet-4.6
+    unverified: true
+    desc: 'Claude Sonnet 4.6 through Nous Portal (the default pick of "hermes setup --portal" per its guide)'
+    auth: 'Nous Portal OAuth'
+
+  # ---- OpenRouter: OPENROUTER_API_KEY; the model part is OpenRouter''s own name
+  - name: openrouter/anthropic/claude-sonnet-4.6
+    unverified: true
+    desc: 'Claude Sonnet 4.6 through OpenRouter (the example of the CLI reference)'
+    auth: OPENROUTER_API_KEY
+
+  # ---- OpenAI Codex (ChatGPT OAuth, hermes auth add openai-codex)
+  - name: openai-codex/gpt-5.4
+    unverified: true
+    desc: 'GPT-5.4 through the ChatGPT login (the Copilot page names gpt-5.4; the Codex catalogue is the picker''s)'
+    auth: 'OpenAI Codex OAuth'
+
+  # ---- a local or self-hosted OpenAI-compatible endpoint: "custom" (model.base_url), named ones under providers:
+  - name: custom/<model>
+    unverified: true
+    desc: 'any model a local server lists: llama.cpp (--jinja, -c 64000, http://localhost:8080/v1), Ollama (http://localhost:11434/v1), vLLM, LM Studio; e.g. custom/qwen2.5:0.5b'
+    auth: 'none for a local server; key_env for a remote one'
+    efforts: []

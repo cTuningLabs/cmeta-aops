@@ -20,6 +20,7 @@ tags:
 - run-ai
 last_generator:
   method: agent
+  via: cmeta 0.33.0
   agent: Claude Code 2.1.289
   by: Grigori Fursin
   date: '2026-10-05'

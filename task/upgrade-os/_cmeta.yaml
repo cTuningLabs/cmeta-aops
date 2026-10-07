@@ -1,0 +1,19 @@
+artifact: 22c5221772064ced
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-10-07T12:39:54.797112+00:00'
+desc: the OS packages (and firmware when asked) brought up to date with the OS's own commands, and whether a reboot is due
+generator:
+  agent: Claude Code 2.1.292
+  by: Grigori Fursin
+  method: agent
+  via: cmeta 0.33.0
+  model: claude-fable-5-1
+note: added on 2026-10-07 at the user's request (cmeta-aops 0.43.3.1); "cx host upgrade <host> --system" runs it on a fleet host
+tags:
+  - task
+  - upgrade
+  - os
+  - system
+  - firmware

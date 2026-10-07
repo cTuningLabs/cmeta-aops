@@ -2,6 +2,50 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.43.4
+- **Hermes Agent as a harness: `tool/hermes`, `task/run-hermes`, `cxt run-ai --harness=hermes`.** Nous Research's
+  open-source agent (MIT) joins Claude Code, Codex, OpenCode, OpenClaw, Antigravity CLI and Gemini CLI. The tool
+  installs it with its official installer (downloaded first, non-interactive, without the browser tools and the
+  computer-use driver; the code, its own uv, Python and Node, the configuration, keys, skills, memory and the session
+  store stay under `HERMES_HOME`: `~/.hermes`, `%LOCALAPPDATA%\hermes` on Windows; the `hermes` command is a shim in
+  `~/.local/bin` or `%LOCALAPPDATA%\hermesin`), pins a release (`--version=2026.9.24`, the git tag) and lists them.
+  `run-hermes` has the flags of its sister tasks: headless `hermes chat -Q -q <prompt>` (one shot; the prompt on stdin
+  with `--query-file -` when it is long or the command is the Windows .cmd shim), `--yes` = `--yolo`, `--stats` =
+  `--format stream-json` turned back into text with the token counters and the session id, an interactive session
+  seeded with the prompt, `--model <provider>/<model>` and `--reasoning none ... ultra` after `--`, a hint with the ways
+  to connect a provider when none is (`cx tool run hermes -- model`, `auth add`, a key, a local server as the `custom`
+  provider - which must serve a 64K context window). `run-ai` knows it: the memory index and the skills go in front of
+  the prompt (Hermes reads `AGENTS.md` from the project by itself), a session resumes with `--resume <id>`, the id is
+  read from the stream or the quiet run's `session_id:` line or `hermes sessions list`, and the transcript is exported
+  with `hermes sessions export --format jsonl`. Tests: `tests/cmeta_aops_basic_tests/test_run_hermes.py` (the
+  stream, the quiet tail, the sessions list and the export, from what hermes v0.21.5 printed with a local model).
+- **`via: cmeta <version>` in the generator record of an agent session.** Every `run-<agent>` task now adds it to the
+  `CMETA_GENERATOR` record it sets (`{"method": "agent", "agent": "Claude Code 2.1.292", "via": "cmeta 0.33.1", ...}`),
+  so an artifact says whether the agent ran through cMeta (`run-ai`, `run-claude`, ...) or by hand. One constant in the
+  task category API (`GENERATOR_VIA_KEY`) holds the word.
+- **`tool/node-js` installs Node.js.** Before it only detected a Node and pointed at nodejs.org. Now, when none is
+  found, the official release archive of the pinned version (the current LTS by default, 24.21.0 on 2026-10-07;
+  `--version=<x>` pins another, `--versions` lists them) is downloaded from nodejs.org for this OS and CPU, its SHA-256
+  checked against the SHASUMS256.txt of the release, and the whole tree - node, npm, npx, `lib/node_modules/npm` -
+  unpacked into the cache entry, nothing on the PATH and nothing in the system; winget (`OpenJS.NodeJS.LTS`), Homebrew
+  and the distribution's `nodejs npm` are the fallbacks. A tool that needs npm declares `node-js` with
+  `add_tool_path_to_env`, as `openclaw` does. Tested on Windows, macOS (arm64) and Ubuntu (x64).
+- **`tool/nix`: Nix detected and installed.** Found in `/nix/var/nix/profiles/default/bin` or `~/.nix-profile/bin`;
+  installed with the Determinate Nix installer (downloaded first, `install --no-confirm`; it elevates with sudo, so a
+  host with passwordless sudo installs unattended; multi-user daemon, flakes on); Windows only inside WSL2. Nix as a
+  rung of the install ladder (`nix profile install`) is a later step.
+
+## 0.43.3.1
+- **`upgrade-os`: the OS packages and firmware, with the OS's own commands.** `cx task run upgrade-os` picks the
+  commands from what the host task detected - apt-get/apt, dnf, yum, microdnf, tdnf, zypper, pacman, apk and xbps on
+  Linux (index refresh, upgrade, `--full` for apt's dist-upgrade, `--autoremove`), `softwareupdate -ia` and Homebrew
+  on macOS, `winget upgrade --all` on Windows (Windows Update only with `--windows_update`, through PSWindowsUpdate) -
+  runs the system steps with `sudo -n` (plain `sudo`, which may ask once, in a terminal), adds the firmware with
+  `--firmware` (fwupd on Linux; macOS and Windows carry firmware in their system updates), lists instead of upgrading
+  with `--check`, and says whether the OS asks for a reboot (`/var/run/reboot-required`, `needs-restarting -r`,
+  `zypper needs-rebooting`, the Windows Update registry key); `--reboot` then reboots, `--dry_run` prints the plan.
+  Nothing is cached: every run is a real run. Tests: `tests/cmeta_aops_basic_tests/test_upgrade_os.py`.
+
 ## 0.43.3
 - **An edited program is rebuilt, not run as it was.** The build stamp (`.cmeta-build-stamp.json`) now records the
   SHA-256 of the program's sources - the declared source files and the code and build files under its `src/`

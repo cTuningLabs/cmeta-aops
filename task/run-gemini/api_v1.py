@@ -135,7 +135,8 @@ def _flag_value(flags, names):
 
 def _agent_generator(gemini_path, flags):
     """The CMETA_GENERATOR record of a gemini session: the agent and its version, and the model it was started with."""
-    rec = {'method': 'agent', 'agent': 'Gemini CLI'}
+    from task_c36be4b9314a45e0.api.ctask import GENERATOR_VIA_KEY, generator_via
+    rec = {'method': 'agent', 'agent': 'Gemini CLI', GENERATOR_VIA_KEY: generator_via()}
     try:
         out = subprocess.run([gemini_path or 'gemini', '--version'], capture_output=True, text=True, timeout=60, shell=False).stdout.strip()
         version = next((x for x in out.split() if x[:1].isdigit()), '')

@@ -81,12 +81,14 @@ def test_how_each_harness_starts_and_resumes_a_session():
     assert C.resume_flags("opencode", "ID") == ["--session", "ID"]
     assert C.resume_flags("openclaw", "ID") == ["--session-id", "ID"]
     assert C.resume_flags("gemini", "ID") == ["--resume", "ID"]
+    assert C.resume_flags("hermes", "20261007_164201_45c8de") == ["--resume", "20261007_164201_45c8de"]
+    assert not C.chooses_id("hermes")                      # hermes names its sessions itself: read back after the run
     assert C.resume_flags("codex", "ID") == []           # a sub-command of codex: run-codex --resume=<id>
     # OpenClaw's terminal UI takes the key of the session, not its id
     assert C.new_session_flags("openclaw", "ID", "c", "a", interactive = True) == ["--session", "agent:main:explicit:ID"]
     assert C.resume_flags("openclaw", "ID", interactive = True) == ["--session", "agent:main:explicit:ID"]
     assert C.resume_flags("claude", "ID", interactive = True) == ["--resume", "ID"]
-    for h in ("claude", "codex", "agy", "opencode", "openclaw", "gemini"):
+    for h in ("claude", "codex", "agy", "opencode", "openclaw", "gemini", "hermes"):
         assert C.native_store_hint(h)
     assert C.session_exists("some-new-harness", "ID", ".") is True      # unknown harness: let it try
     assert C.discover_session("some-new-harness", ".", 0, {"stats": {"session_id": "S"}}) == "S"

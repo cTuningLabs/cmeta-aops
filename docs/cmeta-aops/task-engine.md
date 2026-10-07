@@ -194,7 +194,7 @@ The same module holds `MAX_PROMPT_ARG_CHARS`, `prompt_via_file()` and
 `prompt_via_file_done()`: a task that must hand a program a long text as a command
 line argument (the agent tasks' interactive sessions, `opencode run`, `openclaw agent`)
 writes it to a file above that length and passes a one-line request to read it
-first — see [agent-tasks.md](agent-tasks.md#flags-shared-by-run-claude--run-codex--run-opencode--run-agy--run-gemini).
+first — see [agent-tasks.md](agent-tasks.md#flags-shared-by-run-claude--run-codex--run-opencode--run-agy--run-gemini--run-hermes).
 
 ## Bootstrap chain & key building-block tasks
 

@@ -77,7 +77,7 @@ def test_force_and_a_lower_limit(api):
 
 
 def test_every_agent_task_uses_the_helper(repo_root):
-    for task in ("run-claude", "run-codex", "run-opencode", "run-openclaw", "run-agy", "run-gemini"):
+    for task in ("run-claude", "run-codex", "run-opencode", "run-openclaw", "run-agy", "run-gemini", "run-hermes"):
         source = (repo_root / "task" / task / "api_v1.py").read_text(encoding="utf-8")
         assert "prompt_via_file(" in source and "prompt_via_file_done(" in source, task
         assert "long_prompt_file" in source, task

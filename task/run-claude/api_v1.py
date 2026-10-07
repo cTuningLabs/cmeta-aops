@@ -81,7 +81,8 @@ def _agent_generator(claude_path, flags):
     The CMETA_GENERATOR record of a claude session: the agent and its version, and the model and
     effort (or thinking budget) it was started with. A model switched inside the session is not seen.
     """
-    rec = {'method': 'agent', 'agent': 'Claude Code'}
+    from task_c36be4b9314a45e0.api.ctask import GENERATOR_VIA_KEY, generator_via
+    rec = {'method': 'agent', 'agent': 'Claude Code', GENERATOR_VIA_KEY: generator_via()}
     try:
         out = subprocess.run([claude_path or 'claude', '--version'], capture_output=True, text=True,
                              timeout=30).stdout.strip()

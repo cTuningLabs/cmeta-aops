@@ -9,6 +9,7 @@ generator:
   agent: Claude Code 2.1.291
   by: Grigori Fursin
   method: agent
+  via: cmeta 0.33.0
   model: claude-fable-5-1
 note: 'sccache wraps a compiler (gcc / clang / MSVC, Rust, nvcc) and caches its outputs locally
   or in shared storage, so a repeated build of the same sources is served from the cache.'

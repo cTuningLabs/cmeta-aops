@@ -134,7 +134,8 @@ def _agent_generator(argv, flags):
     The CMETA_GENERATOR record of an openclaw run: the agent and its version, and the model and
     thinking level it was started with (--model / --thinking).
     """
-    rec = {'method': 'agent', 'agent': 'OpenClaw'}
+    from task_c36be4b9314a45e0.api.ctask import GENERATOR_VIA_KEY, generator_via
+    rec = {'method': 'agent', 'agent': 'OpenClaw', GENERATOR_VIA_KEY: generator_via()}
     try:
         out = subprocess.run(argv + ['--version'], capture_output=True, text=True, timeout=60).stdout
         version = next((x for x in out.split() if x[:1].isdigit()), '')

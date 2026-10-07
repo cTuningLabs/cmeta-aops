@@ -5,7 +5,7 @@ Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. Licensed under Apache-2
 # Coding agents and cloud CLIs as tasks
 
 How to launch **Claude Code**, **OpenAI Codex**, **OpenCode.AI**, Google's
-**Antigravity CLI** and **Gemini CLI**, and the **Azure CLI** through cMeta, so that
+**Antigravity CLI** and **Gemini CLI**, Nous Research's **Hermes Agent**, and the **Azure CLI** through cMeta, so that
 the same command works on every machine, the agent starts with the right context,
 and a headless run leaves a transcript and its token statistics next to the prompt
 file - and, with **`run-ai`**, how to run any of these agents on a cMeta artifact so
@@ -14,8 +14,8 @@ that its memory, skills and conversations stay inside that artifact.
 | Artifact | What it does |
 |---|---|
 | [`task/run-ai`](../../task/run-ai/README.md), [`task/import-ai`](../../task/import-ai/_desc.yaml) | One front door to the agents below, on a cMeta artifact: the agent's memory, skills, logs and conversations are kept in the artifact's `!AI` folder, a run continues the last conversation with any agent and model, and other artifacts' memory is read-only context. `import-ai` brings existing memories and skills in. |
-| [`tool/claude`](../../tool/claude/_desc.yaml), [`tool/codex`](../../tool/codex/_desc.yaml), [`tool/opencode`](../../tool/opencode/_desc.yaml), [`tool/agy`](../../tool/agy/_desc.yaml), [`tool/gemini`](../../tool/gemini/_desc.yaml) | Detect or install the agent CLIs, pin a release, list the published versions. |
-| [`task/run-claude`](../../task/run-claude/_desc.yaml), [`task/run-codex`](../../task/run-codex/_desc.yaml), [`task/run-opencode`](../../task/run-opencode/_desc.yaml), [`task/run-agy`](../../task/run-agy/_desc.yaml), [`task/run-gemini`](../../task/run-gemini/_desc.yaml) | Run an agent on an assembled prompt — headless or interactive — and record the output and the token statistics. `run-claude` also adds cMeta repositories to the agent's context. |
+| [`tool/claude`](../../tool/claude/_desc.yaml), [`tool/codex`](../../tool/codex/_desc.yaml), [`tool/opencode`](../../tool/opencode/_desc.yaml), [`tool/agy`](../../tool/agy/_desc.yaml), [`tool/gemini`](../../tool/gemini/_desc.yaml), [`tool/hermes`](../../tool/hermes/_desc.yaml) | Detect or install the agent CLIs, pin a release, list the published versions. |
+| [`task/run-claude`](../../task/run-claude/_desc.yaml), [`task/run-codex`](../../task/run-codex/_desc.yaml), [`task/run-opencode`](../../task/run-opencode/_desc.yaml), [`task/run-agy`](../../task/run-agy/_desc.yaml), [`task/run-gemini`](../../task/run-gemini/_desc.yaml), [`task/run-hermes`](../../task/run-hermes/_desc.yaml) | Run an agent on an assembled prompt — headless or interactive — and record the output and the token statistics. `run-claude` also adds cMeta repositories to the agent's context. |
 | [`tool/az`](../../tool/az/_desc.yaml), [`task/run-az`](../../task/run-az/_desc.yaml) | Detect or install the Azure CLI and run it with the terminal attached (`az login` works). |
 
 The `run-<agent>` tasks share one design: the prompt is the text of
@@ -49,7 +49,7 @@ cxt import-ai --project="project::my-app" --skills="<repo>/.claude/skills"   # b
 (`cxt <task>` is short for `cx task run <task>`.)
 
 - **The agent** (`--harness`): `claude` (the default), `codex`, `opencode`, `openclaw`,
-  `antigravity` (also `agy`), `gemini`, or any `<x>` for which a task `run-<x>` exists.
+  `antigravity` (also `agy`), `gemini`, `hermes`, or any `<x>` for which a task `run-<x>` exists.
   The model and the effort are given in the agent's own names -
   `--model=<model>,<effort>` - and turned into its flags from
   `tool/<agent>/_desc_models.yaml`. OpenClaw may call the other agents as sub-agents:
@@ -167,6 +167,40 @@ that names the case: nothing configured, a personal account that is refused, or 
 key the API does not accept. Gemini CLI has no reasoning-effort flag: the default
 model, `auto`, routes between a Pro and a Flash model.
 
+## Hermes Agent — `tool/hermes` + `task/run-hermes`
+
+[Hermes Agent](https://hermes-agent.nousresearch.com) is Nous Research's open-source
+agent (MIT): a Python CLI with a learning loop that writes skills from experience, a
+persistent memory, skills in the agentskills.io format and many inference providers -
+Nous Portal (a free tier), Anthropic (a Claude Code login on Claude Max, or an API
+key), OpenAI Codex, OpenRouter, GitHub Copilot, and any OpenAI-compatible endpoint
+(llama.cpp, Ollama, vLLM, LM Studio).
+
+```bash
+cx tool setup hermes --install          # the official installer, non-interactive, without the browser tools
+cx tool run hermes -- model             # connect a provider once (the picker signs you in)
+cx tool run hermes -- --version
+cx tool run hermes -- doctor
+
+cx task run run-hermes                                        # open an interactive chat
+cx task run run-hermes --prompt="explain this repo"            # headless, one prompt (hermes chat -Q -q)
+cx task run run-hermes --prompt_file=review.txt --yes --stats  # --yolo; the JSON event stream for the counters
+cx task run run-hermes "continue" -- --resume <session id>
+cx task run run-hermes --prompt="fix the tests" -- --model anthropic/claude-sonnet-4.6 --reasoning high
+```
+
+The installer keeps everything under `HERMES_HOME` (`~/.hermes`, `%LOCALAPPDATA%\hermes`
+on Windows): the code, its own uv, Python and Node, the configuration and keys, the
+skills, the memory and the session store `state.db`; the `hermes` command is a shim in
+`~/.local/bin` (`%LOCALAPPDATA%\hermes\bin` on Windows). Connect a provider **before**
+the first headless run: without one `hermes` exits with "not connected to any AI
+provider" and `run-hermes` repeats the ways to connect. Hermes wants a model with a
+context window of at least 64K tokens: a local server must serve one (`llama.cpp -c 64000`,
+`OLLAMA_CONTEXT_LENGTH=65536`) and `hermes config set model.context_length 65536` tells
+hermes so. The model name is `<provider>/<model>`; `--reasoning` takes `none` ... `ultra`.
+Hermes reads `AGENTS.md` from the working directory by itself and resumes a session
+with `--resume <id>` (`hermes sessions list`, `hermes sessions export --format jsonl`).
+
 ## Azure CLI — `tool/az` + `task/run-az`
 
 ```bash
@@ -192,7 +226,7 @@ in its `_desc.yaml` and `api_v1.py` carry the full reasoning:
 | **macOS** | **Download** — the official `macos` tarball from the GitHub release | Relocatable, but *not* self-contained: the upstream launcher demands `AZ_PYTHON`, so a small `bin/az` wrapper supplies it. Falls back to `brew` when the host has no matching CPython. |
 | **Linux** | Package manager | Upstream publishes **no** portable download (the `.deb`/`.rpm` bundle a venv wired to `/opt/az`). apt-based distros get the Microsoft repo script — plain `apt install azure-cli` fails on stock Debian/Ubuntu — everything else the generic sudo package manager. |
 
-## Flags shared by `run-claude` / `run-codex` / `run-opencode` / `run-agy` / `run-gemini`
+## Flags shared by `run-claude` / `run-codex` / `run-opencode` / `run-agy` / `run-gemini` / `run-hermes`
 
 | Flag | Effect |
 |---|---|
@@ -253,13 +287,16 @@ passed after `--` as `--add-dir <path>` is never added twice.
 
 ## How the artifacts of a session record who made them
 
-`run-claude`, `run-codex`, `run-opencode`, `run-agy` and `run-gemini` set
+`run-claude`, `run-codex`, `run-opencode`, `run-agy`, `run-gemini` and `run-hermes` set
 `CMETA_GENERATOR` for the agent process, unless a task that runs the agent has set it already (an import task keeps its
 own `task` record):
 
 ```json
-{"method": "agent", "agent": "Claude Code 2.1.282", "model": "<model>", "effort": "<effort>"}
+{"method": "agent", "agent": "Claude Code 2.1.282", "via": "cmeta 0.33.1", "model": "<model>", "effort": "<effort>"}
 ```
+
+`via` (since cmeta-aops 0.43.4) names what launched the agent - the cMeta engine and its version - so a record tells
+a session run through `run-ai` or `run-<agent>` from one started by hand.
 
 | Task | `agent` | `model` from | `effort` from |
 |---|---|---|---|
@@ -268,6 +305,7 @@ own `task` record):
 | `run-opencode` | `OpenCode <version>` | `--model` / `-m` | `--variant` |
 | `run-agy` | `Antigravity CLI <version>` | `--model` | `--effort` |
 | `run-gemini` | `Gemini CLI <version>` | `--model` / `-m` | - (no effort flag) |
+| `run-hermes` | `Hermes Agent <release>` | `--model` / `-m` | `--reasoning` |
 
 The model and effort are recorded only when they are passed after `--` (`run-ai` passes its
 `--model` and `--effort` that way): a model or effort chosen in the agent's own config file, or
@@ -290,7 +328,7 @@ and the limit is a rate limit, not a bill.
 > codex) or `opencode models` before trusting a table.
 >
 > **The maintained list is `tool/<name>/_desc_models.yaml`** (`tool/claude`, `tool/codex`,
-> `tool/opencode`, `tool/openclaw`, `tool/agy`, `tool/gemini`; since 2026-10-04) -
+> `tool/opencode`, `tool/openclaw`, `tool/agy`, `tool/gemini`, `tool/hermes`; since 2026-10-04) -
 > `cxt run-ai --list_models` prints it, one `--model=<model>,<effort>` line per
 > combination: the models with a description,
 > context, price and the efforts each takes, the harness's flags for a model and an

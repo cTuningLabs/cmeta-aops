@@ -1,0 +1,66 @@
+authors: Grigori Fursin
+
+# Run Hermes Agent ("hermes", https://hermes-agent.nousresearch.com) non-interactively on an assembled prompt and
+# exit, or open an interactive session. Same flags as the sister tasks "run-claude", "run-codex", "run-opencode",
+# "run-openclaw", "run-agy" and "run-gemini":
+#
+#   cx task run run-hermes --prompt="{prompt text}"
+#   cx task run run-hermes "{prompt text}"                   # the first positional is the prompt
+#   cx task run run-hermes --prompt_file={file}
+#   cx task run run-hermes --prompt_file={file} --prompt="{extra text}" --output_file={file}
+#   cx task run run-hermes --prompt_file={file} --yes --stats
+#
+# With no prompt at all, this task opens an interactive hermes session instead of failing (same default as the
+# sister tasks):
+#
+#   cx task run run-hermes                                   # just open a hermes chat
+#
+# --interactive (short: --i or -i) asks for that session explicitly: the assembled prompt seeds the session
+# ("hermes chat -q <prompt>" on a terminal submits it as the first turn and stays), so a preset prompt can be
+# followed up on by hand:
+#
+#   cx task run run-hermes --prompt_file=review.txt --interactive
+#
+# --yes runs hermes unattended: the approval prompts of dangerous commands are bypassed ("--yolo"). Without it a
+# headless hermes decides with its "smart" approval mode (an auxiliary model judges a flagged command) and may
+# stop at a command it will not run on its own.
+# --stats asks hermes for its JSON event stream ("--format stream-json", one event per line), turned back into text,
+# so that the token counters and the session id can be printed and recorded.
+# --reproducible pins nothing by itself: pin the model and the reasoning level after "--", e.g.
+# "-- --model anthropic/claude-sonnet-4.6 --reasoning high".
+#
+# The prompt sent to hermes is the text of --prompt_file (when given), then "\n", then the text of --prompt. Headless
+# it goes in as "-q <prompt>"; a prompt longer than 30000 characters, or any prompt on Windows (where the "hermes"
+# command is a .cmd shim that mangles quotes and percent signs), goes through stdin instead ("--query-file -", which
+# hermes reads verbatim). An interactive session cannot do that: such a prompt is written to a file -
+# --long_prompt_file={file}, else {prompt_file without extension}-prompt.md, else a temporary file removed
+# afterwards - and hermes is given a one-line request to read it first; it follows it and stays interactive.
+# Anything after "--" is appended to the hermes command line, e.g.
+#
+#   cx task run run-hermes --prompt_file=p.txt -- --model anthropic/claude-opus-4.6 --reasoning medium
+#   cx task run run-hermes "continue" -- --resume <session id>
+#
+# hermes must be connected to a provider once, by hand: "cx tool run hermes -- model" (the interactive picker: Nous
+# Portal with its free tier, Anthropic through a Claude Code login on Claude Max, OpenAI Codex, OpenRouter, ...),
+# "cx tool run hermes -- auth add <provider>", "cx tool run hermes -- config set OPENROUTER_API_KEY <key>", or a local
+# server ("config set model.provider custom", "model.base_url http://localhost:8080/v1", "model.default <model>").
+# A headless run without a provider exits 1 and says so; this task repeats the hint.
+#
+# hermes keeps its state in HERMES_HOME (~/.hermes; %LOCALAPPDATA%\hermes on Windows): config.yaml, .env, skills/,
+# memories/ and the session store state.db ("hermes sessions list / export"). It reads AGENTS.md (or .hermes.md,
+# CLAUDE.md, .cursorrules) from the working directory by itself; "--ignore-rules" after "--" turns that off.
+
+# This task launches hermes and changes files - never memoize it on disk
+cache: False
+
+# The first positional argument after the task name is the prompt
+params_map:
+  arg2: prompt
+
+uses:
+  # Bootstrap host (OS detection, env, vars) - normally already resolved from global
+  - task: runner,1e48cc0c5f6041a5
+
+  # Detect / install the "hermes" tool and expose {{global.hermes.path}} (the official installer)
+  - task: setup,a2f9b61079ce4333
+    name: hermes,94ea5f9134034cfd
