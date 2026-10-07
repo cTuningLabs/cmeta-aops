@@ -7,7 +7,7 @@ CLI, Gemini CLI, ...), with the agent's memory, skills, logs and conversations k
 folder named !AI, so that a project carries its own AI knowledge wherever it goes - and so that "cxt run-ai" picks up
 where the last run stopped, with any harness and any model.
 
-    cxt run-ai [--harness=claude|codex|opencode|openclaw|antigravity|gemini] [--project=<cref>] [-i] [prompt] [-- <harness flags>]
+    cxt run-ai [--harness=claude|codex|opencode|openclaw|antigravity|gemini|hermes] [--project=<cref>] [-i] [prompt] [-- <harness flags>]
     cxt run-ai                                             # continue the latest conversation of the project, interactively
     cxt run-ai "one prompt"                                # one more turn of that conversation, then exit
     cxt run-ai --new "..."                                 # start a new conversation (the memory and skills stay)
@@ -23,7 +23,7 @@ where the last run stopped, with any harness and any model.
     cxt run-ai --apply_pending                             # show each of them and apply it on your word
 
 The harness (--harness; the old name --agent is still accepted) is the CLI that runs the model: claude, codex,
-opencode, openclaw, antigravity (also agy), gemini, or any <x> for which a task run-<x> exists.
+opencode, openclaw, antigravity (also agy), gemini, hermes, or any <x> for which a task run-<x> exists.
 
 The model and the effort (--model, --effort) are given in the harness's own names and turned into its flags from the
 tool's _desc_models.yaml (tool/<harness>/_desc_models.yaml: the models, the efforts, the flags, a description and the
@@ -63,6 +63,8 @@ How each harness is pointed at !AI - the tool's own settings, no API keys:
     antigravity (agy)  as codex; context folders are mounted with --add-dir  (read only; agy has conversations, no memory)
     gemini     as codex; context folders join the workspace with --include-directories  (read only). Gemini CLI serves
                Code Assist Standard/Enterprise licences and API keys; personal Google accounts use antigravity
+    hermes     as codex (read only); hermes also reads AGENTS.md from the project folder by itself and keeps its own
+               memory and skills in HERMES_HOME (~/.hermes); its sessions are in state.db there (--resume <id>)
 
 The first run of a project with an empty !AI/memory copies the memory Claude Code keeps for that folder
 (~/.claude/projects/<slug>/memory) into it, so nothing is lost; --no_seed starts with an empty memory instead.
@@ -127,6 +129,7 @@ HARNESSES = {
     'antigravity': {'task': 'run-agy,fe910b4a9c88448f',      'tool': 'agy,433f36c666ce47f1'},       # Antigravity CLI ("agy"), Google's successor of Gemini CLI for personal accounts
     'agy':         {'task': 'run-agy,fe910b4a9c88448f',      'tool': 'agy,433f36c666ce47f1'},       # the same, by the command name
     'gemini':      {'task': 'run-gemini,af663bab27bb4725',   'tool': 'gemini,40a20e8dca604ece'},    # Gemini CLI: Code Assist Standard/Enterprise licences and API keys
+    'hermes':      {'task': 'run-hermes,324010c67e7a41c2',   'tool': 'hermes,94ea5f9134034cfd'},    # Hermes Agent (Nous Research): many providers, its own skills and memory
 }
 
 AI_DIR = '!AI'
@@ -220,12 +223,12 @@ READ_ONLY_FLAGS = {
 }
 # The harness tasks that take "yes" (their own flags that stop the questions and lift the sandbox); run-openclaw has
 # none - OpenClaw follows its own settings. A task run-<x> that is not listed gets it only from --yes itself.
-YES_HARNESSES = ('claude', 'codex', 'opencode', 'agy', 'gemini')
+YES_HARNESSES = ('claude', 'codex', 'opencode', 'agy', 'gemini', 'hermes')
 
 # The harness tasks that take "long_prompt_file": where they write a prompt too long for a command line argument (an
 # interactive session preloads its first prompt that way; opencode and openclaw have no stdin mode at all) and ask the
 # agent to read it first. run-ai names that file in !AI/log; a task run-<x> that is not listed is not given it.
-LONG_PROMPT_HARNESSES = ('claude', 'codex', 'opencode', 'openclaw', 'agy', 'gemini')
+LONG_PROMPT_HARNESSES = ('claude', 'codex', 'opencode', 'openclaw', 'agy', 'gemini', 'hermes')
 
 
 class CTask(InitCTask):
@@ -1285,7 +1288,7 @@ class CTask(InitCTask):
     # ------------------------------------------------------------------ run
     def run(self,
             ctx: dict,                      # cMeta context
-            harness: str = '',              # claude (default) | codex | opencode | openclaw | antigravity (agy) | gemini | <x> (then the task run-<x>)
+            harness: str = '',              # claude (default) | codex | opencode | openclaw | antigravity (agy) | gemini | hermes | <x> (then the task run-<x>)
             agent: str = '',                # the old name of --harness (still accepted)
             project: str = '',              # cRef "category::artifact" of the artifact to work on (default: detect, else cwd)
             ai_dir: str = AI_DIR,           # the folder inside the project that holds the agent's memory and records

@@ -9,6 +9,7 @@ generator:
   agent: Claude Code 2.1.291
   by: Grigori Fursin
   method: agent
+  via: cmeta 0.33.0
   model: claude-fable-5-1
 note: 'hyperfine times whole commands: warmup runs, statistical outlier detection, exports
   to JSON / CSV / Markdown - the first answer to "how long does this command take".'

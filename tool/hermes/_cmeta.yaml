@@ -1,0 +1,23 @@
+artifact: 94ea5f9134034cfd
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-10-07T16:38:57.194340+00:00'
+desc: "Hermes Agent (hermes) from Nous Research, the self-improving open-source agent: installed with its official installer on Linux, macOS and Windows; run-hermes launches it."
+generator:
+  agent: Claude Code 2.1.292
+  by: Grigori Fursin
+  method: agent
+  via: cmeta 0.33.1
+  model: claude-fable-5-1
+note: 'Hermes Agent (https://hermes-agent.nousresearch.com, MIT): a Python CLI agent with skills, memory and
+  many providers (Nous Portal, Anthropic, OpenAI Codex, OpenRouter, local endpoints). Installed by its own
+  installer (code under ~/.hermes/hermes-agent, the "hermes" command in ~/.local/bin or %LOCALAPPDATA%\hermes\bin);
+  added 2026-10-07 at the user''s request.'
+tags:
+- hermes
+- hermes-agent
+- nous
+- ai
+- agent
+- cli

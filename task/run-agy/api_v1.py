@@ -83,7 +83,8 @@ def _flag_value(flags, names):
 
 def _agent_generator(agy_path, flags, env):
     """The CMETA_GENERATOR record of an agy session: the agent and its version, and the model it was started with."""
-    rec = {'method': 'agent', 'agent': 'Antigravity CLI'}
+    from task_c36be4b9314a45e0.api.ctask import GENERATOR_VIA_KEY, generator_via
+    rec = {'method': 'agent', 'agent': 'Antigravity CLI', GENERATOR_VIA_KEY: generator_via()}
     try:
         out = subprocess.run([agy_path or 'agy', '--version'], capture_output=True, text=True, timeout=60, shell=False, env=env).stdout.strip()
         version = next((x for x in out.split() if x[:1].isdigit()), '')

@@ -8,6 +8,7 @@ generator:
   agent: Claude Code 2.1.292
   by: Grigori Fursin
   method: agent
+  via: cmeta 0.33.0
   model: claude-fable-5-1
 note: added on 2026-10-07 at the user's request (cmeta-aops 0.43.3.1); "cx host upgrade <host> --system" runs it on a fleet host
 tags:

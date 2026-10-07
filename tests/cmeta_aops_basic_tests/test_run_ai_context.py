@@ -160,7 +160,7 @@ def test_a_project_folder_with_brackets_in_its_name_is_not_a_pattern(api, CTask,
 
 # ---------------------------------------------------------------------------------------------- harnesses and models
 def test_the_known_harnesses(api):
-    assert set(api["HARNESSES"]) == {"claude", "codex", "opencode", "openclaw", "antigravity", "agy", "gemini"}
+    assert set(api["HARNESSES"]) == {"claude", "codex", "opencode", "openclaw", "antigravity", "agy", "gemini", "hermes"}
     assert api["HARNESSES"]["agy"] == api["HARNESSES"]["antigravity"]
     for h in api["HARNESSES"].values():      # alias,UID on both: rename-safe
         assert h["task"].count(",") == 1 and h["tool"].count(",") == 1

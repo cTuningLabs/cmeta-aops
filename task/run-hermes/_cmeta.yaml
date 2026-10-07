@@ -1,0 +1,24 @@
+artifact: 324010c67e7a41c2
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-10-07T16:38:57.396562+00:00'
+desc: Run Hermes Agent (hermes) on a prompt from --prompt/--prompt_file, headless
+  (hermes chat -Q -q) or interactive; records the output, the session id and the token stats.
+generator:
+  agent: Claude Code 2.1.292
+  by: Grigori Fursin
+  method: agent
+  via: cmeta 0.33.1
+  model: claude-fable-5-1
+tags:
+- run
+- hermes
+- hermes-agent
+- nous
+- ai
+- cli
+- prompt
+- non-interactive
+- headless
+- interactive

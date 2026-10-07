@@ -721,6 +721,144 @@ def gemini_export(sid):
     return out
 
 
+# hermes --------------------------------------------------------------------------------------------------------
+# Hermes Agent keeps its sessions in <HERMES_HOME>/state.db (SQLite, its own schema and a search index): they are read
+# through its CLI - "hermes sessions list" (newest first: "<id>  <date>  <title> ...") and "hermes sessions export
+# --format jsonl --session-id <id> -" (one JSON object per message on stdout) - never through the database itself.
+HERMES_SESSION_RE = re.compile(r'\b(\d{8}_\d{6}_[0-9a-f]{6}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b', re.I)
+
+
+def hermes_home():
+    """HERMES_HOME, else ~/.hermes (Linux, macOS) or %LOCALAPPDATA%\\hermes (Windows)."""
+    if os.environ.get('HERMES_HOME'):
+        return os.environ['HERMES_HOME']
+    if os.name == 'nt' and os.environ.get('LOCALAPPDATA'):
+        return os.path.join(os.environ['LOCALAPPDATA'], 'hermes')
+    return os.path.join(os.path.expanduser('~'), '.hermes')
+
+
+def hermes_bin():
+    """The hermes command: on PATH, else where its installer puts the shim (~/.local/bin; <HERMES_HOME>/bin/hermes.cmd and
+    %LOCALAPPDATA%/hermes/bin/hermes.cmd on Windows), else ''."""
+    import shutil
+    found = shutil.which('hermes') or (shutil.which('hermes.cmd') if os.name == 'nt' else '')
+    if found:
+        return found
+    candidates = [os.path.join(os.path.expanduser('~'), '.local', 'bin', 'hermes')]
+    if os.name == 'nt':
+        candidates = [os.path.join(hermes_home(), 'bin', 'hermes.cmd')]
+        if os.environ.get('LOCALAPPDATA'):
+            candidates.append(os.path.join(os.environ['LOCALAPPDATA'], 'hermes', 'bin', 'hermes.cmd'))
+    return next((c for c in candidates if os.path.isfile(c)), '')
+
+
+def hermes_run(args, timeout=120):
+    """-> (exit code, stdout) of "hermes <args>" without colours; (-1, '') when hermes is not there or hangs."""
+    import subprocess
+    binary = hermes_bin()
+    if not binary:
+        return -1, ''
+    env = dict(os.environ)
+    env.setdefault('NO_COLOR', '1')
+    try:
+        p = subprocess.run([binary] + list(args), capture_output=True, text=True, encoding='utf-8', errors='replace',
+                           timeout=timeout, env=env, stdin=subprocess.DEVNULL)
+        return p.returncode, (p.stdout or '') + (('\n' + p.stderr) if p.returncode != 0 and p.stderr else '')
+    except Exception:
+        return -1, ''
+
+
+def hermes_sessions(limit=50):
+    """The sessions "hermes sessions list" knows, newest first: [(id, the line)]."""
+    rc, out = hermes_run(['sessions', 'list', '--limit', str(limit)])
+    if rc != 0:
+        return []
+    found = []
+    for line in out.splitlines():
+        m = HERMES_SESSION_RE.search(line)
+        if m and m.group(1) not in [f[0] for f in found]:
+            found.append((m.group(1), line.strip()))
+    return found
+
+
+def hermes_exists(sid):
+    return any(s == sid for s, _ in hermes_sessions(500))
+
+
+def hermes_newest_session(t0=0):
+    """The newest session of the list, when its id's own timestamp (<yyyymmdd>_<hhmmss>) is not older than t0."""
+    for sid, _ in hermes_sessions(5):
+        m = re.match(r'(\d{8})_(\d{6})_', sid)
+        if m and t0:
+            try:
+                started = datetime.datetime.strptime(m.group(1) + m.group(2), '%Y%m%d%H%M%S').timestamp()
+                if started < t0 - 120:
+                    return ''
+            except ValueError:
+                pass
+        return sid
+    return ''
+
+
+def hermes_export(sid):
+    """The messages of a session as hermes exports them (JSONL on stdout): a user message, an answer with its text and
+    tool calls, a tool result (dropped: the call is shown). The keys are read by their shape."""
+    rc, out = hermes_run(['sessions', 'export', '--format', 'jsonl', '--session-id', sid, '-'], timeout=300)
+    if rc != 0 or not out.strip():
+        return None
+    messages = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line.startswith('{'):
+            continue
+        try:
+            d = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(d, dict):
+            continue
+        # one object may be a session header with its messages inside
+        inner = d.get('messages') if isinstance(d.get('messages'), list) else None
+        for m in (inner if inner is not None else [d]):
+            if isinstance(m, dict):
+                messages.append(m)
+    out_list = []
+    for m in messages:
+        role = str(m.get('role') or m.get('type') or '').lower()
+        if role in ('human',):
+            role = 'user'
+        if role in ('ai', 'model', 'agent'):
+            role = 'assistant'
+        if role not in ('user', 'assistant'):
+            continue
+        content = m.get('content')
+        if isinstance(content, list):
+            text = '\n'.join(str(c.get('text') or '') for c in content if isinstance(c, dict))
+        else:
+            text = str(content or m.get('text') or '')
+        blocks = [('text', text)] if text.strip() else []
+        for call in m.get('tool_calls') or m.get('toolCalls') or []:
+            if not isinstance(call, dict):
+                continue
+            fn = call.get('function') if isinstance(call.get('function'), dict) else call
+            name = fn.get('name') or call.get('name') or '?'
+            args = fn.get('arguments') or call.get('arguments') or call.get('args') or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except Exception:
+                    args = {'text': args}
+            hint = next((str(args[k]) for k in ('command', 'cmd', 'file_path', 'path', 'pattern', 'query', 'url', 'description', 'prompt')
+                         if isinstance(args, dict) and args.get(k)), '')
+            blocks.append(('tool', '%s %s' % (name, ' '.join(hint.split())[:160])))
+        if blocks:
+            ts = m.get('timestamp') or m.get('created_at') or m.get('ts') or ''
+            if isinstance(ts, (int, float)):
+                ts = datetime.datetime.fromtimestamp(ts / 1000.0 if ts > 1e11 else ts).isoformat(timespec='seconds')
+            out_list.append((role, local_ts(str(ts)) if ts else '', blocks))
+    return out_list
+
+
 # ====================================================================== the adapter table
 def openclaw_session_key(sid):
     """The key OpenClaw files a session under when a headless turn names it (--session-id <id>); its terminal UI takes
@@ -750,7 +888,7 @@ def resume_flags(harness, sid, interactive=False):
     if h == 'openclaw' and interactive:
         return ['--session', openclaw_session_key(sid)]
     return {'claude': ['--resume', sid], 'agy': ['--conversation', sid], 'opencode': ['--session', sid],
-            'openclaw': ['--session-id', sid], 'gemini': ['--resume', sid]}.get(h, [])
+            'openclaw': ['--session-id', sid], 'gemini': ['--resume', sid], 'hermes': ['--resume', sid]}.get(h, [])
 
 
 def session_exists(harness, sid, project_path):
@@ -767,6 +905,8 @@ def session_exists(harness, sid, project_path):
         return openclaw_exists(sid)
     if h == 'gemini':
         return gemini_exists(sid)
+    if h == 'hermes':
+        return hermes_exists(sid)
     return True     # unknown harness: let it try
 
 
@@ -795,6 +935,11 @@ def discover_session(harness, project_path, t0, task_result=None, before=None):
             return sid
         sessions = opencode_sessions(project_path, since=t0 - 5)
         return sessions[0][0] if sessions else ''
+    if h == 'hermes':
+        sid = stats.get('session_id') or ''
+        if sid:
+            return sid
+        return hermes_newest_session(t0)
     return stats.get('session_id') or ''
 
 
@@ -819,6 +964,8 @@ def export_session(harness, sid, project_path):
         return openclaw_export(sid)
     if h == 'gemini':
         return gemini_export(sid)
+    if h == 'hermes':
+        return hermes_export(sid)
     return None
 
 
@@ -826,7 +973,8 @@ def native_store_hint(harness):
     h = harness_key(harness)
     return {'claude': '~/.claude/projects/<slug>/<id>.jsonl', 'codex': 'state_*.sqlite + thread_history_*.sqlite in CODEX_SQLITE_HOME (run-ai: <project>/!AI/codex) or CODEX_HOME; rollout-*.jsonl in CODEX_HOME',
             'agy': '~/.gemini/antigravity-cli/conversations/<id>.db (protobuf blobs; the readable runs are recovered)', 'opencode': '~/.local/share/opencode/opencode.db',
-            'openclaw': '~/.openclaw/agents/<agent>/sessions/<id>.jsonl (OPENCLAW_STATE_DIR moves ~/.openclaw)', 'gemini': '~/.gemini/tmp/<project>/chats/session-*.jsonl'}.get(h, '')
+            'openclaw': '~/.openclaw/agents/<agent>/sessions/<id>.jsonl (OPENCLAW_STATE_DIR moves ~/.openclaw)', 'gemini': '~/.gemini/tmp/<project>/chats/session-*.jsonl',
+            'hermes': '<HERMES_HOME>/state.db (~/.hermes; SQLite, read through "hermes sessions list" and "hermes sessions export --format jsonl")'}.get(h, '')
 
 
 # ====================================================================== the transcript
@@ -948,7 +1096,7 @@ def write_transcript(conv, log_dir):
             notes.append('%s: the transcript could not be exported (%s)' % (h, e))
             messages = None
         if messages:
-            body += _render_messages(messages, {'user': 'User', 'assistant': {'claude': 'Claude', 'codex': 'Codex', 'agy': 'Antigravity', 'opencode': 'OpenCode', 'openclaw': 'OpenClaw', 'gemini': 'Gemini'}.get(harness_key(h), 'Assistant')})
+            body += _render_messages(messages, {'user': 'User', 'assistant': {'claude': 'Claude', 'codex': 'Codex', 'agy': 'Antigravity', 'opencode': 'OpenCode', 'openclaw': 'OpenClaw', 'gemini': 'Gemini', 'hermes': 'Hermes'}.get(harness_key(h), 'Assistant')})
             s['exported'] = len(messages)
             if harness_key(h) == 'agy':
                 body += _own_records(conv, h, s.get('id'), log_dir)

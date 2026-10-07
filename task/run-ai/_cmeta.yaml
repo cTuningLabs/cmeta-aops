@@ -25,6 +25,7 @@ tags:
 last_update_timestamp: '2026-10-05T19:00:58.132256+00:00'
 last_generator:
   method: agent
+  via: cmeta 0.33.0
   agent: Claude Code 2.1.289
   by: Grigori Fursin
   date: '2026-10-05'

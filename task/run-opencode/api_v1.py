@@ -77,7 +77,8 @@ def _agent_generator(opencode_path, flags):
     ("provider/model") and reasoning variant it was started with (--model / --variant). A model
     switched inside the session is not seen.
     """
-    rec = {'method': 'agent', 'agent': 'OpenCode'}
+    from task_c36be4b9314a45e0.api.ctask import GENERATOR_VIA_KEY, generator_via
+    rec = {'method': 'agent', 'agent': 'OpenCode', GENERATOR_VIA_KEY: generator_via()}
     try:
         out = subprocess.run([opencode_path or 'opencode', '--version'], capture_output=True, text=True,
                              timeout=30).stdout.strip()

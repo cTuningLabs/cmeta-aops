@@ -342,7 +342,7 @@ def test_the_harness_must_exist_and_the_models_are_listed(fresh):
     with contextlib.redirect_stdout(out):
         r = fresh.cm.access({"category": "task", "command": "run", "arg1": "run-ai", "list_models": True, "con": True})
     assert r["return"] == 0, r.get("error")
-    for harness in ("claude", "codex", "opencode", "openclaw", "antigravity", "gemini"):
+    for harness in ("claude", "codex", "opencode", "openclaw", "antigravity", "gemini", "hermes"):
         assert 'the harness "%s"' % harness in out.getvalue(), harness
 
     r = fresh.run(harness = "codex", model = "gpt-test,high", dry_run = True)

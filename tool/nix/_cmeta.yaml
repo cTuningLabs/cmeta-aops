@@ -1,0 +1,18 @@
+artifact: 242f81f5d0634de8
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-10-07T16:55:10.173604+00:00'
+desc: "Nix, the package manager (nix): detected on Linux and macOS, installed with the Determinate Nix installer when missing (multi-user, needs sudo); no native Windows (WSL2 only)."
+generator:
+  agent: Claude Code 2.1.292
+  by: Grigori Fursin
+  method: agent
+  model: claude-fable-5-1
+  via: cmeta 0.33.1
+note: 'added 2026-10-07 at the user''s request ("many people use nix"); the first step is the tool - detection and install; nix as an install-ladder rung ("nix profile install <pkg>") is a later step.'
+tags:
+- nix
+- package-manager
+- linux
+- macos
