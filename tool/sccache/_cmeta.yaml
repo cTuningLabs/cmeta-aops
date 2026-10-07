@@ -1,0 +1,19 @@
+artifact: ae9ea25ef35f43a3
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-10-06T19:44:48.103853+00:00'
+desc: 'sccache: the shared compilation cache from Mozilla - detected, or installed from the
+  pinned official release (SHA-256 checked) on Windows, Linux and macOS.'
+generator:
+  agent: Claude Code 2.1.291
+  by: Grigori Fursin
+  method: agent
+  model: claude-fable-5-1
+note: 'sccache wraps a compiler (gcc / clang / MSVC, Rust, nvcc) and caches its outputs locally
+  or in shared storage, so a repeated build of the same sources is served from the cache.'
+tags:
+- sccache
+- compiler-cache
+- build
+- cli

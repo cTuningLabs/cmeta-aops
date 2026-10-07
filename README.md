@@ -1,6 +1,8 @@
 # cMeta AOps: reusable automations for cMeta (`cmeta-aops`)
 
 [![Test cMeta core AOps](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core.yml/badge.svg)](https://github.com/cTuningLabs/cmeta-aops/actions/workflows/test-core.yml)
+[![Author: Grigori Fursin](https://img.shields.io/badge/author-Grigori%20Fursin-1f6feb)](https://cTuning.ai/@gfursin)
+[![Designed by a human, extended with AI](https://img.shields.io/badge/designed%20by%20a%20human-extended%20with%20AI-8a2be2)](https://cTuning.ai/@gfursin)
 
 **`cmeta-aops`** is the reference content repository of the
 [cMeta](https://github.com/cTuningLabs/cmeta) framework: ready-to-run recipes that
@@ -20,7 +22,10 @@ portable and sustainable**. It was created by [Grigori Fursin](https://cTuning.a
 at cTuning Labs as the next generation of his community projects on reusable and
 reproducible research since 2008 (the cTuning framework,
 [Collective Knowledge](https://github.com/mlcommons/ck), MLCommons Collective Mind), and
-this repository is where we collect the automations built with it.
+this repository is where we collect the automations built with it. cMeta AOps was architected
+and written from scratch by the same author; since 2025 it is extended, tested and automated
+together with AI agents that run through cMeta itself, and every artifact records who made it
+(the `generator` field of its metadata): **designed by a human, extended with AI**.
 
 New to cMeta? The [course from 0 to 1](https://cTuning.ai/project/cmeta/cmeta.course/)
 explains the idea step by step, the

@@ -9,9 +9,19 @@ authors: Grigori Fursin
 #   cx task run run-openclaw --prompt_file={file} --stats
 #   cx task run run-openclaw --prompt="..." --dry_run         # print the openclaw command, run nothing
 #
+# First use on a machine: cMeta installs OpenClaw (npm) when it is missing, so drive it through the tool,
+# never by a bare "openclaw" (which may be another copy, or none):
+#
+#   cx tool run openclaw -- models status                                 # which providers are authenticated
+#   cx tool run openclaw -- models set claude-cli/claude-opus-5-5         # the default model: the local Claude Code login, no other key
+#   cxt run-ai --harness=openclaw "..."        /   cxt run-ai --harness=openclaw -i
+#
+# OpenClaw's own default is openai/gpt-5.5, which needs an OpenAI login ("cx tool run openclaw -- configure");
+# the claude-cli provider runs the "claude" binary cMeta put on OpenClaw's PATH (see "Sub-agents" below).
+#
 # Headless it runs one agent turn with "openclaw agent --local --message <prompt>": the embedded
 # agent runtime of this machine, with the model-provider keys of your shell or of OpenClaw's own
-# auth store ("openclaw configure" / "openclaw onboard" once per machine). --gateway sends the turn
+# auth store ("cx tool run openclaw -- configure" / "-- onboard" once per machine). --gateway sends the turn
 # through a running OpenClaw Gateway instead ("openclaw agent" without --local). A headless turn needs a
 # session: the task passes "--agent main" (the agent OpenClaw creates by default) unless --agent=<id> or
 # --session=<id> is given, or a session flag (--agent, --session-id, --session-key, --to) follows "--".
@@ -50,6 +60,13 @@ authors: Grigori Fursin
 # Provenance: when nothing else set CMETA_GENERATOR, it is set for the run to
 # {"method": "agent", "agent": "OpenClaw <version>", "model": ..., "effort": <--thinking>}, so artifacts
 # created through cMeta during the run record what made them.
+#
+# Sub-agents: OpenClaw may call other agent CLIs (claude, codex, opencode, gemini, agy). They are the
+# copies cMeta knows: set up as cMeta tools before openclaw starts (detected, never installed from here),
+# and their folders - with openclaw's own - go first on the PATH of the openclaw process, so a sub-agent is
+# the pinned, recorded one, not whatever the shell's PATH holds. --agents=claude,codex narrows the list,
+# --agents= (empty) leaves the PATH as it is; an agent that is not on this machine is reported and skipped.
+# --dry_run prints what was found.
 
 # This task launches an agent that may change files - never memoize it on disk
 cache: False

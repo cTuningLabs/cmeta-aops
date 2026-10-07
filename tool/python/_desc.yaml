@@ -8,7 +8,11 @@ cache_params_with: False # moved explicitly to cache_params to avoid unexpected 
 cache_params:
   - with.venv
   - with.pip
+  - with.conda    # a conda environment made by cMeta (task venv --conda) instead of a uv venv: its own entries
+  - with.conda_packages
+  - with.channel
   - venv_path
+  - python_base   # the interpreter a venv was made on (a requested conda / system python): its own entries
 
 names:
   - python3{{global.host.vars.file_ext_exe}}
@@ -32,6 +36,14 @@ install_uses:
   all:
     - task: venv,bb68247d2fde489d
       version: "{{params.version|$None}}"
+      # A requested interpreter that is not a venv (--use.python.tool_path=<conda / system python>,
+      # --here) is not replaced by a uv-managed python: the venv is made on it (python_base, set by check_params)
+      python: "{{params.python_base|$None}}"
+      # --use.python.with.conda: a conda environment (.conda-env, by the conda of tool/conda) instead of a uv venv;
+      # with.conda_packages (comma-separated) and with.channel go into "conda create"
+      conda: "{{params.with.conda|$None}}"
+      conda_packages: "{{params.with.conda_packages|$None}}"
+      channel: "{{params.with.channel|$None}}"
 
 # Add env path keys to aggregated if detected
 add_env_path_keys:

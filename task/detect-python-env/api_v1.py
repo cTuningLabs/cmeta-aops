@@ -46,33 +46,39 @@ class CTask(InitCTask):
 
         is_windows = platform.system() == "Windows"
 
-        is_virtual = False
-
-        path_bin = os.path.dirname(python_path)
+        # The environment of the python, classified as the provenance record classifies it (one rule for both,
+        # since 2026-10-07): a venv (pyvenv.cfg; an older virtualenv by its activate script), a conda base
+        # (conda-meta/ and condabin/), a conda environment (conda-meta/ alone: under envs/ of a base, or
+        # anywhere with "conda create -p", cMeta's .conda-env included) or the system's python. The
+        # environment's root is the folder above bin/ (Scripts\ on Windows), or the python's own folder
+        # (a conda root on Windows, where python.exe sits next to Scripts\ and condabin\).
+        path_bin = os.path.dirname(os.path.abspath(python_path))
         path_root = os.path.dirname(path_bin)
+        activate = 'Scripts\\activate.bat' if is_windows else 'bin/activate'
 
-        if is_windows:
-            candidates = [
-              'Scripts\\activate.bat', 
-              'condabin\\conda.bat',
-            ]
-        else:
-            candidates = [
-              'bin/activate', 
-              'condabin/conda',
-            ]
-
-        for candidate in candidates:
-            path = os.path.join(path_root, candidate)
-            if os.path.isfile(path):
-                is_virtual = True
-
-                env_path = path_root
-                script_path = path
-
+        kind = 'system'
+        env_path = None
+        script_path = None
+        for root in (path_root, path_bin):
+            act = os.path.join(root, activate)
+            if os.path.isfile(os.path.join(root, 'pyvenv.cfg')):
+                kind, env_path = 'venv', root
+                script_path = act if os.path.isfile(act) else None
+                break
+            if os.path.isdir(os.path.join(root, 'conda-meta')):
+                # a base carries the conda itself (condabin/), its package cache (pkgs/) and its environments (envs/)
+                base = any(os.path.isdir(os.path.join(root, d)) for d in ('condabin', 'pkgs', 'envs'))
+                kind = 'conda-base' if base else 'conda-env'
+                env_path = root
+                break
+            if os.path.isfile(act):
+                kind, env_path, script_path = 'venv', root, act
                 break
 
+        is_virtual = kind != 'system'
+
         result['is_virtual'] = is_virtual
+        result['kind'] = kind
 
         result['python_path'] = python_path
 

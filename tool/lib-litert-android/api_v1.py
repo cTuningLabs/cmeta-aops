@@ -33,6 +33,10 @@ MAVEN = 'https://dl.google.com/android/maven2/com/google/ai/edge/litert/litert/{
 GITHUB = 'https://github.com/google-ai-edge/LiteRT/releases/download/v{v}/{name}'
 RELEASE_API = 'https://api.github.com/repos/google-ai-edge/LiteRT/releases/tags/v{v}'
 MODEL = 'https://raw.githubusercontent.com/google-ai-edge/LiteRT/v{v}/litert/test/testdata/mobilenet_v2_1.0_224.tflite'
+# The quantized MobileNet v2 (uint8 in and out, TensorFlow's classic hosted model) for the integer paths of NPUs;
+# the tgz also carries the frozen graph, only the .tflite is kept
+MODEL_INT8 = 'https://storage.googleapis.com/download.tensorflow.org/models/tflite_11_05_08/mobilenet_v2_1.0_224_quant.tgz'
+MODEL_INT8_FILE = 'mobilenet_v2_1.0_224_quant.tflite'
 ASSETS = ('litert_cc_sdk.zip', 'litert_npu_runtime_libraries_jit.zip')
 MARKER = 'cmeta-litert-android.json'
 ABIS = ('arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86')
@@ -115,7 +119,8 @@ class CTool(InitCTool):
                     if os.path.isdir(d)]
         return {'path': os.path.join(root, 'jni', 'arm64-v8a', 'libLiteRt.so'), 'detected_version': marker['version'],
                 'features': {'root': root, 'jni': jni, 'npu': npu, 'include': include[0] if include else None,
-                             'model': marker.get('model'), 'android_push_libs': libs, 'digests': marker['digests'],
+                             'model': marker.get('model'), 'model_int8': marker.get('model_int8'),
+                             'android_push_libs': libs, 'digests': marker['digests'],
                              # what setup-compile and setup-run take from a lib-* tool
                              'lib_names': ['LiteRt'],
                              'paths': {'includes': include[:1], 'libs': lib_dirs[:1], 'found_dynamic_libs': libs,
@@ -128,12 +133,82 @@ class CTool(InitCTool):
     ):
         """
         The runtimes this setup unpacked (content/<version>/ with the marker). Features: root, jni
-        and npu folders per ABI, include (the C SDK), model (MobileNet v2), android_push_libs (the
-        arm64-v8a runtime, GPU accelerator and Google Tensor NPU libraries to push to a device).
+        and npu folders per ABI, include (the C SDK), model (MobileNet v2, float32), model_int8 (the
+        quantized MobileNet v2, uint8; None in an entry made before it was added - "cx tool setup
+        lib-litert-android --update" fetches it), android_push_libs (the arm64-v8a runtime, GPU
+        accelerator and Google Tensor NPU libraries to push to a device).
         """
         roots = sorted(glob.glob(os.path.join(os.getcwd(), 'content', '*')))
+        c = dict(ctx.get('control') or {})
+        c.update(params.get('control') or {})
+        update = bool(c.get('update') or (ctx.get('tasks') or {}).get('run_control', {}).get('update')
+                      or (params.get('task_extra_control') or {}).get('update'))
+        if update:
+            # --update completes an entry made before the quantized model was part of the tool
+            con, verbose = c.get('con', False), c.get('verbose', False)
+            space = '  ' * ctx['tasks'].get('nested_call', 0) if verbose else ''
+            for r in roots:
+                mp = os.path.join(r, MARKER)
+                if not os.path.isfile(mp):
+                    continue
+                with open(mp, encoding = 'utf-8') as f:
+                    marker = json.load(f)
+                if marker.get('model_int8') and os.path.isfile(marker['model_int8']):
+                    continue
+                if con:
+                    print (f'{space}INFO: LiteRT {marker.get("version")}: fetching the quantized MobileNet v2 (uint8)')
+                marker['model_int8'] = self._int8_model(ctx, params, r, marker.setdefault('digests', {}), con, space)
+                with open(mp, 'w', encoding = 'utf-8') as f:
+                    json.dump(marker, f, indent = 2)
         parsed = [self._entry(r) for r in roots if os.path.isfile(os.path.join(r, MARKER))]
         return {'return': 0, 'parsed_paths_with_versions': parsed}
+
+    ############################################################
+    def _download(self, ctx, params, url, name):
+        """A file into downloads/ of this entry through task download-file; its path, or None."""
+        c = params.get('control', {})
+        r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'ctx': ctx,
+                            'arg1': 'download-file,03fed13e2e0447cf', 'url': url, 'directory': 'downloads',
+                            'filename': name, 'env': params.get('env'), 'timeout': params.get('timeout'),
+                            'con': c.get('con', False), 'quiet': c.get('quiet', False), 'verbose': c.get('verbose', False)})
+        if r['return'] > 0:
+            return None
+        path = os.path.join(os.getcwd(), 'downloads', name)
+        return path if os.path.isfile(path) else None
+
+    def _int8_model(self, ctx, params, root, digests, con, space):
+        """
+        The quantized MobileNet v2 (uint8) into <root>/models/, from TensorFlow's hosted tgz (only the
+        .tflite is kept; the tgz and the model are recorded in `digests`). The path, or None when the
+        download or the archive failed - the float model alone is still a working entry.
+        """
+        import tarfile
+        tgz_name = MODEL_INT8_FILE[:-len('.tflite')] + '.tgz'
+        tgz = self._download(ctx, params, MODEL_INT8, tgz_name)
+        if not tgz:
+            if con:
+                print (f'{space}WARNING: the quantized MobileNet v2 could not be downloaded ({MODEL_INT8}); the float model only')
+            return None
+        model = None
+        try:
+            with tarfile.open(tgz) as t:
+                member = next((m for m in t.getmembers() if m.isfile() and m.name.endswith('_quant.tflite')), None)
+                if member is not None:
+                    os.makedirs(os.path.join(root, 'models'), exist_ok = True)
+                    model = os.path.join(root, 'models', MODEL_INT8_FILE)
+                    with t.extractfile(member) as src, open(model, 'wb') as dst:
+                        shutil.copyfileobj(src, dst)
+                    digests[tgz_name] = sha256_of(tgz)
+                    digests[MODEL_INT8_FILE] = sha256_of(model)
+        except (OSError, tarfile.TarError) as e:
+            model = None
+            if con:
+                print (f'{space}WARNING: the quantized MobileNet v2 could not be unpacked ({e}); the float model only')
+        try:
+            os.remove(tgz)
+        except OSError:
+            pass
+        return model
 
     ############################################################
     def install(self,
@@ -224,9 +299,12 @@ class CTool(InitCTool):
             shutil.move(rm['path'], model)
             digests['mobilenet_v2_1.0_224.tflite'] = sha256_of(model)
 
+        # The quantized MobileNet v2 (uint8), the second model: optional as well
+        model_int8 = self._int8_model(ctx, params, root, digests, con, space)
+
         if not os.path.isfile(os.path.join(root, 'jni', 'arm64-v8a', 'libLiteRt.so')):
             return self.cm.error(f'the LiteRT {version} AAR has no arm64-v8a libLiteRt.so')
         with open(os.path.join(root, MARKER), 'w', encoding = 'utf-8') as f:
-            json.dump({'version': version, 'digests': digests, 'model': model}, f, indent = 2)
+            json.dump({'version': version, 'digests': digests, 'model': model, 'model_int8': model_int8}, f, indent = 2)
         shutil.rmtree(downloads, ignore_errors = True)
         return {'return': 0, 'install_cmd': None, 'found_path': os.path.join(root, 'jni', 'arm64-v8a', 'libLiteRt.so')}

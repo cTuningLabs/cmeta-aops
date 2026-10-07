@@ -2,6 +2,112 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.43.3
+- **An edited program is rebuilt, not run as it was.** The build stamp (`.cmeta-build-stamp.json`) now records the
+  SHA-256 of the program's sources - the declared source files and the code and build files under its `src/`
+  folder (headers, CMake lists, Cargo/Go manifests; data and binaries left out) - and `compile-and-run-program`
+  recompiles when one differs, with `INFO: the program's sources changed since this build (<files>)`. Before, a
+  reused build was checked for its targets, host, compiler, compile parameters and Android device, but not for
+  its sources: an edited program silently ran the old binary until `--recompile` (seen 2026-10-07 with a benchmark
+  whose binary was four days older than its source). A stamp written before this version has no digests and
+  compares nothing until the next compile.
+- **`tool/conda` installs Miniforge when no conda is found.** The pinned Miniforge release for this OS and CPU
+  (Linux x86_64/aarch64, macOS x86_64/arm64, Windows x86_64) is downloaded, its SHA-256 checked against the
+  per-asset file upstream publishes, and its installer run silently into the cache entry: user-level, no
+  administrator rights, nothing registered, nothing on the PATH. The version is conda's own (`--version=26.7.2`
+  = Miniforge 26.7.2-0); `--versions` lists the releases. The usual folders of Miniforge, Miniconda and Anaconda
+  are searched first.
+- **A conda environment as the Python of a request: `--use.python.with.conda`.** The `venv` task has `--conda`: a
+  conda environment in `.conda-env` of the python entry (or of the request's venv path) instead of a uv venv, made
+  by the conda cMeta set up (`tool/conda`) with `conda create -y -p ... python[=<version>] pip`
+  (`with.conda_packages` and `with.channel` go into the command); the environment carries `.cmeta-conda-env.json`
+  (who made it). Such an entry is private to conda requests, never shared with a venv request, and a conda request
+  takes no detected python; a named interpreter at the same time is refused (the conda is chosen with
+  `--use.conda.tool_path`). The new `tool/conda-package` is the conda analogue of `tool/pip`: `cx tool setup
+  conda-package --with.package=numpy` installs into that environment with `conda install -p`, cached per python
+  entry. `detect-python-env` now classifies with the record's rule (venv, conda base, conda environment, system -
+  a conda environment is virtual, with its folders and `CONDA_PREFIX` as its environment instead of an activation
+  script; an environment made with `conda create -p` anywhere is an environment, not a base). The provenance record
+  says `the conda environment .conda-env made by conda 26.7.2`, lists what conda installed under
+  `runtime.python.conda_packages`, and the `python` check passes only when a conda request ran in a conda
+  environment. Checked with Miniconda on Windows and Miniforge on Ubuntu.
+- **OpenClaw is driven through its tool.** cMeta installs OpenClaw when it is missing, so the docs, hints and
+  README now say `cx tool run openclaw -- models status` / `-- models set claude-cli/<model>` instead of a bare
+  `openclaw`, which may be another copy or none.
+- **A requested conda base gets its venv on every OS, and a program's venv path keeps a requested interpreter.**
+  Three corner cases of `--use.python.tool_path=<a conda or system python>`, found while assessing conda
+  environments: (1) on Linux and macOS a conda base counts as "virtual" (its root has `condabin/`), so the
+  requested base was accepted as the venv itself and no venv was made - pip would have installed into the
+  user's conda base - while Windows made the venv; now the interpreter a venv is to be made on is never taken
+  as the venv, and a venv's python (a symlink to its base on Linux and macOS) is never mistaken for the base.
+  (2) `detect-python-env` looked one folder too high for a conda base on Windows, where `python.exe` sits at
+  the root: it is virtual there too now (an activated conda base is extended like an activated venv, as before
+  on Linux). (3) A request with a venv path of its own (a program's venv in its build folder) dropped the
+  interpreter and made the venv on a uv-managed python; now `python_base` is kept, the venv at that path is
+  made on the interpreter, and a venv found there that was made on another python (the `home` of its
+  `pyvenv.cfg`) is left aside and remade. Checked with Miniconda on Windows and Miniforge on Ubuntu.
+- **Provenance: a wheel's libraries belong to the pip tool that installed them.** A Python program's venv lives in
+  the program's build folder, so the libraries a wheel brings along (ONNX Runtime's CUDA provider, the `nvidia-*`
+  runtime wheels, numpy's OpenBLAS) were listed in `provenance.json` as unattributed (`tool: null`). The record now
+  reads the venv's own metadata - every distribution's `RECORD` for its files, its `METADATA` for the distributions
+  it requires - and attributes such a library to the `pip-<package>` tool of the run whose package is that
+  distribution or requires it, directly or through other distributions (`nvidia-cudnn-cu13` <- `onnxruntime-gpu[cuda]`
+  -> `pip-onnxruntime`). The nearest tool wins, a tool claims only files of the venv it installed into, and a file of
+  a distribution that no tool of the run pulled stays unattributed. The library's distribution is recorded as `dist`
+  and shown in `cx program provenance` when it is not the tool's own package. Seen with `--provenance=loaded` on
+  Linux and macOS, where the loader log lists what a Python process really loaded. The NVIDIA driver's own libraries
+  (`libcuda`, `libnvidia-*`, `nvcuda.dll`) are attributed to the `cuda` entry of the run (the driver and GPU the
+  target recorded), marked `(driver)`.
+- **Provenance: the frameworks of a Python run, and a requested CUDA version that a wheel ignores.** The record's
+  `runtime.frameworks` lists the distributions behind the loaded wheel libraries and the package of every pip tool
+  of the run, with their versions (`nvidia-cuda-runtime 13.4.92` is the CUDA runtime a wheel brought, a torch version
+  ending in `+cu130` says which CUDA it was built for), read from the venv's metadata, no extra process. A
+  `--use.nvcc.version` (or `cuda`, `lib-cudnn`) on a run whose `libcudart` (`libcudnn`) came with a wheel is now an
+  error-level `wheel` check naming the wheel and the tool: the request cannot apply to a prebuilt binary, the package
+  must be pinned instead.
+- **Provenance: the toolchain a Go or Rust binary says it was built with.** `build.toolchain` reads the binary itself
+  (a Go binary's buildinfo; a Rust binary's `rustc version` string, or the toolchain commit in its `/rustc/<commit>/`
+  source paths, compared with the resolved `rustc -vV`) and the `toolchain` check compares it with the compiler cMeta
+  resolved: a Go that `GOTOOLCHAIN` fetched or a rustup default toolchain other than the one set up is a warning, an
+  error when that compiler's version was requested with `--use`.
+- **Provenance: which Python ran, and whether a requested interpreter was used.** `runtime.python.environment` says
+  what kind of Python a run took - a venv (and what made it, uv or not, and the base it was made on), a conda base
+  or a conda environment (by name), a uv-managed interpreter, or the system's - read from `pyvenv.cfg` and
+  `conda-meta/`; the checks carry it in one line. A `--use.python.tool_path=<interpreter>` request is now checked
+  (`python`): the run used that interpreter, or a venv made on it, else an error names what ran instead (found on
+  2026-10-06: a plain program run with a Miniconda interpreter requested got a uv venv on a uv-managed Python).
+- **A reused build completes its tools' features from the current cache entries.** A reused build replays its
+  compile-time context, with every tool's features of that day; a tool entry re-detected since
+  (`cx tool setup <tool> --update`) may carry keys the snapshot lacks. `compile-and-run-program` now completes
+  them from the entry's current cached result (`build_identity.complete_restored_tools`): keys the snapshot has
+  keep their values, the record of what the build used (found with the quantized model added to
+  `lib-litert-android` after an Android build).
+- **`tool/lib-litert-android`: the quantized MobileNet v2 as a second model.** Next to the release's float32 test
+  model (`features.model`), the setup fetches TensorFlow's hosted quantized MobileNet v2 (uint8 in and out) and keeps
+  its `.tflite` as `features.model_int8` for the integer paths of NPUs; both digests are recorded. An entry made
+  before gets it with `cx tool setup lib-litert-android --update`.
+- **A requested interpreter that is no venv gets its venv made on it.** `--use.python.tool_path=<a conda env's
+  python, a system python>` (or `--here`) while a venv is wanted used to be dropped by the venv rule, and the venv was
+  then made on a uv-managed Python: the interpreter the user named never ran. `tool/python` now turns such a request
+  into `python_base`, the `venv` task makes the venv on it (`uv venv --python <interpreter>`, its new `--python`
+  parameter), the entry is matched on `python_base` on the next request and is never handed to a plain request, and a
+  version given at the same time is refused (the interpreter decides the version). `--use.python.with.venv-` runs the
+  interpreter itself, as before. Checked with Miniconda on Windows: the record says `venv made by uv on a conda base`
+  and the `python` check passes.
+- **`run-openclaw`: the sub-agents OpenClaw calls come from cMeta's tools.** OpenClaw may run claude, codex, opencode,
+  gemini or agy; they are now set up as cMeta tools before openclaw starts (detected only, never installed from here)
+  and their folders go first on the PATH of the openclaw process, with openclaw's own, so a sub-agent is the pinned,
+  recorded copy and not whatever the shell's PATH holds. `--agents=claude,codex` narrows the list, `--agents=` leaves
+  the PATH alone; agents not on the machine are reported and skipped; `--dry_run` prints what was found. Checked
+  live on 2026-10-07: a headless turn through OpenClaw's `claude-cli` backend (the Claude Code login) saw cMeta's
+  copy of `claude` first on its PATH, from a shell whose own PATH had none; `claude-cli/claude-opus-5-5` answers
+  although OpenClaw 2026.6.10's catalog stops at Opus 4.8 (`tool/openclaw/_desc_models.yaml`).
+- **New tools `hyperfine` and `sccache`, from their pinned releases.** hyperfine 1.21.0 (the command-line benchmark:
+  warmup, outliers, JSON/CSV/Markdown exports; upstream publishes no checksums, HTTPS only) and sccache 0.18.0
+  (Mozilla's shared compilation cache for gcc/clang/MSVC, Rust and nvcc; SHA-256 checked against the per-asset
+  file) through `common_release`, x86_64 and aarch64 on Windows, Linux and macOS; an installation on the PATH or in
+  cargo's bin is detected first. Checked on Windows x86_64, Ubuntu x86_64 and macOS arm64.
+
 ## 0.43.2
 - **Long prompts for every agent task: a file instead of a command line argument.** An interactive session
   preloads its first prompt as a command line argument, and `opencode run` / `openclaw agent` have no stdin mode at

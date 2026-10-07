@@ -1,22 +1,72 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# conda - the package and environment manager of Miniforge, Miniconda and Anaconda (https://conda.org).
+#
+# A conda already on the machine is detected first: the PATH, the usual folders of Miniforge, Miniconda
+# and Anaconda, Homebrew. Otherwise the pinned Miniforge release (https://github.com/conda-forge/miniforge,
+# BSD-3-Clause: the community distribution with conda-forge as its only channel) is installed by api_v1.py
+# into the cache entry - the installer for this OS and CPU (Linux x86_64 / aarch64, macOS x86_64 / arm64,
+# Windows x86_64) downloaded, its SHA-256 checked against the per-asset file upstream publishes, run
+# silently into content/miniforge3: user-level, no administrator rights, nothing registered, nothing on the
+# PATH (install ladder tier 1). The version is conda's own (26.7.2 = Miniforge 26.7.2-0).
+#
+#   cx tool setup conda                        # detect, else install the pinned Miniforge
+#   cx tool setup conda --version=26.7.2       # that version (installed when no detected conda has it)
+#   cx tool setup conda --versions             # the Miniforge releases
+#   cx tool run conda -- info --base           # the base folder of the conda in use
+#
+# A program's Python: a conda interpreter named with --use.python.tool_path gets a uv venv made on it
+# (tool/python, python_base; the record says "venv made by uv on a conda base"); --use.python.with.conda asks
+# for a conda environment made by this conda instead (task/venv --conda, "conda create -y -p .conda-env"), and
+# tool/conda-package installs conda packages into it.
+
 names:
   - conda{{global.host.vars.file_ext_bat}}
   - conda
 
-match_version: 
+default_version: '26.7.2'
+
+match_version:
   - regex: '^conda\s*([\d.]+)'
     group: 1
 
 cmd_get_version: '{{tool_path}} --version'
 
+cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/conda-forge/miniforge'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: git,959d8c0fbc004bd0
+cmd_get_versions_regex: '\brefs/tags/(\d+\.\d+\.\d+)-\d+(?![\w.-])'
+
 extra_paths:
   linux:
+    - "{{user_home}}/miniforge3/condabin"
+    - "{{user_home}}/miniconda3/condabin"
+    - "{{user_home}}/anaconda3/condabin"
+    - "/opt/miniforge3/condabin"
+    - "/opt/miniconda3/condabin"
+    - "/opt/anaconda3/condabin"
     - "/opt/conda/**"
     - "/home/linuxbrew/.linuxbrew/**"
   darwin:
+    - "{{user_home}}/miniforge3/condabin"
+    - "{{user_home}}/miniconda3/condabin"
+    - "{{user_home}}/anaconda3/condabin"
+    - "/opt/miniforge3/condabin"
+    - "/opt/miniconda3/condabin"
+    - "/opt/anaconda3/condabin"
     - "/opt/conda/**"
+    - "/opt/homebrew/Caskroom/miniforge/**"
     - "/opt/homebrew/opt/**"
   windows:
+    - "{{user_home}}\\miniforge3\\condabin"
+    - "{{global.host.os_env.LOCALAPPDATA}}\\miniforge3\\condabin"
+    - "C:\\ProgramData\\miniforge3\\condabin"
+    - "C:\\ProgramData\\*conda*\\condabin"
     - "{{user_home}}\\*conda*\\**"
 
+install_help_text: |
+  Could not install Miniforge automatically on this system.
+  Install Miniforge, Miniconda or Anaconda as described at https://github.com/conda-forge/miniforge#install
+  and run "cx tool setup conda" again.

@@ -178,3 +178,40 @@ def test_no_measurements_in_public_size_files():
             if 'peak:' in line or 'kept:' in line:
                 value = line.split(':', 1)[1].split('#')[0].strip()
                 assert value.isdigit(), f'{program}: {line.strip()}'
+
+
+def test_source_digests_follow_the_code_files_and_the_stamp_sees_a_change(stamp, tmp_path):
+    """The declared source and the headers next to it are tracked; data files and tmp folders are not; an
+    edited or added file is named; a stamp without digests (before 0.43.3) compares nothing."""
+    src = tmp_path / 'src'
+    src.mkdir()
+    (src / 'main.c').write_text('int main(void) { return 0; }\n')
+    (src / 'util.h').write_text('#define X 1\n')
+    (src / 'data.bin').write_bytes(b'\x00' * 16)
+    (src / 'tmp-out').mkdir()
+    (src / 'tmp-out' / 'left.c').write_text('ignored\n')
+    (src / '.hidden').mkdir()
+    (src / '.hidden' / 'also.c').write_text('ignored\n')
+
+    digests = stamp.source_digests(str(src), ['main.c'])
+    assert set(digests) == {'main.c', 'util.h'}
+    assert all(len(v) == 64 for v in digests.values())
+
+    s = stamp.make_stamp('p', 'u', ['cpu'], 'linux', sources = digests)
+    assert s['sources'] == digests
+    assert stamp.sources_changed(s, digests) == []
+
+    (src / 'util.h').write_text('#define X 2\n')
+    assert stamp.sources_changed(s, stamp.source_digests(str(src), ['main.c'])) == ['util.h']
+
+    (src / 'more.cpp').write_text('\n')
+    (src / 'util.h').write_text('#define X 1\n')
+    assert stamp.sources_changed(s, stamp.source_digests(str(src), ['main.c'])) == ['more.cpp']
+
+    (src / 'main.c').unlink()
+    assert 'main.c' in stamp.sources_changed(s, stamp.source_digests(str(src), ['main.c']))
+
+    assert stamp.sources_changed({'version': 1, 'compute': ['cpu']}, digests) is None
+    assert stamp.sources_changed(s, None) is None
+    assert stamp.source_digests(str(tmp_path / 'nowhere'), ['main.c']) is None
+    assert stamp.make_stamp('p', 'u', ['cpu'], 'linux')['sources'] is None

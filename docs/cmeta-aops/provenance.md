@@ -81,8 +81,21 @@ always wins; an unset or empty variable means `on`.
 ### Which tool a loaded library belongs to
 
 A library is attributed to the tool that names it and holds it in its folders (`libcudart` to the
-CUDA toolkit, `libcrypto` to `lib-openssl`), else to the tool whose cache entry contains it (a wheel's
-file inside a tool's venv). A compiler's own runtime is the exception that needs a third rule: GCC's
+CUDA toolkit, `libcrypto` to `lib-openssl`), else to the tool whose cache entry contains it. A library
+inside a **Python package** needs a rule of its own, because a program's venv lives in the program's
+build folder, where no tool names or holds anything: the venv's own metadata decides. Every installed
+distribution lists its files in its `RECORD` and the distributions it requires in its `METADATA`, and
+the `pip-<package>` tool of the run records the package it installed; a wheel's library therefore
+belongs to the pip tool whose package is the file's distribution or requires it, directly or through
+other distributions (`nvidia-cudnn-cu13` is required by `onnxruntime-gpu[cuda]`, which `pip-onnxruntime`
+installed). The nearest tool wins when several reach the distribution (numpy installed by `pip-numpy`
+is numpy's, although ONNX Runtime requires it too), a tool claims only files of the venv it installed
+into, and a file of a distribution no tool of the run pulled stays unattributed. The record names the
+distribution next to the tool (`dist`). These libraries are seen with `--provenance=loaded` on Linux and
+macOS, where the loader log lists what a Python process really loaded. The NVIDIA driver's own libraries
+(`libcuda`, `libnvidia-*`, `nvcuda.dll`) belong to the `cuda` entry of the run, the driver and GPU the
+target recorded, and are marked `(driver)`. A compiler's own runtime is the exception that needs a
+third rule: GCC's
 `libgomp`, `libstdc++` and `libgcc_s`, LLVM's `libomp` and `libc++`, Intel's `libiomp5`, MSVC's
 `vcomp140` are installed where every other library is (`/usr/lib/<triplet>`, `C:\Windows\System32`),
 so no tool names them and no folder reaches them. The record asks the compiler itself:
@@ -104,6 +117,10 @@ questions at most, and never for MSVC.
 | static: no shared library beyond the system set | error when `--compile.static` was requested | A **CPU** static build is fully static (no dynamic loader). A **CUDA** static build links the static CUDA runtime and the static third-party libraries, and may load: the C library family, `libstdc++`/`libgcc_s`, the CUDA driver (`libcuda`) and NVIDIA's shared libraries (cuBLAS, cuDNN, …) — the policy [`program-and-compute.md`](program-and-compute.md) documents. On Windows the OpenMP runtime stays a DLL (no static one exists), as documented. |
 | a tool's library comes from that tool's entry | error | `libcudart` from the resolved CUDA toolkit, `libcudnn` from the resolved `lib-cudnn`, `libcrypto` from the resolved `lib-openssl` (or absent in a static build): a library loaded from elsewhere (the system's, another entry's) is flagged with both paths. |
 | requested version resolved | error | `--use.<tool>.version=<v>` → the resolved version matches (setup already enforces it; the record keeps the proof). |
+| a requested CUDA applies | error | `--use.nvcc.version` (or `cuda`, `lib-cudnn`) on a run whose `libcudart` (`libcudnn`) came with a wheel (`nvidia-cuda-runtime`, `nvidia-cudnn-*`, loaded by a Python program): the request cannot apply to a prebuilt binary; the detail names the wheel, its version and the pip tool, and says to pin the package instead. |
+| the requested Python ran | error | `--use.python.tool_path=<interpreter>` → the run used that interpreter, or a venv made on it (`runtime.python.environment`: a venv's base from its `pyvenv.cfg`, a conda base or environment from `conda-meta/`, a uv-managed interpreter, the system's); anything else is named. |
+| a conda environment was asked for | error | `--use.python.with.conda` → the run's Python is a conda environment cMeta made (`runtime.python.environment`: `kind: conda-env`, `made_by: conda <version>` from the environment's `.cmeta-conda-env.json`); what conda installed there is listed under `runtime.python.conda_packages` (pip's distributions stay under `runtime.frameworks`). |
+| the binary's toolchain | warning, error when requested | A Go binary carries the Go that built it (its buildinfo), a Rust binary its `rustc version` or the toolchain commit in its `/rustc/<commit>/` paths: `build.toolchain` records it, and a toolchain other than the resolved compiler (a `GOTOOLCHAIN` download, a rustup default) is flagged. |
 | requested accelerator used | error when explicit, warning when a default | For programs that report `available` / `required` accelerators (LiteRT on Android): an accelerator named explicitly must have been used; an optional one (`npu?`) that was not available is a warning. |
 
 ## The view: `cx program provenance`
@@ -208,8 +225,13 @@ attached by hand: `cx task run test-session --id=<id> --attach=<build folder>/pr
   run's environment, which misses libraries a program loads itself at run time.
 - **Plugins and `dlopen`:** visible only with `--provenance=loaded`.
 - **Python programs:** the binary is the interpreter; the interesting libraries (a wheel's CUDA runtime)
-  appear with `--provenance=loaded`, or in `runtime` when the framework reports its own versions.
+  appear with `--provenance=loaded`, each attributed to the pip tool that installed its distribution, and
+  `runtime.frameworks` names the distributions and versions behind them (and the CUDA a wheel was built
+  for, from its version tag). What a framework reports about itself at run time (`torch.version.cuda`,
+  ONNX Runtime's active providers) is not asked: it would need a process of its own after the run.
 - The record describes **one run** in one build folder. The folder's entry is named by the request, so a
   changed `--use.<tool>.version` builds in its own entry; a changed resolution of the *same* request (a
   toolkit upgraded underneath an auto choice) is refused by the build-folder stamp and rebuilt with
-  `--recompile` or `--clean`.
+  `--recompile` or `--clean`. A change of the program's own sources is rebuilt by itself: the stamp
+  records their digests (since 0.43.3), and a run whose sources differ says
+  `INFO: the program's sources changed since this build (...)` and recompiles.

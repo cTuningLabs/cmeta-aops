@@ -12,7 +12,7 @@ authors: Grigori Fursin
 
 updated: '2026-10-04'
 checked_with: 'OpenClaw 2026.6.10 (openclaw agent --help; openclaw models list)'
-list_cmd: 'openclaw models list'
+list_cmd: 'cx tool run openclaw -- models list'
 sources:
   - https://docs.openclaw.ai/cli/models
   - 'openclaw agent --help (--model, --thinking)'
@@ -61,13 +61,14 @@ models:
     context: 195k
     auth: 'yes (the Claude Code login)'
 
-  # ---- not in this machine's catalog: a newer OpenClaw (or "openclaw models set") may add them
+  # ---- not in this machine's catalog ("openclaw models list" of 2026.6.10 stops at Opus 4.8), but the claude-cli
+  # backend hands the name to Claude Code, which knows its own models: checked 2026-10-07 with a headless turn
   - name: claude-cli/claude-opus-5-5
-    unverified: true
-    desc: 'Opus 5.5 through the Claude Code login, if the catalog lists it'
+    desc: 'Opus 5.5 through the Claude Code login (not in the 2026.6.10 catalog; answered on 2026-10-07)'
+    auth: 'yes (the Claude Code login)'
   - name: claude-cli/claude-sonnet-5-5
     unverified: true
-    desc: 'Sonnet 5.5 through the Claude Code login, if the catalog lists it'
+    desc: 'Sonnet 5.5 through the Claude Code login (not in the 2026.6.10 catalog; Opus 5.5 answered the same way)'
   - name: anthropic/claude-opus-5-5
     unverified: true
     desc: 'Opus 5.5 with an Anthropic API key'

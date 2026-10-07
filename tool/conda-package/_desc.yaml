@@ -1,0 +1,56 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# conda-package - a conda package in the conda environment of the python request, the conda analogue of
+# tool/pip: "cx tool setup conda-package --with.package=numpy" sets up the python tool with with.conda (a
+# conda environment made by cMeta inside the python entry, task/venv --conda, by the conda of tool/conda:
+# a Miniforge / Miniconda / Anaconda on the machine, else the pinned Miniforge) and installs the package into
+# that environment with "conda install -y -p <env>". Cached per python entry, like pip packages; the version
+# detected is what "conda list" reports for the package. A channel or other flags go in --with.flags
+# (e.g. --with.flags="-c conda-forge --override-channels"; Miniforge has conda-forge as its only channel).
+#
+#   cx tool setup conda-package --with.package=numpy
+#   cx tool setup conda-package --with.package=numpy --version=2.3
+#   cx tool setup conda-package --with.package=cuda-toolkit --use.python.with.channel=nvidia
+#
+# The packages conda installed are listed in the provenance record of a run under runtime.python.conda_packages;
+# the pip tools work in the same environment (its python has pip) and their distributions appear under
+# runtime.frameworks.
+
+storage_key: 'conda-{{params.with.package}}'
+artifact_print_name: 'conda package ({{params.with.package|-}})'
+
+cache_params_with: False
+cache_params:
+  - with.package
+
+cache_params_use:
+  all:
+    python:
+      version: "{{global.python.version}}"   # resolved already, so not fuzzy
+      path: "{{global.python.path}}"         # the environment's python: one entry per environment
+
+match_version:
+  - regex: '"version":\s*"([^"]+)"'
+    group: 1
+
+path: "{{global.conda.path}}"
+cmd: "{{global.conda.cmd}}"
+cmd_filename: "{{global.conda.cmd_filename}}"
+
+cmd_get_version: '{{global.conda.qpath}} list -p {{global.python.qconda_env}} --json ^{{params.with.package}}$'
+
+install_cmd:
+  all: '{{global.conda.qpath}} install -y -p {{global.python.qconda_env}} {{params.with.flags|}} {{params.with.package}}'
+install_cmd_version:
+  all: '{{global.conda.qpath}} install -y -p {{global.python.qconda_env}} {{params.with.flags|}} "{{params.with.package}}={{params.version}}"'
+uninstall_cmd:
+  all: '{{global.conda.qpath}} remove -y -p {{global.python.qconda_env}} {{params.with.package}}'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: conda,6e70b3efba794670
+  - task: setup,a2f9b61079ce4333
+    name: python,c00fb574d8ca4463
+    with:
+      conda: True

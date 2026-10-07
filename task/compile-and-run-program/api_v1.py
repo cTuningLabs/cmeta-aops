@@ -118,14 +118,25 @@ class CTask(InitCTask):
                           facts: dict,
     ):
         """Records what the build in the folder is made for (after a compile, or for a folder made
-        before the stamps existed); a folder that cannot be written is left alone."""
+        before the stamps existed), with the digests of the sources it was built from; a folder that
+        cannot be written is left alone."""
         stamp = build_stamp.make_stamp(artifact_alias, artifact_uid, facts['compute'], facts['host'],
                                        compiler = facts.get('compiler'), compile_params = facts.get('compile_params'),
-                                       android = facts.get('android'))
+                                       android = facts.get('android'), sources = self.source_digests(ctx))
         error = build_stamp.write_stamp(target_path, stamp)
         if error and ctx['control'].get('con', False) and ctx['control'].get('verbose', False):
             print (f'WARNING: the build stamp of "{target_path}" was not written: {error}')
         return stamp
+
+    ############################################################
+    def source_digests(self,
+                       ctx: dict,
+    ):
+        """The digests of the program's sources (the declared files and the code under its source
+        folder), as the stamp records them and as a reused build is checked against: a changed source
+        recompiles (since 0.43.3 - before, an edited program silently ran its old binary)."""
+        local = ctx['tasks']['local']
+        return build_stamp.source_digests(local.get('src_path'), local.get('src_file_names_list'))
 
     ############################################################
     def check_program_disk_space(self,
@@ -599,6 +610,7 @@ class CTask(InitCTask):
 
             ctx['tasks']['local']['src_file_names_str'] = src_file_names_str
             ctx['tasks']['local']['src_file_names_str_with_path'] = src_file_names_str_with_path
+            ctx['tasks']['local']['src_file_names_list'] = list(src_file_names)
 
         ###########################################################################################
         # The target task of the 'all' pipeline has resolved the targets only now: read before
@@ -689,6 +701,16 @@ class CTask(InitCTask):
                             # program's defaults) and the compiler the saved state resolved
                             _facts['compiler'] = build_stamp.compiler_identity(_compiled_state_global.get(_compiler_key)) if _compiler_key else None
                             self.write_build_stamp(ctx, target_path, artifact_alias, artifact_uid, _facts)
+                        elif r['stamp'] is not None:
+                            # The sources the build was made from: an edited program is rebuilt, not run
+                            # as it was (a stamp without digests, from before 0.43.3, compares nothing)
+                            changed = build_stamp.sources_changed(r['stamp'], self.source_digests(ctx))
+                            if changed:
+                                recompile = True
+                                if con:
+                                    shown = ', '.join(changed[:5]) + (f', +{len(changed) - 5} more' if len(changed) > 5 else '')
+                                    print ('')
+                                    print (f'{space}INFO: the program\'s sources changed since this build ({shown}): recompiling')
 
                 if not recompile:
                     if _compiled_state_global:
@@ -697,6 +719,15 @@ class CTask(InitCTask):
                             print (f'{space}REUSING EXISTING GLOBAL COMPILE CONTEXT ...')
 
                         self.cm.utils.common.deep_merge(ctx['tasks']['global'], _compiled_state_global, append_lists=False)
+
+                        # The snapshot holds every tool's features of the compile day; an entry re-detected
+                        # since ("cx tool setup <tool> --update": a model added to lib-litert-android) may
+                        # carry keys the snapshot lacks - completed from the entry's current result, while
+                        # what the snapshot has keeps its value (the record of what the build used)
+                        _completed = build_identity.complete_restored_tools(ctx['tasks']['global'])
+                        if _completed and con and verbose:
+                            print (f'{space}INFO: tool features completed from the current cache entries: ' +
+                                   ', '.join(f'{k} ({", ".join(v)})' for k, v in _completed.items()))
 
                     _compiled_state_local = _compiled_state.get('ctx', {}).get('tasks', {}).get('local')
                     if _compiled_state_local:

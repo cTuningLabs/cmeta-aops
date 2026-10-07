@@ -28,6 +28,11 @@ that owns it, with `role: runtime` (attribute_runtime: GCC, Clang and Intel are 
 -print-file-name, MSVC's DLLs are known by name and must lie in the Visual Studio installation or
 in System32, a compiler installed in a folder of its own owns what lies under it).
 
+A library inside a Python package (a wheel's own CUDA runtime, ONNX Runtime's providers, numpy's
+OpenBLAS) is attributed to the pip-<package> tool of the run that installed its distribution,
+directly or as a dependency (attribute_wheel: the distribution from its RECORD, the dependency path
+from the METADATA of the venv's distributions), and the record names the distribution (`dist`).
+
 Checks (the `checks` list of the record; `ok` = no failed error):
   static       with compile.static: CPU - the binary is fully static (Windows: only the OS runtime
                and the documented OpenMP DLL); CUDA - no shared library beyond the OS runtime, the C++
@@ -37,9 +42,16 @@ Checks (the `checks` list of the record; `ok` = no failed error):
                folders - libcudart from the resolved toolkit, libcrypto from the resolved OpenSSL.
                Error when the tool was requested with --use, warning otherwise.
   version      every --use.<tool>.version matches the resolved version (error).
+  wheel        a --use.nvcc|cuda.version (or lib-cudnn) cannot apply to a CUDA runtime (cuDNN) that a
+               wheel brought along (libcudart from nvidia-cuda-runtime, loaded by a Python program): error.
+  toolchain    a Go or Rust binary says which toolchain built it (Go buildinfo; rustc's version string or
+               /rustc/<commit>/ paths): another one than the resolved compiler is a warning, an error
+               when that compiler's version was requested with --use.
   accelerator  when the program reports accelerators (available/required), a required one that was
                not available is an error; an optional one missing is info.
-  info         the toolchain, the driver and GPU, Python.
+  info         the toolchain, the frameworks of a Python run (runtime.frameworks: the distributions behind
+               the loaded wheel libraries and the pip tools' packages, with the CUDA a wheel was built for),
+               the driver and GPU, Python.
 """
 
 import glob
@@ -375,14 +387,173 @@ def collect_resolved(global_ctx):
     return out
 
 
+###################################################################################################
+# A library of a Python package: the pip tool that installed the distribution the file belongs to.
+# A wheel brings its own libraries (ONNX Runtime's CUDA provider, the nvidia-* runtime wheels,
+# numpy's OpenBLAS) into the venv of the program, which lies in the program's build folder - no tool
+# names them and no tool's cache entry holds them. The venv itself knows: every distribution's
+# RECORD lists its files and its METADATA the distributions it requires, and the pip-<package> tool
+# of the run records the package it installed. So a file is attributed to the pip tool whose package
+# is the file's distribution, or requires it, directly or through other distributions
+# (nvidia-cudnn-cu13 <- onnxruntime-gpu[cuda] -> pip-onnxruntime). The nearest tool wins; a file of
+# a distribution that no tool of the run pulled stays unattributed.
+_DIST_INDEX = {}
+
+
+def norm_dist(name):
+    """A distribution name as pip compares them (PEP 503): lower case, runs of -_. as one dash."""
+    return re.sub(r'[-_.]+', '-', str(name or '').strip().lower())
+
+
+def site_packages_of(path):
+    """The site-packages folder a file lies in (as written in the path), or None."""
+    s = str(path or '')
+    low = s.replace('\\', '/').lower()
+    i = low.rfind('/site-packages/')
+    if i < 0:
+        return None
+    return s[:i + len('/site-packages')]
+
+
+def dist_index(site_packages):
+    """
+    The distributions of a site-packages folder, from their .dist-info: {'files': {relative path
+    (normalized): dist}, 'requires': {dist: [dist]}, 'versions': {dist: version}}; read once per folder.
+    """
+    key = os.path.normcase(os.path.normpath(site_packages))
+    if key in _DIST_INDEX:
+        return _DIST_INDEX[key]
+    files, requires, versions = {}, {}, {}
+    try:
+        names = os.listdir(site_packages)
+    except OSError:
+        names = []
+    for n in names:
+        if not n.lower().endswith('.dist-info'):
+            continue
+        folder = os.path.join(site_packages, n)
+        name, version, reqs = None, None, []
+        try:
+            with open(os.path.join(folder, 'METADATA'), encoding = 'utf-8', errors = 'replace') as f:
+                for line in f:
+                    if not line.strip():                 # the headers end at the first empty line
+                        break
+                    if line.startswith('Name:'):
+                        name = line[5:].strip()
+                    elif line.startswith('Version:'):
+                        version = line[8:].strip()
+                    elif line.startswith('Requires-Dist:'):
+                        m = re.match(r'\s*([A-Za-z0-9][A-Za-z0-9._-]*)', line[14:])
+                        if m:
+                            reqs.append(norm_dist(m.group(1)))
+        except OSError:
+            pass
+        dist = norm_dist(name or n[:-len('.dist-info')].split('-')[0])
+        versions[dist] = version
+        requires[dist] = reqs
+        try:
+            with open(os.path.join(folder, 'RECORD'), encoding = 'utf-8', errors = 'replace') as f:
+                for line in f:
+                    rel = line.split(',')[0].strip()
+                    if rel:
+                        files[os.path.normcase(os.path.normpath(rel))] = dist
+        except OSError:
+            pass
+    _DIST_INDEX[key] = {'files': files, 'requires': requires, 'versions': versions}
+    return _DIST_INDEX[key]
+
+
+def wheel_dist(path):
+    """The distribution a file under a site-packages folder belongs to (its RECORD), with the folder; (None, None) outside one."""
+    sp = site_packages_of(path)
+    if not sp:
+        return None, None
+    idx = dist_index(sp)
+    candidates = []
+    for p in (str(path), _real(path)):
+        try:
+            candidates.append(os.path.normcase(os.path.normpath(os.path.relpath(p, sp))))
+        except ValueError:
+            pass
+    for rel in candidates:
+        if rel in idx['files']:
+            return idx['files'][rel], sp
+    return None, sp
+
+
+def _dist_distance(requires, start, goal, limit = 16):
+    """How many Requires-Dist steps lead from one distribution to another (0 = the same), or None."""
+    if start == goal:
+        return 0
+    seen, frontier, depth = {start}, [start], 0
+    while frontier and depth < limit:
+        depth += 1
+        nxt = []
+        for d in frontier:
+            for r in requires.get(d, []):
+                if r == goal:
+                    return depth
+                if r not in seen:
+                    seen.add(r)
+                    nxt.append(r)
+        frontier = nxt
+    return None
+
+
+def pip_tools(global_ctx):
+    """[(key, the distribution the tool installed, the venv's python)] for the pip-<package> tools of the run, in order."""
+    out = []
+    for key, v in (global_ctx or {}).items():
+        if not isinstance(v, dict) or not key.startswith('pip-'):
+            continue
+        params = v.get('_params') if isinstance(v.get('_params'), dict) else {}
+        with_ = params.get('with') if isinstance(params.get('with'), dict) else {}
+        out.append((key, norm_dist(with_.get('package') or key[4:]), v.get('path')))
+    return out
+
+
+def attribute_wheel(path, global_ctx):
+    """
+    The pip tool a wheel's library belongs to, with the distribution: the file's distribution (RECORD),
+    then the pip-<package> tool of the run whose package is that distribution or requires it, in the
+    venv the file lies in; the nearest tool wins. (None, dist) when no tool of the run pulled it.
+    """
+    dist, sp = wheel_dist(path)
+    if not dist:
+        return None, None
+    idx = dist_index(sp)
+    best, best_depth = None, None
+    for key, pkg, python in pip_tools(global_ctx):
+        if python:
+            # the venv the tool installed into: .venv/bin/python or .venv/Scripts/python.exe
+            venv = os.path.dirname(os.path.dirname(str(python)))
+            if not under(sp, [venv]):
+                continue
+        depth = _dist_distance(idx['requires'], pkg, dist)
+        if depth is None and pkg != norm_dist(key[4:]):
+            depth = _dist_distance(idx['requires'], norm_dist(key[4:]), dist)
+        if depth is not None and (best_depth is None or depth < best_depth):
+            best, best_depth = key, depth
+    return best, dist
+
+
 def attribute(path, global_ctx):
     """
-    The key of the resolved tool a library belongs to: the tool that names the library (its lib
+    The key of the resolved tool a library belongs to: a wheel's library to the pip tool that
+    installed its distribution (attribute_wheel); else the tool that names the library (its lib
     names) and holds it in its folders; else the tool whose cache entry holds it (the longest match).
     A library in a system folder that no tool names stays unattributed (a distribution's OpenSSL
     shares /usr/lib with everything else).
     """
+    if site_packages_of(path):
+        key, _ = attribute_wheel(path, global_ctx)
+        if key:
+            return key
     key_of_lib = library_key(path)
+    # the NVIDIA driver's own libraries (libcuda, libnvidia-*; nvcuda.dll) belong to the driver the run
+    # resolved - the `cuda` entry of the target, which recorded its version and the GPU
+    if nvidia_driver_library(path) and isinstance((global_ctx or {}).get('cuda'), dict):
+        return 'cuda'
     tools = [(key, v) for key, v in (global_ctx or {}).items()
              if isinstance(v, dict) and key not in NOT_TOOLS and not key.startswith('target')]
     for key, v in tools:
@@ -397,13 +568,27 @@ def attribute(path, global_ctx):
     return best
 
 
+def nvidia_driver_library(path):
+    """Whether a library is the NVIDIA driver's own: libcuda.so / nvcuda.dll, or libnvidia-* (the driver's helpers)."""
+    key = library_key(path)
+    base = os.path.basename(str(path or '')).lower()
+    return key in NVIDIA_DRIVER or base.startswith('libnvidia-')
+
+
 def library_entries(paths, global_ctx, uname):
     out = []
     for p in paths or []:
         if not p:
             continue
-        out.append({'name': os.path.basename(p), 'path': p, 'system': is_system(p, uname),
-                    'tool': attribute(p, global_ctx)})
+        entry = {'name': os.path.basename(p), 'path': p, 'system': is_system(p, uname),
+                 'tool': attribute(p, global_ctx)}
+        if site_packages_of(p):
+            dist, _ = wheel_dist(p)
+            if dist:
+                entry['dist'] = dist             # the Python distribution the file belongs to
+        if entry['tool'] == 'cuda' and nvidia_driver_library(p):
+            entry['role'] = 'driver'             # shown as "(driver)" under the cuda row
+        out.append(entry)
     return out
 
 
@@ -694,6 +879,301 @@ def find_accelerators(data, out = None):
     return out
 
 
+###################################################################################################
+# The frameworks of a Python run, from the venv: the distributions the loaded wheel libraries belong
+# to, with their versions (nvidia-cuda-runtime 13.4.92 is the CUDA runtime a wheel brought along; a
+# torch version ending in +cu130 names the CUDA it was built for), plus the packages the pip tools of
+# the run installed even when nothing of theirs was loaded (Windows and Android have no loader log).
+def site_packages_folders(venv):
+    """The site-packages folders of a venv: Lib/site-packages (Windows), lib/python3.x/site-packages (POSIX)."""
+    out = []
+    w = os.path.join(str(venv), 'Lib', 'site-packages')
+    if os.path.isdir(w):
+        out.append(w)
+    out += sorted(glob.glob(os.path.join(str(venv), 'lib', 'python3*', 'site-packages')))
+    return out
+
+
+def cuda_build_of(version):
+    """'2.14.1+cu130' -> '13.0', '2.9.0+cu128' -> '12.8'; None when the version carries no CUDA tag."""
+    m = re.search(r'\+cu(\d{2,3})$', str(version or ''))
+    if not m:
+        return None
+    digits = m.group(1)
+    return digits[:-1] + '.' + digits[-1]
+
+
+def framework_versions(libraries, global_ctx):
+    """
+    {distribution: {'version', 'loaded', 'tool', 'cuda_build'?}} - every distribution a loaded wheel
+    library belongs to, and the package of every pip tool of the run (installed in its venv, loaded or not).
+    """
+    out = {}
+
+    def put(dist, version, loaded, tool):
+        e = out.setdefault(dist, {'version': version, 'loaded': False})
+        if version and not e.get('version'):
+            e['version'] = version
+        e['loaded'] = bool(e['loaded'] or loaded)
+        if tool and not e.get('tool'):
+            e['tool'] = tool
+
+    for lib in libraries or []:
+        dist, path = lib.get('dist'), lib.get('path')
+        if not dist or not path:
+            continue
+        sp = site_packages_of(path)
+        versions = dist_index(sp)['versions'] if sp else {}
+        put(dist, versions.get(dist), True, lib.get('tool'))
+    for key, pkg, python in pip_tools(global_ctx):
+        if not python:
+            continue
+        venv = os.path.dirname(os.path.dirname(str(python)))
+        for sp in site_packages_folders(venv):
+            versions = dist_index(sp)['versions']
+            if pkg in versions:
+                put(pkg, versions[pkg], False, key)
+                break
+    for e in out.values():
+        cb = cuda_build_of(e.get('version'))
+        if cb:
+            e['cuda_build'] = cb
+    return out
+
+
+###################################################################################################
+# What kind of Python ran: a venv (pyvenv.cfg; its base from the "home =" line, "uv =" when uv made
+# it), a conda environment or a conda base (conda-meta/), a uv-managed interpreter (uv's python
+# folder) or the system's. The record says so because "python" alone names any of them, and where a
+# run's packages came from (conda channels, pip or uv into a venv, the distribution) follows from it.
+def _python_prefix(path):
+    p = os.path.normpath(str(path or ''))
+    parent = os.path.dirname(p)
+    if os.path.basename(parent).lower() in ('bin', 'scripts'):
+        return os.path.dirname(parent)
+    return parent
+
+
+def _classify_prefix(prefix):
+    """('conda' | 'conda-env' | 'uv-managed' | 'system', the environment's name or None) for an interpreter prefix."""
+    low = str(prefix).replace('\\', '/').rstrip('/').lower()
+    if os.path.isdir(os.path.join(prefix, 'conda-meta')):
+        # a base carries the conda itself (condabin/), its package cache (pkgs/) and its environments (envs/);
+        # an environment has none of them - under envs/ of a base, or anywhere with "conda create -p"
+        # (cMeta's .conda-env inside a python entry)
+        if any(os.path.isdir(os.path.join(prefix, d)) for d in ('condabin', 'pkgs', 'envs')):
+            return 'conda', None
+        return 'conda-env', os.path.basename(str(prefix).rstrip('\\/'))
+    if re.search(r'/uv/python/[^/]*cpython-', low) or re.search(r'/uv/python/[^/]*pypy', low):
+        return 'uv-managed', None
+    return 'system', None
+
+
+def python_environment(path):
+    """
+    {'kind': 'venv' | 'conda' | 'conda-env' | 'uv-managed' | 'system', 'prefix', 'made_by'? ('uv 0.12.21'),
+     'name'? (a conda environment), 'base'? ({'kind', 'prefix', 'name'?} of a venv's base interpreter)}
+    for an interpreter path; {} without one.
+    """
+    if not path:
+        return {}
+    prefix = _python_prefix(path)
+    out = {'prefix': prefix}
+    cfg = os.path.join(prefix, 'pyvenv.cfg')
+    if os.path.isfile(cfg):
+        out['kind'] = 'venv'
+        home, uv = None, None
+        try:
+            with open(cfg, encoding = 'utf-8', errors = 'replace') as f:
+                for line in f:
+                    k, _, v = line.partition('=')
+                    k, v = k.strip().lower(), v.strip()
+                    if k == 'home':
+                        home = v
+                    elif k == 'uv':
+                        uv = v
+        except OSError:
+            pass
+        if uv:
+            out['made_by'] = 'uv ' + uv
+        if home:
+            base_prefix = os.path.dirname(home) if os.path.basename(home).lower() in ('bin', 'scripts') else home
+            kind, name = _classify_prefix(base_prefix)
+            out['base'] = {'kind': kind, 'prefix': base_prefix}
+            if name:
+                out['base']['name'] = name
+        return out
+    kind, name = _classify_prefix(prefix)
+    out['kind'] = kind
+    if name:
+        out['name'] = name
+    if kind in ('conda-env', 'conda'):
+        # an environment cMeta made (task venv --conda) carries who made it
+        marker = os.path.join(prefix, '.cmeta-conda-env.json')
+        if os.path.isfile(marker):
+            try:
+                with open(marker, encoding = 'utf-8') as f:
+                    made = json.load(f)
+                if isinstance(made, dict) and made.get('made_by'):
+                    out['made_by'] = str(made['made_by'])
+                    if made.get('conda'):
+                        out['conda'] = str(made['conda'])
+            except (OSError, ValueError):
+                pass
+    return out
+
+
+def conda_packages(prefix):
+    """{name: version} of the packages conda installed into an environment or base (conda-meta/*.json), {} when none."""
+    folder = os.path.join(str(prefix or ''), 'conda-meta')
+    out = {}
+    if not os.path.isdir(folder):
+        return out
+    for n in sorted(os.listdir(folder)):
+        if not n.endswith('.json'):
+            continue
+        try:
+            with open(os.path.join(folder, n), encoding = 'utf-8') as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if isinstance(d, dict) and d.get('name'):
+            out[str(d['name'])] = str(d.get('version') or '?')
+    return out
+
+
+def python_environment_text(env):
+    """One line for the checks: 'venv made by uv 0.12.21 on a uv-managed Python', 'conda environment myenv', ..."""
+    if not env or not env.get('kind'):
+        return ''
+    kind = env['kind']
+    if kind == 'venv':
+        base = env.get('base') or {}
+        words = {'conda': 'a conda base', 'conda-env': f"the conda environment {base.get('name') or '?'}",
+                 'uv-managed': 'a uv-managed Python', 'system': "the system's Python"}
+        text = 'venv' + (f" made by {env['made_by']}" if env.get('made_by') else '')
+        if base.get('kind'):
+            text += ' on ' + words.get(base['kind'], base['kind'])
+        return text
+    made = f" made by {env['made_by']}" if env.get('made_by') else ''
+    return {'conda': 'a conda base environment' + made, 'conda-env': f"the conda environment {env.get('name') or '?'}" + made,
+            'uv-managed': 'a uv-managed Python (no venv)', 'system': "the system's Python (no venv)"}.get(kind, kind)
+
+
+###################################################################################################
+# The toolchain a Go or Rust binary was built with, read from the binary itself. A Go binary carries
+# its buildinfo (the magic "\xff Go buildinf:" and, since Go 1.18, the version string inline), so a
+# GOTOOLCHAIN that fetched another Go than the one cMeta set up shows; a Rust binary carries
+# "rustc version X.Y.Z (commit date)" (the .comment of an ELF) or at least the toolchain's commit in its
+# "/rustc/<hash>/" source paths, which the resolved rustc's `-vV` answer is compared with.
+GO_BUILDINFO_MAGIC = b'\xff Go buildinf:'
+BINARY_READ_LIMIT = 256 * 1024 * 1024
+
+
+def go_version_in_binary(path):
+    """The Go version a binary was built with ('1.26.2'), from its buildinfo; None when it has none."""
+    try:
+        with open(path, 'rb') as f:
+            data = f.read(BINARY_READ_LIMIT)
+    except OSError:
+        return None
+    i = data.find(GO_BUILDINFO_MAGIC)
+    if i < 0 or i + 32 > len(data):
+        return None
+    flags = data[i + 15]
+    if flags & 2:                                   # the version string inline: a varint length, then the bytes
+        p, n, shift = i + 32, 0, 0
+        while p < len(data):
+            b = data[p]
+            p += 1
+            n |= (b & 0x7f) << shift
+            shift += 7
+            if b < 0x80:
+                break
+        s = data[p:p + n].decode('utf-8', 'replace').strip()
+    else:                                           # Go 1.13-1.17: the version string lies nearby
+        m = re.search(rb'go1\.\d+(?:\.\d+)?(?:rc\d+|beta\d+)?', data[i:i + 65536])
+        s = m.group(0).decode() if m else ''
+    if not s:
+        return None
+    return s[2:] if s.startswith('go') else s
+
+
+def rust_version_in_binary(path):
+    """(version, commit) as far as a binary tells: 'rustc version X.Y.Z (commit date)', else the /rustc/<hash>/ paths."""
+    try:
+        with open(path, 'rb') as f:
+            data = f.read(BINARY_READ_LIMIT)
+    except OSError:
+        return None, None
+    m = re.search(rb'rustc version (\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?)(?: \(([0-9a-f]{7,40})[^)]*\))?', data)
+    if m:
+        return m.group(1).decode(), (m.group(2).decode() if m.group(2) else None)
+    m = re.search(rb'/rustc/([0-9a-f]{40})/', data)
+    return None, (m.group(1).decode() if m else None)
+
+
+def rustc_commit(rustc_path, env = None, timeout = 20):
+    """The commit-hash of `rustc -vV`, or None. `env` is the run's environment: a rustup proxy needs RUSTUP_HOME/CARGO_HOME."""
+    full = dict(os.environ)
+    for k, v in (env or {}).items():
+        if isinstance(v, str):
+            full[str(k)] = v
+    try:
+        out = subprocess.run([str(rustc_path), '-vV'], capture_output = True, text = True, timeout = timeout, env = full).stdout
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    m = re.search(r'^commit-hash:\s*([0-9a-f]+)', out or '', re.M)
+    return m.group(1) if m else None
+
+
+def tools_env(global_ctx):
+    """The environment the tools of the run added (every entry's _aggregate.env: RUSTUP_HOME, CARGO_HOME, ...)."""
+    env = {}
+    for v in (global_ctx or {}).values():
+        agg = v.get('_aggregate') if isinstance(v, dict) else None
+        e = agg.get('env') if isinstance(agg, dict) else None
+        if isinstance(e, dict):
+            env.update({str(k): val for k, val in e.items() if isinstance(val, str)})
+    return env
+
+
+def toolchain_in_binary(exe, global_ctx, rustc_probe = None, env = None):
+    """{'go': {...}} / {'rust': {...}}: for each compiler of the run that leaves its version in the binary, what the binary says."""
+    out = {}
+    if not exe or not os.path.isfile(str(exe)):
+        return out
+    if rustc_probe is None:
+        # the rustup proxy answers only with its homes: the tools' own environment, then the run's
+        probe_env = dict(tools_env(global_ctx))
+        probe_env.update({str(k): v for k, v in (env or {}).items() if isinstance(v, str)})
+        rustc_probe = lambda path: rustc_commit(path, probe_env)
+    for key, v in (global_ctx or {}).items():
+        if not key.startswith('compiler-') or not isinstance(v, dict):
+            continue
+        tool = v.get('tool') if isinstance(v.get('tool'), dict) else {}
+        name = str(tool.get('name') or key[len('compiler-'):]).lower()
+        # the tool's name decides: go, go-android (not google.android-ndk.clang); rustc, rustc-android, rustup
+        if key == 'compiler-go' or re.match(r'^go(-|$)', name):
+            found = go_version_in_binary(exe)
+            out['go'] = {'tool': key, 'resolved': v.get('version'), 'binary': found,
+                         'source': 'go buildinfo' if found else None}
+        elif key == 'compiler-rust' or re.match(r'^rust(c|up)?(-|$)', name):
+            version, commit = rust_version_in_binary(exe)
+            entry = {'tool': key, 'resolved': v.get('version'), 'binary': version, 'binary_commit': commit,
+                     'source': 'rustc version string' if version else ('/rustc/<commit>/ source paths' if commit else None)}
+            if commit and not version and v.get('path'):
+                entry['resolved_commit'] = rustc_probe(v['path'])
+            out['rust'] = entry
+    return out
+
+
+def same_version(a, b):
+    """'1.26.2' vs '1.26.2' or '1.26' - the same release as far as both say."""
+    a, b = str(a or '').strip(), str(b or '').strip()
+    return bool(a and b) and (a == b or a.startswith(b + '.') or b.startswith(a + '.'))
+
+
 def run_checks(record, global_ctx, static_effective, match_version = None):
     """The checks of a record (see the module docstring). Returns the list; sets record['ok']."""
     checks = []
@@ -782,13 +1262,91 @@ def run_checks(record, global_ctx, static_effective, match_version = None):
         else:
             add('accelerator', 'info', True, f'accelerator {name} used')
 
+    # python: an interpreter requested with --use.python.tool_path is the one that ran, or the base of the venv that ran
+    rt = record.get('runtime') or {}
+    want_py = (use.get('python') or {}).get('tool_path') if isinstance(use.get('python'), dict) else None
+    if want_py and want_py != '{{sys.executable}}':
+        py = rt.get('python') if isinstance(rt.get('python'), dict) else {}
+        got = str(py.get('path') or '')
+        env_ = py.get('environment') or {}
+        want_prefix = _python_prefix(want_py)
+        ok = bool(got) and (_real(got) == _real(want_py) or _real(_python_prefix(got)) == _real(want_prefix))
+        if not ok and env_.get('kind') == 'venv' and (env_.get('base') or {}).get('prefix'):
+            ok = _real(env_['base']['prefix']) == _real(want_prefix)         # a venv made on the requested interpreter
+        add('python', 'error', ok,
+            f"--use.python.tool_path={want_py}: " + (f"the run used it" + (' (through a venv made on it)' if env_.get('kind') == 'venv' else '')
+                                                      if ok else f"the run used {got or 'no Python'} instead" +
+                                                      (f" ({python_environment_text(env_)})" if env_ else '')), tool = 'python')
+
+    # python: a conda environment was asked for (--use.python.with.conda): the run's python is one cMeta made
+    want_conda = isinstance(use.get('python'), dict) and isinstance(use['python'].get('with'), dict) \
+        and str(use['python']['with'].get('conda', '')).strip().lower() in ('true', 'yes', '1', 'on')
+    if want_conda:
+        py = rt.get('python') if isinstance(rt.get('python'), dict) else {}
+        env_ = py.get('environment') or {}
+        ok = env_.get('kind') == 'conda-env'
+        add('python', 'error', ok, '--use.python.with.conda: ' +
+            (f"the run used the conda environment {env_.get('name') or '?'}" + (f" made by {env_['made_by']}" if env_.get('made_by') else '')
+             if ok else f"the run used {python_environment_text(env_) or py.get('path') or 'no Python'} instead"), tool = 'python')
+
+    # wheel: a requested CUDA or cuDNN version cannot apply to the runtime a wheel brought along
+    frameworks = rt.get('frameworks') or {}
+    cuda_key = next((k for k in ('nvcc', 'cuda', 'lib-cuda') if isinstance(use.get(k), dict) and use[k].get('version')), None)
+    cudnn_key = 'lib-cudnn' if isinstance(use.get('lib-cudnn'), dict) and use['lib-cudnn'].get('version') else None
+    for lib in libraries:
+        dist = str(lib.get('dist') or '')
+        if not dist:
+            continue
+        lkey = library_key(lib.get('name'))
+        hit = None
+        if cuda_key and (lkey == 'cudart' or dist.startswith('nvidia-cuda-runtime')):
+            hit, cuda_key = cuda_key, None
+        elif cudnn_key and (lkey.startswith('cudnn') or dist.startswith('nvidia-cudnn')):
+            hit, cudnn_key = cudnn_key, None
+        if hit:
+            version = (frameworks.get(dist) or {}).get('version') or ''
+            add('wheel', 'error', False,
+                f"--use.{hit}.version={use[hit]['version']} cannot apply to {lib['name']}, which came with the wheel "
+                f"{dist} {version} ({lib.get('tool') or 'no tool of the run'}): pin the package instead", tool = lib.get('tool'))
+
+    # toolchain: the binary was built by the compiler cMeta resolved (GOTOOLCHAIN or rustup's default may differ)
+    for lang, tc in ((record.get('build') or {}).get('toolchain') or {}).items():
+        key = tc.get('tool') or f'compiler-{lang}'
+        explicit = any(isinstance(use.get(k), dict) and use[k].get('version') for k in (key, lang, 'go', 'rustc', 'rustup', 'rustc-android', 'go-android'))
+        level = 'error' if explicit else 'warning'
+        resolved = str(tc.get('resolved') or '')
+        if tc.get('binary'):
+            ok = same_version(tc['binary'], resolved)
+            add('toolchain', 'info' if ok else level, ok,
+                f"{lang}: the binary was built by {lang} {tc['binary']}; the resolved {key} is {resolved or '?'}"
+                + ('' if ok else ' (another toolchain built it)'), tool = key)
+        elif tc.get('binary_commit'):
+            rc = tc.get('resolved_commit')
+            if rc:
+                ok = tc['binary_commit'].startswith(rc) or rc.startswith(tc['binary_commit'])
+                add('toolchain', 'info' if ok else level, ok,
+                    f"{lang}: the binary carries the toolchain commit {tc['binary_commit'][:12]}; the resolved {key} {resolved} "
+                    f"is {rc[:12]}" + ('' if ok else ' (another toolchain built it)'), tool = key)
+            else:
+                add('toolchain', 'info', None, f"{lang}: the binary carries the toolchain commit {tc['binary_commit'][:12]}; "
+                                               f"the resolved {key} {resolved} did not report its commit", tool = key)
+        else:
+            add('toolchain', 'info', None, f"{lang}: the binary does not say which {lang} toolchain built it", tool = key)
+
     # info
     resolved = record.get('resolved') or {}
     tools = [f"{k} {v.get('version')}" for k, v in resolved.items()
              if k.startswith('compiler-') or k in ('nvcc', 'python', 'msvc', 'gcc', 'gcc-cpp', 'clang', 'clang-cpp') or k.startswith('lib-')]
     if tools:
         add('info', 'info', True, 'toolchain: ' + ', '.join(tools))
-    rt = record.get('runtime') or {}
+    py_env = ((rt.get('python') or {}).get('environment') or {}) if isinstance(rt.get('python'), dict) else {}
+    py_text = python_environment_text(py_env)
+    if py_text:
+        add('info', 'info', True, f"python {(rt.get('python') or {}).get('version') or '?'}: {py_text}", tool = 'python')
+    if frameworks:
+        add('info', 'info', True, 'frameworks: ' + ', '.join(
+            f"{d} {e.get('version') or '?'}" + (f" (built for CUDA {e['cuda_build']})" if e.get('cuda_build') else '')
+            + ('' if e.get('loaded') else ' (installed, nothing of it loaded)') for d, e in frameworks.items()))
     if rt.get('driver') or rt.get('gpu'):
         add('info', 'info', True, f"driver {rt.get('driver')}, GPU {rt.get('gpu')}")
 
@@ -876,6 +1434,12 @@ def build_record(mode, program, target_tmp, target_path, compute, global_ctx, lo
     if kind:
         binary['kind_of_file'] = kind
     record['build'] = {'stamp': read_json(os.path.join(target_path, STAMP_FILE)) if target_path else None, 'binary': binary}
+    try:
+        toolchain = toolchain_in_binary(exe, global_ctx, env = run_env)
+    except Exception as e:                           # a reading problem never spoils the record
+        toolchain = {'error': f'{type(e).__name__}: {e}'}
+    if toolchain:
+        record['build']['toolchain'] = toolchain
 
     # runtime
     cuda = ((global_ctx or {}).get('cuda') or {}).get('features') or {}
@@ -889,6 +1453,15 @@ def build_record(mode, program, target_tmp, target_path, compute, global_ctx, lo
         'python': {'version': python.get('version'), 'path': python.get('path'), 'entry': entry_uid(python)} if python else None,
         'engine_python': sys.version.split()[0],
     }
+    if python and python.get('path'):
+        try:
+            record['runtime']['python']['environment'] = python_environment(python['path'])
+        except Exception as e:                       # never spoils the record
+            record['runtime']['python']['environment'] = {'error': f'{type(e).__name__}: {e}'}
+        env_ = record['runtime']['python'].get('environment') or {}
+        if env_.get('kind') in ('conda-env', 'conda') and env_.get('prefix'):
+            # what conda installed there (pip's distributions are in runtime.frameworks)
+            record['runtime']['python']['conda_packages'] = conda_packages(env_['prefix'])
 
     # loaded
     paths, processes = (None, 0)
@@ -918,6 +1491,14 @@ def build_record(mode, program, target_tmp, target_path, compute, global_ctx, lo
                                                          f'runtime attribution failed: {type(e).__name__}: {e}'] if x)
     if run_skipped:
         record['loaded']['note'] = '; '.join(x for x in [record['loaded'].get('note'), 'the run phase was skipped: build-side record'] if x)
+    # the frameworks of a Python run: the distributions behind the loaded wheel libraries, the pip tools' packages
+    try:
+        frameworks = framework_versions(record['loaded'].get('libraries') or [], global_ctx)
+    except Exception as e:
+        frameworks = {}
+        record['loaded']['note'] = '; '.join(x for x in [record['loaded'].get('note'), f'framework versions failed: {type(e).__name__}: {e}'] if x)
+    if frameworks:
+        record['runtime']['frameworks'] = frameworks
 
     if result_data is not None:
         record['result'] = result_data

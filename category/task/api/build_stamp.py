@@ -13,11 +13,74 @@ host build was pushed to an Android device). A folder without a stamp, made befo
 before and gets a stamp.
 """
 
+import hashlib
 import json
 import os
 import time
 
 STAMP_FILE = '.cmeta-build-stamp.json'
+
+# The files whose change makes a build stale (since 0.43.3 the stamp records their digests and
+# compile-and-run-program recompiles when one differs): the declared sources, and every code or build
+# file under the program's source folder - headers, CMake lists, Cargo/Go manifests, scripts. Data files
+# and binaries are left out; so are hidden and tmp folders. A tree beyond the limits is not tracked.
+SOURCE_SUFFIXES = ('.c', '.cc', '.cpp', '.cxx', '.cu', '.h', '.hh', '.hpp', '.hxx', '.cuh', '.inl', '.inc', '.def',
+                   '.rs', '.go', '.py', '.pyx', '.f', '.f90', '.m', '.mm', '.swift', '.s', '.asm', '.cl', '.metal',
+                   '.glsl', '.hlsl', '.java', '.kt', '.js', '.ts', '.sh', '.bat', '.cmake', '.toml', '.mod')
+SOURCE_NAMES = ('CMakeLists.txt', 'Makefile', 'makefile', 'GNUmakefile', 'Cargo.lock', 'go.sum', 'build.gradle',
+                'meson.build')
+SKIPPED_DIRS = ('__pycache__', 'build', 'node_modules', 'target', '.git')
+MAX_SOURCE_FILES = 2000
+MAX_SOURCE_BYTES = 64 << 20
+
+
+def source_digests(src_path, src_file_names = None):
+    """
+    {relative path: sha256} of a program's sources: the declared source files and the code/build files
+    under src_path (recursive; hidden, tmp* and build folders left out). None when src_path is not a
+    folder or the tree is beyond MAX_SOURCE_FILES - then nothing is compared.
+    """
+    if not src_path or not os.path.isdir(src_path):
+        return None
+    files = {}
+    for name in src_file_names or []:
+        p = os.path.join(src_path, str(name))
+        if os.path.isfile(p):
+            files[os.path.relpath(p, src_path).replace(os.sep, '/')] = p
+    for root, dirs, names in os.walk(src_path):
+        dirs[:] = sorted(d for d in dirs if not d.startswith('.') and not d.startswith('tmp') and d not in SKIPPED_DIRS)
+        for n in sorted(names):
+            if n in SOURCE_NAMES or os.path.splitext(n)[1].lower() in SOURCE_SUFFIXES:
+                p = os.path.join(root, n)
+                files[os.path.relpath(p, src_path).replace(os.sep, '/')] = p
+                if len(files) > MAX_SOURCE_FILES:
+                    return None
+    out = {}
+    for rel in sorted(files):
+        p = files[rel]
+        try:
+            if os.path.getsize(p) > MAX_SOURCE_BYTES:
+                continue
+            h = hashlib.sha256()
+            with open(p, 'rb') as f:
+                for chunk in iter(lambda: f.read(1 << 20), b''):
+                    h.update(chunk)
+            out[rel] = h.hexdigest()
+        except OSError:
+            continue
+    return out
+
+
+def sources_changed(stamp, digests):
+    """
+    The sources that differ from the stamp's record - changed, added or removed files, as relative
+    paths - or [] when they agree. None when there is nothing to compare: the stamp recorded no
+    sources (a build made before 0.43.3) or the digests are None.
+    """
+    if not stamp or digests is None or not isinstance(stamp.get('sources'), dict):
+        return None
+    old = stamp['sources']
+    return sorted(k for k in set(old) | set(digests) if old.get(k) != digests.get(k))
 
 # The compile parameters recorded in the stamp (what a build is, not how it is reported) ...
 COMPILE_KEYS = ('static', 'debug_info', 'fastest', 'openmp', 'profile', 'profile_cuda', 'profile_cuda_kernels', 'lib')
@@ -49,7 +112,7 @@ def compiler_identity(compiler_result):
     return identity if any(identity.values()) else None
 
 
-def make_stamp(program, uid, compute, host, compiler = None, compile_params = None, android = None):
+def make_stamp(program, uid, compute, host, compiler = None, compile_params = None, android = None, sources = None):
     return {'version': 1,
             'program': program,
             'uid': uid,
@@ -58,6 +121,7 @@ def make_stamp(program, uid, compute, host, compiler = None, compile_params = No
             'compiler': compiler,
             'compile': normalize_compile(compile_params),
             'android': {k: v for k, v in (android or {}).items() if v} or None,
+            'sources': sources if isinstance(sources, dict) else None,
             'time': time.strftime('%Y-%m-%dT%H:%M:%S')}
 
 

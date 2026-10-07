@@ -6,6 +6,10 @@ storage_key: venv      # force storage key to avoid mixing up in the future
 
 cache_params:
   - "@version" # Treat @keys as fuzzy versions or versions with conditions during cMeta search!
+  - python     # --python=<interpreter>: a venv made on that interpreter is its own entry
+  - conda      # --conda: a conda environment (.conda-env, made by the conda of tool/conda) instead of a uv venv
+  - conda_packages
+  - channel
 
 # We need it to be able to get all available python versions from uv
 # and resolve it before further logic (cache and run)

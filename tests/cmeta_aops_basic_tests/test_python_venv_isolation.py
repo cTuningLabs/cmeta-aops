@@ -82,6 +82,7 @@ def test_shareable(py, tmp_path):
     assert py['shareable'](art(entry, f['user']))                    # --path, --use.venv.path, venv_here
     assert not py['shareable'](art(entry, f['program']))             # a program's venv in its entry
     assert not py['shareable'](art(entry, f['other_python']))        # another entry's venv
+    assert not py['shareable'](art(entry, entry, python_base = str(tmp_path / 'conda' / 'python')))  # on a named interpreter
 
 
 def test_filter(py, tmp_path):
@@ -94,12 +95,48 @@ def test_filter(py, tmp_path):
     r = tool.filter_tool_cache_artifacts({}, [own, ext, det, user], [tmp_ext, tmp_own], {'name': 'python'})
     assert r == {'return': 0, 'artifacts': [own, det, user], 'tmp_artifacts': [tmp_own]}
 
+    # A venv made on a named interpreter: never for a plain request, only for a request naming that interpreter
+    conda = str(tmp_path / 'conda' / 'python')
+    on_conda = art(f['python'], f['python'], python_base = conda)
+    on_other = art(f['other_python'], f['other_python'], python_base = str(tmp_path / 'other' / 'python'))
+    assert tool.filter_tool_cache_artifacts({}, [own, on_conda, on_other], [], {'name': 'python'})['artifacts'] == [own]
+    r = tool.filter_tool_cache_artifacts({}, [own, on_conda, on_other], [tmp_own], {'name': 'python', 'python_base': conda})
+    assert r == {'return': 0, 'artifacts': [on_conda], 'tmp_artifacts': []}
+
     # A request that names a venv, a python or a path: the engine keeps its lists
     for params, extra in [({'venv_path': str(f['program'])}, {}),
                           ({'tool_path': str(f['program'] / PY)}, {}),
                           ({}, {'path': str(tmp_path / 'p')})]:
         assert tool.filter_tool_cache_artifacts({}, [own, ext], [tmp_ext], dict(name = 'python', **params), **extra) == \
                {'return': 0}
+
+
+def test_a_named_base_interpreter_gets_its_own_venv(py, tmp_path):
+    """--use.python.tool_path=<a conda or system python> while a venv is wanted: python_base is set (the venv task
+    makes the venv on it, the entry is its own), a venv python named the same way is left alone, no venv wanted
+    uses it directly, and a version at the same time is refused."""
+    base = tmp_path / 'conda' / ('python.exe' if os.name == 'nt' else 'python')
+    base.parent.mkdir(parents = True)
+    base.write_text('')
+    venv_py = tmp_path / 'env' / PY
+    venv_py.parent.mkdir(parents = True)
+    venv_py.write_text('')
+    (tmp_path / 'env' / '.venv' / 'pyvenv.cfg').write_text('home = somewhere\n')
+    assert not py['is_venv_python'](str(base)) and py['is_venv_python'](str(venv_py))
+
+    tool = object.__new__(py['CTool'])
+    tool.cm = type('CM', (), {'debug': False, 'error': staticmethod(lambda msg, code = 1: {'return': code, 'error': msg})})()
+    params = {'tool_path': str(base)}
+    assert tool.check_params({'tasks': {}}, params)['return'] == 0
+    assert params['python_base'] == os.path.normpath(str(base)) and params['with'] == {'venv': True, 'pip': True}
+    # matched on python_base, detected only in the interpreter's folder (the entry's tool_path is the venv's python)
+    assert 'tool_path' not in params and params['paths'] == [str(base.parent)]
+    params = {'tool_path': str(venv_py)}
+    assert tool.check_params({'tasks': {}}, params)['return'] == 0 and 'python_base' not in params
+    params = {'tool_path': str(base), 'with': {'venv': False}}
+    assert tool.check_params({'tasks': {}}, params)['return'] == 0 and 'python_base' not in params
+    r = tool.check_params({'tasks': {}}, {'tool_path': str(base), 'version': '3.13'})
+    assert r['return'] == 1 and 'cannot both be given' in r['error']
 
 
 def test_explicit_venv_path_detects_only_there(py, tmp_path):
@@ -157,6 +194,8 @@ def plant(cm, version, venv_path = 'own', tool_dir = None, extra = None):
     assert os.path.normcase(r['path']) == os.path.normcase(str(entry))
     tool_path.parent.mkdir(parents = True, exist_ok = True)
     tool_path.write_text('')
+    # a venv's python has pyvenv.cfg next to its folder (an explicit request for it is not a base interpreter)
+    (tool_path.parent.parent / 'pyvenv.cfg').write_text('home = planted\n', encoding = 'utf-8')
     result = {'return': 0, 'version': version, 'path': str(tool_path), 'path_bin': str(tool_path.parent),
               'qpath': str(tool_path), 'qpath_bin': str(tool_path.parent), 'features': {}}
     (entry / 'cmeta-task-cached-result.json').write_text(json.dumps(result), encoding = 'utf-8')
