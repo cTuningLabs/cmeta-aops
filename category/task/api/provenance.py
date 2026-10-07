@@ -208,7 +208,7 @@ def library_key(name_or_path):
     The library behind a file name: libcublasLt.so.13 -> cublaslt, cudart64_13.dll -> cudart,
     libcrypto-3-x64.dll -> crypto, libstdc++.so.6 -> stdc++, ssl_static -> ssl, $ws2_32 -> ws2_32.
     """
-    base = os.path.basename(str(name_or_path)).strip().lower().lstrip('$')
+    base = str(name_or_path).replace('\\', '/').rsplit('/', 1)[-1].strip().lower().lstrip('$')   # a record of either OS, read on either
     for ext in ('.so', '.dylib', '.dll'):
         i = base.find(ext)
         if i > 0:
@@ -234,7 +234,7 @@ def is_system(name_or_path, uname):
         return bool(binary_deps.is_system_library(name_or_path, uname))
     except Exception:
         key = library_key(name_or_path)
-        base = os.path.basename(str(name_or_path)).lower()
+        base = str(name_or_path).replace('\\', '/').rsplit('/', 1)[-1].lower()
         if uname == 'windows':
             return key in ('kernel32', 'kernelbase', 'user32', 'gdi32', 'advapi32', 'shell32', 'ole32', 'oleaut32',
                            'ws2_32', 'ntdll', 'bcrypt', 'crypt32', 'msvcrt', 'ucrtbase', 'secur32', 'rpcrt4') \
