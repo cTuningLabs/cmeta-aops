@@ -1,0 +1,26 @@
+authors: Grigori Fursin
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# upgrade-os - the operating system's packages (and its firmware when asked) brought up to date with the OS's
+# own commands, chosen from what the host task detected: the package manager of a Linux distribution (apt-get,
+# dnf, yum, zypper, pacman, apk, xbps), softwareupdate and Homebrew on macOS, winget on Windows (Windows Update
+# only with --windows_update: an elevated shell and the PSWindowsUpdate module); then whether the OS says a
+# reboot is due (/var/run/reboot-required, needs-restarting, zypper needs-rebooting, the Windows registry key).
+#
+#   cx task run upgrade-os                           # the OS packages, then brew / winget apps
+#   cx task run upgrade-os --check                   # only list what would be upgraded
+#   cx task run upgrade-os --firmware                # also the firmware (fwupd on Linux)
+#   cx task run upgrade-os --full --autoremove       # apt: dist-upgrade, then drop what nothing needs
+#   cx task run upgrade-os --reboot                  # reboot at the end when the OS asks for it
+#   cx task run upgrade-os --dry_run                 # the commands, nothing runs
+#
+# Root: the system steps run with "sudo -n" (never a hidden prompt) unless the run is interactive (a terminal,
+# not -q), where sudo may ask once; without passwordless sudo a non-interactive run says so and stops. On a
+# fleet: "cx host upgrade <host> --os [--firmware] [--check]" runs this task on the host (cmeta-aops-ext2).
+#
+# This task is never memoized (cache: False): every run is a real run.
+
+cache: False
+
+uses:
+  - task: runner,1e48cc0c5f6041a5

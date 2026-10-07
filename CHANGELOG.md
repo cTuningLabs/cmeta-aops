@@ -2,6 +2,17 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.43.3.1
+- **`upgrade-os`: the OS packages and firmware, with the OS's own commands.** `cx task run upgrade-os` picks the
+  commands from what the host task detected - apt-get/apt, dnf, yum, microdnf, tdnf, zypper, pacman, apk and xbps on
+  Linux (index refresh, upgrade, `--full` for apt's dist-upgrade, `--autoremove`), `softwareupdate -ia` and Homebrew
+  on macOS, `winget upgrade --all` on Windows (Windows Update only with `--windows_update`, through PSWindowsUpdate) -
+  runs the system steps with `sudo -n` (plain `sudo`, which may ask once, in a terminal), adds the firmware with
+  `--firmware` (fwupd on Linux; macOS and Windows carry firmware in their system updates), lists instead of upgrading
+  with `--check`, and says whether the OS asks for a reboot (`/var/run/reboot-required`, `needs-restarting -r`,
+  `zypper needs-rebooting`, the Windows Update registry key); `--reboot` then reboots, `--dry_run` prints the plan.
+  Nothing is cached: every run is a real run. Tests: `tests/cmeta_aops_basic_tests/test_upgrade_os.py`.
+
 ## 0.43.3
 - **An edited program is rebuilt, not run as it was.** The build stamp (`.cmeta-build-stamp.json`) now records the
   SHA-256 of the program's sources - the declared source files and the code and build files under its `src/`
