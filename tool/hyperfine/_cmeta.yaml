@@ -1,0 +1,19 @@
+artifact: 6492c4ff98d14fac
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-10-06T19:44:47.884311+00:00'
+desc: 'hyperfine: the command-line benchmarking tool - detected, or installed from the pinned
+  official release on Windows, Linux and macOS.'
+generator:
+  agent: Claude Code 2.1.291
+  by: Grigori Fursin
+  method: agent
+  model: claude-fable-5-1
+note: 'hyperfine times whole commands: warmup runs, statistical outlier detection, exports
+  to JSON / CSV / Markdown - the first answer to "how long does this command take".'
+tags:
+- hyperfine
+- benchmark
+- timing
+- cli

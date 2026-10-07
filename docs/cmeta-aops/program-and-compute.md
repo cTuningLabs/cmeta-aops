@@ -249,7 +249,9 @@ stays clean: by default every build goes to the program's cache entry. Resolutio
   variants), `--compile.*`, `--with.*`, and the compute targets the run resolved
   (`category/task/api/build_identity.py`). Two requests that differ build in two entries, so
   `--use.nvcc.version=12.9` and `--use.nvcc.version=13.3` coexist and compare; the same request
-  comes back to its entry, where the build stamp guards the folder against a changed resolution.
+  comes back to its entry, where the build stamp guards the folder against a changed resolution
+  and, since 0.43.3, records the digests of the program's sources: an edited source (or header, CMake
+  list, manifest under `src/`) recompiles by itself, with an `INFO` line naming the files.
   The plain request (no explicit choice, cpu) keeps the name `task--program--<name>` every program had
   before and adopts such an entry when it exists without params; the others are
   `task--program--<name>--<uid>`. The folder name says nothing: the entry's `_cmeta` does —

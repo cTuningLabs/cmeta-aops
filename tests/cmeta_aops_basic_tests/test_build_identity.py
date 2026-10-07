@@ -29,6 +29,34 @@ def bi():
     return module
 
 
+def test_a_reused_build_completes_its_tools_features_from_the_current_entries(bi, tmp_path):
+    # the entry of lib-litert-android was re-detected after the build: it now carries model_int8
+    entry = tmp_path / "task--setup--lib-litert-android--0123456789abcdef"
+    entry.mkdir()
+    (entry / "cmeta-task-cached-result.json").write_text(json.dumps({
+        "version": "2.2.0", "features": {"model": "/m/float.tflite", "model_int8": "/m/quant.tflite", "root": "/x"}}), encoding = "utf-8")
+    gone = tmp_path / "task--setup--gone--fedcba9876543210"        # an entry that no longer exists
+    g = {"host": {"os": {"uname": "linux"}},
+         "lib-litert-android": {"version": "2.2.0", "path_cmeta_cache": str(entry), "features": {"model": "/m/old-float.tflite"}},
+         "compiler-c": {"version": "21.0.0", "path_cmeta_cache": str(gone), "features": {"flags": {}}},
+         "python": {"version": "3.14.7", "path": "/v/bin/python"},                   # no entry at all
+         "target": {"compute": ["android-cpu"]}}
+    added = bi.complete_restored_tools(g)
+    assert added == {"lib-litert-android": ["model_int8", "root"]}
+    f = g["lib-litert-android"]["features"]
+    assert f["model_int8"] == "/m/quant.tflite" and f["root"] == "/x"
+    assert f["model"] == "/m/old-float.tflite"                      # what the snapshot had stays: the build's record
+    assert g["compiler-c"]["features"] == {"flags": {}} and "features" not in g["python"]
+    # a second pass adds nothing; a snapshot entry without features gets them all
+    assert bi.complete_restored_tools(g) == {}
+    g["lib-litert-android"].pop("features")
+    assert bi.complete_restored_tools(g) == {"lib-litert-android": ["model", "model_int8", "root"]}
+    # a broken result file is skipped
+    (entry / "cmeta-task-cached-result.json").write_text("{not json", encoding = "utf-8")
+    g["lib-litert-android"]["features"] = {}
+    assert bi.complete_restored_tools(g) == {}
+
+
 def test_request_identity_is_the_explicit_choices_and_the_resolved_targets(bi):
     plain = bi.request_identity({"name": "prog", "target_tmp": "tmp-x", "recompile": True}, {}, [])
     assert plain == {"compute": ["cpu"]} == bi.PLAIN

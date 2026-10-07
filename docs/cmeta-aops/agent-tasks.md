@@ -52,7 +52,13 @@ cxt import-ai --project="project::my-app" --skills="<repo>/.claude/skills"   # b
   `antigravity` (also `agy`), `gemini`, or any `<x>` for which a task `run-<x>` exists.
   The model and the effort are given in the agent's own names -
   `--model=<model>,<effort>` - and turned into its flags from
-  `tool/<agent>/_desc_models.yaml`.
+  `tool/<agent>/_desc_models.yaml`. OpenClaw may call the other agents as sub-agents:
+  `run-openclaw` puts cMeta's copies of them (its tools, detected only) first on
+  openclaw's PATH, so a sub-agent is the pinned, recorded one (`--agents=` to narrow or drop).
+  OpenClaw itself is driven through its tool, never by a bare `openclaw` (cMeta installs it
+  when missing; a bare call may be another copy or none): `cx tool run openclaw -- models status`
+  shows which providers are authenticated, `cx tool run openclaw -- models set claude-cli/<model>`
+  makes the local Claude Code login its default model once.
 - **The project:** `--project=<cref>`, else the artifact the current directory is in,
   else the current directory. The agent works in the artifact's root folder.
 - **Memory and skills:** Claude Code reads and writes `!AI/memory` (its

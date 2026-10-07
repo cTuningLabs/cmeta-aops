@@ -1,0 +1,17 @@
+artifact: eec8ba23074b4139
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+creation_timestamp: '2026-10-07T09:46:20.986647+00:00'
+desc: a conda package in the conda environment of the python request (the conda analogue of tool/pip)
+generator:
+  agent: Claude Code 2.1.292
+  by: Grigori Fursin
+  method: agent
+  model: claude-fable-5-1
+note: added on 2026-10-07 with the conda environment of task/venv --conda (cmeta-aops 0.43.3)
+tags:
+  - tool
+  - conda
+  - package
+  - python

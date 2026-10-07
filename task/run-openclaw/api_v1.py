@@ -151,6 +151,24 @@ def _agent_generator(argv, flags):
     return rec
 
 
+# The agent CLIs OpenClaw may run as sub-agents, as cMeta tools (alias: UID). They are set up before
+# openclaw starts - detected where they are, never installed here - and their folders go first on the
+# PATH of the openclaw process, so a sub-agent is the copy cMeta knows (pinned, recorded), not whatever
+# the shell's PATH holds; an agent that is not on this machine is reported and skipped.
+SUB_AGENTS = {'claude': '383841b240c74e88', 'codex': 'cdbf5f6e6882460f', 'opencode': '7777071804e84fb5',
+              'gemini': '40a20e8dca604ece', 'agy': '433f36c666ce47f1'}
+DEFAULT_AGENTS = ','.join(SUB_AGENTS)
+
+
+def _child_env(bins, base = None):
+    """The environment of the openclaw process: the given folders first on PATH, then the shell's."""
+    env = dict(os.environ if base is None else base)
+    folders = [b for b in bins if b]
+    if folders:
+        env['PATH'] = os.pathsep.join(folders + ([env['PATH']] if env.get('PATH') else []))
+    return env
+
+
 class CTask(InitCTask):
     """
     """
@@ -158,6 +176,38 @@ class CTask(InitCTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
+
+    ############################################################
+    def agents_on_path(self, ctx, agents, con = False, space = ''):
+        """
+        Set up the agent CLIs named in `agents` (comma-separated aliases of SUB_AGENTS, or any tool alias)
+        as cMeta tools, detect only, and return {'bins': [folder, ...], 'found': {alias: path}, 'missing': [alias]}.
+        A tool that is not on this machine is skipped (no install from here).
+        """
+        names = [a.strip() for a in str(agents or '').split(',') if a.strip()]
+        bins, found, missing = [], {}, []
+        g = ctx['tasks']['global']
+        for alias in names:
+            name = f'{alias},{SUB_AGENTS[alias]}' if alias in SUB_AGENTS else alias
+            r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'setup,a2f9b61079ce4333',
+                                'ctx': ctx, 'name': name, 'skip_install': True, 'con': False, 'quiet': True})
+            tool = g.get(alias) if isinstance(g.get(alias), dict) else None
+            path = (tool or {}).get('path')
+            if r.get('return', 1) != 0 or not path:
+                missing.append(alias)
+                continue
+            folder = (tool or {}).get('path_bin') or os.path.dirname(str(path))
+            found[alias] = str(path)
+            if folder and folder not in bins:
+                bins.append(folder)
+        if con and (found or missing):
+            print ('')
+            if found:
+                print (f'{space}INFO: sub-agents on the PATH of openclaw (cMeta tools): ' +
+                       ', '.join(f'{a} ({p})' for a, p in found.items()))
+            if missing:
+                print (f'{space}INFO: sub-agents not on this machine (not installed from here): ' + ', '.join(missing))
+        return {'return': 0, 'bins': bins, 'found': found, 'missing': missing}
 
     ############################################################
     def run(self,
@@ -177,6 +227,7 @@ class CTask(InitCTask):
             append_output_file: bool = False, # append to the output file instead of overwriting it
             skip_output_header: bool = False, # do not add the summary header to the output file
             dry_run: bool = False,          # print the openclaw command line and run nothing
+            agents: str = DEFAULT_AGENTS,   # the agent CLIs put first on openclaw's PATH as cMeta tools (detected, not installed); '' = none
             unparsed: list = None,          # extra flags for openclaw (everything after "--")
     ):
 
@@ -255,6 +306,11 @@ class CTask(InitCTask):
 
         interactive = interactive or i
         argv0 = _openclaw_argv(openclaw_path)
+
+        # The sub-agents OpenClaw may call (claude, codex, ...) come from cMeta's tools, first on its PATH
+        sub = self.agents_on_path(ctx, agents, con = con, space = space)
+        openclaw_bin = _global.get('openclaw', {}).get('path_bin') or os.path.dirname(openclaw_path)
+        child_env = _child_env([openclaw_bin] + sub['bins'])
 
         ###########################################################################################
         # Assemble the prompt: prompt file text + "\n" + prompt text
@@ -346,7 +402,8 @@ class CTask(InitCTask):
         if dry_run:
             prompt_via_file_done(pr)
             return {'return': 0, 'cmd': shown, 'prompt': full_prompt, 'long_prompt_file': pr['file'], 'output': '',
-                    'output_file': '', 'interactive': interactive, 'dry_run': True}
+                    'output_file': '', 'interactive': interactive, 'dry_run': True,
+                    'agents': {'found': sub['found'], 'missing': sub['missing'], 'path': child_env.get('PATH', '')}}
 
         # Provenance: artifacts created through cMeta during the run record how they were made
         # (unless a task that runs openclaw set CMETA_GENERATOR already)
@@ -360,7 +417,7 @@ class CTask(InitCTask):
 
         if interactive:
             try:
-                returncode = subprocess.call(cmd)
+                returncode = subprocess.call(cmd, env=child_env)
             except KeyboardInterrupt:
                 returncode = 1
             except Exception as e:
@@ -381,7 +438,7 @@ class CTask(InitCTask):
 
         try:
             process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                       text=True, encoding='utf-8', errors='replace', bufsize=1)
+                                       text=True, encoding='utf-8', errors='replace', bufsize=1, env=child_env)
         except Exception as e:
             prompt_via_file_done(pr)
             return self.cm.error(f'cannot run "{openclaw_path}": {e}', 1)
@@ -455,8 +512,9 @@ class CTask(InitCTask):
         if returncode != 0:
             hint = ''
             if 'No API key found for provider' in output:
-                hint = (' - the model\'s provider has no key on this machine: "openclaw models list" shows which are '
-                        'authenticated (the Auth column); --model=claude-cli/<model> runs through the local Claude Code login')
+                hint = (' - the model\'s provider has no key on this machine: "cx tool run openclaw -- models status" shows '
+                        'which are authenticated; --model=claude-cli/<model> runs through the local Claude Code login, and '
+                        '"cx tool run openclaw -- models set claude-cli/<model>" makes it the default')
             return self.cm.error(f'openclaw failed with return code {returncode}{hint}', 99)
 
         result = {'return': 0, 'output': output, 'output_file': output_file, 'prompt': full_prompt, 'long_prompt_file': pr['file'],

@@ -1377,7 +1377,7 @@ class CTask(InitCTask):
                 k = model_flags.index('--model')
                 model_flags = model_flags[:k] + model_flags[k + 2:]
                 notes.append('openclaw: its terminal UI takes no --model - type "/model %s" in it, or make it the default '
-                             'once with "openclaw models set %s"' % (model_name, model_name))
+                             'once with "cx tool run openclaw -- models set %s"' % (model_name, model_name))
             extra = model_flags + extra
             if model_flags:
                 notes.append('model flags: %s' % ' '.join(model_flags))

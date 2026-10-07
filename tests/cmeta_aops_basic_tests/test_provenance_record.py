@@ -652,6 +652,258 @@ def test_a_tool_resolved_to_a_library_file_names_it(prov):
     assert not prov._is_library_file("gcc") and not prov._is_library_file("cl.exe") and not prov._is_library_file(".so")
 
 
+# ---------------------------------------------------------------------------------------------- wheels
+
+def make_site_packages(root, posix = True):
+    """A program venv with the distributions of an ONNX Runtime CUDA install: files from RECORD, requirements from METADATA."""
+    venv = root / "venv-cuda" / ".venv"
+    sp = venv / ("lib/python3.14/site-packages" if posix else "Lib/site-packages")
+    dists = {
+        "onnxruntime_gpu-1.30.0": ("onnxruntime-gpu",
+                                   ["numpy>=1.21.6", "packaging", 'nvidia-cuda-runtime~=13.0; extra == "cuda"', 'nvidia-cudnn-cu13; extra == "cudnn"'],
+                                   ["onnxruntime/capi/libonnxruntime_providers_cuda.so", "onnxruntime/capi/libonnxruntime.so.1.30.0"]),
+        "nvidia_cudnn_cu13-9.27.0.42": ("nvidia-cudnn-cu13", ["nvidia-cublas"], ["nvidia/cudnn/lib/libcudnn.so.9"]),
+        "nvidia_cublas-13.8.1.7": ("nvidia-cublas", ["nvidia-cuda-nvrtc"], ["nvidia/cu13/lib/libcublas.so.13"]),
+        "nvidia_cuda_nvrtc-13.4.92": ("nvidia-cuda-nvrtc", [], ["nvidia/cu13/lib/libnvrtc.so.13"]),
+        "nvidia_cuda_runtime-13.4.92": ("nvidia-cuda-runtime", [], ["nvidia/cu13/lib/libcudart.so.13"]),
+        "numpy-2.5.3": ("numpy", [], ["numpy/_core/_multiarray_umath.cpython-314-x86_64-linux-gnu.so", "numpy.libs/libscipy_openblas64_-f48b354e.so"]),
+        "packaging-26.3": ("packaging", [], ["packaging/__init__.py"]),
+        "lonely-1.0": ("lonely", [], ["lonely/liblonely.so"]),
+    }
+    for folder, (name, reqs, files) in dists.items():
+        d = sp / (folder + ".dist-info")
+        d.mkdir(parents = True)
+        version = folder.rsplit("-", 1)[1]
+        (d / "METADATA").write_text("Metadata-Version: 2.1\nName: %s\nVersion: %s\n%s\nSummary: x\n\nthe long description\nRequires-Dist: not-a-header\n"
+                                    % (name, version, "\n".join("Requires-Dist: " + r for r in reqs)), encoding = "utf-8")
+        (d / "RECORD").write_text("".join("%s,sha256=abc,123\n" % f for f in files) + "%s/RECORD,,\n" % d.name, encoding = "utf-8")
+        for f in files:
+            p = sp / f
+            p.parent.mkdir(parents = True, exist_ok = True)
+            p.write_bytes(b"\x7fELF")
+    return venv, sp
+
+
+def test_wheel_library_is_attributed_to_the_pip_tool_that_pulled_its_distribution(prov, tmp_path):
+    venv, sp = make_site_packages(tmp_path)
+    py = str(venv / "bin" / "python")
+    g = ctx_global(cuda = True)
+    g["python"] = {"version": "3.14.7", "path": py}
+    g["pip-onnxruntime"] = {"version": "1.30.0", "path": py,
+                            "_params": {"name": "pip", "with": {"package": "onnxruntime-gpu", "extras": ["cuda", "cudnn"]}}}
+    g["pip-numpy"] = {"version": "2.5.3", "path": py, "_params": {"name": "pip", "with": {"package": "numpy"}}}
+    s = str(sp)
+    # the package's own file; a dependency one step away (through an extra), two and three steps away
+    assert prov.attribute(s + "/onnxruntime/capi/libonnxruntime_providers_cuda.so", g) == "pip-onnxruntime"
+    assert prov.attribute(s + "/nvidia/cu13/lib/libcudart.so.13", g) == "pip-onnxruntime"
+    assert prov.attribute(s + "/nvidia/cudnn/lib/libcudnn.so.9", g) == "pip-onnxruntime"
+    assert prov.attribute(s + "/nvidia/cu13/lib/libcublas.so.13", g) == "pip-onnxruntime"
+    assert prov.attribute(s + "/nvidia/cu13/lib/libnvrtc.so.13", g) == "pip-onnxruntime"
+    # numpy is required by onnxruntime-gpu too, but pip-numpy installed it: the nearest tool wins
+    assert prov.attribute(s + "/numpy/_core/_multiarray_umath.cpython-314-x86_64-linux-gnu.so", g) == "pip-numpy"
+    # the loader reports a path with .. in it (numpy/_core/../../numpy.libs/...): still numpy's
+    assert prov.attribute(s + "/numpy/_core/../../numpy.libs/libscipy_openblas64_-f48b354e.so", g) == "pip-numpy"
+    # a distribution no tool of the run pulled stays unattributed, and so does a file no RECORD lists
+    assert prov.attribute(s + "/lonely/liblonely.so", g) is None
+    assert prov.attribute(s + "/nvidia/cudnn/lib/libcudnn_extra.so.9", g) is None
+    # the record names the distribution; a library outside any site-packages has none
+    entries = prov.library_entries([s + "/nvidia/cudnn/lib/libcudnn.so.9", "/lib/x86_64-linux-gnu/libc.so.6"], g, "linux")
+    assert entries[0]["tool"] == "pip-onnxruntime" and entries[0]["dist"] == "nvidia-cudnn-cu13"
+    assert entries[1]["tool"] is None and "dist" not in entries[1]
+
+
+def test_nvidia_driver_libraries_belong_to_the_cuda_entry_of_the_run(prov):
+    g = ctx_global(cuda = True)         # has the "cuda" entry: the driver and the GPU of the target
+    for p in ("/usr/lib/x86_64-linux-gnu/libcuda.so.1", "/usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.1",
+              "/usr/lib/x86_64-linux-gnu/libnvidia-nvvm70.so.4", "C:\\Windows\\System32\\nvcuda.dll"):
+        assert prov.attribute(p, g) == "cuda", p
+    assert prov.attribute("/usr/lib/x86_64-linux-gnu/libcudart.so.13", g) is None       # the toolkit's, not the driver's
+    entries = prov.library_entries(["/usr/lib/x86_64-linux-gnu/libcuda.so.1"], g, "linux")
+    assert entries[0]["tool"] == "cuda" and entries[0]["role"] == "driver"
+    g_cpu = ctx_global()                # no cuda entry: nothing to attribute the driver to
+    assert prov.attribute("/usr/lib/x86_64-linux-gnu/libcuda.so.1", g_cpu) is None
+
+
+def test_wheel_rule_keeps_to_the_tools_own_venv_and_falls_back_to_the_key(prov, tmp_path):
+    venv, sp = make_site_packages(tmp_path)
+    other_venv, other_sp = make_site_packages(tmp_path / "other")
+    g = ctx_global()
+    # a pip tool that installed into ANOTHER venv does not claim this venv's files
+    g["pip-onnxruntime"] = {"version": "1.30.0", "path": str(other_venv / "bin" / "python"), "_params": {"with": {"package": "onnxruntime-gpu"}}}
+    assert prov.attribute(str(sp / "onnxruntime" / "capi" / "libonnxruntime.so.1.30.0"), g) is None
+    assert prov.attribute(str(other_sp / "onnxruntime" / "capi" / "libonnxruntime.so.1.30.0"), g) == "pip-onnxruntime"
+    # an older entry without _params: the key names the package (pip-numpy -> numpy); the Windows venv layout too
+    venv_w, sp_w = make_site_packages(tmp_path / "win", posix = False)
+    g = ctx_global("windows")
+    g["pip-numpy"] = {"version": "2.5.3", "path": str(venv_w / "Scripts" / "python.exe")}
+    assert prov.attribute(str(sp_w / "numpy.libs" / "libscipy_openblas64_-f48b354e.so"), g) == "pip-numpy"
+    assert prov.site_packages_of(str(sp_w / "numpy" / "x.pyd")) == str(sp_w)
+    assert prov.site_packages_of("/usr/lib/x86_64-linux-gnu/libz.so.1") is None
+    assert prov.norm_dist("Nvidia_CUDNN.cu13") == "nvidia-cudnn-cu13"
+    # the header block of METADATA ends at the first empty line: the Requires-Dist in the description is not read
+    idx = prov.dist_index(str(sp_w))
+    assert "not-a-header" not in idx["requires"]["onnxruntime-gpu"] and idx["versions"]["numpy"] == "2.5.3"
+
+
+def test_framework_versions_from_the_venv(prov, tmp_path):
+    venv, sp = make_site_packages(tmp_path)
+    # a torch wheel built for CUDA 13.0, installed but nothing of it loaded in this run
+    d = sp / "torch-2.14.1+cu130.dist-info"
+    d.mkdir()
+    (d / "METADATA").write_text("Name: torch\nVersion: 2.14.1+cu130\nRequires-Dist: nvidia-cuda-runtime\n\n", encoding = "utf-8")
+    (d / "RECORD").write_text("torch/lib/libtorch_cuda.so,,\n", encoding = "utf-8")
+    py = str(venv / "bin" / "python")
+    g = ctx_global(cuda = True)
+    g["pip-onnxruntime"] = {"version": "1.30.0", "path": py, "_params": {"with": {"package": "onnxruntime-gpu"}}}
+    g["pip-torch"] = {"version": "2.14.1+cu130", "path": py, "_params": {"with": {"package": "torch"}}}
+    libs = prov.library_entries([str(sp / "nvidia/cu13/lib/libcudart.so.13"), str(sp / "nvidia/cudnn/lib/libcudnn.so.9"),
+                                 "/lib/x86_64-linux-gnu/libc.so.6"], g, "linux")
+    fw = prov.framework_versions(libs, g)
+    assert fw["nvidia-cuda-runtime"] == {"version": "13.4.92", "loaded": True, "tool": "pip-onnxruntime"}
+    assert fw["nvidia-cudnn-cu13"]["version"] == "9.27.0.42" and fw["nvidia-cudnn-cu13"]["loaded"]
+    assert fw["onnxruntime-gpu"] == {"version": "1.30.0", "loaded": False, "tool": "pip-onnxruntime"}
+    assert fw["torch"]["version"] == "2.14.1+cu130" and fw["torch"]["cuda_build"] == "13.0" and not fw["torch"]["loaded"]
+    assert prov.cuda_build_of("2.9.0+cu128") == "12.8" and prov.cuda_build_of("1.30.0") is None
+    # a requested CUDA version cannot apply to the wheel's runtime: an error naming the wheel and the tool
+    rec = {"requested": {"use": {"nvcc": {"version": "12.9"}}}, "compute": ["cuda"], "host": {"uname": "linux"},
+           "loaded": {"method": "loader-log", "libraries": libs}, "build": {"binary": {"format": "elf"}},
+           "runtime": {"frameworks": fw}, "resolved": {}}
+    prov.run_checks(rec, g, False)
+    wheel = [c for c in rec["checks"] if c["rule"] == "wheel"]
+    assert len(wheel) == 1 and wheel[0]["level"] == "error" and wheel[0]["ok"] is False
+    assert "nvidia-cuda-runtime 13.4.92" in wheel[0]["detail"] and "pip-onnxruntime" in wheel[0]["detail"] and rec["ok"] is False
+    info = [c["detail"] for c in rec["checks"] if c["rule"] == "info" and c["detail"].startswith("frameworks:")][0]
+    assert "torch 2.14.1+cu130 (built for CUDA 13.0) (installed, nothing of it loaded)" in info
+    # without an explicit CUDA request there is nothing to flag
+    rec["requested"] = {"use": {}}
+    prov.run_checks(rec, g, False)
+    assert not [c for c in rec["checks"] if c["rule"] == "wheel"] and rec["ok"] is True
+
+
+def go_binary(path, version = b"go1.26.2", inline = True):
+    """A file that carries a Go buildinfo header: magic, pointer size, flags (2 = the version inline), then the varint-prefixed version."""
+    head = prov_magic = b"\xff Go buildinf:" + bytes([8, 2 if inline else 0]) + b"\x00" * 16
+    body = bytes([len(version)]) + version if inline else b"\x00" * 40 + version
+    path.write_bytes(b"MZ" + b"\x00" * 100 + head + body + b"\x00" * 50)
+    return str(path)
+
+
+def test_go_and_rust_toolchains_are_read_from_the_binary(prov, tmp_path):
+    exe = go_binary(tmp_path / "program")
+    assert prov.go_version_in_binary(exe) == "1.26.2"
+    assert prov.go_version_in_binary(go_binary(tmp_path / "old", b"go1.17.3", inline = False)) == "1.17.3"
+    (tmp_path / "plain").write_bytes(b"\x7fELF" + b"\x00" * 64)
+    assert prov.go_version_in_binary(str(tmp_path / "plain")) is None
+    rust = tmp_path / "rust-elf"
+    rust.write_bytes(b"\x7fELF\x00rustc version 1.90.0 (1159e78c4 2025-09-14)\x00/rustc/1159e78c47b8b3a2e5c6d7e8f9a0b1c2d3e4f5a6/library/std/src/panic.rs\x00")
+    assert prov.rust_version_in_binary(str(rust)) == ("1.90.0", "1159e78c4")
+    rust_pe = tmp_path / "rust-pe"
+    rust_pe.write_bytes(b"MZ\x00/rustc/1159e78c47b8b3a2e5c6d7e8f9a0b1c2d3e4f5a6/library/std/src/panic.rs\x00")
+    assert prov.rust_version_in_binary(str(rust_pe)) == (None, "1159e78c47b8b3a2e5c6d7e8f9a0b1c2d3e4f5a6")
+
+    g = ctx_global()
+    # an Android build: the NDK's clang is not Go, however its name starts
+    g["compiler-c"] = {"tool": {"name": "google.android-ndk.clang"}, "version": "21.0.0", "path": "/ndk/clang"}
+    assert prov.toolchain_in_binary(exe, g) == {}
+    g["compiler-go"] = {"tool": {"name": "go"}, "version": "1.26.2", "path": "/opt/go/bin/go"}
+    tc = prov.toolchain_in_binary(exe, g)
+    assert tc == {"go": {"tool": "compiler-go", "resolved": "1.26.2", "binary": "1.26.2", "source": "go buildinfo"}}
+    g["compiler-go"] = {"tool": {"name": "go-android"}, "version": "1.26.2", "path": "/opt/go/bin/go"}
+    assert prov.toolchain_in_binary(exe, g)["go"]["binary"] == "1.26.2"
+    g["compiler-rust"] = {"tool": {"name": "rustc"}, "version": "1.90.0", "path": "/opt/rust/bin/rustc"}
+    tc = prov.toolchain_in_binary(str(rust_pe), g, rustc_probe = lambda p: "1159e78c47b8b3a2e5c6d7e8f9a0b1c2d3e4f5a6")
+    assert tc["rust"]["binary_commit"].startswith("1159e78c4") and tc["rust"]["resolved_commit"].startswith("1159e78c4")
+
+    # the checks: the same toolchain is info; another one a warning, or an error when its version was requested
+    def checks_for(toolchain, use = None):
+        rec = {"requested": {"use": use or {}}, "compute": ["cpu"], "host": {"uname": "linux"}, "loaded": {"method": "resolved", "libraries": []},
+               "build": {"binary": {"format": "elf"}, "toolchain": toolchain}, "runtime": {}, "resolved": {}}
+        prov.run_checks(rec, g, False)
+        return [c for c in rec["checks"] if c["rule"] == "toolchain"], rec["ok"]
+    cs, ok = checks_for({"go": {"tool": "compiler-go", "resolved": "1.26.2", "binary": "1.26.2"}})
+    assert cs[0]["level"] == "info" and cs[0]["ok"] is True and ok
+    cs, ok = checks_for({"go": {"tool": "compiler-go", "resolved": "1.26.2", "binary": "1.27.0"}})
+    assert cs[0]["level"] == "warning" and cs[0]["ok"] is False and ok and "another toolchain built it" in cs[0]["detail"]
+    cs, ok = checks_for({"go": {"tool": "compiler-go", "resolved": "1.26.2", "binary": "1.27.0"}}, use = {"go": {"version": "1.26"}})
+    assert cs[0]["level"] == "error" and not ok
+    cs, ok = checks_for({"rust": {"tool": "compiler-rust", "resolved": "1.90.0", "binary": None, "binary_commit": "abc1234567890abcdef", "resolved_commit": "abc1234567890abcdef"}})
+    assert cs[0]["level"] == "info" and cs[0]["ok"] is True
+    cs, ok = checks_for({"rust": {"tool": "compiler-rust", "resolved": "1.90.0", "binary": None, "binary_commit": "abc1234567890abcdef", "resolved_commit": "fff1234567890abcdef"}})
+    assert cs[0]["level"] == "warning" and cs[0]["ok"] is False
+    cs, ok = checks_for({"rust": {"tool": "compiler-rust", "resolved": "1.90.0", "binary": None, "binary_commit": None}})
+    assert cs[0]["level"] == "info" and cs[0]["ok"] is None and "does not say" in cs[0]["detail"]
+    # the record of a Go run carries build.toolchain
+    local = {"target_path_exe": exe}
+    r = record(prov, fake_inspector(SYSTEM_DEPS), local = local, target = str(tmp_path))
+    assert r["build"]["toolchain"]["go"]["binary"] == "1.26.2" if "compiler-go" in ctx_global() else True
+
+
+def test_python_environment_kinds(prov, tmp_path):
+    # a uv-managed interpreter, and a venv uv made on it
+    uvpy = tmp_path / "share" / "uv" / "python" / "cpython-3.14.7-linux-x86_64-gnu"
+    (uvpy / "bin").mkdir(parents = True)
+    (uvpy / "bin" / "python3").write_bytes(b"")
+    venv = tmp_path / "proj" / ".venv"
+    (venv / "bin").mkdir(parents = True)
+    (venv / "bin" / "python").write_bytes(b"")
+    (venv / "pyvenv.cfg").write_text(f"home = {uvpy / 'bin'}\nimplementation = CPython\nuv = 0.12.21\nversion_info = 3.14.7\n", encoding = "utf-8")
+    e = prov.python_environment(str(venv / "bin" / "python"))
+    assert e["kind"] == "venv" and e["made_by"] == "uv 0.12.21" and e["base"]["kind"] == "uv-managed"
+    assert prov.python_environment_text(e) == "venv made by uv 0.12.21 on a uv-managed Python"
+    assert prov.python_environment(str(uvpy / "bin" / "python3"))["kind"] == "uv-managed"
+    # a conda base (conda-meta/ with condabin/, pkgs/ or envs/ next to it) and a conda environment, POSIX and
+    # Windows layouts; an environment made anywhere with "conda create -p" (no such folders) is an environment
+    conda = tmp_path / "miniconda3"
+    (conda / "conda-meta").mkdir(parents = True)
+    (conda / "condabin").mkdir()
+    (conda / "bin").mkdir()
+    made = tmp_path / "entry" / ".conda-env"
+    (made / "conda-meta").mkdir(parents = True)
+    (made / "bin").mkdir()
+    (made / "bin" / "python").write_bytes(b"")
+    assert prov.python_environment(str(made / "bin" / "python"))["kind"] == "conda-env"
+    (conda / "bin" / "python").write_bytes(b"")
+    e = prov.python_environment(str(conda / "bin" / "python"))
+    assert e["kind"] == "conda" and "name" not in e and prov.python_environment_text(e) == "a conda base environment"
+    env = conda / "envs" / "myenv"
+    (env / "conda-meta").mkdir(parents = True)
+    (env / "python.exe").write_bytes(b"")
+    e = prov.python_environment(str(env / "python.exe"))
+    assert e["kind"] == "conda-env" and e["name"] == "myenv" and "myenv" in prov.python_environment_text(e)
+    # a venv made on a conda environment: the base is named
+    v2 = tmp_path / "v2"
+    (v2 / "Scripts").mkdir(parents = True)
+    (v2 / "Scripts" / "python.exe").write_bytes(b"")
+    (v2 / "pyvenv.cfg").write_text(f"home = {env}\nversion = 3.13.9\n", encoding = "utf-8")
+    e = prov.python_environment(str(v2 / "Scripts" / "python.exe"))
+    assert e["kind"] == "venv" and e["base"] == {"kind": "conda-env", "prefix": str(env), "name": "myenv"} and "made_by" not in e
+    assert prov.python_environment_text(e) == "venv on the conda environment myenv"
+    # the system's
+    usr = tmp_path / "usr" / "bin"
+    usr.mkdir(parents = True)
+    (usr / "python3").write_bytes(b"")
+    assert prov.python_environment(str(usr / "python3"))["kind"] == "system"
+    assert prov.python_environment("") == {}
+    # the record carries it, and the checks say it in one line
+    g = ctx_global(python = True)
+    g["python"]["path"] = str(venv / "bin" / "python")
+    r = prov.build_record("on", {"alias": "p", "uid": "0" * 16}, "tmp", str(tmp_path), ["cpu"], g, {"target_path_exe": str(tmp_path / "x")}, {}, {}, False)
+    assert r["runtime"]["python"]["environment"]["kind"] == "venv"
+    assert any(c["detail"] == "python 3.12.3: venv made by uv 0.12.21 on a uv-managed Python" for c in r["checks"])
+    # an interpreter requested with --use.python.tool_path: the run used it, a venv made on it, or something else (error)
+    def py_check(use_path, g_path):
+        g["python"]["path"] = g_path
+        rr = prov.build_record("on", {"alias": "p", "uid": "0" * 16}, "tmp", str(tmp_path), ["cpu"], g, {"target_path_exe": str(tmp_path / "x")},
+                               {}, {"python": {"tool_path": use_path}}, False)
+        return [c for c in rr["checks"] if c["rule"] == "python"][0], rr["ok"]
+    c, ok = py_check(str(conda / "bin" / "python"), str(conda / "bin" / "python"))
+    assert c["ok"] is True and ok and "the run used it" in c["detail"]
+    c, ok = py_check(str(env / "python.exe"), str(v2 / "Scripts" / "python.exe"))              # a venv made on the requested conda env
+    assert c["ok"] is True and ok and "through a venv made on it" in c["detail"]
+    c, ok = py_check(str(conda / "bin" / "python"), str(venv / "bin" / "python"))              # a venv on another base: not honoured
+    assert c["ok"] is False and not ok and "instead" in c["detail"] and "uv-managed" in c["detail"]
+
+
 def test_runtime_rule_yields_to_the_tool_that_names_the_library(prov, tmp_path):
     # the build linked lib-openmp's libomp.so, the process loaded the system's libomp.so.5 (another soname): not
     # the compiler's runtime - the tool's library came from elsewhere, which the origin check reports

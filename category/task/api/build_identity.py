@@ -25,10 +25,53 @@ that every program had before this scheme, and adopts such an entry when it exis
 so the builds made before stay where they are.
 """
 
+import copy
 import hashlib
 import json
+import os
 
 TAGS = ['task', 'c36be4b9314a45e0', 'compile-and-run-program', '05437a1aae224270']
+CACHED_RESULT = 'cmeta-task-cached-result.json'
+
+
+###################################################################################################
+def complete_restored_tools(global_ctx, cached_result = CACHED_RESULT):
+    """
+    A reused build replays its compile-time context into `global`: every tool with the features of
+    the day it was built. A tool entry re-detected since ("cx tool setup <tool> --update": a model
+    added to lib-litert-android, a flag the tool's desc gained) may hold feature keys the snapshot
+    lacks; they are completed here from the entry's current cached result. A key the snapshot has
+    keeps its value - the record of what the build used - and nothing is written. Returns
+    {tool key: [feature keys added]}; {} when every restored tool was already complete.
+    """
+    added = {}
+    for key, tool in list((global_ctx or {}).items()):
+        if not isinstance(tool, dict):
+            continue
+        entry = tool.get('path_cmeta_cache')
+        if not entry or not isinstance(entry, str):
+            continue
+        path = os.path.join(entry, cached_result)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding = 'utf-8') as f:
+                current = json.load(f)
+        except (OSError, ValueError):
+            continue
+        current_features = current.get('features') if isinstance(current, dict) else None
+        if not isinstance(current_features, dict):
+            continue
+        features = tool.get('features')
+        if not isinstance(features, dict):
+            features = {}
+            tool['features'] = features
+        new = [k for k in current_features if k not in features]
+        for k in new:
+            features[k] = copy.deepcopy(current_features[k])
+        if new:
+            added[key] = new
+    return added
 PLAIN = {'compute': ['cpu']}
 
 # Control switches a --use entry may carry that are not part of a request's identity

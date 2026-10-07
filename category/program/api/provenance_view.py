@@ -149,6 +149,12 @@ def _version_of(entry):
     return str(v) if v not in (None, '') else ''
 
 
+def _norm_dist(name):
+    """A distribution name as pip compares them: lower case, runs of -_. as one dash."""
+    import re
+    return re.sub(r'[-_.]+', '-', str(name or '').strip().lower())
+
+
 def _basename(path):
     return os.path.basename(str(path).rstrip('/\\')) if path else ''
 
@@ -203,9 +209,18 @@ def tool_rows(record):
         if not path and isinstance(entry, dict):
             path = entry.get('entry')
 
-        # the libraries loaded from the tool's entry; a compiler's own runtime (libgomp, vcomp140) is marked
-        libs = [_basename(l.get('path') or l.get('name')) + (' (runtime)' if l.get('role') == 'runtime' else '')
-                for l in loaded if isinstance(l, dict) and l.get('tool') == key]
+        # the libraries loaded from the tool's entry; a compiler's own runtime (libgomp, vcomp140) and the
+        # driver's libraries are marked, a wheel's library names its distribution when it is not the tool's own
+        libs = []
+        for l in loaded:
+            if not isinstance(l, dict) or l.get('tool') != key:
+                continue
+            text = _basename(l.get('path') or l.get('name'))
+            if l.get('role') in ('runtime', 'driver'):
+                text += f' ({l["role"]})'
+            elif l.get('dist') and _norm_dist(l['dist']) != _norm_dist(key[4:] if key.startswith('pip-') else key):
+                text += f' ({l["dist"]})'
+            libs.append(text)
 
         own_checks = []
         for c in checks:

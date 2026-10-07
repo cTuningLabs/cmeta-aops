@@ -33,15 +33,56 @@ def cache_entry_of(path):
         p = parent
 
 
+def is_venv_python(path):
+    """Whether the interpreter at path belongs to a virtual environment (pyvenv.cfg next to its folder)."""
+    folder = os.path.dirname(os.path.abspath(path))
+    return any(os.path.isfile(os.path.join(f, 'pyvenv.cfg')) for f in (folder, os.path.dirname(folder)))
+
+
+def venv_home(path):
+    """The folder of the base interpreter a venv was made on (the "home" line of its pyvenv.cfg), or None."""
+    folder = os.path.dirname(os.path.abspath(path))
+    for f in (folder, os.path.dirname(folder)):
+        cfg = os.path.join(f, 'pyvenv.cfg')
+        if not os.path.isfile(cfg):
+            continue
+        try:
+            with open(cfg, encoding = 'utf-8', errors = 'replace') as fh:
+                for line in fh:
+                    key, _, value = line.partition('=')
+                    if key.strip().lower() == 'home':
+                        return value.strip() or None
+        except OSError:
+            return None
+        return None
+    return None
+
+
+def truthy(value):
+    """A CLI boolean (True, 'true', 'yes', '1', 'on'): the engine hands strings over."""
+    return value is True or str(value).strip().lower() in ('true', 'yes', '1', 'on')
+
+
+def conda_env_python_dir(prefix):
+    """Where the python of a conda environment lives: bin/ on POSIX, the environment's root on Windows."""
+    return prefix if os.name == 'nt' else os.path.join(prefix, 'bin')
+
+
 def shareable(artifact):
     """
     Whether a python request without a venv of its own may reuse this cache entry: yes for a python
     detected on the system (no venv path recorded: the system python, an activated venv, the venv cMeta
     runs from), a venv made in the entry itself (a plain request, or one with a version) and a venv at
     a place the user chose (--path, --use.venv.path, venv_here); no for a venv inside another cache
-    entry, which belongs to the program or tool that made it there with its venv_path.
+    entry, which belongs to the program or tool that made it there with its venv_path, no for a venv
+    made on an interpreter the user named (python_base: a conda or system python), which is the python
+    of such requests only, and no for a conda environment cMeta made (conda_env), the python of the
+    requests that asked for one (with.conda).
     """
-    venv_path = artifact.get('cmeta', {}).get('params', {}).get('venv_path')
+    recorded = artifact.get('cmeta', {}).get('params', {})
+    if recorded.get('python_base') or recorded.get('conda_env'):
+        return False
+    venv_path = recorded.get('venv_path')
     if not venv_path:
         return True
     entry = cache_entry_of(venv_path)
@@ -93,6 +134,23 @@ class CTool(InitCTool):
         if 'pip' not in _with:
             _with['pip'] = True
 
+        # --use.python.with.conda: a conda environment made by cMeta (task venv --conda) is the python of this
+        # request - never a detected python, never a venv; the conda that makes it comes from tool/conda
+        _conda = False
+        if 'conda' in _with:
+            if truthy(_with['conda']):
+                _with['conda'] = True
+                _conda = True
+            else:
+                _with.pop('conda')
+        for key in ('conda_packages', 'channel'):
+            if key in _with and not _with[key]:
+                _with.pop(key)
+        if _conda and (params.get('tool_path') or params.get('here') or _with.get('here')):
+            return self.cm.error('python: with.conda (a conda environment made by cMeta) and a named interpreter '
+                                 '(tool_path, here) cannot both be given - the conda to use is chosen with '
+                                 '--use.conda.tool_path=<conda>', 1)
+
         _here = params.get('here')
         if not _here:
             _here = _with.get('here')
@@ -116,8 +174,12 @@ class CTool(InitCTool):
 
             # Detect only the venv in venv_path: a venv found elsewhere (on PATH, activated, or the one
             # cMeta runs from) is not the venv of this request, and was recorded under its venv_path
+            # (a conda request: the conda environment there, .conda-env)
             if not _here and not params.get('tool_path') and not params.get('paths'):
-                params['paths'] = [os.path.join(_venv_path, '.venv', 'Scripts' if os.name == 'nt' else 'bin')]
+                if _conda:
+                    params['paths'] = [conda_env_python_dir(os.path.join(_venv_path, '.conda-env'))]
+                else:
+                    params['paths'] = [os.path.join(_venv_path, '.venv', 'Scripts' if os.name == 'nt' else 'bin')]
 
         if _venv_path or _venv_here:
             ctx_tasks = ctx.setdefault('tasks', {})
@@ -154,6 +216,36 @@ class CTool(InitCTool):
             else:
                 return self.cm.error(f'python not found in "{cur_dir}"')
 
+        # A requested interpreter that is no venv (a conda env's python, a system python, --here) while a
+        # venv is wanted: the venv is made ON it (python_base -> task venv --python), in an entry of its own
+        # (python_base is a cache param and makes the entry unshareable), never replaced by a uv-managed python.
+        # With a venv path of the request as well (a program's venv in its build folder), the venv there is
+        # made on it too - until 2026-10-07 such a request kept the venv path and dropped the interpreter.
+        tool_path = params.get('tool_path')
+        if tool_path and _with.get('venv') and not params.get('python_base') \
+                and tool_path != '{{sys.executable}}' and os.path.isfile(tool_path) and not is_venv_python(tool_path):
+            if params.get('version'):
+                return self.cm.error(f'python: a requested interpreter ({tool_path}) and a version ({params["version"]}) '
+                                     'cannot both be given - the interpreter decides the version', 1)
+            params['python_base'] = os.path.normpath(os.path.abspath(tool_path))
+            # The request is matched on python_base, not on the path: the entry records the venv's python as
+            # its tool_path (the setup task rewrites it to what was selected), so a second request with the
+            # same interpreter would never match and would make one venv per run. Detection is kept to the
+            # venv of the request's venv path when there is one (a venv already made there, checked against
+            # the base in check_features), else to the interpreter's own folder, where the base is found and
+            # left aside (no venv): then the cache, then the venv task.
+            params.pop('tool_path')
+            if not params.get('paths'):
+                if _venv_path:
+                    params['paths'] = [os.path.join(_venv_path, '.venv', 'Scripts' if os.name == 'nt' else 'bin')]
+                else:
+                    params['paths'] = [os.path.dirname(params['python_base'])]
+
+        # A conda request detects only the environment at the request's venv path, when there is one (set
+        # above); else nothing at all - the matching cache entry, or the venv task, is the answer
+        if _conda and not params.get('paths'):
+            params['skip_detect'] = True
+
         return result
 
     ############################################################
@@ -171,10 +263,27 @@ class CTool(InitCTool):
         venvs at places the user chose; not the venv of a program or of another tool inside its cache
         entry (made with venv_path). Such a venv matched before (its parameters contain the request's),
         and in quiet mode the highest version won, often such a venv, so its packages got mixed with
-        others. Requests that name a venv, a python or a path match as before.
+        others. Requests that name a venv, a python or a path match as before; a request for a venv on
+        a named interpreter (python_base, from tool_path) takes only the entries made on that interpreter.
         """
         if params.get('venv_path') or params.get('tool_path') or path:
             return {'return':0}
+
+        if truthy((params.get('with') or {}).get('conda')):
+            def conda_made(a):
+                return bool(a.get('cmeta', {}).get('params', {}).get('conda_env'))
+            return {'return':0,
+                    'artifacts': [a for a in artifacts if conda_made(a)],
+                    'tmp_artifacts': [a for a in tmp_artifacts if conda_made(a)]}
+
+        base = params.get('python_base')
+        if base:
+            def on_base(a):
+                recorded = a.get('cmeta', {}).get('params', {}).get('python_base')
+                return bool(recorded) and same_path(recorded, base)
+            return {'return':0,
+                    'artifacts': [a for a in artifacts if on_base(a)],
+                    'tmp_artifacts': [a for a in tmp_artifacts if on_base(a)]}
 
         return {'return':0,
                 'artifacts': [a for a in artifacts if shareable(a)],
@@ -285,7 +394,31 @@ class CTool(InitCTool):
             if venv:
                 to_add = False
 
-                if is_virtual:
+                # The interpreter a venv is to be made on (python_base) is never the venv itself, even where
+                # detect-python-env calls it virtual: a conda base (its root has condabin/) on Linux and macOS
+                # was accepted as the venv before (2026-10-07), so no venv was made and pip installed into the
+                # user's conda base - while on Windows the same request got its venv
+                # (a venv's python on Linux and macOS is a symlink to its base: resolved paths would call the
+                # venv just made on the base "the base" and refuse it - a venv python is never the base)
+                on_base = bool(params.get('python_base')) and not is_venv_python(python_path) \
+                    and same_path(python_path, params['python_base'])
+                if on_base and ctx['control'].get('con', False):
+                    print ('')
+                    print (f'INFO: the requested python {python_path} is not a venv: a venv is made on it '
+                           f'(--use.python.with.venv- runs it directly)')
+
+                # A venv found for a request on a named interpreter must have been made on that interpreter
+                # (the "home" of its pyvenv.cfg): a venv at the request's venv path made earlier on another
+                # python is left aside, and the venv task makes the right one
+                other_base = False
+                if is_virtual and not on_base and params.get('python_base'):
+                    home = venv_home(python_path)
+                    other_base = bool(home) and not same_path(home, os.path.dirname(params['python_base']))
+                    if other_base and ctx['control'].get('con', False) and verbose:
+                        print (f'INFO: the venv of {python_path} was made on {home}, not on the requested '
+                               f'{params["python_base"]}: not taken')
+
+                if is_virtual and not on_base and not other_base:
                     to_add = True
 
                     features['venv'] = True
@@ -323,6 +456,16 @@ class CTool(InitCTool):
 
                         if rx['returncode'] == 0:
                             features['venv_extra_env'] = rx['env_added']
+
+                    elif r.get('kind') in ('conda-env', 'conda-base'):
+                        # No activation script is run for a conda environment: what "conda activate" would add is
+                        # its folders first on the PATH and CONDA_PREFIX (aggregated with --with.activate)
+                        root = r.get('env_path') or os.path.dirname(python_path)
+                        bins = [os.path.join(root, 'Scripts'), os.path.join(root, 'Library', 'bin'), root] if os.name == 'nt' \
+                            else [os.path.join(root, 'bin')]
+                        features['venv_extra_env'] = {'PATH': os.pathsep.join(bins), 'CONDA_PREFIX': root}
+                        if r.get('kind') == 'conda-env':
+                            features['conda_env'] = root
 
             else:
                 features['venv'] = venv
@@ -410,6 +553,11 @@ class CTool(InitCTool):
         # venv_path specify root venv that we force append '.venv' to.
         # that's why we need to go 1 level above here
         _update_params = {'venv_path': os.path.dirname(_global['venv']['path_to_venv'])}
+        if _global['venv'].get('python_base'):
+            _update_params['python_base'] = _global['venv']['python_base']
+        if _global['venv'].get('env_kind') == 'conda':
+            # a conda environment (task venv --conda): the entry says so, and is never shared with a venv request
+            _update_params['conda_env'] = _global['venv']['path_to_venv']
 
         return {
           'return': 0, 
@@ -438,6 +586,13 @@ class CTool(InitCTool):
 
         result['path_home'] = path_home
         result['qpath_home'] = qpath_home
+
+        # The conda environment this python belongs to (a conda request, or a detected one): the conda tools
+        # install into it with "conda install -p {{global.python.qconda_env}}"
+        conda_env = params.get('conda_env') or (result.get('features') or {}).get('conda_env')
+        if conda_env:
+            result['conda_env'] = conda_env
+            result['qconda_env'] = self.cm.q(conda_env)
 
         return _result
 

@@ -37,6 +37,38 @@ def result(reply = "Heron.", provider = "claude-cli", binding = "c1a0de00-0000-4
             "[agent/cli-backend] claude live session close: reason=restart\n" + json.dumps(data, indent=2) + "\n")
 
 
+def test_sub_agents_come_from_cmeta_tools_and_go_first_on_the_path(openclaw, monkeypatch):
+    """claude and codex are detected as cMeta tools and their folders lead the PATH of openclaw; gemini is not on this machine."""
+    task = task_of(openclaw)
+    ctx = {"tasks": {"global": {}}, "control": {}}
+    calls = []
+
+    class CM:
+        def access(self, d):
+            calls.append(d)
+            alias = d["name"].split(",")[0]
+            if alias == "gemini":
+                return {"return": 16, "error": "gemini: not found"}
+            ctx["tasks"]["global"][alias] = {"path": f"/tools/{alias}/bin/{alias}", "path_bin": f"/tools/{alias}/bin", "version": "1.0"}
+            return {"return": 0}
+
+    task.cm = CM()
+    r = task.agents_on_path(ctx, "claude,codex,gemini", con = False)
+    assert r["found"] == {"claude": "/tools/claude/bin/claude", "codex": "/tools/codex/bin/codex"} and r["missing"] == ["gemini"]
+    assert r["bins"] == ["/tools/claude/bin", "/tools/codex/bin"]
+    # detected only, never installed from here; the known agents are named with their UIDs
+    assert all(c["skip_install"] is True and c["arg1"].startswith("setup,") for c in calls)
+    assert calls[0]["name"] == "claude," + openclaw["SUB_AGENTS"]["claude"]
+    # the child's PATH: openclaw's own folder, the agents, then the shell's
+    import os
+    env = openclaw["_child_env"](["/tools/openclaw/bin"] + r["bins"], base = {"PATH": "/usr/bin", "HOME": "/h"})
+    assert env["PATH"] == os.pathsep.join(["/tools/openclaw/bin", "/tools/claude/bin", "/tools/codex/bin", "/usr/bin"]) and env["HOME"] == "/h"
+    assert openclaw["_child_env"]([], base = {"PATH": "/usr/bin"})["PATH"] == "/usr/bin"
+    # nothing asked: nothing set up
+    calls.clear()
+    assert task.agents_on_path(ctx, "", con = False) == {"return": 0, "bins": [], "found": {}, "missing": []} and calls == []
+
+
 def test_the_reply_is_the_payload_text_not_the_whole_json(openclaw):
     reply, tokens = task_of(openclaw)._from_json(result(reply = "Heron, KESTREL.", provider = "openai", binding = ""))
     assert reply == "Heron, KESTREL."
