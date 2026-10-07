@@ -33,6 +33,12 @@ ARCH = {'linux': {'amd64': 'x86_64', 'arm64': 'aarch64'},
         'windows': {'amd64': 'x86_64'}}
 INSTALL_DIR = 'miniforge3'
 
+# The Windows installer (NSIS, conda's constructor) refuses a destination folder holding one of these
+# characters ("'Destination Folder' contains the following invalid character: !", seen 2026-10-07 with a
+# cMeta home under D:\!FGG_Repos): such an installation goes outside the cache entry, under %LOCALAPPDATA%
+NSIS_REFUSED = '!%^&;=,'
+OUTSIDE_DIR = ('cmeta', 'tools', 'conda')
+
 
 class CTool(InitCTool):
     """
@@ -87,6 +93,16 @@ class CTool(InitCTool):
         installer = r['path']
 
         prefix = os.path.join(os.getcwd(), directory, INSTALL_DIR)
+        if windows and any(c in prefix for c in NSIS_REFUSED):
+            base = os.environ.get('LOCALAPPDATA') or os.path.expanduser('~')
+            outside = os.path.join(base, *OUTSIDE_DIR, f'{INSTALL_DIR}-{tag}')
+            if any(c in outside for c in NSIS_REFUSED):
+                return self.cm.error(f'the Miniforge installer refuses a destination with one of "{NSIS_REFUSED}" and both '
+                                     f'{prefix} and {outside} hold one: install Miniforge by hand and run "cx tool setup conda" again')
+            if con:
+                print(f'{space}INFO: the Miniforge installer refuses a destination with one of "{NSIS_REFUSED}" ({prefix}): '
+                      f'installing into {outside} instead (it stays when the cache entry is removed)')
+            prefix = outside
         if os.path.isdir(prefix):
             shutil.rmtree(prefix, ignore_errors = True)     # a half-done earlier attempt
 

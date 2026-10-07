@@ -325,7 +325,7 @@ def under(path, roots):
 
 def _is_library_file(path):
     """Whether a path names a library file: libomp.so, libomp.so.5, libomp.dylib, omp.dll, libomp.a, omp.lib."""
-    base = os.path.basename(str(path or '')).lower()
+    base = str(path or '').replace('\\', '/').rsplit('/', 1)[-1].lower()     # a record of either OS, read on either
     return bool(re.search(r'[^./].*\.(so(\.\d+)*|dylib|dll|a|lib)$', base))
 
 
@@ -571,7 +571,7 @@ def attribute(path, global_ctx):
 def nvidia_driver_library(path):
     """Whether a library is the NVIDIA driver's own: libcuda.so / nvcuda.dll, or libnvidia-* (the driver's helpers)."""
     key = library_key(path)
-    base = os.path.basename(str(path or '')).lower()
+    base = str(path or '').replace('\\', '/').rsplit('/', 1)[-1].lower()     # a record of either OS, read on either
     return key in NVIDIA_DRIVER or base.startswith('libnvidia-')
 
 

@@ -9,7 +9,9 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 # into the cache entry - the installer for this OS and CPU (Linux x86_64 / aarch64, macOS x86_64 / arm64,
 # Windows x86_64) downloaded, its SHA-256 checked against the per-asset file upstream publishes, run
 # silently into content/miniforge3: user-level, no administrator rights, nothing registered, nothing on the
-# PATH (install ladder tier 1). The version is conda's own (26.7.2 = Miniforge 26.7.2-0).
+# PATH (install ladder tier 1). The version is conda's own (26.7.2 = Miniforge 26.7.2-0). On Windows the installer
+# refuses a destination holding one of ! % ^ & ; = , - a cMeta home such as D:\!FGG_Repos - and the installation
+# then goes to %LOCALAPPDATA%\cmeta\tools\conda\miniforge3-<tag> (it stays when the cache entry is removed).
 #
 #   cx tool setup conda                        # detect, else install the pinned Miniforge
 #   cx tool setup conda --version=26.7.2       # that version (installed when no detected conda has it)

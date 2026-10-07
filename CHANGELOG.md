@@ -16,7 +16,8 @@ All notable changes to cMeta AOps are documented here, newest first.
   per-asset file upstream publishes, and its installer run silently into the cache entry: user-level, no
   administrator rights, nothing registered, nothing on the PATH. The version is conda's own (`--version=26.7.2`
   = Miniforge 26.7.2-0); `--versions` lists the releases. The usual folders of Miniforge, Miniconda and Anaconda
-  are searched first.
+  are searched first. On Windows the installer refuses a destination holding `!`, `%`, `^`, `&`, `;`, `=` or `,`
+  (a cMeta home such as `D:\!FGG_Repos`): the installation then goes to `%LOCALAPPDATA%\cmeta\tools\conda`.
 - **A conda environment as the Python of a request: `--use.python.with.conda`.** The `venv` task has `--conda`: a
   conda environment in `.conda-env` of the python entry (or of the request's venv path) instead of a uv venv, made
   by the conda cMeta set up (`tool/conda`) with `conda create -y -p ... python[=<version>] pip`
