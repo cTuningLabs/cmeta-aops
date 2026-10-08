@@ -1,0 +1,52 @@
+authors: Grigori Fursin
+###################################################################################################
+# The AMD Ryzen AI NPU (XDNA), found without any SDK: on Linux the accel device of the kernel's amdxdna
+# driver (/sys/class/accel, with its firmware version and board name), on Windows the "ComputeAccelerator"
+# device of AMD. The NPU is matched by its PCI ID (VEN_1022: 1502 = XDNA1 Phoenix / Hawk Point, 17F0 rev
+# 10/11/20 = XDNA2 Strix Point / Strix Halo / Krackan Point, 17F2 17F3 1B0B 1B0C = the data-centre ones).
+#
+# Its stack on Linux is FastFlowLM (tool/flm, which bundles AMD's XRT runtime): --compute=npu-amd. On
+# Linux the user must be able to open /dev/accel/accel* and lock memory for the runtime: setup-amd-gpu
+# does that first (groups and an ACL now, the memory-lock limit).
+###################################################################################################
+store_global: True
+storage_key: target--npu-amd
+cache: True
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: setup-amd-gpu,f8c2f7fc258d455b
+    if_os: linux
+
+  - task: generate-temp-file,2e96e68cd41046d1
+    storage_key: generate-temp-file-target-npu-amd
+
+  - task: cmd,c9ba0a88df394d7f
+    if_os: windows
+    cmd: >-
+      powershell -NoProfile -Command "[Console]::OutputEncoding = [Text.Encoding]::UTF8;
+      Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPClass -eq 'ComputeAccelerator' } |
+      ForEach-Object { 'Name: ' + $_.Name; 'DeviceID: ' + $_.DeviceID; 'Status: ' + $_.Status;
+      'DriverVersion: ' + (Get-PnpDeviceProperty -InstanceId $_.DeviceID -KeyName DEVPKEY_Device_DriverVersion).Data; '' }"
+      > {{local.generate-temp-file-target-npu-amd.temp_file}}
+    local:
+      encoding: 'utf-8-sig'
+
+  # accel0 amdxdna 0x1022 0x17f0 0x20 1.1.2.64 RyzenAI-npu6
+  - task: cmd,c9ba0a88df394d7f
+    if_os: linux
+    cmd: >-
+      for d in /sys/class/accel/accel*; do [ -e "$d/device" ] &&
+      echo "$(basename $d) $(basename "$(readlink -f $d/device/driver)") $(cat $d/device/vendor) $(cat $d/device/device)
+      $(cat $d/device/revision 2>/dev/null) $(cat $d/device/fw_version 2>/dev/null || echo -) $(cat $d/device/vbnv 2>/dev/null || echo -)";
+      done > {{local.generate-temp-file-target-npu-amd.temp_file}} 2>/dev/null || true
+
+  - task: force-fail,fbc834fe54894aec
+    if_os: darwin
+    text: 'the AMD NPU needs Windows or Linux (macOS has the Apple Neural Engine)'
+
+env_if_not_used:
+  CMETA_TARGET_NPU_AMD: 0
+env:
+  CMETA_TARGET_NPU_AMD: 1

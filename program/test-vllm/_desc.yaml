@@ -49,9 +49,20 @@ updates:
            - task: setup,a2f9b61079ce4333
              name: python,c00fb574d8ca4463
              if_os: linux,windows
+             if: '"rocm" not in {{global.target.compute|$[]}}'
              version: '{{params.python_version|>=3.10,<3.15}}'
              # Its own venv per set of targets: another program's packages, or the CPU and the
              # CUDA builds of torch, must not mix in
+             with:
+               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+           # vLLM's ROCm wheels (wheels.vllm.ai/rocm) are built for Python 3.12 only: with the generic
+           # range the venv got 3.14 and pip fell back to a CUDA torch from PyPI (seen on an MI300X,
+           # 2026-10-08: "Device string must not be empty")
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+             if_os: linux
+             if: '"rocm" in {{global.target.compute|$[]}}'
+             version: '{{params.python_version|3.12}}'
              with:
                venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
            - task: setup,a2f9b61079ce4333
@@ -65,6 +76,12 @@ updates:
              name: lib-numa,d81f892278524cfa
              if_os: linux
              if: '"cpu" in {{global.target.compute|$[]}} and "cuda" not in {{global.target.compute|$[]}}'
+           # vLLM's ROCm wheels link against Open MPI (libmpi_cxx.so.40: "cannot open shared object file"
+           # on a fresh MI300X image without it, 2026-10-08)
+           - task: setup,a2f9b61079ce4333
+             name: mpi,a1b4f3c058b84b6b
+             if_os: linux
+             if: '"rocm" in {{global.target.compute|$[]}}'
 
            - task: setup,a2f9b61079ce4333
              name: pip

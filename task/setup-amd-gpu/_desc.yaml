@@ -1,0 +1,32 @@
+authors: Grigori Fursin
+
+# setup-amd-gpu - a Linux machine made ready to compute on its AMD GPU and NPU. The kernel drivers (amdgpu,
+# amdxdna) give the devices their nodes, but a fresh account cannot open them: /dev/dri/renderD*, /dev/kfd
+# (ROCm) and /dev/accel/accel* (the NPU) belong to the group "render", and the NPU runtime locks more memory
+# than the default limit allows. A desktop login gets the nodes through an ACL of its seat; a login over ssh,
+# a service or a container does not. This task
+#
+#   - adds the user to the groups that own the nodes, and to "video" (as AMD's ROCm guide asks): lasting, from
+#     the next login;
+#   - gives the user the nodes at once with an ACL (setfacl), so the run that called it goes on;
+#   - for an AMD NPU, lifts the memory-lock limit: a file in /etc/security/limits.d (lasting) and the limit of
+#     the running cx process (at once).
+#
+#   cx task run setup-amd-gpu                # do what is missing
+#   cx task run setup-amd-gpu --check        # only report
+#   cx task run setup-amd-gpu --dry_run      # the commands, nothing runs
+#   cx task run setup-amd-gpu --npu-         # leave the NPU alone
+#
+# Root: the steps run with "sudo -n" (never a hidden prompt) unless the run is interactive (a terminal, not
+# -q), where sudo may ask once; without passwordless sudo a non-interactive run prints the commands to run.
+# The rocm target runs it first (without the NPU part), so "cx program run <program> --compute=rocm" on a
+# fresh machine sets this up by itself. On Windows and macOS there is nothing to do.
+#
+# Never memoized (cache: False): every run looks at the machine as it is.
+
+cache: False
+store_global: True
+storage_key: setup-amd-gpu
+
+uses:
+  - task: runner,1e48cc0c5f6041a5

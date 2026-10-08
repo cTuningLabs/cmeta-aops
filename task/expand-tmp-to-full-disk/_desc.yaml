@@ -1,0 +1,31 @@
+authors: Grigori Fursin
+
+# expand-tmp-to-full-disk - /tmp on the disk of the root filesystem instead of a RAM-backed tmpfs. Ubuntu
+# 26.04 (like Fedora and Arch before it) mounts /tmp as a tmpfs of half the RAM with a per-user quota
+# (systemd's tmp.mount): a 6 GB wheel that pip unpacks there, or a build that extracts an archive there,
+# stops with "No space left on device" or "Disk quota exceeded" on a machine with hundreds of GB free.
+# This task
+#
+#   - masks systemd's tmp.mount, or comments the tmpfs line of /etc/fstab (lasting: /tmp is a folder of
+#     the root filesystem from the next boot on, 1777 as before);
+#   - unmounts the tmpfs now (lazily when a process still holds a file there), so that the run that
+#     called it goes on with the whole disk.
+#
+#   cx task run expand-tmp-to-full-disk                # do what is missing
+#   cx task run expand-tmp-to-full-disk --check        # only report
+#   cx task run expand-tmp-to-full-disk --dry_run      # the commands, nothing runs
+#
+# A /tmp on its own disk partition is left alone (it is a disk). On macOS /tmp is on the root volume:
+# the task reports and does nothing. On Windows it stops with an error (TEMP is a folder on a disk).
+#
+# Root: "sudo -n" (never a hidden prompt) unless the run is interactive (a terminal, not -q), where sudo may
+# ask once; without passwordless sudo a non-interactive run prints the commands to run.
+#
+# Never memoized (cache: False): every run looks at the machine as it is.
+
+cache: False
+store_global: True
+storage_key: expand-tmp-to-full-disk
+
+uses:
+  - task: runner,1e48cc0c5f6041a5

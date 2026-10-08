@@ -1,0 +1,30 @@
+artifact: 1e7e84a019b54a01
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+constraints:
+  supports_compute:
+    - cpu
+  supports_os:
+    - linux
+creation_timestamp: '2026-10-08T08:31:08.859111+00:00'
+desc: AMD Optimizing C/C++ Compiler (AOCC) - AMD's clang for its Zen CPUs, installed without root from AMD's archive once the
+  user accepts its EULA; the C compiler of the pair (aocc-cpp is C++).
+generator:
+  method: agent
+  agent: Claude Code 2.1.293
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  model: claude-fable-5-1
+note: added on 2026-10-08 at the user's question whether AOCC is still developed (5.2.0 of 2026-05, LLVM 17 based, Zen 5) and can be a cMeta compiler
+tags:
+  - lang-c
+  - aocc
+  - amd
+  - compiler
+last_update_timestamp: '2026-10-08T08:35:43.649483+00:00'
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.294
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  date: '2026-10-08'

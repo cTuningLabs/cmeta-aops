@@ -9,6 +9,26 @@ match_version:
 
 cmd_get_version: '{{tool_path}} --version'
 
+# On Linux the distribution's own Docker (docker.io on Debian and Ubuntu, docker on Fedora: the engine and
+# the CLI, enabled as a service by the package); the user still needs the "docker" group for the socket
+# (sudo usermod -aG docker <user>, then a new login). Elsewhere Docker Desktop is the user's install.
+package_name: 'docker.io'
+package_name_os_id:
+  fedora: docker
+  rhel: docker
+  arch: docker
+  opensuse: docker
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+
+requires_sudo:
+  linux: True
+
+install_help_text: |
+  Docker was not found. Linux: "cx tool setup docker --install" takes the distribution's package (docker.io
+  on Ubuntu and Debian); Windows and macOS: Docker Desktop (https://www.docker.com/products/docker-desktop/).
+
 extra_paths:
   windows:
     - "C:\\Program Files\\Docker\\Docker\\**"

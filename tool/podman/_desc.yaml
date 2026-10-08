@@ -9,6 +9,21 @@ match_version:
 
 cmd_get_version: '{{tool_path}} --version'
 
+# On Linux the distribution's own Podman (rootless, no service); on macOS Homebrew's; on Windows winget's
+package_name: 'podman'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+  darwin: '{{global.brew.qpath}} install podman'
+  windows: "{{global.winget.qpath}} install --id=RedHat.Podman -e --no-upgrade --source winget {{global.init.winget_install_flags|}}"
+
+requires_sudo:
+  linux: True
+
+install_help_text: |
+  Podman was not found: "cx tool setup podman --install" (the distribution's package on Linux, Homebrew on
+  macOS, winget on Windows), or https://podman.io/docs/installation.
+
 extra_paths:
   windows:
     - "C:\\Program Files\\RedHat\\Podman\\**"

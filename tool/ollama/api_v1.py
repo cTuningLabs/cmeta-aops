@@ -118,30 +118,23 @@ class CTool(InitCTool):
             version = self.cdesc['default_version']
 
         variant = params.get('with', {}).get('variant')
-        asset = release_asset(uname, uarch, variant)
+        # On Linux the ROCm runtime of Ollama is a second archive (ollama-linux-<arch>-rocm.tar.zst, about
+        # 1 GB) unpacked over the plain one (lib/ollama/rocm): without it a rocm run computes on the CPU.
+        # Taken when asked (--with.variant=rocm) or when the program's target is rocm.
+        target_compute = _global.get('target', {}).get('compute') or []
+        if not variant and uname == 'linux' and 'rocm' in target_compute:
+            variant = 'rocm'
+        asset = release_asset(uname, uarch, None if (uname == 'linux' and variant == 'rocm') else variant)
         if not asset:
             return {'return': 16, 'install_cmd': cmd, 'error': f'Ollama publishes no portable build for {uname}/{uarch}'}
+        assets = [asset]
+        if uname == 'linux' and variant == 'rocm':
+            assets.append(release_asset(uname, uarch, 'rocm'))
 
-        url = f'{RELEASES}/v{version}/{asset}'
         content = os.path.join(os.getcwd(), 'content')
         exe = _global['host']['vars']['file_ext_exe']
 
-        if con:
-            print ('')
-            print (f'{space}INFO: Ollama {version}: {url}')
-
-        ii = {'category': 'task,c36be4b9314a45e0', 'command': 'run',
-              'arg1': 'download-file,03fed13e2e0447cf', 'ctx': ctx,
-              'url': url, 'directory': 'content',
-              'env': params.get('env'), 'timeout': params.get('timeout'),
-              'con': con, 'quiet': quiet, 'verbose': verbose}
-
         if asset.endswith('.tar.zst'):
-            # download-file unpacks zip/tar.gz/tar.xz only
-            r = self.cm.access(ii)
-            if r['return'] > 0:
-                return r
-            archive = os.path.join(content, asset)
             zstd = _global.get('zstd', {}).get('path') or shutil.which('zstd')
             python = None
             if not zstd and not can_unpack_zst():
@@ -151,12 +144,37 @@ class CTool(InitCTool):
                                               con, verbose).get('path')
                 if not python:
                     zstd = self._optional_setup(ctx, 'zstd,e70d016f472d462e', {}, con, verbose).get('path')
-            err = extract_tar_zst(archive, content, zstd, python)
-            if err:
-                return {'return': 16, 'install_cmd': cmd, 'error': err}
-            os.remove(archive)
+            for one in assets:
+                url = f'{RELEASES}/v{version}/{one}'
+                if con:
+                    print ('')
+                    print (f'{space}INFO: Ollama {version}: {url}')
+                # download-file unpacks zip/tar.gz/tar.xz only
+                r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run',
+                                    'arg1': 'download-file,03fed13e2e0447cf', 'ctx': ctx,
+                                    'url': url, 'directory': 'content',
+                                    'env': params.get('env'), 'timeout': params.get('timeout'),
+                                    'con': con, 'quiet': quiet, 'verbose': verbose})
+                if r['return'] > 0:
+                    return r
+                archive = os.path.join(content, one)
+                err = extract_tar_zst(archive, content, zstd, python)
+                if err:
+                    return {'return': 16, 'install_cmd': cmd, 'error': err}
+                os.remove(archive)
             path = os.path.join(content, 'bin', 'ollama')
+            if variant == 'rocm' and con:
+                print (f'{space}INFO: Ollama\'s ROCm runtime unpacked next to it (lib/ollama/rocm)')
         else:
+            url = f'{RELEASES}/v{version}/{asset}'
+            if con:
+                print ('')
+                print (f'{space}INFO: Ollama {version}: {url}')
+            ii = {'category': 'task,c36be4b9314a45e0', 'command': 'run',
+                  'arg1': 'download-file,03fed13e2e0447cf', 'ctx': ctx,
+                  'url': url, 'directory': 'content',
+                  'env': params.get('env'), 'timeout': params.get('timeout'),
+                  'con': con, 'quiet': quiet, 'verbose': verbose}
             path = os.path.join(content, 'ollama' + exe)
             ii.update({'unzip': True, 'clean': True, 'clean_after_unzip': True, 'check_file': path,
                        'make_check_file_executable': True})

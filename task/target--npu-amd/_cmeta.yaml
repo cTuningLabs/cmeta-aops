@@ -1,0 +1,26 @@
+artifact: 920b7d2922374ad7
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-10-08T10:25:00.161222+00:00'
+desc: 'Compute target: the AMD Ryzen AI NPU (XDNA) through FastFlowLM; records the NPU, its PCI ID, generation, firmware
+  and device node, without any SDK.'
+generator:
+  method: agent
+  agent: Claude Code 2.1.294
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  model: claude-fable-5-1
+name: AMD NPU
+note: added on 2026-10-08 with the first XDNA2 NPU of the fleet (the Acer A14, Krackan Point)
+sort: 101
+tags:
+  - target
+  - npu
+  - amd
+last_update_timestamp: '2026-10-08T10:28:32.863225+00:00'
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.294
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  date: '2026-10-08'

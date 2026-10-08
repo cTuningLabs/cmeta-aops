@@ -1,0 +1,17 @@
+artifact: 0ad29e6691b94cd2
+category: task,c36be4b9314a45e0
+tags:
+  - select
+  - src
+  - program
+  - version
+authors: Grigori Fursin
+creation_timestamp: '2026-10-08T07:08:11.078170+00:00'
+desc: Select the source folder of a program by the version of a tool set up earlier in the run, so that one
+  program keeps sources for several generations of a language or library.
+generator:
+  method: agent
+  agent: Claude Code 2.1.293
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  model: claude-opus-5-5

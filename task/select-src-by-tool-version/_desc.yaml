@@ -1,0 +1,18 @@
+authors: Grigori Fursin
+###################################################################################################
+# One program, sources for several generations of a language: the step picks the source folder by
+# the version of a tool that an earlier step of the pipeline set up. Put it after that setup and
+# before setup-compile or setup-run (README.md has the layout and the rules):
+#
+#   - task: setup,a2f9b61079ce4333
+#     name: mojo,666e926f670a4dbc
+#   - task: select-src-by-tool-version,0ad29e6691b94cd2
+#     tool: mojo
+#     program_path: '{{local.selected-program.path}}'
+#     src_file_names: '{{local.src_file_names}}'
+#     rules:
+#       - version: '>=1.0.0'
+#         src_dir: src-v2
+###################################################################################################
+store_global: False
+cache: False

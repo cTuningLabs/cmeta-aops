@@ -2,6 +2,119 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.44.0
+- **cMeta inside AMD's containers: the ROCm that lives in a Python is detected.** `tool/rocm` also finds AMD's
+  Python distribution of ROCm through its CLI `rocm-sdk` (the `rocm` pip package: what the `rocm/vllm` and
+  `rocm/pytorch` images hold, or a venv made by hand; there is no rocm-smi there): the folders from
+  `rocm-sdk path`, the version from the amd-smi next to hipcc, the GPUs from amd-smi's JSON turned into
+  rocm-smi's, and one candidate per installation (an install of this tool has both, its rocm-smi answers).
+  With it, cMeta installed in `rocm/vllm:rocm10.1.0_ubuntu24.04_py3.14-pytorch_2.13.0_vllm-0.29.0` (uv is in
+  the image: `uv tool install cmeta`, `cx repo pull ctuninglabs@cmeta-aops`) ran `test-vllm --compute=rocm
+  --use.python.tool_path=/opt/python/bin/python3 --use.python.with.venv- --python_version='>=3.14'
+  --vllm_version=<the image's>` on the image's Python 3.14 and its preinstalled vLLM 0.29.1 on an MI300X: the
+  route for vLLM on a ROCm 10 machine, whose wheels are built for ROCm 7.2 (below). Tests:
+  `tests/cmeta_aops_basic_tests/test_tool_rocm.py`.
+- **`program/test-sglang`: SGLang's offline engine, the way `test-vllm` does vLLM.** One generation with
+  `sglang.Engine` after a short warm-up (the first call compiles the attention kernels), recorded with the
+  versions, the device, the load, warm-up and generation times and the tokens per second; `--model`, `--n`,
+  `--gpu_mem` (`mem_fraction_static`), `--max_len`, `--tp`, `--attention_backend`, `--sglang_version`,
+  `--cuda_graph=0` (graphs stay on by default: SGLang's eager decoding is no usable default on ROCm). CUDA takes
+  `sglang[all]` from PyPI in the program's venv; SGLang publishes no ROCm wheels, so on ROCm the program runs
+  inside SGLang's official image with cMeta installed there and the image's venv as its python
+  (`--use.python.tool_path=/opt/venv/bin/python --sglang_version=<the image's>`; README.md has the steps) -
+  verified on an MI300X in `lmsysorg/sglang:v0.5.21-rocm10-mi30x`.
+- **torchvision paired with torch on AMD's ROCm index, as on PyTorch's.** `tool/pip-torchvision` reads the
+  torch that is installed (`pip show torch`, not the version a previous step recorded), computes the pair by
+  PyTorch's numbering (2.x.y -> 0.(x+15).y) and, for a torch from AMD's index (`2.14.0+rocm10.1.0`), reads that
+  index: the pair when it is there, its pre-release while torchvision's release is pending (`0.29.0a0+rocm10.1.0`
+  next to torch 2.14.0 in October 2026: taken, its operators load), else a clear error naming the
+  `--use.pip-torch.version` that has a pair; torchvision then comes from the same index and channel as torch
+  whatever the auto route would pick. Verified on an MI300X: AMD's index (gfx942 forced onto it) 2.14.0 /
+  0.29.0a0, PyTorch's ROCm index 2.13.0+rocm7.2 / 0.28.0+rocm7.2 - the pairing CUDA has had. Tests:
+  `tests/cmeta_aops_basic_tests/test_pip_torchvision.py`.
+- **`program/test-onnxruntime` records why a provider failed.** ONNX Runtime prints the cause (`EP Error ...
+  Failed to load library ... libmigraphx_c.so.3: cannot open shared object file`) and retries on the CPU, which
+  the program's disabled fallback refuses; the recorded error was that refusal. The program now captures the
+  printed cause and adds what a missing library means. Found on the way: ONNX Runtime's ROCm EP is gone
+  (removed in 1.23; `onnxruntime-rocm` on PyPI stops at 1.22.2) and the MIGraphX EP is the AMD provider -
+  `onnxruntime-migraphx` 1.27.1 installs from PyPI through `tool/pip-onnxruntime` and needs AMD's MIGraphX
+  library, which neither the ROCm 10.1 core apt repository nor AMD's pip distribution carried on 2026-10-08
+  (the `migraphx` package of the ROCm 7.x apt repositories and the `rocm/onnxruntime` images have it): on an
+  MI300X with ROCm 10.1 the provider could not load, and the program now says exactly that.
+- **`task/setup-amd-gpu`: a Linux machine made ready for its AMD GPU and NPU.** A fresh account cannot open the
+  nodes the kernel drivers create (`/dev/dri/renderD*`, `/dev/kfd` for ROCm, `/dev/accel/accel*` for a Ryzen AI
+  NPU: all `root:render`; a desktop login gets them through its seat, a login over ssh does not), and the NPU
+  runtime locks more memory than a login allows. The task adds the user to the groups that own the nodes (and to
+  `video` with a GPU), gives the nodes at once with an ACL so that the calling run goes on, and for an NPU writes a
+  memory-lock limit file and lifts the limit of the running process. Only what is missing runs; `--check` reports,
+  `--dry_run` prints the commands, `--npu-` leaves the NPU alone; `sudo -n` unless the run is interactive, and a
+  clear list of commands when sudo needs a password. The `rocm` target runs it first on Linux, so
+  `cx program run <program> --compute=rocm` on a fresh machine sets the access up by itself. `tool/rocm` now installs
+  its detection tool (`rocm-smi`) from the distribution's archive where it has one (Ubuntu 26.04 and later).
+  Tests: `tests/cmeta_aops_basic_tests/test_setup_amd_gpu.py`.
+- **ROCm as a first-class target, the way CUDA is.** `tool/rocm` now knows the ROCm version itself (amd-smi,
+  the rocm-sdk CLI, `/opt/rocm/.info`), the GPU families from the kernel (`gfx942`, `gfx1152`: `/sys/class/kfd`)
+  and the folders of the installation, and installs ROCm without root from AMD's Python distribution (TheRock):
+  `cx tool setup rocm --install [--version=10.1.0] [--with.channel=stable|nightly|rc|dev] [--with.gfx=gfx942]`
+  puts `rocm[libraries,devel,device-<gfx>]` - libraries, hipcc, headers, the device code of this machine's GPU -
+  into a venv of the cache entry (the nightly and dev channels are the way to the development versions). The
+  distribution's own packages (Ubuntu 26.04: ROCm 7.1) stay the fallback. `tool/hipcc` is the compiler of the
+  `rocm` target (tag `lang-hip`, found next to rocm-smi, in `/opt/rocm*/bin`, `/opt/rocm*/core-*/bin`), and
+  `target--rocm` sets it up as the target's SDK. `program/test-nmm-hipcc-rocm` is the CUDA test program carried
+  over to HIP with hipify-perl, the first program of the target. `--use.target--rocm.gfx_override=<v>` exports
+  `HSA_OVERRIDE_GFX_VERSION` on request (never by itself). PyTorch for ROCm (`tool/pip`): two sources of wheels -
+  PyTorch's own index per ROCm line, and AMD's index with torch built against each ROCm 10 release for each GPU
+  family (`torch[device-gfx1152]`, the way for a GPU that PyTorch's wheels lack kernels for);
+  `--with.rocm_source=auto|pytorch|amd` (auto: AMD's index only for a GPU family PyTorch's wheels do not carry,
+  Krackan Point's gfx1152 for one; an MI300X stays on PyTorch's index), `--with.rocm_channel=<channel>`;
+  torchvision then comes from the same index, paired (above). `program/llama-cpp` and `program/lib-xopenme` accept the `rocm`
+  target (the llama.cpp tool already knew the ROCm release builds).
+- **The AMD Ryzen AI NPU as a target: `target--npu-amd`, `tool/flm`, `program/test-flm`.** The target finds the
+  NPU without an SDK (Linux: the accel device of the kernel's amdxdna driver with its firmware and board name;
+  Windows: AMD's ComputeAccelerator device), names its generation from the PCI ID and revision (1502 = XDNA1
+  Phoenix / Hawk Point; 17F0 rev 10/11/20 = XDNA2 Strix Point / Strix Halo / Krackan Point) and runs
+  `setup-amd-gpu` first on Linux (the device node's group, the memory-lock limit). `tool/flm` is FastFlowLM
+  (MIT), the LLM runtime for the XDNA2 NPU: the portable release from GitHub (it bundles AMD's XRT runtime,
+  no root), checked against its sha256; `flm validate --json` becomes the tool's features. `test-flm` runs one
+  generation on the NPU through FastFlowLM's private server and records its timings, the way `test-ollama`
+  does. Tests: `tests/cmeta_aops_basic_tests/test_target_npu_amd.py`.
+- **Ollama on ROCm computes on the GPU now.** `tool/ollama` unpacks Ollama's ROCm runtime archive
+  (`ollama-linux-<arch>-rocm.tar.zst`, about 1 GB) over the plain one when the target is rocm or
+  `--with.variant=rocm` is asked: without it a `test-ollama --compute=rocm` ran on the CPU (`size_vram_mib: 0`).
+- **Prebuilt LibTorch for ROCm.** `tool/torch-cpp-prebuilt` knows PyTorch's ROCm archive of LibTorch 2.7.1
+  (`rocm6.3`, with the ROCm runtime inside) and picks the newest ROCm build for the `rocm` target, so
+  `test-nmm-torch-cpp --compute=rocm --setup_torch_cpp.build=prebuilt` needs no source build. It downloads,
+  configures and builds; at run time the archive's ROCm 6.3 libraries and a system ROCm of another line meet
+  (seen with ROCm 10.1: `libamdhip64.so.7: undefined symbol hsa_ext_sampler_create_v2`), so it serves a machine
+  whose ROCm is of the archive's line.
+- **`tool/docker` and `tool/podman` install on Linux** (the distribution's packages: `docker.io` / `docker`,
+  `podman`), Podman on macOS (Homebrew) and Windows (winget) too; before, both only detected.
+- **`tool/aocc` and `tool/aocc-cpp`: AMD's optimizing C/C++ compiler as a cMeta compiler.** AOCC (AMD's clang for
+  the Zen CPUs, closed source, behind AMD's EULA) is detected in `/opt/AMD/aocc-compiler-*` or installed without
+  root from AMD's archive once the user accepts the EULA (`cx tool setup aocc --install --with.accept_eula=yes`;
+  the archive's sha256 is checked); `cx program run test-nmm-c-cpu cpu --use.compiler-c.name=aocc
+  --use.aocc.with.accept_eula=yes` compiles with it.
+- **`task/expand-tmp-to-full-disk`: /tmp on the disk, not in RAM.** Ubuntu 26.04 (like Fedora and Arch) mounts
+  `/tmp` as a tmpfs of half the RAM with a per-user quota; a 6 GB wheel that pip unpacks there fails with "Disk
+  quota exceeded". The task masks systemd's `tmp.mount` (or comments the fstab line) and unmounts the tmpfs now,
+  lazily when a process holds a file there, so `/tmp` is the root filesystem's folder from then on; `--check`,
+  `--dry_run`; reports and does nothing on macOS, stops on Windows.
+- **Fixed: `test-vllm --compute=rocm` took Python 3.14.** vLLM's ROCm wheels are built for Python 3.12 only; the
+  generic range gave 3.14 and pip fell back to a CUDA torch from PyPI ("Device string must not be empty"). The
+  program sets up Python 3.12 for the rocm target (`--python_version` still overrides).
+- **Fixed: no program could start with `--compute=rocm`.** No C or C++ compiler tool listed the `rocm` target, so
+  the compiler step of every such program stopped with "couldn't find tool artifact(s) with tags ['lang-c'] and
+  constraints {... 'supports_compute': ['rocm']}". `tool/gcc`, `tool/gcc-cpp`, `tool/clang` and `tool/clang-cpp`
+  now list it.
+- **`task/select-src-by-tool-version`: one program, sources for several versions of a tool.** A step for a
+  program's pipeline that picks the source folder by the version of a tool set up earlier in the run
+  (`rules: [{version: '>=1.0.0', src_dir: src-v2}]`, the first match wins, comparators joined by commas), so a
+  program follows a language that breaks its old sources and still serves the old tool. First user:
+  `program/test-nmm-mojo-cpu`, whose `src/` was written before Mojo 1.0 and no longer compiled with the Mojo that
+  pip installs today (`fn` removed, `var` required for new names, no `len()` of a `String`); `src-v2/` is the same
+  program in the 1.x syntax, taken for Mojo 1.0.0 and later. Tests:
+  `tests/cmeta_aops_basic_tests/test_select_src_by_tool_version.py`.
+
 ## 0.43.4
 - **Hermes Agent as a harness: `tool/hermes`, `task/run-hermes`, `cxt run-ai --harness=hermes`.** Nous Research's
   open-source agent (MIT) joins Claude Code, Codex, OpenCode, OpenClaw, Antigravity CLI and Gemini CLI. The tool

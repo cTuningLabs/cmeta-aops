@@ -2,15 +2,57 @@ authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 storage_key: rocm
 
+# rocm - the ROCm platform, detected through rocm-smi: AMD's own /opt/rocm, a distribution's packages
+# (Ubuntu 26.04 and later carry ROCm 7.1), or the ROCm that api_v1.py installs without root from AMD's
+# Python distribution (TheRock: "rocm[libraries,devel,device-<gfx>]" in a venv of the cache entry, one
+# of the channels stable, nightly, rc, dev - the way to the newest and to the development versions):
+#
+#   cx tool setup rocm                                   # what is there
+#   cx tool setup rocm --install                         # AMD's distribution, stable channel, the GPU found in the kernel
+#   cx tool setup rocm --install --version=10.1.0        # a given version
+#   cx tool setup rocm --install --with.channel=nightly  # the nightlies (dev: the development builds)
+#   cx tool setup rocm --install --with.gfx=gfx942 --new # for another GPU family (a build machine)
+#
+# The features: the versions rocm-smi prints, "rocm_version" (amd-smi, rocm-sdk or /opt/rocm/.info),
+# "gfx" (the GPU families from the kernel: gfx942, gfx1152 ...), "devices", "paths.bin" (hipcc and
+# amd-smi are next to rocm-smi in AMD's layouts; tool/hipcc looks there first).
+
 names:
   - rocm-smi{{global.host.vars.file_ext_exe}}
+  # AMD's Python distribution inside a python (its "rocm" package: the vLLM and PyTorch images of
+  # rocm/*, a venv made by hand) has no rocm-smi: its CLI rocm-sdk is the detection tool there
+  # (api_v1.py reads the folders from "rocm-sdk path" and the GPUs from amd-smi next to hipcc)
+  - rocm-sdk
 
-match_version: 
+match_version:
   - regex: 'ROCM-SMI version:\s*([^\s]+)'
     group: 1
+  # "rocm-sdk version" prints the ROCm version alone
+  - regex: '^\s*([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*)\s*$'
+    group: 1
 
-cmd_get_version: '{{tool_path}} --version'
+# rocm-smi answers --version; rocm-sdk has no --version (exit 2) and answers "version"
+cmd_get_version: '{{tool_path}} --version 2>/dev/null || {{tool_path}} version'
 
-install_help_text:
-  Please install ROCm from https://rocm.docs.amd.com/en/latest !
+install_uses:
+  linux:
+    - task: setup,a2f9b61079ce4333
+      name: uv,92f171fc18714ebd
 
+# The detection tool from the distribution's own archive, where it has one (Ubuntu 26.04 and later carry
+# ROCm: rocm-smi, rocminfo, hipcc, the HIP runtime ...): tried when api_v1.py's install does not apply
+# (no AMD GPU in the kernel, not Linux x86_64). Elsewhere the package is not found and the text below is
+# shown.
+package_name: 'rocm-smi'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+
+requires_sudo:
+  linux: True
+
+install_help_text: |
+  ROCm was not found (rocm-smi). "cx tool setup rocm --install" takes AMD's Python distribution (Linux
+  x86_64, no root); Ubuntu 26.04 and later: "sudo apt install rocm-smi" (or "rocm" for everything);
+  other systems: https://rocm.docs.amd.com/en/latest - then "cx tool setup rocm". The user also needs the
+  groups "render" and "video": "cx task run setup-amd-gpu" does that.

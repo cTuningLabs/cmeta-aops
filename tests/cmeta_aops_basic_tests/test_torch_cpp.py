@@ -130,6 +130,7 @@ def test_runs_on(prebuilt):
     (("linux", "amd64"), ["cuda"], [86, 50], None, None, "cu128"),   # code for every GPU
     (("linux", "amd64"), ["cuda"], [86], None, "cu126", "cu126"),    # asked for
     (("linux", "amd64"), ["cpu"], [], None, "cu118", "cu118"),
+    (("linux", "amd64"), ["rocm"], [], None, None, "rocm6.3"),         # the ROCm build, newest line
 ])
 def test_choose_variant(prebuilt, system, compute, gpus, driver, variant, expected):
     build, error = prebuilt["choose_variant"]("2.7.1", system, compute, gpus = gpus, driver_cuda = driver, variant = variant)
@@ -143,7 +144,7 @@ def test_choose_variant(prebuilt, system, compute, gpus, driver, variant, expect
     ("2.7.1", ("darwin", "arm64"), ["cuda"], [], None, None, "no CUDA build"),
     ("2.7.1", ("darwin", "arm64"), ["cpu"], [], None, "cu128", 'build "cu128"'),
     ("2.7.1", ("linux", "arm64"), ["cpu"], [], None, None, "for linux arm64"),
-    ("2.7.1", ("linux", "amd64"), ["rocm"], [], None, None, "rocm"),
+    ("2.7.1", ("windows", "amd64"), ["rocm"], [], None, None, "no ROCm build"),
     ("9.9.9", ("linux", "amd64"), ["cpu"], [], None, None, "known"),
 ])
 def test_choose_variant_errors(prebuilt, version, system, compute, gpus, driver, variant, message):

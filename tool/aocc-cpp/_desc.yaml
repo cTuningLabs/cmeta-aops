@@ -1,0 +1,70 @@
+authors: Grigori Fursin
+storage_key: aocc-cpp
+
+# The C++ compiler of AOCC (clang++ next to tool/aocc's clang): the AOCC is set up first, with the same
+# version and EULA parameters (--use.aocc.version=5.2.0 --use.aocc.with.accept_eula=yes).
+
+cache_params_use:
+  all:
+    aocc:
+      version: "{{global.aocc.version}}"
+      path: "{{global.aocc.path}}"
+
+only_paths:
+  all:
+    - "{{global.aocc.features.paths.bin}}"
+
+names:
+  - clang++
+
+match_version:
+  - regex: "AOCC_([0-9]+(?:\\.[0-9]+)+)"
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: aocc,1e7e84a019b54a01
+    version: "{{params.version|$None}}"
+
+install_help_text: |
+  AOCC was not found: "cx tool setup aocc --install --with.accept_eula=yes" (https://www.amd.com/en/developer/aocc.html).
+
+features:
+  linux:
+    flags:
+      catch_errors: ''
+      include_path: '-I'
+      dynamic_build: ''
+      static_build: '-static'
+      dynamic_build_debug: '-g'
+      static_build_debug: '-static -g'
+      obj_file: '-o '
+      exe_file: '-o '
+      lib_file: '-o '
+      lib_file2: ''
+      link_sep: ''
+      lib_path: '-L'
+      lib_prefix: '-l'
+      lib_prefix2: ''
+      lib_postfix: ''
+      openmp: '-fopenmp'
+      fast: '-O3'
+      fastest: '-O3 -ffast-math -march=native'
+      profile: '-fno-omit-frame-pointer'
+      link_profile: ''
+      compile_to_obj: '-c'
+      d: '-D'
+      lib_dynamic_build: '-shared -fPIC'
+      lib_static_build: '-c'
+      lib_dynamic_build_debug: '-shared -fPIC -g'
+      lib_static_build_debug: '-c -g'
+      static_lib1: 'rcs'
+      static_lib2: ''
+    vars:
+      file_ext_exe:
+      file_ext_lib: .a
+      file_ext_lib2: .a
+      file_ext_dlib: .so
+      file_ext_obj: .o

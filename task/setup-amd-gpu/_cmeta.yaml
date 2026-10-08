@@ -1,0 +1,21 @@
+artifact: f8c2f7fc258d455b
+category: task,c36be4b9314a45e0
+tags:
+  - task
+  - setup
+  - amd
+  - gpu
+  - npu
+  - rocm
+  - linux
+authors: Grigori Fursin
+creation_timestamp: '2026-10-08T07:13:42.119224+00:00'
+desc: a Linux machine made ready to compute on its AMD GPU and NPU - the user's access to the device nodes (render and video groups, at once
+  through an ACL), the memory-lock limit the NPU runtime needs - with what was found and what was changed
+generator:
+  method: agent
+  agent: Claude Code 2.1.293
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  model: claude-opus-5-5
+note: added on 2026-10-08 at the user's request, after the first AMD machine of the fleet (Ryzen AI 7 350, Radeon 860M, XDNA2 NPU) needed these steps by hand
