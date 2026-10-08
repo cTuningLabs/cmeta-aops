@@ -5,6 +5,15 @@ storage_key: target--rocm
 cache: True
 
 uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  # On Linux the user must be able to open the GPU's nodes (/dev/kfd, /dev/dri/renderD*), which a fresh
+  # account cannot: setup-amd-gpu adds the groups and gives access at once (it changes nothing when all is
+  # in place, and asks for sudo only when something is missing)
+  - task: setup-amd-gpu,f8c2f7fc258d455b
+    if_os: linux
+    npu: False
+
   - task: setup,a2f9b61079ce4333
     name: rocm,b2584c1c8e984202
 
@@ -13,4 +22,15 @@ env_if_not_used:
   CMETA_TARGET_ROCM: 0
 env:
   CMETA_TARGET_ROCM: 1
+
+# Building for ROCm: the HIP compiler of the ROCm found (hipcc links the runtime itself)
+sdk:
+  uses:
+    - task: setup,a2f9b61079ce4333
+      name: hipcc,61369ac07fad4edd
+
+# --use.target--rocm.gfx_override=<major.minor.step> (api_v1.py) exports HSA_OVERRIDE_GFX_VERSION to the
+# run, for a GPU whose family a framework's prebuilt kernels do not carry (the PyTorch wheels for ROCm 7.2
+# have no gfx1152: presented as gfx1150 with 11.5.0 the Radeon 860M runs them). Never set by itself: the
+# same GPU runs the ROCm 10 wheels natively, and the override then breaks them.
 

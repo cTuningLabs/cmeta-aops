@@ -1,0 +1,19 @@
+artifact: 3270f239e2a243bc
+category: task,c36be4b9314a53e0
+tags:
+  - task
+  - setup
+  - tmp
+  - disk
+  - linux
+authors: Grigori Fursin
+creation_timestamp: '2026-10-08T08:16:54.723819+00:00'
+desc: /tmp moved from a RAM-backed tmpfs with a per-user quota (Ubuntu 26.04, Fedora, Arch) to the disk of the root filesystem, lasting and at once,
+  so that large downloads and builds that unpack in /tmp no longer stop with "No space left" or "Disk quota exceeded"; reports on macOS, stops on Windows
+generator:
+  method: agent
+  agent: Claude Code 2.1.293
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  model: claude-fable-5-1
+note: added on 2026-10-08 at the user's request, after a 6 GB PyTorch wheel for ROCm failed to install on a fresh Ubuntu 26.04 (its /tmp is a 7 GB tmpfs with a quota)

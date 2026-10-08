@@ -333,27 +333,56 @@ class CTool(InitCTool):
             # Check ROCm wheel
             if '--index-url ' not in post_flags:
                 compute_features = target['features']['rocm']
+                versions = compute_features.get('versions', {})
+                # The ROCm version itself (amd-smi, rocm-sdk, /opt/rocm/.info: tool/rocm), else what
+                # rocm-smi's library says (the only number older detections had)
+                rocm_version = compute_features.get('rocm_version') or versions.get('rocm') or versions.get('rocm-smi-lib version') or '0'
+                # The GPU family from the kernel (gfx942, gfx1152), when the target knows it
+                gfx = (compute_features.get('gfx') or [None])[0]
 
-                if not ver:
-                    ver = compute_features.get('ver')
-                if ver:
-                    found = True
-                else:
-                    rocm_version = compute_features['versions']['rocm-smi-lib version']
+                # Two sources of wheels: PyTorch's own index per ROCm line (rocm7.2 ...), whose kernels
+                # cover the GPU families below (read from the rocBLAS library of the 2.14.1+rocm7.2
+                # wheel on 2026-10-08; a wheel for ROCm 7.2 runs on a machine with ROCm 10.1: it carries
+                # its own runtime), and AMD's index of its Python distribution of ROCm (TheRock), with
+                # torch built against each ROCm 10 release for each GPU family as an extra
+                # (torch[device-gfx1152]: the way for a GPU whose family PyTorch's wheels lack).
+                # --with.rocm_source=pytorch|amd|auto; auto takes AMD's index only for a GPU family
+                # PyTorch's wheels do not carry (--with.rocm_channel=stable|nightly|rc|dev picks AMD's
+                # channel). AMD's index may lag on torchvision (see tool/pip-torchvision).
+                pytorch_wheel_gfx = {'gfx908', 'gfx90a', 'gfx942', 'gfx950', 'gfx1030', 'gfx1100', 'gfx1101', 'gfx1102',
+                                     'gfx1150', 'gfx1151', 'gfx1200', 'gfx1201'}
+                source = str(_with.get('rocm_source') or 'auto').lower()
+                channel = str(_with.get('rocm_channel') or 'stable').lower()
+                amd = source == 'amd' or (source == 'auto' and gfx and gfx not in pytorch_wheel_gfx)
 
-                    found = False
-                    ver_lists = rocm_vers
-
-                    for ver in ver_lists:
-                        r = self.cm.utils.common.compare_versions(rocm_version, ver)
-                        if r['return'] == 0 and (r['comparison'] == '>' or r['comparison'] == '='):
-                            found = True
-                            break
-
-                if found:
+                if amd:
+                    if not gfx:
+                        return self.cm.error('the GPU family (gfx...) is not known: AMD\'s index needs it for torch[device-<gfx>] (the rocm target reads it from /sys/class/kfd)')
+                    extra = f'device-{gfx}'
+                    if extra not in extras:
+                        extras.append(extra)
+                    variations_compute.append(f'rocm-amd-{channel}-{gfx}')
                     if post_flags != '': post_flags += ' '
-                    variations_compute.append(f'rocm{ver}')
-                    post_flags += f'--index-url {rocm_url_prefix}{ver}'.replace('{url_extra}', url_extra)
+                    post_flags += f'--index-url https://{channel}.repo.amd.com/rocm/whl-next/'
+                else:
+                    if not ver:
+                        ver = compute_features.get('ver')
+                    if ver:
+                        found = True
+                    else:
+                        found = False
+                        ver_lists = rocm_vers
+
+                        for ver in ver_lists:
+                            r = self.cm.utils.common.compare_versions(str(rocm_version), ver)
+                            if r['return'] == 0 and (r['comparison'] == '>' or r['comparison'] == '='):
+                                found = True
+                                break
+
+                    if found:
+                        if post_flags != '': post_flags += ' '
+                        variations_compute.append(f'rocm{ver}')
+                        post_flags += f'--index-url {rocm_url_prefix}{ver}'.replace('{url_extra}', url_extra)
 
         elif 'xpu' in compute:
             if not skip_extras and 'xpu' not in extras:

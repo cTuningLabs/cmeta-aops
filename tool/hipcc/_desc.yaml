@@ -1,0 +1,72 @@
+authors: Grigori Fursin
+storage_key: hipcc
+
+# hipcc - the HIP compiler of a ROCm installation (a clang driver that compiles the host and the device
+# code, picks the GPU's architecture with rocm_agent_enumerator when no --offload-arch is given, and
+# links the HIP runtime itself). The ROCm is detected first (tool/rocm: rocm-smi), so this fails with a
+# clear text where there is no ROCm. On Ubuntu 26.04 and later the distribution's own packages give it
+# (apt install hipcc libamdhip64-dev); AMD's ROCm puts it in /opt/rocm/bin (/opt/rocm/core-<v>/bin since
+# ROCm 10); the "rocm" Python package of AMD's new distribution (TheRock) has it in its venv.
+
+names:
+  - hipcc
+
+match_version:
+  - regex: "HIP version:\\s*([0-9]+(?:\\.[0-9]+)+)"
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+install_help_text: |
+  hipcc was not found. Ubuntu 26.04 and later: "sudo apt install hipcc libamdhip64-dev"; AMD's ROCm:
+  https://rocm.docs.amd.com/projects/install-on-linux/en/latest/ ; then "cx tool setup hipcc".
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: setup,a2f9b61079ce4333
+    name: rocm,b2584c1c8e984202
+
+extra_paths:
+  linux:
+    - "{{global.rocm.features.paths.bin|}}"     # next to the rocm-smi that tool/rocm found (a ROCm from AMD's pip distribution has both in its venv)
+    - "/opt/rocm*/bin"
+    - "/opt/rocm*/core-*/bin"
+
+features:
+  linux:
+    flags:
+      catch_errors: ''
+      include_path: '-I'
+      dynamic_build: ''
+      static_build: ''                 # the HIP runtime and the GPU driver are shared libraries: no -static
+      dynamic_build_debug: '-g'
+      static_build_debug: '-g'
+      obj_file: '-o '
+      exe_file: '-o '
+      lib_file: '-o '
+      lib_file2: ''
+      link_sep: ''
+      lib_path: '-L'
+      lib_prefix: '-l'
+      lib_prefix2: ''
+      lib_postfix: ''
+      openmp: '-fopenmp'
+      fast: '-O3'
+      fastest: '-O3 -ffast-math'
+      profile: '-fno-omit-frame-pointer'
+      link_profile: ''
+      compile_to_obj: '-c'
+      d: '-D'
+      lib_dynamic_build: '-shared -fPIC'
+      lib_static_build: '-c'
+      lib_dynamic_build_debug: '-shared -fPIC -g'
+      lib_static_build_debug: '-c -g'
+      static_lib1: 'rcs'
+      static_lib2: ''
+    vars:
+      file_ext_exe:
+      file_ext_lib: .a
+      file_ext_lib2: .a
+      file_ext_dlib: .so
+      file_ext_obj: .o

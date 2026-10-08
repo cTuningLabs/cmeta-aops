@@ -40,6 +40,9 @@ ARCHIVES = {
                                       '4a7ffb0c0f6c3b02fb14e7790143dfb2fbb2973c41f107357da57bcddd196077'),
         ('linux', 'amd64', 'cu128'): ('libtorch-cxx11-abi-shared-with-deps-2.7.1+cu128.zip',
                                       'ae513b437ae99150744ef1d06b02a4ecbbb9275c9ffe540c88909623e3293041'),
+        # The ROCm build (its folder is the ROCm line, rocm6.3): 4.4 GB, the ROCm runtime inside
+        ('linux', 'amd64', 'rocm6.3'): ('libtorch-cxx11-abi-shared-with-deps-2.7.1+rocm6.3.zip',
+                                        'd89efeff9aa90ab5cf924c51141d6b21556252ea611bb4b6bf4af5029874f963'),
         ('windows', 'amd64', 'cpu'): ('libtorch-win-shared-with-deps-2.7.1+cpu.zip',
                                       'a294845080d67ff579073b7b6e17e7da1cc856dde6e63fca2d71498b482580f8'),
         ('windows', 'amd64', 'cu118'): ('libtorch-win-shared-with-deps-2.7.1+cu118.zip',
@@ -105,6 +108,14 @@ def choose_variant(version, system, compute, gpus = None, driver_cuda = None, va
         if variant not in builds:
             return None, f'no LibTorch {version} build "{variant}" for {system[0]} {system[1]} (builds: {", ".join(builds)})'
         return variant, None
+
+    # The ROCm builds: the newest ROCm line the release has for this system (the archive carries its
+    # own ROCm runtime, so it also runs on a machine with a newer ROCm)
+    if 'rocm' in compute:
+        rocm_builds = sorted((b for b in builds if b.startswith('rocm')), key = lambda b: [int(x) for x in b[4:].split('.')])
+        if not rocm_builds:
+            return None, f'no ROCm build of LibTorch {version} for {system[0]} {system[1]}: build it from source (tool/torch-cpp)'
+        return rocm_builds[-1], None
 
     other = [c for c in compute if c not in ('cpu', 'cuda', 'metal')]
     if other:

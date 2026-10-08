@@ -1,0 +1,28 @@
+artifact: 079dab643ec3485c
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+constraints:
+  supports_compute:
+    - cpu
+  supports_os:
+    - linux
+creation_timestamp: '2026-10-08T08:31:09.080384+00:00'
+desc: AMD Optimizing C/C++ Compiler (AOCC), the C++ compiler (clang++) of the AOCC that tool/aocc detected or installed.
+generator:
+  method: agent
+  agent: Claude Code 2.1.293
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  model: claude-fable-5-1
+tags:
+  - lang-cpp
+  - aocc
+  - amd
+  - compiler
+last_update_timestamp: '2026-10-08T08:35:43.881224+00:00'
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.294
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  date: '2026-10-08'

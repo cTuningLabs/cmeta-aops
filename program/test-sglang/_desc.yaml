@@ -1,0 +1,94 @@
+authors: Grigori Fursin
+###################################################################################################
+# One generation with SGLang's offline engine (sglang.Engine), with its timings as the result:
+#
+#   cx program run test-sglang --compute=cuda
+#   cx program run test-sglang --compute=cuda --model=Qwen/Qwen2.5-1.5B-Instruct --n=128 --gpu_mem=0.6
+#   cx program run test-sglang --compute=rocm --use.python.tool_path=/opt/venv/bin/python --sglang_version=0.5.21
+#
+# SGLang publishes its wheels for CUDA (sglang[all] from PyPI: sgl-kernel, flashinfer); for ROCm the
+# published route is its docker image (lmsysorg/sglang:<version>-rocm*), where the venv of the image
+# holds SGLang already: cMeta installed in the container runs this program on that python (the last
+# command above, see README.md). Its own venv per set of targets otherwise.
+###################################################################################################
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  run_time_env:
+    CMETA_TARGETS: '{{global.target.cmeta_targets}}'
+    # The venv's console scripts for the JIT kernels (ninja, nvcc of nvidia-cuda-nvcc)
+    +PATH:
+      - '{{global.python.path_bin}}'
+    CMETA_SGLANG_MODEL: '{{local.params.model|Qwen/Qwen2.5-0.5B-Instruct}}'
+    CMETA_SGLANG_MAX_TOKENS: '{{local.params.n|64}}'
+    CMETA_SGLANG_GPU_MEM: '{{local.params.gpu_mem|0.8}}'
+    CMETA_SGLANG_MAX_LEN: '{{local.params.max_len|4096}}'
+    # Graphs stay on (SGLang's own default): its eager decoding is no usable default on ROCm (seen on an MI300X)
+    CMETA_SGLANG_CUDA_GRAPH: '{{local.params.cuda_graph|1}}'
+    CMETA_SGLANG_TP: '{{local.params.tp|}}'
+    CMETA_SGLANG_ATTENTION_BACKEND: '{{local.params.attention_backend|}}'
+    PYTHONUNBUFFERED: 1
+
+  run_src_file_names:
+    - 'program.py'
+
+  output_files:
+    - tmp-cmeta-program-stats.json
+
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+
+updates:
+  compile:
+    skip: True
+
+  run:
+    uses:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+
+         prepend:
+           # SGLang's kernels (sgl-kernel) have wheels for Python 3.10-3.12
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+             version: '{{params.python_version|>=3.10,<3.13}}'
+             # Its own venv per set of targets: another program's torch must not mix in
+             with:
+               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             with:
+               package: numpy
+
+           # CUDA: the full install (sgl-kernel, flashinfer, torch pinned by SGLang) from PyPI
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             if: '"cuda" in {{global.target.compute|$[]}}'
+             with:
+               package: sglang
+               extras:
+                 - all
+             version: '{{params.sglang_version|$None}}'
+             env:
+                PYTHONUNBUFFERED: 1
+
+           # ROCm (and anything else): the package as it is - already there in SGLang's ROCm image
+           - task: setup,a2f9b61079ce4333
+             name: pip
+             if: '"cuda" not in {{global.target.compute|$[]}}'
+             with:
+               package: sglang
+             version: '{{params.sglang_version|$None}}'
+             env:
+                PYTHONUNBUFFERED: 1
+
+         update:
+           target_exe:
+           run_src_file_names: '{{local.run_src_file_names}}'
+           cmd: >-
+             {{global.python.qpath}}
+             {run_flags_after_exe}
+             {{params.run_flags|}}
+             {run_src_file_names_str_with_path}

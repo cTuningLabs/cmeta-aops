@@ -24,12 +24,41 @@ Environment (set by the program's _desc.yaml from its parameters):
   CMETA_ORT_PROVIDERS    providers instead of the targets' (CUDAExecutionProvider,CPUExecutionProvider)
 """
 
+import contextlib
+import io
 import json
 import os
+import re
 import statistics
 import subprocess
 import sys
 import time
+
+# What a missing library of a provider means, in one line
+LIBRARY_HINTS = (
+    ('libmigraphx', 'MIGraphX is not installed: the MIGraphX EP needs AMD\'s MIGraphX library (the migraphx package of a '
+                    'ROCm apt repository, or the rocm/onnxruntime image; the ROCm 10.1 core repository and AMD\'s pip '
+                    'distribution had none on 2026-10-08)'),
+    ('libcudnn', 'cuDNN is not installed: onnxruntime-gpu[cuda,cudnn] brings it from pip, else install it with CUDA'),
+    ('libcublas', 'the CUDA libraries are not installed: onnxruntime-gpu[cuda,cudnn] brings them from pip'),
+    ('libopenvino', 'the OpenVINO runtime is not installed: the openvino package of the release the provider was built against'),
+)
+
+
+def provider_error(exception_text, printed):
+    """
+    The error to record for a provider that failed: the cause ONNX Runtime printed ("EP Error ... Failed to
+    load library ... libmigraphx_c.so.3: cannot open shared object file") with a hint for a missing library,
+    else the exception's text.
+    """
+    # The banner line "*** EP Error ***" comes first; the cause follows a second "EP Error"
+    m = re.search(r'EP Error\s+(?!\*)(.*?)\s+when using', printed or '', re.S)
+    cause = ' '.join(m.group(1).split()) if m else ''
+    if not cause:
+        return (exception_text or '')[:800]
+    hint = next((h for lib, h in LIBRARY_HINTS if lib in cause), '')
+    return (cause[:600] + (f' -> {hint}' if hint else ''))[:900]
+
 
 PROVIDER_OF_TARGET = {
     'cpu': ('CPUExecutionProvider', {}),
@@ -210,12 +239,17 @@ def main():
             entry['error'] = f'{provider} is not available: this ONNX Runtime has {", ".join(available)}'
             print(f'{label}: {entry["error"]}')
             continue
+        # ONNX Runtime prints why a provider failed to load ("EP Error ... Failed to load library ...") and
+        # retries on the CPU, which the disabled fallback then refuses: the exception names the refusal,
+        # the printed text the cause - it is captured and recorded
+        captured = io.StringIO()
         try:
             so = ort.SessionOptions()
             if provider != 'CPUExecutionProvider':
                 so.add_session_config_entry('session.disable_cpu_ep_fallback', '1')
             t = time.perf_counter()
-            session = ort.InferenceSession(model, sess_options = so, providers = [(provider, options)])
+            with contextlib.redirect_stdout(captured):
+                session = ort.InferenceSession(model, sess_options = so, providers = [(provider, options)])
             entry['session_ms'] = round((time.perf_counter() - t) * 1000, 1)
             entry['session_providers'] = session.get_providers()
             for _ in range(5):
@@ -239,7 +273,7 @@ def main():
             if not ran_there:
                 entry['error'] = f'the session runs on {entry["session_providers"]}, not on {provider}'
         except Exception as e:
-            entry['error'] = str(e)[:800]
+            entry['error'] = provider_error(str(e), captured.getvalue())
 
         if entry.get('latency_us'):
             timed = ''

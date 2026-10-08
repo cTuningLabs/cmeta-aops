@@ -1,0 +1,31 @@
+artifact: 61369ac07fad4edd
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+constraints:
+  supports_compute:
+    - rocm
+  supports_os:
+    - linux
+creation_timestamp: '2026-10-08T08:24:30.073637+00:00'
+desc: AMD HIP compiler (hipcc) of a ROCm installation - the system's /opt/rocm or the one cMeta set up - with the ROCm detected first,
+  for compile-and-run HIP programs on the rocm target (the twin of nvcc for CUDA).
+generator:
+  method: agent
+  agent: Claude Code 2.1.293
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  model: claude-fable-5-1
+note: added on 2026-10-08 with the first two AMD GPUs of the fleet (a Radeon 860M, an MI300X); the first compiler of the rocm target
+tags:
+  - lang-hip
+  - hip
+  - rocm
+  - amd
+  - compiler
+last_update_timestamp: '2026-10-08T08:35:43.421046+00:00'
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.294
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  date: '2026-10-08'

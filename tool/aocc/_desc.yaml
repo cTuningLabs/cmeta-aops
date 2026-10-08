@@ -1,0 +1,74 @@
+authors: Grigori Fursin
+storage_key: aocc
+
+# aocc - the AMD Optimizing C/C++ Compiler: AMD's build of clang (5.2.0 is LLVM 17.0.6) with its own
+# optimisations for the Zen CPUs (-march=znver5 for Ryzen AI 300 / EPYC 9005) and its own OpenMP and
+# math libraries. Closed source, published behind an End User License Agreement on amd.com as a tar
+# that needs no root (the bin/clang runs as unpacked; install.sh only writes a setenv script).
+#
+#   cx tool setup aocc --install --with.accept_eula=yes          # 5.2.0 from AMD's archive, into the cache
+#   cx program run test-nmm-c-cpu cpu --use.compiler-c.name=aocc --use.aocc.with.accept_eula=yes
+#   cx program run test-nmm-cpp-cpu cpu --use.compiler-cpp.name=aocc-cpp --use.aocc.with.accept_eula=yes
+#
+# The EULA (https://www.amd.com/en/developer/aocc.html, "Download") is the user's to accept: without
+# --with.accept_eula the install stops and says so. Detected when installed by AMD's own script in
+# /opt/AMD/aocc-compiler-<version>.
+
+default_version: 5.2.0
+
+names:
+  - clang
+
+# AOCC's clang is called "clang": only AMD's folders are searched, never PATH (the system's clang is tool/clang)
+only_paths:
+  linux:
+    - "/opt/AMD/aocc-compiler-*/bin"
+    - "{{global.host.os_env.HOME|}}/aocc-compiler-*/bin"
+
+match_version:
+  - regex: "AOCC_([0-9]+(?:\\.[0-9]+)+)"
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+install_help_text: |
+  AOCC was not found. "cx tool setup aocc --install --with.accept_eula=yes" downloads AMD's archive
+  (https://www.amd.com/en/developer/aocc.html - read the EULA there first) into the cache, no root needed.
+
+features:
+  linux:
+    flags:
+      catch_errors: ''
+      include_path: '-I'
+      dynamic_build: ''
+      static_build: '-static'
+      dynamic_build_debug: '-g'
+      static_build_debug: '-static -g'
+      obj_file: '-o '
+      exe_file: '-o '
+      lib_file: '-o '
+      lib_file2: ''
+      link_sep: ''
+      lib_path: '-L'
+      lib_prefix: '-l'
+      lib_prefix2: ''
+      lib_postfix: ''
+      openmp: '-fopenmp'
+      fast: '-O3'
+      fastest: '-O3 -ffast-math -march=native'
+      profile: '-fno-omit-frame-pointer'
+      link_profile: ''
+      compile_to_obj: '-c'
+      d: '-D'
+      lib_dynamic_build: '-shared -fPIC'
+      lib_static_build: '-c'
+      lib_dynamic_build_debug: '-shared -fPIC -g'
+      lib_static_build_debug: '-c -g'
+      static_lib1: 'rcs'
+      static_lib2: ''
+    vars:
+      file_ext_exe:
+      file_ext_lib: .a
+      file_ext_lib2: .a
+      file_ext_dlib: .so
+      file_ext_obj: .o

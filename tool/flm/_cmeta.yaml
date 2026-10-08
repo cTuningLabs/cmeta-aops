@@ -1,0 +1,32 @@
+artifact: 0d711a7bc3454056
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+constraints:
+  supports_compute:
+    - npu-amd
+  supports_os:
+    - linux
+    - windows
+creation_timestamp: '2026-10-08T10:25:00.369335+00:00'
+desc: FastFlowLM (flm) - LLM inference on the AMD Ryzen AI NPU (XDNA2); the portable release from GitHub, which bundles AMD's
+  XRT runtime on Linux, checked against its sha256; the base of the npu-amd target's programs.
+generator:
+  method: agent
+  agent: Claude Code 2.1.294
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  model: claude-fable-5-1
+note: added on 2026-10-08 after the first NPU runs by hand on the Acer A14 (qwen3:0.6b at 111 tokens/s)
+tags:
+  - flm
+  - fastflowlm
+  - npu
+  - amd
+  - llm
+last_update_timestamp: '2026-10-08T10:28:33.100527+00:00'
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.294
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  date: '2026-10-08'

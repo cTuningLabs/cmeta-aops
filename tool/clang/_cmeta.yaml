@@ -5,6 +5,7 @@ constraints:
   supports_compute:
   - cpu
   - cuda
+  - rocm
   - metal
   - vulkan
   - opencl
@@ -18,13 +19,12 @@ creation_timestamp: '2026-01-09T13:14:50.790548+00:00'
 desc: Clang C compiler, detected among the installed LLVM versions, with its features
   recorded for compile-and-run programs.
 last_generator:
-  agent: Claude Code 2.1.286
-  by: Grigori Fursin
-  date: '2026-10-01'
-  effort: max
   method: agent
-  model: claude-opus-5-5
-last_update_timestamp: '2026-10-01T20:25:09.290125+00:00'
+  agent: Claude Code 2.1.293
+  via: cmeta 0.33.1
+  by: Grigori Fursin
+  date: '2026-10-08'
+last_update_timestamp: '2026-10-08T07:29:32.444467+00:00'
 sort: 3000
 tags:
 - lang-c

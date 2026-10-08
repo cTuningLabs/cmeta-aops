@@ -1,0 +1,62 @@
+authors: Grigori Fursin
+###################################################################################################
+# One generation with FastFlowLM on the AMD NPU, on a private server (its own port, started and stopped
+# by the program), with FastFlowLM's own timings as the result:
+#
+#   cx program run test-flm --compute=npu-amd
+#   cx program run test-flm --compute=npu-amd --model=llama3.2:1b --n=128 --port=52702 --pmode=performance
+#
+# The model (FastFlowLM's own tags: "cx tool run flm -- list") is downloaded on first use into the flm
+# tool's cache entry (--models_dir elsewhere). pmode: powersaver | balanced | performance | turbo.
+###################################################################################################
+inherits:
+  - template-c-cpu,649899ef3f004e4a
+
+local_vars:
+  run_src_file_names:
+    - 'program.py'
+
+  run_time_env:
+    CMETA_TARGETS: '{{global.target.cmeta_targets}}'
+    CMETA_FLM: '{{global.flm.path}}'
+    CMETA_FLM_MODEL: '{{local.params.model|qwen3:0.6b}}'
+    CMETA_FLM_MAX_TOKENS: '{{local.params.n|128}}'
+    CMETA_FLM_PORT: '{{local.params.port|52701}}'
+    CMETA_FLM_PMODE: '{{local.params.pmode|performance}}'
+    CMETA_FLM_MODELS: '{{local.params.models_dir|}}'
+    CMETA_FLM_CACHE: '{{global.flm.path_cmeta_cache|}}'
+    PYTHONUNBUFFERED: 1
+
+  output_files:
+    - tmp-cmeta-program-stats.json
+
+  result_files:
+    stats: tmp-cmeta-program-stats.json
+
+params:
+  compute: npu-amd
+
+###################################################################################################
+updates:
+  compile:
+    skip: True
+
+  run:
+    uses:
+       - match:
+           task: setup-run,148f6c1fdb4247df
+         prepend:
+           - task: setup,a2f9b61079ce4333
+             name: python,c00fb574d8ca4463
+           - task: setup,a2f9b61079ce4333
+             name: flm,0d711a7bc3454056
+             _update: '{{ params.setup_flm|${} }}'
+
+         update:
+           target_exe:
+           run_src_file_names: '{{local.run_src_file_names}}'
+           cmd: >-
+             {{global.python.qpath}}
+             {run_flags_after_exe}
+             {{params.run_flags|}}
+             {run_src_file_names_str_with_path}
