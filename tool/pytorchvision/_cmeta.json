@@ -1,0 +1,30 @@
+{
+  "artifact": "f49e9e68ca6c4290",
+  "authors": "Grigori Fursin",
+  "category": "tool,c393ba5c6fa14f66",
+  "creation_timestamp": "2026-10-08T13:36:45.876035+00:00",
+  "desc": "torchvision in the Python of the run, the mirror of tool/pytorch: detected when it is there, built from source by program/build-pytorchvision against the torch of that Python otherwise (the vision release that pairs with it, or --version), --with.torch=pip for PyTorch's wheel torch first.",
+  "generator": {
+    "agent": "Claude Code 2.1.294",
+    "by": "Grigori Fursin",
+    "method": "agent",
+    "model": "claude-fable-5-1",
+    "via": "cmeta 0.33.1"
+  },
+  "last_generator": {
+    "agent": "Claude Code 2.1.294",
+    "by": "Grigori Fursin",
+    "date": "2026-10-08",
+    "method": "agent",
+    "via": "cmeta 0.33.1"
+  },
+  "last_update_timestamp": "2026-10-08T13:37:57.264955+00:00",
+  "note": "added on 2026-10-08 with the pairing of program/build-pytorchvision; verified on the P14s Gen 4 (CUDA 13.3)",
+  "tags": [
+    "python",
+    "pytorch",
+    "torchvision",
+    "ml",
+    "build"
+  ]
+}

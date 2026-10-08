@@ -1,8 +1,9 @@
 """
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
-
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
+
+tool/pytorchvision: torchvision in the Python of the run - detected when it is there, built from source by
+program/build-pytorchvision against the torch of that Python otherwise (the mirror of tool/pytorch).
 """
 
 import os
@@ -10,10 +11,23 @@ import os
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 
 
+def site_packages_of(path):
+    """The site-packages folder of a detected torchvision ({site}/torchvision/__init__.py), or None."""
+    if os.path.basename(path) == '__init__.py':
+        return os.path.dirname(os.path.dirname(path))
+    return None
+
+
+def python_homes(ctx):
+    """The folders of the Python of the run under which the package's __init__.py is searched (the names of _desc.yaml)."""
+    python = ctx.get('tasks', {}).get('global', {}).get('python', {}) or {}
+    return [p for p in (python.get('path_home'), python.get('path_bin')) if p]
+
+
 class CTool(InitCTool):
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, module_file_path=__file__, **kwargs)
+        super().__init__(*args, module_file_path = __file__, **kwargs)
 
 
     ############################################################
@@ -48,7 +62,8 @@ class CTool(InitCTool):
 
         version = misc.get('version')
         if version:
-            # PyTorch git tags are v2.7.1, v2.12.0, etc.
+            # torchvision's git tags are v0.22.1, v0.29.1, ...; without a version the program pairs
+            # the checkout with the torch it finds
             result['add_to_local'] = {'checkout': f'v{version}'}
 
         return result
@@ -60,13 +75,11 @@ class CTool(InitCTool):
               params: dict = {},
     ):
         """
-        Runs after build_uses (program/build-pytorch installed torch into the Python of the run): the
+        Runs after build_uses (the build program installed torchvision into the Python of the run): the
         detection that follows must look in that Python, not in the entry's build folder, which
-        task/setup/build.py hands it by default (<entry>/build/**) - the package is not there, and
-        until 2026-10-08 every build of this tool ended with "failed to find tool".
+        task/setup/build.py hands it by default (<entry>/build/**) - the package is not there.
         """
-        python = ctx.get('tasks', {}).get('global', {}).get('python', {}) or {}
-        return {'return': 0, 'found_paths': [p for p in (python.get('path_home'), python.get('path_bin')) if p]}
+        return {'return': 0, 'found_paths': python_homes(ctx)}
 
 
     ############################################################
@@ -78,27 +91,12 @@ class CTool(InitCTool):
         new_paths = []
 
         for p in paths:
+            path_site = site_packages_of(p['path'])
+            if not path_site:
+                continue
+
             features = p.setdefault('features', {})
             path_features = features.setdefault('paths', {})
-            path = p['path']
-
-            if os.path.basename(path) == '__init__.py':
-                # pip-installed: {venv_site}/torch/__init__.py
-                path_site = os.path.dirname(os.path.dirname(path))  # {venv_site}/
-            else:
-                # cmake-based (legacy): {build_root}/lib/torch.dll
-                path_lib = os.path.dirname(path)
-                path_site = os.path.dirname(path_lib)  # {build_root}/
-                # Try to read PYTHONPATH from repro ctx saved during the build
-                repro_path = os.path.join(path_site, '_repro_ctx_compile.json')
-                if os.path.isfile(repro_path):
-                    r = self.cm.utils.files.read_file(repro_path)
-                    if r['return'] == 0:
-                        compiled_local = r['data'].get('ctx', {}).get('tasks', {}).get('local', {})
-                        pythonpath = compiled_local.get('run_time_env', {}).get('PYTHONPATH', '')
-                        if pythonpath and os.path.isdir(pythonpath):
-                            path_site = pythonpath
-
             path_features['home'] = path_site
             path_features['qhome'] = self.cm.q(path_site)
             path_features['site_packages'] = path_site
@@ -121,26 +119,9 @@ class CTool(InitCTool):
         for path in paths:
             if not os.path.isfile(path):
                 continue
-
-            if os.path.basename(path) == '__init__.py':
-                # pip-installed: {venv_site}/torch/__init__.py
-                path_site = os.path.dirname(os.path.dirname(path))
-            else:
-                # cmake-based (legacy): {build_root}/lib/torch.dll
-                path_lib = os.path.dirname(path)
-                path_site = os.path.dirname(path_lib)
-                repro_path = os.path.join(path_site, '_repro_ctx_compile.json')
-                if not os.path.isfile(repro_path):
-                    continue
-                r = self.cm.utils.files.read_file(repro_path)
-                if r['return'] != 0:
-                    continue
-                compiled_local = r['data'].get('ctx', {}).get('tasks', {}).get('local', {})
-                pythonpath = compiled_local.get('run_time_env', {}).get('PYTHONPATH', '')
-                if not pythonpath:
-                    continue
-                path_site = pythonpath
-
+            path_site = site_packages_of(path)
+            if not path_site:
+                continue
             found_paths_info[path] = {
                 'features': {
                     'paths': {'site_packages': path_site},
