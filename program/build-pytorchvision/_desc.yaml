@@ -38,7 +38,9 @@ updates:
           internal_func: customize2
         append:
           ######################################################################################
-          # Python is required both for the build system and the resulting Python bindings
+          # The python of the run: torchvision is built against the torch found in it and installed
+          # next to that torch. The same venv for the torch build, this build and the programs that
+          # use the pair: --use.python.venv_path=<folder> on each run (README.md)
           - task: setup,a2f9b61079ce4333
             name: python,c00fb574d8ca4463
 
@@ -100,6 +102,15 @@ updates:
             with:
               package: packaging
 
+          # --torch=pip: PyTorch's wheel for the target into this python (tool/pip picks the index); the
+          # default is the torch already there - the one build-pytorch built into the same venv
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            if: '"{{params.torch|}}" == "pip"'
+            with:
+              package: torch
+            version: '{{params.torch_version|$None}}'
+
           - task: setup,a2f9b61079ce4333
             name: pip,c4987bc3955347f2
             with:
@@ -126,13 +137,20 @@ updates:
             name: lib-cudnn,440a30eb25b64853
 
           ######################################################################################
-          # Clone PyTorch source
+          # The torch in the python decides the torchvision to check out: the tag of the release that
+          # pairs with it (2.14.1 -> v0.29.1), main for a development torch; --checkout=<tag|branch>
+          # overrides. No torch there: an error that names the two ways to get one.
+          - internal_func: customize_torch_pair
+            internal_func_from_local_key: selected-program
+            internal_func_safe: True
+
+          # Clone the vision source at that checkout
           - task: clone-git-to-cache,86919b3cfdd443d2
             name: src-pytorchvision
             url: 'https://github.com/pytorch/vision'
-            checkout: '{{params.checkout|$None}}'
+            checkout: '{{local.checkout|$None}}'
 
-          # PyTorch depends heavily on submodules (e.g. pybind11, sleef, XNNPACK)
+          # The submodules of the tree
           - task: cmd,c9ba0a88df394d7f
             storage_key: init-pytorchvision-submodules
             chdir: '{{global.clone-git-to-cache-src-pytorchvision.path_to_git_repo}}'

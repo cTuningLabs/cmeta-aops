@@ -2,11 +2,32 @@ authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 storage_key: pytorch
 
-# Default to a recent stable release; override with --version or params.with.ver
-default_version: '2.7.1'
+# Default to a recent stable release (the one program/build-pytorch checks out); override with --version or params.with.ver
+default_version: '2.14.1'
 
 # The Python package name used when the tool is queried via pip-like mechanisms
 name: torch
+
+# Found as the package's __init__.py in the site-packages of the Python of the run (a venv on Linux and
+# macOS, a venv or a plain install on Windows): the generic search looks for a FILE of each name under
+# the search paths, so the paths below point at the Python's home. Before (until 2026-10-08) the tool
+# searched for a file named "torch" on the PATH and never found its own build.
+names:
+  - 'lib/python3.*/site-packages/torch/__init__.py'
+  - 'Lib/site-packages/torch/__init__.py'
+
+extra_paths:
+  linux:                                 # Linux and macOS (a venv: <home>/lib/python3.x/site-packages)
+    - '{{global.python.path_home|}}'
+  windows:                               # a venv (<home>\Lib) or a plain install (python.exe next to Lib)
+    - '{{global.python.path_home|}}'
+    - '{{global.python.path_bin|}}'
+
+# The Python first: --use.python.venv_path=<folder> selects the venv the pair lives in
+uses:
+  - task: runner,1e48cc0c5f6041a5
+  - task: setup,a2f9b61079ce4333
+    name: python,c00fb574d8ca4463
 
 # PyTorch version string printed by torch.__version__ is e.g. "2.7.1" or "2.12.0+cpu"
 match_version:

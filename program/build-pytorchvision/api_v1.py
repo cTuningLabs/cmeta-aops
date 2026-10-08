@@ -5,11 +5,80 @@ Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
+import json
 import os
+import re
 import shutil
 import sys
 
 from program_22788f3c30d04e6d.api.cprogram import InitCProgram
+from program_22788f3c30d04e6d.api import common_build
+
+
+def torchvision_release_for_torch(torch_version):
+    """
+    The torchvision release that pairs with a torch release, by PyTorch's numbering: 2.x.y -> 0.(x+15).y
+    (2.14.1 -> 0.29.1), 1.x.y -> 0.(x+1).y - the rule tool/pip-torchvision applies to the wheels. A local
+    tag (+cu130, +rocm10.1.0) is ignored. None for another major version or no version.
+    """
+    parts = str(torch_version or '').split('+')[0].split('.')
+    try:
+        major, minor = int(parts[0]), int(parts[1])
+    except (IndexError, ValueError):
+        return None
+    if major == 1:
+        x = minor + 1
+    elif major == 2:
+        x = minor + 15
+    else:
+        return None
+    m = re.match(r'(\d+)', parts[2]) if len(parts) > 2 else None
+    return f'0.{x}.{m.group(1) if m else 0}'
+
+
+def torchvision_checkout_for(torch_version, requested = None):
+    """
+    (checkout, reason) for the vision repository: the requested tag or branch; else the tag of the release
+    that pairs with a release torch ('v0.29.1' for 2.14.1, 2.14.1+cu130 or 2.14.1+rocm7.2); else 'main'
+    for a development torch (2.15.0a0+git1234abc: built from a branch, its release pair does not exist).
+    """
+    if requested:
+        return str(requested), 'requested'
+    base = str(torch_version or '').split('+')[0]
+    if re.search(r'(a|b|rc)\d', base) or '.dev' in base:
+        return 'main', f'torch {torch_version} is a development build: torchvision main'
+    release = torchvision_release_for_torch(base)
+    if release:
+        return f'v{release}', f'torchvision {release} pairs with torch {base}'
+    return 'main', f'no torchvision release pairs with torch {torch_version}: main'
+
+
+def pair_env(checkout, torch_version, compute, cuda_caps = None):
+    """
+    The environment that ties the torchvision build to its torch: BUILD_VERSION from a release tag (so
+    the package is 0.29.1, not 0.29.1a0+<sha>, and "pip install torchvision==0.29.1" later finds it
+    satisfied), PYTORCH_VERSION (setup.py then requires torch==<this> in the package's metadata, so pip
+    never swaps the torch), FORCE_CUDA for the CUDA and ROCm ops, TORCH_CUDA_ARCH_LIST for this
+    machine's GPUs (unset, the build compiles for every architecture nvcc knows).
+    """
+    env = {}
+    checkout = str(checkout or '')
+    if checkout.startswith('v') and checkout[1:2].isdigit():
+        env['BUILD_VERSION'] = checkout[1:]
+    base = str(torch_version or '').split('+')[0]
+    if base and base[0].isdigit():
+        env['PYTORCH_VERSION'] = base
+    if 'cuda' in compute or 'rocm' in compute:
+        env['FORCE_CUDA'] = '1'
+    if 'cuda' in compute and cuda_caps:
+        env['TORCH_CUDA_ARCH_LIST'] = ';'.join(sorted(cuda_caps))
+    return env
+
+
+# Run as python -c "<probe>": single quotes only, the shell keeps the double-quoted argument whole
+TORCH_PROBE = ("import json, torch; print(json.dumps({'version': torch.__version__, 'cuda': torch.version.cuda, "
+               "'hip': getattr(torch.version, 'hip', None), 'file': torch.__file__}))")
+
 
 class CProgram(InitCProgram):
     """
@@ -32,6 +101,54 @@ class CProgram(InitCProgram):
 
         if 'cuda' in compute:
             _local['lang'] = 'cuda'
+
+        return {'return': 0}
+
+    ############################################################
+    def customize_torch_pair(self,
+                             ctx: dict,
+                             desc: dict = {},
+                             **misc,
+    ):
+        """
+        The torch in the python of this run decides the torchvision to check out: the tag of the release
+        that pairs with it (--checkout overrides), main for a development torch. No torch there is an error
+        with the two ways to get one: build-pytorch into the same python (both runs with the same
+        --use.python.venv_path), or --torch=pip (PyTorch's wheel for the target, set up by the step before).
+        """
+        _local = ctx['tasks']['local']
+        _global = ctx['tasks']['global']
+        con = ctx['control'].get('con', False)
+
+        params = misc.get('params', {}) or {}
+        python = _global['python']['path']
+
+        r = self.cm.utils.sys.run(f'{self.cm.q(python)} -c "{TORCH_PROBE}"', capture_output = True, fail_on_error = False,
+                                  timeout = 300, logger = self.logger)
+        info = None
+        if r.get('returncode') == 0:
+            for line in reversed((r.get('stdout') or '').strip().splitlines()):
+                try:
+                    info = json.loads(line)
+                    break
+                except ValueError:
+                    continue
+        if not info or not info.get('version'):
+            err = ((r.get('stderr') or '').strip().splitlines() or ['no output'])[-1]
+            return self.cm.error(f'no torch in {python} ({err}): torchvision is built against the torch of this python - '
+                                 f'build one there first (cx program run build-pytorch --compute=... with the same '
+                                 f'--use.python.venv_path=<folder> as this run), or add --torch=pip for PyTorch\'s wheel')
+
+        checkout, reason = torchvision_checkout_for(info['version'], params.get('checkout'))
+        _local['checkout'] = checkout
+        _local['torch_version'] = info['version']
+        _local['torch_cuda'] = info.get('cuda')
+        _local['torch_hip'] = info.get('hip')
+
+        if con:
+            print ('')
+            print (f'INFO: torch {info["version"]} in {python} (cuda {info.get("cuda")}, hip {info.get("hip")})')
+            print (f'INFO: torchvision checkout "{checkout}": {reason}')
 
         return {'return': 0}
 
@@ -251,10 +368,19 @@ class CProgram(InitCProgram):
             omp_path = _global['lib-openmp']['path'] #.get('path') or _global['lib-openmp']['qpath'].strip('"').strip("'")
             env.setdefault('OpenMP_omp_LIBRARY', omp_path)
 
-        # XPU: Kineto enables XPUPTI (GPU profiling) which requires Intel PTI SDK.
-        # PTI is a separate optional oneAPI component and may not be installed.
-        # Search for its cmake config under the oneAPI root; if absent, disable
-        # xpupti via LIBKINETO_NOXPUPTI so the build succeeds without profiling.
+        # The pair: the version of the package, the torch it requires, the GPU ops and their architectures
+        devices = _global.get('target', {}).get('features', {}).get('cuda', {}).get('devices', [])
+        caps = {dv.get('compute_cap') for dv in devices if dv.get('compute_cap')}
+        for k, v in pair_env(_local.get('checkout'), _local.get('torch_version'), compute, caps).items():
+            env.setdefault(k, v)
+
+        # setup.py starts one compile job per CPU: the usual limit of the build programs
+        max_jobs = params.get('max_jobs')
+        if max_jobs:
+            env['MAX_JOBS'] = str(max_jobs)
+        else:
+            device = next((c for c in ('cuda', 'rocm', 'xpu') if c in compute), 'cpu')
+            env.setdefault('MAX_JOBS', str(common_build.default_max_jobs(device)))
 
         _local['pip_install_env'] = env
 

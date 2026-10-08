@@ -2,6 +2,39 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.44.1
+- **`tool/pytorchvision`: torchvision as a tool, the mirror of `tool/pytorch`.** Detected when the Python of the
+  run has torchvision (built earlier, or PyTorch's wheel), built from source by `program/build-pytorchvision`
+  otherwise - against the torch of that Python, at the vision release that pairs with it (`--version=0.29.1`
+  names one; `--with.torch=pip` puts PyTorch's wheel torch there first); cached per compute, torch source and
+  version. `cx tool setup pytorch ...` then `cx tool setup pytorchvision ...` with the same
+  `--use.python.venv_path` give the built pair; verified on a ThinkPad with CUDA 13.3 (detection of the pair
+  built before, a build in a fresh venv with the wheel torch, the second call cached, the test program on it).
+  **Fixed on the way: `tool/pytorch` never found its own torch.** The generic detection looks for a file of
+  each name under the search paths, and the tool named only the package (`torch`), so every setup went to a
+  build, even with the torch there. Both tools now name the package's `__init__.py` under the Python's
+  site-packages (Linux, macOS, Windows layouts) and set up the Python first, so `--use.python.venv_path`
+  selects the venv they look in. And after a build the setup task hands the detection the entry's own build
+  folder, where a package installed into the Python never is, so every build of `tool/pytorch` ended with
+  "failed to find tool" after hours of compiling: both tools now point the detection that follows a build at
+  the Python's home. `tool/pytorch`'s default version is the release its build program checks out (2.14.1; it
+  was 2.7.1).
+- **`program/build-pytorchvision` pairs itself with the torch of the Python.** torchvision's compiled operators
+  must be built against the exact torch they run with. The program now probes the torch in the Python of the
+  run, checks out the vision release that pairs with it by PyTorch's numbering (torch 2.14.1 -> `v0.29.1`; a
+  development torch takes `main`; `--checkout` overrides), versions the package as that tag (`BUILD_VERSION`) and
+  makes it require that torch (`PYTORCH_VERSION`), builds the GPU operators for the target (`FORCE_CUDA`, this
+  machine's CUDA architectures) and stops with the two ways to get a torch when the Python has none. `--torch=pip`
+  installs PyTorch's wheel for the target first. One venv shared through `--use.python.venv_path=<folder>` ties
+  the torch build, this build and the programs that use the pair: the pip steps of `test-pytorch-with-vision`
+  then find both satisfied. Before, the program built `main` in the default Python against whatever torch was
+  there, and nothing paired or consumed it. Verified on a ThinkPad with CUDA 13.3, all three mixed combinations:
+  torch built from source (2.14.1) with torchvision from PyTorch's wheels (0.29.1+cu132: the versions pair and the
+  CUDA major versions agree), the built torch with torchvision built against it (v0.29.1, chosen by the program),
+  and PyTorch's wheel torch (2.14.1+cu132) with torchvision built against it - each runs its operators on the GPU
+  through `test-pytorch-with-vision`. The README has the recipes of the four combinations. Tests:
+  `tests/cmeta_aops_basic_tests/test_build_pytorchvision.py`.
+
 ## 0.44.0
 - **cMeta inside AMD's containers: the ROCm that lives in a Python is detected.** `tool/rocm` also finds AMD's
   Python distribution of ROCm through its CLI `rocm-sdk` (the `rocm` pip package: what the `rocm/vllm` and
