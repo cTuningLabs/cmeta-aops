@@ -559,6 +559,15 @@ conversation records) - its own session writes its own memory. A direct change t
 proposal is kept aside in `_direct-<stamp>/` instead of replacing the proposal. The run record and the task result
 (`context_changes`, `pending`) carry what was found.
 
+How "in the meantime" is told: by the records, the way the changes are - not by file times or by the clock. With the
+files, the snapshot keeps the artifact's `applied` records (their names and content) and the runs of its conversation
+records. After the run, a record that is new or reads differently was written since, and the changes it names have
+your word; a run that is new was started since, and one that had no end at the snapshot and has one now ended since.
+A record that was there before the run approves nothing the run does: the same change made again is a new change.
+This holds where the files of a project are stamped by another clock than the one of the machine that runs run-ai -
+a Windows drive inside WSL2, a network share, a folder mounted into a container - in another time zone, or only to
+the whole second.
+
 **An example.** A project `project::my-app` uses `project::shared-rules`. Its session learnt something that belongs to
 the shared rules, and wrote three files under its own `!AI`:
 
@@ -624,7 +633,11 @@ when applying); `REFUSED` a path outside `memory/` and `skills/`.
   artifact's other files are not compared.
 - A file above 8 MB is fingerprinted but not kept, so it is reported and cannot be put back.
 - An artifact counts as "running its own session" for 48 hours after a run of it that has no end (a crash leaves
-  none); its changes are then reported and left.
+  none); its changes are then reported and left. This is the one place where a recorded time is compared with the
+  clock of the machine, with two days to spare.
+- An `--apply_pending` that is writing its files at the very moment a run ends can be seen half done: the files are
+  there, their record is not yet. The run then treats them like any direct change (asks, or puts them back and
+  stages them again - nothing is lost).
 - `--add-dir` still gives Claude write access to the used artifacts; the guard is what undoes a write, not what
   prevents it.
 

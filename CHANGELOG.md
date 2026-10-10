@@ -81,6 +81,23 @@ All notable changes to cMeta AOps are documented here, newest first.
   "return code 1", after the clone. The program checks it when it pairs the checkout with the torch and
   names the ways out (a Python whose torch fits, `--compute=cpu`). Tests:
   `tests/cmeta_aops_basic_tests/test_build_pytorchvision.py`.
+- **`run-ai`: the guard of the used artifacts tells "in the meantime" from the records, not from a clock.**
+  Whether an `--apply_pending` record was written during a run was decided by the record's file time against
+  the clock of the machine at the run's start, and whether the artifact ran a session of its own by the
+  recorded times of its runs against that clock. The files of a project are not always stamped by that clock:
+  on a Windows drive inside WSL2, a network share or a folder mounted into a container the times come from
+  another machine, recorded times can come from another time zone, and some file systems keep times to the
+  whole second. A change the user had just applied could then be taken for a direct change of the session (put
+  back and staged again), and a record from before the run could approve the same change made again by the
+  session. The snapshot taken before the harness starts now also keeps the artifact's `applied` records (names
+  and content) and the runs of its conversation records, read before the files; after the run, a record that
+  is new or reads differently was written since, a run that is new was started since, and one that had no end
+  and has one now ended since. One time rule is left on purpose: a run without an end counts as running for
+  48 hours from its start. With it: the record of a decision takes its name by creating the file (two projects
+  started within the same second carry the same stamp and could write one record over the other), a record
+  caught while it is being written is read again, and the lock of a starting run (`<stamp>.lock`) is old when
+  it is ten minutes older than the lock the new run has just made - by the folder's own file times. Tests:
+  `tests/cmeta_aops_basic_tests/test_run_ai_pending.py`, `test_run_ai_engine.py`.
 
 ## 0.44.1
 - **`tool/pytorchvision`: torchvision as a tool, the mirror of `tool/pytorch`.** Detected when the Python of the

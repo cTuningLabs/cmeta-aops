@@ -304,6 +304,27 @@ def test_runs_started_at_once_reserve_distinct_stamps(tmp_path, task_namespace):
     assert not list(log.iterdir())
 
 
+@pytest.mark.parametrize("clock_offset", [-3600, 3600])
+def test_a_lock_is_old_by_the_times_of_the_folder_not_by_this_machines_clock(tmp_path, task_namespace, monkeypatch, clock_offset):
+    # the files of a project can be stamped by another clock than the one of the machine that runs run-ai (a network
+    # share, a Windows drive inside WSL2). The lock of a run that is starting right now must survive a machine
+    # whose clock is an hour ahead of the folder's, and the lock of a run that died long ago must go on a machine
+    # whose clock is an hour behind: both are told by the age of the lock against the one this run has just made
+    namespace = task_namespace("run-ai")
+    CTask = namespace["CTask"]
+    real = time.time
+    monkeypatch.setitem(namespace, "time", type("Clock", (), {"time": staticmethod(lambda: real() + clock_offset)}))
+    log = tmp_path / "!AI" / "log"
+    starting = put(log / "20000101-000000.lock", "")           # another run, starting at this moment
+    died = put(log / "19990101-000000.lock", "")
+    os.utime(str(died), (real() - 660, real() - 660))          # eleven minutes ago, by the folder's own times
+    stamp, lock = CTask._new_stamp(str(log), True)
+    assert starting.exists() and not died.exists() and pathlib.Path(lock).name == stamp + ".lock"
+    CTask._release_stamp(lock)
+    starting.unlink()
+    assert not list(log.iterdir())
+
+
 def test_after_an_interactive_run_the_next_harness_is_handed_the_conversation(fresh):
     """An interactive session leaves no output file: whether there is a conversation to hand over is what the
     transcript exported from the harnesses' stores, which must be saved with the conversation."""
@@ -537,7 +558,12 @@ def test_the_artifacts_a_project_uses_are_read_only_for_a_run(fresh, monkeypatch
         put(used_ai / "skills" / "s1" / "SKILL.md", "body\n")
         (used_ai / "memory" / "rogue.md").unlink()
         base = used_state()
-        time.sleep(0.5)      # the same content the user approved a moment ago, written again: past the clock slack
+        # the session writes again, at once, the very content the user approved a moment ago: a direct change all the
+        # same - the record of that approval was there before this run began. No pause is needed to tell them apart,
+        # and the times of the records do not matter: here they are an hour ahead of this machine's clock, as a drive
+        # that keeps another clock would stamp them
+        for record in (used_ai / "log").glob("*.applied.json"):
+            os.utime(str(record), (time.time() + 3600, time.time() + 3600))
         r = lab.run(prompt = "go", context_guard = "report")
         assert len(r["context_changes"]) == 3 and all(c["outcome"] == "reported" for c in r["context_changes"])
         assert used_state() != base and not (project_ai / "pending").exists()
@@ -556,6 +582,39 @@ def test_the_artifacts_a_project_uses_are_read_only_for_a_run(fresh, monkeypatch
         shutil.rmtree(used_ai)
         for path, text in original.items():
             put(used_ai / path, text)
+
+
+def test_what_the_user_applies_while_a_session_runs_is_no_direct_change(fresh, monkeypatch):
+    lab = fresh
+    lab.uses(lab.used)
+    used_ai, project_ai = lab.used / "!AI", lab.project / "!AI"
+    original = {p: read(p) for p in used_ai.rglob("*") if p.is_file()}
+    stage = pathlib.Path(lab.run(dry_run = True)["context"][0]["stage_dir"])
+    try:
+        put(stage / "memory" / "two.md", "two\n")
+        put(stage / "memory" / "one.md.delete", "")
+        # while the session lasts the user applies, in another terminal, what was staged. The drive stamps the record
+        # an hour behind this machine's clock (a Windows drive inside WSL2 after a sleep, a network share): by its
+        # time it was written long before the run began - the guard goes by the records it saw at the start instead
+        session(lab, monkeypatch, '''
+            import glob, time
+            from cmeta import CMeta
+            r = CMeta().access({'category': 'task', 'command': 'run', 'arg1': 'run-ai', 'project': %r, 'harness': %r,
+                                'apply_pending': True, 'quiet': True, 'con': False})
+            assert r['return'] == 0 and len(r.get('applied') or []) == 2, r
+            for record in glob.glob(os.path.join(glob.escape(r"%s"), 'log', '*.applied.json')):
+                os.utime(record, (time.time() - 3600, time.time() - 3600))
+        ''' % (lab.cref(lab.project), lab.harness, used_ai))
+        r = lab.run(prompt = "a long session", context_guard = "restore")
+        assert r["return"] == 0, r.get("error")
+        assert r["context_changes"] == [] and r["pending"] == 0 and not (project_ai / "pending").exists()
+        assert read(used_ai / "memory" / "two.md") == "two\n" and not (used_ai / "memory" / "one.md").exists()
+        assert len(list((used_ai / "log").glob("*.applied.json"))) == 1 and "context guard: " not in read(r["record"]).split("| finished |")[1]
+    finally:
+        import shutil
+        shutil.rmtree(used_ai)
+        for path, text in original.items():
+            put(path, text)
 
 
 def test_the_write_mode_comes_from_the_flags_then_the_config_and_reaches_each_harness(fresh):

@@ -30,6 +30,12 @@ both plain files and the standard library, so they behave the same for whoever r
    or the user's own edit during a long session looks like the session's - hence the question. Not a direct change:
    what "--apply_pending" wrote in the meantime (its record says so), and the changes of an artifact that was itself
    run as a project during that time - its own session writes its own memory.
+
+   "In the meantime" is told by the records themselves, the way the changes are: the snapshot remembers the
+   artifact's "applied" records and the runs of its conversation records, and the guard compares them with the ones
+   it finds afterwards. No file time and no recorded time is compared with this machine's clock for it - the files
+   of a project can be stamped by another clock (a Windows drive inside WSL2, a network share, a container), in
+   another time zone, or to the whole second only.
 """
 
 import datetime
@@ -40,6 +46,7 @@ import json
 import os
 import re
 import shutil
+import time
 
 PENDING_DIR = 'pending'
 GUARDED_DIRS = ('memory', 'skills')         # what a run is given from a used artifact, and what can be proposed
@@ -51,7 +58,9 @@ LOG_DIR = 'log'
 SKIP_DIRS = ('__pycache__',)
 MAX_KEEP = 8 * 2 ** 20                      # a larger file is fingerprinted but not kept, so it cannot be put back
 UNFINISHED_RUN_HOURS = 48                   # a run without an end counts as running this long (a crash leaves none)
-CLOCK_SLACK = 0.1                           # seconds a file time may lag behind time.time() (the system clock tick)
+CLOCK_SLACK = 0.1                           # seconds a file time may lag behind time.time() (the system clock tick):
+                                            # only for a snapshot that did not keep the records (see applied_since)
+READ_TRIES, READ_PAUSE = 3, 0.05            # a record caught while it is being written is read again after a moment
 
 
 # ---------------------------------------------------------------------------------------------- names and files
@@ -120,10 +129,52 @@ def _ts(iso):
         return None
 
 
+def _json(path):
+    """(the bytes, what they say) of a JSON record; (the bytes, None) when it cannot be read as one. The records are
+    small files written in one go, not replaced in one step: one caught while it is being written is read again."""
+    data = b''
+    for attempt in range(READ_TRIES):
+        if attempt:
+            time.sleep(READ_PAUSE)
+        try:
+            data = _read(path)
+            return data, json.loads(data.decode('utf-8'))
+        except (OSError, ValueError):
+            continue
+    return data, None
+
+
+def _runs(conv):
+    """The runs of a conversation record -> [(key, started, finished)]. key names a run within its record: its stamp
+    and its start (its place in the list for a record that has no stamps); finished is '' while the run has no end."""
+    runs = conv.get('runs') if isinstance(conv, dict) else None
+    out = []
+    for n, r in enumerate(runs if isinstance(runs, list) else []):
+        if isinstance(r, dict):
+            out.append(('%s %s' % (r.get('stamp') or '#%d' % n, r.get('started') or ''), r.get('started'), str(r.get('finished') or '')))
+    return out
+
+
 # ---------------------------------------------------------------------------------------------- the guard
+class Snapshot(dict):
+    """{relative path: (sha1, the bytes, or None above MAX_KEEP)} of memory/ and skills/ of an !AI folder, and what
+    the artifact's own records said at that moment:
+        applied   {file name: sha1} of its "applied" records (applied_records)
+        runs      {file name: {run: its end, '' while it has none}} of its conversation records (own_runs)
+    The guard compares both with the records it finds after the run (applied_since, own_session_ran)."""
+    applied = None
+    runs = None
+
+
 def snapshot(ai_dir):
-    """{relative path: (sha1, the bytes, or None above MAX_KEEP)} of memory/ and skills/ of an !AI folder."""
-    snap = {}
+    """The memory/ and skills/ of an !AI folder and its records as they are now -> Snapshot.
+    The records are read first: an "applied" record is written after the files it names, and a session records its
+    start before it writes and its end after - so a record the snapshot knows has its files in the snapshot too. The
+    other order would leave a moment in which files written just after they were read came with a record that is
+    already known, and they would count as a direct change."""
+    snap = Snapshot()
+    snap.applied = applied_records(ai_dir)
+    snap.runs = own_runs(ai_dir)
     for rel, full in _walk(ai_dir):
         try:
             data = _read(full)
@@ -152,17 +203,35 @@ def changes(snap, ai_dir):
     return out
 
 
-def applied_since(ai_dir, t0):
-    """{(relative path, sha1 or "deleted")} of what "--apply_pending" wrote into this artifact since t0 (its records
-    in !AI/log) - the changes the user has given their word for."""
-    out = set()
+def applied_records(ai_dir):
+    """{file name: sha1} of the "applied" records in an artifact's !AI/log as they are now - kept by the snapshot."""
+    out = {}
     for fp in _glob(ai_dir, LOG_DIR, '*' + APPLIED_SUFFIX):
         try:
-            if os.path.getmtime(fp) < t0 - CLOCK_SLACK:     # written before the snapshot: already part of it
+            out[os.path.basename(fp)] = _sha(_read(fp))
+        except OSError:
+            pass
+    return out
+
+
+def applied_since(ai_dir, t0, known=None):
+    """{(relative path, sha1 or "deleted")} of what "--apply_pending" wrote into this artifact since the snapshot
+    (its records in !AI/log) - the changes the user has given their word for.
+    known: the records the snapshot saw (applied_records). A record that is not among them, or that reads
+    differently now, was written since; one that is among them describes what the snapshot already holds - if the
+    same change is made again later, that is a new change. Without `known` (a snapshot that did not keep the
+    records) the record's file time is compared with t0, this machine's clock at the snapshot: right on the
+    machine's own disk, a guess where the files are stamped by another clock or to the whole second."""
+    out = set()
+    for fp in _glob(ai_dir, LOG_DIR, '*' + APPLIED_SUFFIX):
+        if known is None:
+            try:
+                if os.path.getmtime(fp) < t0 - CLOCK_SLACK:     # written before the snapshot: already part of it
+                    continue
+            except OSError:
                 continue
-            with open(fp, encoding='utf-8') as f:
-                d = json.load(f)
-        except Exception:
+        data, d = _json(fp)
+        if known is not None and known.get(os.path.basename(fp)) == _sha(data):
             continue
         for e in (d.get('applied') or []) if isinstance(d, dict) else []:
             if isinstance(e, dict) and e.get('rel'):
@@ -170,24 +239,47 @@ def applied_since(ai_dir, t0):
     return out
 
 
-def own_session_ran(ai_dir, t0, t1):
-    """True when the artifact was itself run as a run-ai project between t0 and t1 (the runs of its conversation
-    records): its own session writes its own memory, and that is no direct change of ours."""
+def own_runs(ai_dir):
+    """{file name: {run: its end, '' while it has none}} of the artifact's own conversation records - the runs in
+    which it was the project - as they are now; kept by the snapshot."""
+    out = {}
     for fp in _glob(ai_dir, LOG_DIR, '*.conversation.json'):
-        try:
-            with open(fp, encoding='utf-8') as f:
-                conv = json.load(f)
-        except Exception:
-            continue
-        for r in (conv.get('runs') or []) if isinstance(conv, dict) else []:
-            a = _ts(r.get('started')) if isinstance(r, dict) else None
-            if a is None:
-                continue
-            b = _ts(r.get('finished'))
-            if b is None:
-                b = a + UNFINISHED_RUN_HOURS * 3600
-            if a <= t1 and b >= t0:
-                return True
+        data, conv = _json(fp)
+        if conv is not None:
+            out[os.path.basename(fp)] = {key: finished for key, started, finished in _runs(conv)}
+    return out
+
+
+def own_session_ran(ai_dir, t0, t1, before=None):
+    """True when the artifact was itself run as a run-ai project while our run lasted (the runs of its conversation
+    records): its own session writes its own memory, and that is no direct change of ours.
+    before: its runs as the snapshot saw them (own_runs). The answer then comes from the records: a run that is not
+    among them was started since, and one that had no end then and has one now ended since. A run that still has no
+    end counts as running for UNFINISHED_RUN_HOURS from its start (a crash leaves none) - the one place where a
+    recorded time meets this machine's clock, with two days to spare. A run that had its end at the snapshot was
+    over before ours began, whatever its times say on this machine.
+    Without `before` (a snapshot that did not keep the records) the recorded times are compared with t0 and t1,
+    this machine's clock at the snapshot and now."""
+    for fp in _glob(ai_dir, LOG_DIR, '*.conversation.json'):
+        data, conv = _json(fp)
+        known = None if before is None else before.get(os.path.basename(fp), {})
+        for key, started, finished in _runs(conv):
+            a = _ts(started)
+            if known is None:
+                if a is None:
+                    continue
+                b = _ts(finished) if finished else None
+                if b is None:
+                    b = a + UNFINISHED_RUN_HOURS * 3600
+                if a <= t1 and b >= t0:
+                    return True
+            elif key not in known:
+                return True                 # recorded since the snapshot: it started while our run lasted
+            elif not finished:
+                if a is not None and a + UNFINISHED_RUN_HOURS * 3600 >= t0:
+                    return True             # still without an end: running, or crashed not long ago
+            elif not known[key]:
+                return True                 # it had no end at the snapshot and has one now
     return False
 
 
@@ -201,6 +293,9 @@ def guard(sources, snaps, t0, t1, mode, pending_root, stamp, ask=None, project='
     mode "keep" (a run the user gave write access everywhere, --write=all): the changes stay, are recorded in the
     artifact like an applied proposal, and the version each changed or deleted file had before the run is saved
     under keep_root/<key>/ (when keep_root is given), so that a change can be taken back.
+    t0, t1: this machine's clock at the snapshot and now. With the snapshots of snapshot() they only bound how long
+    a run without an end counts as running; what was applied, and which runs of the artifact started or ended, in
+    the meantime is read from the records the snapshot kept (see applied_since and own_session_ran).
     -> (lines for the user, [{label, rel, what, outcome, staged}])."""
     notes, records = [], []
     for s in sources:
@@ -210,11 +305,11 @@ def guard(sources, snaps, t0, t1, mode, pending_root, stamp, ask=None, project='
         ch = changes(snap, s['ai'])
         if not ch:
             continue
-        approved = applied_since(s['ai'], t0)
+        approved = applied_since(s['ai'], t0, getattr(snap, 'applied', None))
         ch = [c for c in ch if (c[0], c[2] or 'deleted') not in approved]
         if not ch:
             continue
-        if own_session_ran(s['ai'], t0, t1):
+        if own_session_ran(s['ai'], t0, t1, getattr(snap, 'runs', None)):
             for rel, what, sha in ch:
                 records.append({'label': s['label'], 'rel': rel, 'what': what, 'outcome': 'left: the artifact ran its own session meanwhile', 'staged': ''})
             notes.append('context guard: %d file(s) of %s changed during the run - left as they are, that artifact was run as a '
@@ -452,12 +547,19 @@ def finish_target(key_dir, pending_root):
 def record_applied(ai_dir, stamp, project, records, by='cxt run-ai --apply_pending'):
     """<artifact>/!AI/log/<stamp>.applied.json: what was applied (or kept), when and from which project - the
     user's word on record, which also tells the guard of a run in progress that these changes are no direct ones."""
-    fp = os.path.join(ai_dir, LOG_DIR, stamp + APPLIED_SUFFIX)
-    n = 2
-    while os.path.exists(fp):                  # one record per decision
-        fp, n = os.path.join(ai_dir, LOG_DIR, '%s-%d%s' % (stamp, n, APPLIED_SUFFIX)), n + 1
-    os.makedirs(os.path.dirname(fp), exist_ok=True)
-    with open(fp, 'w', encoding='utf-8', newline='\n') as f:
+    os.makedirs(os.path.join(ai_dir, LOG_DIR), exist_ok=True)
+    n = 1
+    while True:
+        # one record per decision. The name is taken by creating the file, which looking for it first is not: two
+        # projects started within the same second carry the same stamp and may record in one artifact at once
+        fp = os.path.join(ai_dir, LOG_DIR, '%s%s%s' % (stamp, '' if n == 1 else '-%d' % n, APPLIED_SUFFIX))
+        n += 1
+        try:
+            f = open(fp, 'x', encoding='utf-8', newline='\n')
+        except FileExistsError:
+            continue
+        break
+    with f:
         json.dump({'applied_on': datetime.datetime.now().isoformat(timespec='seconds'), 'by': by,
                    'from_project': project, 'applied': records}, f, indent=1)
         f.write('\n')

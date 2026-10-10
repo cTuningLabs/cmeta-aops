@@ -294,15 +294,10 @@ class CTask(InitCTask):
         must not share it, so a run that writes records reserves it (reserve=True) by creating <stamp>.lock
         exclusively - one atomic step, which looking for the files first is not - and releases the lock once its run
         record holds the stamp. A lock left by a run that died is harmless (no later run takes a past second) and the
-        next run clears it. -> (stamp, lock file or '')."""
+        next run clears it: one that is ten minutes older than the lock this run has just made - by the times the
+        folder gives its files, not by this machine's clock, which a network share or a Windows drive inside WSL2
+        does not keep. -> (stamp, lock file or '')."""
         base = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-        if reserve:
-            for old in _glob(log_dir, '*' + STAMP_LOCK):
-                try:
-                    if time.time() - os.path.getmtime(old) > 600:
-                        os.remove(old)
-                except OSError:
-                    pass
         n = 1
         while True:
             stamp = base if n == 1 else '%s-%d' % (base, n)
@@ -319,6 +314,16 @@ class CTask(InitCTask):
                 continue
             except OSError:
                 return stamp, ''        # a log folder that cannot be written: the run says so when it writes there
+            try:
+                made = os.path.getmtime(lock)
+            except OSError:
+                return stamp, lock
+            for old in _glob(log_dir, '*' + STAMP_LOCK):
+                try:
+                    if old != lock and made - os.path.getmtime(old) > 600:
+                        os.remove(old)
+                except OSError:
+                    pass
             return stamp, lock
 
     @staticmethod
