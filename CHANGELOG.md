@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## 0.44.1.1 (in development)
+## 0.45.0
 - **The cache entry of a run: a failed or interrupted attempt is resumed in place by the same request, never
   served as a result, never inherited by another request; identical requests at once make one entry.** The
   task engine (`category/task/api/v2.py`) classifies the entries that match a cache query with the engine's
