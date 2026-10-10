@@ -8,6 +8,8 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 import os
 import copy
 
+from task_c36be4b9314a45e0.api.ctask import ask
+
 def build_tool(self,
         ctx: dict,                  # cMeta context
         _result: dict,              # Aggregated result for setup
@@ -101,9 +103,12 @@ def build_tool(self,
 
         elif con:
             print ('')
-            x = input (f'{space}INFO: would you like to build tool "{artifact_print_name}"{with_version} (Y/n)? ')
+            # Nobody to answer (a detached job, a script): an error that names the flags, never a traceback
+            r = ask(f'{space}INFO: would you like to build tool "{artifact_print_name}"{with_version} (Y/n)? ',
+                    how = '-q (--quiet) or --build to build without asking')
+            if r['return'] > 0: return r
 
-            x = x.strip().lower()
+            x = r['answer'].strip().lower()
 
             if x not in ['', 'y', 'yes']:
                 print (f'{space}      Skipped!')
@@ -177,7 +182,7 @@ def build_tool(self,
 
             if not quiet:
                 print ('')
-                input(f'{space}Press Enter to continue:')
+                ask(f'{space}Press Enter to continue:', optional = True)      # a pause to read the note: nobody there, no pause
 
             print ('')
 

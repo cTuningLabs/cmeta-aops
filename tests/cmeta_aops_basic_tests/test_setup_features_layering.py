@@ -40,7 +40,12 @@ def setup_api():
     """task/setup/api_v1.py as a package member (its relative imports), with the engine's InitCTask stubbed."""
     stub = types.ModuleType("task_c36be4b9314a45e0.api.ctask")
     stub.InitCTask = type("InitCTask", (), {})
-    pkg_names = ["task_c36be4b9314a45e0", "task_c36be4b9314a45e0.api"]
+    # the helpers the setup modules take from the task API are the real ones (ctask.py loads without the engine)
+    spec = importlib.util.spec_from_file_location("ctask_helpers_for_setup", REPO_ROOT / "category" / "task" / "api" / "ctask.py")
+    real = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(real)
+    stub.ask = real.ask
+    pkg_names =["task_c36be4b9314a45e0", "task_c36be4b9314a45e0.api"]
     saved = {k: sys.modules.get(k) for k in pkg_names + [stub.__name__, "setup_pkg_under_test"]}
     for name in pkg_names:
         if name not in sys.modules:

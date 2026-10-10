@@ -6,7 +6,9 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import importlib.util
+import inspect
 import os
+import shutil
 import stat
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
@@ -156,6 +158,30 @@ class CTask(InitCTask):
         return module
 
     ############################################################
+    def _md5sum_differs(self, path, filename, md5sum, verbose, space):
+        """The md5sum of a file against the expected one: {'return': 0, 'differs': bool, 'md5sum': <of the file>}."""
+        if verbose:
+            print ('')
+            print (f'{space}RUN: Checking md5sum for {filename}: {md5sum}')
+
+        r = self.cm.utils.files.md5sum(path = path)
+        if r['return'] > 0: return r
+
+        return {'return': 0, 'differs': r['md5sum'] != md5sum, 'md5sum': r['md5sum']}
+
+    ############################################################
+    def _unpack_error(self, r, archive, downloaded_now):
+        """
+        The error of an unpack, with what to do when the archive was not downloaded by this attempt: an
+        earlier one left it (cMeta before 0.34.2 could leave a cut download under its name), and the same
+        request would fail on it every time.
+        """
+        if not downloaded_now and r.get('error'):
+            r['error'] += (f'\nThe archive "{archive}" was left by an earlier attempt and was not downloaded again: '
+                           'if it is incomplete or damaged, delete this file and repeat the command')
+        return r
+
+    ############################################################
     def run(self,
             ctx: dict,        # cMeta context
             chdir: str = None,
@@ -177,10 +203,18 @@ class CTask(InitCTask):
             strip_folders: int = 0,
             timeout: int = None,
             make_check_file_executable: bool = False,
+            resume: bool = True,
     ):
 
         """
         Download file.
+
+        A file gets its name only when it is complete: the engine compares what arrived with the size
+        the server announced (a connection cut mid-way is an error, since cMeta 0.34.2), and a checksum
+        (md5sum), when there is one, is compared before the name is given. Until then the bytes are in
+        "<filename>.download" in the working directory, and an interrupted download continues from them
+        on the next attempt (resume, on by default: an HTTP range request for the rest, only when the
+        server confirms that the file is still the same one; --resume- starts over every time).
 
         Returns:
             dict: A cMeta dictionary with the following keys:
@@ -261,7 +295,6 @@ class CTask(InitCTask):
                     if self.cm.catch_error(r): return r
 
                     try:
-                        import shutil
                         shutil.rmtree(path_to_files)
                     except Exception as e:
                         return self.cm.error(f'can\'t remove directory "{path_to_files}"')
@@ -286,7 +319,21 @@ class CTask(InitCTask):
             rr = {}
 
             success = False
+            downloaded_now = False
             error = ''
+
+            # The partial file of a download ("<name>.download") and the record that lets the engine continue
+            # it ("<name>.download.resume") live in the working directory, not in `directory`: the tools ask
+            # for a clean `directory` on every attempt, and an interrupted download of 1 GB must not start
+            # over for that. A file gets its name only when it is complete and its checksum is right.
+            part_dir = os.getcwd()
+
+            # resume=False: every download starts at its first byte. The engine continues partial files
+            # since 0.34.2; an older one always starts over
+            download_extra = {}
+            if resume and 'resume' in inspect.signature(self.cm.utils.net.download).parameters:
+                download_extra['resume'] = True
+
             for u in range(0, len(urls)):
                 url = urls[u]
 
@@ -301,27 +348,76 @@ class CTask(InitCTask):
                     filename = self._extract_filename_from_url(url)
 
                 filename_with_path = os.path.join(path_to_files, filename)
+                part_with_path = os.path.join(part_dir, filename + '.download')
+
+                # Same positional matching as the filenames above: no check
+                # for a mirror that has no checksum of its own
+                expected_md5sum = md5sums[u] if len(md5sums)>u else None
+
+                # Until 0.45.0 the partial file was in `directory`: one left there by an interrupted run of
+                # that time cannot be continued (no record) and is dropped
+                if directory:
+                    old_part = os.path.join(path_to_files, filename + '.download')
+                    if os.path.isfile(old_part):
+                        os.remove(old_part)
 
                 # Check if need to clean
                 if os.path.isfile(filename_with_path) and clean:
                     os.remove(filename_with_path)
 
+                # A file that an earlier attempt left under its name is taken as it is, unless it has a
+                # checksum to answer to: until 0.45.0 the checksum was compared only right after a download,
+                # so the attempt after a failed check took the bad file
+                if os.path.isfile(filename_with_path) and expected_md5sum:
+                    r = self._md5sum_differs(filename_with_path, filename, expected_md5sum, verbose, space)
+                    if self.cm.catch_error(r): return r
+
+                    if r['differs']:
+                        if con:
+                            print (f'{space}WARNING: {filename} was left by an earlier attempt with md5sum {r["md5sum"]} '
+                                   f'instead of {expected_md5sum}: downloading it again')
+                        os.remove(filename_with_path)
+
                 # Download if doesn't exist
                 if not os.path.isfile(filename_with_path):
                     if tool == 'cmeta':
 
-                        rr = self.cm.utils.net.download(url, 
+                        rr = self.cm.utils.net.download(url,
                                                         filename = filename + '.download',
-                                                        path = directory, 
-                                                        show_progress = con, 
-                                                        fail_on_error = self.cm.fail_on_error, 
-                                                        skip_ssl_certificate = skip_ssl_certificate, 
+                                                        path = part_dir,
+                                                        show_progress = con,
+                                                        fail_on_error = self.cm.fail_on_error,
+                                                        skip_ssl_certificate = skip_ssl_certificate,
                                                         headers = headers,
                                                         api_key = api_key,
                                                         space = space,
+                                                        **download_extra,
                              )
                         if rr['return'] == 0:
-                            success = True
+                            if rr.get('resumed_from') and con and verbose:
+                                print (f'{space}INFO: the download of {filename} continued after its first {rr["resumed_from"]} bytes')
+
+                            complete = True
+
+                            if expected_md5sum:
+                                r = self._md5sum_differs(part_with_path, filename, expected_md5sum, verbose, space)
+                                if self.cm.catch_error(r): return r
+
+                                if r['differs']:
+                                    # Not the file that was asked for: it never gets its name, and nothing of
+                                    # it is kept for a next attempt to continue
+                                    error = f'md5sum failed: {r["md5sum"]} instead of {expected_md5sum}'
+                                    complete = False
+                                    os.remove(part_with_path)
+
+                            if complete:
+                                try:
+                                    os.replace(part_with_path, filename_with_path)
+                                except OSError:
+                                    # `directory` on another file system than the working directory (a link, a mount)
+                                    shutil.move(part_with_path, filename_with_path)
+                                success = True
+                                downloaded_now = True
                         else:
                             error = rr['error']
 
@@ -330,38 +426,13 @@ class CTask(InitCTask):
                 else:
                     success = True
 
-                if success:
-                    f1 = filename + '.download'
-                    f2 = filename
-
-                    if directory:
-                        f1 = os.path.join(directory, f1)
-                        f2 = os.path.join(directory, f2)
-
-                    if os.path.isfile(f1):
-                        os.replace(f1, f2)
-
-                        # Same positional matching as the filenames above: skip
-                        # the check for a mirror that has no checksum of its own
-                        # rather than failing on an out-of-range index.
-                        if len(md5sums)>u:
-                            md5sum = md5sums[u]
-
-                            if verbose:
-                                print ('')
-                                print (f'{space}RUN: Checking md5sum for {filename}: {md5sum}')
-
-                            r = self.cm.utils.files.md5sum(path = filename_with_path)
-                            if self.cm.catch_error(r): return r
-
-                            md5sum_calculated = r['md5sum']
-
-                            if md5sum_calculated != md5sum:
-                                error = f'md5sum failed: {md5sum_calculated}'
-                                success = False
+                    # The file is there: what an interrupted download of it left is of no use any more
+                    for leftover in (part_with_path, part_with_path + getattr(self.cm.utils.net, 'RESUME_RECORD_SUFFIX', '.resume')):
+                        if os.path.isfile(leftover):
+                            os.remove(leftover)
 
                 if success:
-                    break    
+                    break
 
             if not success:
                 x = ','.join(urls)
@@ -390,7 +461,7 @@ class CTask(InitCTask):
                                                   overwrite = unzip_overwrite, 
                                                   clean = clean_after_unzip,
                                                   fail_on_error = self.cm.fail_on_error)
-                    if self.cm.catch_error(r): return r
+                    if self.cm.catch_error(r): return self._unpack_error(r, filename_with_path, downloaded_now)
 
                 elif (filename.endswith('.tar.xz') or \
                       filename.endswith('.tar.gz') or \
@@ -417,7 +488,7 @@ class CTask(InitCTask):
                     }
 
                     rx = self.cm.access(ii)
-                    if self.cm.catch_error(rx): return rx
+                    if self.cm.catch_error(rx): return self._unpack_error(rx, filename_with_path, downloaded_now)
 
                 else:
                     return self.cm.error(f'extension is not yet supported for unzip/untar {filename}')

@@ -72,7 +72,10 @@ class CTask(InitCTask):
 
             delete = True
             if ask and not quiet:
-                x = input(f'{space}        Would you like to delete "{_file}" (Y/n)? ').strip().lower()
+                from task_c36be4b9314a45e0.api.ctask import ask as ask_user
+                r = ask_user(f'{space}        Would you like to delete "{_file}" (Y/n)? ', how = '-q (--quiet) to delete without asking')
+                if r['return'] > 0: return r
+                x = r['answer'].strip().lower()
                 if x in ['n', 'no']:
                     delete = False
 

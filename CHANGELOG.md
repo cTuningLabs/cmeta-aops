@@ -2,6 +2,86 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.44.1.1 (in development)
+- **The cache entry of a run: a failed or interrupted attempt is resumed in place by the same request, never
+  served as a result, never inherited by another request; identical requests at once make one entry.** The
+  task engine (`category/task/api/v2.py`) classifies the entries that match a cache query with the engine's
+  `cx cache classify` (ok, running, crashed, failed, broken - cMeta 0.34.2) and: serves the usable ones as
+  before; resumes, for a request without a usable entry, the newest crashed, failed or broken entry made for
+  THE SAME request (`request_params`, recorded in the entry at its creation: the request's cache meta params
+  with the fuzzy `@version` under its plain name and the constant match params a tool adds - a different
+  version, or none where the attempt had one, gets its own new entry and the failed one stays); waits for a running one (a
+  notice after 3 s, `CMETA_CACHE_WAIT_TIMEOUT`, 86400 s) and then uses its result; creates a new entry
+  otherwise - the find-then-create under the lock of the cache repository's category folder, the attempt
+  under the lock of its entry's folder (`cmeta-task-running.json` says who runs it). At the end the result
+  and ctx files are written first (atomically), then the entry's `params` are REPLACED by the request's full
+  cache meta params (the identity keys and the constant match params, what the find of the next request
+  matches) plus the task's `_update_params` (before: deep-merged over the old ones, so a stale version of a
+  failed attempt survived - the torchvision incident of 2026-10-08), then the `tmp` tag goes (before: the tag
+  went before the result existed) or `failed` is set. A task sees what it resumes in
+  `ctx['tasks']['run_control']['cache_resumed']`. Legacy entries without the record resume by the subset
+  rule of before. `--update`, `--clean`, `--new`, `--path`, `cache_name`, the hooks and the files are
+  unchanged. Tests: `tests/cmeta_aops_basic_tests/test_task_cache_states.py` (a synthetic task that
+  downloads once, fails on demand and counts its attempts: the retry, the other configuration, the legacy
+  entry, the broken entries, a kill and the resume, identical requests at once, `--new`/`--update`,
+  `show`/`clean` by state, a running entry neither cleaned nor deleted, a full reindex during a build, and
+  the invariants - index == disk, one entry per configuration, no lock or temporary file left, usable
+  entries untouched). Needs cMeta 0.34.2 (`min_cmeta_version` of the task category).
+- **Source builds size `MAX_JOBS` to the RAM that is free, with 3 GiB per C++ job.**
+  `category/program/api/common_build.py` (build-pytorch, build-pytorchvision, build-vllm) counted 2 GiB per
+  C++ job of the machine's whole RAM: 15 jobs on a 30 GiB laptop, where PyTorch 2.14's vectorized ATen
+  kernels pass that, and the kernel's out-of-memory killer ended a compiler and the user's desktop session
+  with it. Now 3 GiB per C++ job (4 GiB per CUDA/ROCm job as before), 2 GiB kept for the system, and the
+  budget is the RAM available now (`MemAvailable` on Linux, the free physical memory on Windows, the
+  machine's RAM on macOS): a build next to a browser, a VM or another build gets fewer jobs. `--max_jobs`
+  overrides as before. Tests: `tests/cmeta_aops_basic_tests/test_build_and_target_helpers.py`.
+- **`task/download-file`: a file gets its name only when it is complete, and an interrupted download is
+  continued.** A transfer cut by the network is an error now (cMeta 0.34.2 checks the size the server
+  announced; before, the short file was renamed and unpacked, and since a failed attempt is resumed in its
+  entry the same request would have failed on it every time). The bytes that arrived stay in
+  `<name>.download` and the next attempt asks only for the rest (`download(resume=True)` of the engine: a
+  range request that the server answers only for the same file; `--resume-` starts over every time; an
+  older engine starts over as before). The partial file and its record live in the working directory, not in
+  `directory`: the tools ask for a clean `directory` on every attempt, which used to throw the partial
+  download away with it. A checksum (`md5sum`) is compared BEFORE the file gets its name, and a file found
+  under its name is checked again - before, the check ran only right after a download, so the attempt after a
+  failed check (and the second mirror after a bad first one) took the bad file. Mirrors never complete each
+  other's files. When an archive left by an earlier attempt cannot be unpacked, the error names the file to
+  delete. Tests: `tests/cmeta_aops_basic_tests/test_download_file_resume.py`.
+- **One venv is one python: a folder is recorded under the name the request gave it.** `task/venv` reported
+  the venv under `os.getcwd()`, which on Linux and macOS is the physical path, while every later request
+  looked for it under the path it named: with a link in the path (a home moved to another disk behind a
+  link, `/tmp` on every Mac) the run that made a venv and the runs that used it recorded two pythons, each
+  with its own entry for every pip package. The venv (and the conda environment of `--conda`) is now
+  reported under the name of the folder the task was asked to work in (`folder_as_named` of the task API);
+  no link is resolved - a link is what survives when the disk behind it changes. Without a link in the path
+  nothing changes, and Windows already kept the name. The same folder named by another path is another
+  name, with its own entry. Tests: `tests/cmeta_aops_basic_tests/test_folder_as_named.py`.
+- **`tool/pip`: the CUDA or ROCm line of a torch that is installed is kept by requests that name none.**
+  When a request names no line (`with.ver`, an index, the target's), torch and the packages built against it
+  (torchvision, torchaudio, flash-attn) took the newest line of the machine whatever was installed: a quiet
+  run replaced torch 2.14.1+cu130 by 2.14.1+cu132, and a cu130 torch got a cu132 torchvision. Now the torch
+  already in the Python of the request decides: its packages come from its index, and a request for torch
+  itself keeps it when it is what the request asks for (the same version, or none). A request for another
+  torch version takes the line of the machine as before, and a line that is named is taken whatever is
+  installed. A CPU wheel, a source build and AMD's builds have no say. Tests:
+  `tests/cmeta_aops_basic_tests/test_pip_torch_wheel_line.py`.
+- **A question without a terminal is an error that names the flag, not a traceback.** A setup without `-q`
+  in a detached job ended in `EOFError` at "would you like to install ... (Y/n)?". Every prompt of the task
+  engine, of `task/setup` and of the tasks that select or confirm goes through `ask` of the task API: no
+  terminal is an error of the run (`-q` or `--install`, `--build`, `--update`, `--skip_size_check`, `-f`:
+  whatever answers the question in advance), never a made-up yes - an install may need sudo; the attempt
+  ends `failed` and the same request with the flag resumes it. A pause ("Press Enter to continue") is
+  skipped. A quiet run no longer stops at the two questions about an outdated cache entry
+  (`--check_versions`): it takes their defaults. A terminal and a piped answer are as before. Tests:
+  `tests/cmeta_aops_basic_tests/test_no_terminal_prompts.py`.
+- **`program/build-pytorchvision` says before the clone that the torch is for another CUDA.** torch does not
+  compile CUDA operators with a toolkit of another major version than the one it was built for; with a torch
+  for CUDA 12 in the Python of the run and a CUDA 13 toolkit the build ended inside pip's output with
+  "return code 1", after the clone. The program checks it when it pairs the checkout with the torch and
+  names the ways out (a Python whose torch fits, `--compute=cpu`). Tests:
+  `tests/cmeta_aops_basic_tests/test_build_pytorchvision.py`.
+
 ## 0.44.1
 - **`tool/pytorchvision`: torchvision as a tool, the mirror of `tool/pytorch`.** Detected when the Python of the
   run has torchvision (built earlier, or PyTorch's wheel), built from source by `program/build-pytorchvision`

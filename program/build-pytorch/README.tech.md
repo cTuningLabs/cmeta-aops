@@ -15,7 +15,7 @@ cx program run build-pytorch --compute=cuda --checkout=v2.14.0 --max_jobs=4 --co
 | Option | Default | Meaning |
 |---|---|---|
 | `--checkout` | `v2.14.1` | tag, branch or commit; a tag also sets `PYTORCH_BUILD_VERSION` |
-| `--max_jobs` | sized to the RAM (4 GiB per CUDA job, 2 GiB per C++ job) | `MAX_JOBS` |
+| `--max_jobs` | sized to the RAM free now (4 GiB per CUDA job, 3 GiB per C++ job, 2 GiB kept for the system) | `MAX_JOBS` |
 | `--compile.d.<VAR>=<value>` | `USE_DISTRIBUTED=OFF` | a build variable of `setup.py` (`ON`/`OFF` become `1`/`0`) |
 | `--use_cudnn` | off | `USE_CUDNN=1` with `lib-cudnn` |
 | `--use_mkl` | off | MKL for CPU and XPU builds |

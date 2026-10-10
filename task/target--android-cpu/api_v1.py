@@ -106,7 +106,11 @@ class CTask(InitCTask):
             if quiet:
                 print (f'{space}Quiely selected 0')     
             else:
-                x = input(f'{space}Please select your device or press Enter for 0: ').strip().lower()
+                from task_c36be4b9314a45e0.api.ctask import ask as ask_user
+                r = ask_user(f'{space}Please select your device or press Enter for 0: ',
+                             how = '-q (--quiet) to take the first of the list')
+                if r['return'] > 0: return r
+                x = r['answer'].strip().lower()
                 if x != '':
                     device = int(x)
                     if device <0 or device>=len(devices):

@@ -91,6 +91,86 @@ def prompt_via_file_done(result):
     return {'return': 0}
 
 
+def ask(question, how='-q (--quiet) to take the default answers', optional=False):
+    """
+    A question to the person who runs the command (every prompt of a task goes through here).
+
+    input() raises when nobody can answer: EOFError when the standard input is closed or at its end (a
+    detached job, nohup, a CI step, a pipe that has no more lines), RuntimeError when Python has no
+    standard input at all, OSError or ValueError when its handle is invalid or closed (a job started
+    without a console on Windows) - and the run ended in a traceback in the middle of an install. Here that is an
+    error of the run that says how to answer in advance ("how": the flag that makes the question
+    unnecessary). An answer is never made up: the default of "install (Y/n)?" may install with sudo. An
+    answer that is piped in (echo y | cx ...) is read as before.
+
+    "optional": no answer is the empty answer (a pause before going on, a choice whose default changes
+    nothing) instead of an error.
+
+    Returns {'return': 0, 'answer': <the line typed>}, or {'return': 1, 'error': ..., 'no_terminal': True}.
+    """
+
+    try:
+        return {'return': 0, 'answer': input(question)}
+    except (EOFError, OSError):
+        # the end of the input, or a standard input that cannot be read (an invalid handle, a terminal that hung up)
+        pass
+    except (RuntimeError, ValueError) as e:
+        # "input(): lost sys.stdin", "I/O operation on closed file" - anything else is not ours
+        if 'stdin' not in str(e) and 'closed file' not in str(e):
+            raise
+
+    # The prompt was printed and its line left open
+    print('')
+
+    if optional:
+        return {'return': 0, 'answer': '', 'no_terminal': True}
+
+    text = ' '.join(str(question).split())
+    return {'return': 1,
+            'error': 'no answer to "%s": there is no terminal to answer in (the standard input is closed). '
+                     'Run the command in a terminal, or add %s' % (text, how),
+            'no_terminal': True}
+
+
+def folder_as_named(named, base=None):
+    """
+    The current directory under the name the request gave it.
+
+    A task runs in the folder it was asked to work in (--path, the venv path of a python request) and
+    os.getcwd() names that folder by its physical path: on Linux and macOS every link in the path is
+    resolved (/home/me/work -> /mnt/disk/work, ~/CMETA moved to another disk behind a link, /tmp ->
+    /private/tmp on every Mac), while the next request names the folder as before. What a task records
+    from os.getcwd() is then not what the next request looks for: a venv made at <link>/venv was recorded
+    under its physical path and found under its name, so one venv became two pythons, each with its own
+    record of every package. cMeta records a folder as it was named and resolves no link (the two names can
+    mean different things: the link is what survives when the disk behind it changes); Windows does so
+    by itself (its current directory keeps the name it was given).
+
+    Returns "named" (made absolute against "base", the directory the request was made in, and
+    normalised) when it is the current directory under another name, else os.getcwd() - also when
+    "named" is empty or is not the current directory at all.
+    """
+
+    here = os.getcwd()
+
+    if not named:
+        return here
+
+    path = named if os.path.isabs(named) else os.path.join(base or here, named)
+    path = os.path.normpath(path)
+
+    if os.path.normcase(path) == os.path.normcase(here):
+        return here
+
+    try:
+        if os.path.samefile(path, here):
+            return path
+    except OSError:
+        pass
+
+    return here
+
+
 # The key of the generator record that names what launched the agent or the task: "via: cmeta <engine version>".
 # A record {"method": "agent", "agent": "Claude Code 2.1.292", "by": ..., "model": ...} then says that the agent ran
 # through a cMeta task (run-ai, run-claude, ...) rather than by hand. One constant, so the word can change in one place.

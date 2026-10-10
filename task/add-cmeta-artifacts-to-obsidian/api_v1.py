@@ -58,7 +58,10 @@ class CTask(InitCTask):
                    print (f'Target path exists: {target_path}')
                    print ('')
 
-                   x = input('Would you like to delete and rebuild it (y/N): ').strip().lower()
+                   from task_c36be4b9314a45e0.api.ctask import ask as ask_user
+                   r = ask_user('Would you like to delete and rebuild it (y/N): ', how = '--force to delete and rebuild it without asking')
+                   if r['return'] > 0: return r
+                   x = r['answer'].strip().lower()
 
                    if x in ['y', 'yes']:
                        clean = True

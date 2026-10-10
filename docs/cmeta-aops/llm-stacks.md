@@ -118,7 +118,7 @@ It installs `requirements/build/<device>.txt`, with a torch whose CUDA major ver
 matches the local toolkit, then runs `pip install --no-build-isolation -v .`. The variables
 it sets are `VLLM_TARGET_DEVICE`, `CUDA_HOME` (the toolkit of `nvcc`), `TORCH_CUDA_ARCH_LIST`
 (the detected GPU; a single architecture shortens the build a lot), `NVCC_THREADS`, and
-`MAX_JOBS` sized to the RAM (4 GiB per CUDA job). Override them with `--cuda_arch_list`,
+`MAX_JOBS` sized to the RAM free now (4 GiB per CUDA job, 2 GiB kept for the system). Override them with `--cuda_arch_list`,
 `--max_jobs`, `--nvcc_threads` or `--compile.env.<VAR>=<value>`. A CUDA build takes one to
 several hours.
 
@@ -145,7 +145,8 @@ cx program run build-pytorch --compute=cuda --checkout=v2.14.1    # cpu, cuda, m
 
 The build runs `pip install --no-build-isolation -v .` (scikit-build-core) after
 `requirements-build.txt`. It sets `TORCH_CUDA_ARCH_LIST` from the detected GPUs,
-`MAX_JOBS` from the RAM, `BUILD_TEST=0`, and `PYTORCH_BUILD_VERSION` from the tag. On
+`MAX_JOBS` from the RAM free now (3 GiB per C++ job, 4 GiB per CUDA job, 2 GiB kept for the
+system; `--max_jobs` overrides), `BUILD_TEST=0`, and `PYTORCH_BUILD_VERSION` from the tag. On
 Windows it also sets the MSVC environment and `DISTUTILS_USE_SDK=1`. The run checks the
 device: a matmul on `cuda`, `mps` or the CPU.
 

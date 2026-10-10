@@ -12,6 +12,8 @@ import re
 SUDO_PREFIX = re.compile(r'(^|[;&|(]\s*)sudo\s+(?!-n\b)')
 
 
+from task_c36be4b9314a45e0.api.ctask import ask
+
 from . import upgrade
 
 def install_tool(self,
@@ -126,9 +128,13 @@ def install_tool(self,
 
         elif con:
             print ('')
-            x = input (f'{space}INFO: would you like to {verb} tool "{artifact_print_name}"{with_version} (Y/n)? ')
+            # Nobody to answer (a detached job, a script): an error that names the flags, never a traceback
+            # and never a silent yes - the install may need sudo
+            r = ask(f'{space}INFO: would you like to {verb} tool "{artifact_print_name}"{with_version} (Y/n)? ',
+                    how = f'-q (--quiet) or --install to {verb} without asking')
+            if r['return'] > 0: return r
 
-            x = x.strip().lower()
+            x = r['answer'].strip().lower()
 
             if x not in ['', 'y', 'yes']:
                 print (f'{space}      Skipped!')
@@ -150,7 +156,7 @@ def install_tool(self,
 
             if not quiet:
                 print ('')
-                input(f'{space}Press Enter to continue:')
+                ask(f'{space}Press Enter to continue:', optional = True)      # a pause to read the note: nobody there, no pause
 
             print ('')
 

@@ -75,6 +75,24 @@ def pair_env(checkout, torch_version, compute, cuda_caps = None):
     return env
 
 
+def cuda_major_mismatch(torch_cuda, toolkit):
+    """
+    (the major CUDA version torch was built for, the major version of the toolkit) when they differ, else
+    None - also when one of them is not known (a CPU torch has no CUDA version). torch's own build helper
+    (torch.utils.cpp_extension) refuses to compile CUDA operators with a toolkit of another major version:
+    "The detected CUDA version (13.3) mismatches the version that was used to compile PyTorch (12.8)". A
+    minor difference (13.0 and 13.3) is a warning there and builds.
+    """
+    def major(version):
+        m = re.match(r'\s*(\d+)', str(version or ''))
+        return int(m.group(1)) if m else None
+
+    built_for, compiles_with = major(torch_cuda), major(toolkit)
+    if built_for is None or compiles_with is None or built_for == compiles_with:
+        return None
+    return built_for, compiles_with
+
+
 # Run as python -c "<probe>": single quotes only, the shell keeps the double-quoted argument whole
 TORCH_PROBE = ("import json, torch; print(json.dumps({'version': torch.__version__, 'cuda': torch.version.cuda, "
                "'hip': getattr(torch.version, 'hip', None), 'file': torch.__file__}))")
@@ -138,6 +156,23 @@ class CProgram(InitCProgram):
             return self.cm.error(f'no torch in {python} ({err}): torchvision is built against the torch of this python - '
                                  f'build one there first (cx program run build-pytorch --compute=... with the same '
                                  f'--use.python.venv_path=<folder> as this run), or add --torch=pip for PyTorch\'s wheel')
+
+        # The CUDA operators are compiled by the toolkit of this run against this torch, and torch refuses a
+        # toolkit of another major version than the one it was built for. That used to come out after the
+        # clone, inside pip's output, as "failed with return code 1" (a torch for CUDA 12.8 in the Python the
+        # run took, a CUDA 13.3 toolkit: the P14s Gen 4, 2026-10-09). Said here, before anything is cloned,
+        # with the ways out. Without --use.python.venv_path the program takes the Python cMeta finds (a venv
+        # of another run can be the one): the message names it.
+        if 'cuda' in _global['target']['compute']:
+            nvcc = _global.get('nvcc') or {}
+            mismatch = cuda_major_mismatch(info.get('cuda'), nvcc.get('version'))
+            if mismatch:
+                return self.cm.error(
+                    f'torch {info["version"]} in {python} is built for CUDA {info["cuda"]}, and the CUDA toolkit of this '
+                    f'run is {nvcc.get("version")} ({nvcc.get("path")}): torch does not compile CUDA operators across '
+                    f'major CUDA versions, so torchvision cannot be built against it here. Name a Python whose torch is '
+                    f'for CUDA {mismatch[1]} with --use.python.venv_path=<folder> (a new folder with --torch=pip gets '
+                    f'PyTorch\'s wheel for this machine), or build the CPU operators only (--compute=cpu)')
 
         checkout, reason = torchvision_checkout_for(info['version'], params.get('checkout'))
         _local['checkout'] = checkout

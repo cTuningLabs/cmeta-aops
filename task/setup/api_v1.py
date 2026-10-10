@@ -8,7 +8,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 import os
 import copy 
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, ask
 
 from . import build
 from . import common
@@ -524,7 +524,9 @@ class CTask(InitCTask):
 
         print ('')
         print (f'{space}WARNING: {message}')
-        x = input(f'{space}Continue anyway (y/N)? ').strip().lower()
+        r = ask(f'{space}Continue anyway (y/N)? ', how = '--skip_size_check to go on without this check')
+        if r['return'] > 0: return r
+        x = r['answer'].strip().lower()
         if x not in ['y', 'yes']:
             return self.cm.error(f'{method} of "{tool_name}" cancelled: not enough disk space')
 

@@ -55,7 +55,9 @@ class CTask(InitCTask):
 
             x = space + text2 if use_space else text2
 
-            input(x)
+            # A pause to read the text: nobody there (a detached job, a script), no pause
+            from task_c36be4b9314a45e0.api.ctask import ask as ask_user
+            ask_user(x, optional = True)
 
 
         return {'return': 0, 'text': text}

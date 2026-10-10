@@ -89,6 +89,63 @@ def test_the_torch_probe_survives_the_shell(mod, monkeypatch):
     assert json.loads(out.getvalue().strip()) == {"version": "2.14.1", "cuda": "13.3", "hip": None, "file": "x"}
 
 
+@pytest.mark.parametrize("torch_cuda, toolkit, mismatch", [
+    ("12.8", "13.3.73", (12, 13)),      # the run of 2026-10-09: a cu128 torch, the CUDA 13.3 toolkit
+    ("13.0", "12.9.86", (13, 12)),
+    ("13.0", "13.3.73", None),          # a minor difference builds (torch only warns)
+    ("13.2", "13.3", None),
+    ("12.8", "12.9.86", None),
+    (None, "13.3.73", None),            # a CPU torch has no CUDA version
+    ("12.8", None, None),               # no toolkit known
+    ("", "", None),
+])
+def test_cuda_major_mismatch(mod, torch_cuda, toolkit, mismatch):
+    assert mod["cuda_major_mismatch"](torch_cuda, toolkit) == mismatch
+
+
+def pair(mod, torch_version, torch_cuda, compute, nvcc = "13.3.73"):
+    """customize_torch_pair with a Python whose torch is the given one; returns (the result, the local variables)."""
+    import json, types
+    program = mod["CProgram"].__new__(mod["CProgram"])
+    probe = json.dumps({"version": torch_version, "cuda": torch_cuda, "hip": None, "file": "x"})
+    program.cm = types.SimpleNamespace(
+        q = lambda p: '"' + p + '"',
+        error = lambda text, code = 1: {"return": code, "error": text},
+        utils = types.SimpleNamespace(sys = types.SimpleNamespace(run = lambda cmd, **kw: {"return": 0, "returncode": 0, "stdout": probe + "\n"})))
+    program.logger = None
+    g = {"python": {"path": "/venvs/pair/.venv/bin/python"}, "target": {"compute": compute}}
+    if nvcc:
+        g["nvcc"] = {"version": nvcc, "path": "/usr/local/cuda/bin/nvcc"}
+    ctx = {"control": {"con": False}, "tasks": {"local": {}, "global": g}}
+    return program.customize_torch_pair(ctx, {}, params = {}), ctx["tasks"]["local"]
+
+
+def test_a_torch_for_another_cuda_major_is_refused_before_the_clone(mod):
+    """What ended as "return code 1" inside pip's output after the clone: said first, with the ways out."""
+    r, local = pair(mod, "2.11.0+cu128", "12.8", ["cuda", "cpu"])
+    assert r["return"] > 0
+    for part in ("torch 2.11.0+cu128", "/venvs/pair/.venv/bin/python", "CUDA 12.8", "13.3.73", "/usr/local/cuda/bin/nvcc",
+                 "for CUDA 13", "--use.python.venv_path=<folder>", "--torch=pip", "--compute=cpu"):
+        assert part in r["error"], part
+    assert "checkout" not in local                      # nothing is chosen, so nothing is cloned
+
+
+def test_a_torch_for_the_same_cuda_major_is_paired(mod):
+    r, local = pair(mod, "2.14.1+cu130", "13.0", ["cuda", "cpu"])
+    assert r == {"return": 0} and local["checkout"] == "v0.29.1" and local["torch_cuda"] == "13.0"
+
+
+@pytest.mark.parametrize("torch_version, torch_cuda, compute, nvcc", [
+    ("2.11.0+cu128", "12.8", ["cpu"], "13.3.73"),             # the CPU operators only: no toolkit involved
+    ("2.14.1+cpu", None, ["cuda", "cpu"], "13.3.73"),         # a CPU torch: as before
+    ("2.11.0+cu128", "12.8", ["cuda", "cpu"], None),          # the toolkit is not known here: as before
+    ("2.13.0+rocm7.1", None, ["rocm", "cpu"], None),
+])
+def test_no_cuda_check_where_it_does_not_apply(mod, torch_version, torch_cuda, compute, nvcc):
+    r, local = pair(mod, torch_version, torch_cuda, compute, nvcc)
+    assert r == {"return": 0} and local["checkout"].startswith("v0.")
+
+
 def test_the_tool_mirrors_pytorch():
     """tool/pytorchvision: detected as torchvision in the Python, built by build-pytorchvision with the pairing passed on."""
     desc = yaml.safe_load((REPO_ROOT / "tool" / "pytorchvision" / "_desc.yaml").read_text(encoding = "utf-8"))

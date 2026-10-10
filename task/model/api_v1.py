@@ -117,8 +117,12 @@ class CTask(InitCTask):
                         print (f'{space}{n}) {x}')
                     print ('')
 
+                    from task_c36be4b9314a45e0.api.ctask import ask as ask_user
                     while True:
-                        x = input('Please select a model file or press Enter for 0: ').strip()
+                        r = ask_user('Please select a model file or press Enter for 0: ',
+                                     how = '-q (--quiet) to take the first of the list')
+                        if r['return'] > 0: return r
+                        x = r['answer'].strip()
 
                         if x == "":
                             ifs = 0

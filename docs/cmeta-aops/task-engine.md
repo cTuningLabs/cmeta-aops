@@ -163,7 +163,89 @@ cache identity of that sub-task, so it gets its own cache entry and the default 
     use without `--update`; what was detected keeps its value, and the entry's files are not
     rewritten — they stay the record of what was detected.
   - Files in an entry: `cmeta-task-cached-result.json`, `cmeta-task-cached-ctx.json`
-    (and `cmeta-task-saved-*.json` with `--save`).
+    (and `cmeta-task-saved-*.json` with `--save`), and `cmeta-task-running.json` while an
+    attempt runs (who, since when, for which request).
+
+## The cache entry of a run (since cmeta-aops 0.45.0, cMeta 0.34.2)
+
+An entry is in one of five **states**, derived from its tags, its files and the lock of its
+folder - nothing to configure (`cx cache show` prints them, `cx cache classify` is the API):
+
+| state | what it means | served as a result? | a matching request |
+|---|---|---|---|
+| `ok` | result with `return 0`, recorded paths present | yes | uses it |
+| `running` | the folder's lock is held: another process builds it | no | waits for it, then uses its result |
+| `crashed` | the `tmp` tag of an attempt whose process is gone | no | resumes it in place |
+| `failed` | the last attempt ended with an error (`failed` tag, the error in the result file) | no | resumes it in place |
+| `broken` | the result file cannot be read, or is missing from an entry the task engine made (its request record or ctx file is there), or the recorded `tool_path` / `git_path` is gone | no | resumes it in place |
+
+(A cache artifact that never carries a result - a program's build workspace, a folder used as storage - is
+`ok`: nothing of the states applies to it and `clean` leaves it alone.)
+
+The rules, in the order the engine applies them:
+
+- **A retry of the same configuration resumes the same entry.** A heavy task (a 1 GB
+  download and a 10 GB build) that fails is restarted *in its entry*: the download is
+  there, the attempt counts up. "The same configuration" = the parameters the request was
+  made with (`request_params`, recorded in the entry at its creation) and the same `--path`.
+  A request with another configuration - a different version, or none where the failed
+  attempt had one - gets its **own, new entry**; the failed one stays, resumable by its own
+  configuration, until `cx cache clean --failed`. Nothing of a failed attempt leaks into
+  another request. (Entries made before the record existed are matched by the parameter
+  subset rule of before.)
+- **The request drives a resumed run.** The task gets the request's parameters; at the end
+  the entry's `params` are **replaced** by them (plus what the task reports in
+  `_update_params`), never merged with the old ones. A task that wants to check what it
+  resumes reads `ctx['tasks']['run_control']['cache_resumed']` (`state`, the entry's old
+  `params`); whether the content of the entry is still right for the request (is the source
+  tree complete, is it the right version) is the task's business.
+- **`failed` is an attempt, not a result.** A cached failure is never returned to a later
+  request; the request resumes the entry and the task runs again.
+- **Identical requests at once make one entry.** The find-then-create of the lookup runs
+  under the lock of the cache repository's category folder (`<repo>/cache.lock`, held for
+  milliseconds); the attempt holds the lock of its entry's folder (`<entry>.lock`, the same
+  lock a `delete` of the folder takes) from the choice of the entry until its result and
+  tags are written. A second identical request finds the entry `running`, waits for it (a
+  notice after 3 s naming the process; up to `CMETA_CACHE_WAIT_TIMEOUT` seconds, 86400) and
+  then uses its result. A different configuration does not wait: it makes its own entry.
+- **The result before the tags.** A successful attempt writes its result and ctx files
+  (atomically) *first*, then clears the `tmp` / `failed` tags: no entry is ever "finished"
+  without its result. A failed attempt writes its result (the error) and sets `failed`. A
+  killed process leaves `tmp` and the running file: the entry is `crashed` and resumable; its
+  lock died with the process.
+- **Nothing is deleted on its own.** `cx cache clean` removes the crashed entries by default
+  and takes `--failed`, `--broken`, `--unfinished` (all three) and `--all --force`; a running
+  entry is never removed: `clean` skips it, and `cx cache delete` of it waits for the attempt
+  (`CMETA_LOCK_TIMEOUT`, 30 s) and fails as a whole while it goes on - record and folder stay.
+- `--update` and `--clean` rebuild the selected usable entry in place, as before, as an
+  attempt under its lock (the explicit overwrite); `--new` makes a fresh entry.
+
+What a resumed attempt finds in its entry, for the three things most entries hold:
+
+- **A download** (`task/download-file`). A file gets its name only when it is complete: the
+  engine compares what arrived with the size the server announced, so a transfer that the
+  network cuts is an error, and a checksum (`md5sum`), when the tool gives one, is compared
+  before the name is given. Until then the bytes are in `<name>.download` in the working
+  directory, with a small record next to it (`<name>.download.resume`: the URL, the file's
+  ETag or date on the server, its size). The next attempt asks only for the rest, with an HTTP
+  range request that the server answers only if the file is still the same one; it starts
+  over when that cannot be guaranteed (no record, another URL or mirror, a server without
+  ranges or validators, a file that changed). The partial file lives outside `directory`
+  because the tools ask for a clean `directory` on every attempt. An archive is downloaded
+  again when the run was stopped while unpacking it (the unpacked tree and the archive are
+  in that folder). `--resume-` starts every download at its first byte.
+- **A folder named by the request** (`--path`, the venv path of a python). cMeta records a
+  folder under the name the request gave it and resolves no link: a venv made at
+  `<link>/venv` is found again at `<link>/venv`, whatever disk the link points to today.
+  The same folder named by another path (its physical path, a second link) is another name
+  and gets its own entry. Tasks that report a path from the current directory use
+  `folder_as_named()` of the task API for it (`os.getcwd()` is the physical path on Linux
+  and macOS).
+- **A question.** A run without a terminal (a detached job, `nohup`, CI) cannot be asked
+  anything: a question is then an error that names the flag which answers it in advance
+  (`-q`, `--install`, `--build`, `--update`, `--skip_size_check`, `-f`), the attempt ends
+  `failed`, and the same request with the flag resumes it. No answer is ever made up. Tasks
+  ask through `ask()` of the task API, never through `input()`.
 
 ## `CTask` hooks (`api_v1.py`)
 
@@ -190,7 +272,14 @@ identical in every task's api code). Command-function naming: `run(self, ctx, fo
 → typed kwargs + `ctx`; a single-`params`-dict form (`foo`/`foo__`, trailing `__`
 stripped from the CLI name) is used where the signature is dynamic.
 
-The same module holds `MAX_PROMPT_ARG_CHARS`, `prompt_via_file()` and
+The same module holds the two helpers every task uses instead of the Python built-ins:
+`ask(question, how, optional=False)` for a question to the person who runs the command
+(`{'return': 0, 'answer': ...}`, or an error that names `how` - the flag that makes the
+question unnecessary - when there is no terminal; `optional=True` for a pause, which is
+then skipped), and `folder_as_named(named, base)` for the current directory under the
+name the request gave it (see "The cache entry of a run").
+
+It also holds `MAX_PROMPT_ARG_CHARS`, `prompt_via_file()` and
 `prompt_via_file_done()`: a task that must hand a program a long text as a command
 line argument (the agent tasks' interactive sessions, `opencode run`, `openclaw agent`)
 writes it to a file above that length and passes a one-line request to read it

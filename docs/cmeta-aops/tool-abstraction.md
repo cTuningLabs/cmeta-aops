@@ -199,7 +199,10 @@ back to plain `install_cmd`), `{{version}}`, `{{major_version}}`, `{{pip_version
   `install()` hook in `api_v1.py` calling task `download-file,03fed13e2e0447cf`
   (`filename` to rename to the plain tool name, `make_check_file_executable`), and return
   `{'return':0, 'install_cmd': None, 'found_path': <abs path>}` (or `{'return':16,
-  'install_cmd': cmd}` to fall back to the declarative command).
+  'install_cmd': cmd}` to fall back to the declarative command). The task checks the size
+  the server announced, compares `md5sum` when given, and continues an interrupted download
+  on the next attempt (the partial file stays in the entry, outside `directory`, so
+  `clean: True` does not remove it) - see [task-engine.md](task-engine.md).
 
 ## `_desc.yaml` — compiler tools carry `features.flags`
 
@@ -219,5 +222,6 @@ dictionary that the `program` compile machinery consumes — `dynamic_build`/`st
 - `cx tool setup X --version=<already-installed>` — detection matches, no install.
 - `cx tool run X -- --version` — full set-up-then-run path.
 - Real installs and versioned installs mutate the machine (global CLIs get overwritten) —
-  do them deliberately. In non-interactive shells pass `--install`/`--quiet` (the setup
-  prompt uses `input()` and would raise `EOFError`).
+  do them deliberately. In non-interactive shells pass `--install`/`--quiet`: without a
+  terminal the setup's question is an error that names these flags (nothing is installed,
+  the attempt is `failed` and the same request with the flag resumes it).
