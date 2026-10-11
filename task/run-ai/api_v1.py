@@ -12,7 +12,7 @@ where the last run stopped, with any harness and any model.
     cxt run-ai "one prompt"                                # one more turn of that conversation, then exit
     cxt run-ai --new "..."                                 # start a new conversation (the memory and skills stay)
     cxt run-ai --conversation=20261004-18 "..."            # continue a given conversation (id or prefix)
-    cxt run-ai --conversations                             # list the conversations of the project
+    cxt run-ai --conversations                             # list the conversations of the project and their runs (--cs is the same)
     cxt run-ai --summarize                                 # a summary of the latest conversation (claude: haiku), read first at a hand-over
     cxt run-ai --harness=codex --model=gpt-6.1-sol,high    # the same conversation, now with codex: the transcript is handed over
     cxt run-ai --harness=codex --list_models               # the models and efforts of a harness, every combination ready to copy
@@ -1172,8 +1172,13 @@ class CTask(InitCTask):
             lines.append('  ' + CONV.describe(c))
             for h, s in (c.get('sessions') or {}).items():
                 lines.append('      %s session %s (%d run(s), started %s)' % (h, s.get('id') or '?', s.get('runs', 0), (s.get('started') or '?')[:16]))
+            for r in c.get('runs') or []:
+                if isinstance(r, dict):
+                    lines.append('      run %s' % CONV.describe_run(r))
             lines.append('      files: %s, %s' % (os.path.basename(c['_path']), os.path.basename(CONV.transcript_path(c))))
         lines.append('')
+        if any(c.get('runs') for c in convs):
+            lines.append('  model, effort: what a run was given (--model=<model>,<effort>); "default" = none given, the harness chose')
         lines.append('  cxt run-ai                      continues the first one listed (the latest activity)')
         lines.append('  cxt run-ai --conversation=<id>  continues that one;  cxt run-ai --new  starts another')
         text = '\n'.join(lines) + '\n'
@@ -1304,8 +1309,9 @@ class CTask(InitCTask):
             new: bool = False,              # start a new conversation instead of continuing the latest one
             conversation: str = '',         # continue this conversation (its id or a prefix; --conversations lists them)
             resume: str = '',               # alias of "conversation"
-            conversations: bool = False,    # list the conversations of the project and stop
-            summarize: bool = False,        # write !AI/log/<id>.summary.md for the latest (or --conversation=) conversation and stop
+            conversations: bool = False,    # list the conversations of the project with their runs (harness, model, effort) and stop
+            cs: bool = False,               # short alias of "conversations" (--cs)
+            summarize: bool = False,       # write !AI/log/<id>.summary.md for the latest (or --conversation=) conversation and stop
             prompt: str = '',               # prompt text
             prompt_file: str = '',          # file with the prompt text
             interactive: bool = False,      # preload the prompt, then stay in the interactive session
@@ -1405,7 +1411,7 @@ class CTask(InitCTask):
         stamp, stamp_lock = self._new_stamp(log_dir, False)
         stamp_made = []
 
-        if conversations:
+        if _truthy(conversations) or _truthy(cs):
             return self._list_conversations(log_dir, project_path, con)
         if _truthy(summarize):
             return self._summarize(ctx, log_dir, conversation, harness, task_ref, extra, model_name, project_path, con, verbose, space)

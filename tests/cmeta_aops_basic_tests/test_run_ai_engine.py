@@ -209,6 +209,31 @@ def test_new_conversations_and_picking_one(fresh):
     assert sorted(p.name for p in (fresh.project / "!AI" / "log").iterdir()) == before
 
 
+def test_the_listing_names_the_harness_the_model_and_the_effort_of_every_run(fresh):
+    # a project without a conversation: the listing says so, and neither flag writes anything
+    for flags in ({"conversations": True}, {"cs": True}):
+        r = fresh.run(**flags)
+        assert r["return"] == 0 and r["conversations"] == [] and "none yet" in r["text"] and "model, effort" not in r["text"], flags
+        assert not (fresh.project / "!AI").exists()
+
+    plain = fresh.run(prompt = "the first request")
+    given = fresh.run(prompt = "go on", model = "m1,high")
+    assert plain["return"] == 0 and given["return"] == 0, given.get("error")
+    before = sorted(p.name for p in (fresh.project / "!AI" / "log").iterdir())
+    listing = fresh.run(conversations = True)
+    runs = [line.strip() for line in listing["text"].splitlines() if line.startswith("      run ")]
+    assert len(runs) == 2, listing["text"]
+    # the harness is named whether it was given or not; the model and the effort are the ones the run was given
+    assert "  %s  model: default  effort: default  prompt  " % fresh.harness in runs[0]
+    assert "  %s  model: m1  effort: high  prompt  " % fresh.harness in runs[1]
+    assert runs[0].split()[1] == plain["conversation"] and '"default" = none given' in listing["text"]
+    # --cs is the same listing, and a listing starts no harness and writes nothing
+    short = fresh.run(cs = True)
+    assert short["return"] == 0 and short["text"] == listing["text"] and short["conversations"] == listing["conversations"]
+    assert sorted(p.name for p in (fresh.project / "!AI" / "log").iterdir()) == before
+    assert [(r["harness"], r["model"], r["effort"]) for r in short["conversations"][0]["runs"]] == [(fresh.harness, "", ""), (fresh.harness, "m1", "high")]
+
+
 def test_openclaw_is_told_where_the_project_is_and_its_terminal_ui_gets_its_own_flags(fresh):
     # a one-prompt turn: "openclaw agent" takes the session id and the model
     r = fresh.run(dry_run = True, harness = "openclaw", model = "claude-cli/claude-sonnet-4-6,low", prompt = "read notes.txt")

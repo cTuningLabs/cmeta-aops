@@ -98,6 +98,12 @@ All notable changes to cMeta AOps are documented here, newest first.
   caught while it is being written is read again, and the lock of a starting run (`<stamp>.lock`) is old when
   it is ten minutes older than the lock the new run has just made - by the folder's own file times. Tests:
   `tests/cmeta_aops_basic_tests/test_run_ai_pending.py`, `test_run_ai_engine.py`.
+- **`run-ai --conversations` lists every run with its harness, model and effort; `--cs` is its short name.**
+  Under each conversation the listing now has one line per run: the stamp, the harness (also when it was the
+  default one), the model and the effort the run was given with `--model=<model>,<effort>` or `--effort`
+  (`default` when none was given: the harness used its own), the mode and when it started and ended. The
+  listing still starts no harness and writes nothing; `-j` gives the same records as before. Tests:
+  `tests/cmeta_aops_basic_tests/test_run_ai_engine.py`, `test_run_ai_conversations.py`.
 
 ## 0.44.1
 - **`tool/pytorchvision`: torchvision as a tool, the mirror of `tool/pytorch`.** Detected when the Python of the

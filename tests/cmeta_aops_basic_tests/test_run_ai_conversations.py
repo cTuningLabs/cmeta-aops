@@ -68,6 +68,19 @@ def test_the_file_keeps_no_private_keys_and_the_title_comes_from_the_prompt(tmp_
     assert C.title_from_prompt("", False, "20261005-090000") == "run 20261005-090000"
 
 
+def test_a_run_is_described_by_its_harness_and_the_model_and_effort_it_was_given():
+    run = {"stamp": "20261005-090000", "harness": "codex", "mode": "prompt", "model": "gpt-x", "effort": "high",
+           "started": "2026-10-05T09:00:00", "finished": "2026-10-05T09:02:30", "return": 0}
+    assert C.describe_run(run) == "20261005-090000  codex  model: gpt-x  effort: high  prompt  2026-10-05T09:00 - 2026-10-05T09:02"
+    # none given: the harness chose ("default"); a run that is going on, or one that died, has no end
+    run = {"stamp": "20261005-100000", "harness": "claude", "mode": "interactive", "model": "", "effort": "", "started": "2026-10-05T10:00:00"}
+    assert C.describe_run(run) == "20261005-100000  claude  model: default  effort: default  interactive  2026-10-05T10:00 - (no end yet)"
+    # a model without an effort, and a run that failed
+    run = {"stamp": "s", "harness": "gemini", "mode": "prompt", "model": "g-pro", "started": "2026-10-05T11:00:00", "finished": "2026-10-05T11:00:05", "return": 1}
+    assert C.describe_run(run) == "s  gemini  model: g-pro  effort: default  prompt  2026-10-05T11:00 - 2026-10-05T11:00  (return 1)"
+    assert C.describe_run({}) == "?  ?  model: default  effort: default  ?  ? - (no end yet)"      # a record written by hand
+
+
 # ---------------------------------------------------------------------------------------------- the adapters
 def test_how_each_harness_starts_and_resumes_a_session():
     assert C.harness_key("antigravity") == "agy" and C.harness_key("claude") == "claude"

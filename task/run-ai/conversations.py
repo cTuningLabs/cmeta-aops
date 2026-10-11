@@ -182,6 +182,17 @@ def describe(conv, short=True):
     return s
 
 
+def describe_run(run):
+    """One line per run for --conversations: its stamp, the harness, the model and the effort the run was given
+    (--model=<model>,<effort>; "default" when none was given: the harness chose), its mode, when it ran."""
+    s = '%s  %s  model: %s  effort: %s  %s  %s - %s' % (
+        run.get('stamp') or '?', run.get('harness') or '?', run.get('model') or 'default', run.get('effort') or 'default',
+        run.get('mode') or '?', str(run.get('started') or '?')[:16], str(run.get('finished') or '')[:16] or '(no end yet)')
+    if run.get('return'):
+        s += '  (return %s)' % run['return']
+    return s
+
+
 # ====================================================================== the adapters
 # claude --------------------------------------------------------------------------------------------------------
 CLAUDE_SLUG_MAX = 200     # Claude Code cuts a longer slug to 200 characters and appends "-<hash of the path>"
