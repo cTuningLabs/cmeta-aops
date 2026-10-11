@@ -649,7 +649,10 @@ class CTool(InitCTool):
         # A large download is the user's call, unless -q or --install says yes
         if con and not ctx['control'].get('quiet', False) and params.get('install') is not True:
             print ('')
-            x = input(f'INFO: add {text} (Y/n)? ').strip().lower()
+            from task_c36be4b9314a45e0.api.ctask import ask as ask_user
+            r = ask_user(f'INFO: add {text} (Y/n)? ', how = '-q (--quiet) or --install to add them without asking')
+            if r['return'] > 0: return r
+            x = r['answer'].strip().lower()
             if x not in ['', 'y', 'yes']:
                 return self.cm.error(f'{names} not added to the CUDA toolkit {release} (the programs that link '
                                      f'{", ".join(libs)} need it)')

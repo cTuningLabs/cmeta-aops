@@ -9,8 +9,14 @@ import os
 import time
 import copy
 import fnmatch
+import json
+import platform
+from datetime import datetime, timezone
 
 from cmeta.category import InitCategory
+
+# The cache attempts begun by the runs of one ctx (id(ctx) -> a stack): released by run() however a run ends
+_CACHE_ATTEMPTS = {}
 
 class Category(InitCategory):
     """
@@ -61,6 +67,30 @@ class Category(InitCategory):
 
     ############################################################
     def run(
+            self,
+            params,
+    ):
+        """
+        """
+        ctx = params.get('ctx')
+        key = id(ctx) if ctx is not None else None
+        stack = _CACHE_ATTEMPTS.setdefault(key, []) if key is not None else []
+        depth = len(stack)
+
+        try:
+            return self._run(params)
+
+        finally:
+            # Whatever this call began in a cache entry and did not finish (an error return on the way,
+            # an exception) is released here: the running file goes, the entry lock is dropped; the
+            # entry stays tmp or failed and resumable - never locked by a process that is gone
+            while len(stack) > depth:
+                self._cache_release_attempt(stack.pop())
+            if key is not None and not stack:
+                _CACHE_ATTEMPTS.pop(key, None)
+
+    ############################################################
+    def _run(
             self,
             params,
     ):
@@ -642,6 +672,7 @@ class Category(InitCategory):
 
         task_result_file = None
         update_cache = False
+        attempt = None          # this process's attempt in a cache entry (the lookup sets it)
 
         cache_params = {}
 
@@ -756,21 +787,14 @@ class Category(InitCategory):
             if cache_repo and not cache_name:
                 ii['arg1'] = cache_repo + ':'
 
-            if new:
-                cache_artifacts = []
-            else:
-                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-                # Search in cache !                                                                
-                r = self.cm.access(ii)
-                if r['return']>0 and r['return']!=16: return r
-
-                cache_artifacts = r.get('artifacts', [])
+            # The query as the find makes it: with the fuzzy @ keys (versions with conditions)
+            find_query = copy.deepcopy(ii)
 
             # Just for printing later if needed
             cache_meta_params_copy = cache_meta['params'].copy()
 
-            # Clean params in cache_meta that that start from @ - 
-            # these are fuzzy versions with conditions 
+            # Clean params in cache_meta that that start from @ -
+            # these are fuzzy versions with conditions
             # that should be resolved to the normal key
 
             for key in list(cache_meta['params'].keys()):
@@ -781,37 +805,59 @@ class Category(InitCategory):
                 if key.startswith('@'):
                     del(cache_params[key])
 
-            ###########################################################################################
-            # If multiple cache entries found, remove unfinished ones
-            tmp_cache_artifacts = []
+            # What this request asked for: recorded in a new entry, and the rule by which a resumable
+            # entry is this request's attempt and no other's. Taken BEFORE the fuzzy keys were dropped, under
+            # their plain names: a setup asks for its version as `@version`, and without it a failed
+            # `--version=9.9.9` entry recorded {name} only and was resumed by the request WITHOUT a version
+            # (the torchvision incident again - seen with jq on Windows, 2026-10-09 17:41).
+            request_params = {}
+            for key, value in copy.deepcopy(cache_meta_params_copy).items():
+                request_params[key[1:] if key.startswith('@') else key] = value
 
-            if len(cache_artifacts)>0:
-                finished_cache_artifacts = []
+            def create_entry():
+                """A new entry for this request, tagged tmp, with the request recorded."""
+                name = cache_name
+                alias = None
+                uid = None
+                if not name:
+                    uid = self.cm.utils.generate_cmeta_uid()
+                    extra = '' if cache_extra_alias is None else cache_sep + cache_extra_alias
+                    alias = cache_alias_template.replace('{cache_extra_alias}', extra) + cache_sep + uid
+                    name = f'{alias},{uid}'.lower()
+                    if cache_repo:
+                        name = cache_repo + ':' + name
 
-                for cache_artifact in cache_artifacts:
-                    ca_tool_path = cache_artifact['cmeta'].get('params',{}).get('tool_path')
-                    if 'tmp' in cache_artifact['cmeta'].get('tags',[]) or \
-                       (ca_tool_path and not (os.path.isfile(ca_tool_path) or os.path.isdir(ca_tool_path))):
-                        if 'tmp' not in cache_artifact['cmeta'].get('tags',[]):
-                            cache_artifact['cmeta'].setdefault('tags',[])
-                            cache_artifact['cmeta']['tags'].append('tmp')
-                        tmp_cache_artifacts.append(cache_artifact)
-                    else:
-                        finished_cache_artifacts.append(cache_artifact)
+                meta = copy.deepcopy(cache_meta)
+                meta['request_params'] = copy.deepcopy(request_params)
 
-                cache_artifacts = finished_cache_artifacts
+                r = self.cm.access({'category':uses_categories['cache'],
+                                    'command':'create',
+                                    'arg1':name,
+                                    'tags':cache_tags + ['tmp'],
+                                    'meta':meta
+                    })
+                if self.cm.catch_error(r, fail16=True):
+                    r['return'] = 1
+                    return r
 
-            ###########################################################################################
-            # Let the task drop entries that match the cache query but are not meant for this request
-            # (task/setup asks the tool: a python request without a venv path of its own must not
-            # reuse the venv of a program). Tasks without this hook keep every entry.
-            if (cache_artifacts or tmp_cache_artifacts) and task_api_code is not None and \
-               hasattr(task_api_code, 'filter_cache_artifacts') and callable(getattr(task_api_code, 'filter_cache_artifacts')):
-                r = task_api_code.filter_cache_artifacts(ctx, cache_artifacts, tmp_cache_artifacts, uparams, path = path)
-                if self.cm.catch_error(r): return r
+                made_meta = r['meta']
+                if uid is None:
+                    uid = str(made_meta.get('artifact', '')).split(',')[-1].strip()
+                if alias is None:
+                    alias = os.path.basename(r['path'])
 
-                cache_artifacts = r.get('artifacts', cache_artifacts)
-                tmp_cache_artifacts = r.get('tmp_artifacts', tmp_cache_artifacts)
+                return {'return':0, 'path': r['path'], 'meta': made_meta, 'name': name,
+                        'ref_parts': {'artifact_alias': alias, 'artifact_uid': uid, 'artifact_alias_lowercase': alias.lower()}}
+
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # Search in cache, classify, choose - under the creation lock of the cache repository
+            r = self._cache_lookup(ctx, uses_categories, find_query, new, cache_repo, cache_name, request_params, path,
+                                   task_api_code, uparams, artifact_alias, create_entry, con, verbose, space)
+            if r['return']>0: return r
+
+            cache_artifacts = r['ok']
+            tmp_cache_artifacts = r['resumable']
+            attempt = r['attempt']
 
             ###########################################################################################
             # Check if has cache_features
@@ -866,8 +912,10 @@ class Category(InitCategory):
                     if quiet or update:
                         print (f'{x} Updating ...')
                     else:
-                        y = input(f'{space}{x} Update (Y/n)? ').strip().lower()
-                        
+                        r = self._ask(f'{space}{x} Update (Y/n)? ', '-q (--quiet) or --update to update it without asking')
+                        if r['return']>0: return r
+                        y = r['answer'].strip().lower()
+
                         if y in ['n', 'no']:
                             return self.cm.error(text + ' Cache update was cancelled by user')
 
@@ -1040,7 +1088,14 @@ class Category(InitCategory):
                                                 err = r['error']
                                                 print (f'{space}  {err}')
                                                 print ('')
-                                                x = input(f'{space}Would you like to delete this potentially oudated cache entry (y/N): ')
+                                                if quiet:
+                                                    # A quiet run asks nothing: the default (the entry is kept)
+                                                    x = ''
+                                                else:
+                                                    r = self._ask(f'{space}Would you like to delete this potentially oudated cache entry (y/N): ',
+                                                                  '-q (--quiet) to keep it without asking')
+                                                    if r['return']>0: return r
+                                                    x = r['answer']
                                                 print ('')
 
                                                 if x.strip().lower() in ['y', 'yes']:
@@ -1061,7 +1116,15 @@ class Category(InitCategory):
                                                     print (f'  Cache version: {x_version}')
                                                     print (f'  Detected real version: {x_detected_version}')
                                                     print ('')
-                                                    x = input('Would you like to delete this potentially oudated cache entry (Y/n): ')
+                                                    if quiet:
+                                                        # A quiet run asks nothing: the default, as for a missing path below
+                                                        print ('Quietly deleting this potentially outdated cache entry ...')
+                                                        x = 'Y'
+                                                    else:
+                                                        r = self._ask('Would you like to delete this potentially oudated cache entry (Y/n): ',
+                                                                      '-q (--quiet) to delete it without asking')
+                                                        if r['return']>0: return r
+                                                        x = r['answer']
                                                     print ('')
 
                                                     if x.strip().lower() in ['', 'y', 'yes']:
@@ -1082,7 +1145,10 @@ class Category(InitCategory):
                                 print ('')
                                 x = 'Y'
                             else:
-                                x = input('Would you like to delete this potentially outdated cache entry (Y/n): ')
+                                r = self._ask('Would you like to delete this potentially outdated cache entry (Y/n): ',
+                                              '-q (--quiet) to delete it without asking')
+                                if r['return']>0: return r
+                                x = r['answer']
                                 print ('')
 
                             if x.strip().lower() in ['', 'y', 'yes']:
@@ -1164,44 +1230,36 @@ class Category(InitCategory):
 
             ###########################################################################################
             if len(cache_artifacts) == 0:
-               # Create with tmp tag
+               # The lookup resumed or created the entry of this run and locked it for this process
                update_cache = True
 
-               if len(tmp_cache_artifacts)>0:
-                   # Reuse the first from tmp cache artifacts to avoid creating many tmp ones
-                   cache_path = tmp_cache_artifacts[0]['path']
-                   cache_meta = tmp_cache_artifacts[0]['cmeta']
-                   cache_cmeta_ref_parts = tmp_cache_artifacts[0]['cmeta_ref_parts']
-                   cache_alias = cache_cmeta_ref_parts['artifact_alias']
-                   cache_uid = cache_cmeta_ref_parts['artifact_uid']
-                   cache_name = f'{cache_alias},{cache_uid}'.lower()
+               if attempt is None:
+                   return self.cm.error('Inconsistency in task cache handling: no cache entry was chosen for this run')
 
-               else:
-                   if cache_name is None or cache_name == '':
-                       cache_uid = self.cm.utils.generate_cmeta_uid()
-                       cache_extra_alias = '' if cache_extra_alias is None else cache_sep + cache_extra_alias
-                       cache_alias = cache_alias_template.replace('{cache_extra_alias}', cache_extra_alias)
-                       cache_name = f'{cache_alias}{cache_sep}{cache_uid},{cache_uid}'.lower()
-                       if cache_repo:
-                           cache_name = cache_repo + ':' + cache_name
-
-                   r = self.cm.access({'category':uses_categories['cache'],
-                                       'command':'create',
-                                       'arg1':cache_name,
-                                       'tags':cache_tags + ['tmp'],
-                                       'meta':cache_meta
-                       })
-                   if self.cm.catch_error(r, fail16=True): 
-                       r['return'] = 1
-                       return r
-
-                   cache_path = r['path']
-                   cache_meta = r['meta']
+               cache_path = attempt['path']
+               cache_meta = attempt['meta']
+               cache_cmeta_ref_parts = attempt['ref_parts']
+               cache_alias = cache_cmeta_ref_parts['artifact_alias']
+               cache_uid = cache_cmeta_ref_parts['artifact_uid']
+               cache_name = f'{cache_alias},{cache_uid}'.lower()
+               if cache_repo:
+                   cache_name = cache_repo + ':' + cache_name
 
             if cache_name is None:
                 return self.cm.error('Inconsistency in task cache handling since cache_name is None')
             if cache_path is None:
                 return self.cm.error('Inconsistency in task cache handling since cache_path is None')
+
+            if attempt is None and update_cache:
+                # A usable entry rebuilt with --update or --clean (the user's explicit overwrite): this process's
+                # attempt in it, like a resumed one - the entry lock and the running file
+                r = self._cache_begin_attempt(ctx, {'path': cache_path, 'cmeta': cache_meta, 'cmeta_ref_parts': cache_cmeta_ref_parts},
+                                              'ok', request_params, artifact_alias)
+                if r['return']>0:
+                    if r.get('busy'):
+                        return self.cm.error(f'the cache entry "{cache_name}" is being rebuilt by another process - try again when it is done')
+                    return r
+                attempt = r['attempt']
 
             if con and verbose:
                 print ('')
@@ -1304,6 +1362,11 @@ class Category(InitCategory):
             if cache_params:
                 ctx_tasks_control['cache_params'] = cache_params
 
+            if attempt is not None and attempt.get('state') != 'new':
+                # A task that resumes an entry (crashed, failed, broken, or ok with --update / --clean) can check
+                # what the entry holds (its content is the task's business); a new entry has nothing to check
+                ctx_tasks_control['cache_resumed'] = {'state': attempt['state'], 'params': copy.deepcopy(attempt.get('meta', {}).get('params', {}))}
+
             #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
             # Run custom code!
             result = task_api_code.run(ctx, **uparams)
@@ -1315,14 +1378,17 @@ class Category(InitCategory):
             # Check if success or fail
             if result['return']>0:
                 if cache:
-                    r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_RESULTS, result)
+                    # The failed attempt ends: the result (the error) written, the entry tagged `failed`
+                    # (resumable by the same request, never served as a result), the lock released
+                    r = self._cache_finish_attempt(attempt, ctx, uses_categories, cache_name, cache_params, result,
+                                                   failed = True, con = con, verbose = verbose, space = space)
                     if self.cm.catch_error(r): return r
 
                 if save or save_here:
                     r = self._finish_run(
                             ctx, con, verbose, work_dir, cur_dir, space, save, result, save_here,
                             call_repro, aggregate = True,
-                            saved_uparams = saved_uparams, 
+                            saved_uparams = saved_uparams,
                             saved_cparams = saved_cparams,
                             saved_local = saved_local,
                             saved_ctx_control = saved_ctx_control,
@@ -1330,6 +1396,13 @@ class Category(InitCategory):
                     )
                     if self.cm.catch_error(r): return r
 
+                # Back to the directory of the caller (the success path does it in _finish_run): a process
+                # left inside the entry would keep its folder from being removed on Windows
+                if work_dir != cur_dir:
+                    try:
+                        os.chdir(cur_dir)
+                    except OSError:
+                        pass
 
                 return self.cm.error(result['error'], result['return'])
 
@@ -1349,34 +1422,22 @@ class Category(InitCategory):
         _impact['self_time_with_cmeta'] = time.perf_counter() - time_start
 
         ###########################################################################################
-        # UPDATE CACHE
+        # UPDATE CACHE: this process's attempt ends with its result and ctx written first, then the entry
+        # (its params replaced by this request's plus what the task added, the request recorded, the
+        # tmp/failed tags removed), then the running file and the entry lock go
 
-        if update_cache:
-            if con and verbose:
-                print ('')
-                print (f'{space}UPDATE: cache in {cache_name}')
-           
-            # TBD -> maybe move result error there for debugging?
-            ii = {'category':uses_categories['cache'],
-                  'command':'update',
-                  'arg1':cache_name,
-                  'replace_lists': True,
-                  'new_tags':['tmp-'],
-                 }
-
-            # Check if extra params were produced by the task that should be added to cache entry
-            if len(cache_params)>0:
-                ii['meta'] = {'params':cache_params}
-
-            r = self.cm.access(ii)
-            if self.cm.catch_error(r): return r
-
-        # Save result to cache for reuse
         if cache:
-            r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_RESULTS, result)
-            if self.cm.catch_error(r): return r
-            r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_CTX, ctx, safe_dump = True)
-            if self.cm.catch_error(r): return r
+            if attempt is not None:
+                r = self._cache_finish_attempt(attempt, ctx, uses_categories, cache_name, cache_params, result,
+                                               failed = False, con = con, verbose = verbose, space = space)
+                if self.cm.catch_error(r): return r
+
+            else:
+                # No attempt of this process (the task was skipped: a usable result in --path): the files as before
+                r = self.cm.utils.files.safe_write_file(self.CACHE_FILE_WITH_RESULTS, result)
+                if self.cm.catch_error(r): return r
+                r = self.cm.utils.files.safe_write_file(self.CACHE_FILE_WITH_CTX, ctx, safe_dump = True)
+                if self.cm.catch_error(r): return r
 
         # Dynamic update to result (even if cached)
         if task_api_code is not None and hasattr(task_api_code, 'finish_dynamic_result') and callable(getattr(task_api_code, 'finish_dynamic_result')):
@@ -1411,6 +1472,345 @@ class Category(InitCategory):
 
         # !!! Exit from this function
         return result
+
+
+    ###########################################################################################
+    # The cache entry of a run (docs/cmeta-aops/task-engine.md, "The cache entry of a run"): the lookup
+    # under the creation lock of the cache repository, the states of the entries (the engine's cache
+    # category classifies them: ok, running, crashed, failed, broken), the resume rule (an attempt is
+    # resumed only by the request it was made for), the entry lock and the running file of an attempt,
+    # and the end of an attempt - the result first, then the tags, so that an entry is never "finished"
+    # without its result.
+
+    @staticmethod
+    def _ask(question, how):
+        """A question of the task engine (ask of the task API): nobody to answer = an error that names `how`, no traceback."""
+        from task_c36be4b9314a45e0.api.ctask import ask
+        return ask(question, how)
+
+    CACHE_WAIT_TIMEOUT_ENV = 'CMETA_CACHE_WAIT_TIMEOUT'   # how long a request waits for the attempt of another process
+    CACHE_WAIT_TIMEOUT = 86400
+    CACHE_FILE_RUNNING = 'cmeta-task-running.json'        # RUNNING_FILE of the engine's cache category: who runs the attempt
+
+    def _cache_repo_folder(self, cache_repo):
+        """The folder of the cache category in the repository where the entries of this run live."""
+        ref = {'category_alias': 'repo', 'category_uid': self.cm.cfg['category_repo_uid']}
+        if cache_repo:
+            r = self.cm.utils.names.parse_cmeta_obj(cache_repo, key = 'artifact', fail_on_error = False)
+            if r['return']>0: return r
+            parts = r['obj_parts']
+            if parts.get('artifact_uid'): ref['artifact_uid'] = parts['artifact_uid']
+            if parts.get('artifact_alias'): ref['artifact_alias'] = parts['artifact_alias']
+        else:
+            ref['artifact_alias'] = 'local'
+
+        r = self.cm.repos.find(ref)
+        if r['return']>0: return r
+
+        artifacts = r.get('artifacts', [])
+        if len(artifacts) != 1:
+            return self.cm.error(f'cannot find the repository "{cache_repo or "local"}" of the cache entries ({len(artifacts)} found)')
+
+        return {'return':0, 'folder': os.path.join(artifacts[0]['full_path'], 'cache')}
+
+    @staticmethod
+    def _cache_normalized(x):
+        """Parameters as comparable text: every leaf a string (the CLI gives strings, the API may give numbers)."""
+        if isinstance(x, dict):
+            return {str(k): Category._cache_normalized(v) for k, v in x.items()}
+        if isinstance(x, (list, tuple)):
+            return [Category._cache_normalized(v) for v in x]
+        return str(x)
+
+    def _cache_same_request(self, entry, request_params, request_path, cache_name):
+        """
+        True when `entry` (resumable) is the attempt of THIS request: the same path, and the parameters the
+        request was made with (`request_params`, recorded in the entry at its creation) equal to this
+        request's. An entry made before that record existed is matched as before: by the subset rule on
+        its parameters. A forced cache name is the identity by itself.
+        """
+        if cache_name:
+            return True
+
+        cmeta = entry.get('cmeta', {})
+
+        if (cmeta.get('path') or None) != (request_path or None):
+            return False
+
+        recorded = cmeta.get('request_params')
+        if recorded is not None:
+            return self._cache_normalized(recorded) == self._cache_normalized(request_params)
+
+        return self.cm.utils.common.matches_query(cmeta.get('params', {}), request_params,
+                                                  match_version_func = self.cm.repos.match_version_func,
+                                                  match_empty_version = True)
+
+    def _cache_begin_attempt(self, ctx, entry, state, request_params, artifact_alias):
+        """
+        Take the lock of the entry's folder for an attempt of this process (zero wait: a busy lock means
+        another process works there and the caller waits for it instead), write the running file (who,
+        since when, for which request), and register the attempt so that it is released however the run
+        ends. Returns {'return': 0, 'attempt': ...}, or 'busy': True when the lock is held.
+        """
+        files = self.cm.utils.files
+
+        path = entry['path']
+        pid = os.getpid()
+        host = platform.node() or 'unknown-host'
+        started = datetime.now(timezone.utc).isoformat()
+        note = f'task run {artifact_alias} by pid {pid} on {host} since {started}'
+
+        lock = files.PathLock(files._get_lockfile_path(os.path.normpath(path)), logger = self.logger)
+        try:
+            lock.acquire(timeout = 0, note = note)
+        except TimeoutError:
+            return {'return':1, 'busy': True, 'error': f'the cache entry {path} is taken by another process'}
+        except Exception as e:
+            return self.cm.error(f'cannot lock the cache entry {path}: {e}')
+
+        attempt = {
+            'path': path,
+            'meta': entry.get('cmeta', {}),
+            'ref_parts': entry.get('cmeta_ref_parts', {}),
+            'lock': lock,
+            'state': state,
+            'request_params': copy.deepcopy(request_params),
+            'running_file': os.path.join(path, self.CACHE_FILE_RUNNING),
+            'done': False,
+        }
+
+        if not os.path.isdir(path):
+            os.makedirs(path, exist_ok = True)
+
+        r = files.safe_write_file(attempt['running_file'], {'pid': pid, 'host': host, 'started': started,
+                                                            'task': artifact_alias, 'params': request_params,
+                                                            'resumes': state})
+        if r['return']>0:
+            lock.release()
+            return r
+
+        _CACHE_ATTEMPTS.setdefault(id(ctx), []).append(attempt)
+
+        return {'return':0, 'attempt': attempt}
+
+    def _cache_release_attempt(self, attempt):
+        """The running file goes and the entry lock is dropped (idempotent; the entry's tags are not touched)."""
+        if attempt is None or attempt.get('done'):
+            return
+
+        attempt['done'] = True
+
+        try:
+            if os.path.isfile(attempt['running_file']):
+                os.remove(attempt['running_file'])
+        except OSError:
+            pass
+
+        try:
+            attempt['lock'].release()
+        except Exception:
+            pass
+
+    def _cache_wait_for(self, entry, info, artifact_alias, con, space):
+        """Wait for the attempt of another process in `entry` (up to CMETA_CACHE_WAIT_TIMEOUT seconds, 86400)."""
+        files = self.cm.utils.files
+
+        path = entry['path']
+        alias = entry.get('cmeta_ref_parts', {}).get('artifact_alias', os.path.basename(path))
+        holder = (info or {}).get('holder') or (info or {}).get('why') or 'another process'
+
+        if con:
+            print ('')
+            print (f'{space}CACHE: the entry "{alias}" is being built by another process ({holder}) - waiting for it ...')
+
+        timeout = files.lock_timeout(self.CACHE_WAIT_TIMEOUT, self.CACHE_WAIT_TIMEOUT_ENV, logger = self.logger)
+        lock = files.PathLock(files._get_lockfile_path(os.path.normpath(path)), logger = self.logger)
+        try:
+            files.acquire_with_notice(lock, timeout, f'the cache entry "{alias}"', 'this request',
+                                      self.CACHE_WAIT_TIMEOUT_ENV, logger = self.logger)
+        except TimeoutError as e:
+            return self.cm.error(str(e))
+        except Exception as e:
+            return self.cm.error(f'cannot wait for the cache entry "{alias}": {e}')
+
+        lock.release()
+
+        return {'return':0}
+
+    def _cache_lookup(self, ctx, uses_categories, find_query, new, cache_repo, cache_name, request_params, request_path,
+                      task_api_code, uparams, artifact_alias, create_entry, con, verbose, space):
+        """
+        The lookup of the cache entry of this run, under the creation lock of the cache repository (the
+        sidecar lock of its cache category folder, held for milliseconds): find, classify (the engine's
+        cache category), the task's filter hook; then
+
+        - usable (ok) entries: returned for the selection and the cached result, as before;
+        - otherwise the resumable entries of THIS request (the same recorded request): a running one is
+          waited for (the creation lock released meanwhile) and the lookup starts again; otherwise the
+          newest crashed, failed or broken one is resumed in place;
+        - otherwise a new entry is created (`create_entry`) under the lock.
+
+        The entry resumed or created is locked for this process's attempt before the creation lock is
+        released, so two identical requests never build twice.
+
+        Returns:
+            {'return': 0, 'ok': [...], 'resumable': [...], 'states': {uid: info}, 'attempt': ... or None}
+        """
+        r = self._cache_repo_folder(cache_repo)
+        if r['return']>0: return r
+        category_folder = r['folder']
+
+        files = self.cm.utils.files
+
+        rounds = 0
+        while True:
+            rounds += 1
+            if rounds > 50:
+                return self.cm.error(f'no cache entry could be chosen for "{artifact_alias}" after {rounds} rounds of waiting')
+
+            r = files.lock_path(category_folder, logger = self.logger)
+            if r['return']>0:
+                return self.cm.error(f'cannot lock the cache entries of {os.path.dirname(category_folder)}: {r.get("error")}')
+            creation_lock = r['file_lock']
+
+            wait_for = None
+            wait_info = None
+            try:
+                if new:
+                    found = []
+                else:
+                    r = self.cm.access(find_query)
+                    if r['return']>0 and r['return']!=16: return r
+                    found = r.get('artifacts', [])
+
+                states = {}
+                if found:
+                    r = self.cm.access({'category': uses_categories['cache'], 'command': 'classify',
+                                        'artifacts': found, 'con': False})
+                    if self.cm.catch_error(r): return r
+                    states = r['states']
+
+                ok = []
+                resumable = []
+                for a in found:
+                    if states.get(a['cmeta_ref_parts']['artifact_uid'], {}).get('state') == 'ok':
+                        ok.append(a)
+                    else:
+                        resumable.append(a)
+
+                # The task may drop entries that match the query but are not meant for this request
+                # (task/setup asks the tool: a python request without a venv path of its own must not
+                # reuse the venv of a program). Tasks without this hook keep every entry.
+                if (ok or resumable) and task_api_code is not None and \
+                   hasattr(task_api_code, 'filter_cache_artifacts') and callable(getattr(task_api_code, 'filter_cache_artifacts')):
+                    r = task_api_code.filter_cache_artifacts(ctx, ok, resumable, uparams, path = request_path)
+                    if self.cm.catch_error(r): return r
+
+                    ok = r.get('artifacts', ok)
+                    resumable = r.get('tmp_artifacts', resumable)
+
+                if ok:
+                    return {'return':0, 'ok': ok, 'resumable': resumable, 'states': states, 'attempt': None}
+
+                mine = [a for a in resumable if self._cache_same_request(a, request_params, request_path, cache_name)]
+
+                running = [a for a in mine if states.get(a['cmeta_ref_parts']['artifact_uid'], {}).get('state') == 'running']
+                if running:
+                    wait_for = running[0]
+                    wait_info = states.get(wait_for['cmeta_ref_parts']['artifact_uid'], {})
+                else:
+                    candidates = [a for a in mine if states.get(a['cmeta_ref_parts']['artifact_uid'], {}).get('state') in ('crashed', 'failed', 'broken')]
+                    candidates.sort(key = lambda a: str(a.get('cmeta', {}).get('creation_timestamp', '')), reverse = True)
+
+                    for a in candidates:
+                        state = states[a['cmeta_ref_parts']['artifact_uid']]['state']
+                        r = self._cache_begin_attempt(ctx, a, state, request_params, artifact_alias)
+                        if r['return'] == 0:
+                            if con and verbose:
+                                print ('')
+                                print (f'{space}CACHE: resuming the {state} entry "{a["cmeta_ref_parts"].get("artifact_alias")}"')
+                            return {'return':0, 'ok': [], 'resumable': resumable, 'states': states, 'attempt': r['attempt']}
+                        if r.get('busy'):
+                            wait_for = a
+                            wait_info = states.get(a['cmeta_ref_parts']['artifact_uid'], {})
+                            break
+                        return r
+
+                    if wait_for is None:
+                        r = create_entry()
+                        if r['return']>0: return r
+
+                        entry = {'path': r['path'], 'cmeta': r['meta'], 'cmeta_ref_parts': r['ref_parts']}
+                        r = self._cache_begin_attempt(ctx, entry, 'new', request_params, artifact_alias)
+                        if r['return']>0:
+                            if r.get('busy'):
+                                return self.cm.error(f'the cache entry just created at {entry["path"]} is locked by another process')
+                            return r
+
+                        return {'return':0, 'ok': [], 'resumable': resumable, 'states': states, 'attempt': r['attempt']}
+
+            finally:
+                try:
+                    creation_lock.release()
+                except Exception:
+                    pass
+
+            r = self._cache_wait_for(wait_for, wait_info, artifact_alias, con, space)
+            if r['return']>0: return r
+
+    def _cache_finish_attempt(self, attempt, ctx, uses_categories, cache_name, cache_params, result, failed, con, verbose, space):
+        """
+        The end of this process's attempt in its entry: the result (and the ctx of a success) written
+        first, atomically; then the entry updated - its `params` REPLACED by this request's cache params
+        plus what the task added, the recorded request kept, the `tmp` tag removed, `failed` added or
+        removed - then the running file removed and the entry lock released.
+        """
+        if attempt is None or attempt.get('done'):
+            return {'return':0}
+
+        files = self.cm.utils.files
+
+        r = files.safe_write_file(self.CACHE_FILE_WITH_RESULTS, result)
+        if self.cm.catch_error(r): return r
+
+        if not failed:
+            r = files.safe_write_file(self.CACHE_FILE_WITH_CTX, ctx, safe_dump = True)
+            if self.cm.catch_error(r): return r
+
+        if con and verbose:
+            print ('')
+            print (f'{space}UPDATE: cache in {cache_name}' + (' (the attempt failed)' if failed else ''))
+
+        # The entry's params = THIS request's full cache meta params (the identity keys AND the constant
+        # params a tool adds for the match, e.g. with.compute of llama-cpp - what the find of the next
+        # request matches) plus what the task reported (`_update_params`, tool_path, version): nothing
+        # of an earlier attempt survives. (Only cache_params here lost the constant params, and the next
+        # request made a new entry instead of finding the built one - seen on WSL2, 2026-10-09 17:24.)
+        meta = copy.deepcopy(attempt.get('meta') or {})
+        request_params = copy.deepcopy(attempt.get('request_params') or {})
+        meta['params'] = self.cm.utils.common.deep_merge(request_params, copy.deepcopy(cache_params) if cache_params else {}, append_lists=False)
+        if attempt.get('request_params') is not None:
+            meta['request_params'] = copy.deepcopy(attempt['request_params'])
+
+        ii = {'category': uses_categories['cache'],
+              'command': 'update',
+              'arg1': cache_name,
+              'replace': True,
+              'meta': meta,
+              'new_tags': ['tmp-', 'failed'] if failed else ['tmp-', 'failed-'],
+              'con': False,
+             }
+
+        r = self.cm.access(ii)
+        if self.cm.catch_error(r): return r
+
+        self._cache_release_attempt(attempt)
+
+        stack = _CACHE_ATTEMPTS.get(id(ctx))
+        if stack and attempt in stack:
+            stack.remove(attempt)
+
+        return {'return':0}
 
 
     ###########################################################################################

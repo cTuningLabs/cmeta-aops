@@ -206,7 +206,10 @@ class CTask(InitCTask):
 
         print ('')
         print (f'{space}WARNING: {message}')
-        x = input(f'{space}Continue anyway (y/N)? ').strip().lower()
+        from task_c36be4b9314a45e0.api.ctask import ask as ask_user
+        r = ask_user(f'{space}Continue anyway (y/N)? ', how = '--skip_size_check to go on without this check')
+        if r['return'] > 0: return r
+        x = r['answer'].strip().lower()
         if x not in ['y', 'yes']:
             return self.cm.error(f'build of "{program_name}" cancelled: not enough disk space')
 

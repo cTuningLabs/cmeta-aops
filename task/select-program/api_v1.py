@@ -157,8 +157,12 @@ class CTask(InitCTask):
                                     print (f'{space}{n}) {cmd}')
                                 print ('')
 
+                                from task_c36be4b9314a45e0.api.ctask import ask as ask_user
                                 while True:
-                                    x = input('Please select a command line or press Enter for 0: ').strip()
+                                    r = ask_user('Please select a command line or press Enter for 0: ',
+                                                 how = '-q (--quiet) to take the first of the list')
+                                    if r['return'] > 0: return r
+                                    x = r['answer'].strip()
 
                                     if x == "":
                                         icmd = 0

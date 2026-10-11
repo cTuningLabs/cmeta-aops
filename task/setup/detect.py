@@ -8,6 +8,8 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 import os
 import re
 
+from task_c36be4b9314a45e0.api.ctask import ask
+
 from . import common
 
 def detect_existing_tool(self,
@@ -512,8 +514,12 @@ def detect_existing_tool(self,
 
             else:
                 print ('')
-                x = input(f'{space}Make your selection, press Enter for 0, or select -1 to install/build tool (if supported): ').strip()
- 
+                # Nobody to answer (a detached job, a script): an error that names -q, never a traceback
+                r = ask(f'{space}Make your selection, press Enter for 0, or select -1 to install/build tool (if supported): ',
+                        how = '-q (--quiet) to take the first of the list')
+                if r['return'] > 0: return r
+                x = r['answer'].strip()
+
                 selection = 0 if x == '' else int(x)
 
                 if selection < -1 or selection >= num:

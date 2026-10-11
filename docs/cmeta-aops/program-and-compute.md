@@ -282,6 +282,12 @@ a private venv inside the program's own build folder (`task--program--<name>/<ta
 test-vllm, build-vllm, build-pytorch, test-onnxruntime, image-classification-onnx, test-openvino) that no
 other run picks up. No venv is ever created inside a program artifact. `--clean` wipes a venv that
 lives in the build folder (build-executorch-android keeps its venv in a sibling folder for that reason).
+A venv is recorded under the name the request gave its folder, with no link resolved: one venv is one
+python entry and one entry per package also when the home or the folder is reached through a link (a home
+moved to another disk); the same folder named by another path is another name (see
+[task-engine.md](task-engine.md)). The pip steps for torch and the packages built against it keep the
+CUDA or ROCm line of a torch that is already in the venv when the request names none
+(`--use.pip-torch.with.ver=<version>` names one).
 
 **Compile reuse decision** (`recompile` starts False unless `--recompile`):
 1. Read `_repro_ctx_compile.json`. Missing ⇒ `recompile=True`. Present but
@@ -377,9 +383,10 @@ cache → repro), but their `updates.compile.uses` **append** a full real-build 
   cache. Submodules are initialised with a `cmd` sub-task.
 - A program-specific `internal_func` (`customize_pytorch` / `customize_llama_cpp` /
   `customize_vllm`) computes build env / cmake vars / check-file paths. The CUDA
-  architecture list comes from the detected GPUs, and `MAX_JOBS` from the RAM
-  (`category/program/api/common_build.py`: 4 GiB per CUDA job, 2 GiB per C++ job), since
-  the Python build systems otherwise start one job per CPU and run out of memory.
+  architecture list comes from the detected GPUs, and `MAX_JOBS` from the RAM free now
+  (`category/program/api/common_build.py`: 4 GiB per CUDA job, 3 GiB per C++ job, 2 GiB
+  kept for the system), since the Python build systems otherwise start one job per CPU and
+  run out of memory.
 - The build itself is a `cmd` with `storage_key: compile-program` (so the repro-cache in
   deep dive #A still governs it) running e.g.
   `python -m pip install --no-build-isolation -v .` (pytorch, vllm) or

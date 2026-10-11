@@ -6,8 +6,21 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
+import re
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
+
+
+def wheel_line(version, kind):
+    """
+    The wheel line in the local tag of an installed torch: "130" for 2.14.1+cu130 (kind "cu"), "7.2" for
+    2.14.1+rocm7.2 (kind "rocm" - PyTorch's own index; AMD's builds, +rocm10.1.0, are another source and
+    give None). None for any other build: a CPU wheel (+cpu, or no tag), a source build (+git0d62256).
+    """
+    tag = str(version or '').partition('+')[2]
+    m = re.fullmatch(r'cu(\d+)', tag) if kind == 'cu' else re.fullmatch(r'rocm(\d+\.\d+)', tag) if kind == 'rocm' else None
+    return m.group(1) if m else None
+
 
 class CTool(InitCTool):
     """
@@ -244,6 +257,62 @@ class CTool(InitCTool):
         return {'return':0}
 
     ############################################################
+    def _installed_version(self,
+                           ctx: dict,
+                           package: str,
+    ):
+        """
+        The version of a package in the Python of this request ("2.14.1+cu130"), or None: not installed,
+        or no Python set up yet. Asked from the interpreter itself (importlib.metadata), which costs a
+        Python start and no pip.
+        """
+        python = (ctx['tasks']['global'].get('python') or {}).get('path')
+        if not python or not os.path.isfile(python):
+            return None
+
+        cmd = f'{self.cm.q(python)} -c "import importlib.metadata as m; print(m.version(\'{package}\'))"'
+        r = self.cm.utils.sys.run(cmd, capture_output = True, fail_on_error = False, logger = self.logger)
+        if r.get('return', 0) > 0 or r.get('returncode') != 0:
+            return None
+
+        lines = (r.get('stdout') or '').strip().splitlines()
+        return lines[-1].strip() if lines else None
+
+    ############################################################
+    def _line_of_installed_torch(self,
+                                 ctx: dict,
+                                 params: dict,
+                                 kind: str,          # cu | rocm
+    ):
+        """
+        The wheel line (CUDA: "130", ROCm: "7.2") a request that names none is to take from the torch that
+        is already in its Python, with that torch's version; (None, version or None) when it has no say.
+
+        The packages built against torch (torchvision, torchaudio, ...) come from the index of the torch
+        that is there. A request for torch itself keeps the line of the installed torch when that torch
+        is what the request asks for (the same version, or no version at all): only a request for another
+        version is a request to replace it, and takes the line of the machine as before.
+        """
+        installed = self._installed_version(ctx, 'torch')
+        line = wheel_line(installed, kind)
+        if not line:
+            return None, installed
+
+        if (params.get('with') or {}).get('package') == 'torch':
+            wanted = params.get('version')
+            if wanted:
+                public = installed.partition('+')[0]
+                try:
+                    same = self.cm.utils.common.matches_query({'version': public}, {'@version': str(wanted)},
+                                                              match_version_func = self.cm.repos.match_version_func)
+                except Exception:
+                    same = str(wanted).lstrip('=') == public
+                if not same:
+                    return None, installed
+
+        return line, installed
+
+    ############################################################
     def _common_compute_init(self,
             ctx: dict,
             params: dict,
@@ -314,6 +383,20 @@ class CTool(InitCTool):
                             found = True
                             break
 
+                    # No CUDA line was named (with.ver, an index, the target): the torch that is already in
+                    # this Python decides, when it has a say (_line_of_installed_torch). Until 0.45.0 the
+                    # newest line of the machine was taken whatever was installed: a quiet run replaced
+                    # torch 2.14.1+cu130 by 2.14.1+cu132 and gave a cu130 torch a cu132 torchvision.
+                    line, installed = self._line_of_installed_torch(ctx, params, 'cu')
+                    if line:
+                        if (not found or line != ver.replace('.','')) and ctx['control'].get('con', False):
+                            package = _with.get('package')
+                            print ('')
+                            print (f'INFO: torch {installed} is in this Python: {package} keeps its CUDA line cu{line} '
+                                   f'(--use.pip-{package}.with.ver=<CUDA version> names another)')
+                        ver = line
+                        found = True
+
                 if found:
                     if post_flags != '': post_flags += ' '
                     ver = ver.replace('.','')
@@ -378,6 +461,17 @@ class CTool(InitCTool):
                             if r['return'] == 0 and (r['comparison'] == '>' or r['comparison'] == '='):
                                 found = True
                                 break
+
+                        # As for CUDA: no ROCm line was named, so the torch already in this Python decides
+                        line, installed = self._line_of_installed_torch(ctx, params, 'rocm')
+                        if line:
+                            if (not found or line != ver) and ctx['control'].get('con', False):
+                                package = _with.get('package')
+                                print ('')
+                                print (f'INFO: torch {installed} is in this Python: {package} keeps its ROCm line rocm{line} '
+                                       f'(--use.pip-{package}.with.ver=<ROCm version> names another)')
+                            ver = line
+                            found = True
 
                     if found:
                         if post_flags != '': post_flags += ' '

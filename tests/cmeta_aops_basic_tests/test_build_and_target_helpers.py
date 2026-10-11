@@ -15,6 +15,7 @@ Offline tests of module-level helpers that need no cMeta context:
 
 import importlib.util
 import io
+import os
 import pathlib
 import subprocess
 import sys
@@ -54,24 +55,33 @@ def common_build():
     return load_module("category/program/api/common_build.py", "common_build")
 
 
-@pytest.mark.parametrize("cpus, ram, device, nvcc_threads, expected", [
-    (16, 31.5, "cuda", 1, 7),     # the p14s laptops: 4 GiB per CUDA job
-    (16, 15.0, "cuda", 1, 3),     # WSL with half the RAM
-    (16, 31.5, "cuda", 2, 3),     # nvcc threads multiply the memory of a job
-    (16, 31.5, "cpu", 1, 15),     # C++ only: 2 GiB per job
-    (10, 64.0, "cpu", 1, 10),     # never more jobs than CPUs
-    (4, 2.0, "cuda", 1, 1),       # always at least one job
-    (12, None, "cuda", 1, 12),    # RAM unknown: one job per CPU, as the build systems do
+@pytest.mark.parametrize("cpus, ram, available, device, nvcc_threads, expected", [
+    (16, 31.5, None, "cuda", 1, 7),     # the p14s laptops: 4 GiB per CUDA job after 2 GiB for the system
+    (16, 15.0, None, "cuda", 1, 3),     # WSL with half the RAM
+    (16, 31.5, None, "cuda", 2, 3),     # nvcc threads multiply the memory of a job
+    (16, 31.5, None, "cpu", 1, 9),      # C++ only: 3 GiB per job (15 jobs of 2 GiB: an OOM kill on the P14s Gen 4)
+    (16, 31.5, 13.4, "cpu", 1, 3),      # the RAM available now bounds the budget (a build next to another)
+    (16, 31.5, 60.0, "cpu", 1, 9),      # ... and never above the machine's RAM
+    (16, 31.5, 1.0, "cpu", 1, 1),       # ... and never below one job
+    (10, 64.0, None, "cpu", 1, 10),     # never more jobs than CPUs
+    (4, 2.0, None, "cuda", 1, 1),       # always at least one job
+    (12, None, 5.0, "cuda", 1, 12),     # RAM unknown: one job per CPU, as the build systems do
 ])
-def test_default_max_jobs(common_build, monkeypatch, cpus, ram, device, nvcc_threads, expected):
+def test_default_max_jobs(common_build, monkeypatch, cpus, ram, available, device, nvcc_threads, expected):
     monkeypatch.setattr(common_build.os, "cpu_count", lambda: cpus)
     monkeypatch.setattr(common_build, "total_ram_gib", lambda: ram)
+    monkeypatch.setattr(common_build, "available_ram_gib", lambda: available)
     assert common_build.default_max_jobs(device, nvcc_threads) == expected
 
 
-def test_total_ram_gib_on_this_machine(common_build):
+def test_ram_gib_on_this_machine(common_build):
     ram = common_build.total_ram_gib()
     assert ram is None or ram > 0.5
+    available = common_build.available_ram_gib()
+    assert available is None or 0 < available <= (ram or available)
+    if sys.platform.startswith("linux") or os.name == "nt":   # the two systems that say it
+        assert available is not None
+    assert common_build.default_max_jobs("cpu") >= 1
 
 
 # --------------------------------------------------------------------------------------------

@@ -74,7 +74,7 @@ cx program run build-vllm --compute=cuda --cuda_arch_list="8.6;12.0" --max_jobs=
 |---|---|---|
 | `--checkout` | `v0.30.0` | tag, branch or commit |
 | `--cuda_arch_list` | the detected GPUs | `TORCH_CUDA_ARCH_LIST` (one architecture shortens the build a lot) |
-| `--max_jobs` | sized to the RAM (4 GiB per CUDA job) | `MAX_JOBS` |
+| `--max_jobs` | sized to the RAM free now (4 GiB per CUDA job, 2 GiB kept for the system) | `MAX_JOBS` |
 | `--nvcc_threads` | 1 | `NVCC_THREADS` |
 | `--build_type` | Release | `CMAKE_BUILD_TYPE` |
 | `--compile.env.<VAR>=<value>` | | any other build variable (vLLM's `setup.py`, `vllm/envs.py`) |

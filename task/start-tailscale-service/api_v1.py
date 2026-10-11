@@ -49,7 +49,8 @@ class CTask(InitCTask):
             print ('')
             print ('WARNING: make sure that you run start-tailscale-service in the Desktop terminal since it may open browser to log in to tailscale!')
             print ('')
-            x = input('Press Enter to continue: ')
+            from task_c36be4b9314a45e0.api.ctask import ask as ask_user
+            ask_user('Press Enter to continue: ', optional = True)      # a pause to read the warning: nobody there, no pause
 
         cmd = 'sudo brew services start tailscale'
 

@@ -11,7 +11,7 @@ import re
 import shutil
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, folder_as_named
 
 CONDA_TOOL = 'conda,6e70b3efba794670'
 CONDA_ENV_DIR = '.conda-env'
@@ -133,6 +133,12 @@ class CTask(InitCTask):
         return result
 
     ############################################################
+    def work_dir_as_named(self, ctx):
+        """The folder this run works in, under the name the request gave it (folder_as_named of the task API)."""
+        control = ctx.get('tasks', {}).get('run_control', {})
+        return folder_as_named(control.get('work_dir'), control.get('cur_dir'))
+
+    ############################################################
     def run(self,
             ctx: dict,        # cMeta context
             **kwargs,
@@ -202,8 +208,10 @@ class CTask(InitCTask):
         rx = self.cm.access(ii)
         if self.cm.catch_error(rx): return rx
 
-        # Check paths
-        cur_dir = os.getcwd()
+        # Check paths: the venv is reported under the name the request gave its folder (--path, the
+        # venv path of a python request), which is where the next request looks for it - os.getcwd()
+        # resolves the links of the path on Linux and macOS, and one venv became two pythons there
+        cur_dir = self.work_dir_as_named(ctx)
 
         path_to_venv = os.path.join(cur_dir, '.venv')
 
@@ -291,7 +299,7 @@ class CTask(InitCTask):
             if self.cm.catch_error(r): return r
         conda = _global['conda']
 
-        cur_dir = os.getcwd()
+        cur_dir = self.work_dir_as_named(ctx)       # the folder as the request named it (see run)
         prefix = os.path.join(cur_dir, CONDA_ENV_DIR)
         if os.path.isdir(prefix):
             shutil.rmtree(prefix, ignore_errors = True)        # conda refuses an existing prefix: a half-made one goes

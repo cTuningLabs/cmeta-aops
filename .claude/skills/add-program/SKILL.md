@@ -64,8 +64,9 @@ project root for details.` — then add your `constraints`.
 > picked up by the incremental `cx program index <ref>` — it refuses with "artifact
 > already exists" and leaves the **stale** meta in the index, so the compute filter fails
 > at run time (`couldn't find "program" artifact(s) … with constraints …`). After any
-> `_cmeta.json` change to an already-indexed artifact, run a full **`cx --reindex`**.
-> A `_desc.yaml`- or `src/`-only edit needs no reindex at all.
+> `_cmeta.json` change to an already-indexed artifact, run **`cx program reindex <name>`**
+> (cMeta 0.34.0+: the record is rewritten from the folder, nothing is written) - or a full
+> `cx --reindex` on an older engine. A `_desc.yaml`- or `src/`-only edit needs no reindex at all.
 
 If you instead hand-author the folder from scratch (it isn't indexed yet), register it
 with `cx program index ctuninglabs@cmeta-aops:<name>` (or `cx --reindex`).
@@ -241,7 +242,7 @@ steps.
 ## 7. Index, run, verify
 
 ```bash
-cx --reindex                                                # if you edited _cmeta.json after `cx program add` (see gotcha above)
+cx program reindex test-hello-c-cpu                         # if you edited _cmeta.json after `cx program add` (see gotcha above; `cx --reindex` before cMeta 0.34.0)
 cx program find test-hello-c-cpu                            # confirm it resolves in THIS repo
 
 cx program compile test-hello-c-cpu cpu -j --quiet         # compile only (skip_run); -j trace; --quiet auto-picks selections
@@ -344,7 +345,7 @@ int main(int argc, char** argv) {
 
 Then:
 ```bash
-cx --reindex                                   # _cmeta.json changed after `cx program add`
+cx program reindex test-hello-c-cpu            # _cmeta.json changed after `cx program add` (cMeta 0.34.0+)
 cx program run test-hello-c-cpu cpu --quiet    # sets up a C compiler, builds hello, runs it → "Hello, world!" + {"hello":"world"}
 ```
 
@@ -359,8 +360,9 @@ cx program run test-hello-c-cpu cpu --quiet    # sets up a C compiler, builds he
       ctuninglabs@cmeta-aops:<name>`), not a bare form (which lands in `local`).
 - [ ] `_cmeta.json` (json, matching siblings); fixed the auto-generated `copyright:`.
 - [ ] **`constraints.supported_compute`** set to exactly the targets you support — and ran
-      **`cx --reindex`** after editing `_cmeta.json` (incremental `cx program index` won't
-      refresh an already-indexed entry, so the compute filter would use stale meta).
+      **`cx program reindex <name>`** (cMeta 0.34.0+; `cx --reindex` before) after editing
+      `_cmeta.json` (`cx program index` won't refresh an already-indexed entry, so the compute
+      filter would use stale meta).
 - [ ] `_desc.yaml` `inherits` a real template `alias,UID`; referenced tasks/tools/libs by
       `alias,UID` (look up UIDs with `cx task find` / `cx tool find`).
 - [ ] `local_vars.lang` matches a compiler tag (`lang-c`/`lang-cpp`/`lang-cuda`); flipped

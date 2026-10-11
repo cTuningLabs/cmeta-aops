@@ -12,7 +12,8 @@ with no path in the way and nothing to install in the user's home.
 cxt run-ai                                           # continue the latest conversation of the project around the cwd, interactively
 cxt run-ai "one prompt"                              # one more turn of that conversation, then exit
 cxt run-ai --new "a fresh start"                     # a new conversation (the memory and the skills stay)
-cxt run-ai --conversations                           # the conversations of the project: id, runs, harnesses, title
+cxt run-ai --conversations                           # the conversations of the project: id, title, and each run with its
+                                                     # harness, model and effort (short: --cs)
 cxt run-ai --conversation=20261004-18 -i             # continue a given one (id or prefix)
 cxt run-ai --harness=codex --model=gpt-6.1-sol,high  # the same conversation with codex: the transcript is handed over
 cxt run-ai --project="project::my-app" -i            # the project named explicitly (category::artifact)
@@ -159,22 +160,28 @@ instructions that ask it for session files of its own do not apply.
 `conversations.py` next to this file holds the adapters (new, resume, discover, exists, export) and the transcript
 writer; `api_v1.py` picks the conversation, writes the record before the run and closes it after.
 
-### `--conversations`: what a project has
+### `--conversations` (`--cs`): what a project has
 
-`cxt run-ai --conversations` lists the conversations of the project and stops: no harness starts and nothing is
-written - it reads `!AI/log/*.conversation.json`. The one with the latest activity comes first; that is the one a
-plain `cxt run-ai` continues.
+`cxt run-ai --conversations` - or the short `cxt run-ai --cs` - lists the conversations of the project and stops: no
+harness starts and nothing is written - it reads `!AI/log/*.conversation.json`. The one with the latest activity comes
+first; that is the one a plain `cxt run-ai` continues. Under each conversation, every run is listed with its harness
+and with the model and the effort it was given.
 
 ```
 RUN-AI: conversations of <project> (<project>/!AI/log)
-  20260101-120000  4 run(s), claude, last 2026-01-01T12:30 with claude  - interactive session 20260101-120000
-      claude session <uuid> (1 run(s), started 2026-01-01T12:30)
+  20260101-120000  2 run(s), claude, last 2026-01-01T12:30 with claude  - interactive session 20260101-120000
+      claude session <uuid> (2 run(s), started 2026-01-01T12:00)
+      run 20260101-120000  claude  model: default  effort: default  interactive  2026-01-01T12:00 - 2026-01-01T12:10
+      run 20260101-122000  claude  model: opus  effort: high  interactive  2026-01-01T12:20 - 2026-01-01T12:30
       files: 20260101-120000.conversation.json, 20260101-120000.transcript.md
-  20260101-110000  4 run(s), claude/codex, last 2026-01-01T11:40 with claude  - interactive session 20260101-110000
-      claude session <uuid> (1 run(s), started 2026-01-01T11:35)
+  20260101-110000  2 run(s), codex/claude, last 2026-01-01T11:40 with claude  - fix the tests
       codex session <uuid> (1 run(s), started 2026-01-01T11:00)
+      claude session <uuid> (1 run(s), started 2026-01-01T11:35)
+      run 20260101-110000  codex  model: default  effort: default  prompt  2026-01-01T11:00 - 2026-01-01T11:05
+      run 20260101-113500  claude  model: default  effort: default  interactive  2026-01-01T11:35 - 2026-01-01T11:40
       files: 20260101-110000.conversation.json, 20260101-110000.transcript.md
 
+  model, effort: what a run was given (--model=<model>,<effort>); "default" = none given, the harness chose
   cxt run-ai                      continues the first one listed (the latest activity)
   cxt run-ai --conversation=<id>  continues that one;  cxt run-ai --new  starts another
 ```
@@ -187,6 +194,7 @@ RUN-AI: conversations of <project> (<project>/!AI/log)
 | `last ... with claude` | when the latest run ended (or started, while it is running) and with which harness |
 | `- interactive session ...` | the title: the first prompt (90 characters), or "interactive session <stamp>" / "run <stamp>" without one |
 | `claude session <id> (1 run(s), started ...)` | the native session of that harness, which the next run with it resumes. Its count starts again when the harness gets a new native session; the earlier ids stay in the file under `previous` |
+| `run <stamp>  claude  model: opus  effort: high  interactive  <start> - <end>` | one run: its stamp (the name of its files in `!AI/log`), the harness - named also when it was the default one -, the model and the effort the run was given with `--model=<model>,<effort>` or `--effort` (`default`: none was given and the harness used its own; a model chosen inside an interactive session is not known to run-ai), `interactive` or `prompt`, when it started and ended (`(no end yet)`: it is running, or it ended without closing its record), and `(return N)` when it failed |
 | `files:` | in `!AI/log`: the record run-ai keeps, and the transcript - the portable copy to read or hand to another harness |
 
 ```bash
@@ -559,6 +567,15 @@ conversation records) - its own session writes its own memory. A direct change t
 proposal is kept aside in `_direct-<stamp>/` instead of replacing the proposal. The run record and the task result
 (`context_changes`, `pending`) carry what was found.
 
+How "in the meantime" is told: by the records, the way the changes are - not by file times or by the clock. With the
+files, the snapshot keeps the artifact's `applied` records (their names and content) and the runs of its conversation
+records. After the run, a record that is new or reads differently was written since, and the changes it names have
+your word; a run that is new was started since, and one that had no end at the snapshot and has one now ended since.
+A record that was there before the run approves nothing the run does: the same change made again is a new change.
+This holds where the files of a project are stamped by another clock than the one of the machine that runs run-ai -
+a Windows drive inside WSL2, a network share, a folder mounted into a container - in another time zone, or only to
+the whole second.
+
 **An example.** A project `project::my-app` uses `project::shared-rules`. Its session learnt something that belongs to
 the shared rules, and wrote three files under its own `!AI`:
 
@@ -624,7 +641,11 @@ when applying); `REFUSED` a path outside `memory/` and `skills/`.
   artifact's other files are not compared.
 - A file above 8 MB is fingerprinted but not kept, so it is reported and cannot be put back.
 - An artifact counts as "running its own session" for 48 hours after a run of it that has no end (a crash leaves
-  none); its changes are then reported and left.
+  none); its changes are then reported and left. This is the one place where a recorded time is compared with the
+  clock of the machine, with two days to spare.
+- An `--apply_pending` that is writing its files at the very moment a run ends can be seen half done: the files are
+  there, their record is not yet. The run then treats them like any direct change (asks, or puts them back and
+  stages them again - nothing is lost).
 - `--add-dir` still gives Claude write access to the used artifacts; the guard is what undoes a write, not what
   prevents it.
 

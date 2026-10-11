@@ -33,6 +33,18 @@ cx program run test-pytorch-with-vision --compute=cuda --use.python.venv_path=$V
 Without `--use.python.venv_path` each program takes the shared Python of the machine (cMeta's own, or
 the venv it finds), as `test-pytorch-with-vision` always did for the pip pair.
 
+For a CUDA build the torch of that Python must be for the CUDA toolkit of the run: torch does not compile
+CUDA operators with a toolkit of another major version than the one it was built for (a torch for CUDA 12
+and a CUDA 13 toolkit). The program checks this when it pairs the checkout with the torch, before anything
+is cloned, and names the Python it took and the ways out: a Python whose torch fits
+(`--use.python.venv_path=<folder>`; a new folder with `--torch=pip` gets PyTorch's wheel for the machine) or
+the CPU operators only (`--compute=cpu`).
+
+The pip steps keep the CUDA line of a torch that is installed: `--torch=pip` and the test program replace
+neither the torch nor its line unless the request names another (`--use.pip-torch.with.ver=13.2`, a torch
+version that is not the installed one), and torchvision, when it comes from PyTorch's wheels, is taken from
+the index of the installed torch.
+
 | Parameter | Default | Meaning |
 |---|---|---|
 | `--checkout` | the pair of the torch found | the vision tag or branch to build |
