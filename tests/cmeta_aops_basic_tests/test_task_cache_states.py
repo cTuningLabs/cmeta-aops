@@ -390,7 +390,10 @@ def test_a_crashed_attempt_is_resumed(cm, home, inv):
     wait_for(lambda: states(cm)[e['cmeta_ref_parts']['artifact_uid']] == 'crashed', 30, 'the entry to be crashed')
     found, st = inv.check(expected_entries=1, allow_crashed=True)
     running = json.loads((pathlib.Path(e['path']) / RUNNING).read_text())
-    assert running['pid'] == proc.pid and running['task'] == TASK
+    # The pid on record is the process that ran the task: the one started here - or, in a virtual environment on
+    # Windows, the interpreter that its python.exe launcher started (a child with a pid of its own)
+    behind_a_launcher = os.name == 'nt' and sys.prefix != sys.base_prefix
+    assert running['task'] == TASK and (running['pid'] == proc.pid or behind_a_launcher)
 
     r = run(cm, name='eps', version='4')
     assert r['return'] == 0 and r['attempt'] == 2 and r['resumed']['state'] == 'crashed', r

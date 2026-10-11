@@ -2,6 +2,13 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.45.0.1 (in development)
+- **Python 3.15.** The suite runs on Python 3.15 in CI, next to 3.9 and 3.14 (Linux, Windows, macOS); nothing
+  in the repository needed a change. Two tests did: `test_tool_upgrade.py` compared a tool's version with
+  `platform.python_version()`, which carries the suffix of a pre-release (`3.15.0rc2`), and
+  `test_task_cache_states.py` compared the process id on record with the one it had started, which in a
+  virtual environment on Windows is the `python.exe` launcher and not the interpreter that runs the task.
+
 ## 0.45.0
 - **The cache entry of a run: a failed or interrupted attempt is resumed in place by the same request, never
   served as a result, never inherited by another request; identical requests at once make one entry.** The

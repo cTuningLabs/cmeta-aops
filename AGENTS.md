@@ -213,7 +213,7 @@ Two layers:
   paths / drive letters — adapt before running. CI (`.github/workflows/*.yml`,
   `workflow_dispatch`) clones the framework, `pip install .[all]`,
   `cx repo plug .`, then runs `cx task ...` recipes on
-  `{ubuntu,windows,macos} × py{3.9,3.14}`. To verify a real change, run the relevant
+  `{ubuntu,windows,macos} × py{3.9,3.14,3.15}`. To verify a real change, run the relevant
   recipe locally.
 
 ### 7.1 Test sessions — where real tests run and what they record
@@ -271,7 +271,7 @@ Details: [`task/test-session/README.md`](task/test-session/README.md).
   rebuilds every category and is slow — keep it for moves/renames, bulk `git
   pull`, or a wiped `CMETA_HOME`. Payload-only edits (`api/`, `src/`,
   `_desc.yaml`) need no reindex at all.
-- Python 3.9–3.14; keep engine runtime deps out of artifact code.
+- Python 3.9–3.15; keep engine runtime deps out of artifact code.
 
 ### 8.0 Git workflow — sign-off, branch naming, PR titles
 
