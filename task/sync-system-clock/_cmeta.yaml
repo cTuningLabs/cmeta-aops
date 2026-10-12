@@ -1,0 +1,18 @@
+artifact: 7aaf0c96689d43f1
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-10-12T20:14:30.920603+00:00'
+desc: the system clock checked against a time server and put right - the time service restarted and resynced - with the OS's own commands
+generator:
+  agent: Claude Code 2.1.296
+  by: Grigori Fursin
+  method: agent
+  model: claude-fable-5-1
+  via: cmeta 0.35.1
+note: added on 2026-10-12 at the user's request, after WSL2's clock was seen stepping by seconds every 30 s because the Windows host's time service was stopped; "cx host run <host> \"cx task run sync-system-clock --check\"" measures a fleet host
+tags:
+  - task
+  - clock
+  - time
+  - ntp
+  - system

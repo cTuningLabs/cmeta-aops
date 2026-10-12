@@ -69,7 +69,7 @@ def test_open_close_nearest(deadlines):
     deadlines.close_deadline(ctx, a)
     deadlines.close_deadline(ctx, None)
     assert "deadlines" not in ctx["tasks"]
-    passed = {"name": "x", "seconds": 1, "until": time.time() - 5, "option": "--x"}
+    passed = {"name": "x", "seconds": 1, "until": time.monotonic() - 5, "option": "--x"}   # deadlines are monotonic
     assert deadlines.time_left(passed) == 0
 
 
@@ -89,11 +89,11 @@ def test_deadline_stops_a_long_command(cm, deadlines, tmp_path):
     warm_up(cm)
     ctx = {"tasks": {}}
     deadlines.open_deadline(ctx, "compile", 2, "--compile_timeout")
-    started = time.time()
+    started = time.monotonic()
     r = run_cmd(cm, sleeper(tmp_path), ctx = ctx)
     assert r["return"] == 99, r
     assert "the compile deadline of 2 s (--compile_timeout) passed" in r["error"] and "stopped after" in r["error"]
-    assert time.time() - started < 20
+    assert time.monotonic() - started < 20
 
 
 def test_per_command_timeout_wins_when_shorter(cm, deadlines, tmp_path):
@@ -106,7 +106,7 @@ def test_per_command_timeout_wins_when_shorter(cm, deadlines, tmp_path):
 def test_a_command_after_the_deadline_is_not_started(cm, deadlines, tmp_path):
     ctx = {"tasks": {}}
     entry = deadlines.open_deadline(ctx, "compile", 1, "--compile_timeout")
-    entry["until"] = time.time() - 1                       # already passed
+    entry["until"] = time.monotonic() - 1                  # already passed
     marker = tmp_path / "ran.txt"
     script = tmp_path / "mark.py"
     script.write_text(f"open(r'{marker}', 'w').write('x')\n")
@@ -122,10 +122,10 @@ def test_nested_commands_share_the_deadline_and_it_closes(cm, deadlines, tmp_pat
     entry = deadlines.open_deadline(ctx, "compile", 3, "--compile_timeout")
     r1 = run_cmd(cm, f'{PY} -c "import time; time.sleep(1.2)"', ctx = ctx)
     assert r1["return"] == 0, r1
-    started = time.time()
+    started = time.monotonic()
     r2 = run_cmd(cm, sleeper(tmp_path), ctx = ctx)          # a "nested" build: the same ctx
     assert r2["return"] == 99 and "deadline" in r2["error"], r2
-    assert time.time() - started < 10                         # stopped by the time left, about 2 s
+    assert time.monotonic() - started < 10                    # stopped by the time left, about 2 s
     deadlines.close_deadline(ctx, entry)
     r3 = run_cmd(cm, f'{PY} -c "import time; time.sleep(0.1); print(7)"', ctx = ctx, capture_output = True)
     assert r3["return"] == 0 and r3["stdout"].strip() == "7" and not r3.get("timed_out")

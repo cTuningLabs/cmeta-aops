@@ -10,6 +10,9 @@ ctx is shared with the nested tasks (the task engine copies only ctx['control'] 
 task/cmd gives each command min(its own timeout, the time left to the nearest deadline) and fails
 at once when none is left, so a build that a tool runs inside the phase is stopped too. The task
 closes the deadline when the phase ends, also on errors. Without a deadline nothing changes.
+
+The deadline is kept on the monotonic clock: the wall clock can be set meanwhile (NTP, a virtual machine's
+clock sync - WSL2 seen stepping it by seconds every 30 s) and a deadline of N seconds stays N seconds.
 """
 
 import time
@@ -30,7 +33,7 @@ def open_deadline(ctx, name, timeout, option):
     limit = seconds(timeout)
     if limit is None:
         return None
-    entry = {'name': name, 'seconds': limit, 'until': time.time() + limit, 'option': option}
+    entry = {'name': name, 'seconds': limit, 'until': time.monotonic() + limit, 'option': option}
     ctx.setdefault('tasks', {}).setdefault(KEY, []).append(entry)
     return entry
 
@@ -53,8 +56,8 @@ def nearest(ctx):
 
 
 def time_left(entry, now = None):
-    """The seconds left to a deadline, rounded up, at least 0."""
-    left = entry['until'] - (time.time() if now is None else now)
+    """The seconds left to a deadline, rounded up, at least 0 (`now`: a time.monotonic() value)."""
+    left = entry['until'] - (time.monotonic() if now is None else now)
     return max(0, int(left) + (1 if left > int(left) else 0))
 
 

@@ -148,7 +148,7 @@ class CTask(InitCTask):
                 timeout = left
                 by_deadline = True
 
-        started = time.time()
+        started = time.monotonic()              # not the wall clock: NTP or a VM's clock sync can set it meanwhile
 
         result = self.cm.utils.sys.run(
             cmd, 
@@ -175,7 +175,7 @@ class CTask(InitCTask):
             skip_print_env = skip_print_env,
         )
 
-        elapsed = time.time() - started
+        elapsed = time.monotonic() - started
 
         if chdir:
             os.chdir(cur_dir)
@@ -185,8 +185,12 @@ class CTask(InitCTask):
         returncode = result.get('returncode', 0)
 
         # utils.sys.run stops a command that runs past the timeout, with its subprocesses, and
-        # returns -1, the code it also returns at once when a command cannot be started
-        timed_out = timeout is not None and returncode == -1 and elapsed >= timeout
+        # returns -1, the code it also returns at once when a command cannot be started; an engine
+        # that says so (cMeta after 0.35.1: 'timed_out') is believed, an older one is judged by the time
+        if 'timed_out' in result:
+            timed_out = bool(result['timed_out'])
+        else:
+            timed_out = timeout is not None and returncode == -1 and elapsed >= timeout
         if timed_out:
             result['timed_out'] = True
 
