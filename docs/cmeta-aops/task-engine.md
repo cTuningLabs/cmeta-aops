@@ -220,6 +220,34 @@ The rules, in the order the engine applies them:
 - `--update` and `--clean` rebuild the selected usable entry in place, as before, as an
   attempt under its lock (the explicit overwrite); `--new` makes a fresh entry.
 
+### Several usable entries: which one a request takes
+
+A request often matches more than one usable entry: three versions of a tool, the same version
+built for two targets. They are offered in this order, and a quiet run (`-q`) takes the first:
+
+1. the task's own `sort_keys` (`_desc.yaml`), or by default the highest version
+   (`@cmeta.params.version-`), then the lowest `priority`, then the `path`;
+2. the entry's `sort` value, when it has one;
+3. **the time of creation, the newest first** (`creation_timestamp` of the entry's meta);
+4. the alias, then the UID.
+
+Step 3 is what makes the choice the same on every machine. Two entries that are equal on steps 1
+and 2 - a second entry made with `--new`, the two entries that identical requests at once made
+before 0.45 - used to fall to their aliases, which end in a random UID: one machine took the older
+entry, the next one the newer. Now the entry made last is taken everywhere; an entry without a
+time of creation comes after the ones that have one.
+
+When the time of creation decided, a quiet run says so in one line:
+
+```text
+NOTE: 2 cache entries have the same version, priority, path: the newest is used - task--setup--jq--5f0c..., made 2026-10-12T10:07:10+00:00
+```
+
+and a run that asks adds "(entries with the same version, priority, path are listed newest first)"
+to its question. Without the console (`--con-`, the API) nothing is printed. `cx cache show
+--duplicates` lists the usable entries that no request can tell apart, group by group, and `cx
+cache clean --duplicates` keeps the newest of each group (cMeta 0.35.1 and later).
+
 What a resumed attempt finds in its entry, for the three things most entries hold:
 
 - **A download** (`task/download-file`). A file gets its name only when it is complete: the

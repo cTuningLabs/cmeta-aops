@@ -3,6 +3,21 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.45.0.1 (in development)
+- **Of the usable cache entries that are equal for a request, the one made last is taken - on every
+  machine.** A request that matches several usable entries takes the first in this order: the task's own
+  `sort_keys` or, by default, the highest version, then the priority, then the path; then the entry's `sort`
+  value. Entries that were still equal fell to their aliases, which end in a random UID: a second entry made
+  with `--new`, or the two entries that identical requests at once made before 0.45, were taken by chance -
+  the older one on one machine, the newer on the next. Now the time of creation decides before the alias,
+  the newest first (`cmeta.creation_timestamp-` after the keys above, in `category/task/api/v2.py`); nothing
+  changes for entries that differ in version, priority, path or the task's own keys, and an entry without a
+  time of creation comes after those that have one, in the order of before. A quiet run says in one line
+  when the time decided (`NOTE: 2 cache entries have the same version, priority, path: the newest is used -
+  <alias>, made <time>`), a run that asks says that such entries are listed newest first, and without the
+  console nothing is printed. `cx cache show --duplicates` and `cx cache clean --duplicates` of the engine
+  (cMeta 0.35.1 and later) list and remove the entries that no request can tell apart. Docs: "Several usable
+  entries: which one a request takes" in `docs/cmeta-aops/task-engine.md`. Tests:
+  `tests/cmeta_aops_basic_tests/test_task_cache_selection.py`.
 - **Python 3.15.** The suite runs on Python 3.15 in CI, next to 3.9 and 3.14 (Linux, Windows, macOS); nothing
   in the repository needed a change. Two tests did: `test_tool_upgrade.py` compared a tool's version with
   `platform.python_version()`, which carries the suffix of a pre-release (`3.15.0rc2`), and
