@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## 0.45.0.1 (in development)
+## 0.45.1
 - **Of the usable cache entries that are equal for a request, the one made last is taken - on every
   machine.** A request that matches several usable entries takes the first in this order: the task's own
   `sort_keys` or, by default, the highest version, then the priority, then the path; then the entry's `sort`
