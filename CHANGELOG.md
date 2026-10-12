@@ -18,6 +18,14 @@ All notable changes to cMeta AOps are documented here, newest first.
   (cMeta 0.35.1 and later) list and remove the entries that no request can tell apart. Docs: "Several usable
   entries: which one a request takes" in `docs/cmeta-aops/task-engine.md`. Tests:
   `tests/cmeta_aops_basic_tests/test_task_cache_selection.py`.
+- **The running file of a short attempt no longer stays in its finished entry on Windows.** The end of an
+  attempt removes `cmeta-task-running.json`; Windows refuses to remove a file that another handle has open,
+  and the file is read by everyone who classifies the entry - the lookup of another request, `cx cache
+  show`. An attempt of a few milliseconds ended while such a reader was there, the refusal was swallowed,
+  and the usable entry kept the file of an attempt that was over (no harm to the result; the entry looked
+  as if something had run in it). The removal is now tried again until the reader is gone. Found by the
+  test of identical requests at once, which failed now and then on Windows; a test holds the file open
+  across the end of an attempt.
 - **Python 3.15.** The suite runs on Python 3.15 in CI, next to 3.9 and 3.14 (Linux, Windows, macOS); nothing
   in the repository needed a change. Two tests did: `test_tool_upgrade.py` compared a tool's version with
   `platform.python_version()`, which carries the suffix of a pre-release (`3.15.0rc2`), and

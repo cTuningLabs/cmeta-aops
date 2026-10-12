@@ -434,6 +434,44 @@ def test_identical_requests_at_once_make_one_entry_and_the_second_waits(cm, home
     assert all(s == 'ok' for s in st.values())
 
 
+def test_the_running_file_goes_although_a_reader_has_it_open_when_the_attempt_ends(cm, home, inv):
+    """Windows refuses to remove a file that another handle has open, and the running file of an entry is read
+    by everyone who classifies it (the lookup of another request, `cx cache show`). The end of an attempt waits
+    for such a reader; before, the file stayed in the finished entry (the test above failed 2 times in 6 by
+    it: the entry of the third request, a few milliseconds long, was being classified by the second)."""
+    import threading
+
+    cache_dir = home / 'repos' / 'local' / 'cache'
+    seen = []
+
+    def reader():
+        # Open the running file as soon as the attempt writes it and keep it open past the end of the attempt
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            for path in cache_dir.glob(f'task--{TASK}--*/{RUNNING}'):
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        seen.append(str(path))
+                        time.sleep(1.0)
+                    return
+                except OSError:
+                    pass
+            time.sleep(0.002)
+
+    thread = threading.Thread(target=reader, daemon=True)
+    thread.start()
+
+    r = run(cm, name='rho', version='13', sleep=0.3)
+    thread.join(90)
+
+    assert r['return'] == 0, r.get('error')
+    assert seen, 'the reader never saw the running file of the attempt'
+
+    # The invariants include it: no running file in an entry whose attempt is over
+    found, st = inv.check(expected_entries=1)
+    assert list(st.values()) == ['ok']
+
+
 def test_new_update_and_clean_as_before(cm, home, inv):
     r = run(cm, name='eta', version='7')
     assert r['return'] == 0 and r['attempt'] == 1

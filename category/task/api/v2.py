@@ -1690,11 +1690,22 @@ class Category(InitCategory):
 
         attempt['done'] = True
 
-        try:
-            if os.path.isfile(attempt['running_file']):
+        # Windows refuses to remove a file that another handle has open, and the running file is read by
+        # everyone who classifies this entry - the lookup of another request, `cx cache show`. A short
+        # attempt ends while such a reader is there: tried again until the reader is gone (it reads a few
+        # lines), or the file stayed in a finished entry (seen 2026-10-12: 2 runs in 6).
+        deadline = time.monotonic() + 5
+
+        while True:
+            try:
                 os.remove(attempt['running_file'])
-        except OSError:
-            pass
+                break
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.005)
+            except OSError:
+                break
 
         try:
             attempt['lock'].release()
