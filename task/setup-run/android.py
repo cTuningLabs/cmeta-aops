@@ -56,6 +56,7 @@ def push_folder(adb_path, serial, files, device_dir):
         rc, out = adb(adb_path, serial, 'push', *files[i:i + PUSH_BATCH], device_dir + '/')
         if rc != 0:
             return False, out.strip()
+
     # Pushed from Windows, files are not executable
     rc, out = adb(adb_path, serial, 'shell', f'chmod 755 {device_dir}/* && echo {stamp} > {device_dir}/.cmeta-stamp')
     if rc != 0:

@@ -115,6 +115,7 @@ def test_export_line_and_attach_as(session, helpers, tmp_path):
     assert helpers["export_line"](sid, "powershell") == f'$env:CMETA_TEST_SESSION = "{sid}"'
     assert helpers["export_line"](sid) == (f"set CMETA_TEST_SESSION={sid}" if os.name == "nt" else f"export CMETA_TEST_SESSION={sid}")
     assert helpers["SESSION_ENV"] == "CMETA_TEST_SESSION"
+
     # a single attachment stored under another name: the records of several runs are all called provenance.json
     record = tmp_path / "provenance.json"
     record.write_text("{}", encoding="utf-8")
@@ -123,6 +124,7 @@ def test_export_line_and_attach_as(session, helpers, tmp_path):
     folder = os.path.join(os.path.dirname(r["log"]), "attachments")
     assert os.path.isfile(os.path.join(folder, "provenance--prog--tmp--120000.json")) and not os.path.exists(os.path.join(folder, "provenance.json"))
     assert [a["name"] for a in r["record"]["attachments"]] == ["provenance--prog--tmp--120000.json"]
+
     # several files: their own names, attach_as is not applied
     other = tmp_path / "other.txt"
     other.write_text("x", encoding="utf-8")
@@ -149,6 +151,7 @@ def test_two_artifacts_hold_every_session_and_list_filters(session, cm):
     mine = [x["id"] for x in session(list=True, host=host.upper(), type="filter-b-" + u)["sessions"]]
     assert mine == [b["id"]]
     assert session(list=True, date=a["id"][:8], type="filter-a-" + u)["sessions"][0]["title"] == "first"
+
     # the other id forms work too
     old = a["id"].replace("/", "-", 1)
     assert session(id=old, note="by the old id")["record"]["notes"][-1]["text"] == "by the old id"
@@ -275,6 +278,7 @@ def write_transcripts(root, session_id, start, minutes_before, minutes_inside):
         return t.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
     main = [transcript_line(utc(-minutes_before), "req-before")]
+
     # One request logged twice (one line per content block): counted once
     main += [transcript_line(utc(minutes_inside), "req-1"), transcript_line(utc(minutes_inside), "req-1"),
              json.dumps({"type": "user", "timestamp": utc(minutes_inside), "message": {"content": "hi"}})]
@@ -298,6 +302,7 @@ def test_claude_usage_counts_requests_once_in_the_window(helpers, tmp_path):
 
     prices = {"claude-opus-5-5": {"input": 1, "output": 1000, "cache_write": 0, "cache_read": 1000},
               "claude-haiku-4-5-20251001": {"output": 2000}}
+
     # opus: 100 out * 1000/1e6 + 1000 cache-read * 1000/1e6 + 2 in * 1/1e6; haiku: 50 out * 2000/1e6
     assert helpers["usage_cost"](usage, prices) == round(0.1 + 1.0 + 0.000002 + 0.1, 2)
     assert helpers["usage_cost"](usage, {"claude-opus-5-5": prices["claude-opus-5-5"]}) is None
@@ -306,6 +311,7 @@ def test_claude_usage_counts_requests_once_in_the_window(helpers, tmp_path):
 def test_finish_records_the_agent_usage(session, tmp_path):
     r = session(start=True, type="usage")
     started = datetime.datetime.fromisoformat(r["record"]["started"])
+
     # The session's own transcripts (CLAUDE_CONFIG_DIR points at tmp_path/claude)
     write_transcripts(tmp_path, "0000-test-session", started, minutes_before=30, minutes_inside=0)
     r = session(finish=True, id=r["id"])
@@ -314,6 +320,7 @@ def test_finish_records_the_agent_usage(session, tmp_path):
     assert usage["requests"] == 2 and usage["output_tokens"] == 150
     md = open(r["log"], encoding="utf-8").read()
     assert "Agent: 2 requests; 150 output, 4 input, 20 cache-write and 2,000 cache-read tokens" in md
+
     # the model the agent was started with is kept
     assert r["record"]["agent"]["model"] == "claude-opus-5-5" and "model_from" not in r["record"]["agent"]
 
@@ -325,6 +332,7 @@ def test_finish_takes_the_model_from_the_transcript_when_none_was_given(session,
     assert r["return"] == 0, r.get("error")
     assert "model" not in r["record"]["agent"]
     started = datetime.datetime.fromisoformat(r["record"]["started"])
+
     # the main transcript writes more output (opus, 100) than the subagent's (haiku, 50)
     write_transcripts(tmp_path, "0000-test-session", started, minutes_before=30, minutes_inside=0)
     r = session(finish=True, id=r["id"])

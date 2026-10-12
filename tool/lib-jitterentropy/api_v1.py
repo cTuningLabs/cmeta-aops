@@ -27,6 +27,7 @@ SPEC = {
     'src_dir': 'jitterentropy-library-{version}',
     'sources': ['src/*.c'],
     'include_dirs': ['.', 'src'],
+
     # As the project's Makefile builds it: with its internal timer (it needs pthreads) and without
     # optimization, which jitterentropy-base.c requires (the noise source depends on it)
     'defines': ['JENT_CONF_ENABLE_INTERNAL_TIMER'],

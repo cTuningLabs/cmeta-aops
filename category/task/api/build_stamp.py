@@ -84,6 +84,7 @@ def sources_changed(stamp, digests):
 
 # The compile parameters recorded in the stamp (what a build is, not how it is reported) ...
 COMPILE_KEYS = ('static', 'debug_info', 'fastest', 'openmp', 'profile', 'profile_cuda', 'profile_cuda_kernels', 'lib')
+
 # ... and the ones a folder is refused for: the static/dynamic kind and library/program. Optimization,
 # debug and profiling flags change the binary but are switched on one folder in everyday use
 # (--compile.fastest, then a plain run), so they are recorded, not compared

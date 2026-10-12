@@ -681,6 +681,7 @@ class CTask(InitCTask):
 
                     if not recompile:
                         compile_uname = _compiled_state_global['host']['os']['uname']
+
                         # Can happen in Docker or WSL with shared host disk
                         if compile_uname != uname:
                             recompile = True

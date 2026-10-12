@@ -123,6 +123,7 @@ class CProgram(InitCProgram):
                 _proc = os.environ.get('PROCESSOR_ARCHITECTURE', '').upper()
                 if _proc in _proc_map:
                     d['CMAKE_SYSTEM_PROCESSOR'] = _proc_map[_proc]
+
             # Detect Clang (GNU-frontend) by compiler path and disable PYTORCH_QNNPACK.
             _win_cpath = ''
             for _ckey in ('compiler-cpp', 'compiler-c'):
@@ -156,6 +157,7 @@ class CProgram(InitCProgram):
         # picking up the system Python via PATH.
         python_qpath = _global['python']['qpath']
         python_path = _global['python'].get('path') or python_qpath.strip('"').strip("'")
+
         # <venv>/ from <venv>/Scripts/python.exe (Windows) or <venv>/bin/python (Linux/macOS)
         python_root = os.path.dirname(os.path.dirname(python_path))
 
@@ -167,6 +169,7 @@ class CProgram(InitCProgram):
             d['Python_EXECUTABLE'] = python_qpath
         if 'Python3_EXECUTABLE' not in d:
             d['Python3_EXECUTABLE'] = python_qpath
+
         # Prefer the active virtualenv / venv over any system Python found in PATH
         d.setdefault('Python_FIND_VIRTUALENV', 'FIRST')
         d.setdefault('Python3_FIND_VIRTUALENV', 'FIRST')
@@ -275,6 +278,7 @@ class CProgram(InitCProgram):
             if os.path.isdir(_llvm_lib):
                 _libc_pp    = os.path.join(_llvm_lib, 'libc++.a')
                 _libc_dylib = os.path.join(_llvm_lib, 'libc++.dylib')
+
                 # Follow all symlinks: if the resolved path is inside _llvm_lib it's
                 # LLVM's own ABI v2 shared libc++ (e.g. libc++.dylib -> libc++.1.dylib
                 # within the same dir).  If it escapes to /usr/lib/ it's Apple's ABI v1.

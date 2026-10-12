@@ -84,6 +84,7 @@ class CTool(InitCTool):
         url   = f'https://github.com/bazelbuild/bazel/releases/download/{version_simple}/{asset}'
 
         directory = 'content'
+
         # Save under a stable name so detection (names: bazel{{ext}}) finds it
         path_to_tool = os.path.join(os.getcwd(), directory, 'bazel' + exe)
 

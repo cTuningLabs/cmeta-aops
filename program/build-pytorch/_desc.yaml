@@ -1,5 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
 ###################################################################################################
 inherits:
   - template-c-cpu,649899ef3f004e4a
@@ -41,6 +42,7 @@ updates:
           # Python is required both for the build system and the resulting Python bindings
           - task: setup,a2f9b61079ce4333
             name: python,c00fb574d8ca4463
+
             # Its own venv: the torch it builds must not meet another program's torch or the
             # CUDA wheels it brings (an older pip cuBLAS broke the import of a CUDA 13.3 build)
             with:
@@ -134,6 +136,7 @@ updates:
           - task: clone-git-to-cache,86919b3cfdd443d2
             name: src-pytorch
             url: 'https://github.com/pytorch/pytorch'
+
             # The newest release (master is the next development version); --checkout=<tag|branch>
             checkout: '{{params.checkout|v2.14.1}}'
 

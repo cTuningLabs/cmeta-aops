@@ -200,6 +200,7 @@ class CTask(InitCTask):
               'quiet': quiet,
               'verbose': verbose, 
               'text_cmd': f'RUN:', 
+
               # Important to be able to continue processing detect/install/build
               'fail_if_nonzero_return_code': True, 
               'print_cur_dir': True,

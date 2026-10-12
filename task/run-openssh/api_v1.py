@@ -38,6 +38,7 @@ import time
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
 TAILSCALE = ipaddress.ip_network('100.64.0.0/10')
+
 # Where Tailscale's installers put its command when it is not on PATH
 TAILSCALE_CLI = ['C:\\Program Files\\Tailscale\\tailscale.exe', '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
                  '/opt/homebrew/bin/tailscale', '/usr/local/bin/tailscale', '/home/linuxbrew/.linuxbrew/bin/tailscale']
@@ -118,6 +119,7 @@ def alive(pid):
         os.kill(pid, 0)
     except OSError:
         return False
+
     # The program's name: sshd rewrites its title, which macOS shows as "comm"
     try:
         with open(f'/proc/{pid}/comm') as f:

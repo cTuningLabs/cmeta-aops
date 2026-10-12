@@ -593,6 +593,7 @@ class Category(InitCategory):
         cache = cparams.get('cache')
 
         cache_repo = cparams.get('cache_repo')
+
         # Check if was forced for the whole run: --use.init.default_cache_repo=<repo> or config::task (task init)
         x_cache_repo = ctx_tasks.get('global', {}).get('init', {}).get('default_cache_repo')
         if x_cache_repo:
@@ -1157,6 +1158,7 @@ class Category(InitCategory):
                     if delete:
                         ii = {'category': uses_categories['cache'],
                               'command': 'delete',
+
                               # default cache rm is only in local while we need to allow any repo here
                               'arg1': '*:' + x_cache_artifact_uid,
                               'force': True
@@ -1317,6 +1319,7 @@ class Category(InitCategory):
             r = self.use_(
                   ctx, 
                   desc = uses2, 
+
 # Careful: reusing local - no complex sub-tasks ...
 # Usually just for cmd ...
                   local = ctx_tasks['local'],

@@ -248,6 +248,7 @@ def test_build_prebuilt(torch_cpp):
     assert params["skip_detect"] is False and params["skip_install"] is True and params["skip_build"] is True
     r = torch_cpp_tool(torch_cpp).check_params(ctx, {"with": {"build": "conda"}}, {})
     assert r["return"] == 1 and "--with.build=conda" in r["error"]
+
     # The archives have shared libraries only
     r = torch_cpp_tool(torch_cpp).check_params(ctx, {"with": {"build": "prebuilt", "static": "True"}}, {})
     assert r["return"] == 1 and "--with.static needs a source build" in r["error"]
@@ -256,6 +257,7 @@ def test_build_prebuilt(torch_cpp):
 
 def test_torch_cpp_desc():
     d = desc("tool/torch-cpp/_desc.yaml")
+
     # The cache identity of the builds is unchanged: no "build" (or other) key was added
     assert set(d["cache_meta_const"]["params"]["with"]) == {"compute", "static", "strict_compute", "ver"}
     assert d["skip_detect"] is True and "torch.dll" in d["names"]
@@ -282,6 +284,7 @@ def test_prebuilt_desc():
          "from tool_c393ba5c6fa14f66.api.common_release import _download, _sha256": "",
          "from tool_c393ba5c6fa14f66.api.common_libtorch import found_paths_with_versions, add_path_features": ""})["ARCHIVES"]
     [use] = d["uses"]
+
     # --with.compute as given: a list, a string or nothing (the engine also evaluates it before check_params)
     for compute, variant, expected in [("['cuda']", "", True), ("cuda", "", True), ("cpu,cuda", "", True),
                                        ("['cpu']", "", False), ("", "", False), ("None", "", False),
@@ -334,6 +337,7 @@ def test_install_prefix_of(tmp_path):
     build = str(tmp_path / "build")
     assert install_prefix_of(build) == os.path.join(build, "install")
     assert install_prefix_of(build, {}) == os.path.join(build, "install")
+
     # A prefix the build was given (quoted on the command line) wins
     assert install_prefix_of(build, {"CMAKE_INSTALL_PREFIX": '"/opt/lib torch"'}) == "/opt/lib torch"
     assert install_prefix_of(build, {"CMAKE_INSTALL_PREFIX": r"D:\x\prefix"}) == r"D:\x\prefix"
@@ -357,6 +361,7 @@ def test_customize_pytorch_installs_apart_from_the_build(tmp_path):
     assert f"-DCMAKE_INSTALL_PREFIX={install}" in local["cmake_d_vars"]
     assert local["target_path_exe"] == os.path.join(install, "lib", "libtorch.so")
     assert local["run_time_env"]["PYTHONPATH"].startswith(os.path.join(install, "lib", "python"))
+
     # The build's own prefix is kept
     ctx["tasks"]["local"] = {"target_path": str(build)}
     assert prog.customize_pytorch(ctx, {}, params = {"compile": {"d": {"CMAKE_INSTALL_PREFIX": "/opt/torch"}}})["return"] == 0
@@ -389,6 +394,7 @@ def test_tool_build_hands_the_installed_library_to_detection(torch_cpp, tmp_path
     ctx = {"tasks": {"global": {"host": {"os": {"uname": uname}}}}}
     r = tool.build(ctx, {})
     assert r["return"] == 1 and "did not install" in r["error"]
+
     # The library of the build tree does not count: only the installed one
     (tmp_path / "build" / "lib").mkdir(parents = True)
     (tmp_path / "build" / "lib" / library).write_bytes(b"")

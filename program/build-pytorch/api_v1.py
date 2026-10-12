@@ -132,12 +132,15 @@ class CProgram(InitCProgram):
         # Build type / misc
         env.setdefault('DEBUG', '1' if debug_info else '0')
         env.setdefault('CMAKE_BUILD_TYPE', 'Debug' if debug_info else 'Release')
+
         # Tests are not needed to use or benchmark the build and double its time
         env.setdefault('BUILD_TEST', '0')
+
         # setup.py starts one compile job per CPU, too many for the RAM of a laptop building CUDA kernels
         device = next((c for c in ('cuda', 'rocm', 'xpu') if c in compute), 'cpu')
         env.setdefault('MAX_JOBS', str(params.get('max_jobs') or common_build.default_max_jobs(device)))
         env.setdefault('PYTHONUNBUFFERED', '1')
+
         # CMake 4 no longer configures projects that require CMake < 3.5, like the helper
         # projects NNPACK downloads; this keeps them configuring (CMake 3.x ignores it)
         env.setdefault('CMAKE_POLICY_VERSION_MINIMUM', '3.5')

@@ -183,6 +183,7 @@ class CProgram(InitCProgram):
             d.setdefault('CMAKE_TOOLCHAIN_FILE', os.path.join(ndk_root, 'build', 'cmake', 'android.toolchain.cmake'))
             d.setdefault('ANDROID_ABI', params.get('android_abi') or 'arm64-v8a')
             d.setdefault('ANDROID_PLATFORM', f"android-{params.get('android_api') or 28}")
+
             # Cross-compiled: the CPU of this machine says nothing about the device's
             d.setdefault('GGML_NATIVE', 'OFF')
             d.setdefault('GGML_OPENMP', 'OFF')
@@ -266,6 +267,7 @@ class CProgram(InitCProgram):
             build_env['CC'] = str(d['CMAKE_C_COMPILER']).strip('"')
         if 'CMAKE_CXX_COMPILER' in d:
             build_env['CXX'] = str(d['CMAKE_CXX_COMPILER']).strip('"')
+
         # --max_jobs=N: parallel compile jobs (Ninja's default is the CPU count plus 2, which can
         # take more memory than a busy machine has)
         if params.get('max_jobs'):

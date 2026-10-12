@@ -53,6 +53,7 @@ def test_a_failed_result_shows_its_error_and_the_text_when_nothing_streamed(herm
     out = t._parse_stream_line('{"type": "result", "session_id": "20261007_164201_45c8de", "exit_code": 1, "text": "", '
                                '"tokens": {"input": 0, "output": 0, "total": 0}, "duration_ms": 1019, "error": "credentials or agent init failed"}', run_stats, state)
     assert out == ["[error] credentials or agent init failed\n"] and run_stats["error"] == "credentials or agent init failed"
+
     # a line that is not JSON is a log line of the CLI and passes through
     assert t._parse_stream_line("Hermes couldn't start the model connection: ...\n", run_stats, state) == ["Hermes couldn't start the model connection: ...\n"]
 

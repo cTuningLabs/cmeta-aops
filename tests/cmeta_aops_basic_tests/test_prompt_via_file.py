@@ -40,6 +40,7 @@ def test_a_long_prompt_goes_to_the_named_file(api, tmp_path):
     assert path.read_text(encoding="utf-8") == LONG
     assert str(path).replace("\\", "/") in r["text"] and str(len(LONG)) in r["text"] and len(r["text"]) < 400
     assert r["reason"].startswith("too long")
+
     # the whole command line is short now (Windows caps it at 32767 characters)
     assert len(subprocess.list2cmdline(["codex.exe", "-m", "gpt-5.6-sol", r["text"]])) < 1000
     done(r)
@@ -67,6 +68,7 @@ def test_a_long_prompt_with_no_name_goes_to_a_temporary_file(api):
 
 def test_force_and_a_lower_limit(api):
     prompt_via_file, done, limit = api
+
     # a launcher script would mangle the argument: the file whatever the length, with the reason given
     r = prompt_via_file("short", "gemini", force=True, why="the launcher would mangle it", limit=7000)
     assert r["file"] != "" and r["reason"] == "the launcher would mangle it"

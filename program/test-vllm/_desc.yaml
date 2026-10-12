@@ -6,6 +6,7 @@ inherits:
 local_vars:
   run_time_env:
     CMETA_TARGETS: '{{global.target.cmeta_targets}}'
+
     # The venv's console scripts (ninja, nvcc of nvidia-cuda-nvcc) for FlashInfer's JIT kernels:
     # the venv's python runs without the venv being activated
     +PATH:
@@ -18,6 +19,7 @@ local_vars:
     CMETA_VLLM_CPU_OFFLOAD_GB: '{{local.params.cpu_offload_gb|}}'
     CMETA_VLLM_DTYPE: '{{local.params.dtype|}}'
     CMETA_VLLM_TP: '{{local.params.tp|}}'
+
     # CPU: the KV cache in GiB (unset, vLLM reserves 92% of the RAM and may refuse to start)
     VLLM_CPU_KVCACHE_SPACE: '{{local.params.cpu_kv_cache_gib|4}}'
     PYTHONUNBUFFERED: 1
@@ -51,10 +53,12 @@ updates:
              if_os: linux,windows
              if: '"rocm" not in {{global.target.compute|$[]}}'
              version: '{{params.python_version|>=3.10,<3.15}}'
+
              # Its own venv per set of targets: another program's packages, or the CPU and the
              # CUDA builds of torch, must not mix in
              with:
                venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+
            # vLLM's ROCm wheels (wheels.vllm.ai/rocm) are built for Python 3.12 only: with the generic
            # range the venv got 3.14 and pip fell back to a CUDA torch from PyPI (seen on an MI300X,
            # 2026-10-08: "Device string must not be empty")
@@ -71,11 +75,13 @@ updates:
              version: '{{params.python_version|3.12}}'
              with:
                venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+
            # vLLM's CPU kernels link against libnuma (Linux)
            - task: setup,a2f9b61079ce4333
              name: lib-numa,d81f892278524cfa
              if_os: linux
              if: '"cpu" in {{global.target.compute|$[]}} and "cuda" not in {{global.target.compute|$[]}}'
+
            # vLLM's ROCm wheels link against Open MPI (libmpi_cxx.so.40: "cannot open shared object file"
            # on a fresh MI300X image without it, 2026-10-08)
            - task: setup,a2f9b61079ce4333

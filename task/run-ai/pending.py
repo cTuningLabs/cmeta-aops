@@ -373,6 +373,7 @@ def guard(sources, snaps, t0, t1, mode, pending_root, stamp, ask=None, project='
                         stage = _join(os.path.join(key_dir, '%s-%s' % (DIRECT_DIR, stamp)), rel)   # a proposal for it is staged already
                     _write(stage, data)
                     kept = stage
+
                 # 2. the file is put back as it was before the run
                 if what == 'added':
                     os.remove(target)

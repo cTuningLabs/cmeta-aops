@@ -45,6 +45,7 @@ install_cmd:
 
 install_cmd_version:
   windows: '{{global.winget.qpath}} install --id=Google.AntigravityCLI -e --version={{simple_version}} --no-upgrade {{global.init.winget_install_flags|}}'
+
   # the official script takes no version: it installs the latest build
   linux: '{{global.curl.qpath}} -fsSL https://antigravity.google/cli/install.sh | bash'
   darwin: '{{global.curl.qpath}} -fsSL https://antigravity.google/cli/install.sh | bash'

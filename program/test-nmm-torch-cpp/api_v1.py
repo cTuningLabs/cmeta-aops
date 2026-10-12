@@ -55,6 +55,7 @@ class CProgram(InitCProgram):
             cxx = _global['compiler-cpp'].get('path') or _global['compiler-cpp']['qpath'].strip('"').strip("'")
             if uname == 'windows' and _global['compiler-cpp'].get('features', {}).get('id') == 'Intel':
                 cxx = d.get('CMAKE_C_COMPILER', cxx)
+
             # PyTorch's prebuilt LibTorch for Windows is built with MSVC: its CMake config adds MSVC
             # options (/EHsc, /bigobj) that the GNU-style clang++ rejects; clang-cl, next to it, takes
             # them (same ABI)

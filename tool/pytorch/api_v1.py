@@ -89,6 +89,7 @@ class CTool(InitCTool):
                 # cmake-based (legacy): {build_root}/lib/torch.dll
                 path_lib = os.path.dirname(path)
                 path_site = os.path.dirname(path_lib)  # {build_root}/
+
                 # Try to read PYTHONPATH from repro ctx saved during the build
                 repro_path = os.path.join(path_site, '_repro_ctx_compile.json')
                 if os.path.isfile(repro_path):

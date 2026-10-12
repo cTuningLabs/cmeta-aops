@@ -339,6 +339,7 @@ class CTool(InitCTool):
         if version and not version_simple:
             return {'return': 16, 'install_cmd': cmd,
                     'error': f'the cuDNN download needs an exact version (--version=9.26.0, for example), not "{version}"'}
+
         # The version a user asks for is the one cudnn_version.h reports (three numbers, "9.26.0");
         # NVIDIA's index of that version (redistrib_9.26.0.json) names the build (9.26.0.51)
         v = version_simple or VERSION

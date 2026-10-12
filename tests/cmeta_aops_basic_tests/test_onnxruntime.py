@@ -64,6 +64,7 @@ def test_providers_of_the_targets(program):
     assert runs(["cpu"]) == [("CPUExecutionProvider", {})]
     assert runs(["cpu", "cuda"]) == [("CPUExecutionProvider", {}), ("CUDAExecutionProvider", {})]
     assert runs(["npu-intel"]) == [("OpenVINOExecutionProvider", {"device_type": "NPU"})]
+
     # openvino next to a device target names the stack, alone it is the OpenVINO CPU device
     assert runs(["npu-intel", "openvino"]) == [("OpenVINOExecutionProvider", {"device_type": "NPU"})]
     assert runs(["openvino"]) == [("OpenVINOExecutionProvider", {"device_type": "CPU"})]

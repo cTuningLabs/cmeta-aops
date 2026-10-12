@@ -95,6 +95,7 @@ def test_extra_tags_and_extra_match_check_the_tool_of_a_cached_compiler(compiler
     r = compiler.filter_cache_artifacts(ctx(), [entry('gcc-cpp', '13.3.0'), entry('clang-cpp', '18.1.3')], [],
                                         {'lang': 'cpp', 'compute': 'cuda', 'extra_tags': 'clang-cpp', 'extra_match': NVCC_LINUX})
     assert chosen(r) == ['clang-cpp 18.1.3']
+
     # a Windows request: the cached gcc-cpp (a Linux tool) fails the match, msvc stays
     r = compiler.filter_cache_artifacts(ctx('windows'), [entry('gcc-cpp', '13.3.0'), entry('msvc', '19.44.35207')], [],
                                         {'lang': 'cpp', 'compute': 'cuda', 'extra_match': NVCC_WINDOWS})
@@ -109,11 +110,13 @@ def test_the_compiler_set_up_in_this_run_wins(compiler, capsys):
     entries = [entry('nvcc', '12.9.86', lang = 'cuda'), entry('nvcc', '13.3.73', lang = 'cuda')]
     r = compiler.filter_cache_artifacts(c, entries, [], {'lang': 'cuda', 'compute': 'cuda'})
     assert chosen(r) == ['nvcc 13.3.73']
+
     # nothing set up yet: the newest toolkit, said in an INFO line
     r = compiler.filter_cache_artifacts(ctx(con = True), entries, [], {'lang': 'cuda', 'compute': 'cuda'})
     assert chosen(r) == ['nvcc 13.3.73']
     out = capsys_out()
     assert 'cached versions of nvcc: taking 13.3.73' in out and '--use.compiler-cuda.version' in out
+
     # a version named in the request is matched by the cache query (the limits are not applied here);
     # of several entries within it the newest is taken
     c['tasks']['global']['nvcc'] = {'version': '13.3.73'}
@@ -133,6 +136,7 @@ def test_entries_of_one_compiler_are_one_choice(compiler, capsys):
     assert [x['path'] for x in r['artifacts']] == [b['path']]
     r = compiler.filter_cache_artifacts(ctx(), [b, a], [], {'lang': 'cpp', 'compute': 'vulkan'})
     assert [x['path'] for x in r['artifacts']] == [a['path']]           # neither fits exactly: the more specific one
+
     # the same for nvcc itself (lang cuda) and for a CPU compiler
     n1, n2 = entry('nvcc', '13.3.73', lang = 'cuda'), entry('nvcc', '13.3.73', lang = 'cuda')
     n2['cmeta']['params']['compute'] = ['cuda', 'vulkan']
@@ -148,6 +152,7 @@ def test_a_cpu_request_takes_the_compiler_of_the_os(compiler, capsys):
     assert chosen(r) == ['gcc-cpp 13.3.0']
     out = capsys.readouterr().out
     assert 'suit this run: taking gcc-cpp 13.3.0' in out and 'clang-cpp 18.1.3' in out and '--use.compiler-cpp.name' in out
+
     # Windows: MSVC before a newer clang; macOS: clang before gcc although the repository ranks gcc first
     r = compiler.filter_cache_artifacts(ctx('windows'), [entry('clang', '22.1.7', 'cpu', 'c'), entry('msvc', '19.50.35726', 'cpu', 'c')], [],
                                         {'lang': 'c', 'compute': 'cpu'})
@@ -155,6 +160,7 @@ def test_a_cpu_request_takes_the_compiler_of_the_os(compiler, capsys):
     r = compiler.filter_cache_artifacts(ctx('darwin'), [entry('gcc-cpp', '15.2.0', 'cpu'), entry('clang-cpp', '21.0.0', 'cpu')], [],
                                         {'lang': 'cpp', 'compute': 'cpu'})
     assert chosen(r) == ['clang-cpp 21.0.0']
+
     # a limit of the run still applies (--use.clang-cpp.version=<18 asks for another clang)
     r = compiler.filter_cache_artifacts(ctx(use = {'clang-cpp': {'version': '<18'}}), cpu, [], {'lang': 'cpp', 'compute': 'cpu'})
     assert chosen(r) == ['gcc-cpp 13.3.0']
@@ -181,6 +187,7 @@ def test_preferred_compilers_agree_with_the_tools_rank():
             if uname in meta.get('constraints', {}).get('supports_os', []):
                 sorts.append(meta['sort'])
         assert sorts == sorted(sorts), (uname, families, sorts)
+
     # the system compiler of each OS comes first
     assert table['windows'][0] == 'msvc' and table['linux'][0] == 'gcc' and table['darwin'][0] == 'clang'
 

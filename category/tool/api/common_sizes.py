@@ -75,6 +75,7 @@ def select_rule(rules, facts, matches_query, match_version_func = None):
             if not matches_query({'version': facts['version']}, {'@version': str(version_cond)},
                                  match_version_func = match_version_func, match_empty_version = False):
                 continue
+
         # compute may be a list in the request: a scalar condition is "in", a list is "subset"
         if 'compute' in cond and isinstance(facts.get('compute'), list) and not isinstance(cond['compute'], list):
             if cond['compute'] not in facts['compute']:

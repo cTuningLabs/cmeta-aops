@@ -129,6 +129,7 @@ def test_a_named_base_interpreter_gets_its_own_venv(py, tmp_path):
     params = {'tool_path': str(base)}
     assert tool.check_params({'tasks': {}}, params)['return'] == 0
     assert params['python_base'] == os.path.normpath(str(base)) and params['with'] == {'venv': True, 'pip': True}
+
     # matched on python_base, detected only in the interpreter's folder (the entry's tool_path is the venv's python)
     assert 'tool_path' not in params and params['paths'] == [str(base.parent)]
     params = {'tool_path': str(venv_py)}
@@ -194,6 +195,7 @@ def plant(cm, version, venv_path = 'own', tool_dir = None, extra = None):
     assert os.path.normcase(r['path']) == os.path.normcase(str(entry))
     tool_path.parent.mkdir(parents = True, exist_ok = True)
     tool_path.write_text('')
+
     # a venv's python has pyvenv.cfg next to its folder (an explicit request for it is not a base interpreter)
     (tool_path.parent.parent / 'pyvenv.cfg').write_text('home = planted\n', encoding = 'utf-8')
     result = {'return': 0, 'version': version, 'path': str(tool_path), 'path_bin': str(tool_path.parent),

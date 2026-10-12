@@ -36,9 +36,11 @@ install_uses:
   all:
     - task: venv,bb68247d2fde489d
       version: "{{params.version|$None}}"
+
       # A requested interpreter that is not a venv (--use.python.tool_path=<conda / system python>,
       # --here) is not replaced by a uv-managed python: the venv is made on it (python_base, set by check_params)
       python: "{{params.python_base|$None}}"
+
       # --use.python.with.conda: a conda environment (.conda-env, by the conda of tool/conda) instead of a uv venv;
       # with.conda_packages (comma-separated) and with.channel go into "conda create"
       conda: "{{params.with.conda|$None}}"

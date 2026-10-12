@@ -40,6 +40,7 @@ def setup_api():
     """task/setup/api_v1.py as a package member (its relative imports), with the engine's InitCTask stubbed."""
     stub = types.ModuleType("task_c36be4b9314a45e0.api.ctask")
     stub.InitCTask = type("InitCTask", (), {})
+
     # the helpers the setup modules take from the task API are the real ones (ctask.py loads without the engine)
     spec = importlib.util.spec_from_file_location("ctask_helpers_for_setup", REPO_ROOT / "category" / "task" / "api" / "ctask.py")
     real = importlib.util.module_from_spec(spec)
@@ -95,9 +96,11 @@ def test_a_cached_result_gets_the_keys_it_lacks_and_keeps_its_own(common):
     assert f["flags"]["openmp"] == "-fopenmp-detected"                 # the cached value wins
     assert f["paths"] == ["b", "c"] and f["detected"] is True           # lists as cached, extra keys kept
     assert cached["path"] == "/usr/bin/gcc" and cached["version"] == "12.2.0"
+
     # a second pass changes nothing
     assert common.layer_desc_features(DESC, cached, "linux", deep_merge) == []
     assert {k: v for k, v in f.items() if k != "flags"} == {k: v for k, v in before.items() if k != "flags"}
+
     # the desc itself is not changed
     assert "detected" not in DESC["features"]["linux"]
 
@@ -122,6 +125,7 @@ def test_finish_dynamic_result_layers_the_desc(setup_api):
     r = task.finish_dynamic_result(ctx, cached, {"name": "gcc"})
     assert r["return"] == 0 and r["result"] is cached
     assert cached["features"]["flags"]["openmp_static_archive"] == "libgomp.a" and cached["features"]["flags"]["openmp"] == "-fopenmp"
+
     # nothing to add: the result is handed back unchanged and not announced
     r = task.finish_dynamic_result(ctx, cached, {"name": "gcc"})
     assert r["return"] == 0 and "result" not in r

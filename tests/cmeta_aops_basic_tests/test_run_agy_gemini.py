@@ -54,8 +54,10 @@ def test_gemini_stream_of_a_run_that_worked(gemini):
     ])
     assert text == "Let me check.\n[tool: run_shell_command] du -a .\nIt is data.bin.\na log line of the CLI, not an event\n"
     assert stats["session_id"] == "5ab0c0de-1234-4abc-8def-0123456789ab" and stats["status"] == "success"
+
     # the default model routes between two: the name it was started with, and the ones that worked
     assert stats["model"] == "auto" and stats["models"] == ["gemini-3.1-pro-preview", "gemini-3.5-flash-lite"]
+
     # the totals of the run are at the top level; the per-model split repeats them and is not added again
     tokens = task._get_tokens(stats)
     assert (tokens["input"], tokens["output"], tokens["cache_read"]) == (1500, 60, 1000)

@@ -39,9 +39,11 @@ def main():
               'seed': 12345}
     if 'cuda' in targets or 'rocm' in targets or 'xpu' in targets:
         kwargs['gpu_memory_utilization'] = float(os.environ.get('CMETA_VLLM_GPU_MEM') or 0.8)
+
     # --enforce_eager=0 lets vLLM capture CUDA graphs (faster decoding, longer start)
     if os.environ.get('CMETA_VLLM_ENFORCE_EAGER', '').strip().lower() in ('0', 'false', 'no', 'off'):
         kwargs['enforce_eager'] = False
+
     # --cpu_offload_gb: weights kept in CPU memory (--compute=cpu,cuda offload experiments)
     if os.environ.get('CMETA_VLLM_CPU_OFFLOAD_GB'):
         kwargs['cpu_offload_gb'] = float(os.environ['CMETA_VLLM_CPU_OFFLOAD_GB'])

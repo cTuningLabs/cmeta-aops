@@ -248,6 +248,7 @@ class CTool(InitCTool):
                     kwargs = {'filter': 'data'} if hasattr(tarfile, 'data_filter') else {}
                     t.extractall(work, members = list(safe_members(t)), **kwargs)
                 os.remove(r['path'])
+
             # The standalone runtime build looks for the LLVM cmake modules in "../cmake"
             os.rename(os.path.join(work, f'cmake-{version}.src'), os.path.join(work, 'cmake'))
             src = os.path.join(work, f'openmp-{version}.src')

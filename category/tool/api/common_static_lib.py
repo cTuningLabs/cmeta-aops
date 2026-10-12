@@ -163,6 +163,7 @@ def c_compiler(tool, ctx, params):
         p = {'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'compiler,f3925b201c704bde',
              'ctx': ctx, 'lang': 'c', 'con': c.get('con', False), 'quiet': c.get('quiet', False),
              'verbose': c.get('verbose', False)}
+
         # A C++ program: the C compiler of the same family and version
         cpp = _global.get('compiler-cpp') or {}
         name = C_COMPILER_OF.get((cpp.get('tool') or {}).get('name'))
@@ -304,6 +305,7 @@ def detect_static_lib(tool, ctx, paths, params, spec):
                       'include': include, 'qinclude': tool.cm.q(include), 'includes': [include],
                       'lib': lib_dir, 'qlib': tool.cm.q(lib_dir), 'libs': [lib_dir], 'libs_static': [lib_dir]},
             'lib_names': [spec['lib']],
+
             # a static build gets the archive by its path: named, a link without -static would take a
             # shared library of that name found first (setup-compile, tool/lib-openssl)
             'lib_names_static': [archive],

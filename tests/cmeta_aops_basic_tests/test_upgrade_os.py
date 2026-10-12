@@ -54,6 +54,7 @@ def test_other_linux_package_managers(up):
     assert names(up["plan"]("linux", {"package_manager": "pacman"})) == ["upgrade"]
     assert names(up["plan"]("linux", {"package_manager": "apk"})) == ["update", "upgrade"]
     assert names(up["plan"]("linux", {"package_manager": "dnf"}, check = True)) == ["check"]
+
     # a package manager this task does not know: nothing planned (the run says so)
     assert up["plan"]("linux", {"package_manager": "emerge"}) == []
 

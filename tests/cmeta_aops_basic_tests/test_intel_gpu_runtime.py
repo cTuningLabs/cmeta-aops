@@ -77,6 +77,7 @@ def test_intel_gpus_from_sysfs(tool, tmp_path):
         d.mkdir()
         for name, value in (("vendor", vendor), ("class", cls), ("device", dev)):
             (d / name).write_text(value + "\n")
+
     # (sysfs names the folders 0000:00:02.0; dashes here, as Windows refuses ':' in a name)
     device("0000-00-02.0", "0x8086", "0x030000", "0x591b")    # the Intel iGPU
     device("0000-02-00.0", "0x10de", "0x030200", "0x134d")    # an NVIDIA GPU
@@ -92,6 +93,7 @@ def test_the_packages_are_pinned(tool):
         assert any("igc-opencl" in n for n in names), version
         for path, sha in packages:
             assert sha is None or re.fullmatch(r"[0-9a-f]{64}", sha), path
+
     # every package is pinned
     assert all(sha for packages in tool["RELEASES"].values() for _, sha in packages)
 
@@ -152,6 +154,7 @@ def test_root_of_needs_the_marker(tool, tmp_path):
     assert tool["root_of"](str(lib)) is None
     (tmp_path / "content" / "26.35.39758.10" / tool["MARKER"]).write_text("{}")
     assert tool["root_of"](str(lib)) == str(tmp_path / "content" / "26.35.39758.10")
+
     # the legacy1 ICD has another name, at the same depth
     legacy = tmp_path / "content" / "24.35.30872.36" / tool["ICD_LIBS"][1]
     legacy.parent.mkdir(parents = True)

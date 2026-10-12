@@ -1,5 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
 ###################################################################################################
 # ExecuTorch's executor_runner for Android, built from source with the XNNPACK (CPU) and Vulkan
 # (GPU) backends: the prebuilt runtime (tool/executorch-android) has XNNPACK only. Cross-compiled
@@ -21,6 +22,7 @@ inherits:
 local_vars:
   lang: cpp
   target_file_name: 'executor_runner'
+
   # The build is the cmd step below: not the template's compile of src/
   skip_template_compile: True
 
@@ -81,6 +83,7 @@ updates:
             storage_key: compile-program
             save_script: '{{local.target_path}}//tmp-cmeta-compile-program{{global.host.vars.file_ext_bat}}'
             chdir: '{{local.target_path}}'
+
             # ninja on PATH: nested CMake builds (XNNPACK's) look for it there, not CMAKE_MAKE_PROGRAM
             set_env:
               +PATH:

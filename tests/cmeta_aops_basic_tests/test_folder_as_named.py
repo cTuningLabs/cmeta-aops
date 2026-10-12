@@ -71,6 +71,7 @@ def test_the_folder_reached_through_a_link_keeps_the_name_of_the_request(folder_
     named = folder_as_named(str(link))
     assert same(named, link)                         # not <tmp>/disk/work, which os.getcwd() gives on Linux and macOS
     assert os.path.samefile(named, real)
+
     # a file made in the current directory is found under the name
     (pathlib.Path(os.getcwd()) / 'made-here.txt').write_text('x')
     assert os.path.isfile(os.path.join(named, 'made-here.txt'))
@@ -161,6 +162,7 @@ def test_venv_is_reported_under_the_name_of_its_folder(task_namespace, linked, t
     assert same(r['path_to_scripts'], scripts)
     assert same(r['path_to_python'], scripts / ('python.exe' if os.name == 'nt' else 'python'))
     assert os.path.isfile(r['path_to_python']) and os.path.isfile(r['path_to_activate_script'])
+
     # what tool/python records as the venv path of the entry is the folder the request named
     assert same(os.path.dirname(r['path_to_venv']), link)
 

@@ -93,10 +93,13 @@ def test_the_step_selects_the_folder_and_its_files(mod, tmp_path):
 
 def test_the_step_fails_clearly(mod, tmp_path):
     rules = [{'version': '>=1.0.0', 'src_dir': 'src-v2'}]
+
     # before the setup of the tool
     assert 'not known' in task(mod).run(ctx(), tool = 'mojo', rules = rules, program_path = str(tmp_path))['error']
+
     # a folder that is not there
     assert 'does not exist' in task(mod).run(ctx('1.1.0'), tool = 'mojo', rules = rules, program_path = str(tmp_path))['error']
+
     # a source file that is not in the selected folder
     (tmp_path / 'src-v2').mkdir()
     r = task(mod).run(ctx('1.1.0'), tool = 'mojo', rules = rules, program_path = str(tmp_path), src_file_names = ['program.mojo'])
@@ -109,6 +112,7 @@ def test_the_mojo_program_has_both_generations():
     steps = [s for u in desc['updates']['run']['uses'] for s in u.get('prepend', [])]
     select = [s for s in steps if str(s.get('task', '')).startswith('select-src-by-tool-version,')]
     assert len(select) == 1 and select[0]['tool'] == 'mojo'
+
     # the selection comes after the setup of mojo
     names = [str(s.get('name', s.get('task'))) for s in steps]
     assert names.index('mojo,666e926f670a4dbc') < [i for i, s in enumerate(steps) if s is select[0]][0]

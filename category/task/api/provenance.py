@@ -87,6 +87,7 @@ NVIDIA_DRIVER = ('cuda', 'nvcuda')                # libcuda.so / nvcuda.dll (exa
 NVIDIA_SHARED = ('cublas', 'cublaslt', 'cudnn', 'nvrtc', 'cufft', 'curand', 'cusparse', 'cusolver', 'nvjitlink',
                  'cutensor', 'nccl', 'nvjpeg', 'npp', 'nvtx', 'nvperf', 'cupti')
 WINDOWS_OPENMP = ('omp', 'vcomp')                 # no static OpenMP runtime exists on Windows (documented)
+
 # Libraries that a static build must not load: a static runtime or archive exists for each of them
 STATIC_MUST_BE_IN = ('cudart', 'gomp', 'crypto', 'ssl', 'z', 'zstd', 'jitterentropy', 'xopenme', 'polybench')
 
@@ -345,6 +346,7 @@ def tool_library_keys(tool, key = None, broad = False):
             lk = library_key(name)
             if lk and lk not in keys:
                 keys.append(lk)
+
     # a tool resolved to a library file names that library (lib-openmp: .../libomp.so)
     path = tool.get('path')
     if isinstance(path, str) and _is_library_file(path):
@@ -550,6 +552,7 @@ def attribute(path, global_ctx):
         if key:
             return key
     key_of_lib = library_key(path)
+
     # the NVIDIA driver's own libraries (libcuda, libnvidia-*; nvcuda.dll) belong to the driver the run
     # resolved - the `cuda` entry of the target, which recorded its version and the GPU
     if nvidia_driver_library(path) and isinstance((global_ctx or {}).get('cuda'), dict):
@@ -617,9 +620,11 @@ COMPILER_FAMILIES = {
     'intel-oneapi': 'intel',
     'msvc': 'msvc', 'cl': 'msvc', 'microsoft-visual-studio': 'msvc', 'microsoft.visual-studio': 'msvc',
 }
+
 # Tools that hold a compiler without being the compiler the run used (the role keys compiler-* and
 # the compilers themselves come first when a library is attributed)
 HOLDER_TOOLS = ('microsoft-visual-studio', 'microsoft.visual-studio', 'llvm', 'android-ndk', 'intel-oneapi')
+
 # Folders every package shares: a compiler found there owns only what -print-file-name confirms
 POSIX_SHARED_PREFIXES = ('', '/', '/bin', '/sbin', '/lib', '/lib64', '/usr', '/usr/local', '/opt', '/opt/local',
                          '/opt/homebrew', '/home', '/users', '/snap', '/var', '/tmp')
@@ -780,6 +785,7 @@ def attribute_runtime(libraries, global_ctx, uname, probe = None):
     compilers = compiler_tools(global_ctx)
     if not compilers:
         return 0
+
     # a library that a resolved tool names is that tool's business (the origin check says whether the
     # loaded one came from it): lib-openmp's libomp is never the compiler's runtime here
     claimed = set()
@@ -1153,6 +1159,7 @@ def toolchain_in_binary(exe, global_ctx, rustc_probe = None, env = None):
             continue
         tool = v.get('tool') if isinstance(v.get('tool'), dict) else {}
         name = str(tool.get('name') or key[len('compiler-'):]).lower()
+
         # the tool's name decides: go, go-android (not google.android-ndk.clang); rustc, rustc-android, rustup
         if key == 'compiler-go' or re.match(r'^go(-|$)', name):
             found = go_version_in_binary(exe)
@@ -1483,6 +1490,7 @@ def build_record(mode, program, target_tmp, target_path, compute, global_ctx, lo
                                         if not android else 'an Android run: the resolution stands in')
         if binary.get('error'):
             record['loaded']['note'] = '; '.join(x for x in [record['loaded'].get('note'), binary['error']] if x)
+
     # a compiler's runtime library (libgomp, vcomp140, ...) belongs to the compiler of the run
     try:
         attribute_runtime(record['loaded'].get('libraries') or [], global_ctx, uname)
@@ -1491,6 +1499,7 @@ def build_record(mode, program, target_tmp, target_path, compute, global_ctx, lo
                                                          f'runtime attribution failed: {type(e).__name__}: {e}'] if x)
     if run_skipped:
         record['loaded']['note'] = '; '.join(x for x in [record['loaded'].get('note'), 'the run phase was skipped: build-side record'] if x)
+
     # the frameworks of a Python run: the distributions behind the loaded wheel libraries, the pip tools' packages
     try:
         frameworks = framework_versions(record['loaded'].get('libraries') or [], global_ctx)

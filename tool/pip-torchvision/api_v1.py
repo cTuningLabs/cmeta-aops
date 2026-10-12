@@ -186,6 +186,7 @@ class CTool(InitCTool):
                     else:
                         # The index could not be read: the computed pair
                         params['version'] = wanted + '+' + tag
+
                     # The same index as torch (the auto route would take PyTorch's for a GPU family it covers)
                     _with['rocm_source'] = 'amd'
                     _with['rocm_channel'] = channel

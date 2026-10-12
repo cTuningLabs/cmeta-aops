@@ -81,6 +81,7 @@ def android_run(bin_dir, exe_name, variant, model_path):
             'android_push_folders': {device_dir: files},
             'android_push_files': {device_model: model_path},
             'android_ld_library_path': [device_dir],
+
             # perf.json is made here after the run, from the llama.log pulled from the device
             'android_skip_pull': ['perf.json'],
         },

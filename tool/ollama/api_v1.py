@@ -118,6 +118,7 @@ class CTool(InitCTool):
             version = self.cdesc['default_version']
 
         variant = params.get('with', {}).get('variant')
+
         # On Linux the ROCm runtime of Ollama is a second archive (ollama-linux-<arch>-rocm.tar.zst, about
         # 1 GB) unpacked over the plain one (lib/ollama/rocm): without it a rocm run computes on the CPU.
         # Taken when asked (--with.variant=rocm) or when the program's target is rocm.
@@ -149,6 +150,7 @@ class CTool(InitCTool):
                 if con:
                     print ('')
                     print (f'{space}INFO: Ollama {version}: {url}')
+
                 # download-file unpacks zip/tar.gz/tar.xz only
                 r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run',
                                     'arg1': 'download-file,03fed13e2e0447cf', 'ctx': ctx,

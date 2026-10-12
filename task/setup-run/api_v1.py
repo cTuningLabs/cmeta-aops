@@ -304,6 +304,7 @@ class CTask(InitCTask):
 
             cmds.append(adb_with_serial + f' shell "rm -rf {adb_tmp_path_lib}"')
             cmds.append(adb_with_serial + f' shell "mkdir {adb_tmp_path_lib}"')
+
             # Only for a program of its own: without one, "rm -rf /data/local/tmp/" would empty
             # the device's work folder (programs that run a release keep it in a folder below)
             if target_exe:

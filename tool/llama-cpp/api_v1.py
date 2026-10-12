@@ -396,6 +396,7 @@ class CTool(InitCTool):
             if not os.path.isfile(p):
                 if key != 'completion':
                     continue
+
                 # Builds before the llama-cli rework: llama-cli is the completion tool
                 p = path
             result[f'{key}_path'] = p

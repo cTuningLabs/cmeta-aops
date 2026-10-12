@@ -19,6 +19,7 @@ storage_key: rocm
 
 names:
   - rocm-smi{{global.host.vars.file_ext_exe}}
+
   # AMD's Python distribution inside a python (its "rocm" package: the vLLM and PyTorch images of
   # rocm/*, a venv made by hand) has no rocm-smi: its CLI rocm-sdk is the detection tool there
   # (api_v1.py reads the folders from "rocm-sdk path" and the GPUs from amd-smi next to hipcc)
@@ -27,6 +28,7 @@ names:
 match_version:
   - regex: 'ROCM-SMI version:\s*([^\s]+)'
     group: 1
+
   # "rocm-sdk version" prints the ROCm version alone
   - regex: '^\s*([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*)\s*$'
     group: 1

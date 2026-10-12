@@ -238,6 +238,7 @@ class CTask(InitCTask):
 
         result['access'] = look()
         result['ready'] = all(result['access'].values()) and memlock_ok()
+
         # The groups are in place but this session cannot use them yet, and the ACL could not help
         result['relogin'] = (not result['ready']) and not any(f in ('groups', 'memlock') for f in failed)
 

@@ -19,6 +19,7 @@ from tool_c393ba5c6fa14f66.api.common_release import _download, _sha256
 
 RELEASE = '10.0.0.0p2-Preview'
 URL = 'https://github.com/PowerShell/Win32-OpenSSH/releases/download/{release}/{asset}'
+
 # The release's SHA-256 digests (GitHub's release API)
 ASSETS = {
     'amd64': ('OpenSSH-Win64.zip', '23f50f3458c4c5d0b12217c6a5ddfde0137210a30fa870e98b29827f7b43aba5'),

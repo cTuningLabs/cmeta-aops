@@ -148,10 +148,12 @@ def test_a_project_folder_with_brackets_in_its_name_is_not_a_pattern(api, CTask,
     put(ai / "skills" / "deploy" / "SKILL.md", "---\nname: deploy\ndescription: how to deploy\n---\nsteps\n")
     assert "the first fact" in CTask._memory_text(str(ai))
     assert [(name, desc) for name, desc, path in CTask._list_skills(str(ai / "skills"))] == [("deploy", "how to deploy")]
+
     # an !AI/memory that holds something is never seeded over
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-home"))
     put(pathlib.Path(api["CONV"].claude_project_dirs(str(project))[0]) / "memory" / "native.md", "n\n")
     assert CTask.__new__(CTask)._seed_memory(str(project), str(ai / "memory"), apply = True) == (0, "")
+
     # the conversations of such a project are found too
     conv = api["CONV"].new_conversation(str(ai / "log"), "20261005-090000", str(project), "", "t")
     api["CONV"].save_conversation(conv)
@@ -176,6 +178,7 @@ def test_every_harness_has_its_task_and_its_model_list(api, repo_root):
         assert isinstance(models.get("flags", {}).get("model"), list) and "{{model}}" in " ".join(models["flags"]["model"]), name
         names = [m["name"] for m in models["models"]]
         assert names and len(names) == len(set(names)), name
+
         # the UIDs in the map are the ones of the artifacts
         for kind, ref in (("task", h["task"]), ("tool", h["tool"])):
             meta = yaml.safe_load((repo_root / kind / ref.split(",")[0] / "_cmeta.yaml").read_text(encoding = "utf-8"))
@@ -190,6 +193,7 @@ def test_model_and_effort_are_split_and_turned_into_flags(CTask):
     desc = {"flags": {"model": ["--model", "{{model}}"], "effort": ["-c", "model_reasoning_effort={{effort}}"]}}
     flags, model_t, effort_t = t._native_flags(desc, "gpt-x", "high")
     assert flags == ["--model", "gpt-x", "-c", "model_reasoning_effort=high"]
+
     # a harness without an effort flag: the effort is not passed on
     flags, model_t, effort_t = t._native_flags({"flags": {"model": ["--model", "{{model}}"]}}, "gemini-x", "high")
     assert flags == ["--model", "gemini-x"]

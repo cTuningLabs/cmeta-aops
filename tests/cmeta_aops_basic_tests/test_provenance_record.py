@@ -477,9 +477,11 @@ def test_origin_follows_symbolic_links(prov, tmp_path, monkeypatch):
 
 def test_attribution_by_name_then_by_cache_entry(prov):
     g = ctx_global(cuda = True)
+
     # the distribution's OpenSSL shares /usr/lib with everything: libcrypto is its own, libgomp is nobody's
     assert prov.attribute("/usr/lib/x86_64-linux-gnu/libcrypto.so.3", g) == "lib-openssl"
     assert prov.attribute("/usr/lib/x86_64-linux-gnu/libgomp.so.1", g) is None
+
     # a library inside a tool's cache entry belongs to that tool, whatever its name
     assert prov.attribute("/home/u/CMETA/repos/local/cache/task--setup--lib-cudnn--cccc0000dddd1111/content/lib/libcudnn_graph.so.9", g) == "lib-cudnn"
     assert prov.attribute("/opt/other/libcudnn.so.9", g) is None
@@ -555,6 +557,7 @@ def test_compiler_family_and_root(prov):
     assert prov.compiler_root({"path": vs + r"\VC\Tools\MSVC\14.50.35717\bin\HostX64\x64\cl.exe"}, "msvc").lower() == vs.lower()
     assert prov.compiler_root({"path": vs + r"\VC\Auxiliary\Build\vcvars64.bat"}, "msvc").lower() == vs.lower()
     assert prov.compiler_root({"path": r"C:\Program Files\LLVM\bin\clang.exe"}, "llvm").lower() == r"c:\program files\llvm"
+
     # a folder of the compiler's own, as against the system folders every package shares
     assert prov.dedicated_root("/opt/llvm-21", "linux") and prov.dedicated_root("/usr/lib/llvm-21", "linux")
     assert prov.dedicated_root("/opt/homebrew/Cellar/gcc/15.2.0", "darwin") and not prov.dedicated_root("/opt/homebrew", "darwin")
@@ -596,6 +599,7 @@ def test_runtime_library_in_the_compilers_own_folder(prov):
     assert prov.attribute_runtime(libs, g, "linux", probe = probe_table({})) == 1
     assert libs[0]["tool"] == "compiler-c" and libs[0]["role"] == "runtime"
     assert libs[1]["tool"] is None                                              # not a runtime name
+
     # a compiler in a shared system folder owns nothing by place: /usr is everybody's
     libs2 = [lib("libgomp.so.1", "/usr/lib/x86_64-linux-gnu/libgomp.so.1")]
     assert prov.attribute_runtime(libs2, ctx_global(), "linux", probe = probe_table({})) == 0 and libs2[0]["tool"] is None
@@ -629,10 +633,12 @@ def test_record_attributes_the_runtime_and_the_static_check_still_sees_it(prov, 
     r = record(prov, fake_inspector(deps), target = tmp_path)
     gomp = next(l for l in r["loaded"]["libraries"] if l["name"] == "libgomp.so.1")
     assert gomp["tool"] == "compiler-c" and gomp["role"] == "runtime" and r["ok"] is True
+
     # requested static: the runtime library is the compiler's and still a violation
     r = record(prov, fake_inspector(deps), compile_static = True, requested_static = True, target = tmp_path)
     static = check(r, "static")
     assert static and static[0]["ok"] is False and "libgomp.so.1" in static[0]["detail"] and r["ok"] is False
+
     # the loader log's libraries get the same treatment
     folder = tmp_path / "logged"
     folder.mkdir()
@@ -693,19 +699,24 @@ def test_wheel_library_is_attributed_to_the_pip_tool_that_pulled_its_distributio
                             "_params": {"name": "pip", "with": {"package": "onnxruntime-gpu", "extras": ["cuda", "cudnn"]}}}
     g["pip-numpy"] = {"version": "2.5.3", "path": py, "_params": {"name": "pip", "with": {"package": "numpy"}}}
     s = str(sp)
+
     # the package's own file; a dependency one step away (through an extra), two and three steps away
     assert prov.attribute(s + "/onnxruntime/capi/libonnxruntime_providers_cuda.so", g) == "pip-onnxruntime"
     assert prov.attribute(s + "/nvidia/cu13/lib/libcudart.so.13", g) == "pip-onnxruntime"
     assert prov.attribute(s + "/nvidia/cudnn/lib/libcudnn.so.9", g) == "pip-onnxruntime"
     assert prov.attribute(s + "/nvidia/cu13/lib/libcublas.so.13", g) == "pip-onnxruntime"
     assert prov.attribute(s + "/nvidia/cu13/lib/libnvrtc.so.13", g) == "pip-onnxruntime"
+
     # numpy is required by onnxruntime-gpu too, but pip-numpy installed it: the nearest tool wins
     assert prov.attribute(s + "/numpy/_core/_multiarray_umath.cpython-314-x86_64-linux-gnu.so", g) == "pip-numpy"
+
     # the loader reports a path with .. in it (numpy/_core/../../numpy.libs/...): still numpy's
     assert prov.attribute(s + "/numpy/_core/../../numpy.libs/libscipy_openblas64_-f48b354e.so", g) == "pip-numpy"
+
     # a distribution no tool of the run pulled stays unattributed, and so does a file no RECORD lists
     assert prov.attribute(s + "/lonely/liblonely.so", g) is None
     assert prov.attribute(s + "/nvidia/cudnn/lib/libcudnn_extra.so.9", g) is None
+
     # the record names the distribution; a library outside any site-packages has none
     entries = prov.library_entries([s + "/nvidia/cudnn/lib/libcudnn.so.9", "/lib/x86_64-linux-gnu/libc.so.6"], g, "linux")
     assert entries[0]["tool"] == "pip-onnxruntime" and entries[0]["dist"] == "nvidia-cudnn-cu13"
@@ -728,10 +739,12 @@ def test_wheel_rule_keeps_to_the_tools_own_venv_and_falls_back_to_the_key(prov, 
     venv, sp = make_site_packages(tmp_path)
     other_venv, other_sp = make_site_packages(tmp_path / "other")
     g = ctx_global()
+
     # a pip tool that installed into ANOTHER venv does not claim this venv's files
     g["pip-onnxruntime"] = {"version": "1.30.0", "path": str(other_venv / "bin" / "python"), "_params": {"with": {"package": "onnxruntime-gpu"}}}
     assert prov.attribute(str(sp / "onnxruntime" / "capi" / "libonnxruntime.so.1.30.0"), g) is None
     assert prov.attribute(str(other_sp / "onnxruntime" / "capi" / "libonnxruntime.so.1.30.0"), g) == "pip-onnxruntime"
+
     # an older entry without _params: the key names the package (pip-numpy -> numpy); the Windows venv layout too
     venv_w, sp_w = make_site_packages(tmp_path / "win", posix = False)
     g = ctx_global("windows")
@@ -740,6 +753,7 @@ def test_wheel_rule_keeps_to_the_tools_own_venv_and_falls_back_to_the_key(prov, 
     assert prov.site_packages_of(str(sp_w / "numpy" / "x.pyd")) == str(sp_w)
     assert prov.site_packages_of("/usr/lib/x86_64-linux-gnu/libz.so.1") is None
     assert prov.norm_dist("Nvidia_CUDNN.cu13") == "nvidia-cudnn-cu13"
+
     # the header block of METADATA ends at the first empty line: the Requires-Dist in the description is not read
     idx = prov.dist_index(str(sp_w))
     assert "not-a-header" not in idx["requires"]["onnxruntime-gpu"] and idx["versions"]["numpy"] == "2.5.3"
@@ -747,6 +761,7 @@ def test_wheel_rule_keeps_to_the_tools_own_venv_and_falls_back_to_the_key(prov, 
 
 def test_framework_versions_from_the_venv(prov, tmp_path):
     venv, sp = make_site_packages(tmp_path)
+
     # a torch wheel built for CUDA 13.0, installed but nothing of it loaded in this run
     d = sp / "torch-2.14.1+cu130.dist-info"
     d.mkdir()
@@ -764,6 +779,7 @@ def test_framework_versions_from_the_venv(prov, tmp_path):
     assert fw["onnxruntime-gpu"] == {"version": "1.30.0", "loaded": False, "tool": "pip-onnxruntime"}
     assert fw["torch"]["version"] == "2.14.1+cu130" and fw["torch"]["cuda_build"] == "13.0" and not fw["torch"]["loaded"]
     assert prov.cuda_build_of("2.9.0+cu128") == "12.8" and prov.cuda_build_of("1.30.0") is None
+
     # a requested CUDA version cannot apply to the wheel's runtime: an error naming the wheel and the tool
     rec = {"requested": {"use": {"nvcc": {"version": "12.9"}}}, "compute": ["cuda"], "host": {"uname": "linux"},
            "loaded": {"method": "loader-log", "libraries": libs}, "build": {"binary": {"format": "elf"}},
@@ -774,6 +790,7 @@ def test_framework_versions_from_the_venv(prov, tmp_path):
     assert "nvidia-cuda-runtime 13.4.92" in wheel[0]["detail"] and "pip-onnxruntime" in wheel[0]["detail"] and rec["ok"] is False
     info = [c["detail"] for c in rec["checks"] if c["rule"] == "info" and c["detail"].startswith("frameworks:")][0]
     assert "torch 2.14.1+cu130 (built for CUDA 13.0) (installed, nothing of it loaded)" in info
+
     # without an explicit CUDA request there is nothing to flag
     rec["requested"] = {"use": {}}
     prov.run_checks(rec, g, False)
@@ -802,6 +819,7 @@ def test_go_and_rust_toolchains_are_read_from_the_binary(prov, tmp_path):
     assert prov.rust_version_in_binary(str(rust_pe)) == (None, "1159e78c47b8b3a2e5c6d7e8f9a0b1c2d3e4f5a6")
 
     g = ctx_global()
+
     # an Android build: the NDK's clang is not Go, however its name starts
     g["compiler-c"] = {"tool": {"name": "google.android-ndk.clang"}, "version": "21.0.0", "path": "/ndk/clang"}
     assert prov.toolchain_in_binary(exe, g) == {}
@@ -832,6 +850,7 @@ def test_go_and_rust_toolchains_are_read_from_the_binary(prov, tmp_path):
     assert cs[0]["level"] == "warning" and cs[0]["ok"] is False
     cs, ok = checks_for({"rust": {"tool": "compiler-rust", "resolved": "1.90.0", "binary": None, "binary_commit": None}})
     assert cs[0]["level"] == "info" and cs[0]["ok"] is None and "does not say" in cs[0]["detail"]
+
     # the record of a Go run carries build.toolchain
     local = {"target_path_exe": exe}
     r = record(prov, fake_inspector(SYSTEM_DEPS), local = local, target = str(tmp_path))
@@ -851,6 +870,7 @@ def test_python_environment_kinds(prov, tmp_path):
     assert e["kind"] == "venv" and e["made_by"] == "uv 0.12.21" and e["base"]["kind"] == "uv-managed"
     assert prov.python_environment_text(e) == "venv made by uv 0.12.21 on a uv-managed Python"
     assert prov.python_environment(str(uvpy / "bin" / "python3"))["kind"] == "uv-managed"
+
     # a conda base (conda-meta/ with condabin/, pkgs/ or envs/ next to it) and a conda environment, POSIX and
     # Windows layouts; an environment made anywhere with "conda create -p" (no such folders) is an environment
     conda = tmp_path / "miniconda3"
@@ -870,6 +890,7 @@ def test_python_environment_kinds(prov, tmp_path):
     (env / "python.exe").write_bytes(b"")
     e = prov.python_environment(str(env / "python.exe"))
     assert e["kind"] == "conda-env" and e["name"] == "myenv" and "myenv" in prov.python_environment_text(e)
+
     # a venv made on a conda environment: the base is named
     v2 = tmp_path / "v2"
     (v2 / "Scripts").mkdir(parents = True)
@@ -878,18 +899,21 @@ def test_python_environment_kinds(prov, tmp_path):
     e = prov.python_environment(str(v2 / "Scripts" / "python.exe"))
     assert e["kind"] == "venv" and e["base"] == {"kind": "conda-env", "prefix": str(env), "name": "myenv"} and "made_by" not in e
     assert prov.python_environment_text(e) == "venv on the conda environment myenv"
+
     # the system's
     usr = tmp_path / "usr" / "bin"
     usr.mkdir(parents = True)
     (usr / "python3").write_bytes(b"")
     assert prov.python_environment(str(usr / "python3"))["kind"] == "system"
     assert prov.python_environment("") == {}
+
     # the record carries it, and the checks say it in one line
     g = ctx_global(python = True)
     g["python"]["path"] = str(venv / "bin" / "python")
     r = prov.build_record("on", {"alias": "p", "uid": "0" * 16}, "tmp", str(tmp_path), ["cpu"], g, {"target_path_exe": str(tmp_path / "x")}, {}, {}, False)
     assert r["runtime"]["python"]["environment"]["kind"] == "venv"
     assert any(c["detail"] == "python 3.12.3: venv made by uv 0.12.21 on a uv-managed Python" for c in r["checks"])
+
     # an interpreter requested with --use.python.tool_path: the run used it, a venv made on it, or something else (error)
     def py_check(use_path, g_path):
         g["python"]["path"] = g_path
@@ -922,6 +946,7 @@ def test_runtime_rule_yields_to_the_tool_that_names_the_library(prov, tmp_path):
     assert "libomp.so.5 comes from /usr/lib/x86_64-linux-gnu/libomp.so.5, not from the resolved lib-openmp" in origin[0]["detail"]
     omp = next(l for l in r["loaded"]["libraries"] if l["name"] == "libomp.so.5")
     assert omp["tool"] is None and "role" not in omp
+
     # the same library loaded from the tool's own folder is the tool's
     prov.binary_deps = fake_inspector(SYSTEM_DEPS + [dep("libomp.so", "/opt/llvm/lib/libomp.so")])
     r = prov.build_record("on", {"alias": "prog", "uid": "0" * 16}, "tmp", str(tmp_path), ["cpu"], g,
@@ -947,6 +972,7 @@ def test_mode_from_the_environment(prov):
     assert prov.mode_of("off", env = {"CMETA_PROVENANCE": "strict"}) == "off"     # the run's own choice wins
     with pytest.raises(ValueError, match = "CMETA_PROVENANCE=sometimes"):
         prov.mode_of(None, env = {"CMETA_PROVENANCE": "sometimes"})
+
     # inside a test session the default is strict; CMETA_PROVENANCE and the run's own choice still win
     assert prov.mode_of(None, env = {"CMETA_TEST_SESSION": "20261005/0952.prov-runtime"}) == "strict"
     assert prov.mode_of(None, env = {"CMETA_TEST_SESSION": "20261005/0952.prov-runtime", "CMETA_PROVENANCE": "on"}) == "on"
@@ -987,11 +1013,13 @@ def test_hook_attaches_the_record_to_the_test_session(driver, prov, tmp_path, mo
     assert p["id"] == "20261005/0952.prov-runtime" and p["attach"] == os.path.join(str(tmp_path), "provenance.json")
     assert p["attach_as"].startswith("provenance--prog--tmp--") and p["note"].startswith("provenance: prog (tmp) ok, 0 failed")
     assert p["con"] is False
+
     # the session cannot be reached: a warning, the run's result stands
     driver.cm.access = lambda p: {"return": 1, "error": "no session"}
     r = driver.write_provenance(ctx, {}, "on", {"name": "prog"}, {}, str(tmp_path), "tmp", "prog", "0" * 16, ["cpu"])
     assert r["return"] == 0 and "session" not in r["provenance"]
     assert "WARNING: provenance record not attached to test session 20261005/0952.prov-runtime: no session" in capsys.readouterr().out
+
     # no session: nothing is called
     monkeypatch.delenv("CMETA_TEST_SESSION")
     calls.clear()

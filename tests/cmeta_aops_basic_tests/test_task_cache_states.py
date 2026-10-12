@@ -239,9 +239,11 @@ class Invariants:
         found = entries(self.cm)
         folders = {p.name.lower() for p in self.cache_dir.iterdir() if p.is_dir() and p.name.startswith(f'task--{TASK}--')} if self.cache_dir.is_dir() else set()
         assert {os.path.basename(a['path']).lower() for a in found} == folders, (found, folders)
+
         # I2
         if expected_entries is not None:
             assert len(found) == expected_entries, [a['path'] for a in found]
+
         # I3: no lock files, no temporaries, no running file of a dead attempt
         leftovers = []
         if self.cache_dir.is_dir():
@@ -256,6 +258,7 @@ class Invariants:
             if not allow_crashed:
                 assert st[uid] != 'crashed', f'{a["path"]} is crashed'
                 assert not (pathlib.Path(a['path']) / RUNNING).exists(), f'{a["path"]} keeps a running file'
+
         # I4: the usable entries of the snapshot are byte-identical
         for a in found:
             uid = a['cmeta_ref_parts']['artifact_uid']
@@ -288,6 +291,7 @@ def test_a_retry_of_the_same_configuration_resumes_the_entry_without_a_second_do
     e = found[0]
     assert st[e['cmeta_ref_parts']['artifact_uid']] == 'ok'
     assert count_in(e['path'], 'downloads.txt') == 1 and count_in(e['path'], 'attempts.txt') == 2
+
     # the identity, the task's additions AND the constant match parameter (the find of the next request needs it)
     assert e['cmeta']['params'] == {'name': 'alpha', 'version': '1', 'built_version': '1', 'with': CONST}, e['cmeta']['params']
     assert e['cmeta']['tags'][-1:] != ['tmp'] and 'failed' not in e['cmeta']['tags']
@@ -317,6 +321,7 @@ def test_a_different_configuration_gets_its_own_entry_and_the_failed_one_stays(c
     assert st[failed_uid] == 'failed'
     new_uid = next(u for u in by_uid if u != failed_uid)
     assert st[new_uid] == 'ok'
+
     # the version of the failed attempt did not leak: the new entry carries the one it resolved itself
     assert by_uid[new_uid]['cmeta']['params']['version'] == '9.9', by_uid[new_uid]['cmeta']['params']
     assert by_uid[new_uid]['cmeta']['request_params'] == {'name': 'beta', 'with': CONST}
@@ -390,6 +395,7 @@ def test_a_crashed_attempt_is_resumed(cm, home, inv):
     wait_for(lambda: states(cm)[e['cmeta_ref_parts']['artifact_uid']] == 'crashed', 30, 'the entry to be crashed')
     found, st = inv.check(expected_entries=1, allow_crashed=True)
     running = json.loads((pathlib.Path(e['path']) / RUNNING).read_text())
+
     # The pid on record is the process that ran the task: the one started here - or, in a virtual environment on
     # Windows, the interpreter that its python.exe launcher started (a child with a pid of its own)
     behind_a_launcher = os.name == 'nt' and sys.prefix != sys.base_prefix
@@ -471,6 +477,7 @@ def test_a_running_entry_is_not_deleted_and_a_full_reindex_during_a_build_change
         wait_for(lambda: any((pathlib.Path(a['path']) / 'building.txt').is_file() for a in entries(cm)), 90, 'the build to start')
         e = entries(cm)[0]
         uid = e['cmeta_ref_parts']['artifact_uid']
+
         # A delete waits for the attempt (CMETA_LOCK_TIMEOUT, 30 s by default) and fails as a whole while it
         # goes on: record and folder stay (2 s here so that the 12 s build is still running)
         monkeypatch.setenv('CMETA_LOCK_TIMEOUT', '2')
@@ -481,6 +488,7 @@ def test_a_running_entry_is_not_deleted_and_a_full_reindex_during_a_build_change
         assert os.path.isdir(e['path'])
         r = cm.access({'category': 'cache', 'command': 'clean', 'tags': TASK, 'unfinished': True, 'con': False})
         assert r['return'] == 0 and r['removed'] == [] and uid in r['skipped']
+
         # A full reindex of the home while the build runs: the entry keeps its record
         r = cm.repos.reindex()
         assert r['return'] == 0, r.get('error')

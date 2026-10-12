@@ -795,6 +795,7 @@ class CTask(InitCTask):
             # Attempt to detect tool
 
             r = self.detect_existing_tool(ctx, **kwargs_copy)
+
             # Fail if return error > 0 and return error !=16
             # If want to fail on error 16, add "r, fail16=True")
             if self.cm.catch_error(r): return r

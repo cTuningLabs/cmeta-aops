@@ -1,4 +1,5 @@
 authors: Grigori Fursin
+
 ###################################################################################################
 # One generation with SGLang's offline engine (sglang.Engine), with its timings as the result:
 #
@@ -17,6 +18,7 @@ inherits:
 local_vars:
   run_time_env:
     CMETA_TARGETS: '{{global.target.cmeta_targets}}'
+
     # The venv's console scripts for the JIT kernels (ninja, nvcc of nvidia-cuda-nvcc)
     +PATH:
       - '{{global.python.path_bin}}'
@@ -24,6 +26,7 @@ local_vars:
     CMETA_SGLANG_MAX_TOKENS: '{{local.params.n|64}}'
     CMETA_SGLANG_GPU_MEM: '{{local.params.gpu_mem|0.8}}'
     CMETA_SGLANG_MAX_LEN: '{{local.params.max_len|4096}}'
+
     # Graphs stay on (SGLang's own default): its eager decoding is no usable default on ROCm (seen on an MI300X)
     CMETA_SGLANG_CUDA_GRAPH: '{{local.params.cuda_graph|1}}'
     CMETA_SGLANG_TP: '{{local.params.tp|}}'
@@ -53,6 +56,7 @@ updates:
            - task: setup,a2f9b61079ce4333
              name: python,c00fb574d8ca4463
              version: '{{params.python_version|>=3.10,<3.13}}'
+
              # Its own venv per set of targets: another program's torch must not mix in
              with:
                venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'

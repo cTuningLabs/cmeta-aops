@@ -51,6 +51,7 @@ def provider_error(exception_text, printed):
     load library ... libmigraphx_c.so.3: cannot open shared object file") with a hint for a missing library,
     else the exception's text.
     """
+
     # The banner line "*** EP Error ***" comes first; the cause follows a second "EP Error"
     m = re.search(r'EP Error\s+(?!\*)(.*?)\s+when using', printed or '', re.S)
     cause = ' '.join(m.group(1).split()) if m else ''
@@ -239,6 +240,7 @@ def main():
             entry['error'] = f'{provider} is not available: this ONNX Runtime has {", ".join(available)}'
             print(f'{label}: {entry["error"]}')
             continue
+
         # ONNX Runtime prints why a provider failed to load ("EP Error ... Failed to load library ...") and
         # retries on the CPU, which the disabled fallback then refuses: the exception names the refusal,
         # the printed text the cause - it is captured and recorded

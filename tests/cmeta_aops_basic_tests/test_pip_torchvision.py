@@ -80,14 +80,19 @@ def test_version_key_orders_pre_release_before_final(tv):
 def test_choose_torchvision(tv):
     choose = tv["choose_torchvision"]
     available = ["0.27.0", "0.28.0", "0.29.0a0"]
+
     # The pair is there
     assert choose("0.28.0", available) == ("0.28.0", "exact")
+
     # The pair is pending: its pre-release
     assert choose("0.29.0", available) == ("0.29.0a0", "pre-release")
+
     # Neither: the newest final release, which pairs with an older torch
     assert choose("0.30.0", available) == (None, "0.28.0")
+
     # An empty index (not read): nothing to say
     assert choose("0.29.0", []) == (None, None)
+
     # Several pre-releases: the newest
     assert choose("0.29.0", ["0.29.0a0", "0.29.0rc1", "0.28.0"]) == ("0.29.0rc1", "pre-release")
 

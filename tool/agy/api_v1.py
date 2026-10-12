@@ -35,6 +35,7 @@ ASSETS = {
     ('darwin', 'amd64'): 'agy_cli_mac_x64.tar.gz',
     ('darwin', 'arm64'): 'agy_cli_mac_arm64.tar.gz',
 }
+
 # Alpine and the other musl distributions
 MUSL_ASSETS = {'amd64': 'agy_cli_linux_x64_musl.tar.gz', 'arm64': 'agy_cli_linux_arm64_musl.tar.gz'}
 

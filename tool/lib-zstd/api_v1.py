@@ -23,9 +23,11 @@ SPEC = {
         '1.5.7': 'eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3',
     },
     'src_dir': 'zstd-{version}/lib',
+
     # The library's compression, decompression and dictionary builder (no legacy formats)
     'sources': ['common/*.c', 'compress/*.c', 'decompress/*.c', 'dictBuilder/*.c'],
     'include_dirs': ['.', 'common'],
+
     # As zstd's own lib/Makefile builds libzstd.a: its xxhash under the ZSTD_ prefix, single-threaded;
     # the C decoder instead of the x86-64 assembly one, so every system builds the same sources
     'defines': ['XXH_NAMESPACE=ZSTD_', 'ZSTD_LEGACY_SUPPORT=0', 'ZSTD_DISABLE_ASM', 'DEBUGLEVEL=0'],

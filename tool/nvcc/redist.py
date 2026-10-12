@@ -223,6 +223,7 @@ def unpack_into(archive, root):
         rel = os.path.relpath(dirpath, src)
         dst_dir = os.path.normpath(os.path.join(root, rel))
         os.makedirs(dst_dir, exist_ok = True)
+
         # symbolic links to folders are listed with the folders: move them as links
         for name in [d for d in dirnames if os.path.islink(os.path.join(dirpath, d))] + filenames:
             dst = os.path.join(dst_dir, name)

@@ -305,6 +305,7 @@ class CTask(InitCTask):
             runtime_compiler = _global[global_compiler_key]
             if flags.get('host_compiler') and 'compiler-cpp' in _global:
                 runtime_compiler = _global['compiler-cpp']
+
             # The flags of a reused compiler entry are completed from the tool's current meta by task
             # setup (finish_dynamic_result), so a flag the meta gained after the entry was cached
             # (openmp_static_archive, linker_option_prefix) is here without --update

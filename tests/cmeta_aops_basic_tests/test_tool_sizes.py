@@ -204,6 +204,7 @@ def test_skip_check_installs_and_records_the_size(cm, fake_tool):
     impact = r["_impact"]
     assert impact["disk_method"] == "install" and impact["disk_os"] and impact["disk_gb"] > 0
     assert impact["peak_gb"] >= impact["disk_gb"]
+
     # the cache entry's result carries it, and the next plain request reuses the entry without a check
     cache = pathlib.Path(os.environ["CMETA_HOME"]) / "repos" / "local" / "cache"
     results = list(cache.glob(f"task--setup--{FAKE}--*/cmeta-task-cached-result.json"))
@@ -311,6 +312,7 @@ def test_download_file_reports_and_records_the_peak(cm, zip_tool):
     assert r["return"] == 0, r.get("error")
     impact = r["_impact"]
     archive, unpacked = zip_tool["archive_bytes"], 300_000 + 4
+
     # download-file reported the archive, the unpacked tree and their sum, and recorded them in the entry
     # (the _impact figures are GB rounded to 6 decimals, so the bytes are checked in the record)
     entry = pathlib.Path(r["path_cmeta_cache"])
@@ -319,11 +321,13 @@ def test_download_file_reports_and_records_the_peak(cm, zip_tool):
     assert records[0]["peak_bytes"] == archive + unpacked
     assert impact["download_gb"] == round(archive / GB, 6)
     assert impact["peak_gb"] == round((archive + unpacked) / GB, 6)
+
     # the archive is gone, so what is kept is below the peak by the archive's size (a 600-byte
     # archive is within the 6-decimal rounding of the GB figures, so the bytes carry the check)
     assert impact["disk_gb"] <= impact["peak_gb"]
     assert records[0]["peak_bytes"] - records[0]["unpacked_bytes"] == archive
     assert not (entry / "content" / "zz-zip-fake-1.0.zip").exists()
+
     # the suggestions use the real peak, above what is kept
     r = cm.access({"category": "task", "command": "run", "arg1": "setup", "name": zip_tool["name"], "sizes": True, "con": False, "quiet": True})
     assert r["return"] == 0 and r["records"][0]["peak_gb"] == impact["peak_gb"]

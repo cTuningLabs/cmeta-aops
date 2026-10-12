@@ -256,6 +256,7 @@ def test_installer_layout_still_detected(ns, tmp_path):
     assert f['output'] == '9.21.0'
     assert f['features']['paths']['lib'] == str(home / 'lib' / '13.2' / 'x64')
     assert f['features']['paths']['dynamic_lib'] == str(home / 'bin' / '13.2' / 'x64')
+
     # built for a newer CUDA minor than the toolkit: not taken
     assert detect(ns, 'windows', 'amd64', '13.1.0', home / 'include' / '13.2' / 'cudnn.h') == {}
 
@@ -301,6 +302,7 @@ def test_finish_checks_the_gpu(ns):
     assert tool.finish_dynamic_result(new, res, {})['return'] == 0 and res['features']['gpu_arch_min'] == 75
     early = dict(result, version = '9.10.2', features = {'paths': {'dynamic_lib': '/nonexistent'}})
     assert tool.finish_dynamic_result(old, early, {})['return'] == 0 and early['features']['gpu_arch_min'] == 50
+
     # a version check (the cache re-check of an entry) never judges the GPU
     assert tool.finish_dynamic_result(old, dict(result, features = {'paths': {'dynamic_lib': '/x'}}), {'version_check': True})['return'] == 0
 

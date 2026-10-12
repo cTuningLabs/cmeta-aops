@@ -1,5 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
 ###################################################################################################
 # A stack target: it detects nothing itself; the device targets next to it say where OpenVINO
 # runs (npu-intel -> "NPU", xpu -> "GPU", cpu -> "CPU"). Alone, programs use every device

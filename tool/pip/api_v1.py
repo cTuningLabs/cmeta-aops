@@ -167,6 +167,7 @@ class CTool(InitCTool):
 
         elif package_url:
             custom_package = '{{params.with.url}}'
+
             # version is ignored here
             if package_url_tag:
                 custom_package += '@' + package_url_tag
@@ -417,9 +418,11 @@ class CTool(InitCTool):
             if '--index-url ' not in post_flags:
                 compute_features = target['features']['rocm']
                 versions = compute_features.get('versions', {})
+
                 # The ROCm version itself (amd-smi, rocm-sdk, /opt/rocm/.info: tool/rocm), else what
                 # rocm-smi's library says (the only number older detections had)
                 rocm_version = compute_features.get('rocm_version') or versions.get('rocm') or versions.get('rocm-smi-lib version') or '0'
+
                 # The GPU family from the kernel (gfx942, gfx1152), when the target knows it
                 gfx = (compute_features.get('gfx') or [None])[0]
 

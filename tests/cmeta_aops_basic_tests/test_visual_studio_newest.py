@@ -58,6 +58,7 @@ def test_no_version_takes_the_newest_installation():
     ns = vs_module()
     r = hook(ns, [VS2022, VS2026, VS2019], {"name": "microsoft.visual-studio"})
     assert r == {"return": 0, "artifacts": [VS2026]}
+
     # the version compares as numbers: 19.9 would be older than 19.50
     old = entry("19.9.1")
     assert hook(ns, [old, VS2026], {"name": "microsoft.visual-studio"})["artifacts"] == [VS2026]

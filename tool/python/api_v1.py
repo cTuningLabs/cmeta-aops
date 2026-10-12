@@ -228,6 +228,7 @@ class CTool(InitCTool):
                 return self.cm.error(f'python: a requested interpreter ({tool_path}) and a version ({params["version"]}) '
                                      'cannot both be given - the interpreter decides the version', 1)
             params['python_base'] = os.path.normpath(os.path.abspath(tool_path))
+
             # The request is matched on python_base, not on the path: the entry records the venv's python as
             # its tool_path (the setup task rewrites it to what was selected), so a second request with the
             # same interpreter would never match and would make one venv per run. Detection is kept to the
@@ -447,6 +448,7 @@ class CTool(InitCTool):
                               'text_cmd': 'RUN:', 
                               'capture_output': True,
                               'capture_env': True,
+
                               # Important to be able to continue processing detect/install/build
                               'fail_if_nonzero_return_code': False, 
                         }
@@ -486,6 +488,7 @@ class CTool(InitCTool):
                       'verbose': verbose, 
                       'text_cmd': 'RUN:', 
                       'capture_output': True,
+
                       # Important to be able to continue processing detect/install/build
                       'fail_if_nonzero_return_code': False, 
                 }

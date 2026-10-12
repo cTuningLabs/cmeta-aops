@@ -83,6 +83,7 @@ def load_model(model_id: str, local_dir: str = ".") -> torch.nn.Module:
             model_dir = str(local_path)
         else:
             sys.exit(f"[ERROR] Local path exists but is not a directory or .pt/.pth/.bin file: {local_path}")
+
     # ---- Hugging Face Hub model ID ----------------------------------------- #
     else:
         print(f"[INFO] Fetching model '{model_id}' from Hugging Face Hub …")

@@ -209,6 +209,7 @@ def probe(loader_path = None):
                             'api_version': api_version(api),
                             'driver_version': driver_version(drv, vendor_id),
                             'device_local_memory_mib': local // (1024 * 1024)}
+
             # A driver registered twice (two ICD manifests) lists its device twice
             same = [d for d in devices if {k: v for k, v in d.items() if k != 'index'} == {k: v for k, v in entry.items() if k != 'index'}]
             if not same:

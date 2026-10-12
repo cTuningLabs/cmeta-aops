@@ -514,6 +514,7 @@ def detect_existing_tool(self,
 
             else:
                 print ('')
+
                 # Nobody to answer (a detached job, a script): an error that names -q, never a traceback
                 r = ask(f'{space}Make your selection, press Enter for 0, or select -1 to install/build tool (if supported): ',
                         how = '-q (--quiet) to take the first of the list')

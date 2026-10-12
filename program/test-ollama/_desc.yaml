@@ -1,5 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
 ###################################################################################################
 # One generation with Ollama on a private server - started on its own port (another Ollama on
 # the machine keeps running), stopped at the end - with Ollama's own timings as the result:

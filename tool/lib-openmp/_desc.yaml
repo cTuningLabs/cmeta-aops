@@ -17,6 +17,7 @@ extra_paths:
     - "{{global.llvm.features.paths.home|/home/linuxbrew/.linuxbrew}}/lib"
     - "{{global.llvm.features.paths.home|/home/linuxbrew/.linuxbrew}}/lib/*"
     - "/home/linuxbrew/.linuxbrew/lib"
+
     # The distribution's libomp-dev (Debian, Ubuntu: /usr/lib/llvm-<N>/lib; Fedora, Arch: /usr/lib64, /usr/lib)
     - "/usr/lib/llvm-*/lib"
     - "/usr/lib/*-linux-gnu"

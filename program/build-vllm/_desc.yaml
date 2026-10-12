@@ -1,5 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
 ###################################################################################################
 # Build vLLM from source (https://docs.vllm.ai/en/latest/getting_started/installation/) and run
 # one generation, as program test-vllm does with the wheels:
@@ -36,6 +37,7 @@ local_vars:
 
   run_time_env:
     CMETA_TARGETS: '{{global.target.cmeta_targets}}'
+
     # The venv's console scripts (ninja, nvcc of nvidia-cuda-nvcc) for FlashInfer's JIT kernels:
     # the venv's python runs without the venv being activated
     +PATH:
@@ -71,6 +73,7 @@ updates:
             name: python,c00fb574d8ca4463
             if_os: linux,windows
             version: '{{params.python_version|>=3.10,<3.14}}'
+
             # Its own venv per set of targets: another program's packages, or the CPU and the
             # CUDA builds of torch, must not mix in
             with:
@@ -124,6 +127,7 @@ updates:
              version: '{{params.python_version|3.12}}'
              with:
                venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+
            # vLLM's CPU kernels link against libnuma (Linux)
            - task: setup,a2f9b61079ce4333
              name: lib-numa,d81f892278524cfa

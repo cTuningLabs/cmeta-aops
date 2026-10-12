@@ -218,6 +218,7 @@ class CTool(InitCTool):
                   'verbose': verbose,
                   'text_cmd': 'RUN:',
                   'capture_output': True,
+
                   # Important to be able to continue processing detect/install/build
                   'fail_if_nonzero_return_code': False,
             }
@@ -445,6 +446,7 @@ def _parse_int(value):
         return value
 
     text = str(value)
+
     # Keep digits only, so values like "4,096 MiB" or "17163091968 B" can be parsed.
     digits = ''.join(ch for ch in text if ch.isdigit())
     if not digits:

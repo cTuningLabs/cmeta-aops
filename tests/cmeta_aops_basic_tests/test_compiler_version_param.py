@@ -24,6 +24,7 @@ def test_compiler_init_accepts_version():
     ns = {"__name__": "task_compiler", "__file__": str(path)}
     exec(compile(src, str(path), "exec"), ns)
     task = object.__new__(ns["CTask"])
+
     # the engine's check_params names the calling module in its message: give it a module it can find
     task.cm = types.SimpleNamespace(check_params = lambda params, allowed, name: check_params(params, allowed, "cmeta.utils.common"),
                                     catch_error = lambda r: r["return"] > 0)
