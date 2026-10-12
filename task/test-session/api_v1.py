@@ -197,6 +197,7 @@ def cmeta_info(home):
         info['version'] = getattr(cmeta, '__version__', None)
         package = os.path.dirname(os.path.abspath(cmeta.__file__))
         info['path'] = package
+
         # Only an engine checkout (the package at <git root>/cmeta), not a pip install that
         # happens to sit in some other repository
         top = git(package, 'rev-parse', '--show-toplevel')
@@ -573,6 +574,7 @@ class CTask(InitCTask):
             items = attach if isinstance(attach, list) else str(attach).split(',')
             folder = self._files(rec)['attachments']
             max_mib = float(params.get('attach_max_mib') or MAX_ATTACH_MIB)
+
             # --attach_as=<name>: the name of a single attached file in the log (the records of several
             # program runs are all called provenance.json)
             as_name = str(params.get('attach_as') or '').strip()
@@ -695,6 +697,7 @@ class CTask(InitCTask):
             usage = claude_usage(session, started, t)
             if usage is not None:
                 costs['agent_usage'] = usage
+
                 # A session started with the harness's default model records no model: take the
                 # one that did most of the work (subagents may run a smaller one)
                 models = {m: c for m, c in (usage.get('by_model') or {}).items()

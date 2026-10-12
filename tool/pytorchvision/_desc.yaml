@@ -74,7 +74,9 @@ build_uses:
       compute: '{{params.with.compute|$[]}}'
       skip_run: True
       target_path: '{{local.target_path}}'
+
       # v<version> when a version was asked; else the program pairs the checkout with the torch it finds
       checkout: '{{local.checkout|$None}}'
+
       # --with.torch=pip: PyTorch's wheel torch into the Python before the build
       torch: '{{params.with.torch|$None}}'

@@ -17,11 +17,14 @@ Offline tests of "cx tool setup <tool> --status" and "--upgrade" (task/setup/upg
 import importlib.util
 import os
 import pathlib
-import platform
 import sys
 
 import pytest
 import yaml
+
+# The version the fake tool (this Python) is detected with: the numbers of "python --version". A pre-release says
+# "3.15.0rc2" there and platform.python_version() repeats it, while a tool's version is the numeric part.
+PYTHON_VERSION = "%d.%d.%d" % sys.version_info[:3]
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -92,22 +95,28 @@ def test_brew_cask_flag(up):
      "{{global.winget.qpath}} upgrade --id=SST.opencode -e --source winget {{global.init.winget_install_flags|}}"),
     ("winget", WINGET_UV, False,
      "{{global.winget.qpath}} upgrade --id=astral-sh.uv -e --source winget {{global.init.winget_install_flags|}}"),
+
     # a specific version keeps "install" (winget changes versions through install) but still drops --no-upgrade
     ("winget", "{{global.winget.qpath}} install --id=Git.Git -e --version=2.55.0 --no-upgrade --source winget", True,
      "{{global.winget.qpath}} install --id=Git.Git -e --version=2.55.0 --source winget"),
+
     # brew: the last "install" becomes "upgrade", casks included
     ("brew", BREW_GH, False, "{{global.brew.qpath}} upgrade gh"),
     ("brew", BREW_CASK, False, "brew upgrade --cask obsidian"),
     ("brew", BREW_AZ, False, "brew update && brew upgrade {{name}}"),
     ("brew", "{{global.brew.qpath}} install gh@2", True, "{{global.brew.qpath}} install gh@2"),
+
     # the system package manager: task/host's upgrade command
     ("sudo", SUDO, False, "{{global.host.os_extra.upgrade_cmd_sudo}}"),
     ("sudo", "{{global.host.os_extra.install_cmd_sudo_version}}", True, "{{global.host.os_extra.install_cmd_sudo_version}}"),
+
     # npm: @latest
     ("npm", NPM, False, "npm install -g openclaw@latest"),
+
     # install scripts and pip run again as they are
     ("script", SCRIPT_CLAUDE_SH, False, SCRIPT_CLAUDE_SH),
     ("pip", PIP, False, PIP),
+
     # other install verbs with an upgrade counterpart
     ("rerun", RUSTUP, False, "rustup update stable"),
     ("rerun", SNAP, False, "snap refresh kubectl --classic"),
@@ -267,6 +276,7 @@ def test_versioned_install_cmd(up):
     cmd = up.versioned_install_cmd(ndk, "windows", rerun)
     assert cmd == 'sdkmanager "ndk;{{simple_version}}"'
     assert up.expand_version(cmd, "30.0.16248370") == 'sdkmanager "ndk;30.0.16248370"'
+
     # Without known versions, or through another channel: none
     assert up.versioned_install_cmd(dict(ndk, cmd_get_versions = None), "windows", rerun) is None
     assert up.versioned_install_cmd(ndk, "windows", {"primary": up.CHANNEL_WINGET}) is None
@@ -296,10 +306,12 @@ def fake_tool(cm):
         "names": [os.path.basename(python)],
         "match_version": [{"regex": r"Python (\d+\.\d+\.\d+)", "group": 1}],
         "cmd_get_version": "{{tool_path}} --version",
+
         # "the newest version" and "the install command" are Python one-liners: no network
         "cmd_get_latest_version": f'"{python}" -c "import sys; sys.stdout.write(str(99) + chr(46) + str(0) + chr(46) + str(0))"',
         "cmd_get_latest_version_regex": r"(\d+\.\d+\.\d+)",
         "install_cmd": {"all": f'"{python}" -c "print(1)"'},
+
         # setup's common install_uses would set up winget / curl / brew first
         "skip_common_install_uses": True,
     }
@@ -322,7 +334,7 @@ def test_status_reports_installed_and_newest(cm, fake_tool):
 
     status = r["status"]
     assert status["installed"] is True
-    assert status["version"] == platform.python_version()
+    assert status["version"] == PYTHON_VERSION
     assert os.path.normcase(status["path"]) == os.path.normcase(sys.executable)
     assert status["upstream_version"] == "99.0.0"
     assert status["latest_version"] == "99.0.0"
@@ -344,10 +356,10 @@ def test_upgrade_runs_the_channel_command_and_detects_again(cm, fake_tool):
     r = _setup(cm, upgrade=True)
     assert r["return"] == 0, r.get("error")
 
-    assert r["version"] == platform.python_version()
+    assert r["version"] == PYTHON_VERSION
     record = r["last_upgrade"]
-    assert record["from"] == platform.python_version()
-    assert record["to"] == platform.python_version()
+    assert record["from"] == PYTHON_VERSION
+    assert record["to"] == PYTHON_VERSION
     assert record["changed"] is False
     assert "failed" not in record
     assert record["cmd"].endswith('-c "print(1)"')
@@ -355,5 +367,5 @@ def test_upgrade_runs_the_channel_command_and_detects_again(cm, fake_tool):
     # the cache entry of this tool now carries the record, and a plain setup replays it
     r2 = _setup(cm)
     assert r2["return"] == 0, r2.get("error")
-    assert r2["version"] == platform.python_version()
+    assert r2["version"] == PYTHON_VERSION
     assert r2["last_upgrade"]["changed"] is False

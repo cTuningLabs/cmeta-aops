@@ -1,5 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
 # Obsidian (https://obsidian.md) - the desktop note-taking app on local Markdown files.
 #
 # Detection: the Electron binary. Windows installs Obsidian.exe per user under %LOCALAPPDATA%\Programs\Obsidian

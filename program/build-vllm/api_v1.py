@@ -103,6 +103,7 @@ class CProgram(InitCProgram):
             if device == 'cpu' and uname == 'linux':
                 # requirements/build/cpu.txt pins torch==<v>+cpu
                 index_flags = f'--extra-index-url {TORCH_INDEX}/cpu'
+
                 # A CUDA toolkit on the machine must not turn the CPU build into a CUDA one
                 env['CMAKE_ARGS'] = '-DCMAKE_DISABLE_FIND_PACKAGE_CUDA=ON'
             elif device == 'xpu':

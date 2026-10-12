@@ -24,6 +24,7 @@ def load_node():
     import pathlib
     import sys
     import types
+
     # the hook imports the tool category's base class: a stand-in is enough for the helpers
     stub = types.ModuleType("tool_c393ba5c6fa14f66.api.ctool")
     stub.InitCTool = type("InitCTool", (), {"__init__": lambda self, *a, **k: None})
@@ -63,6 +64,7 @@ def test_the_digest_comes_from_the_release_list():
 
 def test_an_archive_is_unpacked_without_its_top_folder(tmp_path):
     m = load_node()
+
     # a tar.gz as nodejs.org lays it out
     tgz = tmp_path / "node-v1.0.0-linux-x64.tar.gz"
     with tarfile.open(tgz, "w:gz") as t:
@@ -78,6 +80,7 @@ def test_an_archive_is_unpacked_without_its_top_folder(tmp_path):
     assert (dest / "bin" / "npm").exists()                       # the symlink, or a copy where links cannot be made
     if os.name != "nt":
         assert os.access(dest / "bin" / "node", os.X_OK)
+
     # a zip as nodejs.org lays it out for Windows
     z = tmp_path / "node-v1.0.0-win-x64.zip"
     with zipfile.ZipFile(z, "w") as zf:

@@ -374,6 +374,7 @@ class CTask(InitCTask):
             base = argv0 + ['tui'] + ([] if gateway else ['--local'])
         else:
             base = argv0 + ['agent'] + ([] if gateway else ['--local'])
+
             # "openclaw agent" needs a session target: the agent (and a session id) unless given after "--"
             if not [x for x in extra_flags if x.split('=')[0] in SESSION_FLAGS]:
                 flags += ['--agent', agent or 'main'] + (['--session-id', session] if session else [])

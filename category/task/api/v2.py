@@ -593,6 +593,7 @@ class Category(InitCategory):
         cache = cparams.get('cache')
 
         cache_repo = cparams.get('cache_repo')
+
         # Check if was forced for the whole run: --use.init.default_cache_repo=<repo> or config::task (task init)
         x_cache_repo = ctx_tasks.get('global', {}).get('init', {}).get('default_cache_repo')
         if x_cache_repo:
@@ -968,23 +969,27 @@ class Category(InitCategory):
                      'allow_skip': True,
                 }
 
-                if 'sort_keys' in cdesc:
-                    p['sort_keys'] = cdesc['sort_keys']
-                else:
-                    p['sort_keys'] = [
-                       '@cmeta.params.version-',
-                       'cmeta.params.priority',
-                       'cmeta.params.path',
-                    ]
+                # The order of the selection: the task's own keys or the default ones, then the entries that
+                # are still equal come newest first - the same entry on every machine
+                equal_keys, p['sort_keys'] = self._cache_selection_keys(cdesc)
+
+                if not quiet and self._cache_equal_entries(cache_artifacts, equal_keys):
+                    p['select_text'] += f' (entries with the same {self._cache_key_names(equal_keys)} are listed newest first)'
 
                 r = self.cm.access(p)
-                if self.cm.catch_error(r, fail16 = True): 
+                if self.cm.catch_error(r, fail16 = True):
                     r['return'] = 1
                     return r
 
                 if r.get('skipped', False):
                     cache_artifacts = []
                 else:
+                    # A quiet selection that only the time of creation decided says so in one line
+                    if con and quiet:
+                        note = self._cache_newest_note(r['artifacts'], r['artifact'], equal_keys)
+                        if note:
+                            print (f'{space}{note}')
+
                     cache_artifacts = [r['artifact']]
 
 
@@ -1157,6 +1162,7 @@ class Category(InitCategory):
                     if delete:
                         ii = {'category': uses_categories['cache'],
                               'command': 'delete',
+
                               # default cache rm is only in local while we need to allow any repo here
                               'arg1': '*:' + x_cache_artifact_uid,
                               'force': True
@@ -1317,6 +1323,7 @@ class Category(InitCategory):
             r = self.use_(
                   ctx, 
                   desc = uses2, 
+
 # Careful: reusing local - no complex sub-tasks ...
 # Usually just for cmd ...
                   local = ctx_tasks['local'],
@@ -1492,6 +1499,89 @@ class Category(InitCategory):
     CACHE_WAIT_TIMEOUT = 86400
     CACHE_FILE_RUNNING = 'cmeta-task-running.json'        # RUNNING_FILE of the engine's cache category: who runs the attempt
 
+    # The order in which the usable entries of a request are offered, when the task names no `sort_keys`
+    CACHE_SORT_KEYS = ['@cmeta.params.version-', 'cmeta.params.priority', 'cmeta.params.path']
+
+    # What decides among the entries that are equal on those keys: the one made last comes first
+    CACHE_SORT_KEY_NEWEST = 'cmeta.creation_timestamp-'
+
+    def _cache_selection_keys(self, cdesc):
+        """
+        The sort keys of the selection among the usable entries of a request, as (equal_keys, sort_keys):
+
+        - `equal_keys`: the task's own `sort_keys` (its _desc) or CACHE_SORT_KEYS, then `cmeta.sort` (the
+          engine adds it after the caller's keys anyway: named here, it keeps that place);
+        - `sort_keys`: the same, then the time of creation, newest first. Before, entries equal on
+          `equal_keys` fell to the alias, which ends in a random UID: another entry on another machine.
+          Entries without a time of creation come last, in the order of their aliases as before.
+        """
+        equal_keys = list(cdesc['sort_keys']) if 'sort_keys' in cdesc else list(self.CACHE_SORT_KEYS)
+
+        if 'cmeta.sort' not in equal_keys:
+            equal_keys.append('cmeta.sort')
+
+        sort_keys = list(equal_keys)
+
+        if self.CACHE_SORT_KEY_NEWEST not in sort_keys:
+            sort_keys.append(self.CACHE_SORT_KEY_NEWEST)
+
+        return equal_keys, sort_keys
+
+    @staticmethod
+    def _cache_key_names(equal_keys):
+        """The sort keys in words, for a message: '@cmeta.params.version-' -> 'version' (`cmeta.sort` is left out)."""
+        names = [k.lstrip('@').rstrip('-').split('.')[-1] for k in equal_keys if k != 'cmeta.sort']
+
+        return ', '.join(names) if names else 'order'
+
+    def _cache_equal_entries(self, artifacts, equal_keys, entry = None):
+        """
+        The entries that the selection cannot tell apart except by their time of creation: those equal to
+        `entry` on `equal_keys`, or, without an entry, those of the first group of two or more.
+        """
+        build = self.cm.utils.common.build_sort_key
+
+        if entry is not None:
+            key = build(entry, equal_keys)
+            return [a for a in artifacts if build(a, equal_keys) == key]
+
+        # Equal as the sort sees them (the keys are compared, not their text)
+        keys = [build(a, equal_keys) for a in artifacts]
+
+        for key in keys:
+            group = [a for a, k in zip(artifacts, keys) if k == key]
+            if len(group) > 1:
+                return group
+
+        return []
+
+    def _cache_newest_note(self, artifacts, entry, equal_keys):
+        """
+        One line for a quiet selection that the time of creation decided: how many entries were equal, and
+        which one - the newest - was taken. Empty when `entry` had no equal.
+        """
+        equal = self._cache_equal_entries(artifacts, equal_keys, entry)
+
+        if len(equal) < 2:
+            return ''
+
+        parts = entry['cmeta_ref_parts']
+        alias = parts.get('artifact_alias') or parts['artifact_uid']
+        names = self._cache_key_names(equal_keys)
+
+        # The time as it is recorded, without the fraction of a second
+        made = str(entry.get('cmeta', {}).get('creation_timestamp') or '')
+        if '.' in made:
+            head, _, tail = made.partition('.')
+            made = head + tail.lstrip('0123456789')
+
+        # An entry without a time of creation is first only among others without one: its name decided
+        if not made:
+            return (f'NOTE: {len(equal)} cache entries have the same {names} and no time of creation on record: '
+                    f'the first by name is used - {alias}')
+
+        return f'NOTE: {len(equal)} cache entries have the same {names}: the newest is used - {alias}, made {made}'
+
     def _cache_repo_folder(self, cache_repo):
         """The folder of the cache category in the repository where the entries of this run live."""
         ref = {'category_alias': 'repo', 'category_uid': self.cm.cfg['category_repo_uid']}
@@ -1600,11 +1690,22 @@ class Category(InitCategory):
 
         attempt['done'] = True
 
-        try:
-            if os.path.isfile(attempt['running_file']):
+        # Windows refuses to remove a file that another handle has open, and the running file is read by
+        # everyone who classifies this entry - the lookup of another request, `cx cache show`. A short
+        # attempt ends while such a reader is there: tried again until the reader is gone (it reads a few
+        # lines), or the file stayed in a finished entry (seen 2026-10-12: 2 runs in 6).
+        deadline = time.monotonic() + 5
+
+        while True:
+            try:
                 os.remove(attempt['running_file'])
-        except OSError:
-            pass
+                break
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.005)
+            except OSError:
+                break
 
         try:
             attempt['lock'].release()

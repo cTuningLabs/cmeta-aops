@@ -105,6 +105,7 @@ def main():
         options = {'seed': 12345, 'temperature': 0, 'num_predict': max_tokens}
         if targets.split(',') == ['cpu']:
             options['num_gpu'] = 0
+
         # --ngl: the layers on the GPU, the rest on the CPU (Ollama's num_gpu), as with llama.cpp
         if os.environ.get('CMETA_OLLAMA_NUM_GPU'):
             options['num_gpu'] = int(os.environ['CMETA_OLLAMA_NUM_GPU'])

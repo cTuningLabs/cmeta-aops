@@ -110,7 +110,7 @@ If your contribution includes source you did not write:
 ## Development setup
 
 ```bash
-pip install cmeta                   # the engine (Apache-2.0, Python 3.9-3.14)
+pip install cmeta                   # the engine (Apache-2.0, Python 3.9-3.15)
 cx repo plug .                      # register this repository with cMeta (once)
 cx <category> find                  # list artifacts in a category
 ```

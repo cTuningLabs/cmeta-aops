@@ -73,6 +73,7 @@ def test_specs(specs):
         assert spec["version"][0] in [os.path.basename(h) for h in spec["headers"]]
         d = desc(f"tool/{name}/_desc.yaml")
         assert d["skip_detect"] is True and d["names"] == [spec["version"][0]]
+
     # jitterentropy must not be optimized (jitterentropy-base.c fails on __OPTIMIZE__)
     assert "-O0" in specs["lib-jitterentropy"]["cflags"]
 
@@ -176,6 +177,7 @@ def test_static_deps_and_names(openssl):
     with_paths = [dict(d, path = f"/a/lib{d['lib']}.a") for d in deps]
     assert openssl["static_lib_names"](ARCHIVES, with_paths) == \
         ARCHIVES + ["/a/libjitterentropy.a", "pthread", "/a/libz.a", "/a/libzstd.a", "dl", "m"]
+
     # Ubuntu 24.04, Debian: libcrypto.a needs none of them
     assert openssl["static_deps"]({"OPENSSL_cleanse", "memcpy", "pthread_once"}) == []
     assert openssl["static_lib_names"](ARCHIVES, []) == ARCHIVES + ["pthread", "dl", "m"]
@@ -303,6 +305,7 @@ def test_static_libraries_without_archives_or_nm(openssl, tmp_path, monkeypatch)
     assert tool.static_libraries(ctx, features, {}, False)["return"] == 0                 # a dynamic request: the same, no tool
     assert features["lib_names_static"] == archives + ["/usr/lib/libz.a", "pthread", "dl", "m"]
     assert tool.cm.setups == []
+
     # a tool that reports no archive
     tool.cm.access = lambda p: {"return": 0, "features": {}}
     monkeypatch.setattr(openssl["shutil"], "which", lambda name: "/usr/bin/nm" if name == "nm" else None)

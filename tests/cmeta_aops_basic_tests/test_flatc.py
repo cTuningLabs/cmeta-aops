@@ -61,6 +61,7 @@ def test_pinned_digests(release):
     checksum = {"sha256": {"1.0.0": {"a.zip": "AB" * 32}}}
     r = release["_expected_sha256"](None, None, None, checksum, {"version": "1.0.0"}, "a.zip", "content")
     assert r == {"return": 0, "sha256": "ab" * 32}
+
     # another version, or an asset not pinned: downloaded over HTTPS only
     assert release["_expected_sha256"](None, None, None, checksum, {"version": "2.0.0"}, "a.zip", "content")["sha256"] is None
     assert release["_expected_sha256"](None, None, None, checksum, {"version": "1.0.0"}, "b.zip", "content")["sha256"] is None

@@ -55,6 +55,7 @@ def test_the_description_detects_rocm_sdk_too(desc):
     names = [n for n in desc["names"]]
     assert any(n.startswith("rocm-smi") for n in names)
     assert "rocm-sdk" in names
+
     # rocm-sdk has no --version: the command falls back to "version"
     assert "|| {{tool_path}} version" in desc["cmd_get_version"]
     regexes = [m["regex"] for m in desc["match_version"]]
@@ -79,12 +80,14 @@ def test_amd_smi_json_becomes_rocm_smi_json(rocm):
     assert card["PCI Bus"] == "0000:83:00.0"
     assert card["Driver version"] == "6.19.14"
     assert card["VRAM Total Memory (B)"] == str(196592 * 1024 * 1024)
+
     # ... and the device parser of rocm-smi's JSON reads it
     devices = rocm["parse_rocm_smi_devices"](cards)
     assert devices[0]["name"] == "AMD Instinct MI300X"
     assert devices[0]["pci.bus_id"] == "0000:83:00.0"
     assert devices[0]["memory.total"] == 196592 * 1024 * 1024
     assert devices[0]["compute_cap"] == "gfx942"
+
     # a list, N/A values, no gpu index
     cards = rocm["cards_from_amd_smi"]([{"asic": {"market_name": "N/A", "device_id": "0x1234"}}])
     assert cards == {"card0": {"Card Model": "0x1234"}}
@@ -101,6 +104,7 @@ def test_one_candidate_per_installation(rocm, tmp_path):
     (image / "rocm-sdk").write_text("#!/bin/sh\n")
     paths = [{"path": str(own / "rocm-smi")}, {"path": str(own / "rocm-sdk")}, {"path": str(image / "rocm-sdk")}, {"path": "/usr/bin/rocm-smi"}]
     kept = [p["path"] for p in rocm["prefer_rocm_smi"](paths)]
+
     # the rocm-sdk next to our own rocm-smi is dropped, the image's (alone) is kept
     assert kept == [str(own / "rocm-smi"), str(image / "rocm-sdk"), "/usr/bin/rocm-smi"]
 
@@ -122,8 +126,10 @@ def test_the_provider_error_is_the_cause_ort_printed(ort):
     assert error.startswith("/root/Codes/onnxruntime/core/session/provider_bridge_ort.cc")
     assert "libmigraphx_c.so.3: cannot open shared object file" in error
     assert "-> MIGraphX is not installed" in error
+
     # nothing printed: the exception's text
     assert ort["provider_error"]("boom", "") == "boom"
     assert ort["provider_error"]("boom", None) == "boom"
+
     # a cause without a known library: no hint
     assert ort["provider_error"]("x", "EP Error something odd happened when using [('X', {})]") == "something odd happened"

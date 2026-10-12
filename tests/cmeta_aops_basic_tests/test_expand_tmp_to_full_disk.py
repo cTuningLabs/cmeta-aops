@@ -36,6 +36,7 @@ def test_the_mount_of_tmp(mod):
     assert m['fstype'] == 'tmpfs' and m['source'] == 'tmpfs' and 'usrquota' in m['options'] and 'size=7553924k' in m['options']
     assert mod["tmp_mount"]("/dev/sda2 / ext4 rw 0 0\n") is None                     # a folder of the root filesystem
     assert mod["tmp_mount"]("/dev/sdb1 /tmp ext4 rw,relatime 0 0\n")['fstype'] == 'ext4'   # its own partition
+
     # the last mount on /tmp counts (mounts stack)
     stacked = "tmpfs /tmp tmpfs rw 0 0\n/dev/sdb1 /tmp ext4 rw 0 0\n"
     assert mod["tmp_mount"](stacked)['fstype'] == 'ext4'

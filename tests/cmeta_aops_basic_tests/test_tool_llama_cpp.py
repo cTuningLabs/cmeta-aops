@@ -83,6 +83,7 @@ B10000 = [
     ("darwin", "arm64", "metal", None, "llama-b11324-bin-macos-arm64.tar.gz", None),
     ("darwin", "arm64", "cpu", None, "llama-b11324-bin-macos-arm64.tar.gz", None),
     ("darwin", "amd64", "cpu", None, "llama-b11324-bin-macos-x64.tar.gz", None),
+
     # CUDA: the newest build of the driver's major version (minor-version compatibility)
     ("windows", "amd64", "cuda", "13.3", "llama-b11324-bin-win-cuda-13.4-x64.zip", "cudart-llama-bin-win-cuda-13.4-x64.zip"),
     ("windows", "amd64", "cuda", "12.8", "llama-b11324-bin-win-cuda-12.4-x64.zip", "cudart-llama-bin-win-cuda-12.4-x64.zip"),
@@ -91,6 +92,7 @@ B10000 = [
     ("linux", "amd64", "cuda", "13.0", "llama-b11324-bin-ubuntu-cuda-13.4-x64.tar.gz", "cudart-llama-b11324-bin-ubuntu-cuda-13.4-x64.tar.gz"),
     ("linux", "amd64", "cuda", "12.9", "llama-b11324-bin-ubuntu-cuda-12.8-x64.tar.gz", "cudart-llama-b11324-bin-ubuntu-cuda-12.8-x64.tar.gz"),
     ("linux", "arm64", "cuda", "13.3", "llama-b11324-bin-ubuntu-cuda-13.4-arm64.tar.gz", "cudart-llama-b11324-bin-ubuntu-cuda-13.4-arm64.tar.gz"),
+
     # Vulkan, SYCL, ROCm, OpenVINO
     ("windows", "amd64", "vulkan", None, "llama-b11324-bin-win-vulkan-x64.zip", None),
     ("linux", "amd64", "vulkan", None, "llama-b11324-bin-ubuntu-vulkan-x64.tar.gz", None),
@@ -118,6 +120,7 @@ def test_select_asset_older_release(ll):
     sel = ll.select_asset("10000", "windows", "amd64", "cuda", assets=B10000, cuda_driver="13.3")
     assert sel["asset"] == "llama-b10000-bin-win-cuda-13.3-x64.zip"
     assert sel["cudart"] == "cudart-llama-bin-win-cuda-13.3-x64.zip"
+
     # no Linux CUDA build in that release: an error, so setup falls back to a source build
     assert "error" in ll.select_asset("10000", "linux", "amd64", "cuda", assets=B10000, cuda_driver="13.3")
 

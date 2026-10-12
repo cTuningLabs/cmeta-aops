@@ -165,6 +165,7 @@ def test_a_run_keeps_its_records_in_the_project_and_the_next_one_continues(fresh
     assert (ai / "log" / (conversation + ".conversation.json")).is_file() and pathlib.Path(r1["transcript"]).is_file()
     record = read(r1["record"])
     assert "| harness | `%s`" % fresh.harness in record and "| return | 0 |" in record and "new" in record
+
     # the harness worked in the project folder and was told where it is
     prompt = read(fresh.scratch / "prompt.txt")
     assert prompt.endswith("remember the word heron. Reply with one line only") and str(ai).replace("\\", "/") + "/memory/" in prompt
@@ -176,6 +177,7 @@ def test_a_run_keeps_its_records_in_the_project_and_the_next_one_continues(fresh
     prompt = read(fresh.scratch / "prompt.txt")
     assert prompt.startswith("You continue conversation %s of this project" % conversation) and conversation + ".transcript.md" in prompt
     assert "continues the conversation " + conversation in prompt and prompt.endswith("which word?")
+
     # how the conversation began is not repeated in front of the new request: it would read as an instruction
     assert "Reply with one line only" not in prompt
     data = json.loads(read(ai / "log" / (conversation + ".conversation.json")))
@@ -223,10 +225,12 @@ def test_the_listing_names_the_harness_the_model_and_the_effort_of_every_run(fre
     listing = fresh.run(conversations = True)
     runs = [line.strip() for line in listing["text"].splitlines() if line.startswith("      run ")]
     assert len(runs) == 2, listing["text"]
+
     # the harness is named whether it was given or not; the model and the effort are the ones the run was given
     assert "  %s  model: default  effort: default  prompt  " % fresh.harness in runs[0]
     assert "  %s  model: m1  effort: high  prompt  " % fresh.harness in runs[1]
     assert runs[0].split()[1] == plain["conversation"] and '"default" = none given' in listing["text"]
+
     # --cs is the same listing, and a listing starts no harness and writes nothing
     short = fresh.run(cs = True)
     assert short["return"] == 0 and short["text"] == listing["text"] and short["conversations"] == listing["conversations"]
@@ -242,9 +246,11 @@ def test_openclaw_is_told_where_the_project_is_and_its_terminal_ui_gets_its_own_
     assert flags[flags.index("--session-id") + 1] == r["new_session"] and flags[flags.index("--model") + 1] == "claude-cli/claude-sonnet-4-6"
     assert flags[flags.index("--thinking") + 1] == "low"
     prompt = r["params"]["prompt"]
+
     # OpenClaw works in a workspace of its own: the orientation names the project folder; the request follows the mark
     assert "The project folder is %s" % str(fresh.project).replace("\\", "/") in prompt
     assert prompt.endswith("\n<!-- run-ai: the request of this run follows -->\nread notes.txt")
+
     # its terminal UI takes the session's key and no --model
     r = fresh.run(dry_run = True, harness = "openclaw", model = "claude-cli/claude-sonnet-4-6,low", interactive = True, prompt = "hi")
     assert r["return"] == 0, r.get("error")
@@ -252,6 +258,7 @@ def test_openclaw_is_told_where_the_project_is_and_its_terminal_ui_gets_its_own_
     assert flags[flags.index("--session") + 1] == "agent:main:explicit:" + r["new_session"]
     assert "--model" not in flags and "--session-id" not in flags and flags[flags.index("--thinking") + 1] == "low"
     assert any('"/model claude-cli/claude-sonnet-4-6"' in n for n in r["notes"])
+
     # other harnesses are not told about a workspace
     r = fresh.run(dry_run = True, prompt = "hi")
     assert "The project folder is" not in r["params"]["prompt"]
@@ -270,6 +277,7 @@ def test_summarize_writes_a_summary_that_the_next_hand_over_points_to(fresh):
     summary = read(r["summary"])
     assert pathlib.Path(r["summary"]).name == conversation + ".summary.md" and summary.rstrip().endswith("an answer")
     assert "run-ai --summarize" in summary and "as of run 1" in summary
+
     # the harness was given the transcript itself, and the conversation was not continued (nor moved up the list)
     prompt = read(fresh.scratch / "prompt.txt")
     assert prompt.startswith("Summarize conversation " + conversation) and "<transcript>" in prompt and "remember the word heron" in prompt
@@ -358,6 +366,7 @@ def test_after_an_interactive_run_the_next_harness_is_handed_the_conversation(fr
     claude = pathlib.Path(os.environ["CLAUDE_CONFIG_DIR"]) / "projects" / re.sub(r"[^A-Za-z0-9]", "-", os.path.normpath(str(fresh.project)))
     put(claude / (sid + ".jsonl"), json.dumps({"type": "user", "timestamp": "2026-01-01T10:00:00.000Z", "message": {"content": "the word is heron"}}) + "\n"
         + json.dumps({"type": "assistant", "timestamp": "2026-01-01T10:00:05.000Z", "message": {"content": [{"type": "text", "text": "Noted: heron."}]}}) + "\n")
+
     # a conversation held so far by an interactive claude session (no output file, nothing exported yet)
     put(ai_log / "20260101-100000.conversation.json", json.dumps({
         "id": "20260101-100000", "project": str(fresh.project), "cref": "", "started": "2026-01-01T10:00:00", "updated": "2026-01-01T10:01:00",
@@ -423,6 +432,7 @@ def test_ai_uses_of_the_project_and_its_depth(fresh):
         r = fresh.run(dry_run = True)
         assert kinds(r) == [(fresh.used.name, "ai_uses")]
         assert r["context"][0]["skills"] and r["context"][0]["has_memory"]
+
         # the source's index reaches the harness, with the links made absolute
         assert "the memory of " + fresh.used.name in r["params"]["prompt"]
         assert str(fresh.used / "!AI" / "memory" / "one.md").replace("\\", "/") in r["params"]["prompt"]
@@ -583,6 +593,7 @@ def test_the_artifacts_a_project_uses_are_read_only_for_a_run(fresh, monkeypatch
         put(used_ai / "skills" / "s1" / "SKILL.md", "body\n")
         (used_ai / "memory" / "rogue.md").unlink()
         base = used_state()
+
         # the session writes again, at once, the very content the user approved a moment ago: a direct change all the
         # same - the record of that approval was there before this run began. No pause is needed to tell them apart,
         # and the times of the records do not matter: here they are an hour ahead of this machine's clock, as a drive
@@ -618,6 +629,7 @@ def test_what_the_user_applies_while_a_session_runs_is_no_direct_change(fresh, m
     try:
         put(stage / "memory" / "two.md", "two\n")
         put(stage / "memory" / "one.md.delete", "")
+
         # while the session lasts the user applies, in another terminal, what was staged. The drive stamps the record
         # an hour behind this machine's clock (a Windows drive inside WSL2 after a sleep, a network share): by its
         # time it was written long before the run began - the guard goes by the records it saw at the start instead
@@ -645,14 +657,17 @@ def test_what_the_user_applies_while_a_session_runs_is_no_direct_change(fresh, m
 def test_the_write_mode_comes_from_the_flags_then_the_config_and_reaches_each_harness(fresh):
     lab = fresh
     lab.uses(lab.used)
+
     # the default: the harness asks, the used artifacts take proposals (and the user is asked about a direct change)
     r = lab.run(dry_run = True)
     assert (r["write"], r["write_from"], r["context_guard"]) == ("ask", "default", "ask") and "yes" not in r["params"]
     assert "Read-only means" in r["params"]["prompt"] and not any(n.startswith("write:") for n in r["notes"])
+
     # --yes is what it has always been: no questions, proposals for the used artifacts
     r = lab.run(dry_run = True, yes = True)
     assert (r["write"], r["write_from"], r["context_guard"]) == ("project", "--yes", "restore") and r["params"]["yes"] is True
     assert "Read-only means" in r["params"]["prompt"]
+
     # -w = --write=all: the used artifacts may be changed directly; the harness is told so
     for flags in ({"w": True}, {"write": "all"}, {"write": True}, {"write": "true"}):
         r = lab.run(dry_run = True, harness = "claude", **flags)
@@ -662,6 +677,7 @@ def test_the_write_mode_comes_from_the_flags_then_the_config_and_reaches_each_ha
     assert "Read-only means" not in r["params"]["prompt"] and "a change to it is proposed under" not in r["params"]["prompt"]
     assert "yes" not in r["params"] and any("has no switch for its questions" in n for n in r["notes"])      # a harness run-ai does not know
     assert lab.run(dry_run = True, w = True, yes = True)["params"]["yes"] is True
+
     # an explicit guard wins over the mode's
     r = lab.run(dry_run = True, w = True, context_guard = "restore")
     assert (r["write"], r["context_guard"]) == ("all", "restore") and "Read-only means" in r["params"]["prompt"]
@@ -714,18 +730,21 @@ def test_write_all_keeps_a_direct_change_records_it_and_saves_the_version_before
         ''' % used_ai)
         r = lab.run(prompt = "tidy the shared memory", w = True)
         assert r["return"] == 0 and (r["write"], r["context_guard"]) == ("all", "keep") and r["pending"] == 0
+
         # the changes stay ...
         assert read(used_ai / "memory" / "one.md") == "one, improved by the session\n" and (used_ai / "memory" / "three.md").is_file()
         assert not (used_ai / "skills" / "s1" / "SKILL.md").exists() and not (project_ai / "pending").exists()
         changes = {c["rel"]: c for c in r["context_changes"]}
         assert sorted(changes) == ["memory/one.md", "memory/three.md", "skills/s1/SKILL.md"]
         assert all(c["outcome"].startswith("kept") for c in changes.values())
+
         # ... the versions before the run are in the project's log (nothing for a new file) ...
         stamp = pathlib.Path(r["record"]).name.split(".")[0]
         before = project_ai / "log" / (stamp + ".before") / ("%s--%s" % (lab.used.name, lab.uid(lab.used)))
         assert read(before / "memory" / "one.md") == "one\n" and (before / "skills" / "s1" / "SKILL.md").is_file()
         assert not (before / "memory" / "three.md").exists() and changes["memory/three.md"]["before"] == ""
         assert pathlib.Path(changes["memory/one.md"]["before"]) == before / "memory" / "one.md"
+
         # ... and the artifact has its own record of what was changed, from which project
         applied = [json.loads(read(p)) for p in (used_ai / "log").glob("*.applied.json")]
         assert len(applied) == 1 and sorted(a["rel"] for a in applied[0]["applied"]) == sorted(changes)
@@ -747,6 +766,7 @@ def test_apply_pending_asks_for_all_changes_or_one_by_one(fresh, monkeypatch):
     try:
         put(stage / "memory" / "two.md", "two\n")
         put(stage / "memory" / "three.md", "three\n")
+
         # a terminal, and a user who answers "each", then yes to the first change and no to the second
         answers = iter(["e", "n", "y"])
         monkeypatch.setattr("builtins.input", lambda prompt = "": next(answers))
@@ -757,6 +777,7 @@ def test_apply_pending_asks_for_all_changes_or_one_by_one(fresh, monkeypatch):
         assert [a["rel"] for a in r["applied"]] == ["memory/two.md"] and [x["rel"] for x in r["left"]] == ["memory/three.md"]
         assert read(used_ai / "memory" / "two.md") == "two\n" and not (used_ai / "memory" / "three.md").exists()
         assert (stage / "memory" / "three.md").is_file() and not (stage / "memory" / "two.md").exists()
+
         # "yes" takes the rest at once; nothing left, the staging folder goes
         answers = iter(["y"])
         with contextlib.redirect_stdout(io.StringIO()):

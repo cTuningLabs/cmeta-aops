@@ -49,6 +49,7 @@ PYTHON = '3.12'
 SOURCE_BY_DEFAULT = ('darwin',)
 OPENMPI_URL = 'https://download.open-mpi.org/release/open-mpi/v{minor}/openmpi-{version}.tar.bz2'
 OPENMPI_SHA256 = {'5.0.11': 'e668a3c4acd50c41dc204c8a6dd98a611e0f26af89cf677577fa9be8a2698003'}
+
 # The bundled hwloc, libevent, PMIx and PRRTE, as in the wheel; no Fortran or OpenSHMEM
 OPENMPI_CONFIGURE = ('--disable-mpi-fortran --disable-oshmem --with-hwloc=internal --with-libevent=internal '
                      '--with-pmix=internal --with-prrte=internal')

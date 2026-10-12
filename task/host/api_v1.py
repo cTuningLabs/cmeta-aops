@@ -505,6 +505,7 @@ def detect_linux_env():
 
     if os_name == "darwin":
         distro_id = "darwin"
+
         # Compatibility alias requested by caller-side logic.
         id_like = "debian"
     else:

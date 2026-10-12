@@ -40,6 +40,7 @@ ARCHIVES = {
                                       '4a7ffb0c0f6c3b02fb14e7790143dfb2fbb2973c41f107357da57bcddd196077'),
         ('linux', 'amd64', 'cu128'): ('libtorch-cxx11-abi-shared-with-deps-2.7.1+cu128.zip',
                                       'ae513b437ae99150744ef1d06b02a4ecbbb9275c9ffe540c88909623e3293041'),
+
         # The ROCm build (its folder is the ROCm line, rocm6.3): 4.4 GB, the ROCm runtime inside
         ('linux', 'amd64', 'rocm6.3'): ('libtorch-cxx11-abi-shared-with-deps-2.7.1+rocm6.3.zip',
                                         'd89efeff9aa90ab5cf924c51141d6b21556252ea611bb4b6bf4af5029874f963'),
@@ -136,6 +137,7 @@ def choose_variant(version, system, compute, gpus = None, driver_cuda = None, va
                                                   for b in sorted(cuda)))
     if driver_cuda:
         supported = [b for b in candidates if cuda[b][0] <= driver_cuda]
+
         # CUDA's minor version compatibility: a 12.x runtime also runs with an older 12.x driver
         same_major = [b for b in candidates if cuda[b][0] // 10 == driver_cuda // 10]
         candidates = supported or same_major

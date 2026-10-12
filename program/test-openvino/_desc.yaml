@@ -1,5 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
 ###################################################################################################
 #   cx program run test-openvino --compute=npu-intel          # the NPU
 #   cx program run test-openvino --compute=cpu,npu-intel      # the CPU and the NPU, side by side
@@ -48,6 +49,7 @@ updates:
            - task: setup,a2f9b61079ce4333
              name: python,c00fb574d8ca4463
              version: '{{params.python_version|>=3.10,<3.15}}'
+
              # Its own venv per set of targets
              with:
                venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'

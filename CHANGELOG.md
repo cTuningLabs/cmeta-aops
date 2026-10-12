@@ -2,6 +2,36 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.45.1
+- **Of the usable cache entries that are equal for a request, the one made last is taken - on every
+  machine.** A request that matches several usable entries takes the first in this order: the task's own
+  `sort_keys` or, by default, the highest version, then the priority, then the path; then the entry's `sort`
+  value. Entries that were still equal fell to their aliases, which end in a random UID: a second entry made
+  with `--new`, or the two entries that identical requests at once made before 0.45, were taken by chance -
+  the older one on one machine, the newer on the next. Now the time of creation decides before the alias,
+  the newest first (`cmeta.creation_timestamp-` after the keys above, in `category/task/api/v2.py`); nothing
+  changes for entries that differ in version, priority, path or the task's own keys, and an entry without a
+  time of creation comes after those that have one, in the order of before. A quiet run says in one line
+  when the time decided (`NOTE: 2 cache entries have the same version, priority, path: the newest is used -
+  <alias>, made <time>`), a run that asks says that such entries are listed newest first, and without the
+  console nothing is printed. `cx cache show --duplicates` and `cx cache clean --duplicates` of the engine
+  (cMeta 0.35.1 and later) list and remove the entries that no request can tell apart. Docs: "Several usable
+  entries: which one a request takes" in `docs/cmeta-aops/task-engine.md`. Tests:
+  `tests/cmeta_aops_basic_tests/test_task_cache_selection.py`.
+- **The running file of a short attempt no longer stays in its finished entry on Windows.** The end of an
+  attempt removes `cmeta-task-running.json`; Windows refuses to remove a file that another handle has open,
+  and the file is read by everyone who classifies the entry - the lookup of another request, `cx cache
+  show`. An attempt of a few milliseconds ended while such a reader was there, the refusal was swallowed,
+  and the usable entry kept the file of an attempt that was over (no harm to the result; the entry looked
+  as if something had run in it). The removal is now tried again until the reader is gone. Found by the
+  test of identical requests at once, which failed now and then on Windows; a test holds the file open
+  across the end of an attempt.
+- **Python 3.15.** The suite runs on Python 3.15 in CI, next to 3.9 and 3.14 (Linux, Windows, macOS); nothing
+  in the repository needed a change. Two tests did: `test_tool_upgrade.py` compared a tool's version with
+  `platform.python_version()`, which carries the suffix of a pre-release (`3.15.0rc2`), and
+  `test_task_cache_states.py` compared the process id on record with the one it had started, which in a
+  virtual environment on Windows is the `python.exe` launcher and not the interpreter that runs the task.
+
 ## 0.45.0
 - **The cache entry of a run: a failed or interrupted attempt is resumed in place by the same request, never
   served as a result, never inherited by another request; identical requests at once make one entry.** The

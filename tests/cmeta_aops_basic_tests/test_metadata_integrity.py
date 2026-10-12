@@ -62,5 +62,6 @@ def test_cmeta_file_parses_and_has_identity(path):
 @pytest.mark.parametrize("path", DESC_FILES, ids=_rid)
 def test_desc_file_parses(path):
     data = _load(path)
+
     # A _desc.yaml may legitimately be empty (comments only -> None); otherwise a mapping.
     assert data is None or isinstance(data, dict), f"{_rid(path)} must be a mapping or empty"

@@ -80,6 +80,7 @@ def test_differences(stamp):
     assert stamp.differences(s, compiler = {'name': None, 'version': None}) == []
     assert stamp.differences(s, compile_params = {'static': True}) == [('compile parameters', 'defaults', 'static=true')]
     assert stamp.differences(s, compile_params = {'static': 'False'}) == []
+
     # Optimization, debug, OpenMP and profiling flags are recorded but never refused for
     for flags in ({'fastest': True}, {'debug_info': True}, {'openmp': True}, {'profile': True}, {'fastest': True, 'openmp': True}):
         assert stamp.differences(s, compile_params = flags) == [], flags
@@ -87,6 +88,7 @@ def test_differences(stamp):
     assert f['compile'] == {'fastest': 'true', 'openmp': 'true'}                     # in the stamp
     assert stamp.differences(f, compile_params = {}) == []                            # a plain run after --compile.fastest
     assert stamp.differences(f, compile_params = {'openmp': True, 'static': True}) == [('compile parameters', 'defaults', 'static=true')]
+
     # Android: a stamp without a device compares nothing; one with a device compares the ABI and serial
     assert stamp.differences(s, android = {'serial': 'X', 'abi': 'arm64-v8a'}) == []
     a = stamp.make_stamp('p', 'u', ['android-cpu'], 'linux', android = {'serial': 'A1', 'abi': 'arm64-v8a'})
@@ -102,6 +104,7 @@ def test_same_plain_run_is_never_refused(stamp):
                              compile_params = params)
         assert stamp.differences(s, compute = ['cpu'], host = 'windows', compiler = {'name': 'clang', 'version': '22.1.1'},
                                  compile_params = params) == []
+
     # A stamp made for an old folder without the defaults (the saved origin parameters) and the live
     # request with them: not a difference either, since the defaults are not compared keys
     old = stamp.make_stamp('p', 'u', ['cpu'], 'windows', compile_params = {})

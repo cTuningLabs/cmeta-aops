@@ -43,6 +43,7 @@ def main():
               'log_level': 'warning'}
     if 'cuda' in targets or 'rocm' in targets:
         kwargs['mem_fraction_static'] = float(os.environ.get('CMETA_SGLANG_GPU_MEM') or 0.8)
+
     # --cuda_graph=0 runs without graphs (a shorter start; on ROCm the decoding then crawls)
     if os.environ.get('CMETA_SGLANG_CUDA_GRAPH', '1').strip().lower() in ('0', 'false', 'no', 'off'):
         kwargs['disable_cuda_graph'] = True

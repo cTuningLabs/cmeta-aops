@@ -204,6 +204,7 @@ def test_openmp_finish_static_and_dynamic(tmp_path):
     result = {"return": 0, "path_cmeta_cache": str(entry), "features": {"paths": {"dynamic_lib": str(lib)}}}
     assert tool.finish_dynamic_result(ctx, result, {"with": {"static": None}})["return"] == 0
     assert result["features"]["paths"]["found_dynamic_lib_paths"] == [str(lib)] and "libs_static" not in result["features"]["paths"]
+
     # Windows: a static build keeps the DLL's folder on the run-time path (no static runtime exists)
     ctx["tasks"]["global"]["host"]["os"]["uname"] = "windows"
     result = {"return": 0, "path_cmeta_cache": str(entry), "features": {"paths": {"dynamic_lib": str(lib)}}}
@@ -300,6 +301,7 @@ def test_openssl_static_archives_and_windows_folder(tmp_path):
     assert ns["static_archives"]([str(lib)]) == []                                        # both are needed
     (lib / "libcrypto.a").write_bytes(b"!<arch>\n")
     assert ns["static_archives"]([str(tmp_path), str(lib)]) == [str(lib / "libssl.a"), str(lib / "libcrypto.a")]
+
     # Windows: the MT folder next to the detected MD folder, with both static libraries
     vc = tmp_path / "VC" / "x64"
     (vc / "MD").mkdir(parents = True)
@@ -330,6 +332,7 @@ def test_openssl_finish_static_on_macos(tmp_path, monkeypatch):
     monkeypatch.setitem(ns, "find_static_lib", lambda lib, dirs, compiler = None: None)
     ctx = {"control": {}, "tasks": {"nested_call": 0, "global": {"host": {"os": {"uname": "darwin"}},
                                                                    "compiler-c": {"path": "/usr/bin/clang"}}}}
+
     # an entry made before today keeps the copies of the archives in a "static" folder: no longer used
     result = {"return": 0, "path_cmeta_cache": str(entry),
               "features": {"paths": {"libs": [str(lib)], "lib": str(lib), "libs_static": [str(entry / "static")]}, "lib_names": ["ssl", "crypto"]}}
@@ -337,6 +340,7 @@ def test_openssl_finish_static_on_macos(tmp_path, monkeypatch):
     assert "libs_static" not in result["features"]["paths"]
     assert result["features"]["lib_names_static"] == [str(lib / "libssl.a"), str(lib / "libcrypto.a"), "/cache/lib-zlib/install/lib/libzlib.a", "m"]
     assert tool.cm.setups == ["lib-zlib,c46f457c9da347a7"]
+
     # A dynamic request: no tool is set up; the archives (and the system's static archives of what
     # they may need, none here) are named for a static build that did not ask this tool for one
     result = {"return": 0, "path_cmeta_cache": str(entry), "features": {"paths": {"libs": [str(lib)]}, "lib_names": ["ssl", "crypto"]}}
@@ -360,6 +364,7 @@ def test_openssl_static_build_stops_without_archives(tmp_path):
     assert tool.finish_dynamic_result(ctx, result, {"with": {}})["return"] == 0
     assert "libssl.a" in result["features"]["static_unavailable"] and "lib_names_static" not in result["features"]
     assert tool.cm.setups == []
+
     # macOS and Windows name their packages; the strings of with.static are read
     ctx["tasks"]["global"]["host"] = {"os": {"uname": "darwin"}}
     r = tool.finish_dynamic_result(ctx, {"return": 0, "features": {"paths": {"libs": [str(tmp_path)]}}}, {"with": {"static": "True"}})
@@ -367,6 +372,7 @@ def test_openssl_static_build_stops_without_archives(tmp_path):
     ctx["tasks"]["global"]["host"] = {"os": {"uname": "windows"}}
     r = tool.finish_dynamic_result(ctx, {"return": 0, "features": {"paths": {"lib": str(tmp_path / "MD")}}}, {"with": {"static": True}})
     assert r["return"] == 1 and "ShiningLight.OpenSSL.Dev" in r["error"] and "libssl_static.lib" in r["error"]
+
     # Windows with the MT libraries: the static folder, nothing unavailable; a dynamic request gets the DLL folder
     mt = tmp_path / "MT"
     mt.mkdir()
@@ -486,12 +492,14 @@ def test_static_openmp_runtime_resolution(tmp_path):
     assert r["link"] == [f'"{archive}"', "-lpthread", "-ldl", "-Wl,--as-needed"]
     nvcc_flags = {"lib_prefix": "-l", "linker_option_prefix": "-Xlinker ", "host_compiler": "-ccbin g++"}
     assert ns["static_openmp_runtime"](gcc, "libgomp.a", nvcc_flags, "linux", q = q)["link"][-1] == "-Xlinker --as-needed"
+
     # no archive: the compiler prints the bare name - an error that names the compiler and the system's package facts
     ns["print_file_name"] = lambda compiler, name: name
     r = ns["static_openmp_runtime"](gcc, "libgomp.a", gcc["features"]["flags"], "linux", os_id = "arch", q = q)
     assert r["return"] == 1 and "/usr/bin/gcc (libgomp.a)" in r["error"] and "this system (arch): Arch Linux" in r["error"]
     r = ns["static_openmp_runtime"](gcc, "libgomp.a", gcc["features"]["flags"], "linux", os_id = "rocky", id_like = "rhel centos fedora", q = q)
     assert "this system (rocky): the archive comes with the gcc package" in r["error"] and "--compile.static" in r["error"]
+
     # a compiler without an archive name (clang) and Windows: not this rule
     clang = {"path": "/usr/bin/clang", "features": {"flags": {"openmp": "-fopenmp"}}}
     assert ns["static_openmp_runtime"](clang, None, clang["features"]["flags"], "linux", q = q) is None
@@ -535,6 +543,7 @@ def test_lib_paths_of_cmeta_tools_come_before_the_system_folders(tmp_path):
     assert ns["order_lib_paths"]([system, xopenme, llvm], roots) == [xopenme, llvm, system]
     assert ns["order_lib_paths"]([system, xopenme, llvm], []) == [system, xopenme, llvm]
     assert ns["order_lib_paths"]([], roots) == []
+
     # through the task: the -L of the cache entries before the system's, the -l order untouched
     for d in (system, xopenme, llvm):
         (tmp_path / d.lstrip("/")).mkdir(parents = True)
@@ -567,6 +576,7 @@ def test_setup_compile_static_openmp_with_nvcc_and_its_host_gcc(tmp_path):
     cmd = r["add_to_local"]["compile_cmds"][0]
     assert r["return"] == 0 and "-ccbin /usr/bin/g++" in cmd and "-cudart=static" in cmd and "-Xcompiler -fopenmp" in cmd
     assert f'"{archive}" -lpthread -ldl -Xlinker --as-needed' in cmd and cmd.index("--as-needed") < cmd.index("-o ")
+
     # the host compiler has no archive: the build stops before the compile with the reason
     ns["print_file_name"] = lambda compiler, name: name
     r = task.run(openmp_ctx(tmp_path, "compiler-cuda", nvcc, {"compiler-cpp": gpp}), lang = "cuda", src_path = str(tmp_path),

@@ -102,6 +102,7 @@ def main():
         print('FastFlowLM', stats.get('flm'), '| model', model, '| targets', targets, '| pmode', pmode)
 
         options = {'seed': 12345, 'temperature': 0, 'num_predict': max_tokens}
+
         # Warm-up: the first request also loads the model onto the NPU
         t0 = time.perf_counter()
         api(base, '/api/generate', {'model': model, 'stream': False, 'prompt': 'Hi', 'options': dict(options, num_predict = 1)})

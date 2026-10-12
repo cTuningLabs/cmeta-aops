@@ -20,6 +20,7 @@ def test_repo_is_plugged(cm):
     assert r["return"] == 0, r.get("error")
 
     repo_uids = {a["cmeta_ref_parts"].get("artifact_uid") for a in r.get("artifacts", [])}
+
     # _cmr.yaml -> ctuninglabs@cmeta-aops,3cb4ee4f444048f6
     assert "3cb4ee4f444048f6" in repo_uids, f"this repo not found among plugged repos: {repo_uids}"
 
@@ -30,6 +31,7 @@ def test_uniform_access_reports_errors_not_raises(cm):
     r = cm.access(
         {"category": "task", "command": "find", "arg1": "this-artifact-does-not-exist-xyz"}
     )
+
     # find of a missing alias yields no artifacts (return 0/empty) or a >0 code with error;
     # either way it must be a well-formed dict with an int 'return' and no crash.
     assert isinstance(r, dict) and isinstance(r.get("return"), int)

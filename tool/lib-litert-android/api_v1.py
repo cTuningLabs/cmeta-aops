@@ -33,6 +33,7 @@ MAVEN = 'https://dl.google.com/android/maven2/com/google/ai/edge/litert/litert/{
 GITHUB = 'https://github.com/google-ai-edge/LiteRT/releases/download/v{v}/{name}'
 RELEASE_API = 'https://api.github.com/repos/google-ai-edge/LiteRT/releases/tags/v{v}'
 MODEL = 'https://raw.githubusercontent.com/google-ai-edge/LiteRT/v{v}/litert/test/testdata/mobilenet_v2_1.0_224.tflite'
+
 # The quantized MobileNet v2 (uint8 in and out, TensorFlow's classic hosted model) for the integer paths of NPUs;
 # the tgz also carries the frozen graph, only the .tflite is kept
 MODEL_INT8 = 'https://storage.googleapis.com/download.tensorflow.org/models/tflite_11_05_08/mobilenet_v2_1.0_224_quant.tgz'
@@ -74,6 +75,7 @@ def unpack(aar, npu_zip, sdk_zip, root):
                 os.makedirs(d, exist_ok = True)
                 with open(os.path.join(d, parts[2]), 'wb') as f:
                     f.write(z.read(n))
+
     # <vendor>_runtime[_vNN]/src/main/jni/<abi>/<lib>.so -> npu/<vendor>[_vNN]/<abi>/<lib>.so
     with zipfile.ZipFile(npu_zip) as z:
         for n in z.namelist():
@@ -121,6 +123,7 @@ class CTool(InitCTool):
                 'features': {'root': root, 'jni': jni, 'npu': npu, 'include': include[0] if include else None,
                              'model': marker.get('model'), 'model_int8': marker.get('model_int8'),
                              'android_push_libs': libs, 'digests': marker['digests'],
+
                              # what setup-compile and setup-run take from a lib-* tool
                              'lib_names': ['LiteRt'],
                              'paths': {'includes': include[:1], 'libs': lib_dirs[:1], 'found_dynamic_libs': libs,

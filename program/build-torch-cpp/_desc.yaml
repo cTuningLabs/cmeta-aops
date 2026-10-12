@@ -1,5 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
 ###################################################################################################
 inherits:
   - template-c-cpu,649899ef3f004e4a
@@ -26,6 +27,7 @@ params:
       USE_QNNPACK: 'OFF'
       USE_NNPACK: 'OFF'
       USE_FBGEMM: 'OFF'
+
       # third_party/benchmark uses -pedantic-errors, which Clang 22 turns into a
       # hard error for __COUNTER__ in #if expressions (-Wc2y-extensions).
       BUILD_TEST: 'OFF'
@@ -179,6 +181,7 @@ updates:
           - internal_func: customize_test
             internal_func_from_local_key: selected-program
             internal_func_safe: True
+
           # cmake configure + build of the test binary against the installed libtorch
           - task: cmd,c9ba0a88df394d7f
             storage_key: test-build

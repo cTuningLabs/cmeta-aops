@@ -42,6 +42,7 @@ def test_detect_python_env_layouts(detect, tmp_path):
     """One classifier for the detection and the provenance record: venv (pyvenv.cfg; an older virtualenv by its
     activate script), conda-base (conda-meta/ and condabin/), conda-env (conda-meta/ alone, under envs/ or
     anywhere), system; the root is the folder above bin/, or the python's own folder (a conda root on Windows)."""
+
     # a venv: pyvenv.cfg at the root, the activate script next to the python
     venv_py = touch(tmp_path / 'venv' / BIN / PY)
     touch(tmp_path / 'venv' / BIN / ACTIVATE)
@@ -162,6 +163,7 @@ def test_venv_home_and_a_venv_made_on_another_base_is_left_aside(py, tmp_path):
     params = {'python_base': str(base), 'with': {'venv': True, 'pip': False}}
     r = tool.check_features(ctx, [{'path': str(on_other)}, {'path': str(on_base)}, {'path': str(base)}], params)
     assert [p['path'] for p in r['paths']] == [str(on_base)]
+
     # a plain request takes any venv
     r = tool.check_features(ctx, [{'path': str(on_other)}, {'path': str(on_base)}], {'with': {'venv': True, 'pip': False}})
     assert [p['path'] for p in r['paths']] == [str(on_other), str(on_base)]
@@ -174,6 +176,7 @@ def test_a_venv_python_that_resolves_to_the_base_is_still_the_venv(py, tmp_path,
     base = touch(tmp_path / 'mf' / BIN / PY)
     venv_py = touch(tmp_path / 'entry' / '.venv' / BIN / PY)
     (tmp_path / 'entry' / '.venv' / 'pyvenv.cfg').write_text(f'home = {base.parent}\n')
+
     # a same_path that resolves the venv python to the base, as realpath does with the symlink
     monkeypatch.setitem(py, 'same_path', lambda a, b: os.path.normcase(a) == os.path.normcase(b) or
                         {os.path.normcase(a), os.path.normcase(b)} == {os.path.normcase(str(base)), os.path.normcase(str(venv_py))})

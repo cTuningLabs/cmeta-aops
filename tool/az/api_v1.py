@@ -137,6 +137,7 @@ class CTool(InitCTool):
               'unzip': True,
               'clean': True,
               'clean_after_unzip': True,
+
               # Both archives unpack straight into their root (the ZIP starts at
               # "bin/", the tarball at "./bin/") - there is no wrapper folder.
               'strip_folders': 0,

@@ -67,6 +67,7 @@ LEGACY_ID_PREFIXES = ('16', '22', '19', '59', '5a', '31', '3e', '9b', '87', '8a'
 MARKER = 'cmeta-intel-gpu-runtime.json'
 LIB_DIRS = ('usr/lib/x86_64-linux-gnu', 'usr/local/lib')   # where the packages put their libraries
 ICD_LIB = 'usr/lib/x86_64-linux-gnu/intel-opencl/libigdrcl.so'
+
 # The legacy1 packages name theirs differently (and libze_intel_gpu_legacy1.so.1, intel_legacy1.icd)
 ICD_LIBS = (ICD_LIB, 'usr/lib/x86_64-linux-gnu/intel-opencl/libigdrcl_legacy1.so')
 

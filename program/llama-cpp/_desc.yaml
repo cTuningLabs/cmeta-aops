@@ -1,5 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
 ###################################################################################################
 inherits:
   - template-c-cpu,649899ef3f004e4a
@@ -35,6 +36,7 @@ updates:
          append:
            - task: setup,a2f9b61079ce4333
              name: llama-cpp,daa99512448647b7
+
              # Note that next I add space after ${} otherwise will mix up }}} ...
 #             with: '{{ params.setup_llama_cpp|${} }}'
 #             skip_install: True
@@ -48,6 +50,7 @@ updates:
 
        - match:
            task: setup-run,148f6c1fdb4247df
+
          # The binary and the model: here, or on the Android device (kept under /data/local/tmp)
          prepend:
            - internal_func: prepare_target_run
@@ -56,11 +59,13 @@ updates:
          update:
            global_keys_with_dynamic_libs:
              - llama-cpp
+
            # Android (--compute=android-cpu): the release folder and the model to keep on the device
            android_push_folders: '{{local.llama_cpp_setup_run.android_push_folders|$None}}'
            android_push_files: '{{local.llama_cpp_setup_run.android_push_files|$None}}'
            android_ld_library_path: '{{local.llama_cpp_setup_run.android_ld_library_path|$None}}'
            android_skip_pull: '{{local.llama_cpp_setup_run.android_skip_pull|$None}}'
+
            # llama-completion: one-shot text generation (llama-cli became an interactive
            # chat UI that prints a banner, late 2025); llama-cli itself in older builds
            cmd: >-

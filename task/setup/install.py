@@ -128,6 +128,7 @@ def install_tool(self,
 
         elif con:
             print ('')
+
             # Nobody to answer (a detached job, a script): an error that names the flags, never a traceback
             # and never a silent yes - the install may need sudo
             r = ask(f'{space}INFO: would you like to {verb} tool "{artifact_print_name}"{with_version} (Y/n)? ',
@@ -405,6 +406,7 @@ def install_tool(self,
                   'quiet': quiet, 
                   'verbose': verbose, 
                   'text_cmd': 'RUN:', 
+
                   # Important to be able to continue processing detect/install/build
                   'fail_if_nonzero_return_code': False, 
             }

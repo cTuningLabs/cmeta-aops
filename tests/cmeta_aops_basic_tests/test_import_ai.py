@@ -61,6 +61,7 @@ def test_memories_are_copied_with_their_index_lines_and_a_record(world):
     memory = world.ai / "memory"
     assert sorted(p.name for p in memory.iterdir()) == ["MEMORY.md", "build.md", "release.md"]
     assert read(memory / "build.md") == read(world.source / "build.md")              # never edited
+
     # the line of the source index when it has one, else one made from the front matter
     assert read(memory / "MEMORY.md") == ("- [The build](build.md) — how the build is started\n"
                                           "- [release-steps](release.md) — the steps of a release\n")
@@ -175,11 +176,13 @@ def test_the_source_of_each_skill_is_recorded_and_run_ai_sees_a_copy_go_apart(wo
     assert [(n, c) for n, c, s in drift(str(skills))] == [("deploy", "source")]
     assert world(skills = str(world.skills / "deploy"), overwrite = True)["skills"]["replaced"] == 1
     assert drift(str(skills)) == []
+
     # the copy changes here: said so, differently; then both
     put(skills / "review" / "SKILL.md", SKILL.format(name = "review") + "A local step.\n")
     assert [(n, c) for n, c, s in drift(str(skills))] == [("review", "copy")]
     put(world.skills / "review" / "SKILL.md", SKILL.format(name = "review") + "Another step.\n")
     assert [(n, c) for n, c, s in drift(str(skills))] == [("review", "both")]
+
     # a source that is not on this machine says nothing; a cache folder is no change
     import shutil
     shutil.rmtree(str(world.skills / "review"))

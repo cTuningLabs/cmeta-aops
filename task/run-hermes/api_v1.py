@@ -63,6 +63,7 @@ RUN_ONLY_FLAGS = ['--format', '--oneshot', '--query-file', '-Q', '--quiet', '--m
 
 # The prompt on stdin, read verbatim ("--query-file -"): above MAX_PROMPT_ARG_CHARS, and always behind a .cmd shim
 STDIN_FLAGS = ['--query-file', '-']
+
 # What a Windows .cmd shim mangles on its way to the Python behind it: such a prompt never goes as an argument
 CMD_UNSAFE = set('"%!^&|<>\r\n')
 
@@ -466,6 +467,7 @@ class CTask(InitCTask):
         kind = str(event.get('type') or event.get('event') or event.get('kind') or '').lower()
         subtype = str(event.get('subtype') or '').lower()
         payload = event.get('data') if isinstance(event.get('data'), dict) else event
+
         # hermes v0.21.5 (seen 2026-10-07): {"type": "system", "subtype": "init", "model", "session_id", "timestamp"} first,
         # {"type": "result", "session_id", "exit_code", "text", "tokens": {input, output, total, cache_read, cache_write},
         # "duration_ms", "error"?, "timestamp"} last; the events in between are read by their shape
@@ -498,6 +500,7 @@ class CTask(InitCTask):
             if final and state['streamed'] == 0:
                 out.insert(0, final.rstrip() + '\n')
             return out
+
         # a tool call
         call = payload.get('tool_call') or payload.get('tool') or (payload if kind.startswith('tool') else None)
         if isinstance(call, dict) and (call.get('name') or call.get('tool_name') or call.get('function')):
@@ -513,6 +516,7 @@ class CTask(InitCTask):
             if 'result' in kind or 'output' in kind:
                 return []
             return [self._shorten(f'[tool: {name}] {hint}') + '\n']
+
         # text: a delta streams ({"type": "text", "text": "hello"} in v0.21.5, one event per chunk), a final text shows
         # when nothing streamed
         if kind in ('text', 'delta', 'text_delta', 'content_delta', 'chunk', 'assistant_delta', 'message_delta'):

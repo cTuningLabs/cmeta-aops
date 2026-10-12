@@ -91,6 +91,7 @@ def test_guard_restore_puts_back_and_keeps_proposals(world):
     assert read(ai / "memory" / "one.md") == "one\n" and read(ai / "memory" / "two.md") == "two\n"
     assert not (ai / "memory" / "three.md").exists() and not (ai / "skills" / "s2").exists()
     assert P.changes(snap[world["ai"]], world["ai"]) == []
+
     # and nothing that was written is lost: it waits as proposals
     d = world["dir"]
     assert read(d / "memory" / "one.md") == "one, edited\n" and read(d / "memory" / "three.md") == "three\n"
@@ -132,6 +133,7 @@ def test_guard_ask_keeps_on_the_users_word_and_records_it(world):
     assert not os.path.exists(world["pending"]) and all("kept" in r["outcome"] for r in records)
     rec = json.loads(read(ai / "log" / "S6.applied.json"))
     assert rec["from_project"] == "the::project" and "context guard" in rec["by"] and len(rec["applied"]) == 2
+
     # a second decision under the same stamp gets its own record
     assert P.record_applied(world["ai"], "S6", "p", []).endswith("S6-2.applied.json")
 
@@ -162,6 +164,7 @@ def test_guard_keeps_a_staged_proposal_and_sets_the_direct_change_aside(world):
     assert read(ai / "memory" / "one.md") == "one\n"
     assert read(world["dir"] / "memory" / "one.md") == "one, as proposed earlier\n"
     assert read(world["dir"] / "_direct-S9" / "memory" / "one.md") == "one, edited directly\n"
+
     # what is set aside is not a proposal: only the earlier one is listed
     targets, unknown = P.staged(world["pending"], world["sources"])
     assert [(i["rel"], i["action"]) for i in targets[0]["items"]] == [("memory/one.md", "change")]
@@ -244,13 +247,16 @@ def test_the_snapshot_keeps_the_records_beside_the_files(world):
     put(ai / "log" / "c2.conversation.json", "{ not JSON")
     put(ai / "log" / "c3.conversation.json", json.dumps({"id": "c3", "runs": 5}))
     snap = P.snapshot(world["ai"])
+
     # still the plain mapping of the guarded files ...
     assert isinstance(snap, dict) and sorted(snap) == ["memory/MEMORY.md", "memory/one.md", "skills/s1/SKILL.md"]
+
     # ... and what the records said
     assert snap.applied == {"S0.applied.json": P._sha(pathlib.Path(record).read_bytes())}
     assert snap.runs == {"c1.conversation.json": {"20260101-100000 2026-01-01T10:00:00": "2026-01-01T11:00:00",
                                                   "20260102-100000 2026-01-02T10:00:00": ""},
                          "c3.conversation.json": {}}
+
     # an artifact without a log folder
     bare = pathlib.Path(world["ai"]).parent.parent / "bare" / "!AI"
     put(bare / "memory" / "a.md", "a\n")
@@ -391,6 +397,7 @@ def test_a_run_of_the_artifact_that_started_or_ended_meanwhile_is_told_by_its_re
     put(conv, json.dumps({"id": "c1", "runs": [old, started]}))
     ended = dict(started, finished = iso(clock_offset + 5))
     assert left_alone(guard_after(lambda: put(conv, json.dumps({"id": "c1", "runs": [old, ended]}))))
+
     # ... and one that is still going on (no end): it counts as running, wherever its start lies for this clock
     put(conv, json.dumps({"id": "c1", "runs": [old, started]}))
     assert left_alone(guard_after(lambda: None))
@@ -408,6 +415,7 @@ def test_a_run_without_an_end_stops_counting_after_two_days(world):
         put(ai / "log" / "c1.conversation.json", json.dumps({"id": "c1", "runs": [{"stamp": "S", "started": iso(-hours * HOUR)}]}))
         snap = P.snapshot(world["ai"])
         assert P.own_session_ran(world["ai"], time.time(), time.time(), snap.runs) is counts, hours
+
     # a start that cannot be read counts for nothing
     put(ai / "log" / "c1.conversation.json", json.dumps({"id": "c1", "runs": [{"stamp": "S", "started": "some day"}]}))
     assert not P.own_session_ran(world["ai"], time.time(), time.time(), P.own_runs(world["ai"]))
@@ -513,6 +521,7 @@ def test_apply_whole_file_append_and_delete(world):
     assert [(e["rel"], e["action"]) for e in rec["applied"]] == [("memory/MEMORY.md", "append"), ("memory/four.md", "new"), ("skills/s1/SKILL.md", "delete")]
     P.finish_target(t["dir"], world["pending"])
     assert not os.path.exists(world["pending"])                    # nothing left: the staging folders are gone
+
     # a second look finds nothing to do
     assert P.staged(world["pending"], world["sources"]) == ([], [])
 

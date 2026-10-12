@@ -43,6 +43,7 @@ INDEX_FILE = 'MEMORY.md'
 PLUGIN_DIR = '.claude-plugin'
 PLUGIN_FILE = 'plugin.json'
 SEP = ';'
+
 # !AI/skills/.sources.json: where each skill was copied from, when, and the hash of what was copied - run-ai compares the
 # copy with its source on every run and says when they went apart
 SOURCES_FILE = '.sources.json'
@@ -217,6 +218,7 @@ class CTask(InitCTask):
         skills_dir = os.path.join(ai_root, SKILLS_DIR)
         log_dir = os.path.join(ai_root, LOG_DIR)
         stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+
         # the artifact's alias: its part of the cRef without the UID (an alias may contain commas itself)
         alias = re.sub(r',[0-9a-f]{16}$', '', cref.split('::', 1)[1]) if cref else os.path.basename(path)
 

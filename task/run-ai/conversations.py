@@ -115,6 +115,7 @@ def list_conversations(log_dir):
         if isinstance(d, dict) and d.get('id'):
             d['_path'] = fp
             out.append(d)
+
     # the times are kept to the second: among conversations of the same second the one started last comes first
     out.sort(key=lambda d: (str(d.get('updated') or d.get('started') or ''), str(d.get('started') or ''), len(d['id']), d['id']), reverse=True)
     return out
@@ -497,6 +498,7 @@ def agy_export(sid):
         texts = [r for r in runs if len(r.split()) >= 3 and not r.startswith('{')]
         if not texts:
             continue
+
         # the user step repeats the prompt: keep the longest run and anything that is not a prefix of it
         if kind == 'user':
             texts.sort(key=len, reverse=True)
@@ -828,6 +830,7 @@ def hermes_export(sid):
             continue
         if not isinstance(d, dict):
             continue
+
         # one object may be a session header with its messages inside
         inner = d.get('messages') if isinstance(d.get('messages'), list) else None
         for m in (inner if inner is not None else [d]):
@@ -1084,6 +1087,7 @@ def write_transcript(conv, log_dir):
             '', '> Written by run-ai after every run from the harnesses\' own session stores; tool results are left out, tool calls are one line each.',
             '> `cxt run-ai` continues this conversation; `cxt run-ai --new` starts another.', '', '---', '']
     body, notes = [], []
+
     # the segments in the order the sessions were started, the sessions a harness had before its current one included
     entries = []
     for h, s in (conv.get('sessions') or {}).items():
@@ -1139,6 +1143,7 @@ def handover_text(conv, harness, log_dir, why):
             harnesses.append(r['harness'])
     last = runs[-1] if runs else {}
     tp = transcript_path(conv).replace('\\', '/')
+
     # a summary written by --summarize is read first when there is one; the transcript stays the record
     summary = conv.get('summary') or {}
     sp = summary_path(conv)
@@ -1146,6 +1151,7 @@ def handover_text(conv, harness, log_dir, why):
     if summary and os.path.isfile(sp):
         read_first = ('read its summary %s (written after run %d of %d), then its transcript as far as you need: %s' % (
             sp.replace('\\', '/'), int(summary.get('runs') or 0), len(runs), tp))
+
     # the title (the first words of the first request) is left out on purpose: quoted here, in front of the prompt,
     # it reads like an instruction of this run to a model that has not seen the conversation yet
     return ('You continue conversation %s of this project%s: %d run(s) so far with %s, the last on %s. Before anything '

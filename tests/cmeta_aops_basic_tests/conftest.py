@@ -62,6 +62,7 @@ def task_namespace():
         if task not in loaded:
             path = REPO_ROOT / "task" / task / "api_v1.py"
             source = path.read_text(encoding="utf-8")
+
             # the one import line of the task category API becomes one line again (the line numbers of the file
             # are kept for tracebacks): the base class a stand-in, the helpers the real ones
             m = re.search(r"^from task_c36be4b9314a45e0\.api\.ctask import ([^\n]+)$", source, re.M)

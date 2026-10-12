@@ -65,6 +65,7 @@ class CTask(InitCTask):
         os.close(fd)
         cmd = [gitleaks, 'git' if history else 'dir', path, '--redact', '--no-banner',
                '--report-format', 'json', '--report-path', tmp, '--exit-code', '0']
+
         # The baseline is matched here, by gitleaks' fingerprint (commit:file:rule:line), so that a report
         # of this task (which holds no values) works as a baseline - as well as a native gitleaks report
         accepted = set()

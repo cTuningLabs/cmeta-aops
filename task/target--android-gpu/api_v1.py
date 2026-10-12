@@ -112,6 +112,7 @@ class CTask(InitCTask):
 
         opencl = {'library': libs[0] if libs else None,
                   'public': any(x.startswith('libOpenCL') for x in public),
+
                   # from the adb shell, a vendor libOpenCL.so may need the vendor (sphal) namespace
                   # to find its driver: load it with android_load_sphal_library (libvndksupport)
                   'shell_note': 'load it through android_load_sphal_library() when it finds no platform'}

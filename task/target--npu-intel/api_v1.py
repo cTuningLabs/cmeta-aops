@@ -181,6 +181,7 @@ class CTask(InitCTask):
                 hint = 'no "ComputeAccelerator" device from Intel (VEN_8086) in the Device Manager'
             else:
                 hint = 'no accel device of the intel_vpu driver in /sys/class/accel'
+
                 # The NPU without its accel device: the kernel has no intel_vpu for it, or the
                 # driver could not load the NPU's firmware
                 on_pci = intel_npus_on_pci()

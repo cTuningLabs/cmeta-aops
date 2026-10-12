@@ -100,6 +100,7 @@ def _expected_sha256(tool, ctx, params, checksum, v, asset, directory):
         return {'return': 0, 'sha256': digest.lower() if digest else None}
     kind = 'list' if 'list' in checksum else 'file' if 'file' in checksum else 'yq' if 'yq' in checksum else None
     url = checksum[kind].format(**v)
+
     # The version is part of the file name: download-file keeps a file that already exists, and
     # "cx tool setup <tool> --upgrade" installs the newer release into the same cache entry, where
     # the checksums of the old release would otherwise be reused and fail every download
@@ -117,6 +118,7 @@ def _expected_sha256(tool, ctx, params, checksum, v, asset, directory):
             if len(parts) >= 2 and parts[-1].lstrip('*').split('/')[-1] == asset:
                 return {'return': 0, 'sha256': parts[0].lower()}
         return tool.cm.error(f'{asset} is not listed in {url}')
+
     # yq: "checksums" has one line per asset with several hashes, "checksums_hashes_order" names them
     ro = _download(tool, ctx, params, checksum['order'].format(**v), directory, f'_sums_{v["version"]}_order')
     if ro['return'] > 0:

@@ -41,6 +41,7 @@ SYSTEM = {
     'apk': {'update': 'apk update', 'upgrade': 'apk upgrade', 'check': 'apk list --upgradable'},
     'xbps-install': {'upgrade': 'xbps-install -Syu -y', 'check': 'xbps-install -Sun'},
 }
+
 # macOS: the system (softwareupdate, root) and the user's Homebrew; Windows: the user's apps (winget) and,
 # only when asked, Windows Update through the PSWindowsUpdate module (an elevated PowerShell)
 MACOS_SYSTEM = {'upgrade': 'softwareupdate -ia', 'check': 'softwareupdate -l', 'sudo': True, 'reboot_text': 'restart'}
@@ -50,6 +51,7 @@ WINGET = {'upgrade': 'winget upgrade --all --source winget --accept-source-agree
 WINDOWS_UPDATE = {'upgrade': 'powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Get-Module -ListAvailable PSWindowsUpdate)) { Install-Module PSWindowsUpdate -Force -Scope CurrentUser }; Import-Module PSWindowsUpdate; Get-WindowsUpdate -AcceptAll -Install -IgnoreReboot"',
                   'check': 'powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Get-Module -ListAvailable PSWindowsUpdate)) { Install-Module PSWindowsUpdate -Force -Scope CurrentUser }; Import-Module PSWindowsUpdate; Get-WindowsUpdate"',
                   'sudo': False, 'reboot_cmd': 'powershell -NoProfile -Command "if (Test-Path \'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired\') { exit 1 } else { exit 0 }"', 'reboot_codes': (1,)}
+
 # Firmware: fwupd on Linux (the LVFS: laptops, docks, NVMe, ...); macOS firmware comes with softwareupdate;
 # Windows firmware comes through Windows Update (the OEM's channel)
 FWUPD = {'update': 'fwupdmgr refresh --force', 'check': 'fwupdmgr get-updates', 'upgrade': 'fwupdmgr update -y', 'sudo': True}
@@ -176,6 +178,7 @@ class CTask(InitCTask):
             extra['brew_present'] = shutil.which('brew') is not None
         root = uname != 'windows' and hasattr(os, 'geteuid') and os.geteuid() == 0
         interactive = (not quiet) and sys.stdin.isatty()
+
         # the engine hands CLI booleans over as strings
         system, apps, firmware = truthy(system), truthy(apps), truthy(firmware)
         windows_update, check, full = truthy(windows_update), truthy(check), truthy(full)

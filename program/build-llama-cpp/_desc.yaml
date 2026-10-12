@@ -1,5 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
 ###################################################################################################
 inherits:
   - template-c-cpu,649899ef3f004e4a
@@ -129,6 +130,7 @@ updates:
 
        - match:
            task: setup-run,148f6c1fdb4247df
+
          # The binary and the model: here, or on the Android device (kept under /data/local/tmp)
          prepend:
            - internal_func: prepare_target_run

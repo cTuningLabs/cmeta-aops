@@ -67,8 +67,10 @@ def test_unknown_pair_is_main(mod):
 def test_pair_env(mod):
     env = mod["pair_env"]("v0.29.1", "2.14.1", ["cuda"], {"8.6", "7.5"})
     assert env == {"BUILD_VERSION": "0.29.1", "PYTORCH_VERSION": "2.14.1", "FORCE_CUDA": "1", "TORCH_CUDA_ARCH_LIST": "7.5;8.6"}
+
     # a ROCm torch: the GPU ops, no CUDA architectures, the torch version without its local tag
     assert mod["pair_env"]("v0.28.0", "2.13.0+rocm10.1.0", ["rocm"]) == {"BUILD_VERSION": "0.28.0", "PYTORCH_VERSION": "2.13.0", "FORCE_CUDA": "1"}
+
     # main with a development torch: no package version, no torch pin, CPU only
     assert mod["pair_env"]("main", "2.15.0a0+git1", ["cpu"]) == {"PYTORCH_VERSION": "2.15.0a0"}
     assert mod["pair_env"](None, None, ["cpu"]) == {}
@@ -151,8 +153,10 @@ def test_the_tool_mirrors_pytorch():
     desc = yaml.safe_load((REPO_ROOT / "tool" / "pytorchvision" / "_desc.yaml").read_text(encoding = "utf-8"))
     assert desc["storage_key"] == "pytorchvision" and desc["name"] == "torchvision"
     assert "import torchvision" in desc["cmd_get_version"]
+
     # found as the package's __init__.py under the Python's home (the generic search wants a file name), after the python step
     assert all(n.endswith("site-packages/torchvision/__init__.py") for n in desc["names"]) and len(desc["names"]) == 2
+
     # extra_paths is a dict by OS (linux also serves macOS; task/setup/detect.py)
     assert "{{global.python.path_home|}}" in desc["extra_paths"]["linux"] and "{{global.python.path_home|}}" in desc["extra_paths"]["windows"]
     assert any(u.get("name", "").startswith("python,") for u in desc["uses"])
@@ -173,6 +177,7 @@ def test_the_tool_mirrors_pytorch():
     t = tool["CTool"].__new__(tool["CTool"])
     assert t.customize_build({}, {"version": "0.29.1"}) == {"return": 0, "add_to_local": {"checkout": "v0.29.1"}}
     assert t.customize_build({}, {}) == {"return": 0}
+
     # after the build the detection looks in the Python of the run, not in the entry's build folder
     ctx = {"tasks": {"global": {"python": {"path_home": "/v/.venv", "path_bin": "/v/.venv/bin"}}}}
     assert t.build(ctx, {}) == {"return": 0, "found_paths": ["/v/.venv", "/v/.venv/bin"]}
@@ -190,6 +195,7 @@ def test_the_description_pairs_before_the_clone():
     clone = next(i for i, s in enumerate(steps) if s.get("task", "").startswith("clone-git-to-cache"))
     assert pair < clone
     assert steps[clone]["checkout"] == "{{local.checkout|$None}}"
+
     # --torch=pip brings PyTorch's wheel before the pairing
     torch_step = next(s for s in steps if s.get("with", {}).get("package") == "torch")
     assert "pip" in torch_step["if"] and steps.index(torch_step) < pair

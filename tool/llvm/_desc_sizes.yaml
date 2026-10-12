@@ -9,6 +9,7 @@ sizes:
   - if: {method: install, os: linux}
     peak: 12
     kept: 10
+
   # Windows and macOS releases are much smaller (the installer and the Homebrew bottle)
   - if: {method: install}
     peak: 4

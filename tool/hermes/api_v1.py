@@ -18,6 +18,7 @@ import subprocess
 
 INSTALL_SH = 'https://hermes-agent.nousresearch.com/install.sh'
 INSTALL_PS1 = 'https://hermes-agent.nousresearch.com/install.ps1'
+
 # non-interactive (no setup wizard, no gateway questions), without the browser tools and the computer-use driver
 # (heavy; "hermes pm install agent-browser" adds them later)
 INSTALL_FLAGS_SH = ['--non-interactive', '--skip-browser', '--skip-computer-use']

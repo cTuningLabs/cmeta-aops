@@ -1,5 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
 ###################################################################################################
 # One dated place per test, build or benchmark: a sandbox to work in, and a log that stays, as
 # the folder <YYYYMMDD>/<HHMM>.<type>/ (the session id) of two artifacts of the local repository

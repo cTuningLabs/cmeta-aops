@@ -282,6 +282,7 @@ class CTask(InitCTask):
                 if con:
                     print('')
                     print(f'{space}INFO: gemini takes the output format in headless mode only, so it is dropped from the session: {" ".join(dropped)}')
+
             # the prompt, or the one-line request to read its file (see prompt_via_file above)
             cmd = base_cmd + flags + (['-i', pr['text']] if full_prompt else [])
         else:
@@ -540,6 +541,7 @@ class CTask(InitCTask):
         tokens = {'input': c.get('input', 0) or 0, 'cache_read': c.get('cache_read', 0) or 0, 'output': c.get('output', 0) or 0,
                   'reasoning': c.get('reasoning', 0) or 0, 'tool': c.get('tool', 0) or 0}
         tokens['sent'] = tokens['input']            # gemini's prompt count includes the cached part
+
         # gemini's own total when it gives one (it knows what its counters include), else the sum
         tokens['total'] = c.get('total_reported') or (tokens['input'] + tokens['output'] + tokens['reasoning'] + tokens['tool'])
         tokens['cost_usd'] = 0                      # gemini reports no cost

@@ -10,8 +10,10 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_deb import sha256_of
 
 EULA_URL = 'https://www.amd.com/en/developer/aocc.html'
+
 # AMD's archive of a release: aocc-5-2 for 5.2.0 (the first two numbers of the version)
 ARCHIVE = 'https://download.amd.com/developer/eula/aocc/aocc-{major}-{minor}/aocc-compiler-{version}.tar'
+
 # The archives the tool knows the checksum of (measured on 2026-10-08; AMD's download page shows one too)
 SHA256 = {
     '5.2.0': 'f98af7e2ae8801dd4ba443520653acb739536a86c2a1caf096310c3cfd554ca0',

@@ -27,6 +27,7 @@ SPEC = {
     'sources': ['adler32.c', 'compress.c', 'crc32.c', 'deflate.c', 'gzclose.c', 'gzlib.c', 'gzread.c',
                 'gzwrite.c', 'infback.c', 'inffast.c', 'inflate.c', 'inftrees.c', 'trees.c', 'uncompr.c',
                 'zutil.c'],
+
     # What zlib's configure sets on Linux and macOS (zconf.h: "#if HAVE_UNISTD_H-0")
     'defines': ['HAVE_UNISTD_H=1', 'HAVE_STDARG_H=1'],
     'headers': ['zlib.h', 'zconf.h'],

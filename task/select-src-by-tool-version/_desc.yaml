@@ -1,4 +1,5 @@
 authors: Grigori Fursin
+
 ###################################################################################################
 # One program, sources for several generations of a language: the step picks the source folder by
 # the version of a tool that an earlier step of the pipeline set up. Put it after that setup and

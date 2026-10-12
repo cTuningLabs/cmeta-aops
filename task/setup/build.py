@@ -103,6 +103,7 @@ def build_tool(self,
 
         elif con:
             print ('')
+
             # Nobody to answer (a detached job, a script): an error that names the flags, never a traceback
             r = ask(f'{space}INFO: would you like to build tool "{artifact_print_name}"{with_version} (Y/n)? ',
                     how = '-q (--quiet) or --build to build without asking')

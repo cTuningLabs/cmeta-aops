@@ -72,9 +72,11 @@ def test_a_run_is_described_by_its_harness_and_the_model_and_effort_it_was_given
     run = {"stamp": "20261005-090000", "harness": "codex", "mode": "prompt", "model": "gpt-x", "effort": "high",
            "started": "2026-10-05T09:00:00", "finished": "2026-10-05T09:02:30", "return": 0}
     assert C.describe_run(run) == "20261005-090000  codex  model: gpt-x  effort: high  prompt  2026-10-05T09:00 - 2026-10-05T09:02"
+
     # none given: the harness chose ("default"); a run that is going on, or one that died, has no end
     run = {"stamp": "20261005-100000", "harness": "claude", "mode": "interactive", "model": "", "effort": "", "started": "2026-10-05T10:00:00"}
     assert C.describe_run(run) == "20261005-100000  claude  model: default  effort: default  interactive  2026-10-05T10:00 - (no end yet)"
+
     # a model without an effort, and a run that failed
     run = {"stamp": "s", "harness": "gemini", "mode": "prompt", "model": "g-pro", "started": "2026-10-05T11:00:00", "finished": "2026-10-05T11:00:05", "return": 1}
     assert C.describe_run(run) == "s  gemini  model: g-pro  effort: default  prompt  2026-10-05T11:00 - 2026-10-05T11:00  (return 1)"
@@ -84,6 +86,7 @@ def test_a_run_is_described_by_its_harness_and_the_model_and_effort_it_was_given
 # ---------------------------------------------------------------------------------------------- the adapters
 def test_how_each_harness_starts_and_resumes_a_session():
     assert C.harness_key("antigravity") == "agy" and C.harness_key("claude") == "claude"
+
     # run-ai chooses the session id for these, and learns it after the run for the others
     assert [h for h in ("claude", "codex", "opencode", "openclaw", "antigravity", "agy", "gemini") if C.chooses_id(h)] == ["claude", "openclaw", "gemini"]
     assert C.new_session_flags("claude", "ID", "20261005-090000", "my-app") == ["--session-id", "ID", "--name", "run-ai 20261005-090000 my-app"]
@@ -97,6 +100,7 @@ def test_how_each_harness_starts_and_resumes_a_session():
     assert C.resume_flags("hermes", "20261007_164201_45c8de") == ["--resume", "20261007_164201_45c8de"]
     assert not C.chooses_id("hermes")                      # hermes names its sessions itself: read back after the run
     assert C.resume_flags("codex", "ID") == []           # a sub-command of codex: run-codex --resume=<id>
+
     # OpenClaw's terminal UI takes the key of the session, not its id
     assert C.new_session_flags("openclaw", "ID", "c", "a", interactive = True) == ["--session", "agent:main:explicit:ID"]
     assert C.resume_flags("openclaw", "ID", interactive = True) == ["--session", "agent:main:explicit:ID"]
@@ -159,10 +163,12 @@ def test_a_long_project_path_finds_the_folder_claude_code_shortened(tmp_path, mo
     assert C.claude_session_file(str(deep), "sess-1") == str(mine / "sess-1.jsonl")
     assert C.claude_session_file(str(deep), "sess-2") == ""
     assert [b for role, ts, b in C.export_session("claude", "sess-1", str(deep))] == [[("text", "hello from deep")]]
+
     # a folder whose sessions say nothing about their directory (only a memory) is taken
     (mine / "sess-1.jsonl").unlink()
     (mine / "memory").mkdir()
     assert [pathlib.Path(d) for d in C.claude_project_dirs(str(deep))] == [mine]
+
     # a short path keeps its plain slug
     short = tmp_path / "short"
     assert C.claude_project_dirs(str(short))[0].endswith(C.re.sub(r"[^A-Za-z0-9]", "-", os.path.normpath(str(short))))
@@ -195,6 +201,7 @@ def test_openclaw_sessions_are_found_through_its_index_and_exported(tmp_path, mo
         ("assistant", [("text", "Let me read it."), ("tool", "read D:/p/notes.txt")]),
         ("assistant", [("text", "Heron.")])]
     assert messages[0][1] and not messages[0][1].endswith("Z")         # local time
+
     # the key run-ai gave the terminal UI leads to the session it filed under its own id
     assert C.openclaw_session_id(tui_key) == tui_real
     assert C.openclaw_session_file(tui_key).endswith(tui_real + ".jsonl")
@@ -321,6 +328,7 @@ def test_a_replaced_session_keeps_its_segment_and_headings_in_answers_do_not_cut
     assert text.index("## claude - session `sess-a`") < text.index("## claude - session `sess-b`")
     assert "Read the notes." in text and "## Step 2" in text and "Answer." in text and "Done." in text
     assert len(notes) == 1 and "kept" in notes[0]
+
     # and again: the kept text survives a second export unchanged
     assert C.write_transcript(conv, str(log))[0] and read(path).count("Read the notes.") == 1 and "Answer." in read(path)
 
@@ -342,5 +350,6 @@ def test_hand_over_names_the_transcript_and_the_reason(tmp_path):
     assert text.startswith("You continue conversation 20261005-090000 of this project (no gemini session in it yet)")
     assert "3 run(s) so far with claude, codex" in text and "2026-10-05T09:30" in text
     assert "Before anything else, read its transcript" in text and "answer the request at the end of this message" in text
+
     # the title is the first words of the first request: quoted in front of a prompt it would read as an instruction
     assert "Which file is the largest?" not in text

@@ -47,10 +47,12 @@ def test_a_reused_build_completes_its_tools_features_from_the_current_entries(bi
     assert f["model_int8"] == "/m/quant.tflite" and f["root"] == "/x"
     assert f["model"] == "/m/old-float.tflite"                      # what the snapshot had stays: the build's record
     assert g["compiler-c"]["features"] == {"flags": {}} and "features" not in g["python"]
+
     # a second pass adds nothing; a snapshot entry without features gets them all
     assert bi.complete_restored_tools(g) == {}
     g["lib-litert-android"].pop("features")
     assert bi.complete_restored_tools(g) == {"lib-litert-android": ["model", "model_int8", "root"]}
+
     # a broken result file is skipped
     (entry / "cmeta-task-cached-result.json").write_text("{not json", encoding = "utf-8")
     g["lib-litert-android"]["features"] = {}
@@ -65,8 +67,10 @@ def test_request_identity_is_the_explicit_choices_and_the_resolved_targets(bi):
                                {"nvcc": {"version": 12.9, "update": True}, "compiler-cpp": {"name": "gcc-cpp"}}, ["cuda", "cpu"])
     assert full == {"use": {"compiler-cpp": {"name": "gcc-cpp"}, "nvcc": {"version": "12.9"}},
                     "compile": {"static": True}, "with": {"openmp": True}, "compute": ["cpu", "cuda"]}
+
     # the program's run parameters, the control switches of --use and the empty members are not identity
     assert "params" not in full and "update" not in full["use"]["nvcc"] and "flags" not in full["compile"]
+
     # the same request in another spelling has the same digest; a different one another
     again = bi.request_identity({"compile": {"static": True}, "with": {"openmp": "yes"}}, {"compiler-cpp": {"name": "gcc-cpp"}, "nvcc": {"version": "12.9"}}, ["cpu", "cuda"])
     assert bi.digest(again) == bi.digest(full) and len(bi.digest(full)) == 16
@@ -146,6 +150,7 @@ def test_entries_per_request_with_the_cache_category(bi, cm):
 def test_the_entry_made_before_is_adopted_by_the_plain_request(bi, cm):
     cache = "cache,1ebdcc1cc30c4022"
     alias, uid = "test-legacy-entry", "0f0f0f0f0f0f0f0f"
+
     # an entry as every program had it before: the plain name, the four tags, no params
     r = cm.access({"category": cache, "command": "get", "arg1": f"task--program--{alias}", "tags": bi.TAGS})
     assert r["return"] == 0, r.get("error")

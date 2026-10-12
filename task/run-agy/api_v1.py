@@ -421,6 +421,7 @@ class CTask(InitCTask):
         if not isinstance(event, dict):
             return [str(event).rstrip() + '\n']
         kind = str(event.get('type') or event.get('event') or '')
+
         # agy 1.2.16 (seen 2026-10-04) nests the payload under the event's own name:
         #   {"event": "init", "conversation_id": ..., "init": {"cwd": ..., "tools": [...]}}
         #   {"event": "step_update", "step_update": {"conversation_id", "step_index", "state": "ACTIVE"|"DONE",
@@ -534,6 +535,7 @@ class CTask(InitCTask):
         c = run_stats.get('tokens') or {}
         tokens = {'input': c.get('input', 0) or 0, 'cache_read': c.get('cache_read', 0) or 0, 'output': c.get('output', 0) or 0,
                   'reasoning': c.get('reasoning', 0) or 0, 'tool': 0}
+
         # whether "input_tokens" already holds the cached part is not documented: "sent" is the input count as reported
         tokens['sent'] = tokens['input']
         tokens['total'] = c.get('total_reported') or (tokens['input'] + tokens['output'] + tokens['reasoning'])

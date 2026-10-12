@@ -81,6 +81,7 @@ class CTool(InitCTool):
         windows = uname == 'windows'
         v = {'version': version_simple, 'tag': tag, 'os': OS[uname], 'arch': ARCH[uname][uarch],
              'suffix': '.exe' if windows else '.sh', 'exe': '', 'host_exe': '.exe' if windows else '', 'uname': uname}
+
         # The POSIX installer refuses to run unless its own name ends in .sh (its guard against being sourced)
         item = {'name': 'miniforge-installer' if windows else 'miniforge-installer.sh', 'url': URL,
                 'checksum': {'file': '{url}.sha256'}}

@@ -77,6 +77,7 @@ class CTask(InitCTask):
         devices = []
         for line in stdout.splitlines():
             line = line.strip()
+
             # Skip the header line and empty lines
             if not line or line.startswith('List of devices'):
                 continue

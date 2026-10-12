@@ -1,4 +1,5 @@
 authors: Grigori Fursin
+
 ###################################################################################################
 # The AMD Ryzen AI NPU (XDNA), found without any SDK: on Linux the accel device of the kernel's amdxdna
 # driver (/sys/class/accel, with its firmware version and board name), on Windows the "ComputeAccelerator"

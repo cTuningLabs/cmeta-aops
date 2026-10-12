@@ -48,10 +48,12 @@ class CTool(InitCTool):
                 return self.cm.error('PyTorch\'s prebuilt LibTorch has shared libraries only: '
                                      '--with.static needs a source build (without --with.build=prebuilt)')
             _with['build'] = 'prebuilt'
+
             # tool/torch-cpp-prebuilt caches the archive under its own name; this setup is not cached,
             # since a cache entry with "build: prebuilt" would also match the requests without
             # --with.build (an entry matches every request whose parameters it contains)
             cparams['cache'] = False
+
             # Detect the prebuilt library (force_tool_path in _desc.yaml); never fall back to a build
             params['skip_detect'] = False
             params['skip_install'] = True

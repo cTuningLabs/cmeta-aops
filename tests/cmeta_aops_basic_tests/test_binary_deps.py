@@ -240,6 +240,7 @@ def test_elf_resolution_rpath_env_runpath_system(bd, tmp_path):
 def test_elf_rpath_is_ignored_when_runpath_exists(bd, tmp_path):
     write(tmp_path / "rp" / "libfoo.so.1", b"x")
     write(tmp_path / "run" / "libfoo.so.1", b"x")
+
     # ELF rpaths are ":"-separated lists, so the test keeps them relative to $ORIGIN (a drive letter would split)
     both = write(tmp_path / "both", make_elf(needed = ["libfoo.so.1"], rpath = "$ORIGIN/rp", runpath = "$ORIGIN/run"))
     only = write(tmp_path / "only", make_elf(needed = ["libfoo.so.1"], rpath = "$ORIGIN/rp"))
@@ -247,6 +248,7 @@ def test_elf_rpath_is_ignored_when_runpath_exists(bd, tmp_path):
     assert r["deps"][0]["source"] == "runpath" and r["deps"][0]["path"].startswith(str(tmp_path / "run"))
     r = bd.resolve(only, env = {}, uname = "linux", system_dirs = [])
     assert r["deps"][0]["source"] == "rpath"
+
     # LD_LIBRARY_PATH beats RUNPATH but not RPATH
     write(tmp_path / "env" / "libfoo.so.1", b"x")
     r = bd.resolve(both, env = {"LD_LIBRARY_PATH": str(tmp_path / "env")}, uname = "linux", system_dirs = [])
@@ -303,6 +305,7 @@ def test_pe_resolution_order(bd, tmp_path):
     assert by["delayed.dll"]["source"] == "env"
     assert by["gone.dll"]["path"] is None and r["missing"] == ["gone.dll"]
     assert "gone.dll (missing)" in bd.describe(r) and "KERNEL32.dll (system)" in bd.describe(r)
+
     # the current folder is searched after the system folders
     write(tmp_path / "cwd" / "gone.dll", b"x")
     r = bd.resolve(app, env = env, cwd = str(tmp_path / "cwd"), uname = "windows")
@@ -340,6 +343,7 @@ def test_macho_resolution(bd, tmp_path):
     assert by["@rpath/libfoo.dylib"]["source"] == "rpath" and by["@rpath/libfoo.dylib"]["path"] == str(tmp_path / "lib" / "libfoo.dylib")
     assert by["@loader_path/libnear.dylib"]["source"] == "app"
     assert by["@rpath/libgone.dylib"]["path"] is None and r["missing"] == ["@rpath/libgone.dylib"]
+
     # DYLD_LIBRARY_PATH wins over @rpath; a system library stays system when read on another OS
     write(tmp_path / "env" / "libfoo.dylib", b"x")
     r = bd.resolve(app, env = {"DYLD_LIBRARY_PATH": str(tmp_path / "env")}, uname = "linux", system_dirs = [])

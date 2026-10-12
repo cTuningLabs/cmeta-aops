@@ -218,12 +218,14 @@ def test_declared_targets():
     for tool, tag in [("go-android", "lang-go"), ("rustc-android", "lang-rust")]:
         m = meta(f"tool/{tool}/_cmeta.yaml")
         assert tag in m["tags"] and m["constraints"]["supports_compute"] == ["android-cpu"]
+
     # The host tools stay as they were, so a cpu build selects them
     for tool in ["go", "rustc"]:
         assert meta(f"tool/{tool}/_cmeta.yaml")["constraints"]["supports_compute"] == ["cpu"]
 
     for program in ["test-nmm-go-cpu", "test-nmm-rust-cpu"]:
         assert set(meta(f"program/{program}/_cmeta.json")["constraints"]["supported_compute"]) == {"android-cpu", "cpu"}
+
     # No Swift compiler for Android: the program does not claim it
     assert meta("program/test-nmm-swift-cpu/_cmeta.json")["constraints"]["supported_compute"] == ["cpu"]
 

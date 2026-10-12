@@ -21,6 +21,7 @@ UNSUPPORTED_PATH_CHARS = '!'
 def sdk_layout(root, uname):
     """glslc, header, include, lib and bin of an SDK root, or None when it is not one."""
     exe = '.exe' if uname == 'windows' else ''
+
     # The LunarG Windows SDK has Bin, Include and Lib; elsewhere the folders are lower-case, and
     # trying them first keeps a case-insensitive macOS disk from reporting /opt/homebrew/Bin
     layouts = [('Bin', 'Include', 'Lib'), ('bin', 'include', 'lib')]
@@ -295,6 +296,7 @@ class CTool(InitCTool):
 
         if uname == 'windows':
             installer = os.path.join(content, filename)
+
             # Qt Installer Framework command line; copy_only=1: files only - no environment
             # variables, registry entries or system-wide Vulkan runtime
             run = (f'{self.cm.q(installer)} --root {self.cm.q(root)} --accept-licenses --default-answer '

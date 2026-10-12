@@ -62,6 +62,7 @@ def test_gpu_device_nodes(vulkan_tool, tmp_path):
     gpu_nodes = vulkan_tool["gpu_nodes"]
     dev = tmp_path / "dev"
     dev.mkdir()
+
     # a container of Docker on WSL2 without --gpus: the VM's virtual GPUs are on PCI, but no node
     assert gpu_nodes(str(dev)) == []
 

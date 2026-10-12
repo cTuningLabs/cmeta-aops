@@ -115,7 +115,7 @@ tells the story from Collective Knowledge to cMeta and lists the publications (s
 **What that means in practice — please read before relying on anything here:**
 
 - **Maturity varies a lot.** A few paths have CI coverage across
-  `{Linux, Windows, macOS} × Python {3.9, 3.14}` — the core, and a handful of
+  `{Linux, Windows, macOS} × Python {3.9, 3.14, 3.15}` — the core, and a handful of
   clang/C++, NumPy and PyTorch task recipes. Note these workflows are
   **manually triggered** (`workflow_dispatch`), not run on every push, so a green
   badge reflects the last deliberate run rather than the current commit. Everything

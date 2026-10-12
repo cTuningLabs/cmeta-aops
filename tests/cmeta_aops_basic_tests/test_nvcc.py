@@ -245,6 +245,7 @@ class FakeCM:
         self.list_gpu_arch = list_gpu_arch
         self.downloads = []
         self.packages = FakePackages()
+
         # what task compiler (lang cpp) sets up as the host compiler
         self.host_cc = host_cc or {"tool": {"name": "gcc-cpp"}, "version": "13.3.0", "qpath": '"/usr/bin/g++"'}
         self.compiler_calls = []
@@ -320,6 +321,7 @@ def server(redist, tmp_path, monkeypatch):
     urls, manifests = {}, {}
     for release, nvcc in (("12.9.2", "12.9.86"), ("13.0.2", "13.0.88")):
         m = {"release_label": release}
+
         # one folder per release: the "1.0" component archives of both releases share their file
         # names, and the sha256 in a release's manifest must be that of the file its URL serves
         (store / release).mkdir()
@@ -481,6 +483,7 @@ def test_arch_flags_fail_for_an_older_gpu(nvcc_api):
 
 def test_arch_flags_for_a_gpu_newer_than_the_toolkit(nvcc_api):
     t = tool(nvcc_api, FakeCM({}))
+
     # CUDA 11.8 knows up to sm_90; on a Blackwell GPU (sm_120) the driver compiles compute_90 PTX
     features = {"supported_arch": [35, 50, 60, 70, 75, 80, 86, 87, 89, 90], "supported_arch_min": 35,
                 "supported_arch_max": 90, "version_major": 11, "paths": {"home": None},
@@ -542,6 +545,7 @@ def test_host_compiler_version_ranges(host):
     assert ranges == {"microsoft-visual-studio": ">=19.10,<19.50", "msvc": ">=19.10,<19.50",
                       "gcc-cpp": "<15", "clang-cpp": "<20"}
     assert host.version_ranges({}) == {}
+
     # the ranges select what they should
     assert matches(ranges["msvc"], "19.44.35217") and not matches(ranges["msvc"], "19.50.35717")
     assert matches(ranges["gcc-cpp"], "14.2.0") and not matches(ranges["gcc-cpp"], "15.2.0")
@@ -580,6 +584,7 @@ def test_the_host_compiler_follows_the_toolkit(nvcc_api, tmp_path):
     r = t.finish_dynamic_result(ctx, nvcc_result(toolkit_home(tmp_path, "12.8")), {"with": {}})
     assert r["return"] == 0, r
     assert cm.compiler_calls[0]["msvc"] == {"version": ">=19.10,<19.50"}
+
     # the Visual Studio installation follows the version of msvc (tool/msvc passes it on): no range of its own
     assert "microsoft-visual-studio" not in cm.compiler_calls[0]
     assert r["result"]["features"]["flags"]["host_compiler"] == "-ccbin " + cl

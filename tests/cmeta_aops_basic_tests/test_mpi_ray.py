@@ -186,6 +186,7 @@ def test_pyvenv_bin_folder(pyvenv, tmp_path, monkeypatch):
     r = pyvenv["install_pyvenv"](tool, ctx, {"control": {}}, None, spec)
     assert r["return"] == 0 and r["found_path"] == os.path.join(str(tmp_path), "venv", "Library", "bin", "mpiexec.exe")
     assert any('"impi-rt==2021.18.1" "mpi4py==4.1.2"' in c for c in tool.cm.commands)
+
     # without "bin", the command is a console script in Scripts (missing here)
     r = pyvenv["install_pyvenv"](tool, ctx, {"control": {}}, None, dict(spec, bin = None))
     assert r["return"] == 1 and "Scripts" in r["error"]

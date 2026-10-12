@@ -1,5 +1,6 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
 ###################################################################################################
 # The Intel NPU, found without any SDK: on Windows the "ComputeAccelerator" devices (with their
 # driver version), on Linux the accel devices of the intel_vpu driver. The NPU is matched by its
