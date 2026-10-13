@@ -50,8 +50,9 @@ cx task run test-python -j                      # a task with the full trace: ev
 
 cMeta keeps its repositories, index and caches in one folder, its home: `~/CMETA`
 (`%USERPROFILE%\CMETA` on Windows). There is nothing to set up. To use another folder, set
-`CMETA_HOME`; `cx --version` shows the home in use. Inside an activated Python virtual
-environment (or conda environment) the home is `<env>/CMETA` unless `CMETA_HOME` is set.
+`CMETA_HOME`; `cx --version` shows the home in use (`cx --print-home` prints its path alone,
+for scripts). Inside an activated Python virtual environment (or conda environment) the home
+is `<env>/CMETA` unless `CMETA_HOME` is set.
 
 **Updating** — the engine and this repository are updated separately:
 

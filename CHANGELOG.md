@@ -27,6 +27,11 @@ All notable changes to cMeta AOps are documented here, newest first.
   attempts in all, never two at once), a request that waits longer than `CMETA_LOCK_TIMEOUT` (the wait for an
   attempt has its own limit), and one that gives up after a short `CMETA_CACHE_WAIT_TIMEOUT` with a message that
   names it. Durations in these tests are measured on the monotonic clock.
+- **`rclone-to-ssh` (and so `cx host push` and `sync`) works with a login name that contains a space.** The ssh
+  command handed to rclone (`--sftp-ssh`) is quoted as one argument for the shell, and the login inside it as one
+  item for rclone, which splits that value at spaces and keeps a quoted item whole: the login of a Windows account
+  such as `First Last` was cut in two. A login without a space gives the same command as before.
+- README: `cx --print-home` prints the path of the cMeta home alone, for scripts (cMeta after 0.35.1).
 - **Every duration a task measures is on the monotonic clock.** The agent tasks (run-claude, run-codex,
   run-gemini, run-agy, run-hermes, run-opencode, run-openclaw: "Duration" and the `duration` of the result), the
   run time of run-ai, the elapsed time of rclone-to-ssh and the `self_time_*` of compile-and-run-program took the
