@@ -14,6 +14,11 @@ All notable changes to cMeta AOps are documented here, newest first.
   unless the run is interactive. Why: a laptop's WSL2 clock was seen stepping by seconds every 30 s because the
   Windows host's time service was stopped - every program that compares timestamps suffers from such a clock.
   Tests: `test_sync_system_clock.py` (the parsers, the plan per OS, a `--check` on the machine).
+- **A new task, `reboot`: a reboot of Windows, Linux or macOS scheduled with the OS's own command.**
+  `cx task run reboot --dry_run` shows the command (`shutdown.exe /r /t <seconds>` on Windows, `shutdown -r +<minutes>`
+  on Linux and macOS, through `sudo -n` unless the user is root); `--yes` schedules it after `--delay_seconds` (60;
+  0 to 3600, rounded up to whole minutes on Linux and macOS). Without `--yes` nothing happens. Tests:
+  `test_reboot_task.py` (the commands per OS, the limits, no reboot without `--yes`).
 - **A timeout stays a timeout when the wall clock is set.** `task/cmd` told a timeout from another failure by the
   time the command took, on the wall clock: a clock set back meanwhile (NTP, a virtual machine's clock sync - WSL2
   was seen stepping it by seconds every 30 s) turned a real timeout into "failed with return code -1". Now the
