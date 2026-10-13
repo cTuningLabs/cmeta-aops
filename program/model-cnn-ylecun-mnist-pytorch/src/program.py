@@ -4,22 +4,25 @@ import os
 import sys
 import time
 
-# SHould not be moved after torch - fails
-_import_start = time.time()
-from datasets import load_dataset
-import_time_datasets = time.time() - _import_start
+# Durations are measured with time.perf_counter(): the finest clock, and one that nobody sets while the
+# program runs (time.time() gives moments, not durations)
 
-_import_start = time.time()
+# SHould not be moved after torch - fails
+_import_start = time.perf_counter()
+from datasets import load_dataset
+import_time_datasets = time.perf_counter() - _import_start
+
+_import_start = time.perf_counter()
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from torch.utils.data import DataLoader
-import_time_torch = time.time() - _import_start
+import_time_torch = time.perf_counter() - _import_start
 
-_import_start = time.time()
+_import_start = time.perf_counter()
 from torchvision import transforms
-import_time_torchvision = time.time() - _import_start
+import_time_torchvision = time.perf_counter() - _import_start
 
 
 class SimpleMNISTCNN(nn.Module):
@@ -346,7 +349,7 @@ def train(args, device):
     print ('')
     for epoch in range(args.epochs):
 
-        epoch_start = time.time()
+        epoch_start = time.perf_counter()
 
         model.train()
 
@@ -370,7 +373,7 @@ def train(args, device):
 
         _, accuracy = evaluate(model, test_loader, device, criterion)
 
-        epoch_time = time.time() - epoch_start
+        epoch_time = time.perf_counter() - epoch_start
 
         print(
             f"Epoch {epoch + 1}/{args.epochs} "
@@ -426,9 +429,9 @@ def test(args, device):
 
     criterion = nn.CrossEntropyLoss()
 
-    eval_start = time.time()
+    eval_start = time.perf_counter()
     loss, accuracy = evaluate(model, test_loader, device, criterion)
-    eval_time = time.time() - eval_start
+    eval_time = time.perf_counter() - eval_start
 
     print('')
     print(

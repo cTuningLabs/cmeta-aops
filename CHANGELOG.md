@@ -2,6 +2,52 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.45.2
+- **A new task, `sync-system-clock`: the system clock measured against a time server and put right with the
+  OS's own commands.** `cx task run sync-system-clock` measures the offset (w32tm on Windows, chronyc or
+  timedatectl's timesync-status on Linux, sntp on macOS) and the state of the time service, and when the clock
+  is off by more than `--max_offset` (1 s) or the service is not running, fixes it: Windows - the Windows Time
+  service set to start automatically, started and told to resync (an elevated PowerShell, the administrator
+  prompt); Linux - `timedatectl set-ntp true` and systemd-timesyncd restarted or chrony stepped; WSL2 -
+  `hwclock -s` (the clock is a copy of the Windows host's; the lasting fix is the host's service); macOS -
+  `sntp -sS` and network time on. `--check` reports only, `--force` fixes anyway. Root steps run with `sudo -n`
+  unless the run is interactive. Why: a laptop's WSL2 clock was seen stepping by seconds every 30 s because the
+  Windows host's time service was stopped - every program that compares timestamps suffers from such a clock.
+  Tests: `test_sync_system_clock.py` (the parsers, the plan per OS, a `--check` on the machine).
+- **A new task, `reboot`: a reboot of Windows, Linux or macOS scheduled with the OS's own command.**
+  `cx task run reboot --dry_run` shows the command (`shutdown.exe /r /t <seconds>` on Windows, `shutdown -r +<minutes>`
+  on Linux and macOS, through `sudo -n` unless the user is root); `--yes` schedules it after `--delay_seconds` (60;
+  0 to 3600, rounded up to whole minutes on Linux and macOS). Without `--yes` nothing happens. Tests:
+  `test_reboot_task.py` (the commands per OS, the limits, no reboot without `--yes`).
+- **A timeout stays a timeout when the wall clock is set.** `task/cmd` told a timeout from another failure by the
+  time the command took, on the wall clock: a clock set back meanwhile (NTP, a virtual machine's clock sync - WSL2
+  was seen stepping it by seconds every 30 s) turned a real timeout into "failed with return code -1". Now the
+  engine's own word comes first (`timed_out`, cMeta after 0.35.1), and the elapsed time of an older engine is
+  measured on the monotonic clock. The deadline of a phase (`--compile_timeout`, `category/task/api/deadlines.py`)
+  is kept on the monotonic clock too. Tests: `test_cmd_timeout.py` (the wall clock set back 10 s on purpose),
+  `test_compile_deadline.py`.
+- **More tests of timeouts and of the cache attempts.** `test_cmd_timeout.py` allows a slow system its time (the
+  child 20 s, the call within 15 s - the 4 s it allowed were eaten by WSL2's clock); `test_task_cache_states.py`:
+  three identical requests with the first one killed (one resumes the attempt, the other uses its result - two
+  attempts in all, never two at once), a request that waits longer than `CMETA_LOCK_TIMEOUT` (the wait for an
+  attempt has its own limit), and one that gives up after a short `CMETA_CACHE_WAIT_TIMEOUT` with a message that
+  names it. Durations in these tests are measured on the monotonic clock.
+- **`rclone-to-ssh` (and so `cx host push` and `sync`) works with a login name that contains a space.** The ssh
+  command handed to rclone (`--sftp-ssh`) is quoted as one argument for the shell, and the login inside it as one
+  item for rclone, which splits that value at spaces and keeps a quoted item whole: the login of a Windows account
+  such as `First Last` was cut in two. A login without a space gives the same command as before.
+- README: `cx --print-home` prints the path of the cMeta home alone, for scripts (cMeta after 0.35.1).
+- **Every duration a task measures is on the monotonic clock.** The agent tasks (run-claude, run-codex,
+  run-gemini, run-agy, run-hermes, run-opencode, run-openclaw: "Duration" and the `duration` of the result), the
+  run time of run-ai, the elapsed time of rclone-to-ssh and the `self_time_*` of compile-and-run-program took the
+  difference of two wall-clock times: a clock set meanwhile (NTP, a virtual machine's clock sync) made them wrong,
+  even negative. A start that is also a time of day (run-openclaw's session file, run-ai's native session and
+  guard) stays on the wall clock next to the monotonic one. The names and units of the results are unchanged; on
+  Linux and macOS a run that spans a sleep of the machine now counts the time it was awake. A guard test keeps the
+  rule for category/, task/ and tool/ (`test_durations_use_the_monotonic_clock.py`, the twin of the engine's).
+  The MNIST benchmark program (`model-cnn-ylecun-mnist-pytorch`) times its imports, epochs and evaluation with
+  `time.perf_counter()`.
+
 ## 0.45.1
 - **Of the usable cache entries that are equal for a request, the one made last is taken - on every
   machine.** A request that matches several usable entries takes the first in this order: the task's own

@@ -1,0 +1,22 @@
+authors: Grigori Fursin
+
+# sync-system-clock - the system clock checked against a time server and, when it is off or its time service is
+# not running, put right with the OS's own commands: Windows - the Windows Time service (w32time) set to start
+# automatically, started and told to resync (an elevated PowerShell: expect the administrator prompt); Linux -
+# NTP switched on with timedatectl and systemd-timesyncd restarted or chrony stepped; WSL2 - the clock is a copy
+# of the Windows host's, "hwclock -s" sets it again from the hardware clock (the lasting fix is the host's time
+# service); macOS - sntp against the server and network time switched on.
+#
+#   cx task run sync-system-clock                   # measure; fix when the clock is off or the service is down
+#   cx task run sync-system-clock --check           # measure and report only
+#   cx task run sync-system-clock --force           # fix even when the clock looks right
+#   cx task run sync-system-clock --server=pool.ntp.org --max_offset=0.5
+#   cx host run <host> "cx task run sync-system-clock --check"      # a fleet host
+#
+# Root: the system steps run with "sudo -n" (never a hidden prompt) unless the run is interactive (a terminal,
+# not -q), where sudo may ask once; without passwordless sudo a non-interactive run says so and prints the
+# commands to run by hand. Windows asks for administrator rights through the UAC prompt.
+#
+# This task is never memoized (cache: False): every run measures.
+
+cache: False

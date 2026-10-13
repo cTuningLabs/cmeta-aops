@@ -770,7 +770,7 @@ class CTask(InitCTask):
                 ###########################################################################################
                 compile_uses = compile_desc.get('uses')
                 if compile_uses:
-                    self_time_compile_with_cmeta = time.time()
+                    self_time_compile_with_cmeta = time.monotonic()
 
                     # The stamp of the build folder: a rebuild that this run implies (the targets
                     # changed, the binary is gone) does not go into a folder built for other targets,
@@ -822,7 +822,7 @@ class CTask(InitCTask):
 
                     _impact = r.setdefault('_impact', {})
                     _impact['self_time_compile'] = ctx['tasks']['local'].get('compile-program', {}).get('_impact',{}).get('self_time')
-                    _impact['self_time_compile_with_cmeta'] = time.time() - self_time_compile_with_cmeta
+                    _impact['self_time_compile_with_cmeta'] = time.monotonic() - self_time_compile_with_cmeta
 
                     sizes = self.common_sizes() if r.get('return') == 0 else None
                     if sizes is not None:
@@ -874,7 +874,8 @@ class CTask(InitCTask):
 #                ctx['tasks']['local']['run_time_env']['+PATH'] = dynamic_lib_paths
 
 
-        self_time_run_with_cmeta = time.time()
+        # The times of this task on the monotonic clock: the wall clock can be set while a program runs
+        self_time_run_with_cmeta = time.monotonic()
         if not run_desc.get('skip', False) and not skip_run:
             if con and verbose:
                 print ('')
@@ -946,7 +947,7 @@ class CTask(InitCTask):
         self_time_compile = ctx_tasks['local'].get('compile-program', {}).get('_impact', {}).get('self_time')
 
         result['_impact'] = {'self_time_compile_with_cmeta': self_time_compile,
-                             'self_time_run_with_cmeta': time.time() - self_time_run_with_cmeta}
+                             'self_time_run_with_cmeta': time.monotonic() - self_time_run_with_cmeta}
         if build_disk_gb is not None:
             result['_impact']['disk_gb'] = build_disk_gb
 

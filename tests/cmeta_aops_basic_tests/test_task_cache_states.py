@@ -6,7 +6,9 @@ The cache entry of a run, end to end, with a synthetic task written into the thr
 its run "downloads" once, "builds", fails on demand, counts its attempts): a retry of the same configuration
 resumes the same entry without a second download; the request's parameters replace the entry's; a different
 configuration gets its own entry while the failed one stays; a failed, crashed or broken entry is never served
-as a result; identical requests at once make one entry (the second waits and uses the result); `--new`,
+as a result; identical requests at once make one entry (the second waits and uses the result; of three with
+the first killed, one resumes and the other uses its result; the wait has its own limit, not the lock timeout,
+and gives up after CMETA_CACHE_WAIT_TIMEOUT); `--new`,
 `--update`, `--clean` as before; `cx cache show --state` / `clean --failed|--crashed|--broken`; a delete of a
 running entry is refused - and after every step the invariants: the index equals the disk, one entry per
 configuration, no lock or temporary files left, the results and parameters of usable entries untouched.
@@ -199,8 +201,8 @@ def count_in(folder, fname):
 
 
 def wait_for(predicate, seconds=60, what='the condition'):
-    deadline = time.time() + seconds
-    while time.time() < deadline:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
         if predicate():
             return
         time.sleep(0.05)
@@ -434,6 +436,80 @@ def test_identical_requests_at_once_make_one_entry_and_the_second_waits(cm, home
     assert all(s == 'ok' for s in st.values())
 
 
+def test_three_identical_requests_and_the_first_one_killed(cm, home, inv):
+    """The first of three identical requests is killed while the two others wait for its entry: one of them
+    resumes the crashed attempt in place (the download stays), the other waits for that one and uses its
+    result - one entry, two attempts in all, never two at once."""
+    args = ['--name=theta', '--version=7', '--sleep=8']
+    first = start(args)
+    waiters = []
+    try:
+        wait_for(lambda: any((pathlib.Path(a['path']) / 'building.txt').is_file() for a in entries(cm)), 90, 'the first build to start')
+        waiters = [start(args), start(args)]
+        time.sleep(4)                       # the two are waiting for the entry by now (or come to it later: the same end)
+        first.kill()
+        first.communicate()
+        results = [finish(p, 300) for p in waiters]
+    finally:
+        for p in [first] + waiters:
+            if p.poll() is None:
+                p.kill(); p.communicate()
+
+    for rc, out in results:
+        assert rc == 0, out
+
+    found, st = inv.check(expected_entries=1)
+    assert count_in(found[0]['path'], 'attempts.txt') == 2, 'one attempt after the killed one, not two'
+    assert count_in(found[0]['path'], 'downloads.txt') == 1, 'the resumed attempt kept the download'
+    assert all(s == 'ok' for s in st.values())
+
+
+def test_a_request_waits_for_a_build_longer_than_the_lock_timeout(cm, home, inv):
+    """The wait for another process's attempt has its own limit (CMETA_CACHE_WAIT_TIMEOUT, a day): a short
+    CMETA_LOCK_TIMEOUT - the limit of a write - does not cut it."""
+    first = start(['--name=iota', '--version=8', '--sleep=8'])
+    try:
+        wait_for(lambda: any((pathlib.Path(a['path']) / 'building.txt').is_file() for a in entries(cm)), 90, 'the first build to start')
+        t0 = time.monotonic()
+        second = start(['--name=iota', '--version=8', '--sleep=8'], CMETA_LOCK_TIMEOUT='2')
+        rc2, out2 = finish(second, 300)
+        waited = time.monotonic() - t0
+        rc1, out1 = finish(first, 300)
+    finally:
+        if first.poll() is None:
+            first.kill(); first.communicate()
+
+    assert rc1 == 0, out1
+    assert rc2 == 0, out2
+    assert waited > 3, waited
+    found, st = inv.check(expected_entries=1)
+    assert count_in(found[0]['path'], 'attempts.txt') == 1, 'the waiter used the result, it did not build'
+
+
+def test_a_request_gives_up_after_the_cache_wait_timeout(cm, home, inv):
+    """A short CMETA_CACHE_WAIT_TIMEOUT: the waiting request gives up with a message that names the entry and
+    the variable, long before the build ends; the build goes on and its entry is usable."""
+    first = start(['--name=kappa', '--version=9', '--sleep=12'])
+    try:
+        wait_for(lambda: any((pathlib.Path(a['path']) / 'building.txt').is_file() for a in entries(cm)), 90, 'the first build to start')
+        t0 = time.monotonic()
+        second = start(['--name=kappa', '--version=9', '--sleep=12'], CMETA_CACHE_WAIT_TIMEOUT='2')
+        rc2, out2 = finish(second, 300)
+        gave_up = time.monotonic() - t0
+        rc1, out1 = finish(first, 300)
+    finally:
+        if first.poll() is None:
+            first.kill(); first.communicate()
+
+    assert rc2 != 0, out2
+    assert 'stayed locked by another process' in out2 and 'CMETA_CACHE_WAIT_TIMEOUT' in out2, out2
+    assert gave_up < 11, gave_up
+    assert rc1 == 0, out1
+    found, st = inv.check(expected_entries=1)
+    assert count_in(found[0]['path'], 'attempts.txt') == 1
+    assert all(s == 'ok' for s in st.values())
+
+
 def test_the_running_file_goes_although_a_reader_has_it_open_when_the_attempt_ends(cm, home, inv):
     """Windows refuses to remove a file that another handle has open, and the running file of an entry is read
     by everyone who classifies it (the lookup of another request, `cx cache show`). The end of an attempt waits
@@ -446,8 +522,8 @@ def test_the_running_file_goes_although_a_reader_has_it_open_when_the_attempt_en
 
     def reader():
         # Open the running file as soon as the attempt writes it and keep it open past the end of the attempt
-        deadline = time.time() + 60
-        while time.time() < deadline:
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
             for path in cache_dir.glob(f'task--{TASK}--*/{RUNNING}'):
                 try:
                     with open(path, 'r', encoding='utf-8') as f:

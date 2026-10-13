@@ -22,6 +22,8 @@ See _desc.yaml for the CLI recipes and for why the remote is built this way.
 """
 
 import os
+import shlex
+import subprocess
 import time
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
@@ -103,11 +105,12 @@ class CTask(InitCTask):
 
         self.logger.debug("RUNNING TASK rclone-to-ssh run")
 
-        # Wall clock for the whole job - the remote mkdir and the transfer
-        # together. rclone prints its own "Elapsed time" for the transfer only,
+        # The time of the whole job - the remote mkdir and the transfer
+        # together - on the monotonic clock, which nobody sets while it runs.
+        # rclone prints its own "Elapsed time" for the transfer only,
         # and only when --progress is on, so a --no-progress run otherwise
         # reports no timing at all.
-        t_start = time.time()
+        t_start = time.monotonic()
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
@@ -124,7 +127,7 @@ class CTask(InitCTask):
         # exactly when the duration is worth knowing. Returns the seconds so the
         # caller can put them in the result dict.
         def report_elapsed(what):
-            elapsed = time.time() - t_start
+            elapsed = time.monotonic() - t_start
             if con and not quiet:
                 print ('')
                 print (f'{space}ELAPSED: {self._format_elapsed(elapsed)}'
@@ -201,14 +204,17 @@ class CTask(InitCTask):
             if ssh_path and ssh_exe == 'ssh':
                 print(f'{space}INFO: that path contains a space, so "ssh" from PATH is used instead')
 
-        ssh_cmd = f'{ssh_exe} {ssh_options.strip()} {ssh_target}' if ssh_options else f'{ssh_exe} {ssh_target}'
+        # rclone parses this command itself; retain a username containing spaces as one argument.
+        ssh_login = quote_path(ssh_target)
+        ssh_cmd = f'{ssh_exe} {ssh_options.strip()} {ssh_login}' if ssh_options else f'{ssh_exe} {ssh_login}'
+        ssh_argument = subprocess.list2cmdline([ssh_cmd]) if os.name == 'nt' else shlex.quote(ssh_cmd)
 
         cmd_parts = [
             rclone_path,
             rclone_command,
             quote_path(local_dir),
             quote_path(':sftp:' + remote_path),
-            f'--sftp-ssh "{ssh_cmd}"',
+            f'--sftp-ssh {ssh_argument}',
 
             # NOT optional here, despite looking like a tuning knob. rclone
             # probes an sftp remote for a usable hash command by running
@@ -324,7 +330,7 @@ class CTask(InitCTask):
                 rclone_path,
                 'mkdir',
                 quote_path(':sftp:' + remote_path),
-                f'--sftp-ssh "{ssh_cmd}"',
+                f'--sftp-ssh {ssh_argument}',
                 '--sftp-disable-hashcheck',
             ])
 
@@ -655,7 +661,7 @@ class CTask(InitCTask):
         "3843.7s" is not a number anyone reads as "just over an hour".
 
         Args:
-            seconds (float): Elapsed wall-clock seconds.
+            seconds (float): Elapsed seconds.
 
         Returns:
             str: e.g. "12.3s", "2m 5.1s", "1h 4m 3.7s".

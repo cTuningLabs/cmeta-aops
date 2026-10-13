@@ -40,16 +40,19 @@ def test_no_timeout_unchanged(cm):
 
 
 def test_timeout_stops_the_command_and_its_children(cm, tmp_path):
-    # The command starts a child that writes a file after 6 s and waits for it
+    # The command starts a child that writes a file after 20 s and waits for it. The run returns well before
+    # the child's own end, measured on the monotonic clock (the wall clock can be set meanwhile: WSL2 was seen
+    # stepping it by seconds every 30 s, which ate the 4 s this test once allowed), and the marker, looked for
+    # after the child's end, proves it was stopped
     marker = tmp_path / "child-survived.txt"
     child = tmp_path / "child.py"
-    child.write_text(f"import time\ntime.sleep(6)\nopen(r'{marker}', 'w').write('x')\n")
+    child.write_text(f"import time\ntime.sleep(20)\nopen(r'{marker}', 'w').write('x')\n")
     parent = script(tmp_path, "parent.py", f"import subprocess, sys\nsubprocess.run([sys.executable, r'{child}'])\n")
-    started = time.time()
+    started = time.monotonic()
     r = run_cmd(cm, parent, timeout = 2)
     assert r["return"] == 99 and "timed out after 2 s" in r["error"], r
-    assert time.time() - started < 6
-    time.sleep(6)
+    assert time.monotonic() - started < 15
+    time.sleep(max(0.0, 22 - (time.monotonic() - started)))
     assert not marker.exists(), "the child of the timed-out command was not stopped"
 
 
@@ -64,10 +67,30 @@ def test_timeout_in_other_modes(cm, tmp_path, extra):
     if extra.get("cmds") == "two":
         extra["cmds"] = [f'{PY} -c "print(1)"', sleep]    # each command gets the full time
         cmd = ""
-    started = time.time()
+    started = time.monotonic()
     r = run_cmd(cm, cmd, timeout = 2, **extra)
     assert r["return"] == 99 and "timed out" in r["error"], r
-    assert time.time() - started < 20
+    assert time.monotonic() - started < 20
+
+
+def test_a_timeout_stays_a_timeout_when_the_wall_clock_is_set_back(cm, tmp_path, monkeypatch):
+    # The wall clock set back 10 s while the command runs (NTP, a virtual machine's clock sync): the verdict
+    # does not depend on it - before, the elapsed time came out negative and the timeout was reported as
+    # "failed with return code -1"
+    real = time.time
+    calls = {"n": 0}
+
+    def stepped_back():
+        calls["n"] += 1
+        return real() - (0 if calls["n"] == 1 else 10.0)
+
+    sleep = script(tmp_path, "sleep.py", "import time\ntime.sleep(30)\n")
+    monkeypatch.setattr(time, "time", stepped_back)
+    try:
+        r = run_cmd(cm, sleep, timeout = 2)
+    finally:
+        monkeypatch.setattr(time, "time", real)
+    assert r["return"] == 99 and "timed out after 2 s" in r["error"], r
 
 
 def test_timeout_without_failing(cm, tmp_path):

@@ -1897,7 +1897,10 @@ class CTask(InitCTask):
         snaps = {g['ai']: PEND.snapshot(g['ai']) for g in guarded} if guard_mode != 'off' else {}
         saved = {k: os.environ.get(k) for k in env}
         os.environ.update(env)
+        # t0, a time of day, finds the native session and bounds the guard; the run's duration is on the
+        # monotonic clock, which nobody sets while it runs
         t0 = time.time()
+        started = time.monotonic()
         try:
             rr = self.cm.access(dict(params, category=TASK_CATEGORY, command='run', arg1=task_ref, ctx=ctx,
                                      path=project_path, unparsed=extra, con=con, verbose=verbose))
@@ -1907,7 +1910,7 @@ class CTask(InitCTask):
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
-        seconds = time.time() - t0
+        seconds = time.monotonic() - started
 
         # 6. close the conversation: the native session (discovered now for the harnesses that name it only afterwards)
         #    and the transcript, re-exported from the harnesses' own stores

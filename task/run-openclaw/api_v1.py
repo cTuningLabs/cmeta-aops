@@ -412,7 +412,10 @@ class CTask(InitCTask):
         if not os.environ.get('CMETA_GENERATOR'):
             os.environ['CMETA_GENERATOR'] = json.dumps(_agent_generator(argv0, extra_flags))
 
+        # The start as a time of day finds the session file of the run (_from_json); the run's duration is on the
+        # monotonic clock, which nobody sets while it runs
         start_time = time.time()
+        started = time.monotonic()
 
         ###########################################################################################
         # Interactive: hand the terminal over to openclaw
@@ -426,7 +429,7 @@ class CTask(InitCTask):
                 prompt_via_file_done(pr)
                 return self.cm.error(f'cannot run "{openclaw_path}": {e}', 1)
             prompt_via_file_done(pr)
-            duration = time.time() - start_time
+            duration = time.monotonic() - started
             if con:
                 print ('')
                 if returncode != 0:
@@ -459,7 +462,7 @@ class CTask(InitCTask):
 
         returncode = process.wait()
         prompt_via_file_done(pr)
-        duration = time.time() - start_time
+        duration = time.monotonic() - started
         output = ''.join(lines)
 
         tokens = {}
