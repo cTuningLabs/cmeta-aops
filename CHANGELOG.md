@@ -27,6 +27,16 @@ All notable changes to cMeta AOps are documented here, newest first.
   attempts in all, never two at once), a request that waits longer than `CMETA_LOCK_TIMEOUT` (the wait for an
   attempt has its own limit), and one that gives up after a short `CMETA_CACHE_WAIT_TIMEOUT` with a message that
   names it. Durations in these tests are measured on the monotonic clock.
+- **Every duration a task measures is on the monotonic clock.** The agent tasks (run-claude, run-codex,
+  run-gemini, run-agy, run-hermes, run-opencode, run-openclaw: "Duration" and the `duration` of the result), the
+  run time of run-ai, the elapsed time of rclone-to-ssh and the `self_time_*` of compile-and-run-program took the
+  difference of two wall-clock times: a clock set meanwhile (NTP, a virtual machine's clock sync) made them wrong,
+  even negative. A start that is also a time of day (run-openclaw's session file, run-ai's native session and
+  guard) stays on the wall clock next to the monotonic one. The names and units of the results are unchanged; on
+  Linux and macOS a run that spans a sleep of the machine now counts the time it was awake. A guard test keeps the
+  rule for category/, task/ and tool/ (`test_durations_use_the_monotonic_clock.py`, the twin of the engine's).
+  The MNIST benchmark program (`model-cnn-ylecun-mnist-pytorch`) times its imports, epochs and evaluation with
+  `time.perf_counter()`.
 
 ## 0.45.1
 - **Of the usable cache entries that are equal for a request, the one made last is taken - on every

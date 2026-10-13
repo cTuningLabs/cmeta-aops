@@ -105,11 +105,12 @@ class CTask(InitCTask):
 
         self.logger.debug("RUNNING TASK rclone-to-ssh run")
 
-        # Wall clock for the whole job - the remote mkdir and the transfer
-        # together. rclone prints its own "Elapsed time" for the transfer only,
+        # The time of the whole job - the remote mkdir and the transfer
+        # together - on the monotonic clock, which nobody sets while it runs.
+        # rclone prints its own "Elapsed time" for the transfer only,
         # and only when --progress is on, so a --no-progress run otherwise
         # reports no timing at all.
-        t_start = time.time()
+        t_start = time.monotonic()
 
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
@@ -126,7 +127,7 @@ class CTask(InitCTask):
         # exactly when the duration is worth knowing. Returns the seconds so the
         # caller can put them in the result dict.
         def report_elapsed(what):
-            elapsed = time.time() - t_start
+            elapsed = time.monotonic() - t_start
             if con and not quiet:
                 print ('')
                 print (f'{space}ELAPSED: {self._format_elapsed(elapsed)}'
@@ -660,7 +661,7 @@ class CTask(InitCTask):
         "3843.7s" is not a number anyone reads as "just over an hour".
 
         Args:
-            seconds (float): Elapsed wall-clock seconds.
+            seconds (float): Elapsed seconds.
 
         Returns:
             str: e.g. "12.3s", "2m 5.1s", "1h 4m 3.7s".

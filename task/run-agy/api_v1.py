@@ -264,7 +264,8 @@ class CTask(InitCTask):
         if not os.environ.get('CMETA_GENERATOR'):
             os.environ['CMETA_GENERATOR'] = json.dumps(_agent_generator(agy_path, extra_flags, env))
 
-        start_time = time.time()
+        # The run's duration, on the monotonic clock: the wall clock can be set while it runs
+        start_time = time.monotonic()
 
         # ---- interactive: hand the terminal over
         if interactive:
@@ -276,7 +277,7 @@ class CTask(InitCTask):
                 prompt_via_file_done(pr)
                 return self.cm.error(f'cannot run "{agy_path}": {e}', 1)
             prompt_via_file_done(pr)
-            duration = time.time() - start_time
+            duration = time.monotonic() - start_time
             if con:
                 print('')
                 if returncode != 0:
@@ -319,7 +320,7 @@ class CTask(InitCTask):
             return self.cm.error('interrupted by the user', 1)
         returncode = process.wait()
         prompt_via_file_done(pr)
-        duration = time.time() - start_time
+        duration = time.monotonic() - start_time
         output = ''.join(lines)
 
         stats_lines = self._format_stats(run_stats)

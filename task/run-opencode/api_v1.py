@@ -396,7 +396,8 @@ class CTask(InitCTask):
         if not os.environ.get('CMETA_GENERATOR'):
             os.environ['CMETA_GENERATOR'] = json.dumps(_agent_generator(opencode_path, extra_flags))
 
-        start_time = time.time()
+        # The run's duration, on the monotonic clock: the wall clock can be set while it runs
+        start_time = time.monotonic()
 
         ###########################################################################################
         # Interactive: hand the terminal over to opencode.
@@ -415,7 +416,7 @@ class CTask(InitCTask):
 
             prompt_via_file_done(pr)
 
-            duration = time.time() - start_time
+            duration = time.monotonic() - start_time
 
             if con:
                 print ('')
@@ -476,7 +477,7 @@ class CTask(InitCTask):
 
         prompt_via_file_done(pr)
 
-        duration = time.time() - start_time
+        duration = time.monotonic() - start_time
 
         output = ''.join(lines)
 
