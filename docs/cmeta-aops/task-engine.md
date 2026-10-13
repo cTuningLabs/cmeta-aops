@@ -111,6 +111,15 @@ applied in "UPDATE PARAMS FROM USE BASED ON STORAGE KEY"):
   deep-merged into `ctx['tasks']['use']`, so it reaches every nesting level.
 - **Matched by storage key.** When a task starts, its params are deep-merged with `use[<its storage
   key>]`, **overriding** what its parent passed in the `uses:` entry.
+- **The words are read by what `run()` expects (cMeta 0.37+).** On a run started from the command line,
+  a word given to a task - `--x=no` on its own command line or `--use.<key>.x=no` for a sub-task - becomes
+  a boolean when `run()` annotates the parameter `bool` (`x: bool = False`): yes/no, true/false, on/off,
+  1/0, any case; any other word stops the run with a message naming the parameter and the task. A task
+  can describe its sensitive parameters in its `_desc.yaml` and the task category converts and checks
+  exactly those: `cli_params: {count: int, mode: {values: [fast, full]}, ratio: {type: float, min: 0,
+  max: 1}}`. A parameter without annotation or description gets the text as it is; the Python API and the
+  values a task's code passes to a sub-task are never read. `cli_types: false` in a task's `_desc.yaml`
+  and `CMETA_CLI_TYPES=off` keep the words text.
 - **Control switches travel too.** `path`, `skip`, `cache`, `cache_repo`, `cache_name`,
   `cache_extra_alias`, `cache_extra_params`, `cache_extra_tags`, `update`, `clean`, `new` go to that
   task's control params: `--use.get-hf-model.update` redoes only that step.

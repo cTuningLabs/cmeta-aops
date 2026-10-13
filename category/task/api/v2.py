@@ -470,6 +470,22 @@ class Category(InitCategory):
                         cparams = self.cm.utils.common.deep_merge(cparams, use_control_params, append_lists=True)
 
         ###########################################################################################
+        # THE WORDS OF THE COMMAND LINE, READ BY WHAT run() EXPECTS (cMeta 0.37+): on a run started from the
+        # command line, the words given to this task - on its command line or through --use.<key>.<param> -
+        # become booleans for the parameters run() annotates bool, and the parameters the task describes in its
+        # _desc (`cli_params`: a type, allowed values, a range) are converted and checked; a string that is not
+        # of the type stops the run with a message naming the parameter. An older engine has no helper and the
+        # words stay text; `cli_types: false` in the task's _desc keeps them text for this task.
+
+        typed_params_from_cli = getattr(self.cm.utils, 'typed_params_from_cli', None)
+
+        if typed_params_from_cli is not None and task_api_code is not None and hasattr(task_api_code, 'run') \
+                and 'cli' in ctx.get('origin', {}) and cdesc.get('cli_types', True) and self.cm.utils.cli_types_enabled():
+            r = typed_params_from_cli(task_api_code.run, ctx_tasks['params'], cdesc.get('cli_params'),
+                                      where = f' of task "{artifact_alias}"')
+            if self.cm.catch_error(r): return r
+
+        ###########################################################################################
         # CHECK PARAMS INCLUDING FROM --use. ...
         # May do some basic tasks and stop
 

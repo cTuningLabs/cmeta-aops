@@ -401,6 +401,17 @@ class Category(InitCategory):
                         cparams = self.cm.utils.common.deep_merge(cparams, use_control_params, append_lists=True)
 
         ###########################################################################################
+        # THE WORDS OF THE COMMAND LINE, READ BY WHAT run() EXPECTS (cMeta 0.37+; see api/v2.py)
+
+        typed_params_from_cli = getattr(self.cm.utils, 'typed_params_from_cli', None)
+
+        if typed_params_from_cli is not None and task_api_code is not None and hasattr(task_api_code, 'run') \
+                and 'cli' in ctx.get('origin', {}) and cdesc.get('cli_types', True) and self.cm.utils.cli_types_enabled():
+            r = typed_params_from_cli(task_api_code.run, ctx_tasks['params'], cdesc.get('cli_params'),
+                                      where = f' of task "{artifact_alias}"')
+            if self.cm.catch_error(r): return r
+
+        ###########################################################################################
         # CHECK PARAMS INCLUDING FROM --use. ...
 
         if task_api_code is not None and hasattr(task_api_code, 'check_params') and callable(getattr(task_api_code, 'check_params')):

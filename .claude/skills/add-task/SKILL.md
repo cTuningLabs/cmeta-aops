@@ -269,6 +269,15 @@ calls go through `self.cmeta['uses_categories']['<name>']`, never a hard-coded a
 kwargs + `ctx`; a single-`params`-dict form (`foo`/`foo__`, trailing `__` stripped
 from the CLI name) is used where the signature is dynamic.
 
+**Booleans and described parameters** (cMeta 0.37+): annotate a yes/no parameter
+`bool` (`force: bool = False`) and the task category hands `run()` a real boolean for
+`--force=no` / `--use.<key>.force=no` (yes/no, true/false, on/off, 1/0; any other word
+is an error naming the parameter) - no `truthy()` helper is needed for the command
+line. A parameter without the annotation gets the text as typed. For a sensitive
+parameter, describe it in `_desc.yaml` and the task category converts and checks it:
+`cli_params: {jobs: {type: int, min: 1}, mode: {values: [fast, full]}}`. Describe
+what matters, when it matters - nothing else is checked.
+
 ---
 
 ## 5. Common building-block sub-tasks (reference by `alias,UID`)
