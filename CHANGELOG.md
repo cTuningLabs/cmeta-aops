@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.45.2.1)
+## 0.46.0
 - **The words of the command line reach a task as what its `run()` expects (cMeta 0.37+).** On a run started
   from the command line, the words given to a task - on its command line or through `--use.<key>.<param>` for a
   sub-task - become booleans for the parameters `run()` annotates `bool` (`flag: bool = False`): yes/no,
