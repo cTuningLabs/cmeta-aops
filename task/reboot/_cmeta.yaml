@@ -2,7 +2,7 @@ artifact: ddf5633344d84171
 authors: '[Grigori Fursin](https://cTuning.ai/@gfursin)'
 category: task,c36be4b9314a45e0
 creation_timestamp: '2026-10-13T05:43:00+00:00'
-desc: 'Schedule a reboot on Windows, Linux or macOS, with a safe preview and explicit --yes for execution.'
+desc: 'Confirm and reboot Windows, Linux or macOS; Linux systemd hosts can override session inhibitors.'
 tags:
 - reboot
 - system

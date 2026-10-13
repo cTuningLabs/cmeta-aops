@@ -2,6 +2,19 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.46.0
+- **The words of the command line reach a task as what its `run()` expects (cMeta 0.37+).** On a run started
+  from the command line, the words given to a task - on its command line or through `--use.<key>.<param>` for a
+  sub-task - become booleans for the parameters `run()` annotates `bool` (`flag: bool = False`): yes/no,
+  true/false, on/off and 1/0, any case; any other word stops the run with a message naming the parameter and the
+  task. Before, `--x=no` handed the task the string `'no'`, which is true. A task can also describe its sensitive
+  parameters in its `_desc.yaml` (`cli_params`: a type among bool, int, float and str, allowed `values`, a `min`
+  and a `max`) and the task category converts and checks exactly those. The Python API is not read, nor are the
+  parameters a task's own code passes to a sub-task. `cli_types: false` in a task's `_desc.yaml` and
+  `CMETA_CLI_TYPES=off` keep the words text; an older engine has no helper and the words stay text too.
+  The task category calls the engine's `typed_params_from_cli` before a task's `check_params` hook, in API v1
+  and v2. Test: `tests/cmeta_aops_basic_tests/test_task_cli_types.py`.
+
 ## 0.45.2
 - **A new task, `sync-system-clock`: the system clock measured against a time server and put right with the
   OS's own commands.** `cx task run sync-system-clock` measures the offset (w32tm on Windows, chronyc or
