@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## 0.45.1.1 (in development)
+## 0.45.2
 - **A new task, `sync-system-clock`: the system clock measured against a time server and put right with the
   OS's own commands.** `cx task run sync-system-clock` measures the offset (w32tm on Windows, chronyc or
   timedatectl's timesync-status on Linux, sntp on macOS) and the state of the time service, and when the clock
