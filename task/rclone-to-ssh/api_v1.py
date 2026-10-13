@@ -22,6 +22,8 @@ See _desc.yaml for the CLI recipes and for why the remote is built this way.
 """
 
 import os
+import shlex
+import subprocess
 import time
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
@@ -201,14 +203,17 @@ class CTask(InitCTask):
             if ssh_path and ssh_exe == 'ssh':
                 print(f'{space}INFO: that path contains a space, so "ssh" from PATH is used instead')
 
-        ssh_cmd = f'{ssh_exe} {ssh_options.strip()} {ssh_target}' if ssh_options else f'{ssh_exe} {ssh_target}'
+        # rclone parses this command itself; retain a username containing spaces as one argument.
+        ssh_login = quote_path(ssh_target)
+        ssh_cmd = f'{ssh_exe} {ssh_options.strip()} {ssh_login}' if ssh_options else f'{ssh_exe} {ssh_login}'
+        ssh_argument = subprocess.list2cmdline([ssh_cmd]) if os.name == 'nt' else shlex.quote(ssh_cmd)
 
         cmd_parts = [
             rclone_path,
             rclone_command,
             quote_path(local_dir),
             quote_path(':sftp:' + remote_path),
-            f'--sftp-ssh "{ssh_cmd}"',
+            f'--sftp-ssh {ssh_argument}',
 
             # NOT optional here, despite looking like a tuning knob. rclone
             # probes an sftp remote for a usable hash command by running
@@ -324,7 +329,7 @@ class CTask(InitCTask):
                 rclone_path,
                 'mkdir',
                 quote_path(':sftp:' + remote_path),
-                f'--sftp-ssh "{ssh_cmd}"',
+                f'--sftp-ssh {ssh_argument}',
                 '--sftp-disable-hashcheck',
             ])
 
