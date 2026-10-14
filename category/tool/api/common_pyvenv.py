@@ -7,10 +7,14 @@ whose api_v1.py only declares the package:
 
     from tool_c393ba5c6fa14f66.api.common_pyvenv import install_pyvenv
 
-    SPEC = {'name': 'yamllint', 'package': 'yamllint', 'default_version': '1.38.0', 'python': '3.12'}
+    SPEC = {'name': 'yamllint', 'package': 'yamllint', 'python': '3.12'}
 
     def install(self, ctx, params, cmd=None, *misc):
         return install_pyvenv(self, ctx, params, cmd, SPEC)
+
+and whose _desc.yaml pins the version installed when none is asked for:
+
+    default_version: '1.38.0'
 
 What it does:
   1. sets up tool/uv (detected, or installed without admin rights);
@@ -23,16 +27,21 @@ What it does:
 SPEC keys:
   name             the console script (without .exe)
   package          the PyPI package (default: name)
-  default_version  pinned version when the user asks for none
   python           Python version of the environment (e.g. '3.12')
   extra            more requirement strings installed alongside (e.g. 'ansible-core==2.21.4')
   unsupported_os   {uname: message} for systems the tool does not run on (e.g. Windows for Ansible)
   bin              {uname: folder of the environment} holding the command, for packages that install
                    their programs as data rather than console scripts (impi-rt on Windows: Library/bin);
                    default bin, or Scripts on Windows
+
+The version is not a SPEC key: default_version in the tool's _desc.yaml is the one place that says which
+version cMeta installs by default (common_release.default_version reads it; a 'default_version' SPEC key of
+a tool written before 0.46.1 is still read when the description has none).
 """
 
 import os
+
+from tool_c393ba5c6fa14f66.api.common_release import default_version
 
 
 def install_pyvenv(tool, ctx, params, cmd, spec):
@@ -50,7 +59,9 @@ def install_pyvenv(tool, ctx, params, cmd, spec):
     version = params.get('version')
     version_simple = params.get('version_simple')
     if not version:
-        version = version_simple = spec['default_version']
+        version = version_simple = default_version(tool, spec)
+        if not version:
+            return tool.cm.error(f'{spec["name"]} pins no default_version in its _desc.yaml: give --version=<version>')
     requirement = spec.get('package', spec['name']) + ('==' + version_simple if version_simple else version)
 
     r = tool.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'setup,a2f9b61079ce4333',

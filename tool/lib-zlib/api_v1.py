@@ -16,7 +16,6 @@ from tool_c393ba5c6fa14f66.api.common_static_lib import install_static_lib, dete
 SPEC = {
     'name': 'zlib',
     'lib': 'z',
-    'default_version': '1.3.2',
     'url': ['https://github.com/madler/zlib/releases/download/v{version}/zlib-{version}.tar.gz',
             'https://zlib.net/fossils/zlib-{version}.tar.gz'],
     'sha256': {

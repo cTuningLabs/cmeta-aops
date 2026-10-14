@@ -166,7 +166,12 @@ Detection keys:
 - `match_version:` — list of `{regex, group}`; first match wins. Escape
   backslashes for YAML.
 - `extra_paths:` (per OS, glob `**` allowed) — extra dirs to search beyond
-  `PATH`, e.g. winget install locations. Optional.
+  `PATH`, e.g. winget install locations. Optional. Only a whole `**` component
+  recurses (`C:\\Program Files**\\OpenSSL**\\**`: one level for each starred
+  name, then the recursion inside the OpenSSL folders); a recursion that would
+  start at a filesystem root (`/**`, `C:\\**`, `/*/**`) or in /proc, /sys,
+  /dev, /run is refused by the search, and the guard test
+  `test_guards_cli_words_and_search.py` fails on a declared pattern it refuses.
 
 Optional "list available versions" (`cx tool setup <name> --versions`):
 ```yaml
@@ -307,7 +312,7 @@ only a spec. Examples: `tool/helm`, `tool/kind`, `tool/gitleaks`, `tool/terrafor
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 GH = 'https://github.com/kubernetes-sigs/kind/releases/download'
-SPEC = {'name': 'kind', 'default_version': '0.33.0',
+SPEC = {'name': 'kind',
         'url': GH + '/v{version}/kind-{os}-{arch}',
         'checksum': {'file': '{url}.sha256sum'},
         'unsupported': [['windows', 'arm64']]}
@@ -316,6 +321,10 @@ class CTool(InitCTool):
     def install(self, ctx, params, cmd=None, *misc):
         return install_release(self, ctx, params, cmd, SPEC)
 ```
+
+The version installed when none is asked for is **`default_version: '0.33.0'` in the tool's `_desc.yaml`**,
+never in the spec: `cx tool show kind` answers it and a bump is one edit (the installers read the description;
+a tool with neither gets a clear error).
 
 The spec keys:
 
@@ -344,10 +353,11 @@ never touched. Examples: `tool/yamllint`, `tool/aiperf`, `tool/ansible`.
 ```python
 from tool_c393ba5c6fa14f66.api.common_pyvenv import install_pyvenv
 
-SPEC = {'name': 'ansible', 'package': 'ansible-core', 'default_version': '2.21.4', 'python': '3.12',
+SPEC = {'name': 'ansible', 'package': 'ansible-core', 'python': '3.12',
         'unsupported_os': {'windows': 'Ansible does not run on Windows as a control node - use WSL or a container'}}
 ```
 
+The package version installed by default is `default_version: '2.21.4'` in `_desc.yaml`, as for every tool.
 `extra` pins companion packages (`tool/ansible-lint` pins `ansible-core==2.21.4`), and
 `unsupported_os` turns a known-broken OS into one clear message instead of a traceback.
 

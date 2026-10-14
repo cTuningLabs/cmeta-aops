@@ -2,3 +2,7 @@ authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 cache: False
 
+# The switches as words of the command line (--print_line=no, --use.<key>.print_line=yes): run() reads its
+# parameters through **kwargs, so the task category is told here which ones are booleans (cMeta 0.37+)
+cli_params:
+  print_line: bool

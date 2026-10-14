@@ -100,9 +100,12 @@ class CTask(InitCTask):
 
             includes = ''
 
+            # A file of a Hugging Face repository is a POSIX path: a doubled separator of a description
+            # ("mnist//train-...") matched with huggingface_hub 1.x and matches nothing with 2.x (only the
+            # README came); the file names of the cache entry stay as described
             if files:
                 for f in files:
-                    includes += f' --include {f}'
+                    includes += ' --include ' + '/'.join(p for p in f.replace('\\', '/').split('/') if p)
 
             ctx['tasks']['local']['includes'] = includes
 

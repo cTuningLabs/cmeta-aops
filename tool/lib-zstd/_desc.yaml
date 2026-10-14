@@ -11,6 +11,8 @@ skip_detect: True
 names:
   - zstd.h
 
+default_version: '1.5.7'
+
 match_version:
   - regex: '^.*$'
     group: 0

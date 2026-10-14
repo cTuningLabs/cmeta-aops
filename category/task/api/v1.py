@@ -11,6 +11,55 @@ import copy
 
 from cmeta.category import InitCategory
 
+
+def cli_words(ctx):
+    """
+    The words of the command line that gave a parameter its value, as (name, value) pairs: --key=value,
+    -key=value, key=value and --use.<storage key>.key=value (the name is the last part, "-" read as "_").
+    The words after "--" are not read. A flag (--key, --key-), a list (--key,) and the typed values of an
+    @file are not words and are never here. (The same as in api/v2.py.)
+    """
+    cmd = ((ctx.get('origin') or {}).get('cli') or {}).get('cmd') or []
+    if isinstance(cmd, str):
+        import shlex
+        cmd = shlex.split(cmd)
+
+    words = set()
+    for word in cmd:
+        if word == '--':
+            break
+        if isinstance(word, str) and '=' in word:
+            key, value = word.lstrip('-').split('=', 1)
+            words.add((key.rsplit('.', 1)[-1].replace('-', '_'), value))
+
+    return words
+
+
+def read_cli_words(cm, ctx, ctx_tasks, task_api_code, cdesc, artifact_alias):
+    """
+    The words of the command line among this task's parameters, read by what its run() expects (cMeta 0.37+);
+    only the words the command line gave to THIS task (cli_words) - a value a parent's code passes to a
+    sub-task stays as it is. Called before the init hook and after the --use merge. (The same as in api/v2.py.)
+    """
+    typed_params_from_cli = getattr(cm.utils, 'typed_params_from_cli', None)
+
+    if typed_params_from_cli is None or task_api_code is None or not hasattr(task_api_code, 'run') \
+            or 'cli' not in ctx.get('origin', {}) or not cdesc.get('cli_types', True) or not cm.utils.cli_types_enabled():
+        return {'return': 0}
+
+    words = cli_words(ctx)
+    typed = {k: v for k, v in ctx_tasks['params'].items() if isinstance(v, str) and (k, v) in words}
+    if not typed:
+        return {'return': 0}
+
+    r = typed_params_from_cli(task_api_code.run, typed, cdesc.get('cli_params'), where = f' of task "{artifact_alias}"')
+    if r['return'] > 0:
+        return r
+
+    ctx_tasks['params'].update(typed)
+
+    return {'return': 0}
+
 class Category(InitCategory):
     """
     """
@@ -319,6 +368,10 @@ class Category(InitCategory):
 
         task_extra_uses = []
         if task_api_code is not None and hasattr(task_api_code, 'init') and callable(getattr(task_api_code, 'init')):
+            # The task's own words of the command line, read before init sees them (see api/v2.py)
+            r = read_cli_words(self.cm, ctx, ctx_tasks, task_api_code, cdesc, artifact_alias)
+            if self.cm.catch_error(r): return r
+
             r = task_api_code.init(ctx, ctx_tasks['params'])
             if self.cm.catch_error(r): return r
 
@@ -403,13 +456,8 @@ class Category(InitCategory):
         ###########################################################################################
         # THE WORDS OF THE COMMAND LINE, READ BY WHAT run() EXPECTS (cMeta 0.37+; see api/v2.py)
 
-        typed_params_from_cli = getattr(self.cm.utils, 'typed_params_from_cli', None)
-
-        if typed_params_from_cli is not None and task_api_code is not None and hasattr(task_api_code, 'run') \
-                and 'cli' in ctx.get('origin', {}) and cdesc.get('cli_types', True) and self.cm.utils.cli_types_enabled():
-            r = typed_params_from_cli(task_api_code.run, ctx_tasks['params'], cdesc.get('cli_params'),
-                                      where = f' of task "{artifact_alias}"')
-            if self.cm.catch_error(r): return r
+        r = read_cli_words(self.cm, ctx, ctx_tasks, task_api_code, cdesc, artifact_alias)
+        if self.cm.catch_error(r): return r
 
         ###########################################################################################
         # CHECK PARAMS INCLUDING FROM --use. ...

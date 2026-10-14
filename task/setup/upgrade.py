@@ -873,6 +873,316 @@ def find_latest(self, ctx, desc, tool_read, params, channels, query_channel = No
     return result
 
 
+###################################################################################################
+# Versions by name: "known" (the version the tool's _desc.yaml pins, default_version) and "latest" (the
+# newest one its channel or upstream offers), and the policy that says what a request without a version
+# means. The pure helpers first (offline tests), then the task-bound functions.
+
+VERSION_WORDS = ('known', 'latest')
+VERSION_POLICIES = ('known', 'latest', 'ask')
+VERSIONS_TTL_HOURS = 24                        # how long a cached lookup of the newest version is trusted
+VERSIONS_ARTIFACT = 'tool-versions'            # tmp::tool-versions of the local repository: one <tool>.json per tool
+TMP_CATEGORY = 'tmp,a2551f6124a34cf3'
+KNOWN_SOURCE = "default_version of the tool's _desc.yaml"
+
+
+def version_word(value):
+    """'known' or 'latest' when the version asked for is one of the two words, else None."""
+    v = str(value).strip().lower() if isinstance(value, str) else ''
+    return v if v in VERSION_WORDS else None
+
+
+def policy_of(value):
+    """A policy word (known, latest, ask), lower case, or None for anything else."""
+    v = str(value).strip().lower() if isinstance(value, str) else ''
+    return v if v in VERSION_POLICIES else None
+
+
+def known_version(desc):
+    """The version a tool installs when none is asked for: default_version of its _desc.yaml, or None."""
+    v = (desc or {}).get('default_version')
+    return str(v).strip() if v not in (None, '') else None
+
+
+def ttl_hours(value, default = VERSIONS_TTL_HOURS):
+    """A time to live in hours from a config value, an env value or a parameter; the default when it is not a number."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def lookup_age_hours(record, now = None):
+    """How old a cached lookup is, in hours, from its asked_at (ISO 8601, UTC); None without a usable time."""
+    try:
+        asked = datetime.datetime.fromisoformat(str((record or {}).get('asked_at')).replace('Z', '+00:00'))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if asked.tzinfo is None:
+        asked = asked.replace(tzinfo = datetime.timezone.utc)
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return (now - asked).total_seconds() / 3600
+
+
+def pick_version(rl, channels):
+    """
+    The version "latest" means for a tool, from a find_latest result: the channel's newest when the tool is
+    installed through a channel that knows its versions (winget, Homebrew, the system package manager), else
+    upstream's newest - the rule of --status. Returns (version, source).
+    """
+    if channels.get('primary') in CHANNELS_WITH_OWN_LATEST and rl.get('channel_version'):
+        return rl['channel_version'], rl.get('channel_source')
+    if rl.get('upstream_version'):
+        return rl['upstream_version'], rl.get('upstream_source')
+    if rl.get('channel_version'):
+        return rl['channel_version'], rl.get('channel_source')
+    return None, None
+
+
+def version_policy(self, ctx, desc, params):
+    """
+    The policy for a request without a version, from the narrowest source that names one:
+      1. the request's own version_policy (--use.<tool>.version_policy=latest for one tool);
+      2. the run's: init.version_policy in the global context, which task/init takes from
+         --use.init.version_policy, else CMETA_VERSION_POLICY, else the key version_policy of config::task;
+      3. the tool's _desc.yaml (version_policy: latest for a tool whose newest is always right);
+      4. known: whatever is found first, else the pin - the behaviour before the policy existed.
+    Returns (policy, where it comes from).
+    """
+    own = policy_of(params.get('version_policy'))
+    if own:
+        return own, 'the request'
+
+    run = policy_of(ctx['tasks'].get('global', {}).get('init', {}).get('version_policy'))
+    if run:
+        return run, 'the run (init.version_policy)'
+
+    tool = policy_of(desc.get('version_policy'))
+    if tool:
+        return tool, "the tool's _desc.yaml"
+
+    return 'known', 'the default'
+
+
+def versions_folder(self, ctx):
+    """
+    The folder that keeps the cached lookups: the artifact tmp::tool-versions of the local repository, made on
+    first use; None when it cannot be made - a lookup then goes to the network every time.
+    """
+    _global = ctx['tasks'].setdefault('global', {})
+    folder = _global.get('_versions_folder')
+    if folder is not None:
+        return folder or None
+
+    ref = 'local:' + VERSIONS_ARTIFACT
+    folder = None
+    r = self.cm.access({'category': TMP_CATEGORY, 'command': 'find', 'arg1': ref, 'con': False})
+    if r['return'] == 0 and r.get('artifacts'):
+        folder = r['artifacts'][0]['path']
+    elif r['return'] in (0, 16):
+        r = self.cm.access({'category': TMP_CATEGORY, 'command': 'create', 'arg1': ref, 'yaml': True, 'con': False,
+                            'tags': ['tool', 'versions', 'lookup', 'cmeta-aops'],
+                            'meta': {'desc': 'The cached lookups of the newest version of each tool ("cx tool setup '
+                                             '<tool> --versions", "--version=latest"): one <tool>.json per tool, '
+                                             'asked again after versions_ttl_hours (24) or with --refresh_versions.'}})
+        if r['return'] == 0:
+            folder = r.get('path')
+
+    _global['_versions_folder'] = folder or ''
+    return folder
+
+
+def lookup_versions(self, ctx, desc, tool_read, params, refresh = False, list_all = False):
+    """
+    The newest version of a tool and, when asked, every version it publishes: from the cached answer in
+    tmp::tool-versions/<tool>.json when it is younger than the time to live (versions_ttl_hours of the run:
+    --use.init.versions_ttl_hours, CMETA_VERSIONS_TTL_HOURS or config::task; 24 hours), else asked
+    (find_latest: the channel and upstream; list_versions for the list) and cached; once per run (a memo in
+    the global context). Never fails: an unreachable source is a note and "latest" is None.
+    Returns the record: tool, known, latest, source, channel, channel_version, channel_source,
+    upstream_version, upstream_source, versions (None unless listed), notes, asked_at, from_cache.
+    """
+    _global = ctx['tasks'].setdefault('global', {})
+    alias = tool_read['artifact_au']
+    memo = _global.setdefault('_tool_versions', {})
+
+    def complete(record):
+        return not list_all or record.get('versions') is not None
+
+    record = memo.get(alias)
+    if record and not refresh and complete(record):
+        return dict(record, from_cache = True)
+
+    folder = self.versions_folder(ctx)
+    path = os.path.join(folder, alias + '.json') if folder else None
+    ttl = ttl_hours(_global.get('init', {}).get('versions_ttl_hours'))
+
+    if path and not refresh and os.path.isfile(path):
+        try:
+            with open(path, encoding = 'utf-8') as f:
+                record = json.load(f)
+        except (OSError, ValueError):
+            record = None
+        age = lookup_age_hours(record) if isinstance(record, dict) else None
+        if age is not None and 0 <= age < ttl and complete(record):
+            memo[alias] = record
+            return dict(record, from_cache = True)
+
+    # Asked: the channel and upstream, and the list when wanted; the sub-setups they need stay quiet
+    channels = self.describe_channels(ctx, desc, tool_read, params)
+    versions, note = None, None
+    saved = _quiet_control(ctx)
+    try:
+        rl = self.find_latest(ctx, desc, tool_read, params, channels, query_channel = None, never_install = not list_all)
+        if rl['return'] > 0:
+            rl = {'channel_version': None, 'channel_source': None, 'upstream_version': None, 'upstream_source': None,
+                  'notes': [str(rl.get('error') or 'the lookup failed')]}
+        if list_all and desc.get('cmd_get_versions'):
+            rv = self.list_versions(ctx, desc, params, never_install = False)
+            if rv['return'] == 0:
+                versions = rv.get('versions') or []
+            else:
+                note = f'cmd_get_versions failed ({str(rv.get("error") or rv["return"]).strip().splitlines()[0]})'
+        elif list_all:
+            versions = []       # nothing to list: the tool has no cmd_get_versions (its newest version may still be known)
+    finally:
+        _restore_control(ctx, saved)
+
+    latest, source = pick_version(rl, channels)
+    record = {'tool': alias, 'known': known_version(desc), 'latest': latest, 'source': source,
+              'channel': channels.get('primary'),
+              'channel_version': rl.get('channel_version'), 'channel_source': rl.get('channel_source'),
+              'upstream_version': rl.get('upstream_version'), 'upstream_source': rl.get('upstream_source'),
+              'versions': versions, 'notes': list(rl.get('notes') or []) + ([note] if note else []),
+              'asked_at': now_iso()}
+    memo[alias] = record
+
+    if path:
+        try:
+            with open(path + '.tmp', 'w', encoding = 'utf-8') as f:
+                json.dump(record, f, indent = 2)
+            os.replace(path + '.tmp', path)
+        except OSError:
+            pass
+
+    return dict(record, from_cache = False)
+
+
+def resolve_version(self, ctx, params, tool_read):
+    """
+    "known" and "latest" as the version asked for (--version=latest, --use.<tool>.version=known), or no version
+    under a policy (version_policy): a concrete version in params before the cache lookup, so that the cache
+    entry's key and the provenance hold a real version. "known" is default_version of the tool's _desc.yaml;
+    "latest" the newest version its channel or upstream offers (lookup_versions, cached). When the one chosen
+    cannot be determined, the other is taken with one warning line; "ask" asks which one when they differ
+    (without a terminal, or with -q: the known one). A request without a version under the policy "known" is
+    left as it is: whatever is found first, else the pin - the behaviour before these words existed; so is a
+    version the request names. Returns {'return': 0}, with 'resolved' when a version was resolved.
+    """
+    con = ctx['control'].get('con', False)
+    quiet = ctx['control'].get('quiet', False)
+    desc = tool_read['desc']
+    name = tool_read['artifact_print_name']
+    space = tool_read['space']
+
+    word = version_word(params.get('version'))
+    if not word:
+        if params.get('version'):
+            return {'return': 0}
+        policy, _ = self.version_policy(ctx, desc, params)
+        if policy == 'known':
+            return {'return': 0}
+        word = policy
+
+    known = known_version(desc)
+    chosen, source, warning = None, None, None
+
+    if word in ('latest', 'ask'):
+        record = self.lookup_versions(ctx, desc, tool_read, params, refresh = bool(params.get('refresh_versions')))
+        latest = record.get('latest')
+        where = (record.get('source') or 'unknown source') + (', cached' if record.get('from_cache') else '')
+
+        if word == 'ask' and latest and known and latest != known and con and not quiet:
+            from task_c36be4b9314a45e0.api.ctask import ask
+
+            print ('')
+            r = ask(f'{space}INFO: the newest version of "{name}" is {latest} ({where}), the one known to cMeta is '
+                    f'{known}: install the newest one? (y/N) ',
+                    how = '--version=latest or --version=known, or -q for the known one')
+            if r['return'] > 0:
+                return r
+            if r['answer'].strip().lower() in ('y', 'yes'):
+                chosen, source = latest, where
+            else:
+                chosen, source = known, KNOWN_SOURCE
+        elif word == 'ask':
+            chosen, source = (known, KNOWN_SOURCE) if known else (latest, where)
+        elif latest:
+            chosen, source = latest, where
+        elif known:
+            chosen, source = known, KNOWN_SOURCE
+            warning = (f'the newest version of "{name}" could not be determined '
+                       f'({"; ".join(record.get("notes") or []) or "no source"}) - taking the known version {known}')
+        else:
+            warning = f'the newest version of "{name}" could not be determined and its _desc.yaml pins none - the version stays open'
+    elif known:
+        chosen, source = known, KNOWN_SOURCE
+    elif con and ctx['control'].get('verbose', False):
+        # A tool without a pin (a channel tool): "known" is whatever the channel gives, as before
+        print (f'{space}INFO: "{name}" pins no default_version - the version stays open')
+
+    if warning and con:
+        print ('')
+        print (f'{space}cMeta warning: {warning}')
+
+    if not chosen:
+        params.pop('version', None)
+        return {'return': 0}
+
+    params['version'] = chosen
+    params['version_word'] = word
+
+    if con:
+        print (f'{space}INFO: version "{word}" of "{name}" = {chosen} ({source})')
+
+    return {'return': 0, 'resolved': {'word': word, 'version': chosen, 'source': source, 'known': known}}
+
+
+def fallback_version(self, ctx, kwargs, error):
+    """
+    After the install of a version chosen by a word failed: the other word's version (the known one after
+    "latest", the newest one after "known"), announced with one warning line. A version the request named is
+    never replaced: it fails as asked. Returns the version to try, or None.
+    """
+    word = kwargs.get('version_word')
+    if not word:
+        return None
+
+    con = ctx['control'].get('con', False)
+    tool_read = kwargs['tool_read']
+    desc = tool_read['desc']
+    name = tool_read['artifact_print_name']
+    space = tool_read['space']
+    current = kwargs.get('version')
+    known = known_version(desc)
+
+    if current != known:
+        other, source = known, KNOWN_SOURCE
+    else:
+        record = self.lookup_versions(ctx, desc, tool_read, kwargs)
+        other, source = record.get('latest'), record.get('source')
+
+    if not other or other == current:
+        return None
+
+    if con:
+        print ('')
+        print (f'{space}cMeta warning: version {current} of "{name}" ("{word}") could not be installed '
+               f'({str(error).strip().splitlines()[0] if error else "the install failed"}) - trying {other} ({source})')
+
+    return other
+
+
 def _detect_kwargs(self, params, tool_read):
     """The keyword arguments detect_existing_tool() expects, from the user params of a setup run."""
     skip = ('status', 'upgrade', 'detect', 'install', 'build', 'versions', 'version_check',

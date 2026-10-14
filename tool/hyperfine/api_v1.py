@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'hyperfine',
- 'default_version': '1.21.0',
  'url': 'https://github.com/sharkdp/hyperfine/releases/download/v{version}/hyperfine-v{version}-{arch}-{os}.{ext}',
  'os': {'linux': 'unknown-linux-gnu', 'windows': 'pc-windows-msvc', 'darwin': 'apple-darwin'},
  'arch': {'amd64': 'x86_64', 'arm64': 'aarch64'},

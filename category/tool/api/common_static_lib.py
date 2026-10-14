@@ -10,7 +10,7 @@ need, see tool/lib-openssl):
 
     from tool_c393ba5c6fa14f66.api.common_static_lib import install_static_lib, detect_static_lib
 
-    SPEC = {'name': 'zlib', 'lib': 'z', 'default_version': '1.3.2',
+    SPEC = {'name': 'zlib', 'lib': 'z',
             'url': 'https://github.com/madler/zlib/releases/download/v{version}/zlib-{version}.tar.gz',
             'sha256': {'1.3.2': 'bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16'},
             'src_dir': 'zlib-{version}', 'sources': ['*.c'], 'headers': ['zlib.h', 'zconf.h'],
@@ -21,6 +21,10 @@ need, see tool/lib-openssl):
 
     def detect_versions(self, ctx, paths, params={}):
         return detect_static_lib(self, ctx, paths, params, SPEC)
+
+and whose _desc.yaml pins the version built when none is asked for (a version the sha256 map pins):
+
+    default_version: '1.3.2'
 
 What install_static_lib does, with no root and no build system:
   1. downloads the release with the download-file task and checks it against the SHA-256 pinned in
@@ -41,7 +45,6 @@ Linux and macOS (gcc or clang); on Windows install_static_lib returns a clear er
 SPEC keys:
   name             the upstream project
   lib              the library: lib<lib>.a, -l<lib>
-  default_version  the version built when no exact version is asked for
   url              the source release URL template ({version}), or a list of them (mirrors)
   file             the name of the downloaded file (template; default: the URL's last part)
   sha256           {version: SHA-256 of the release file}
@@ -65,7 +68,7 @@ import subprocess
 import tarfile
 from concurrent.futures import ThreadPoolExecutor
 
-from tool_c393ba5c6fa14f66.api.common_release import _sha256
+from tool_c393ba5c6fa14f66.api.common_release import _sha256, default_version
 
 # The C compiler tool of a C++ compiler tool (a C++ program that needs a static C library)
 C_COMPILER_OF = {'gcc-cpp': 'gcc', 'clang-cpp': 'clang'}
@@ -191,7 +194,9 @@ def install_static_lib(tool, ctx, params, cmd, spec):
     if _global['host']['os']['uname'] == 'windows':
         return tool.cm.error(spec.get('windows') or f'lib{lib}: the static library is built on Linux and macOS')
 
-    version = params.get('version_simple') or spec['default_version']
+    version = params.get('version_simple') or default_version(tool, spec)
+    if not version:
+        return tool.cm.error(f'{name} pins no default_version in its _desc.yaml: give --version=<version>')
     sha256 = (params.get('with', {}).get('sha256') or spec['sha256'].get(version) or '').lower()
     if not sha256:
         return tool.cm.error(f'no SHA-256 is pinned for {name} {version}: give --with.sha256=<SHA-256 of its '

@@ -18,3 +18,9 @@ uses_before_init:
     lang: '{{params.lang|$None}}'
     compute: '{{params.compute|$None}}'
 
+# The switches as words of the command line (--profile=no, --use.<key>.profile=yes): run() reads its
+# parameters through **kwargs, so the task category is told here which ones are booleans (cMeta 0.37+)
+cli_params:
+  profile: bool
+  profile_cuda: bool
+  profile_cuda_kernels: bool

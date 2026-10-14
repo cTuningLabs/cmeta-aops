@@ -276,7 +276,16 @@ is an error naming the parameter) - no `truthy()` helper is needed for the comma
 line. A parameter without the annotation gets the text as typed. For a sensitive
 parameter, describe it in `_desc.yaml` and the task category converts and checks it:
 `cli_params: {jobs: {type: int, min: 1}, mode: {values: [fast, full]}}`. Describe
-what matters, when it matters - nothing else is checked.
+what matters, when it matters - nothing else is checked. A `run()` that reads `**kwargs`
+has no annotations to read against: name every switch a user may type as a word in
+`cli_params` (`task/setup` lists its 21: `skip_install: bool`, ...), or `--skip_install=no`
+stays the text "no", which is true. Only the words the command line holds for a task are
+read; the values your code passes to a sub-task with `cm.access` are Python values and are
+never converted - so never annotate a path or a text `bool` (download-file's `check_file`
+was, and every release download stopped on it, 2026-10-14). The guard tests in
+`tests/cmeta_aops_basic_tests/test_guards_cli_words_and_search.py` check every task: a `bool`
+parameter used as text, a `**kwargs` switch (a boolean default, or a `skip_*` / `ignore_*` /
+`force_*` / `custom_*` name) missing from `cli_params`, a type the engine does not convert.
 
 ---
 

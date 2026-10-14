@@ -17,6 +17,7 @@ import shutil
 import zipfile
 
 import pytest
+import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -52,7 +53,10 @@ def test_the_asset_of_each_platform(flatc):
     assert flatc["asset_for"]("darwin", "amd64") == "MacIntel.flatc.binary.zip"
     assert flatc["asset_for"]("linux", "aarch64") is None
     assert flatc["asset_for"]("windows", "arm64") is None
-    pinned = flatc["SPEC"]["checksum"]["sha256"][flatc["SPEC"]["default_version"]]
+    # The version installed by default is pinned in _desc.yaml; its digests are in the spec
+    desc = yaml.safe_load((REPO_ROOT / "tool" / "flatc" / "_desc.yaml").read_text(encoding = "utf-8"))
+    assert "default_version" not in flatc["SPEC"]
+    pinned = flatc["SPEC"]["checksum"]["sha256"][str(desc["default_version"])]
     assert set(pinned) == set(flatc["ASSETS"].values())
     assert all(len(d) == 64 for d in pinned.values())
 
@@ -106,6 +110,9 @@ def context(uname, uarch):
 def tool(flatc, server):
     t = flatc["CTool"].__new__(flatc["CTool"])
     t.cm = FakeCM(server)
+
+    # The description of the tool, as setup hands it to the hook: the version installed by default is there
+    t.cdesc = yaml.safe_load((REPO_ROOT / "tool" / "flatc" / "_desc.yaml").read_text(encoding = "utf-8"))
     return t
 
 

@@ -94,3 +94,34 @@ def test_use_init_reaches_the_global_state_of_a_pipeline(cm):
     r = cm.access({"category": "task", "command": "run", "arg1": "host", "con": False, "quiet": True, "ctx": ctx})
     assert r["return"] == 0, r.get("error")
     assert "default_cache_repo" not in ctx["tasks"]["global"]["init"]      # nothing asked: the cache stays in "local"
+
+
+def test_the_file_cache_of_one_run(task):
+    """--use.init.file_cache=<folder> names the file cache of one run, over the key of config::task (0.47.0;
+    before, init refused the parameter: "unexpected keyword argument 'file_cache'")."""
+    assert run(task, file_cache = "/run")["file_cache"] == "/run"
+    assert run(task, {"file_cache": "/cfg"})["file_cache"] == "/cfg"
+    assert run(task, {"file_cache": "/cfg"}, file_cache = "/run")["file_cache"] == "/run"
+    assert "file_cache" not in run(task, file_cache = "")
+
+
+@pytest.mark.parametrize("key, env", [("version_policy", "CMETA_VERSION_POLICY"),
+                                      ("versions_ttl_hours", "CMETA_VERSIONS_TTL_HOURS")])
+def test_the_version_keys_flag_over_variable_over_config(task, monkeypatch, key, env):
+    monkeypatch.delenv(env, raising = False)
+    assert key not in run(task)
+    assert run(task, {key: "from-config"})[key] == "from-config"
+
+    monkeypatch.setenv(env, "from-env")
+    assert run(task, {key: "from-config"})[key] == "from-env"
+    assert run(task, {key: "from-config"}, **{key: "from-flag"})[key] == "from-flag"
+
+    monkeypatch.setenv(env, "")
+    assert run(task, {key: "from-config"})[key] == "from-config"
+
+
+def test_the_run_keys_reach_init_through_the_engine(cm, tmp_path):
+    use = {"init": {"file_cache": str(tmp_path), "version_policy": "known", "versions_ttl_hours": "1"}}
+    r = cm.access({"category": "task", "command": "run", "arg1": "init", "con": False, "quiet": True, "use": use})
+    assert r["return"] == 0, r.get("error")
+    assert r["file_cache"] == str(tmp_path) and r["version_policy"] == "known" and r["versions_ttl_hours"] == "1"

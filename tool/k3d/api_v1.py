@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'k3d',
- 'default_version': '5.9.0',
  'url': 'https://github.com/k3d-io/k3d/releases/download/v{version}/k3d-{os}-{arch}{exe}',
  'checksum': {'list': 'https://github.com/k3d-io/k3d/releases/download/v{version}/checksums.txt'},
  'unsupported': [['windows', 'arm64']]}

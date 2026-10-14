@@ -1,0 +1,40 @@
+authors: Grigori Fursin
+cache: False
+store_global: False
+
+default_profile: fleet
+new_ssh:
+  port: 2222
+  remote_address: 100.64.0.0/10
+
+profiles:
+  fleet: [ssh, tailscale]
+  ssh: [ssh]
+  managed: []
+  slurm: []
+  kubernetes: []
+  aks: []
+  mpi: []
+
+features:
+  ssh: Enable the system SSH service at boot; required only for direct SSH management.
+  tailscale: Enable an installed Tailscale service; Windows also enables unattended mode.
+  keep_awake: Windows/macOS disable AC idle sleep; Linux masks system sleep targets on all power sources.
+  boot_unlock: Windows only; unlock an explicitly identified BitLocker data volume before login.
+
+windows:
+  ssh_service: sshd
+  tailscale_service: Tailscale
+  openssh_tool: openssh-server,6adb356930f8464e
+  ssh_directory: Program Files/cMeta/OpenSSH
+  unlock_directory: ProgramData/cMeta-BootUnlock
+  unlock_task: cMeta-Unlock-Data-AtStartup
+  firewall_name: cMeta-SSH-Setup
+
+linux:
+  ssh_services: [ssh.service, sshd.service]
+  tailscale_service: tailscaled.service
+
+darwin:
+  ssh_service: com.openssh.sshd
+  tailscale_service: tailscale

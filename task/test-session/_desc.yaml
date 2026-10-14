@@ -38,3 +38,16 @@ cache: False
 
 params_map:
   arg2: id
+
+# The switches as words of the command line (--start=no, --use.<key>.start=yes): run() reads its
+# parameters through **kwargs, so the task category is told here which ones are booleans (cMeta 0.37+)
+cli_params:
+  start: bool
+  finish: bool
+  prune: bool
+  migrate: bool
+  list: bool
+  keep: bool
+  all: bool
+  remove_old: bool
+  skip_usage: bool

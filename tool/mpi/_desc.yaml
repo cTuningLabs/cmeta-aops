@@ -26,6 +26,13 @@ cache_params:
 names:
   - mpiexec{{global.host.vars.file_ext_exe}}
 
+# The version installed when none is asked for, per implementation (--with.mpi); the SHA-256 of the
+# Open MPI tarball built with --with.build=source is pinned in api_v1.py for the Open MPI version here
+default_versions:
+  openmpi: '5.0.11'
+  mpich: '5.0.2'
+  intel: '2021.18.1'
+
 match_version:
   - regex: '\(Open MPI\)\s+(\d+\.\d+\.\d+)'
     group: 1

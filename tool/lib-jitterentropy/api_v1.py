@@ -18,7 +18,6 @@ from tool_c393ba5c6fa14f66.api.common_static_lib import install_static_lib, dete
 SPEC = {
     'name': 'jitterentropy',
     'lib': 'jitterentropy',
-    'default_version': '3.7.0',
     'url': 'https://github.com/smuellerDD/jitterentropy-library/archive/refs/tags/v{version}.tar.gz',
     'file': 'jitterentropy-library-{version}.tar.gz',
     'sha256': {

@@ -54,9 +54,12 @@ Checks (the `checks` list of the record; `ok` = no failed error):
                the driver and GPU, Python.
 """
 
+import copy
+import datetime
 import glob
 import json
 import os
+import platform
 import posixpath
 import re
 import subprocess
@@ -356,6 +359,132 @@ def tool_library_keys(tool, key = None, broad = False):
     if key in ('nvcc', 'lib-cuda'):
         keys += [k for k in ('cudart',) + (NVIDIA_SHARED if broad and key == 'nvcc' else ()) if k not in keys]
     return keys
+
+
+###################################################################################################
+# The reproduction of a run ("cx ... -r"): a folder repro/<stamp>/ in the directory the command was run from,
+# with the request as a file that reruns it with every tool pinned to the version it used (cx @repro/<stamp>/
+# repro.json), the tools with their versions, paths and cache entries, and the run's circumstances.
+
+REPRO_FOLDER = 'repro'
+REPRO_REQUEST_FILE = 'repro.json'
+REPRO_TOOLS_FILE = 'tools.json'
+REPRO_RUN_FILE = 'run.json'
+REPRO_README_FILE = 'README.md'
+
+# Keys of the original request that must not be replayed: the context, the command line itself, the switch
+# that writes the reproduction files and the switches that only shape the output of that run
+REPRO_SKIP_KEYS = ('ctx', '_cli', 'repro', 'r', 'help', 'h', 'json', 'j', 'json_file', 'jf', 'dump', 'pause_at_the_end',
+                   'pause_if_error', 'pif', 'reindex')
+
+
+def repro_request(origin_params, tools):
+    """
+    The request that reruns the run with every tool pinned: the original request without the keys that must
+    not be replayed, and use.<storage key>.version = the version each tool was used at. What the request named
+    for a tool is replaced by what it became: a word ("latest"), a partial version ("3.12" -> "3.12.14") or a
+    range is not a reproduction (the original words stay in run.json).
+    """
+    request = {k: copy.deepcopy(v) for k, v in (origin_params or {}).items() if k not in REPRO_SKIP_KEYS}
+
+    # A version given as a word ("known", "latest") is what the run resolved: the pins below carry the result
+    if str(request.get('version', '')).strip().lower() in ('known', 'latest'):
+        request.pop('version')
+
+    use = request.get('use') if isinstance(request.get('use'), dict) else {}
+    use = copy.deepcopy(use)
+    for key, tool in (tools or {}).items():
+        if not tool.get('version'):
+            continue
+        entry = use.setdefault(key, {}) if isinstance(use.get(key), dict) else use.__setitem__(key, {}) or use[key]
+        entry['version'] = str(tool['version'])
+    if use:
+        request['use'] = use
+    return request
+
+
+def repro_readme(stamp, argv, pwd, pins):
+    """The README of a reproduction folder: how to rerun, what is pinned, how to change one version."""
+    lines = ['# Reproduce this run', '',
+             f'The command of {stamp} (its words, the machine and the result are in `{REPRO_RUN_FILE}`):', '',
+             '    ' + ' '.join(str(a) for a in (argv or [])), '',
+             f'Rerun it from the same directory with every tool pinned to the version it used:', '',
+             f'    cd {pwd}',
+             f'    cx @{REPRO_FOLDER}/{stamp}/{REPRO_REQUEST_FILE}', '',
+             f'The pins are `use.<tool>.version` in `{REPRO_REQUEST_FILE}` ({len(pins)} tool{"s" if len(pins) != 1 else ""}: ' +
+             (', '.join(f'{k} {v}' for k, v in pins.items()) if pins else 'none') +
+             f'); `{REPRO_TOOLS_FILE}` lists every tool with its path and its cache entry.', '',
+             'A tool that is no longer at its version is installed at it where cMeta can (a release download, a pinned',
+             'package) and fails loudly otherwise: remove that tool\'s `version` line to let it float, or set another',
+             'version to try the change one tool at a time. `--version=known` and `--version=latest` are also accepted.', '']
+    return '\n'.join(lines)
+
+
+def write_repro(cm, ctx, result, cmeta_version = None):
+    """
+    Writes repro/<stamp>/ (repro.json, tools.json, run.json, README.md) in the directory the command was run
+    from, for the run in ctx (its original request in ctx['origin'], its tools in the global context) and its
+    result. The stamp is kept in ctx['repro'] so that a run writes one folder. Never fails the run: an error
+    is returned as {'return': 0, 'warning': ...}.
+    """
+    repro = ctx.setdefault('repro', {})
+    origin = ctx.get('origin') or {}
+    stamp = repro.get('stamp')
+    if not stamp:
+        stamp = repro['stamp'] = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+
+    global_ctx = (ctx.get('tasks') or {}).get('global') or {}
+    tools = collect_resolved(global_ctx)
+    for key, tool in tools.items():
+        params = (global_ctx.get(key) or {}).get('_params')
+        if isinstance(params, dict):
+            tool['params'] = {k: v for k, v in params.items() if k != 'tool_path'}
+        word = (global_ctx.get(key) or {}).get('version_resolved')
+        if isinstance(word, dict):
+            tool['version_resolved'] = word
+
+    request = repro_request(origin.get('params'), tools)
+    pins = {k: v['version'] for k, v in use_versions(request).items()}
+    host = global_ctx.get('host') or {}
+    os_ = host.get('os') or {}
+    os_extra = host.get('os_extra') or {}
+    argv = (origin.get('cli') or {}).get('cmd') or []
+    pwd = origin.get('pwd') or os.getcwd()
+
+    run = {'stamp': stamp,
+           'command_line': argv if isinstance(argv, list) else str(argv),
+           'directory': pwd,
+           'time': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec = 'seconds'),
+           'return': (result or {}).get('return'),
+           'error': (result or {}).get('error'),
+           'host': {'uname': os_.get('uname'), 'uarch': os_.get('uarch'), 'os_id': os_extra.get('id'),
+                    'os_version': os_extra.get('version') or os_extra.get('version_id') or platform.version(),
+                    'platform': platform.platform(), 'hostname': platform.node()},
+           'cmeta_version': cmeta_version,
+           'python': platform.python_version(),
+           'tools': len(tools)}
+
+    folder = os.path.join(pwd, REPRO_FOLDER, stamp)
+    try:
+        os.makedirs(folder, exist_ok = True)
+        for name, data in ((REPRO_REQUEST_FILE, request), (REPRO_TOOLS_FILE, tools), (REPRO_RUN_FILE, run)):
+            with open(os.path.join(folder, name), 'w', encoding = 'utf-8') as f:
+                json.dump(data, f, indent = 2, default = str)
+                f.write('\n')
+        with open(os.path.join(folder, REPRO_README_FILE), 'w', encoding = 'utf-8') as f:
+            f.write(repro_readme(stamp, argv, pwd, pins))
+    except OSError as e:
+        return {'return': 0, 'warning': f'the reproduction files could not be written in {folder}: {e}'}
+
+    repro['folder'] = folder
+    repro['tools'] = tools
+    return {'return': 0, 'folder': folder, 'pins': pins}
+
+
+def use_versions(request):
+    """The use.<key> entries of a request that pin a version: {key: {'version': ...}}."""
+    use = request.get('use') if isinstance(request.get('use'), dict) else {}
+    return {k: v for k, v in use.items() if isinstance(v, dict) and v.get('version')}
 
 
 def collect_resolved(global_ctx):

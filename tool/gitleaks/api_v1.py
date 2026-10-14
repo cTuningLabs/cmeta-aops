@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'gitleaks',
- 'default_version': '8.30.1',
  'url': 'https://github.com/gitleaks/gitleaks/releases/download/v{version}/gitleaks_{version}_{os}_{arch}.{ext}',
  'arch': {'amd64': 'x64', 'arm64': 'arm64'},
  'ext': {'windows': 'zip', '*': 'tar.gz'},

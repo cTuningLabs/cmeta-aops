@@ -2,6 +2,126 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.47.0
+- **Fix: only the words of the command line are read as what a task's `run()` expects; a value a parent's
+  code passes to a sub-task stays as it is.** In 0.46.0 the task category converted every string parameter of
+  every task of a run started from the command line, so a path that `common_release.py` handed to
+  download-file's `check_file` (then annotated `bool`) stopped the run with "Invalid bool value ... for
+  'check_file'": every fresh release download (`cx tool setup jq`, `yq`, `helm`, ...) failed. Now a parameter
+  is converted only when the command line holds that word for it (`--key=value`, `-key=value`, `key=value`,
+  `--use.<storage key>.key=value`; `cli_words` in `category/task/api/v2.py` and `v1.py`), at any depth: the
+  words forwarded by `cx tool setup` and `cx program run` are still read, the Python values of a `uses` list,
+  a `cm.access` call or an `@file` are not. `check_file` of download-file is a `str` (it always was a file
+  name). Tests: `test_task_cli_types.py` (a parent's code calling the child with a path for a bool parameter;
+  the `--use` word read in the same child).
+- **Fix (Windows, since 0.42.0): the tools installed in Program Files are found again.** The tool search
+  skipped a pattern such as `C:\Program Files**\OpenSSL**\**` as "a recursive search from a filesystem root",
+  because it judged a pattern by the text before its first star (`C:\`). Only a whole `**` component recurses
+  in Python's glob; `Program Files**` is one level, as `*`. So lib-openssl, openssl, llama-cpp,
+  microsoft.windows.adk and windirstat were never found in their Program Files folders: winget answered that
+  OpenSSL was already installed, the search found nothing, and every C program that links OpenSSL
+  (`cx program run test-nmm-c-cpu`) failed on a fresh Windows cache. Now the folder the recursion starts from
+  is what is checked (`glob_pattern_is_safe` in `category/tool/api/v1.py`): a wildcard before it is expanded
+  one level and each folder it gives must be a real folder below a root, not a pseudo file system; `/*/**`
+  (every folder of a disk) stays refused. Tests: `test_find_path_safety.py`.
+- **Fix: the Hugging Face downloads work with huggingface_hub 2.x.** `get-hf-dataset` and `get-hf-model` gave
+  `hf download` the file names of a description as `--include` patterns as they were written: the doubled
+  separator of `dataset/hf-ylecun@mnist` (`mnist//train-00000-of-00001.parquet`) matched with huggingface_hub
+  1.x and matches nothing with 2.2.0 - only the README came, and the MNIST program failed in a fresh cMeta home.
+  Each pattern is now a clean POSIX path; the file names of the cache entries stay as described, so the entries
+  already made are reused.
+- **The switches of seven more tasks whose `run()` reads `**kwargs` are described in `cli_params`**, so a word
+  is read as a boolean: `compile-and-run-program` (`here`, `recompile`, `skip_compile`, `skip_run`,
+  `skip_size_check`), `setup-compile` and `setup-run` (`profile`, `profile_python`, `profile_cuda`,
+  `profile_cuda_kernels`, `run_on_host`), `target` (`ask`, `add_env`), `clone-git-to-cache` (`version_to_dir`,
+  `skip_checkout_dir`), `finish-run` (`print_line`) and `test-session` (`start`, `finish`, `prune`, `migrate`,
+  `list`, `keep`, `all`, `remove_old`, `skip_usage`). Before, `cx program run <p> --recompile=no` handed on the
+  text "no", which is true. The flags (`--recompile`, `--recompile-`) behave as before.
+- **Guard tests over the whole repository, for the kinds of bugs found in this release**
+  (`test_guards_cli_words_and_search.py`): no parameter annotated `bool` in a task or a category is used as
+  text; every switch a `**kwargs` task reads (with a boolean default, or named `skip_*`, `ignore_*`, `force_*`,
+  `custom_*`) is described in its `cli_params`, and the known switches stay described as `bool`; every
+  `cli_params` description uses a type the engine converts; no search pattern a tool declares (`names`,
+  `extra_paths`, `only_paths`, every OS) is refused by the tool search. The words of the command line are also
+  tested through the real `cx` and `cxt` in a child process (`test_task_cli_types.py`): `--key=value` in any
+  case, `key=value`, the flags `--key` and `--key-`, `--use.<key>.<param>` for a sub-task, a value a parent's code
+  passes, an `@file`, the words after `--`, the messages of a wrong word and `CMETA_CLI_TYPES=off`; and
+  `task/init` takes `file_cache`, `version_policy` and `versions_ttl_hours` from the flag, the variable and the
+  config in that order (`test_init_default_cache_repo.py`).
+- **`tool/docker-compose`: Docker Compose as its own binary.** `cx tool setup docker-compose` finds the
+  program on the PATH and in Docker's CLI plugin folders (Docker Desktop's included), else installs the pinned
+  release of docker/compose (`default_version` 5.6.0) into the cMeta cache with its SHA-256 checked against
+  the release's checksums; `--versions` lists the release tags. Installing it does not install or start Docker
+  Engine.
+- **`tool/wsl` installs and updates the WSL runtime with Microsoft's own commands.** `cx tool setup wsl
+  --install` runs `wsl.exe --install --no-distribution --web-download` (no Linux distribution is added),
+  `--upgrade` runs `wsl.exe --update --web-download`; the tool's README explains the administrator terminal,
+  the restart Windows may ask for, and how to add, import and set up a distribution.
+- **Versions by name: `--version=known` and `--version=latest`, a policy for a request without a version,
+  and the newest version of every tool looked up once and cached** (`task/setup/upgrade.py`, the setup task's
+  `check_params`). `known` is `default_version` of the tool's `_desc.yaml`; `latest` is the newest version the
+  tool's channel or upstream offers - the rule of `--status`: the channel's for winget, Homebrew and the system
+  package manager, upstream's (the GitHub release marked latest, else the newest tag) for a release download.
+  Both words are resolved to a concrete version BEFORE the cache lookup, so the cache entry's key and the
+  provenance record hold a real version, and they travel to a sub-task as a version does
+  (`--use.python.version=latest`). A request without a version follows a policy: `known` (the default: whatever
+  is found first, else the pin - the behaviour before), `latest`, or `ask` (the question "the newest is X, the
+  known one is Y: install the newest?", the known one without a terminal or with `-q`); set for one tool by
+  `--use.<tool>.version_policy`, for the run by `--use.init.version_policy`, for a shell by
+  `CMETA_VERSION_POLICY`, for the machine by the key `version_policy` of `config::task` (the flag wins over the
+  variable, the variable over the config; `task/init` carries it as `init.version_policy`), for a tool by
+  `version_policy` in its `_desc.yaml` (`latest` for a tool whose newest is always right), else `known`.
+  A version chosen by a word that cannot be determined or installed falls back to the other one, once, with one
+  `cMeta warning:` line, and the cache entry records the version obtained (`version_fallback` in the result);
+  a version the request names is never replaced. The lookup of the newest version is cached per tool in
+  `tmp::tool-versions/<tool>.json` of the local repository for `versions_ttl_hours` (24; `--use.init.
+  versions_ttl_hours`, `CMETA_VERSIONS_TTL_HOURS`, `config::task`), asked once per run, refreshed with
+  `--refresh_versions`; offline, the cached answer, else the known version with a line. `cx tool setup <tool>
+  --versions` now also prints the known and the newest version, their source and the policy, works for a tool
+  without `cmd_get_versions` (its channel's newest), and returns `known`, `latest`, `latest_source`, `policy`
+  and the lookup record for the Python API; the result of a setup carries `version_resolved` (the word and
+  the version it became). Tests: `test_tool_versions.py` (the helpers; the words, the policy sources, the two
+  fallbacks and the cache end to end on throwaway tools, offline).
+- **Reproduce a run: `cx ... -r` writes `repro/<stamp>/` and `cx @repro/<stamp>/repro.json` reruns it with
+  every tool pinned to the version it used** (`category/task/api/provenance.py` `write_repro`, called by the
+  task category when the outermost task of a run started with `-r` (`--repro`) ends). In the directory the
+  command was run from: `repro.json` - the original request with `use.<tool>.version` = the version each tool of
+  the run was used at (what the request named for a tool - a word, a partial version such as `3.12`, a range -
+  becomes what it resolved to: `3.12.14`), which the engine's `@file` include replays; `tools.json` - every tool
+  with its version, path, cache entry and
+  parameters; `run.json` - the command line, the directory, the time, the result, the host and the cMeta version;
+  `README.md` - how to rerun and how to change one version at a time. A pinned version that is no longer there is
+  installed where cMeta can and fails loudly otherwise: remove the pin to let that tool float. The engine's own
+  `cmeta-repro-*.json` files are written as before. Tests: `test_repro.py` (the request, the README, a run with
+  `-r` and its rerun from the file, a pin that cannot be met).
+- **`--use.init.file_cache=<folder>` names the file cache of one run** (the folder of large downloads and
+  clones that `clone-git-to-cache`, `get-hf-model` and `get-hf-dataset` keep outside the cache entries), as the
+  key `file_cache` of `config::task` does for every run; before, `task/init` refused the parameter.
+- **The switches of `cx tool setup` are read as words** (`--skip_install=no`, `--use.<tool>.install=yes`): the
+  setup task reads its parameters through `**kwargs`, so its 21 boolean switches are now named in `cli_params`
+  of `task/setup/_desc.yaml` - before, `--skip_install=no` kept the text "no", which is true.
+- **The version a tool installs by default is declared in its `_desc.yaml` only.** `default_version` of the
+  tool's description is the one place that says which version cMeta installs when none is asked for, so that
+  `cx tool show <tool>` answers it and a bump is one edit. The shared installers (`common_release.py`,
+  `common_pyvenv.py`, `common_static_lib.py`) read it from the description (`common_release.default_version`),
+  and the SPEC dicts of the 25 tools on them lose their copy; the three static libraries get the key, and
+  `tool/mpi` gets `default_versions`, one per implementation. A SPEC `default_version` of a tool written before
+  this version is still read when the description has none; a tool with neither gets an error naming the key.
+  No behaviour change: the same versions as before. Test: `test_tool_default_version.py` (every tool on a
+  shared installer declares the key, no code copy, the installers read the description). The first step of the
+  work on default and latest versions of tools.
+- **Prototype `setup-cmeta-host`: optional host services for Windows, Linux and macOS.**
+  Terminal runs explain and ask about SSH, Tailscale, sleep settings and Windows BitLocker
+  data-volume boot unlock, then ask before applying. `-q` suppresses questions; scripted changes
+  require `--apply`, while `--check` and `--dry_run` inspect only. Existing services/configuration
+  remain when deselected. Windows setup can keep portable SSH on the OS disk, enable unattended
+  Tailscale, and provision a protected SYSTEM startup unlock task using an existing external-key
+  protector without exporting key contents to cMeta. `managed`, `slurm`, `kubernetes`, `aks` and
+  `mpi` profiles select no services by default; controller registration and workload launchers
+  remain separate. Includes safe metadata reports and a usage/maintenance guide. Validation:
+  13 focused tests, interactive/quiet Windows CLI checks and read-only NucBox inspection;
+  generalized live provisioning and Linux/macOS apply still need disposable-host integration tests.
+
 ## 0.46.0
 - **The words of the command line reach a task as what its `run()` expects (cMeta 0.37+).** On a run started
   from the command line, the words given to a task - on its command line or through `--use.<key>.<param>` for a

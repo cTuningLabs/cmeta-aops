@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'kind',
- 'default_version': '0.33.0',
  'url': 'https://github.com/kubernetes-sigs/kind/releases/download/v{version}/kind-{os}-{arch}',
  'checksum': {'file': '{url}.sha256sum'},
  'unsupported': [['windows', 'arm64']]}

@@ -41,7 +41,13 @@ match_version:
 cmd_get_version: '{{tool_path}} --version'  # {{tool_path}} = the found binary
 extra_paths:                                # extra dirs to search beyond PATH (per OS, glob ** allowed)
   windows: [ "{{global.host.os_env.APPDATA}}\\npm" ]
+default_version: '4.3.0'                    # the version installed when none is asked for (a quoted string)
 ```
+
+`default_version` is the one place that says which version cMeta installs by default: the shared installers
+(`common_release.py`, `common_pyvenv.py`, `common_static_lib.py`) and a custom `install()` hook
+(`self.cdesc['default_version']`) read it from the description, never from a copy in the code, so that
+`cx tool show <tool>` answers the question and a bump is one edit.
 
 `setup/detect.py` searches each `names` filename on `aggregated.env.PATH` + `os_env.PATH`
 + `extra_paths`, runs `cmd_get_version` on each hit, and regex-matches the version

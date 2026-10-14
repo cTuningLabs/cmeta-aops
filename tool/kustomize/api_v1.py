@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'kustomize',
- 'default_version': '5.8.1',
  'url': 'https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv{version}/kustomize_v{version}_{os}_{arch}.{ext}',
  'ext': {'windows': 'zip', '*': 'tar.gz'},
  'checksum': {'list': 'https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv{version}/checksums.txt'}}

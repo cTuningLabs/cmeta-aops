@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'yq',
- 'default_version': '4.53.6',
  'url': 'https://github.com/mikefarah/yq/releases/download/v{version}/yq_{os}_{arch}{exe}',
  'checksum': {'yq': 'https://github.com/mikefarah/yq/releases/download/v{version}/checksums',
               'order': 'https://github.com/mikefarah/yq/releases/download/v{version}/checksums_hashes_order'}}

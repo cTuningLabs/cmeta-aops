@@ -7,6 +7,34 @@ cache: True                      # force by default
 params_map:
   arg2: name
 
+# The switches as words of the command line (--skip_install=no, --use.<tool>.install=yes): run() reads its
+# parameters through **kwargs, so the task category is told here which ones are booleans (cMeta 0.37+)
+cli_params:
+  detect: bool
+  install: bool
+  build: bool
+  skip_detect: bool
+  skip_install: bool
+  skip_build: bool
+  skip_install_uses: bool
+  skip_build_uses: bool
+  skip_cache_version_check: bool
+  skip_size_check: bool
+  versions: bool
+  status: bool
+  upgrade: bool
+  sizes: bool
+  here: bool
+  ignore_install_errors: bool
+  ignore_build_errors: bool
+  custom_install: bool
+  custom_build: bool
+  add_tool_path_to_env: bool
+  force_add_tool_path_to_env: bool
+  refresh_versions: bool
+  version_policy:
+    values: [known, latest, ask]
+
 cache_params:
   - name
   - "@version" # Treat @keys as fuzzy versions or versions with conditions during cMeta search!

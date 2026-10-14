@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'golangci-lint',
- 'default_version': '2.14.0',
  'url': 'https://github.com/golangci/golangci-lint/releases/download/v{version}/golangci-lint-{version}-{os}-{arch}.{ext}',
  'ext': {'windows': 'zip', '*': 'tar.gz'},
  'member': 'golangci-lint-{version}-{os}-{arch}/golangci-lint{exe}',

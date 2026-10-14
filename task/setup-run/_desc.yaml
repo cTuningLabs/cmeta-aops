@@ -13,3 +13,11 @@ uses_before_init:
     ask: '{{params.ask|$False}}'
     compute: '{{params.compute|$None}}'
 
+# The switches as words of the command line (--run_on_host=no, --use.<key>.run_on_host=yes): run() reads its
+# parameters through **kwargs, so the task category is told here which ones are booleans (cMeta 0.37+)
+cli_params:
+  run_on_host: bool
+  profile: bool
+  profile_python: bool
+  profile_cuda: bool
+  profile_cuda_kernels: bool

@@ -38,8 +38,30 @@ def test_glob_pattern_is_safe(tool_api):
     assert safe("C:\\Program Files\\LLVM\\**\\libomp.dll")
     assert safe("/usr/lib/llvm-14/**/libomp.so")
     for pattern in ["//**/libomp.so", "/**/libomp.so", "/**", "C:\\**\\x.dll", "C:/**/x.dll",
-                    "/proc/**/x", "/sys/**/x", "/dev/**/x", "/run/**/x", "/*/**/libomp.so"]:
+                    "/proc/**/x", "/sys/**/x", "/dev/**/x", "/run/**/x", "/*/**/libomp.so",
+                    "C:\\*\\**\\x.dll", "C:\\?*\\**\\x.dll"]:
         assert not safe(pattern), pattern
+
+
+def test_glob_pattern_is_safe_when_only_a_name_has_stars(tool_api, tmp_path):
+    """
+    "**" inside a name is one level, as "*" (Python's glob): "C:\\Program Files**\\OpenSSL**\\**" recurses in
+    the OpenSSL folders, never from "C:\\" - judged by the text before its first star it was skipped and
+    lib-openssl was never found in "C:\\Program Files\\OpenSSL-Win64" (0.42.0 - 0.46.0).
+    """
+    safe = tool_api.glob_pattern_is_safe
+    assert safe("C:\\Program Files**\\OpenSSL**\\**\\opensslv.h")
+    assert safe("D:\\Program Files**\\llama.cpp\\**\\llama-cli.exe")
+    assert safe("/opt/OpenSSL**/include/openssl/opensslv.h")           # no recursive component: always
+
+    # The folders a wildcard before the recursion gives are each checked: a real folder below the root is fine
+    (tmp_path / "Program Files" / "OpenSSL-Win64").mkdir(parents = True)
+    assert safe(str(tmp_path / "Program Files**" / "OpenSSL**" / "**" / "opensslv.h"))
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"), reason = "needs a /proc to match")
+def test_glob_pattern_is_safe_expands_to_a_pseudo_file_system(tool_api):
+    assert not tool_api.glob_pattern_is_safe("/pro*/**/x")
 
 
 def test_lib_openmp_searches_library_folders_only():

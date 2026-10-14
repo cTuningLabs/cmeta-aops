@@ -192,7 +192,7 @@ class CTask(InitCTask):
             skip_ssl_certificate: bool = False,
             filename: str = None,
             md5sum: str = None,
-            check_file: bool = False,
+            check_file: str = None,      # a file that must exist after the download (relative to the directory, or absolute)
             directory: str = None,
             headers: dict = None,
             api_key: str = None,

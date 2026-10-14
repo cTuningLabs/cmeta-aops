@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.common_pyvenv import install_pyvenv
 
 SPEC = {'name': 'ansible-lint',
  'package': 'ansible-lint',
- 'default_version': '26.9.0',
  'python': '3.12',
  'extra': ['ansible-core==2.21.4'],
  'unsupported_os': {'windows': 'Ansible does not run on Windows as a control node (it needs POSIX-only '

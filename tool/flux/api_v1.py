@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'flux',
- 'default_version': '2.9.5',
  'url': 'https://github.com/fluxcd/flux2/releases/download/v{version}/flux_{version}_{os}_{arch}.{ext}',
  'ext': {'windows': 'zip', '*': 'tar.gz'},
  'checksum': {'list': 'https://github.com/fluxcd/flux2/releases/download/v{version}/flux_{version}_checksums.txt'}}

@@ -18,23 +18,42 @@ UNSAFE_SEARCH_ROOTS = ('/proc', '/sys', '/dev', '/run')
 
 def glob_pattern_is_safe(pattern):
     """
-    Whether a search pattern may be expanded: a pattern without "**" always; one with "**" only when
-    the fixed part before its first wildcard is a real folder below a filesystem root (not "/", not
-    "C:\\", not /proc, /sys, /dev, /run). A tool's "{{...home}}/**" becomes "//**" when the home of a
-    distribution's compiler resolves to "/".
+    Whether a search pattern may be expanded: a pattern without a recursive "**" always; one with it only
+    when the folder the recursion starts from is a real folder below a filesystem root (not "/", not "C:\\",
+    not /proc, /sys, /dev, /run, not "/*" - every folder of a disk). A tool's "{{...home}}/**" becomes "//**"
+    when the home of a distribution's compiler resolves to "/".
+
+    Only a whole "**" component recurses (as Python's glob reads it): "C:\\Program Files**\\OpenSSL**\\**"
+    starts its recursion in the OpenSSL folders, so a wildcard in the folders before it is expanded (one
+    level each, cheap) and every folder it gives is checked. Before (0.42.0 - 0.46.0) the pattern was judged
+    by the text before its first wildcard, "C:\\", and skipped: lib-openssl, openssl, llama-cpp,
+    microsoft.windows.adk and windirstat were never found in their Program Files folders.
     """
-    if '**' not in pattern:
+    import glob
+
+    m = re.search(r'(?:^|(?<=[\\/]))\*\*(?=[\\/]|$)', pattern)
+    if m is None:
         return True
-    head = pattern
-    for wildcard in ('*', '?', '['):
-        i = head.find(wildcard)
-        if i >= 0:
-            head = head[:i]
-    head = os.path.normpath(os.path.dirname(head + 'x')) if head and not head.endswith(('/', '\\')) else os.path.normpath(head or '/')
-    posix = head.replace('\\', '/').rstrip('/')
-    if posix in ('', '.') or re.fullmatch(r'[A-Za-z]:', posix):     # "/", "//" or a drive root, on any OS
+
+    def is_root_or_pseudo(folder):
+        posix = os.path.normpath(folder).replace('\\', '/').rstrip('/') if folder else ''
+        if posix in ('', '.') or re.fullmatch(r'[A-Za-z]:', posix):     # "/", "//" or a drive root, on any OS
+            return True
+        return any(posix == root or posix.startswith(root + '/') for root in UNSAFE_SEARCH_ROOTS)
+
+    base = pattern[:m.start()].rstrip('\\/')
+    if is_root_or_pseudo(base):
         return False
-    return not any(posix == root or posix.startswith(root + '/') for root in UNSAFE_SEARCH_ROOTS)
+
+    # The first folder below the root must name something: "/*/**" or "C:\\?*\\**" is the whole disk
+    first = re.sub(r'^[A-Za-z]:', '', base.replace('\\', '/')).lstrip('/').split('/')[0]
+    if re.sub(r'\[[^\]]*\]|[*?]', '', first) == '':
+        return False
+
+    if not any(c in base for c in '*?['):
+        return True
+
+    return not any(is_root_or_pseudo(folder) for folder in glob.glob(base))
 
 
 class Category(InitCategory):

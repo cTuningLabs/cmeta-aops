@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'tofu',
- 'default_version': '1.12.6',
  'url': 'https://github.com/opentofu/opentofu/releases/download/v{version}/tofu_{version}_{os}_{arch}.zip',
  'ext': {'*': 'zip'},
  'checksum': {'list': 'https://github.com/opentofu/opentofu/releases/download/v{version}/tofu_{version}_SHA256SUMS'},

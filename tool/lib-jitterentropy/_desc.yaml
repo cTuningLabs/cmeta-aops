@@ -11,6 +11,8 @@ skip_detect: True
 names:
   - jitterentropy.h
 
+default_version: '3.7.0'
+
 match_version:
   - regex: '^.*$'
     group: 0

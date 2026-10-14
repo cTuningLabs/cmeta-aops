@@ -118,8 +118,11 @@ applied in "UPDATE PARAMS FROM USE BASED ON STORAGE KEY"):
   can describe its sensitive parameters in its `_desc.yaml` and the task category converts and checks
   exactly those: `cli_params: {count: int, mode: {values: [fast, full]}, ratio: {type: float, min: 0,
   max: 1}}`. A parameter without annotation or description gets the text as it is; the Python API and the
-  values a task's code passes to a sub-task are never read. `cli_types: false` in a task's `_desc.yaml`
-  and `CMETA_CLI_TYPES=off` keep the words text.
+  values a task's code passes to a sub-task are never read (the task category reads only the words the
+  command line literally holds for the task: `--x=no`, `-x=no`, `x=no`, `--use.<key>.x=no`). A task whose
+  `run()` reads `**kwargs` has no annotations to read against: it names its switches in `cli_params`
+  (`task/setup` does, for `detect`, `install`, `skip_install`, `versions`, ...). `cli_types: false` in a
+  task's `_desc.yaml` and `CMETA_CLI_TYPES=off` keep the words text.
 - **Control switches travel too.** `path`, `skip`, `cache`, `cache_repo`, `cache_name`,
   `cache_extra_alias`, `cache_extra_params`, `cache_extra_tags`, `update`, `clean`, `new` go to that
   task's control params: `--use.get-hf-model.update` redoes only that step.

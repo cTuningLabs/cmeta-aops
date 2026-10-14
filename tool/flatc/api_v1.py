@@ -24,7 +24,6 @@ ASSETS = {('windows', 'amd64'): 'Windows.flatc.binary.zip',
           ('darwin', 'amd64'): 'MacIntel.flatc.binary.zip'}
 
 SPEC = {'name': 'flatc',
-        'default_version': '25.12.19',
         'ext': {'*': 'zip'},
         'checksum': {'sha256': {'25.12.19': {
             'Windows.flatc.binary.zip': 'fff9445c9db907227bc64b54cc98743084c4949282aa4e576cff6a955724ddc8',

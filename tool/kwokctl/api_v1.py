@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'kwokctl',
- 'default_version': '0.8.0',
  'url': 'https://github.com/kubernetes-sigs/kwok/releases/download/v{version}/kwokctl-{os}-{arch}{exe}',
  'extra': [{'name': 'kwok',
             'url': 'https://github.com/kubernetes-sigs/kwok/releases/download/v{version}/kwok-{os}-{arch}{exe}'}]}

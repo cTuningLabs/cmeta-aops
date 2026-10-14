@@ -32,6 +32,11 @@ class CTask(InitCTask):
     status_tool = upgrade.status_tool
     upgrade_tool = upgrade.upgrade_tool
     prepare_upgrade_version = upgrade.prepare_upgrade_version
+    version_policy = upgrade.version_policy
+    versions_folder = upgrade.versions_folder
+    lookup_versions = upgrade.lookup_versions
+    resolve_version = upgrade.resolve_version
+    fallback_version = upgrade.fallback_version
     describe_channels = upgrade.describe_channels
     find_latest = upgrade.find_latest
     list_versions = upgrade.list_versions
@@ -68,7 +73,7 @@ class CTask(InitCTask):
                 'skip_size_check', 'sizes',
                 'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths',
                 'version', 'env', 'timeout', 'with', 'arg3',
-                'version_check',
+                'version_check', 'version_policy', 'version_word', 'refresh_versions',
                 'ignore_install_errors', 'ignore_build_errors',
                 'custom_install', 'custom_build',
                 'add_tool_path_to_env', 'force_add_tool_path_to_env',
@@ -114,9 +119,7 @@ class CTask(InitCTask):
         result = {'return':0}
 
         if params.get('versions', False):
-            if not desc.get('cmd_get_versions'):
-                return self.cm.error(f'not CMD to find available versions for the tool "{artifact_print_name}" in "{__file__}"')
-
+            # A tool without cmd_get_versions still has a newest version (its channel, cmd_get_latest_version)
             if desc.get('cmd_get_versions_uses'):
                 _uses = desc['cmd_get_versions_uses']
 
@@ -232,25 +235,39 @@ class CTask(InitCTask):
 
 
         ###########################################################################################
-        # Checking versions
+        # --versions: every version the tool publishes, the newest one its channel or upstream offers, the one
+        # known to cMeta and the policy of a request without a version; the lookup is cached (--refresh_versions)
         if params.get('versions', False):
-            r = self.list_versions(ctx, desc, params)
-            if r['return'] > 0:
-                err = r.get('error', '')
-                return self.cm.error(f'failed to get versions for tool "{artifact_print_name}" in "{__file__}":\n{err}')
+            record = self.lookup_versions(ctx, desc, tool_read, params, refresh = bool(params.get('refresh_versions')),
+                                          list_all = True)
+            versions = record.get('versions')
+            if not versions and not record.get('latest'):
+                return self.cm.error(f'no versions of tool "{artifact_print_name}" could be found ({"; ".join(record.get("notes") or []) or "no cmd_get_versions and no source of the newest version"})')
 
-            versions = r['versions']
+            policy, policy_source = self.version_policy(ctx, desc, params)
 
             result['stop'] = True
-            result['versions'] = versions
+            result['versions'] = versions or []
+            result['known'] = record.get('known')
+            result['latest'] = record.get('latest')
+            result['latest_source'] = record.get('source')
+            result['policy'] = policy
+            result['versions_lookup'] = record
 
             if con:
                 print ('')
-                print ('Detected versions:')
-                print ('')
-
                 if versions:
+                    print ('Detected versions:')
+                    print ('')
                     print (', '.join(versions))
+                    print ('')
+                cached = ' (cached)' if record.get('from_cache') else ''
+                print (f'Known to cMeta (default_version): {record.get("known") or "-"}')
+                print (f'Newest available: {record.get("latest") or "-"}' +
+                       (f' ({record.get("source")}{cached})' if record.get('latest') else ''))
+                print (f'Policy of a request without a version: {policy} ({policy_source})')
+                for note in record.get('notes') or []:
+                    print (f'Note: {note}')
 
             return result
 
@@ -278,6 +295,15 @@ class CTask(InitCTask):
         # the new version afterwards - both are what the engine's "update" switch does
         if params.get('upgrade', False):
             cparams['update'] = True
+
+        ###########################################################################################
+        # --version=known|latest, or no version under a policy: a concrete version before the cache lookup
+        if not params.get('upgrade', False):
+            r = self.resolve_version(ctx, params, tool_read)
+            if self.cm.catch_error(r): return r
+
+            if r.get('resolved'):
+                result['version_resolved'] = r['resolved']
 
         return result
 
@@ -842,9 +868,24 @@ class CTask(InitCTask):
             # Attempt to install tool
 
             r = self.install_tool(ctx, result, **kwargs_copy)
+
+            # A version chosen by a word ("known", "latest") that could not be installed: the other one, once,
+            # with a warning; the entry then records the version obtained (a version the request named fails)
+            version_fallback = None
+            if r['return'] > 0 or r.get('failed', False):
+                other = self.fallback_version(ctx, kwargs_copy, r.get('error'))
+                if other:
+                    version_fallback = {'from': version, 'to': other, 'why': r.get('error') or 'the install failed'}
+                    version = other
+                    kwargs_copy['version'] = other
+                    kwargs_copy.update(upgrade.split_version(other))
+                    r = self.install_tool(ctx, result, **kwargs_copy)
+
             if not ignore_install_errors and self.cm.catch_error(r): return r
 
             _update_params = r.get('_update_params')
+            if version_fallback and r['return'] == 0 and not r.get('failed', False):
+                _update_params = dict(_update_params or {}, version = version)
 
             # A custom install may report the space it took at its peak (archive + unpacked tree)
             if r.get('peak_gb') is not None:
@@ -871,9 +912,12 @@ class CTask(InitCTask):
                             _result_update_params = result.setdefault('_update_params', {})
                             _result_update_params = self.cm.utils.common.deep_merge(_result_update_params, _update_params, append_lists=True)
 
+                        if version_fallback:
+                            result['version_fallback'] = version_fallback
+
             xerror = r.get('error')
             xwarning = r.get('warning')
-            
+
             if xwarning:
                 if warning:
                     warning += '\n\n'
@@ -1007,6 +1051,10 @@ class CTask(InitCTask):
 
         if warning:
             result['warning'] = warning
+
+        # The word the version came from ("known", "latest") and the version it became, for the record
+        if kwargs_copy.get('version_word'):
+            result['version_resolved'] = {'word': kwargs_copy['version_word'], 'version': version}
 
         if skip_cache_version_check:
             result['skip_cache_version_check'] = True
