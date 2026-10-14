@@ -13,7 +13,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'sccache',
- 'default_version': '0.18.0',
  'url': 'https://github.com/mozilla/sccache/releases/download/v{version}/sccache-v{version}-{arch}-{os}.{ext}',
  'os': {'linux': 'unknown-linux-musl', 'windows': 'pc-windows-msvc', 'darwin': 'apple-darwin'},
  'arch': {'amd64': 'x86_64', 'arm64': 'aarch64'},

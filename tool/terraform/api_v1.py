@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'terraform',
- 'default_version': '1.16.4',
  'url': 'https://releases.hashicorp.com/terraform/{version}/terraform_{version}_{os}_{arch}.zip',
  'ext': {'*': 'zip'},
  'checksum': {'list': 'https://releases.hashicorp.com/terraform/{version}/terraform_{version}_SHA256SUMS'}}

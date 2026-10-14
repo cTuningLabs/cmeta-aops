@@ -17,7 +17,6 @@ from tool_c393ba5c6fa14f66.api.common_pyvenv import install_pyvenv
 
 SPEC = {'name': 'ray',
         'package': 'ray[default]',
-        'default_version': '2.59.0',
         'python': '3.12.14'}
 
 

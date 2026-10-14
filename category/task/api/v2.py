@@ -15,6 +15,61 @@ from datetime import datetime, timezone
 
 from cmeta.category import InitCategory
 
+
+def cli_words(ctx):
+    """
+    The words of the command line that gave a parameter its value, as (name, value) pairs: --key=value,
+    -key=value, key=value and --use.<storage key>.key=value (the name is the last part, "-" read as "_").
+    The words after "--" are not read. A flag (--key, --key-), a list (--key,) and the typed values of an
+    @file are not words and are never here.
+    """
+    cmd = ((ctx.get('origin') or {}).get('cli') or {}).get('cmd') or []
+    if isinstance(cmd, str):
+        import shlex
+        cmd = shlex.split(cmd)
+
+    words = set()
+    for word in cmd:
+        if word == '--':
+            break
+        if isinstance(word, str) and '=' in word:
+            key, value = word.lstrip('-').split('=', 1)
+            words.add((key.rsplit('.', 1)[-1].replace('-', '_'), value))
+
+    return words
+
+
+def read_cli_words(cm, ctx, ctx_tasks, task_api_code, cdesc, artifact_alias):
+    """
+    The words of the command line among this task's parameters, read by what its run() expects (cMeta 0.37+):
+    a word for a parameter run() annotates bool becomes a boolean, a word for a parameter the task describes
+    in its _desc (cli_params) its described type, checked against the values and the range; any other word
+    stops the run with a message naming the parameter and the task. Only the words the command line gave to
+    THIS task are read (cli_words): a value a parent's code passes to a sub-task is a Python value and stays
+    as it is - a path given to download-file's check_file, then annotated bool, was read as a bool and stopped
+    every release download (2026-10-14). Called before the task's init hook (its own words) and again after
+    the --use merge (the words for a sub-task); a converted value is no longer a string. An older engine has
+    no helper and the words stay text; `cli_types: false` in the task's _desc keeps them text for this task.
+    """
+    typed_params_from_cli = getattr(cm.utils, 'typed_params_from_cli', None)
+
+    if typed_params_from_cli is None or task_api_code is None or not hasattr(task_api_code, 'run') \
+            or 'cli' not in ctx.get('origin', {}) or not cdesc.get('cli_types', True) or not cm.utils.cli_types_enabled():
+        return {'return': 0}
+
+    words = cli_words(ctx)
+    typed = {k: v for k, v in ctx_tasks['params'].items() if isinstance(v, str) and (k, v) in words}
+    if not typed:
+        return {'return': 0}
+
+    r = typed_params_from_cli(task_api_code.run, typed, cdesc.get('cli_params'), where = f' of task "{artifact_alias}"')
+    if r['return'] > 0:
+        return r
+
+    ctx_tasks['params'].update(typed)
+
+    return {'return': 0}
+
 # The cache attempts begun by the runs of one ctx (id(ctx) -> a stack): released by run() however a run ends
 _CACHE_ATTEMPTS = {}
 
@@ -77,10 +132,24 @@ class Category(InitCategory):
         stack = _CACHE_ATTEMPTS.setdefault(key, []) if key is not None else []
         depth = len(stack)
 
+        # "cx ... -r": the outermost task run of the process writes the reproduction folder when it ends
+        # (repro/<stamp>/ in the directory the command was run from, see provenance.write_repro)
+        repro = ctx.get('repro') if isinstance(ctx, dict) else None
+        if repro is not None:
+            repro['_task_depth'] = repro.get('_task_depth', 0) + 1
+
         try:
-            return self._run(params)
+            result = self._run(params)
+
+            if repro is not None and repro.get('_task_depth') == 1:
+                self._write_repro(ctx, result)
+
+            return result
 
         finally:
+            if repro is not None:
+                repro['_task_depth'] -= 1
+
             # Whatever this call began in a cache entry and did not finish (an error return on the way,
             # an exception) is released here: the running file goes, the entry lock is dropped; the
             # entry stays tmp or failed and resumable - never locked by a process that is gone
@@ -88,6 +157,26 @@ class Category(InitCategory):
                 self._cache_release_attempt(stack.pop())
             if key is not None and not stack:
                 _CACHE_ATTEMPTS.pop(key, None)
+
+    ############################################################
+    def _write_repro(self, ctx, result):
+        """The reproduction folder of a run started with -r (--repro): repro/<stamp>/ with the request that reruns
+        it with every tool pinned to its version (cx @repro/<stamp>/repro.json), the tools and the run's facts."""
+        try:
+            from task_c36be4b9314a45e0.api import provenance
+        except ImportError as e:
+            print (f'cMeta warning: the reproduction files were not written (the provenance module could not be loaded: {e})')
+            return
+
+        r = provenance.write_repro(self.cm, ctx, result, cmeta_version = getattr(self.cm, '__version__', None))
+        con = (ctx.get('control') or {}).get('con', False)
+        if r.get('warning'):
+            print (f'cMeta warning: {r["warning"]}')
+        elif con and r.get('folder'):
+            folder = os.path.relpath(r['folder'], (ctx.get('origin') or {}).get('pwd') or os.getcwd())
+            print ('')
+            print (f'cMeta info: the reproduction files are in {folder} ({len(r.get("pins") or {})} tool version(s) pinned): '
+                   f'"cx @{folder.replace(os.sep, "/")}/{provenance.REPRO_REQUEST_FILE}" reruns this command with them')
 
     ############################################################
     def _run(
@@ -382,8 +471,15 @@ class Category(InitCategory):
             if self.cm.catch_error(r): return r
 
         ###########################################################################################
+        # THE WORDS OF THE COMMAND LINE among this task's own parameters, read by what run() expects (cMeta
+        # 0.37+) before the init hook sees them (--versions=no of setup); the --use words follow their merge
+
+        r = read_cli_words(self.cm, ctx, ctx_tasks, task_api_code, cdesc, artifact_alias)
+        if self.cm.catch_error(r): return r
+
+        ###########################################################################################
         # RUN INIT FROM TASK CODE IF EXISTS
-        # Can check and update params 
+        # Can check and update params
 
         task_extra_uses = []
         if task_api_code is not None and hasattr(task_api_code, 'init') and callable(getattr(task_api_code, 'init')):
@@ -470,20 +566,11 @@ class Category(InitCategory):
                         cparams = self.cm.utils.common.deep_merge(cparams, use_control_params, append_lists=True)
 
         ###########################################################################################
-        # THE WORDS OF THE COMMAND LINE, READ BY WHAT run() EXPECTS (cMeta 0.37+): on a run started from the
-        # command line, the words given to this task - on its command line or through --use.<key>.<param> -
-        # become booleans for the parameters run() annotates bool, and the parameters the task describes in its
-        # _desc (`cli_params`: a type, allowed values, a range) are converted and checked; a string that is not
-        # of the type stops the run with a message naming the parameter. An older engine has no helper and the
-        # words stay text; `cli_types: false` in the task's _desc keeps them text for this task.
+        # THE WORDS OF THE COMMAND LINE given through --use.<key>.<param>, read by what run() expects (the
+        # task's own words were read before its init hook; see read_cli_words)
 
-        typed_params_from_cli = getattr(self.cm.utils, 'typed_params_from_cli', None)
-
-        if typed_params_from_cli is not None and task_api_code is not None and hasattr(task_api_code, 'run') \
-                and 'cli' in ctx.get('origin', {}) and cdesc.get('cli_types', True) and self.cm.utils.cli_types_enabled():
-            r = typed_params_from_cli(task_api_code.run, ctx_tasks['params'], cdesc.get('cli_params'),
-                                      where = f' of task "{artifact_alias}"')
-            if self.cm.catch_error(r): return r
+        r = read_cli_words(self.cm, ctx, ctx_tasks, task_api_code, cdesc, artifact_alias)
+        if self.cm.catch_error(r): return r
 
         ###########################################################################################
         # CHECK PARAMS INCLUDING FROM --use. ...

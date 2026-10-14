@@ -17,7 +17,6 @@ from tool_c393ba5c6fa14f66.api.common_static_lib import install_static_lib, dete
 SPEC = {
     'name': 'zstd',
     'lib': 'zstd',
-    'default_version': '1.5.7',
     'url': 'https://github.com/facebook/zstd/releases/download/v{version}/zstd-{version}.tar.gz',
     'sha256': {
         '1.5.7': 'eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3',

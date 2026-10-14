@@ -5,7 +5,15 @@ Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
+import os
+
 from task_c36be4b9314a45e0.api.ctask import InitCTask
+
+# The run-wide settings of the versions of tools (task/setup/upgrade.py): the parameter of this task
+# (--use.init.<key>=...), else the environment variable, else the key of config::task
+VERSION_KEYS = {'version_policy': 'CMETA_VERSION_POLICY',           # known | latest | ask
+                'versions_ttl_hours': 'CMETA_VERSIONS_TTL_HOURS'}    # how long a lookup of the newest version is trusted
+
 
 class CTask(InitCTask):
     """
@@ -27,6 +35,9 @@ class CTask(InitCTask):
     def run(self,
             ctx: dict,              # cMeta context
             default_cache_repo: str = None,
+            file_cache: str = None,          # the folder(s) of large downloads and clones for this run (else the key file_cache of config::task)
+            version_policy: str = None,      # known | latest | ask for every tool of the run (else CMETA_VERSION_POLICY, else config::task)
+            versions_ttl_hours: str = None,  # hours a cached lookup of a newest version is trusted (else CMETA_VERSIONS_TTL_HOURS, else config::task; 24)
     ):
 
         """
@@ -56,6 +67,17 @@ class CTask(InitCTask):
         # the same one config::task may set
         if default_cache_repo:
             result['default_cache_repo'] = default_cache_repo
+
+        # --use.init.file_cache=<folder>: the file cache of this run (clone-git-to-cache, get-hf-model, ...)
+        if file_cache:
+            result['file_cache'] = file_cache
+
+        # The versions of tools: the flag, else the environment, else the config (already in result)
+        given = {'version_policy': version_policy, 'versions_ttl_hours': versions_ttl_hours}
+        for key, env in VERSION_KEYS.items():
+            value = given[key] or os.environ.get(env)
+            if value not in (None, ''):
+                result[key] = value
 
         return result
 

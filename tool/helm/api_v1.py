@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'helm',
- 'default_version': '4.3.0',
  'url': 'https://get.helm.sh/helm-v{version}-{os}-{arch}.{ext}',
  'ext': {'windows': 'zip', '*': 'tar.gz'},
  'member': '{os}-{arch}/helm{exe}',

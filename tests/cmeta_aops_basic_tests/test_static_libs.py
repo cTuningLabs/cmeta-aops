@@ -39,7 +39,7 @@ def load(rel_path, imports):
 @pytest.fixture(scope = "module")
 def common():
     return load("category/tool/api/common_static_lib.py",
-                {"from tool_c393ba5c6fa14f66.api.common_release import _sha256": "_sha256 = None"})
+                {"from tool_c393ba5c6fa14f66.api.common_release import _sha256, default_version": "_sha256 = default_version = None"})
 
 
 @pytest.fixture(scope = "module")
@@ -65,13 +65,16 @@ def desc(rel_path):
 def test_specs(specs):
     for name, lib in TOOLS.items():
         spec = specs[name]
-        assert spec["lib"] == lib and spec["default_version"] in spec["sha256"]
+        d = desc(f"tool/{name}/_desc.yaml")
+
+        # The version built by default is pinned in _desc.yaml (not in the spec) and has its digest in the spec
+        assert "default_version" not in spec
+        assert spec["lib"] == lib and str(d["default_version"]) in spec["sha256"]
         for digest in spec["sha256"].values():
             assert re.fullmatch(r"[0-9a-f]{64}", digest)
         urls = spec["url"] if isinstance(spec["url"], list) else [spec["url"]]
         assert all(u.startswith("https://") and "{version}" in u for u in urls)
         assert spec["version"][0] in [os.path.basename(h) for h in spec["headers"]]
-        d = desc(f"tool/{name}/_desc.yaml")
         assert d["skip_detect"] is True and d["names"] == [spec["version"][0]]
 
     # jitterentropy must not be optimized (jitterentropy-base.c fails on __OPTIMIZE__)

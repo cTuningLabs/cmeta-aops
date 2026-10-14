@@ -10,7 +10,7 @@ category/tool/api/common_pyvenv.py (uv creates the environment in the tool's cac
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_pyvenv import install_pyvenv
 
-SPEC = {'name': 'yamllint', 'package': 'yamllint', 'default_version': '1.38.0', 'python': '3.12'}
+SPEC = {'name': 'yamllint', 'package': 'yamllint', 'python': '3.12'}
 
 
 class CTool(InitCTool):

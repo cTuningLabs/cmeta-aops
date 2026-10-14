@@ -40,7 +40,11 @@ def mpi():
 
 @pytest.fixture(scope = "module")
 def pyvenv():
-    return load("category/tool/api/common_pyvenv.py")
+    ns = load("category/tool/api/common_pyvenv.py", ["from tool_c393ba5c6fa14f66.api.common_release import default_version"])
+
+    # common_release.default_version: the description's version, else the spec's (the stub tools here have no description)
+    ns["default_version"] = lambda tool, spec = None: (getattr(tool, "cdesc", None) or {}).get("default_version") or (spec or {}).get("default_version")
+    return ns
 
 
 def test_which_mpi(mpi):

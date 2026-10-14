@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'kubelogin',
- 'default_version': '0.2.20',
  'url': 'https://github.com/Azure/kubelogin/releases/download/v{version}/kubelogin-{os}-{arch}.zip',
  'os': {'windows': 'win', 'linux': 'linux', 'darwin': 'darwin'},
  'ext': {'*': 'zip'},

@@ -8,9 +8,9 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 detected first (Open MPI, MPICH, Intel MPI, MS-MPI); otherwise a pinned MPI from PyPI goes into
 the tool's own Python environment, without root, with mpi4py for MPI programs in Python:
 
-  --with.mpi=openmpi   Open MPI 5.0.11 (Linux, macOS; the default there): mpiexec, mpicc, mpi.h
-  --with.mpi=mpich     MPICH 5.0.2 (Linux, macOS): mpiexec (Hydra), mpicc, mpi.h
-  --with.mpi=intel     the Intel MPI runtime 2021.18.1 (Linux, Windows; the default on Windows):
+  --with.mpi=openmpi   Open MPI (Linux, macOS; the default there): mpiexec, mpicc, mpi.h
+  --with.mpi=mpich     MPICH (Linux, macOS): mpiexec (Hydra), mpicc, mpi.h
+  --with.mpi=intel     the Intel MPI runtime (Linux, Windows; the default on Windows):
                        mpiexec and the Intel MPI Benchmarks (IMB-MPI1), no compiler wrappers. On
                        Linux the environment's lib folder goes on LD_LIBRARY_PATH as well: the
                        wheel's programs carry no RPATH. Intel MPI jobs span Linux hosts or Windows
@@ -26,6 +26,9 @@ tarball is pinned for the default release (--with.sha256 gives it for another --
 
 The result exports the launcher's folder on PATH; features.python is the environment's Python
 (with mpi4py) for `mpiexec -n 4 <python> program.py`; features.build is pip or source.
+
+The version installed when none is asked for is pinned per implementation in _desc.yaml
+(default_versions), so that the description answers it; --version chooses another one.
 """
 
 import os
@@ -37,9 +40,9 @@ from tool_c393ba5c6fa14f66.api.common_pyvenv import install_pyvenv
 from tool_c393ba5c6fa14f66.api.common_release import _download, _sha256
 
 IMPLEMENTATIONS = {
-    'openmpi': {'package': 'openmpi', 'default_version': '5.0.11', 'os': ('linux', 'darwin')},
-    'mpich': {'package': 'mpich', 'default_version': '5.0.2', 'os': ('linux', 'darwin')},
-    'intel': {'package': 'impi-rt', 'default_version': '2021.18.1', 'os': ('linux', 'windows')},
+    'openmpi': {'package': 'openmpi', 'os': ('linux', 'darwin')},
+    'mpich': {'package': 'mpich', 'os': ('linux', 'darwin')},
+    'intel': {'package': 'impi-rt', 'os': ('linux', 'windows')},
 }
 DEFAULT = {'linux': 'openmpi', 'darwin': 'openmpi', 'windows': 'intel'}
 MPI4PY = 'mpi4py==4.1.2'
@@ -263,10 +266,13 @@ class CTool(InitCTool):
         name, impl, error = implementation(uname, _with.get('mpi'))
         if error:
             return self.cm.error(error)
+        default = str((self.cdesc.get('default_versions') or {}).get(name) or '')
         if _with.get('build') == 'source':
-            version = params.get('version_simple') or params.get('version') or impl['default_version']
+            version = params.get('version_simple') or params.get('version') or default
+            if not version:
+                return self.cm.error(f'no default version of {name} is pinned in the mpi _desc.yaml (default_versions): give --version=<version>')
             return install_openmpi_source(self, ctx, params, version)
-        spec = {'name': 'mpiexec', 'package': impl['package'], 'default_version': impl['default_version'],
+        spec = {'name': 'mpiexec', 'package': impl['package'], 'default_version': default,
                 'python': PYTHON, 'extra': [MPI4PY], 'bin': {'windows': 'Library/bin'}}
         return install_pyvenv(self, ctx, params, cmd, spec)
 

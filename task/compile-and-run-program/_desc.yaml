@@ -20,3 +20,12 @@ uses_before_init:
     ask: '{{params.ask|$False}}'
     compute: '{{params.compute|$[]}}'
     cmd: '{{params.cmd|$[]}}'
+
+# The switches as words of the command line (--here=no, --use.<key>.here=yes): run() reads its
+# parameters through **kwargs, so the task category is told here which ones are booleans (cMeta 0.37+)
+cli_params:
+  here: bool
+  recompile: bool
+  skip_compile: bool
+  skip_run: bool
+  skip_size_check: bool

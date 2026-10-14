@@ -7,13 +7,17 @@ whose api_v1.py only declares where their release assets live:
 
     from tool_c393ba5c6fa14f66.api.common_release import install_release
 
-    SPEC = {'name': 'helm', 'default_version': '4.3.0',
+    SPEC = {'name': 'helm',
             'url': 'https://get.helm.sh/helm-v{version}-{os}-{arch}.{ext}',
             'ext': {'windows': 'zip', '*': 'tar.gz'},
             'checksum': {'file': '{url}.sha256sum'}}
 
     def install(self, ctx, params, cmd=None, *misc):
         return install_release(self, ctx, params, cmd, SPEC)
+
+and whose _desc.yaml pins the version installed when none is asked for:
+
+    default_version: '4.3.0'
 
 What it does, with the Python standard library only (no tar/unzip binaries needed):
   1. picks the asset for this OS and CPU from the templates ({version}, {os}, {arch}, {ext}, {exe});
@@ -28,7 +32,6 @@ so setup can fall back to a package manager where the tool declares one, or prin
 
 SPEC keys:
   name             binary name without extension (also the file name it is saved as)
-  default_version  pinned version when the user asks for none
   url              asset URL template
   os / arch        cMeta uname / uarch -> the upstream spelling (default: the same word)
   ext              archive extension per OS ('*' = any other OS); omit for a bare binary
@@ -44,6 +47,10 @@ SPEC keys:
   version_tag      tag/version spelling in the URL if it differs, e.g. 'kustomize/v{version}'
   unsupported      [[uname, uarch], ...] pairs upstream publishes nothing for (e.g. ['windows', 'arm64'])
   extra            list of {'name', 'url', 'checksum', 'member', 'ext'} fetched into the same folder
+
+The version is not a SPEC key: default_version in the tool's _desc.yaml is the one place that says which
+version cMeta installs by default, so that the description of a tool can be queried (cx tool show <tool>);
+a 'default_version' SPEC key of a tool written before 0.46.1 is still read when the description has none.
 """
 
 import hashlib
@@ -51,6 +58,13 @@ import os
 import stat
 import tarfile
 import zipfile
+
+
+def default_version(tool, spec=None):
+    """The version a tool installs when none is asked for: default_version of its _desc.yaml, else the SPEC's."""
+    desc = getattr(tool, 'cdesc', None) or {}
+    version = desc.get('default_version') or (spec or {}).get('default_version')
+    return str(version) if version is not None else None
 
 
 def _pick(mapping, key, default=None):
@@ -212,7 +226,9 @@ def install_release(tool, ctx, params, cmd, spec):
     version = params.get('version')
     version_simple = params.get('version_simple')
     if not version:
-        version = version_simple = spec['default_version']
+        version = version_simple = default_version(tool, spec)
+        if not version:
+            return tool.cm.error(f'{spec["name"]} pins no default_version in its _desc.yaml: give --version=<version>')
     if not version_simple:
         return {'return': 16, 'install_cmd': cmd,
                 'error': f'the {spec["name"]} release download needs an exact version (got "{version}")'}

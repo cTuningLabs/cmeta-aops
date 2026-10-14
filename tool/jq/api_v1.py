@@ -12,7 +12,6 @@ from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import install_release
 
 SPEC = {'name': 'jq',
- 'default_version': '1.8.2',
  'url': 'https://github.com/jqlang/jq/releases/download/jq-{version}/jq-{os}-{arch}{exe}',
  'os': {'windows': 'windows', 'linux': 'linux', 'darwin': 'macos'},
  'checksum': {'list': 'https://github.com/jqlang/jq/releases/download/jq-{version}/sha256sum.txt'}}
