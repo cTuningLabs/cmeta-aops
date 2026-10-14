@@ -15,6 +15,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #   cxt rclone-to-ssh sync . me@nas:/backup --blacklist=.venv/,.git/,__pycache__/
 #   cxt rclone-to-ssh sync . me@nas:/backup --whitelist_from=whitelist.txt
 #   cxt rclone-to-ssh sync D:\photos nas:/mnt/backup --ssh_options="-p 2222 -i ~/.ssh/nas"
+#   cxt rclone-to-ssh copy D:\results me@nas:/mnt/runs/42 --from_remote   # the other way: from the host to here
 #   cxt rclone-to-ssh --info                                        # every param and flag, with defaults
 #   cxt rclone-to-ssh sync D:\photos me@nas:/mnt/backup -j          # verbose trace (shows the exact CMD)
 #
@@ -22,7 +23,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #
 # Positional arguments (api_v1.py::run documents all of them):
 #
-#   arg2  rclone command - sync, copy, move, bisync, check, ... (always local -> remote)
+#   arg2  rclone command - sync, copy, move, bisync, check, ... (local -> remote; --from_remote: remote -> local)
 #         plus one spelling of its own: "resync" is turned into
 #         "bisync --resync". rclone has no resync command (it answers
 #         'unknown command "resync"'); --resync is the flag that seeds a

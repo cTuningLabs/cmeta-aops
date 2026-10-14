@@ -2,6 +2,20 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.47.2
+- **A quiet run never answers a prompt of the system, on Windows too.** On Linux and macOS a quiet run (`-q`)
+  already runs `sudo` as `sudo -n`, which fails at once instead of waiting at a password prompt nobody sees. Now
+  Windows has the same rule: a tool declares `requires_sudo: windows: True` when its Windows install needs
+  administrator rights (the installer asks with a UAC prompt), and a quiet run from a process that is not
+  elevated does not start it. The UAC prompt would wait on the desktop for nobody, or fail without one. The setup
+  ends with an error that names the command to run in an elevated terminal, or says to run the command without
+  `-q` and answer the prompt. From an elevated process (an administrator terminal, a CI runner) it runs, as with
+  passwordless sudo; without `-q` nothing changes. task/host records `elevated` in the Windows `os_extra`. Visual
+  Studio Build Tools, WSL and the MSI fallback of az declare it. Tests: the rule for every OS
+  (`test_build_and_target_helpers.py`) and a real quiet setup on Windows (`test_no_terminal_prompts.py`).
+- **rclone-to-ssh copies the other way too: `--from_remote`** (copy, copyto, sync from the host to `local_dir`;
+  not bisync, which goes both ways already). It is what `cx host pull` of the private fleet category builds on.
+
 ## 0.47.1
 - **`cx tool check-updates`: the tools behind upstream, as a report.** For every tool with a `default_version`
   (`--all`: every tool; or the tools named, `cx tool check-updates yq,jq`), the version cMeta installs by default

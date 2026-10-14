@@ -79,6 +79,15 @@ dependency of an unattended run — when a helper is only needed for one step
 (unpacking an archive, say), look for a tier-1 route first, as `tool/ollama`
 does by unpacking `.tar.zst` with a Python 3.14 set up through uv.
 
+Windows has the same rule since cmeta-aops 0.47.2: declare `requires_sudo:
+windows: True` when the Windows install needs administrator rights (the
+installer asks with a UAC prompt: Visual Studio Build Tools, WSL, an MSI). A
+quiet run from a process that is not elevated then does not start it - the
+prompt would wait for nobody - and its error says what to run in an elevated
+terminal. From an elevated process (an administrator terminal, a CI runner)
+it runs, as with passwordless sudo; without `-q` the user answers the prompt.
+A quiet run never answers a prompt of the system: that is the meaning of `-q`.
+
 ### Tiers combine
 
 The usual shape for a well-behaved tool is **Tier 1 primary with a Tier 2/3
@@ -202,7 +211,7 @@ install_cmd_version:                                            # used when a --
   windows: "{{global.winget.qpath}} install --id=Bazel.Bazel -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}"
   linux:   '{{global.host.os_extra.install_cmd_sudo_version}}'
 
-requires_sudo:            # forces non-interactive sudo handling
+requires_sudo:            # forces non-interactive sudo handling (windows: True = administrator rights, UAC)
   linux: True
   darwin: True
 

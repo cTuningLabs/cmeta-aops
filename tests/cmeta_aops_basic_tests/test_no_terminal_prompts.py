@@ -17,6 +17,7 @@ import sys
 import textwrap
 
 import pytest
+import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 FAKE = 'zz-noterm-fake'
@@ -228,6 +229,71 @@ def test_a_piped_no_is_a_refusal_as_before(cm, clean_setup, monkeypatch, capsys)
     r = setup(cm)
     assert r['return'] > 0 and 'failed to setup tool' in r['error'] and 'no terminal' not in r['error']
     assert 'Skipped!' in capsys.readouterr().out
+
+
+###################################################################################################
+# Through task/setup: an install that needs administrator rights on Windows (requires_sudo: windows)
+
+ADMIN = 'zz-noterm-admin'
+
+
+def is_elevated():
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+@pytest.fixture
+def admin_tool(cm):
+    """A tool whose install command (it writes marker.txt in the entry) is declared to need administrator rights
+    on Windows; it is never found, so every setup ends in an error - what matters is whether the command ran."""
+    r = cm.access({'category': 'tool', 'command': 'find', 'arg1': ADMIN, 'con': False})
+    if r['return'] == 16 or not r.get('artifacts'):
+        r = cm.access({'category': 'tool', 'command': 'add', 'arg1': f'local:{ADMIN}', 'con': False, 'quiet': True, 'yaml': True})
+        assert r['return'] == 0, r.get('error')
+        tool = pathlib.Path(r['path'])
+    else:
+        tool = pathlib.Path(r['artifacts'][0]['path'])
+    marker = '"' + sys.executable + '" -c "open(' + "'marker.txt', 'w').write('x')" + '"'
+    (tool / '_desc.yaml').write_text(yaml.safe_dump({
+        'skip_detect': True, 'skip_common_install_uses': True, 'names': [ADMIN],
+        'install_cmd': {'all': marker}, 'requires_sudo': {'windows': True}}), encoding = 'utf-8')
+
+    def remove():
+        for a in entries(cm, 'setup'):
+            if a['cmeta'].get('params', {}).get('name', '') == ADMIN:
+                cm.access({'category': 'cache', 'command': 'delete', 'arg1': '*:' + a['cmeta_ref_parts']['artifact_uid'],
+                           'force': True, 'con': False})
+    remove()
+    yield tool
+    remove()
+
+
+def admin_markers(cm):
+    return [os.path.join(a['path'], 'marker.txt') for a in entries(cm, 'setup')
+            if a['cmeta'].get('params', {}).get('name', '') == ADMIN and os.path.isfile(os.path.join(a['path'], 'marker.txt'))]
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason = 'administrator rights of Windows (sudo -n is tested on its own)')
+def test_a_quiet_run_never_starts_an_install_that_asks_for_administrator_rights(cm, admin_tool, monkeypatch, capsys):
+    """-q from a process that is not elevated: the command is not run (a UAC prompt would wait for nobody), the
+    warning says what to run; from an elevated process (a CI runner) it runs. Without -q it runs as before."""
+    no_terminal(monkeypatch)
+    r = setup(cm, name = ADMIN, quiet = True)
+    out = capsys.readouterr().out
+    assert r['return'] > 0, r
+
+    if is_elevated():
+        assert admin_markers(cm)
+    else:
+        assert not admin_markers(cm)
+        assert 'needs administrator rights' in r['error'] and 'marker.txt' in r['error'] and 'without -q' in r['error']
+        assert 'needs administrator rights, which a quiet run (-q) does not ask for' in out
+
+    r = setup(cm, name = ADMIN, install = True)                                  # not quiet: the user may answer
+    assert admin_markers(cm)
 
 
 ###################################################################################################

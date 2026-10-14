@@ -73,6 +73,7 @@ class CTask(InitCTask):
             unparsed: list = None,        # everything after "--" is quoted and appended to the rclone command
             install: bool = None,         # consumed by _desc.yaml: answers task/setup's "install rclone?" up front
             rclone_version: str = None,   # consumed by _desc.yaml: pin the rclone version to set up
+            from_remote: bool = False,    # the other way: from the host to local_dir (copy, copyto, sync; not bisync)
     ):
 
         """
@@ -168,9 +169,14 @@ class CTask(InitCTask):
         if not local_dir:
             local_dir = '.'
 
+        # --from_remote: the host is the source and local_dir the destination (rclone makes it); bisync goes
+        # both ways already
+        if from_remote and rclone_command == 'bisync':
+            return self.cm.error('--from_remote is for copy, copyto and sync: bisync goes both ways already')
+
         # Fail here rather than let rclone fail later: with "sync" a mistyped
         # source is the difference between a backup and an empty destination.
-        if not os.path.exists(local_dir):
+        if not from_remote and not os.path.exists(local_dir):
             return self.cm.error(f'local directory "{local_dir}" not found (cur dir: {os.getcwd()})')
 
         ###########################################################################################
@@ -209,11 +215,15 @@ class CTask(InitCTask):
         ssh_cmd = f'{ssh_exe} {ssh_options.strip()} {ssh_login}' if ssh_options else f'{ssh_exe} {ssh_login}'
         ssh_argument = subprocess.list2cmdline([ssh_cmd]) if os.name == 'nt' else shlex.quote(ssh_cmd)
 
+        source, destination = quote_path(local_dir), quote_path(':sftp:' + remote_path)
+        if from_remote:
+            source, destination = destination, source
+
         cmd_parts = [
             rclone_path,
             rclone_command,
-            quote_path(local_dir),
-            quote_path(':sftp:' + remote_path),
+            source,
+            destination,
             f'--sftp-ssh {ssh_argument}',
 
             # NOT optional here, despite looking like a tuning knob. rclone

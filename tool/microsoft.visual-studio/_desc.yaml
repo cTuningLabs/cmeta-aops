@@ -39,6 +39,11 @@ extra_paths:
 install_cmd:
   windows: '{{global.winget.qpath}} install --id=@VS_BUILD_TOOLS@ -e --source winget {{global.init.winget_install_flags|}} --override "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"'
 
+# The installer needs administrator rights: a quiet run (-q) from a process that is not elevated does not start
+# it (a UAC prompt would wait for nobody) and says what to run instead
+requires_sudo:
+  windows: True
+
 install_help_text: |
   Could not install Visual Studio Build Tools automatically: install them from
   https://visualstudio.microsoft.com/downloads/ (Tools for Visual Studio, Build Tools) with the

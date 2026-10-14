@@ -93,8 +93,10 @@ install_cmd_version:
   # Without this key task/setup reuses install_cmd above and installs current.
   linux: '{{global.host.os_extra.install_cmd_sudo_version}}'
 
+# The winget fallback is an MSI that needs administrator rights (the release zip of api_v1.py needs none)
 requires_sudo:
   linux: True
+  windows: True
 
 install_uses:
   all:

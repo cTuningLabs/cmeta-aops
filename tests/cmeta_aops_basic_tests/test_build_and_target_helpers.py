@@ -7,7 +7,8 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 Offline tests of module-level helpers that need no cMeta context:
 
 * category/program/api/common_build.py - MAX_JOBS sized to the RAM of source builds;
-* task/setup/install.py - quiet installs turn "sudo" into "sudo -n" (no password prompt);
+* task/setup/install.py - quiet installs turn "sudo" into "sudo -n" (no password prompt), and on Windows do not
+  start an install that needs administrator rights from a process that is not elevated (no UAC prompt);
 * task/target--xpu - the GPUs in the lspci / Win32_VideoController probe output;
 * task/target--cpu - when a cached CPU inventory comes from another machine;
 * tool/ollama - release assets and the Python 3.14 unpacking of .tar.zst archives.
@@ -104,6 +105,26 @@ def sudo_prefix():
 ])
 def test_quiet_installs_use_sudo_n(sudo_prefix, cmd, expected):
     assert sudo_prefix.sub(r"\1sudo -n ", cmd) == expected
+
+
+@pytest.fixture(scope = "module")
+def unattended_rights():
+    return load_head("task/setup/install.py", "\ndef install_tool", ["from . import upgrade"]).unattended_rights
+
+
+@pytest.mark.parametrize("uname, quiet, needs_admin, passwordless_sudo, elevated, expected", [
+    ("linux", True, True, False, False, "sudo -n"),        # nobody to type the password: fail at once
+    ("linux", True, True, True, False, None),               # passwordless sudo: the standing permission
+    ("darwin", True, False, False, False, "sudo -n"),       # every "sudo" of a quiet run, declared or not, as before
+    ("linux", False, True, False, False, None),             # not quiet: sudo asks in the terminal
+    ("windows", True, True, False, False, "refuse"),        # a UAC prompt would wait for nobody
+    ("windows", True, True, True, True, None),              # an elevated process: no prompt
+    ("windows", True, False, True, False, None),            # no administrator rights needed
+    ("windows", False, True, True, False, None),            # not quiet: the user answers the prompt
+])
+def test_a_quiet_run_never_answers_a_prompt_of_the_system(unattended_rights, uname, quiet, needs_admin,
+                                                          passwordless_sudo, elevated, expected):
+    assert unattended_rights(uname, quiet, needs_admin, passwordless_sudo, elevated) == expected
 
 
 # --------------------------------------------------------------------------------------------
