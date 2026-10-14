@@ -2,6 +2,19 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## Unreleased
+- **Prototype `setup-cmeta-host`: optional host services for Windows, Linux and macOS.**
+  Terminal runs explain and ask about SSH, Tailscale, sleep settings and Windows BitLocker
+  data-volume boot unlock, then ask before applying. `-q` suppresses questions; scripted changes
+  require `--apply`, while `--check` and `--dry_run` inspect only. Existing services/configuration
+  remain when deselected. Windows setup can keep portable SSH on the OS disk, enable unattended
+  Tailscale, and provision a protected SYSTEM startup unlock task using an existing external-key
+  protector without exporting key contents to cMeta. `managed`, `slurm`, `kubernetes`, `aks` and
+  `mpi` profiles select no services by default; controller registration and workload launchers
+  remain separate. Includes safe metadata reports and a usage/maintenance guide. Validation:
+  13 focused tests, interactive/quiet Windows CLI checks and read-only NucBox inspection;
+  generalized live provisioning and Linux/macOS apply still need disposable-host integration tests.
+
 ## 0.46.0
 - **The words of the command line reach a task as what its `run()` expects (cMeta 0.37+).** On a run started
   from the command line, the words given to a task - on its command line or through `--use.<key>.<param>` for a

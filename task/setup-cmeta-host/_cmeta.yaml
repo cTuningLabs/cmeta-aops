@@ -1,0 +1,16 @@
+artifact: 5cbcaaf819ec4b5e
+category: task,c36be4b9314a45e0
+authors: Grigori Fursin
+desc: Select and prepare optional host services for cMeta fleet access on Windows, Linux and macOS.
+tags:
+- setup
+- host
+- fleet
+- ssh
+- tailscale
+creation_timestamp: '2026-10-13T22:13:59.257953+00:00'
+generator:
+  method: agent
+  agent: OpenAI Codex 0.162.1
+  via: cmeta 0.37.0
+  by: Grigori Fursin
