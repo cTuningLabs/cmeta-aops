@@ -117,9 +117,8 @@ cx tool add ctuninglabs@cmeta-aops:bazel --yaml   # writes tool/bazel/_cmeta.yam
 ```
 
 `cx tool add` maps to the base `create_` (`cmeta/category_api_v1.py`). It only
-creates `_cmeta.*` (and its generated `copyright:` may differ from the siblings —
-fix it to `Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs. All rights
-reserved.`). Then hand-author `_desc.yaml` (and `api_v1.py` for a Tier-1 download).
+creates `_cmeta.*` (remove the `copyright:` key it generates and keep `authors:`: new code and metadata
+carry no copyright line - user rule, 2026-10-08). Then hand-author `_desc.yaml` (and `api_v1.py` for a Tier-1 download).
 
 If you accidentally created it in the wrong repo, remove it with the repo-qualified
 name (`cx tool rm local:<name> --force`) and re-add with the `<repo>:` prefix.
@@ -132,8 +131,10 @@ After a hand-edit to `_cmeta.*` meta: **`cx <cat> update <ref>`** (or
 `cx <cat> index <ref>` to register a hand-made folder). `cx --reindex` rebuilds
 every category and is slow — keep it for moves/renames and bulk `git pull`.
 
-**Copyright headers are load-bearing.** Copy the Apache-2.0 block from a sibling
-`.py`; keep the `authors:`/`copyright:` lines at the top of `_desc.yaml`. The one
+**No copyright line in new code or metadata** (user rule, 2026-10-08). `_cmeta.*` and `_desc.yaml` carry
+`authors:` and no `copyright:` key; a `.py` starts with the licence pointer only ("Licensed under the Apache
+License, Version 2.0." and "See the COPYRIGHT and LICENSE files in the project root for details."), never
+"Copyright (C) ... and cTuning Labs". Files that exist keep the notice they have. The one
 exception is vendored third-party source — keep its upstream notice verbatim and
 list it in `THIRD-PARTY.md`.
 
@@ -146,7 +147,6 @@ command, and regex-matches the version.
 
 ```yaml
 authors: Grigori Fursin
-copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 names:
   - bazel{{global.host.vars.file_ext_exe}}   # {{...file_ext_exe}} = ".exe" on Windows, "" elsewhere
 
@@ -326,6 +326,24 @@ The version installed when none is asked for is **`default_version: '0.33.0'` in
 never in the spec: `cx tool show kind` answers it and a bump is one edit (the installers read the description;
 a tool with neither gets a clear error).
 
+Give the tool a source of its versions (`cmd_get_versions` + `cmd_get_versions_regex`, or the GitHub release
+of the spec): `cx tool check-updates` compares the pin (`default_version`, not what a machine has installed)
+with the newest version and shows `unknown` without one, and `cx task run explore-tool-versions <tool>` tries
+versions from that list (by default the pin and the newest; `--last=<n>`: the `n` newest of the list). Versions
+that `latest` must not take go in `latest_limits`, each with a reason and a date, so the report can say when to
+lift it:
+
+```yaml
+latest_limits:
+  - exclude: '>=3.15'          # a PEP 440 specifier
+    reason: 'PyYAML 6.0.3 has no cp315 wheels for Windows'
+    since: '2026-10-12'
+```
+
+A bump of `default_version` is backed by `explore-tool-versions` verdicts from more than one OS: run the same
+exploration on each machine, put the verdict files in one folder, and `--promote --verdicts=<folder>` prints the
+evidence and the proposal. A version asked for by number is always taken as asked.
+
 The spec keys:
 
 - **Templates:** `url`, `member` and the checksum URLs expand `{version}`, `{os}`, `{arch}`,
@@ -375,7 +393,6 @@ chmod +x.
 
 ```yaml
 authors: Grigori Fursin
-copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 names:
   - bazel{{global.host.vars.file_ext_exe}}
 
@@ -410,8 +427,6 @@ install_help_text: |
 
 ```python
 """
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
-
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
@@ -569,7 +584,15 @@ cx tool run bazel -- --version
 Cache notes: each setup result + downloaded binary lands in a `cache` entry
 (`cx cache show|clean|delete`), keyed by `name`/`@version`/`tool_path` (see
 `task/setup/_desc.yaml` `cache_params`). Force a fresh entry with `--new`,
-rebuild with `--update`, wipe with `--clean`.
+rebuild with `--update`, wipe with `--clean`. Since cmeta-aops 0.45.0 (cMeta 0.34.2)
+an entry has a state (`ok`, `running`, `crashed`, `failed`, `broken`; `cx cache show`
+prints it, `cx cache clean [--failed|--broken|--unfinished]` removes by it): a setup
+that failed or was killed is **resumed in the same entry** by the same request (the
+download or the partial build stays, nothing is downloaded twice), another version or
+configuration gets its own entry, a `failed` entry is never served, two identical
+setups at once share one entry. Install and build hooks therefore run again in a
+folder that may hold the files of the previous attempt: check what is there before
+downloading or cleaning (`task-engine.md`, "The cache entry of a run").
 
 ### 7.1 Big tools: declare the disk space in `_desc_sizes.yaml`
 
@@ -598,7 +621,7 @@ setup <name> --sizes` prints the records and a suggested file. A custom `install
 ## 8. Checklist / gotchas
 
 - [ ] Created with the **repo-qualified** name (`cx tool add ctuninglabs@cmeta-aops:<name>`), not a bare `cx tool add <name>` (which lands in `local`).
-- [ ] Fixed the auto-generated `copyright:` in `_cmeta.*` to match the siblings.
+- [ ] Removed the auto-generated `copyright:` key from `_cmeta.*` (no copyright line in new work).
 - [ ] `names:` ends with `{{global.host.vars.file_ext_exe}}`.
 - [ ] `match_version` regex tested against real `cmd_get_version` output; YAML backslashes escaped.
 - [ ] Tier 1: `install()` imports `from tool_c393ba5c6fa14f66.api.ctool import InitCTool`
@@ -608,6 +631,6 @@ setup <name> --sizes` prints the records and a suggested file. A custom `install
 - [ ] Refreshed the index with the narrowest command (`cx <cat> update|index <ref>`) after editing `_cmeta.*` meta; a `_desc.yaml`-only edit needs none.
 - [ ] Verified with `cx tool run <name> -- --version` (real run, not just `--info`); used `--install` for unattended install.
 - [ ] `cx tool setup <name> --status` names the right channel and newest version (add `cmd_get_versions` so upstream is known; `upgrade_cmd` / `cmd_get_latest_version` only if the derivation is wrong).
-- [ ] Apache-2.0 copyright header copied from a sibling (upstream notices on vendored third-party source left verbatim); referenced sub-tasks by `alias,UID`.
+- [ ] The `.py` header is the licence pointer only ("Licensed under the Apache License, Version 2.0." + the COPYRIGHT/LICENSE line), no `Copyright (C)` line (upstream notices on vendored third-party source left verbatim); referenced sub-tasks by `alias,UID`.
 - [ ] Don't touch author scratch siblings (`*.yaml2`, `*.py2`, `*.arc1`, `tmp*/`).
 ```

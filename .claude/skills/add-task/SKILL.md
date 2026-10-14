@@ -59,9 +59,8 @@ cx task add ctuninglabs@cmeta-aops:run-claude-minimal --yaml   # writes task/run
 ```
 
 `--yaml` matches the siblings (which use `_cmeta.yaml`); omit for `_cmeta.json`.
-The generated `copyright:` may differ from siblings — fix it to
-`2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in
-the project root for details.`
+Remove the generated `copyright:` key and keep `authors:`: new code and metadata carry
+no copyright line (user rule, 2026-10-08; the repository's COPYRIGHT file applies).
 
 Fastest correct route: **clone the nearest existing task** and edit. Copy a
 `_desc.yaml` whose shape matches your intent (e.g. `task/test-claude/` for
@@ -82,8 +81,10 @@ ways to register it:
 > `_cmeta.*` identity/tags, not `_desc` content). Reindex only after changing
 > `_cmeta.*`, moving/creating folders, or adding tags.
 
-**Copyright headers are load-bearing.** Keep the `authors:`/`copyright:` lines
-atop `_desc.yaml`; copy the Apache-2.0 block from a sibling into any `.py`. The one
+**No copyright line in new code or metadata** (user rule, 2026-10-08). `_cmeta.*` and `_desc.yaml` carry
+`authors:` and no `copyright:` key; a `.py` starts with the licence pointer only ("Licensed under the Apache
+License, Version 2.0." and "See the COPYRIGHT and LICENSE files in the project root for details."), never
+"Copyright (C) ... and cTuning Labs". Files that exist keep the notice they have. The one
 exception is vendored third-party source — keep its upstream notice verbatim and
 list it in `THIRD-PARTY.md`.
 
@@ -95,7 +96,6 @@ Minimal shape (a task that sets up `python` then reports it — like `test-pytho
 
 ```yaml
 authors: Grigori Fursin
-copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 uses:
   - task: runner,1e48cc0c5f6041a5      # bootstrap host (OS/env/vars) — usually already in global
   - task: setup,a2f9b61079ce4333       # detect/install a tool
@@ -188,6 +188,17 @@ Two independent reuse layers:
   (most `run`/launch tasks). `preserve_global_keys: [compiler, lib-*]` snapshots
   and restores matching global keys around the task (glob-aware) to keep it atomic.
 
+  **The life of an entry (cmeta-aops 0.45.0 / cMeta 0.34.2):** an entry is `ok`, `running`,
+  `crashed`, `failed` or `broken` (`cx cache show` prints it, `cx cache classify` is the
+  API; docs: `task-engine.md` "The cache entry of a run"). A failed or killed attempt is
+  **resumed in its entry** by the same request (same `request_params`, same `--path`): the
+  task runs again in the folder it left (the download is still there), so a task should be
+  written to continue from what it finds (check the files, not the flags) and may read
+  `ctx['tasks']['run_control']['cache_resumed']` (`state`, the entry's old `params`) when it
+  resumes. A request with another configuration gets a new entry; a `failed` entry is never
+  served as a result; two identical requests at once make one entry (the second waits).
+  At the end the entry's `params` are **replaced** by the request's plus `_update_params`.
+
 ### 3d. Templating
 
 Values are expanded against `ctx['tasks']`:
@@ -209,8 +220,6 @@ cache → `uses2` → **`run`** → cache write → **`finish_dynamic_result`**.
 
 ```python
 """
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
-
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
@@ -286,6 +295,10 @@ was, and every release download stopped on it, 2026-10-14). The guard tests in
 `tests/cmeta_aops_basic_tests/test_guards_cli_words_and_search.py` check every task: a `bool`
 parameter used as text, a `**kwargs` switch (a boolean default, or a `skip_*` / `ignore_*` /
 `force_*` / `custom_*` name) missing from `cli_params`, a type the engine does not convert.
+Never name a `run()` parameter like a control word of the task category (`save`, `path`, `new`, `info`,
+`tags`, `cache`, `update`, `clean`, `skip`, ... - `control1` and `control2` of `category/task/api/v2.py`): the
+category keeps those words and the parameter never arrives (`--save=<file>` saves the context of the run). The
+guard test fails on a new one.
 
 ---
 
@@ -323,7 +336,6 @@ Key facts this relies on:
 artifact: <16 hex digits>       # a fresh UID (python -c "import uuid;print(uuid.uuid4().hex[:16])")
 authors: Grigori Fursin
 category: task,c36be4b9314a45e0
-copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 tags:
   - run
   - claude
@@ -336,7 +348,6 @@ note: Set up the "claude" tool and run it interactively via CLI.
 ### `task/run-claude-minimal/_desc.yaml`
 ```yaml
 authors: Grigori Fursin
-copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 uses:
   # Bootstrap host (OS detection, env, vars) - normally already resolved from global
   - task: runner,1e48cc0c5f6041a5
@@ -387,7 +398,7 @@ Add a `test.bat` mirroring siblings if the task warrants a CLI recipe.
 
 - [ ] Created/registered with the **repo-qualified** name
       (`cx task add|index ctuninglabs@cmeta-aops:<name>`), not a bare form (which lands in `local`).
-- [ ] Fixed the auto-generated `copyright:` in `_cmeta.*` to match siblings.
+- [ ] Removed the auto-generated `copyright:` key from `_cmeta.*` (no copyright line in new work).
 - [ ] Sub-tasks referenced by `alias,UID` (UID authoritative); looked up real UIDs with `cx task find`.
 - [ ] Chose the right list: `uses_before_init` (before `init`) vs `uses` (main) vs `uses2` (post-cache, pre-run).
 - [ ] Set `cache: False` for launch/side-effecting tasks; used `store_global`/`storage_key` only for true "resolve-once" deps.
@@ -397,4 +408,4 @@ Add a `test.bat` mirroring siblings if the task warrants a CLI recipe.
 - [ ] Strategy B: honored the return contract (`{'return':0}` / `>0` / `16`); did PATH/env reuse in `finish_dynamic_result` so it survives caching.
 - [ ] Ran `cx task index <ref>` (or `cx --reindex`) after adding the folder / changing `_cmeta.*`; a `_desc.yaml`-only edit needs neither.
 - [ ] Verified with a real run (safe passthrough, not `--info` for pipeline-only tasks); used `-j` to read the trace.
-- [ ] Apache-2.0 copyright header copied from a sibling; upstream notices on any vendored third-party source left verbatim (and added to `THIRD-PARTY.md`); didn't touch author scratch siblings (`*.yaml2`, `*.py2`, `*.arc1`, `tmp*/`, `cmeta-task-saved-*.json`).
+- [ ] The `.py` header is the licence pointer only ("Licensed under the Apache License, Version 2.0." + the COPYRIGHT/LICENSE line), no `Copyright (C)` line; upstream notices on any vendored third-party source left verbatim (and added to `THIRD-PARTY.md`); didn't touch author scratch siblings (`*.yaml2`, `*.py2`, `*.arc1`, `tmp*/`, `cmeta-task-saved-*.json`).

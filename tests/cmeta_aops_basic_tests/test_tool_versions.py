@@ -191,3 +191,179 @@ def test_the_policy_of_a_request_without_a_version(cm, tools):
 def test_a_named_version_is_never_replaced(cm, tools):
     r = setup(cm, "test-versions-failing", version=LATEST, new=True)
     assert r["return"] > 0 and LATEST in r["error"] and "version_fallback" not in r
+
+
+###################################################################################################
+# cx tool check-updates: the pins against the newest versions, a report
+
+def test_update_status(up):
+    assert up.update_status("4.53.6", "4.54.1") == ("behind", "minor")
+    assert up.update_status("4.53.6", "5.0.0") == ("behind", "major")
+    assert up.update_status("4.53.6", "4.53.7") == ("behind", "patch")
+    assert up.update_status("1.8", "1.8.1") == ("behind", "patch")
+    assert up.update_status("4.3.0", "4.3.0") == ("current", None)
+    assert up.update_status("2.49.0.windows.1", "2.49.0") == ("current", None)
+    assert up.update_status("5.0.0", "4.9.9") == ("ahead", None)
+    assert up.update_status(None, "1.0.0") == ("no pin", None) and up.update_status("", None) == ("no pin", None)
+    assert up.update_status("1.0.0", None) == ("unknown", None)
+
+
+@pytest.fixture(scope="module")
+def update_tools(cm, tools):
+    """Two more throwaway tools: one whose newest version is its pin, one whose pin is newer than the newest."""
+    return {
+        "current": fake_tool(cm, "test-versions-current", one_liner(PYTHON_VERSION)),
+        "ahead": fake_tool(cm, "test-versions-ahead", one_liner("0.0.1")),
+        "no-pin": fake_tool(cm, "test-versions-nopin", one_liner(LATEST), extra={"default_version": None}),
+    }
+
+
+def check_updates(cm, names, **params):
+    ii = {"category": "tool", "command": "check_updates", "arg1": ",".join(names), "con": False, "quiet": True}
+    ii.update(params)
+    return cm.access(ii)
+
+
+def test_check_updates_reports_each_tool(cm, tools, update_tools):
+    names = ["test-versions-newest", "test-versions-current", "test-versions-ahead", "test-versions-nopin",
+             "test-versions-silent", "test-versions-no-such-tool"]
+    r = check_updates(cm, names, refresh_versions=True)
+    assert r["return"] == 0, r.get("error")
+
+    rows = {row["tool"]: row for row in r["tools"]}
+    assert [row["tool"] for row in r["tools"]] == names
+    assert (rows["test-versions-newest"]["status"], rows["test-versions-newest"]["step"]) == ("behind", "major")
+    assert rows["test-versions-newest"]["known"] == PYTHON_VERSION and rows["test-versions-newest"]["latest"] == LATEST
+    assert rows["test-versions-current"]["status"] == "current"
+    assert rows["test-versions-ahead"]["status"] == "ahead"
+    assert rows["test-versions-nopin"]["status"] == "no pin" and rows["test-versions-nopin"]["latest"] == LATEST
+    assert rows["test-versions-silent"]["status"] == "unknown" and rows["test-versions-silent"]["latest"] is None
+    assert rows["test-versions-no-such-tool"]["status"] == "error" and rows["test-versions-no-such-tool"]["notes"]
+    assert r["summary"] == {"behind": 1, "behind_major": 1, "current": 1, "ahead": 1, "no pin": 1, "unknown": 1, "error": 1}
+
+    # A second report reads the cached lookups; nothing was installed
+    r = check_updates(cm, ["test-versions-newest"])
+    assert r["tools"][0]["from_cache"] is True and r["tools"][0]["latest"] == LATEST
+
+
+def test_check_updates_saves_the_report(cm, tools, update_tools, tmp_path):
+    for name in ("report.json", "report.md"):
+        r = check_updates(cm, ["test-versions-newest", "test-versions-current"], output=str(tmp_path / name))
+        assert r["return"] == 0, r.get("error")
+        assert os.path.isfile(r["output"])
+
+    data = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert [row["tool"] for row in data["tools"]] == ["test-versions-newest", "test-versions-current"]
+    text = (tmp_path / "report.md").read_text(encoding="utf-8")
+    assert f"| test-versions-newest | {PYTHON_VERSION} | {LATEST} | behind (major) |" in text
+    assert text.index("test-versions-newest") < text.index("test-versions-current")    # what needs a look first
+
+
+HOOK_API = '''from tool_c393ba5c6fa14f66.api.ctool import InitCTool
+
+class CTool(InitCTool):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, module_file_path=__file__, **kwargs)
+
+    def check_params(self, ctx, params, cparams):
+        return {'return': 1, 'error': 'an Android target must be selected to install this tool'}
+'''
+
+
+def test_check_updates_reads_a_tool_whose_own_hook_stops_an_install(cm, tools):
+    """lib-openssl-android needs an Android target to install: a version check installs nothing, so the tool's
+    condition is a note of its row (it stopped the report with an error before)."""
+    path = fake_tool(cm, "test-versions-hook", one_liner(LATEST))
+    with open(os.path.join(path, "api_v1.py"), "w", encoding="utf-8") as f:
+        f.write(HOOK_API)
+
+    r = check_updates(cm, ["test-versions-hook"], refresh_versions=True)
+    assert r["return"] == 0, r.get("error")
+    row = r["tools"][0]
+    assert (row["status"], row["latest"]) == ("behind", LATEST)
+    assert "an Android target must be selected" in " ".join(row["notes"])
+
+    # A setup still stops on it
+    r = setup(cm, "test-versions-hook")
+    assert r["return"] > 0 and "an Android target must be selected" in r["error"]
+
+
+###################################################################################################
+# The limits of "latest" (latest_limits in a tool's _desc.yaml): versions it must not take, with why and since when
+
+def test_latest_limits_and_exclusion(up):
+    limit = {"exclude": ">=3.15", "reason": "no cp315 wheels", "since": "2026-10-12"}
+    assert up.latest_limits({"latest_limits": limit}) == [limit]
+    assert up.latest_limits({"latest_limits": [limit, {"reason": "no exclude"}]}) == [limit]
+    assert up.latest_limits({}) == []
+
+    assert up.excluded_by("3.15.0", [limit]) is limit and up.excluded_by("3.16.1", [limit]) is limit
+    # PEP 440: a pre-release of 3.15 sorts below 3.15 (and "latest" skips pre-releases); ">=3.15.0a0" takes them too
+    assert up.excluded_by("3.15.0rc1", [limit]) is None and up.excluded_by("3.15.0rc1", [{"exclude": ">=3.15.0a0"}]) is not None
+    assert up.excluded_by("3.14.8", [limit]) is None and up.excluded_by("not a version", [limit]) is None
+    assert up.excluded_by("2.5.3", [{"exclude": "==2.5.*"}]) is not None
+    assert up.excluded_by("2.5.3", [{"exclude": "this is not a specifier"}]) is None
+
+    versions = ["3.15.0", "3.15.0rc2", "3.14.8", "3.14.7", "3.13.15"]
+    assert up.allowed_latest("3.15.0", versions, [limit]) == ("3.14.8", limit)
+    assert up.allowed_latest("3.14.8", versions, [limit]) == ("3.14.8", None)
+    assert up.allowed_latest("3.15.0", None, [limit]) == (None, limit)
+    assert up.allowed_latest("3.15.0", versions, []) == ("3.15.0", None)
+    assert up.limit_text(limit) == "excluded >=3.15: no cp315 wheels (since 2026-10-12)"
+
+
+def test_the_python_tool_declares_its_limit():
+    desc = yaml.safe_load((REPO_ROOT / "tool" / "python" / "_desc.yaml").read_text(encoding="utf-8"))
+    assert [(x["exclude"], bool(x["reason"]), bool(x["since"])) for x in desc["latest_limits"]] == [(">=3.15", True, True)]
+
+
+@pytest.fixture(scope="module")
+def limited_tool(cm, tools):
+    """A tool whose newest version (99.0.0) is excluded: latest is the newest listed version no limit excludes."""
+    listed = f"v1.0.0\nv{PYTHON_VERSION}\nv{LATEST}\n"          # one version per line, as git ls-remote prints them
+    return fake_tool(cm, "test-versions-limited", one_liner(LATEST), extra={
+        "cmd_get_versions": one_liner(listed), "cmd_get_versions_regex": r"v(\d+\.\d+\.\d+)",
+        "latest_limits": [{"exclude": ">=99", "reason": "a throwaway limit", "since": "2026-10-14"}]})
+
+
+def test_latest_skips_the_versions_a_limit_excludes(cm, limited_tool):
+    r = setup(cm, "test-versions-limited", version="latest", new=True, refresh_versions=True)
+    assert r["return"] == 0, r.get("error")
+    assert r["version_resolved"]["version"] == PYTHON_VERSION and r["version"] == PYTHON_VERSION
+
+    r = setup(cm, "test-versions-limited", versions=True)
+    assert r["return"] == 0, r.get("error")
+    assert (r["latest"], r["newest"]) == (PYTHON_VERSION, LATEST) and r["limit"]["exclude"] == ">=99"
+
+    r = check_updates(cm, ["test-versions-limited"])
+    row = r["tools"][0]
+    assert (row["status"], row["latest"], row["newest"]) == ("current", PYTHON_VERSION, LATEST)
+    assert row["limit_text"] == "excluded >=99: a throwaway limit (since 2026-10-14)"
+
+
+def test_a_version_asked_for_by_number_is_taken_despite_a_limit(cm, limited_tool):
+    """99.0.0 is excluded from "latest", yet asked for by number it is what the setup tries (and, the throwaway
+    tool being this Python, fails loudly) - never replaced by an allowed version."""
+    r = setup(cm, "test-versions-limited", version=LATEST, new=True)
+    assert r["return"] > 0 and LATEST in r["error"]
+    assert "version_resolved" not in r and "version_fallback" not in r
+
+
+def test_check_updates_installs_no_helper(cm, tools, tmp_path):
+    """The version lookup of a tool may need a helper (git for ls-remote, the Android command line tools ...):
+    "cx tool check-updates" uses only the helpers on the machine - in a container with Homebrew it began to
+    install android-commandlinetools (2026-10-14); --versions may still set one up."""
+    marker = tmp_path / "helper-installed"
+    helper = fake_tool(cm, "test-versions-helper", one_liner(LATEST), extra={
+        "names": ["no-such-helper-binary"],
+        "install_cmd": {"all": f'"{PYTHON}" -c "open(r\'{marker}\', \'w\').close()"'}})
+    fake_tool(cm, "test-versions-needs-helper", one_liner(LATEST), extra={
+        "cmd_get_versions_uses": [{"task": "setup", "name": "test-versions-helper"}]})
+
+    r = check_updates(cm, ["test-versions-needs-helper"], refresh_versions=True)
+    assert r["return"] == 0, r.get("error")
+    assert r["tools"][0]["latest"] == LATEST, (r["tools"][0]["status"], r["tools"][0]["notes"])
+    assert not marker.exists()
+
+    r = setup(cm, "test-versions-needs-helper", versions=True, refresh_versions=True)
+    assert marker.exists()

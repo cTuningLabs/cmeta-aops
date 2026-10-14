@@ -18,7 +18,7 @@ authors: Grigori Fursin
 names:
   - yq{{global.host.vars.file_ext_exe}}
 
-default_version: '4.53.6'
+default_version: '4.54.1'
 
 match_version:
   - regex: 'version v(\d+\.\d+\.\d+)'

@@ -2,6 +2,56 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.47.1
+- **`cx tool check-updates`: the tools behind upstream, as a report.** For every tool with a `default_version`
+  (`--all`: every tool; or the tools named, `cx tool check-updates yq,jq`), the version cMeta installs by default
+  (the pin in the tool's meta, not what a machine has installed: that is `--status`) against the newest one
+  `latest` may take - the cached lookups of `cx tool setup <tool> --versions` (`--refresh_versions` asks again) -
+  with a status: `behind` (and its step: major, minor, patch), `current`,
+  `ahead` (the pin is newer than the channel's newest), `unknown` (no source of the newest version) or `no pin`;
+  `--output=<file>` writes it as Markdown (`.json`: JSON), the Python API returns a row per tool and the counts.
+  Nothing is installed or changed: the lookups use only the helpers already on the machine (the rule of
+  `--status`; a missing one makes that answer `unknown`). It runs on a new switch of the setup task, `--check_update` (one quiet line per
+  tool; a tool's own condition for an install, such as the Android target of lib-openssl-android, is a note there,
+  not a stop). lib-zlib, lib-zstd and lib-jitterentropy now list their versions (the release tags on GitHub), so
+  their newest version is known too.
+- **The limits of `latest` in a tool's meta.** `latest_limits` in a tool's `_desc.yaml` names the versions `latest`
+  must not take, each with a reason and a date (`exclude`: a PEP 440 specifier such as `>=3.15`, `reason`,
+  `since`); `latest` - the word or the policy - is then the newest version no limit excludes (the versions are
+  listed only when the newest one is excluded; with no list, the known version with one warning). A version asked
+  for by number is taken as asked, with a warning when a limit excludes it. `--versions` and `check-updates` show
+  the limits. tool/python carries the first one: `>=3.15` (PyYAML 6.0.3 has no cp315 wheels for Windows), the cap
+  of cMeta's own installer.
+- **A new task, `explore-tool-versions`: a tool tried at several versions, a verdict per version, and the
+  proposals they support.** `cx task run explore-tool-versions <tool>` tries the tool's known version and the newest
+  one `latest` may take (and the newest one, when a limit excludes it); `--versions=a,b,latest` names the versions,
+  `--last=<n>` takes the `n` newest released ones of the tool's list (`cmd_get_versions`, the cached lookup of
+  `cx tool setup <tool> --versions`; `--refresh_versions` asks again) - never a range by itself, and the first lines
+  of a run name each version and why it is tried. Each version is set up in a fresh cache entry (removed afterwards
+  unless `--keep`), the program runs with it when asked (`--program`), and a verdict per version is appended to a
+  JSONL file (`--output`, by default `explore-tool-versions-<tool>-<host>-<stamp>.jsonl` in the current directory;
+  works or fails, why the version was tried, the class of the error - not available, checksum, download, build,
+  crash, else the stage -, the machine, the versions of cMeta and cmeta-aops), copied into the test session of the
+  shell. A sub-task that raises is a failed verdict of class `crash`, and the exploration goes on.
+  `--promote --verdicts=<files or folders>` reads the verdict files of one or many machines (put in one folder; it
+  never contacts a machine), prints the evidence - per tool and version, where it worked and where it failed - and
+  the proposals as YAML lines: the next `default_version` (the newest version that worked wherever it was tried, on
+  at least `--min_os` (2) operating systems), a new limit of `latest` (a newer version that failed somewhere), or a
+  note for a version a machine's channel does not offer (an older uv) - a note, not a limit. It never writes a
+  tool's meta. Tests: `test_explore_tool_versions.py`.
+- **yq: `default_version` 4.53.6 -> 4.54.1**, the first bump made from the verdicts of `explore-tool-versions` (it
+  works on Windows, Linux and macOS).
+- **Fix: task/venv stopped the run with a traceback for a Python version uv cannot install.** `resolve_with_uv`
+  raised `ValueError` ("No matching Python version for '3.14.8'", met with an older uv on Linux and macOS); now it
+  is an error that names the version and where the versions come from. Test: `test_venv_python_version.py`.
+- **A guard: no `run()` parameter of a task is named like a control word of the task category** (`save`, `path`,
+  `new`, `info`, `tags`, ...): such a parameter never reaches `run()` - `--save=<file>` saves the context of the run
+  instead. The two existing ones work by their own route and are listed (run-ai's `new`, scan-git-secrets' `path`).
+- **The skills for contributors (`.claude/skills/add-task`, `add-program`, `add-tool`) follow the rules of new
+  code:** no copyright line in a new file (`authors:` and the Apache-2.0 pointer only; the generated `copyright:`
+  key is removed), the life of a cache entry (resumed in place after a failed or killed attempt), the typed words
+  of the command line and the control words a `run()` parameter must not take.
+
 ## 0.47.0
 - **Fix: only the words of the command line are read as what a task's `run()` expects; a value a parent's
   code passes to a sub-task stays as it is.** In 0.46.0 the task category converted every string parameter of

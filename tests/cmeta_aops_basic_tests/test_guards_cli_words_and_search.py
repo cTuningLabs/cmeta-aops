@@ -37,7 +37,7 @@ SWITCHES = {
     'setup': ['detect', 'install', 'build', 'skip_detect', 'skip_install', 'skip_build', 'skip_install_uses',
               'skip_build_uses', 'skip_cache_version_check', 'skip_size_check', 'versions', 'status', 'upgrade',
               'sizes', 'here', 'ignore_install_errors', 'ignore_build_errors', 'custom_install', 'custom_build',
-              'add_tool_path_to_env', 'force_add_tool_path_to_env', 'refresh_versions'],
+              'add_tool_path_to_env', 'force_add_tool_path_to_env', 'refresh_versions', 'check_update'],
     'clone-git-to-cache': ['version_to_dir', 'skip_checkout_dir'],
     'compile-and-run-program': ['here', 'recompile', 'skip_compile', 'skip_run', 'skip_size_check'],
     'finish-run': ['print_line'],
@@ -251,3 +251,40 @@ def test_no_declared_search_pattern_is_refused(tool_api):
                 problems.append(f'tool/{path.parent.name}: "{pattern}"')
 
     assert not problems, 'declared search patterns the tool search refuses:\n' + '\n'.join(problems)
+
+
+# A parameter of run() named like a control word of the task category (save, path, new, info, tags, ...) never
+# reaches run(): the category keeps those words for itself. The two that do work, by their own route:
+CONTROL_WORD_EXCEPTIONS = {
+    ('run-ai', 'new'): 'run() also reads it from the control of the task (cparams)',
+    ('scan-git-secrets', 'path'): 'the control path is the working directory of the task, which is what it scans',
+}
+
+
+def control_words():
+    """The control words of the task category (control1 and control2 of category/task/api/v2.py)."""
+    tree = ast.parse((REPO_ROOT / 'category' / 'task' / 'api' / 'v2.py').read_text(encoding = 'utf-8'))
+    words = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Attribute) \
+                and node.targets[0].attr in ('control1', 'control2'):
+            words |= {e.value for e in node.value.elts if isinstance(e, ast.Constant)}
+    return words
+
+
+def test_no_task_parameter_is_named_like_a_control_word():
+    """explore-tool-versions (then explore-versions) had "save" (2026-10-14): --save=<file> saved the context of the run instead."""
+    words = control_words()
+    assert {'save', 'path', 'new', 'info', 'tags'} <= words
+
+    problems = []
+    for path in sorted(REPO_ROOT.glob('task/*/api_v1.py')):
+        tree = ast.parse(path.read_text(encoding = 'utf-8'))
+        for func in ast.walk(tree):
+            if isinstance(func, ast.FunctionDef) and func.name == 'run':
+                names = {a.arg for a in func.args.args + func.args.kwonlyargs} - {'self', 'ctx'}
+                for name in sorted(names & words):
+                    if (path.parent.name, name) not in CONTROL_WORD_EXCEPTIONS:
+                        problems.append(f'task/{path.parent.name}: run() parameter "{name}" is a control word of the task category')
+
+    assert not problems, '\n'.join(problems)

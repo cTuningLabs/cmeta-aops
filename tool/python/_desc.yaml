@@ -30,6 +30,13 @@ cmd_get_versions_uses:
     name: uv,92f171fc18714ebd
 cmd_get_versions_regex: 'cpython-(\d+\.\d+\.\d+)-'
 
+# The versions "latest" must not take, with why and since when ("cx tool check-updates" and "--versions" show
+# them; a version asked for by number is still taken): the cap of cMeta's own installer (">=3.9,<3.15")
+latest_limits:
+  - exclude: '>=3.15'
+    reason: 'PyYAML 6.0.3 has no cp315 wheels for Windows (a venv needs MSVC to build it); lift it when it has'
+    since: '2026-10-12'
+
 install_help_text: Check https://www.python.org/ for more details!
 
 install_uses:
