@@ -55,9 +55,8 @@ cx program add ctuninglabs@cmeta-aops:test-hello-c-cpu   # writes program/test-h
 
 (Programs use `_cmeta.json`, the default — do **not** pass `--yaml`.) `cx program add`
 maps to the base `create_`; it writes only `_cmeta.json` and **indexes it immediately**
-with that initial meta. Fix its auto-generated `copyright:` to match the siblings —
-`2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the
-project root for details.` — then add your `constraints`.
+with that initial meta. Remove its auto-generated `copyright:` key (new code and metadata carry no copyright
+line - user rule, 2026-10-08), then add your `constraints`.
 
 > **Reindex gotcha (verified):** because `cx program add` already indexed the artifact,
 > editing `_cmeta.json` afterwards (e.g. adding `constraints.supported_compute`) is **not**
@@ -83,7 +82,6 @@ Fastest correct route: copy `program/test-nmm-c-cpu/` and edit.
   "authors": "Grigori Fursin",
   "category": "program,22788f3c30d04e6d",
   "constraints": { "supported_compute": ["cpu"] },
-  "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",
   "note": "one-line description"
 }
 ```
@@ -99,7 +97,6 @@ Fastest correct route: copy `program/test-nmm-c-cpu/` and edit.
 
 ```yaml
 authors: Grigori Fursin
-copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 inherits:
   - template-c-cpu,649899ef3f004e4a
 
@@ -200,8 +197,6 @@ selected-program` (declared safe, so a missing hook is skipped):
 
 ```python
 """
-Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
-
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
@@ -296,7 +291,6 @@ test-hello-c-cpu cpu`.
   "authors": "Grigori Fursin",
   "category": "program,22788f3c30d04e6d",
   "constraints": { "supported_compute": ["cpu"] },
-  "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",
   "note": "minimal hello-world C program with a stats output file"
 }
 ```
@@ -304,7 +298,6 @@ test-hello-c-cpu cpu`.
 `program/test-hello-c-cpu/_desc.yaml`
 ```yaml
 authors: Grigori Fursin
-copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
 inherits:
   - template-c-cpu,649899ef3f004e4a
 
@@ -358,7 +351,7 @@ cx program run test-hello-c-cpu cpu --quiet    # sets up a C compiler, builds he
 
 - [ ] Created/registered with the **repo-qualified** name (`cx program add|index
       ctuninglabs@cmeta-aops:<name>`), not a bare form (which lands in `local`).
-- [ ] `_cmeta.json` (json, matching siblings); fixed the auto-generated `copyright:`.
+- [ ] `_cmeta.json` (json, matching siblings); removed the auto-generated `copyright:` key (no copyright line in new work).
 - [ ] **`constraints.supported_compute`** set to exactly the targets you support — and ran
       **`cx program reindex <name>`** (cMeta 0.34.0+; `cx --reindex` before) after editing
       `_cmeta.json` (`cx program index` won't refresh an already-indexed entry, so the compute
@@ -377,7 +370,7 @@ cx program run test-hello-c-cpu cpu --quiet    # sets up a C compiler, builds he
 - [ ] Verified with a real `cx program run <name> <compute> -j --quiet` for each supported
       target the host can build (`--quiet` avoids the interactive compiler-pick `EOFError`);
       used `--recompile`/`--clean` to bust the repro cache when testing.
-- [ ] Apache-2.0 copyright header copied from a sibling; upstream notices on any
+- [ ] The `.py` header is the licence pointer only ("Licensed under the Apache License, Version 2.0." + the COPYRIGHT/LICENSE line), no `Copyright (C)` line; upstream notices on any
       vendored third-party source left verbatim (and added to `THIRD-PARTY.md`);
       didn't touch author scratch siblings (`*.yaml2`, `*.py2`, `*.arc1`, `tmp*/`,
       `cmeta-task-saved-*.json`).

@@ -47,6 +47,10 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **A guard: no `run()` parameter of a task is named like a control word of the task category** (`save`, `path`,
   `new`, `info`, `tags`, ...): such a parameter never reaches `run()` - `--save=<file>` saves the context of the run
   instead. The two existing ones work by their own route and are listed (run-ai's `new`, scan-git-secrets' `path`).
+- **The skills for contributors (`.claude/skills/add-task`, `add-program`, `add-tool`) follow the rules of new
+  code:** no copyright line in a new file (`authors:` and the Apache-2.0 pointer only; the generated `copyright:`
+  key is removed), the life of a cache entry (resumed in place after a failed or killed attempt), the typed words
+  of the command line and the control words a `run()` parameter must not take.
 
 ## 0.47.0
 - **Fix: only the words of the command line are read as what a task's `run()` expects; a value a parent's
