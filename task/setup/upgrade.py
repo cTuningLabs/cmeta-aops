@@ -939,6 +939,89 @@ def pick_version(rl, channels):
     return None, None
 
 
+def update_status(known, latest):
+    """
+    How the version cMeta installs by default (known) stands against the newest one (latest), for the report of
+    "cx tool check-updates": (status, step) - status 'behind', 'current', 'ahead' (the pin is newer than the
+    channel's newest), 'no pin' (no default_version) or 'unknown' (no newest version, or versions that do not
+    compare); step 'major', 'minor' or 'patch' for a pin that is behind, else None.
+    """
+    if not known:
+        return 'no pin', None
+
+    verdict = version_verdict(known, latest)
+    if verdict == 'outdated':
+        a, b = parse_version(known), parse_version(latest)
+        for i, step in enumerate(('major', 'minor', 'patch')):
+            if (a.release + (0, 0, 0))[i] != (b.release + (0, 0, 0))[i]:
+                return 'behind', step
+        return 'behind', 'patch'
+    if verdict == 'newer':
+        return 'ahead', None
+    if verdict == 'up-to-date':
+        return 'current', None
+    return 'unknown', None
+
+
+def latest_limits(desc):
+    """
+    The limits of "latest" a tool's _desc.yaml declares (latest_limits): the versions "latest" must not take,
+    each with why and since when - a range known to break, or the versions after a maximum until a dependency
+    catches up:
+
+        latest_limits:
+          - exclude: '>=3.15'           # the versions excluded (a PEP 440 specifier)
+            reason: 'PyYAML 6.0.3 has no cp315 wheels for Windows'
+            since: '2026-10-12'         # when it was set: the report says how old a limit is
+
+    Returns the list (a single dict is a list of one; an entry without exclude is ignored).
+    """
+    limits = (desc or {}).get('latest_limits') or []
+    if isinstance(limits, dict):
+        limits = [limits]
+    return [limit for limit in limits if isinstance(limit, dict) and limit.get('exclude')]
+
+
+def excluded_by(version, limits):
+    """The first limit whose exclude covers the version (pre-releases included), or None - also for a version or
+    a specifier that does not parse."""
+    v = parse_version(version)
+    if v is None:
+        return None
+
+    from packaging.specifiers import SpecifierSet
+    from packaging.version import Version
+
+    public = Version(v.public)
+    for limit in limits or []:
+        try:
+            if SpecifierSet(str(limit['exclude'])).contains(public, prereleases = True):
+                return limit
+        except Exception:
+            continue
+    return None
+
+
+def allowed_latest(latest, versions, limits):
+    """
+    The newest version "latest" may take: the newest one itself when no limit excludes it, else the newest of
+    the listed versions that no limit excludes (pre-releases skipped; None without a list). Returns (version,
+    the limit that excluded the newest one or None).
+    """
+    hit = excluded_by(latest, limits) if latest else None
+    if not hit:
+        return latest, None
+    return pick_latest([v for v in versions or [] if not excluded_by(v, limits)]), hit
+
+
+def limit_text(limit):
+    """A limit in one line: 'excluded >=3.15: <reason> (since <date>)'."""
+    if not limit:
+        return ''
+    return (f'excluded {limit.get("exclude")}' + (f': {limit["reason"]}' if limit.get('reason') else '') +
+            (f' (since {limit["since"]})' if limit.get('since') else ''))
+
+
 def version_policy(self, ctx, desc, params):
     """
     The policy for a request without a version, from the narrowest source that names one:
@@ -1028,17 +1111,20 @@ def lookup_versions(self, ctx, desc, tool_read, params, refresh = False, list_al
             memo[alias] = record
             return dict(record, from_cache = True)
 
-    # Asked: the channel and upstream, and the list when wanted; the sub-setups they need stay quiet
+    # Asked: the channel and upstream, and the list when wanted; the sub-setups they need stay quiet. A version
+    # check (--check_update) installs no helper: what is not on the machine makes the answer unknown
+    no_install = bool(params.get('check_update'))
     channels = self.describe_channels(ctx, desc, tool_read, params)
     versions, note = None, None
     saved = _quiet_control(ctx)
     try:
-        rl = self.find_latest(ctx, desc, tool_read, params, channels, query_channel = None, never_install = not list_all)
+        rl = self.find_latest(ctx, desc, tool_read, params, channels, query_channel = None,
+                              never_install = no_install or not list_all)
         if rl['return'] > 0:
             rl = {'channel_version': None, 'channel_source': None, 'upstream_version': None, 'upstream_source': None,
                   'notes': [str(rl.get('error') or 'the lookup failed')]}
         if list_all and desc.get('cmd_get_versions'):
-            rv = self.list_versions(ctx, desc, params, never_install = False)
+            rv = self.list_versions(ctx, desc, params, never_install = no_install)
             if rv['return'] == 0:
                 versions = rv.get('versions') or []
             else:
@@ -1068,6 +1154,24 @@ def lookup_versions(self, ctx, desc, tool_read, params, refresh = False, list_al
     return dict(record, from_cache = False)
 
 
+def newest_allowed(self, ctx, desc, tool_read, params, record):
+    """
+    The newest version "latest" may take for a tool, from its lookup record and the limits of its _desc.yaml
+    (latest_limits): the newest one when no limit excludes it, else the newest listed version that none
+    excludes - the list is looked up (and cached) only then. Returns (version or None, the limit that excluded
+    the newest one or None).
+    """
+    limits = latest_limits(desc)
+    latest = record.get('latest')
+    if not limits or not excluded_by(latest, limits):
+        return latest, None
+
+    versions = record.get('versions')
+    if versions is None:
+        versions = self.lookup_versions(ctx, desc, tool_read, params, list_all = True).get('versions')
+    return allowed_latest(latest, versions, limits)
+
+
 def resolve_version(self, ctx, params, tool_read):
     """
     "known" and "latest" as the version asked for (--version=latest, --use.<tool>.version=known), or no version
@@ -1088,6 +1192,11 @@ def resolve_version(self, ctx, params, tool_read):
     word = version_word(params.get('version'))
     if not word:
         if params.get('version'):
+            # A version the request names is taken as asked, also when a limit of "latest" excludes it
+            limit = excluded_by(params['version'], latest_limits(desc))
+            if limit and con:
+                print ('')
+                print (f'{space}cMeta warning: version {params["version"]} of "{name}" is {limit_text(limit)} - taken as asked')
             return {'return': 0}
         policy, _ = self.version_policy(ctx, desc, params)
         if policy == 'known':
@@ -1099,8 +1208,10 @@ def resolve_version(self, ctx, params, tool_read):
 
     if word in ('latest', 'ask'):
         record = self.lookup_versions(ctx, desc, tool_read, params, refresh = bool(params.get('refresh_versions')))
-        latest = record.get('latest')
+        latest, limit = self.newest_allowed(ctx, desc, tool_read, params, record)
         where = (record.get('source') or 'unknown source') + (', cached' if record.get('from_cache') else '')
+        if limit:
+            where += f'; the newest one, {record.get("latest")}, is {limit_text(limit)}'
 
         if word == 'ask' and latest and known and latest != known and con and not quiet:
             from task_c36be4b9314a45e0.api.ctask import ask
@@ -1119,6 +1230,10 @@ def resolve_version(self, ctx, params, tool_read):
             chosen, source = (known, KNOWN_SOURCE) if known else (latest, where)
         elif latest:
             chosen, source = latest, where
+        elif known and limit:
+            chosen, source = known, KNOWN_SOURCE
+            warning = (f'the newest version of "{name}", {record.get("latest")}, is {limit_text(limit)}, and no other '
+                       f'version is listed - taking the known version {known}')
         elif known:
             chosen, source = known, KNOWN_SOURCE
             warning = (f'the newest version of "{name}" could not be determined '

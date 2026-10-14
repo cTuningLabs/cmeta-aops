@@ -125,7 +125,11 @@ class CTask(InitCTask):
 
             versions = rx['stdout']
 
-            params['version'] = resolve_with_uv(versions, version)
+            # A version uv cannot install (or a condition it cannot read) is an error that names it, not a crash
+            try:
+                params['version'] = resolve_with_uv(versions, version)
+            except ValueError as e:
+                return self.cm.error(f'venv: {e} among the Pythons this uv can install ("uv python list --all-versions")', 1)
         
         if params.get('here') or params.get('with',{}).get('here'):
             cparams['path'] = ctx['origin']['pwd']

@@ -35,6 +35,7 @@ class CTask(InitCTask):
     version_policy = upgrade.version_policy
     versions_folder = upgrade.versions_folder
     lookup_versions = upgrade.lookup_versions
+    newest_allowed = upgrade.newest_allowed
     resolve_version = upgrade.resolve_version
     fallback_version = upgrade.fallback_version
     describe_channels = upgrade.describe_channels
@@ -73,7 +74,7 @@ class CTask(InitCTask):
                 'skip_size_check', 'sizes',
                 'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths',
                 'version', 'env', 'timeout', 'with', 'arg3',
-                'version_check', 'version_policy', 'version_word', 'refresh_versions',
+                'version_check', 'version_policy', 'version_word', 'refresh_versions', 'check_update',
                 'ignore_install_errors', 'ignore_build_errors',
                 'custom_install', 'custom_build',
                 'add_tool_path_to_env', 'force_add_tool_path_to_env',
@@ -118,6 +119,9 @@ class CTask(InitCTask):
 
         result = {'return':0}
 
+        # --versions sets up the helpers of the lookup (and installs a missing one). A version check
+        # (--check_update, "cx tool check-updates") does not come here: its lookup uses only the helpers already
+        # on the machine (never_install, as --status), a missing one is a note and the answer "unknown"
         if params.get('versions', False):
             # A tool without cmd_get_versions still has a newest version (its channel, cmd_get_latest_version)
             if desc.get('cmd_get_versions_uses'):
@@ -212,14 +216,20 @@ class CTask(InitCTask):
 
         result = {'return': 0}
 
-        # Check if extra init from a tool
+        # Check if extra init from a tool. A version check (--check_update) installs nothing, so a tool's own
+        # condition for an install (lib-openssl-android: an Android target) is a note there, not a stop
+        hook_notes = []
         if hasattr(tool_api_code, 'check_params') and callable(getattr(tool_api_code, 'check_params')):
             r = tool_api_code.check_params(ctx, params, cparams)
-            if self.cm.catch_error(r): return r
+            if r['return'] > 0 and params.get('check_update', False):
+                hook_notes.append(str(r.get('error') or '').strip())
+            elif self.cm.catch_error(r): return r
 
         if tool_api_code2 and hasattr(tool_api_code2, 'check_params2') and callable(getattr(tool_api_code2, 'check_params2')):
             r = tool_api_code2.check_params2(ctx, params, cparams)
-            if self.cm.catch_error(r): return r
+            if r['return'] > 0 and params.get('check_update', False):
+                hook_notes.append(str(r.get('error') or '').strip())
+            elif self.cm.catch_error(r): return r
 
         # Check tool path
         tool_path = params.get('tool_path')
@@ -235,6 +245,29 @@ class CTask(InitCTask):
 
 
         ###########################################################################################
+        # --check_update: the version cMeta installs by default (known) against the newest one the channel or
+        # upstream offers (latest, the cached lookup of --versions); nothing is detected or installed. "cx tool
+        # check-updates" asks it of every tool
+        if params.get('check_update', False):
+            record = self.lookup_versions(ctx, desc, tool_read, params, refresh = bool(params.get('refresh_versions')))
+            latest, limit = self.newest_allowed(ctx, desc, tool_read, params, record)
+            status, step = upgrade.update_status(record.get('known'), latest)
+
+            result.update({'stop': True, 'tool': artifact_au, 'known': record.get('known'),
+                           'latest': latest, 'latest_source': record.get('source'),
+                           'newest': record.get('latest'), 'limit': limit,
+                           'limit_text': upgrade.limit_text(limit) if limit else None,
+                           'status': status, 'step': step, 'notes': hook_notes + (record.get('notes') or []),
+                           'asked_at': record.get('asked_at'), 'from_cache': record.get('from_cache')})
+
+            if con:
+                print (f'{artifact_print_name}: known {record.get("known") or "-"}, newest {latest or "-"}'
+                       f' - {status}{" (" + step + ")" if step else ""}' +
+                       (f'; {record.get("latest")} is {upgrade.limit_text(limit)}' if limit else ''))
+
+            return result
+
+        ###########################################################################################
         # --versions: every version the tool publishes, the newest one its channel or upstream offers, the one
         # known to cMeta and the policy of a request without a version; the lookup is cached (--refresh_versions)
         if params.get('versions', False):
@@ -245,12 +278,16 @@ class CTask(InitCTask):
                 return self.cm.error(f'no versions of tool "{artifact_print_name}" could be found ({"; ".join(record.get("notes") or []) or "no cmd_get_versions and no source of the newest version"})')
 
             policy, policy_source = self.version_policy(ctx, desc, params)
+            latest, limit = self.newest_allowed(ctx, desc, tool_read, params, record)
 
             result['stop'] = True
             result['versions'] = versions or []
             result['known'] = record.get('known')
-            result['latest'] = record.get('latest')
+            result['latest'] = latest
             result['latest_source'] = record.get('source')
+            result['newest'] = record.get('latest')
+            result['limit'] = limit
+            result['latest_limits'] = upgrade.latest_limits(desc)
             result['policy'] = policy
             result['versions_lookup'] = record
 
@@ -265,6 +302,12 @@ class CTask(InitCTask):
                 print (f'Known to cMeta (default_version): {record.get("known") or "-"}')
                 print (f'Newest available: {record.get("latest") or "-"}' +
                        (f' ({record.get("source")}{cached})' if record.get('latest') else ''))
+                if limit:
+                    print (f'Newest allowed by the latest_limits of the tool: {latest or "-"} '
+                           f'({record.get("latest")} is {upgrade.limit_text(limit)})')
+                for other in upgrade.latest_limits(desc):
+                    if other is not limit:
+                        print (f'Limit of "latest": {upgrade.limit_text(other)}')
                 print (f'Policy of a request without a version: {policy} ({policy_source})')
                 for note in record.get('notes') or []:
                     print (f'Note: {note}')

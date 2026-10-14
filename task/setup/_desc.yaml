@@ -32,6 +32,7 @@ cli_params:
   add_tool_path_to_env: bool
   force_add_tool_path_to_env: bool
   refresh_versions: bool
+  check_update: bool
   version_policy:
     values: [known, latest, ask]
 

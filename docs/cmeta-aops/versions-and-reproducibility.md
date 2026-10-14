@@ -46,8 +46,8 @@ comparable, and a later lookup of "what worked on this kind of machine" has exac
 version it became are in the result (`version_resolved`) and in the entry's parameters (`version_word`).
 
 ```
-cx tool setup yq --version=known         # 4.53.6, the pin
-cx tool setup yq --version=latest        # 4.54.1 today, from the cached lookup
+cx tool setup yq --version=known         # the pin (its default_version)
+cx tool setup yq --version=latest        # the newest one, from the cached lookup
 cx tool setup yq --versions              # the list, the known and the newest version, their sources, the policy
 ```
 
@@ -88,7 +88,7 @@ A version chosen by a word, not named by the request, may fall back to the other
 
 A version the request names fails loudly, as every forced configuration does: a build that fails with the
 latest LLVM is reported, never retried with another version behind the user's back. Walking the versions on
-purpose is the exploration run of section 8.
+purpose is the exploration run of section 6.
 
 ## 5. The lookup of the newest version: once, cached, honest offline
 
@@ -110,7 +110,73 @@ one, else the known version with a line; a setup never fails because a lookup fa
 mind: the GitHub `releases/latest` redirect is one HTTPS request and no API quota; `git ls-remote --tags` needs
 git and a few seconds; winget, Homebrew and pip queries take seconds and gain most from the cache.
 
-## 6. Reproduce a run: `-r` and `cx @repro/<stamp>/repro.json`
+## 6. What cMeta knows about versions: the limits of `latest`, the report, the exploration runs
+
+**The limits of `latest`.** A tool's `_desc.yaml` can name the versions `latest` must not take, each with why and
+since when - a range known to break, or the versions after a maximum until a dependency catches up:
+
+```yaml
+latest_limits:
+  - exclude: '>=3.15'          # a PEP 440 specifier
+    reason: 'PyYAML 6.0.3 has no cp315 wheels for Windows (a venv needs MSVC to build it); lift it when it has'
+    since: '2026-10-12'
+```
+
+`latest` (the word, or the policy) is then the newest version no limit excludes: when the newest one is excluded,
+the versions the tool publishes are listed (`cmd_get_versions`, cached) and the newest allowed one is taken; with no
+list, the known version, with one warning. A version asked for by number is taken as asked, with a warning when a
+limit excludes it. `--versions` and `cx tool check-updates` show the limits and their dates. tool/python carries the
+first one (the cap of cMeta's own installer).
+
+**The report: `cx tool check-updates`.** For every tool with a `default_version` (`--all`: every tool), it
+compares two versions:
+
+- **known:** the `default_version` in the tool's `_desc.yaml`, the version cMeta installs;
+- **newest:** the newest version that `latest` may take, from the channel or upstream.
+
+It does not look at what is installed on the machine; `cx tool setup <tool> --status` does that. The newest
+versions come from the cached lookups, so a second report is instant:
+
+```
+cx tool check-updates                       # TOOL, KNOWN, NEWEST, STATUS (behind with its step, current, ahead, unknown, no pin)
+cx tool check-updates yq,jq,helm            # these tools
+cx tool check-updates --refresh_versions    # ask the channels and upstream again
+cx tool check-updates --output=updates.md   # the report as Markdown (.json: JSON)
+```
+
+`ahead` means the pin is newer than what the channel offers. `unknown` means the tool has no source of its newest
+version: add `cmd_get_versions`. Nothing is installed or changed: moving a pin stays a decision, with a test. The
+Python API returns a row per tool and the counts.
+
+**The exploration runs: `cx task run explore-tool-versions`.** It tries a tool at a few versions, each in a fresh
+cache entry, and runs a program with each one when asked. It writes a verdict per version to a JSONL file: works or
+fails, the class of the error, the machine.
+
+- **The versions:** by default the known one and the newest one `latest` may take. `--versions` names others;
+  `--last=<n>` takes the `n` newest released versions of the tool's list (its `cmd_get_versions`). Never a range
+  by itself. The first lines of a run name each version and why it is tried.
+- **The verdicts:** by default in `explore-tool-versions-<tool>-<host>-<stamp>.jsonl` in the current directory,
+  and copied into the test session of the shell when there is one.
+- **Several machines:** run the same exploration on each, put the files in one folder, and run `--promote` on that
+  folder. It reads files only and never contacts a machine. It prints the evidence (where each version worked or
+  failed) and proposes, as YAML lines for a person to commit:
+  - the next `default_version`: the newest version that worked everywhere it was tried, on at least two operating
+    systems;
+  - a new limit of `latest`: a newer version that failed somewhere;
+  - a note: a version that a machine's channel does not offer, such as an older uv.
+
+```
+cx task run explore-tool-versions yq                       # known and latest
+cx task run explore-tool-versions yq --last=3              # the three newest released versions
+cx task run explore-tool-versions python --versions=3.12.14,3.13.15,3.14.8 --program=test-nmm-python-cpu
+cx task run explore-tool-versions --promote --verdicts=<the verdict files or a folder of them>
+```
+
+See [task/explore-tool-versions/README.md](../../task/explore-tool-versions/README.md) for the details and the
+verdict's fields. The verdicts stay in test sessions until their shape has settled; the meta remains the knowledge
+cMeta acts on.
+
+## 7. Reproduce a run: `-r` and `cx @repro/<stamp>/repro.json`
 
 Any command run with `-r` (`--repro`) writes, in the directory it was run from, a folder
 `repro/<YYYYMMDD-HHMMSS>/`:
@@ -169,9 +235,9 @@ whatever is newest on the day of the replay) and the same packages, and runs the
 its own folder, so the versions of the two runs can be compared tool by tool. Two things stay outside the pins:
 what the machine itself provides (the compiler of Visual Studio, the Windows SDK, winget - a pin that the machine no
 longer meets fails loudly), and the bytes of a download that a publisher replaces under the same version (a pinned
-dataset revision is planned, section 8).
+dataset revision is planned, section 9).
 
-## 7. For the Python API
+## 8. For the Python API
 
 - `cm.access({'category': 'task', 'command': 'run', 'arg1': 'setup', 'name': 'yq', 'versions': True})` returns
   `versions` (the list), `known`, `latest`, `latest_source`, `policy` and `versions_lookup` (the cached record);
@@ -182,23 +248,19 @@ dataset revision is planned, section 8).
   `category/task/api/provenance.py` `collect_resolved(global)` trims them to one dict, `write_repro(cm, ctx,
   result)` writes the reproduction folder for any run.
 
-## 8. Planned
+## 9. Planned
 
-- **The bounds of `latest` in meta**, with a reason and a date (a version range known to break, a maximum until
-  a dependency has wheels), so that `latest` is the newest version that can work; and `since`, when the known
-  version was last confirmed.
-- **`cx tool check-updates`**: the known versions against the newest ones for every tool, as a report (weekly
-  on the fleet; a bump stays a decision).
-- **The exploration run**: one task run per version of one tool, each in a fresh cache entry, the verdicts
-  recorded (works, fails, the error's class, the machine) - first in the test sessions, then as records that a
-  promotion script reads to move `known` forward and to bound `latest`.
+- **`cx tool check-updates` on the fleet, weekly**, as a report in a test session, and the first promotions by
+  hand from the verdicts of `explore-tool-versions` on Windows, Linux and macOS.
+- **The verdicts as records**: a public category when their shape has settled (the crowd layer), and the
+  resolver's third source - what worked on this kind of machine for this task - read at setup time.
 - **Models, datasets, prompts and benchmarks** as versioned, cached artifacts in the same scheme (a model's
   revision, a dataset's snapshot, a prompt's hash), so that a run's reproduction folder pins them too; cMeta's
-  artifacts and UIDs are the identities.
-- **A knowledge layer** read at setup time: what worked on this kind of machine for this task - the resolver
-  keeps a slot for it.
+  artifacts and UIDs are the identities. The Hugging Face downloads are not pinned by revision yet.
+- **`--use.<tool>.with.*` in `repro.json`** for the tools a run sets up with parameters (mpi), and the engine's
+  own `cmeta-repro-*.json` moved into the reproduction folder (an engine change).
 
-## 9. The configuration keys cmeta-aops reads
+## 10. The configuration keys cmeta-aops reads
 
 The config category holds one artifact per task family (`cx config set <artifact> --meta.<key>=<value>`,
 `cx config read <artifact>`). The keys read today:

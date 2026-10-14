@@ -1,0 +1,17 @@
+artifact: 753da1d8d0474967
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-10-14T09:49:08.077771+00:00'
+desc: try a tool at several versions - its setup and, when asked, a program with it - in fresh cache entries, record a verdict per version, and propose the next default_version or a limit of latest from the verdicts
+generator:
+  agent: Claude Code
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  via: cmeta 0.37.0
+note: added on 2026-10-14 as step 5 of the work on default and latest versions of tools (the exploration runs and the promotion of their verdicts); the verdicts stay in test sessions until their shape has settled
+tags:
+  - task
+  - versions
+  - explore
+  - reproducibility

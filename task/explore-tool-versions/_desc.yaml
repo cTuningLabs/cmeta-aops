@@ -1,0 +1,22 @@
+authors: Grigori Fursin
+
+# A tool tried at several versions, a verdict per version, and the proposals they support (README.md):
+#
+#   cx task run explore-tool-versions <tool> [--versions=known,latest,<version>,...] [--last=<n>] [--refresh_versions]
+#                                            [--program=<program> [--use_key=<storage key>]] [--keep] [--output=<file>]
+#   cx task run explore-tool-versions --promote --verdicts=<file.jsonl|folder>[,...] [--min_os=2]
+
+cache: False
+store_global: False
+
+params_map:
+  arg2: tool
+
+# The numbers as words of the command line (the switches are annotated bool in run())
+cli_params:
+  last:
+    type: int
+    min: 1
+  min_os:
+    type: int
+    min: 1

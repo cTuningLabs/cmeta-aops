@@ -286,6 +286,10 @@ was, and every release download stopped on it, 2026-10-14). The guard tests in
 `tests/cmeta_aops_basic_tests/test_guards_cli_words_and_search.py` check every task: a `bool`
 parameter used as text, a `**kwargs` switch (a boolean default, or a `skip_*` / `ignore_*` /
 `force_*` / `custom_*` name) missing from `cli_params`, a type the engine does not convert.
+Never name a `run()` parameter like a control word of the task category (`save`, `path`, `new`, `info`,
+`tags`, `cache`, `update`, `clean`, `skip`, ... - `control1` and `control2` of `category/task/api/v2.py`): the
+category keeps those words and the parameter never arrives (`--save=<file>` saves the context of the run). The
+guard test fails on a new one.
 
 ---
 
