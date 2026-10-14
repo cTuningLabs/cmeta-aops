@@ -197,6 +197,9 @@ class CTask(InitCTask):
              "package_manager": "winget",
              "passwordless_sudo": True,
              "sudo": False,
+             # An elevated process (an administrator terminal, a task with the highest privileges) installs what
+             # needs administrator rights without a UAC prompt: the standing permission of a quiet run there
+             "elevated": is_elevated_windows(),
            }
 
         # Finish automation
@@ -283,6 +286,15 @@ class CTask(InitCTask):
                 _path.append(path_local_bin)
 
         return result
+
+###################################################################################################
+def is_elevated_windows():
+    """True when this Windows process runs with administrator rights (elevated), False otherwise or unknown."""
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
 
 ###################################################################################################
 def detect_linux_env():

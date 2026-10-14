@@ -21,6 +21,11 @@ install_cmd:
 upgrade_cmd:
   windows: 'wsl.exe --update --web-download'
 
+# Installing a Windows component needs administrator rights: a quiet run (-q) from a process that is not
+# elevated does not start it (a UAC prompt would wait for nobody) and says what to run instead
+requires_sudo:
+  windows: True
+
 install_help_text: |
   WSL requires Windows 10 build 19041 or later, or Windows 11, and hardware virtualization.
   Open PowerShell as Administrator and run:

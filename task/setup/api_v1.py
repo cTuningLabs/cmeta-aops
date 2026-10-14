@@ -832,6 +832,7 @@ class CTask(InitCTask):
         success = False
 
         warning = ''
+        install_refused = None
 
         ##############################################################################
         if version:
@@ -925,6 +926,10 @@ class CTask(InitCTask):
                     r = self.install_tool(ctx, result, **kwargs_copy)
 
             if not ignore_install_errors and self.cm.catch_error(r): return r
+
+            # An install a quiet run did not start (administrator rights on Windows): the reason goes into the error
+            if r.get('refused'):
+                install_refused = r.get('warning')
 
             _update_params = r.get('_update_params')
             if version_fallback and r['return'] == 0 and not r.get('failed', False):
@@ -1049,7 +1054,8 @@ class CTask(InitCTask):
                 extra['warning'] = warning
 
             # Normally, should not be 16 here and not 16 since setup task failed at this stage
-            return self.cm.error(f'failed to setup tool "{artifact_print_name}"{x} in "{__file__}"', 32, extra = extra)
+            return self.cm.error(f'failed to setup tool "{artifact_print_name}"{x} in "{__file__}"' +
+                                 (f': {install_refused}' if install_refused else ''), 32, extra = extra)
 
         ##############################################################################
         if upgrade_requested and 'last_upgrade' not in result:

@@ -12,6 +12,27 @@ import re
 SUDO_PREFIX = re.compile(r'(^|[;&|(]\s*)sudo\s+(?!-n\b)')
 
 
+def unattended_rights(uname, quiet, needs_admin, passwordless_sudo, elevated):
+    """
+    What a quiet run (-q: nobody to answer, never a question - neither cMeta's nor the system's) does with an
+    install command that may need administrator rights:
+      - 'sudo -n' on Linux and macOS without passwordless sudo: sudo fails at once instead of waiting at a password
+        prompt that nobody may see;
+      - 'refuse' on Windows for a tool whose install needs administrator rights (requires_sudo: windows: True)
+        from a process that is not elevated: the administrator prompt (UAC) would wait on the desktop, or fail
+        without one, so the command is not run and the user is told what to run;
+      - None: the command runs as it is (not quiet; passwordless sudo; an elevated process; no rights needed).
+    Passwordless sudo and an elevated process are the machine's standing permission for unattended runs.
+    """
+    if not quiet:
+        return None
+
+    if uname == 'windows':
+        return 'refuse' if needs_admin and not elevated else None
+
+    return None if passwordless_sudo else 'sudo -n'
+
+
 from task_c36be4b9314a45e0.api.ctask import ask
 
 from . import upgrade
@@ -185,6 +206,9 @@ def install_tool(self,
     os_key = uname if (uname == 'windows' or uname in requires_sudo) else 'linux'
     x = requires_sudo.get('all') if 'all' in requires_sudo else requires_sudo.get(os_key)
     sudo_warning = False
+
+    # On Windows the same key means administrator rights (the installer asks with a UAC prompt)
+    needs_admin = bool(x)
     if x:
         # Turn on non-interactive mode unless passwordless sudo
         # You may customize it further via customize_install_cmd
@@ -258,7 +282,7 @@ def install_tool(self,
     if install_cmd and not force_custom_install:
         if sudo_warning:
             print ('')
-            print (f'{space}WARNING: this installation requires SUDO ...')
+            print (f'{space}WARNING: this installation requires ' + ('administrator rights ...' if uname == 'windows' else 'SUDO ...'))
 
         # Add version if supported
         versioned = False
@@ -383,11 +407,31 @@ def install_tool(self,
 
         result['install_cmd'] = install_cmd
 
-        # A quiet run (-q) must not wait at a sudo password prompt that nobody may see: an unattended
-        # benchmark would hang for hours. "sudo -n" fails at once when sudo needs a password
-        # (and still works when it does not, or when the credentials are cached).
-        passwordless_sudo = ctx_tasks['global'].get('host', {}).get('os_extra', {}).get('passwordless_sudo', False)
-        sudo_non_interactive = quiet and uname != 'windows' and not passwordless_sudo
+        # A quiet run (-q) never answers a prompt of the system that nobody may see: an unattended benchmark
+        # would hang for hours. "sudo -n" fails at once when sudo needs a password (and still works when it
+        # does not, or when the credentials are cached); on Windows an install that needs administrator
+        # rights is not started from a process that is not elevated (unattended_rights)
+        os_extra = ctx_tasks['global'].get('host', {}).get('os_extra', {})
+        rights = unattended_rights(uname, quiet, needs_admin, os_extra.get('passwordless_sudo', False),
+                                   os_extra.get('elevated', False))
+        sudo_non_interactive = rights == 'sudo -n'
+
+        if rights == 'refuse':
+            result['failed'] = True
+            result['refused'] = 'administrator rights'
+            result['warning'] = ('the installation needs administrator rights, which a quiet run (-q) does not ask for: run "' +
+                                 '" and "'.join(cmds) + '" in an elevated terminal, or the cMeta command without -q')
+
+            if con:
+                print ('')
+                print (f'{space}WARNING: this installation needs administrator rights, which a quiet run (-q) does not ask for:')
+                print (f'{space}         Windows would ask with a UAC prompt. Run it yourself in an elevated terminal,')
+                print (f'{space}         or run the cMeta command without -q to answer the prompt, then repeat it:')
+                print ('')
+                for cmd in cmds:
+                    print (f'{space}           {cmd}')
+
+            cmds = []
 
         for cmd in cmds:
             original_cmd = cmd
