@@ -11,3 +11,22 @@ cmd_get_version: '{{tool_path}} --version'
 
 win_only: True
 
+# WSL is a Windows system component: use Microsoft's inbox bootstrapper.
+# This installs the runtime without adding a default Linux distribution.
+skip_common_install_uses: True
+
+install_cmd:
+  windows: 'wsl.exe --install --no-distribution --web-download'
+
+upgrade_cmd:
+  windows: 'wsl.exe --update --web-download'
+
+install_help_text: |
+  WSL requires Windows 10 build 19041 or later, or Windows 11, and hardware virtualization.
+  Open PowerShell as Administrator and run:
+    cx tool setup wsl --install
+  Restart Windows if the installer requests it, then retry the original command.
+  No Linux distribution is installed by tool setup. To select one:
+    cx tool run wsl -- --list --online
+  See https://learn.microsoft.com/windows/wsl/install
+

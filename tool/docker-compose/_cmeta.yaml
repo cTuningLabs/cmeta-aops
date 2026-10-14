@@ -1,0 +1,9 @@
+artifact: 2c49bad0ff1d4961
+category: tool,c393ba5c6fa14f66
+authors: Grigori Fursin
+creation_timestamp: '2026-10-11T17:23:14.818529+00:00'
+generator:
+  method: agent
+  agent: OpenAI Codex 0.162.0
+  via: cmeta 0.34.2.1
+  by: Grigori Fursin
