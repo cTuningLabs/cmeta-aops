@@ -21,6 +21,7 @@ tool/docker, two things the declarative _desc.yaml cannot say:
 """
 
 import os
+import re
 import subprocess
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
