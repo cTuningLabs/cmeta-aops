@@ -60,13 +60,14 @@ class CTask(InitCTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
+        self.instances = {}
 
     ############################################################
     def run(self,
             ctx: dict,
             action: str = 'launch',       # launch, peek, collect or remove
             cmds: str = None,             # launch: the commands, separated by ";" - the words after "cx", or "!<shell line>"
-            hosts: str = None,            # host aliases separated by "," ("here": this machine); default: the test hosts
+            hosts: str = None,            # host aliases separated by "," ("here": this machine; "docker:ubuntu", "podman", "wsl:debian" = an instance of that template here); default: the test hosts
             tree: str = None,             # launch: the repository folder to test (default: the clone of ctuninglabs@cmeta-aops)
             id: str = None,               # the name of the round (default at launch: the time; then required)
             files: str = None,            # collect: only these files of a host's work folder ("*.jsonl,steps.txt")
@@ -89,6 +90,14 @@ class CTask(InitCTask):
             return self.cm.error(f'test-on-hosts: unknown action "{action}" (launch, peek, collect, remove)')
         if action != 'launch' and not id:
             return self.cm.error(f'test-on-hosts --action={action}: name the round (--id=<round>, printed at its launch)')
+
+        # A host ref of the run-on-any-host design (docker[:template], podman[:template], wsl[:template]) is the
+        # instance of that template on this machine, made on first use: the round runs inside it, with the tree
+        # already mounted there when it is the repository the instance carries
+        r = self.resolve_refs(con, host_list)
+        if r['return'] > 0: return r
+        host_list = r['hosts']
+        self.instances = r['instances']
 
         rid = id or datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
         local = self.local_folder(rid)
@@ -130,31 +139,49 @@ class CTask(InitCTask):
 
         started = {}
 
-        # The tree once, for every remote host
-        if remote_hosts:
-            tarball = os.path.join(local, 'tree.tar.gz')
+        def launcher_for(tree_arg, wsl = False):
+            """
+            launch.sh: the runner started detached, with the tree as a tarball or as a folder inside. Through
+            ssh "nohup ... &" survives the session; inside a WSL distribution only a new session does (setsid -f):
+            a process in the launching session's group is gone with wsl.exe (seen 2026-10-16).
+            """
+            path = os.path.join(local, ('launch-wsl.sh' if wsl else 'launch.sh') if tree_arg == 'tree.tar.gz' else
+                                ('launch-wsl-mounted.sh' if wsl else 'launch-mounted.sh'))
+            words = f'python3 "$ROOT/runner.py" "$ROOT" {sh_quote(tree_arg)} ' + ' '.join(sh_quote(c) for c in commands)
+            with open(path, 'w', encoding = 'utf-8', newline = '\n') as f:
+                f.write('#!/bin/bash\n'
+                        f'# test-on-hosts round {rid}: the runner started detached from the launching session\n\n'
+                        f'ROOT="$HOME/{remote}"\n'
+                        'cd "$ROOT" || exit 1\n')
+                if wsl:
+                    f.write(f'setsid -f {words} > "$ROOT/run.out" 2>&1 < /dev/null\n'
+                            'echo "started on $(hostname) (a new session)"\n')
+                else:
+                    f.write(f'nohup {words} > "$ROOT/run.out" 2>&1 < /dev/null &\n'
+                            'echo "started on $(hostname): pid $!"\n')
+            return path
+
+        # The tree once, for every remote host that does not carry it already
+        tarball = os.path.join(local, 'tree.tar.gz')
+        if any(not self.instances.get(h, {}).get('tree_inside') for h in remote_hosts):
             tar_tree(tree, tarball)
 
-            launcher = os.path.join(local, 'launch.sh')
-            with open(launcher, 'w', encoding = 'utf-8', newline = '\n') as f:
-                f.write('#!/bin/bash\n'
-                        f'# test-on-hosts round {rid}: the runner started detached from the ssh session\n\n'
-                        f'ROOT="$HOME/{remote}"\n'
-                        'cd "$ROOT" || exit 1\n'
-                        'nohup python3 "$ROOT/runner.py" "$ROOT" tree.tar.gz ' + ' '.join(sh_quote(c) for c in commands) +
-                        ' > "$ROOT/run.out" 2>&1 < /dev/null &\n'
-                        'echo "started on $(hostname): pid $!"\n')
-
         for h in remote_hosts:
-            for path in (tarball, runner):
+            inside = self.instances.get(h, {}).get('tree_inside') if os.path.normcase(os.path.normpath(tree)) == \
+                     os.path.normcase(os.path.normpath(self.instances.get(h, {}).get('tree_local') or '')) else ''
+            files = [runner] if inside else [tarball, runner]
+            for path in files:
                 r = self.host('push', arg1 = h, arg2 = path, to = f'{remote}/{os.path.basename(path)}')
                 if r['return'] > 0:
                     started[h] = f'push failed: {r.get("error")}'
                     break
             else:
-                r = self.host('run', arg1 = h, script = launcher, capture = True)
+                r = self.host('run', arg1 = h, script = launcher_for(inside or 'tree.tar.gz', wsl = self.instances.get(h, {}).get('engine') == 'wsl'),
+                              capture = True)
                 out = (r.get('outputs') or {}).get(h, {}).get('stdout', '')
                 started[h] = out.strip().splitlines()[-1] if r['return'] == 0 and out.strip() else f'start failed: {r.get("error")}'
+                if inside:
+                    started[h] += f' (the tree mounted at {inside})'
 
             if con:
                 print (f'  {h}: {started[h]}')
@@ -187,7 +214,8 @@ class CTask(InitCTask):
             f.write('#!/bin/bash\n'
                     f'ROOT="$HOME/{remote}"\n'
                     'cat "$ROOT/DONE" 2>/dev/null || echo running\n'
-                    'cat "$ROOT/work/steps.txt" 2>/dev/null\n')
+                    'cat "$ROOT/work/steps.txt" 2>/dev/null\n'
+                    'true\n')
 
         states = {}
         for h in host_list:
@@ -265,6 +293,59 @@ class CTask(InitCTask):
                 print (f'  {h}: ' + ('removed' if removed[h] else 'NOT removed'))
 
         return {'return': 0, 'id': rid, 'removed': removed}
+
+    ############################################################
+    def resolve_refs(self, con, host_list):
+        """
+        The host list with every ref of a template instance (docker[:template], podman[:template], wsl[:template],
+        and the --on_* words after it: "docker:debian --on_template.os_version=13") replaced by the instance's
+        alias, made or found through get-host--docker / get-host--wsl; for each instance, where the tree repository
+        (ctuninglabs@cmeta-aops) is mounted inside, so that a round runs on it without a push.
+        """
+        hosts, instances = [], {}
+        for ref in host_list:
+            words = ref.split()
+            head = words[0]
+            engine, _, template = head.partition(':')
+            if engine not in ('docker', 'podman', 'wsl'):
+                hosts.append(ref)
+                continue
+            options = {}
+            for w in words[1:]:
+                if w.startswith('--on_') and '=' in w:
+                    k, _, v = w[5:].partition('=')
+                    if k.startswith('template.'):
+                        options.setdefault('template', {})[k[9:]] = v
+                    else:
+                        options[k] = v
+            task = 'get-host--wsl' if engine == 'wsl' else 'get-host--docker'
+            ii = {'category': 'task', 'command': 'run', 'arg1': task, 'name': template or 'ubuntu',
+                  'template': options.get('template') or {}, 'instance': options.get('instance', ''),
+                  'repos': options.get('repos', ''), 'con': con, 'quiet': True}
+            if engine != 'wsl':
+                ii['engine'] = engine
+                ii['arch'] = options.get('arch', '')
+                ii['compute'] = options.get('compute', 'cpu')
+            r = self.cm.access(ii)
+            if r['return'] > 0:
+                return r
+            alias = r['host']
+            hosts.append(alias)
+            # the tree repository inside the instance, from its host artifact
+            rh = self.cm.access({'category': 'host', 'command': 'find', 'arg1': alias, 'con': False})
+            mounts = []
+            if rh['return'] == 0 and rh.get('artifacts'):
+                rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(rh['artifacts'][0]['path'], '_desc'))
+                mounts = ((rd.get('data') or {}).get('mounts') or []) if rd['return'] == 0 else []
+            inst = {'ref': ref, 'engine': engine}
+            for m in mounts:
+                if m.get('repo') == TREE_REPO and m.get('kind') != 'data':
+                    inst['tree_inside'] = m.get('inside')
+                    inst['tree_local'] = m.get('path')
+            instances[alias] = inst
+            if con:
+                print (f'  {ref} -> {alias}' + (f' (the tree mounted at {inst["tree_inside"]})' if inst.get('tree_inside') else ''))
+        return {'return': 0, 'hosts': hosts, 'instances': instances}
 
     ############################################################
     def host(self, command, **params):

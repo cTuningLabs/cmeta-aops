@@ -101,15 +101,17 @@ class Category(InitCategory):
             'check_versions',
             'cv',
             'skip_clean_local',
-            'on',                # run on any host: --on=<host | docker[:template] | podman[:template]>; its options are --on_<name>
+            'on',                # run on any host: --on=<host | docker[:template] | podman[:template] | wsl[:template]>; its options are --on_<name>
+            'on_block',          # the "on:" block of the artifact that started the run (a program's, handed over by the program category)
         ]
 
         # Passed further to customization APIs ...
         self.control2 = [
-            'path', 
-            'skip', 
-            'cache', 
-            'cache_repo', 
+            'path',
+            'skip',
+            'cache',
+            'cache_repo',
+            'cache_repo_key',    # the key of config::task cache_repos that names the repository of this task's cache entries (data tasks: data)
             'cache_name',
             'cache_extra_alias', 
             'cache_extra_params', 
@@ -225,13 +227,8 @@ class Category(InitCategory):
         nested_call = ctx_tasks.setdefault('nested_call', 0)
         space = '  ' * nested_call if verbose else ''
 
-        # "Run on any host": --on=<ref> on the outermost task of a command line delegates the whole command line, as
-        # typed, to that host (a fleet host, or an instance of a container template made on the way) and returns
-        # its result; the inner run carries CMETA_ON=here and never delegates again. cx program run, cx tool setup
-        # and cx app run all pass through here, so one word serves them all.
-        on = params.get('on')
-        if on and nested_call == 0 and str(on).strip() != 'here' and os.environ.get('CMETA_ON', '') != 'here':
-            return self._run_on(ctx, params, str(on).strip(), con, quiet, verbose)
+        # "Run on any host": --on=<ref> (or the artifact's own "on:" block) on the outermost task of a command line
+        # delegates the whole command line to a host - see below, once the task's _desc.yaml is loaded
 
         check_versions = params.get('check_versions')
         if check_versions is None:
@@ -288,6 +285,24 @@ class Category(InitCategory):
         cdesc = r['loaded_files']['_desc'].get('data', {})
 
         task_path = artifact['path']
+
+        ###########################################################################################
+        # RUN ON ANY HOST: --on=<ref> on the outermost task of a command line delegates the whole command line, as
+        # typed, to that host (a fleet host, or an instance of a container template made on the way) and returns
+        # its result; without the word, the artifact's own route ("on:" in its _desc.yaml - the task's, or the
+        # program's handed over by the program category) decides: requires_os, a route per OS, a default. The
+        # inner run carries CMETA_ON=here and never delegates again. cx program run, cx tool setup and cx app run
+        # all pass through here, so one word serves them all
+
+        if nested_call == 0 and os.environ.get('CMETA_ON', '') != 'here':
+            on = str(params.get('on') or '').strip()
+            if not on:
+                r_route = self._route_of(params.get('on_block') or cdesc.get('on'),
+                                         (artifact.get('cmeta_ref_parts') or {}).get('artifact_alias') or str(params.get('arg1') or 'the task'))
+                if self.cm.catch_error(r_route): return r_route
+                on = r_route['route']
+            if on and on != 'here':
+                return self._run_on(ctx, params, on, con, quiet, verbose)
         cmeta = artifact['cmeta']
         cmeta_ref_parts = artifact['cmeta_ref_parts']
 
@@ -582,6 +597,20 @@ class Category(InitCategory):
         if self.cm.catch_error(r): return r
 
         ###########################################################################################
+        # A DATA TASK'S REPOSITORY, known before check_params chooses where its files go: cache_repo_key in the
+        # task's _desc.yaml (get-hf-model: data) or in the uses entry of its caller, resolved through the key
+        # cache_repos.<key> of config::task (task init; --use.init.cache_repos.<key>=<repo> for one run). The
+        # entry and its files stay together there (the task ignores file_cache): portable, shared with instances
+        # and other hosts. No key, or no repository for it: as before
+
+        if not cparams.get('cache_repo'):
+            cache_repo_key = cparams.get('cache_repo_key') or cdesc.get('cache_repo_key')
+            if cache_repo_key:
+                data_repo = (ctx_tasks.get('global', {}).get('init', {}).get('cache_repos') or {}).get(str(cache_repo_key))
+                if data_repo:
+                    ctx_tasks['local']['in_data_repository'] = str(data_repo)
+
+        ###########################################################################################
         # CHECK PARAMS INCLUDING FROM --use. ...
         # May do some basic tasks and stop
 
@@ -705,6 +734,11 @@ class Category(InitCategory):
         cache = cparams.get('cache')
 
         cache_repo = cparams.get('cache_repo')
+
+        # A data task's entries go to its data repository (resolved above, before check_params): models and datasets
+        # apart from the tools of this machine
+        if not cache_repo and ctx_tasks['local'].get('in_data_repository'):
+            cache_repo = ctx_tasks['local']['in_data_repository']
 
         # Check if was forced for the whole run: --use.init.default_cache_repo=<repo> or config::task (task init)
         x_cache_repo = ctx_tasks.get('global', {}).get('init', {}).get('default_cache_repo')
@@ -1851,6 +1885,34 @@ class Category(InitCategory):
 
         return {'return':0}
 
+    def _route_of(self, block, artifact_alias):
+        """
+        The route an artifact's "on:" block gives a run started without --on, on this OS:
+
+            on:
+              requires_os: [linux]        # the pipeline needs one of these (windows, linux, darwin)
+              default: docker:vllm-cuda   # the route when the command line names none: here | <ref of --on>
+              windows: wsl                # a route per OS of the machine, when it differs
+              darwin: docker
+
+        The OS's own route, else the default; nothing when this OS satisfies requires_os and no route is forced for
+        it; an error naming the options when this OS is not allowed and no route is given. Returns {'route': ''}
+        for "here".
+        """
+        if not isinstance(block, dict) or not block:
+            return {'return': 0, 'route': ''}
+        system = platform.system().lower()
+        if system not in ('windows', 'linux', 'darwin'):
+            system = 'linux'
+        route = str(block.get(system) or block.get('default') or '').strip()
+        requires = block.get('requires_os')
+        if requires:
+            allowed = [str(x).strip().lower() for x in (requires if isinstance(requires, list) else str(requires).split(','))]
+            if system not in allowed and not route:
+                return self.cm.error(f'"{artifact_alias}" needs {" or ".join(allowed)} (on: requires_os), not {system}: '
+                                     f'--on=docker, --on=wsl, --on=<host>, or a route for {system} in its "on:" block')
+        return {'return': 0, 'route': '' if route == 'here' else route}
+
     def _run_on(self, ctx, params, ref, con, quiet, verbose):
         """
         The "run on any host" delegation (the design of 2026-10-15, phase 3, first slice). The words of the command
@@ -1859,14 +1921,21 @@ class Category(InitCategory):
 
             --on=<alias>                       a host artifact (a fleet host, an instance made before)
             --on=docker[:<template>]           an instance of the template (ubuntu by default) on this machine's docker,
-            --on=podman[:<template>]           made or found by get-host--docker (--on_instance, --on_repos, --on_arch,
-                                               --on_new_host, --on_template.<key>=<value> go to it); the compute word
-                                               of the run picks the template's overlay when it has one (cuda, rocm)
+            --on=podman[:<template>]           made or found by get-host--docker (--on_instance, --on_repos, --on_data,
+                                               --on_arch, --on_new_host, --on_template.<key>=<value> go to it); the
+                                               compute word of the run picks the template's overlay when it has one
+            --on=wsl[:<template>]              the same as a WSL distribution of this Windows machine (get-host--wsl)
             --on=here                          nothing: here, as without the word (the inner run's own value)
+            --on_pull                          the run works in ~/work/<run id> there and that folder comes back here
+                                               (on-runs/<run id> of the current directory)
+            --on_rm                            a throwaway instance: made for this run, destroyed after it
 
-        The host's shell is a POSIX one (a Windows host is refused by this slice); -q and -v travel as typed, and
-        a terminal here is a terminal there (ssh -t, docker exec -it): the inner run asks its questions as a local
-        run would. The result is the inner exit code, and run_on (the host, the words, the engine, whether the
+        The data repositories of this machine (config::task cache_repos) are mounted into an instance and indexed
+        here again after the run: a model fetched inside lands in the same place as one fetched here.
+
+        The words are quoted for the host's shell: a POSIX one, or PowerShell for a Windows host whose artifact
+        declares "access: shell: powershell" (a cmd shell is refused); -q and -v travel as typed, and a terminal
+        here is a terminal there (ssh -t, docker exec -it): the inner run asks its questions as a local run would. The result is the inner exit code, and run_on (the host, the words, the engine, whether the
         instance was made now, the terminal), also kept in ctx['on'] for provenance.
         """
         import shlex
@@ -1880,6 +1949,7 @@ class Category(InitCategory):
 
         host_category = 'host,e4e49c251c814f6d'
         engine, host, made = '', None, None
+        shell = 'posix'                    # the words are quoted for the host's shell: POSIX, or PowerShell for a Windows host
 
         if ref in ('docker', 'podman') or ref.startswith('docker:') or ref.startswith('podman:'):
             engine, _, template = ref.partition(':')
@@ -1889,13 +1959,25 @@ class Category(InitCategory):
             r = self.cm.access({'category': 'task,' + self.cmeta['artifact'], 'command': 'run', 'arg1': 'get-host--docker,08e0250b15e2486a',
                                 'name': template or 'ubuntu', 'engine': engine, 'template': options.get('template') or {},
                                 'compute': compute, 'arch': str(options.get('arch') or ''), 'instance': str(options.get('instance') or ''),
-                                'repos': str(options.get('repos') or ''), 'new_host': bool(options.get('new_host', False)),
+                                'repos': str(options.get('repos') or ''), 'data': str(options.get('data') or ''),
+                                'new_host': bool(options.get('new_host', False)) or bool(options.get('rm', False)),
                                 'con': con, 'quiet': quiet, 'verbose': verbose})
             if r['return'] > 0:
                 return r
             host, made = r['host'], r
         elif ref == 'wsl' or ref.startswith('wsl:'):
-            return self.cm.error('--on=wsl is not built yet: --on=docker, --on=podman or a host artifact (cx host ls)')
+            if os.name != 'nt':
+                return self.cm.error('--on=wsl needs Windows (WSL): --on=docker, --on=podman or a host artifact (cx host ls)')
+            engine, _, template = ref.partition(':')
+            r = self.cm.access({'category': 'task,' + self.cmeta['artifact'], 'command': 'run', 'arg1': 'get-host--wsl,a3396a4efa35460b',
+                                'name': template or 'ubuntu', 'template': options.get('template') or {},
+                                'instance': str(options.get('instance') or ''), 'repos': str(options.get('repos') or ''),
+                                'data': str(options.get('data') or ''),
+                                'new_host': bool(options.get('new_host', False)) or bool(options.get('rm', False)),
+                                'con': con, 'quiet': quiet, 'verbose': verbose})
+            if r['return'] > 0:
+                return r
+            host, made = r['host'], r
         else:
             r = self.cm.access({'category': host_category, 'command': 'find', 'arg1': ref, 'con': False})
             if r['return'] > 0 or not r.get('artifacts'):
@@ -1903,8 +1985,12 @@ class Category(InitCategory):
             a = r['artifacts'][0]
             host = a['cmeta_ref_parts'].get('artifact_alias') or ref
             d = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(a['path'], '_desc'))
-            if d['return'] == 0 and str((d.get('data') or {}).get('os', '')).lower() in ('windows', 'win'):
-                return self.cm.error(f'{host} runs Windows: this slice of --on quotes the words for a POSIX shell (a Windows host comes next)')
+            desc = (d.get('data') or {}) if d['return'] == 0 else {}
+            declared = str((desc.get('access') or {}).get('shell') or '').strip().lower()
+            if declared in ('powershell', 'pwsh'):
+                shell = 'powershell'
+            elif declared == 'cmd' or (not declared and str(desc.get('os', '')).lower() in ('windows', 'win')):
+                return self.cm.error(f'{host} runs Windows with the shell "{declared or "cmd"}": --on needs "access: shell: powershell" in its host artifact')
 
         # A terminal here (someone at the keyboard) is a terminal there - ssh -t, docker exec -it - so that the inner
         # run asks its questions (install a tool?) as a local run would; a run without one (a script, a test round)
@@ -1914,9 +2000,34 @@ class Category(InitCategory):
         except (AttributeError, ValueError):
             terminal = False
 
-        inner = 'CMETA_ON=here cx ' + ' '.join(shlex.quote(str(w)) for w in inner_words)
+        # The inner run's provenance records where it ran and from where (write_repro reads these)
+        image = (made or {}).get('image', '')
+        env_pairs = [('CMETA_ON', 'here'), ('CMETA_ON_HOST', str(host)), ('CMETA_ON_FROM', platform.node())]
+        if engine:
+            env_pairs.append(('CMETA_ON_ENGINE', engine))
+        if image:
+            env_pairs.append(('CMETA_ON_IMAGE', str(image)))
+        # --on_pull: the run works in a folder of its own inside (~/work/<run id>: the repro records of the inner run,
+        # what --save_here writes, anything the words leave there) and that folder comes back here afterwards
+        pull = bool(options.get('pull', False))
+        run_id = datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + '-'.join(w for w in inner_words[:3] if w and not w.startswith('-'))[:40]
+        work = f'work/{run_id}' if pull else ''
+
+        if shell == 'powershell':
+            import re
+            sq = lambda s: "'" + s.replace("'", "''") + "'"                   # a value: always quoted (a bare word after = is a command there)
+            psq = lambda s: s if s and not re.search(r'[^A-Za-z0-9_./:=@,+\\-]', s) else sq(s)
+            inner = '; '.join(f'$env:{k}={sq(v)}' for k, v in env_pairs) + '; cx ' + ' '.join(psq(str(w)) for w in inner_words)
+            if work:
+                inner = f'New-Item -ItemType Directory -Force {sq("~/" + work)} | Out-Null; Set-Location {sq("~/" + work)}; ' + inner
+        else:
+            inner = ' '.join(f'{k}={shlex.quote(v)}' for k, v in env_pairs) + ' cx ' + ' '.join(shlex.quote(str(w)) for w in inner_words)
+            if work:
+                inner = f'mkdir -p ~/{work} && cd ~/{work} && ' + inner
         run_on = {'host': host, 'ref': ref, 'engine': engine, 'words': inner, 'instance_made': bool(made and made.get('made')),
-                  'image': (made or {}).get('image', ''), 'terminal': terminal}
+                  'image': image, 'terminal': terminal}
+        if work:
+            run_on['work'] = work
         ctx['on'] = run_on
 
         if con:
@@ -1926,6 +2037,29 @@ class Category(InitCategory):
 
         rr = self.cm.access({'category': host_category, 'command': 'run', 'arg1': host, 'arg2': inner, 'interactive': terminal,
                              'con': con, 'quiet': quiet, 'verbose': verbose})
+
+        # The data repositories the instance shares with this machine (models, datasets): what the run inside added
+        # to them is indexed here now (the index lives in each home, the folder is the same)
+        data_repos = list((made or {}).get('data_repos') or [])
+        for alias in data_repos:
+            self.cm.access({'category': 'repo,f4f792ab40c7498f', 'command': 'reindex', 'arg1': alias, 'con': False})
+        run_on['data_repos'] = data_repos
+
+        # --on_pull: the run's work folder comes back here, into on-runs/<run id> of the current directory
+        if work:
+            pulled = os.path.join(os.getcwd(), 'on-runs', run_id)
+            rp = self.cm.access({'category': host_category, 'command': 'pull', 'arg1': host, 'arg2': work, 'to': pulled,
+                                 'con': False, 'quiet': True})
+            run_on['pulled'] = pulled if rp.get('return', 1) == 0 else ''
+            if con:
+                print ('')
+                print (f'cMeta info: the run\'s folder ~/{work} of {host} ' + (f'is here: {pulled}' if run_on['pulled'] else f'could not be pulled ({rp.get("error", "")})'))
+
+        # --on_rm: a throwaway instance (made for this run, --on_new_host implied), gone with its artifact now
+        if engine and bool(options.get('rm', False)):
+            rd = self.cm.access({'category': host_category, 'command': 'destroy', 'arg1': host, 'con': con, 'quiet': quiet})
+            run_on['destroyed'] = rd.get('return', 1) == 0
+
         outputs = (rr.get('outputs') or {}).get(host) or {}
         rc = outputs.get('returncode')
         if rc is None:

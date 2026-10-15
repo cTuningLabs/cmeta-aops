@@ -32,12 +32,14 @@ Engines: --engine=docker|podman (default: config `container.engine`, else docker
 --secret=<config alias> (values or "env:NAME"), never written into an image layer.
 """
 
+import atexit
 import copy
 import hashlib
 import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -66,6 +68,72 @@ LABEL = 'cmeta.container'
 # CMETA_CONTAINER_TRACE=1 shows the full cMeta task trace of the nested build/run tasks (otherwise only the
 # engine's own output and this category's progress lines are printed - the trace drowns them)
 TRACE = str(os.environ.get('CMETA_CONTAINER_TRACE', '')).lower() in ('1', 'true', 'yes', 'on')
+
+
+def headless_docker_config():
+    """
+    Docker Desktop keeps registry credentials in the OS keychain (macOS) or credential manager (Windows) through
+    a credsStore in ~/.docker/config.json, and a session without user interaction - ssh, a service - cannot open
+    it: every pull then fails with "error getting credentials" (the Mac mini over ssh, 2026-10-15). When the
+    store's helper cannot list, the docker commands of this process get a copy of the config without the store
+    (DOCKER_CONFIG, removed at exit): anonymous pulls work; a private registry needs a desktop session or a
+    DOCKER_CONFIG of your own. Returns the folder set, '' when nothing was needed.
+    """
+    if os.environ.get('DOCKER_CONFIG') or sys.platform.startswith('linux'):
+        return ''
+    path = os.path.join(os.path.expanduser('~'), '.docker', 'config.json')
+    try:
+        with open(path, encoding='utf-8') as f:
+            cfg = json.load(f)
+    except (OSError, ValueError):
+        return ''
+    helpers = {str(cfg.get('credsStore') or '')} | {str(v) for v in (cfg.get('credHelpers') or {}).values()}
+    helpers.discard('')
+    if not helpers:
+        return ''
+
+    broken = False
+    if sys.platform == 'darwin':
+        # the helpers read the login keychain: can this session open it? (over ssh: "User interaction is not allowed")
+        keychain = os.path.join(os.path.expanduser('~'), 'Library', 'Keychains', 'login.keychain-db')
+        try:
+            r = subprocess.run(['security', 'show-keychain-info', keychain], stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+            broken = r.returncode != 0
+        except (OSError, subprocess.SubprocessError):
+            broken = True
+    else:
+        for helper in helpers:
+            try:
+                r = subprocess.run([f'docker-credential-{helper}', 'list'], stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+                broken = broken or r.returncode != 0
+            except (OSError, subprocess.SubprocessError):
+                broken = True
+    if not broken:
+        return ''
+
+    folder = tempfile.mkdtemp(prefix='cmeta-docker-config-')
+    cfg.pop('credsStore', None)
+    cfg.pop('credHelpers', None)
+    with open(os.path.join(folder, 'config.json'), 'w', encoding='utf-8') as f:
+        json.dump(cfg, f, indent=2)
+    if sys.platform == 'darwin' and not os.environ.get('DOCKER_BUILDKIT'):
+        # Docker Desktop on macOS pulls through its own backend, which asks the store whatever the config says;
+        # the classic builder pulls a public base image anonymously (checked over ssh on the Mac mini, 2026-10-15)
+        os.environ['DOCKER_BUILDKIT'] = '0'
+    # the endpoints (Docker Desktop: desktop-linux) and the CLI plugins (buildx, compose) live next to the config
+    for sub in ('contexts', 'cli-plugins'):
+        src = os.path.join(os.path.dirname(path), sub)
+        if not os.path.isdir(src):
+            continue
+        try:
+            os.symlink(src, os.path.join(folder, sub), target_is_directory=True)
+        except OSError:
+            shutil.copytree(src, os.path.join(folder, sub), dirs_exist_ok=True)
+    os.environ['DOCKER_CONFIG'] = folder
+    atexit.register(shutil.rmtree, folder, ignore_errors=True)
+    return folder
 
 # one package-install fragment per package manager; {pkgs} = the space-separated package list
 PKG_BLOCKS = {
@@ -146,6 +214,14 @@ class Category(InitCategory):
                     p = cand
                     break
         self._engine_cache[engine] = p
+        if p and engine == 'docker':
+            # once per process, before the first docker command: a session without a desktop gets a config
+            # without the credential store (see headless_docker_config)
+            folder = headless_docker_config()
+            if folder:
+                print (f'cMeta info: docker\'s credential store cannot be opened in this session (no desktop session): '
+                       f'anonymous pulls only, through DOCKER_CONFIG={folder}'
+                       + (' and the classic builder (DOCKER_BUILDKIT=0)' if os.environ.get('DOCKER_BUILDKIT') == '0' else ''))
         return p
 
     def _pick_engine(self, engine=''):

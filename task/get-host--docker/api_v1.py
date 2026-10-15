@@ -26,6 +26,7 @@ Everything runs through the engine's own commands (docker run / inspect / start 
 """
 
 import datetime
+import json
 import os
 import platform
 import re
@@ -39,10 +40,12 @@ from task_c36be4b9314a45e0.api.ctask import InitCTask
 CONTAINER_CATEGORY = 'container,ed08f0d107044479'
 HOST_CATEGORY = 'host,e4e49c251c814f6d'
 REPO_CATEGORY = 'repo,f4f792ab40c7498f'
+CONFIG_CATEGORY = 'config,cc6bfe174be847ed'
 
 DEFAULT_TEMPLATE = 'ubuntu'
 DEFAULT_REPOS = 'ctuninglabs@cmeta-aops'
 KEEPALIVE = ['sleep', 'infinity']
+READY_TIMEOUT = 600              # seconds for the entrypoint to plug and index the mounted repositories (minutes on a Docker Desktop bind mount)
 ARCHES = {'arm64': 'arm64', 'aarch64': 'arm64', 'amd64': 'amd64', 'x86_64': 'amd64', 'x64': 'amd64'}
 
 
@@ -58,6 +61,29 @@ def engine_run(engine, args, timeout=600):
 def clean_name(text):
     """A container and artifact name: lower case, letters, digits, dots and dashes."""
     return re.sub(r'[^a-z0-9.]+', '-', str(text).lower()).strip('-.')
+
+
+def wait_ready(engine, inst, first_repo, con):
+    """
+    True once the entrypoint has plugged the mounted repositories and built the index: the file ~/.cmeta-ready it
+    writes at the end (images built since 2026-10-15); for an older image, the first repository found and no
+    "cx --reindex" running. A bind mount through Docker Desktop or podman machine reads thousands of files
+    slowly, so the first index takes minutes there (2026-10-15: a run inside started before it was done and
+    found no task); a note every 30 s says what is waited for.
+    """
+    find = f'cx repo find {first_repo}' if first_repo else 'cx --version'
+    check = ('if grep -q cmeta-ready "$HOME/entrypoint.sh" 2>/dev/null; then test -f "$HOME/.cmeta-ready"; '
+             f'else ! pgrep -f "cx --reindex" >/dev/null 2>&1 && {find} >/dev/null 2>&1; fi')
+    t0 = time.monotonic()
+    noted = t0
+    while time.monotonic() - t0 < READY_TIMEOUT:
+        if engine_run(engine, ['exec', inst, 'sh', '-lc', check], timeout=60)[0] == 0:
+            return True
+        if con and time.monotonic() - noted >= 30:
+            print (f'cMeta info: waiting for the instance {inst} to plug and index its repositories ({int(time.monotonic() - t0)} s)')
+            noted = time.monotonic()
+        time.sleep(2)
+    return False
 
 
 def readme(instance, engine, engine_version, image, name, params, compute, arch, carrier, home, mounts, made, cmeta_version):
@@ -80,7 +106,7 @@ def readme(instance, engine, engine_version, image, name, params, compute, arch,
         '',
     ]
     for m in mounts:
-        lines.append(f'- {home}/repos/{m["repo"]}  <-  {m["path"]}')
+        lines.append(f'- {m.get("inside") or home + "/repos/" + m["repo"]}  <-  {m["path"]}' + ('  (a data repository: models, datasets)' if m.get('kind') == 'data' else ''))
     if not mounts:
         lines.append('- nothing')
     lines += [
@@ -140,6 +166,7 @@ class CTask(InitCTask):
             engine: str = 'docker',          # docker or podman
             instance: str = '',              # the instance's name (default: <this host>-<engine>-<template>-<os_version>[-<compute>][-<arch>])
             repos: str = '',                 # repositories of this machine mounted inside, comma-separated (default: ctuninglabs@cmeta-aops)
+            data: str = '',                  # data repositories (config::task cache_repos) mounted under <home>/data/<alias>: all by default, a subset, or "none"
             new_host: bool = False,          # another instance of the same place (-2, -3 ...) instead of the existing one
             pull: bool = False,              # pull the base image again when building
             rebuild: bool = False,           # build the image again
@@ -201,11 +228,16 @@ class CTask(InitCTask):
             code, out, err = engine_run(engine, ['inspect', '-f', '{{.State.Status}}', container], timeout=60)
             status = out.strip() if code == 0 else 'missing'
             if status == 'running' or (status != 'missing' and engine_run(engine, ['start', container], timeout=120)[0] == 0):
+                # a started container runs its entrypoint again (plug, reindex): wait for it as for a new one
+                first = ((d.get('mounts') or [{}])[0]).get('repo', '') if status != 'running' else ''
+                if status != 'running' and not wait_ready(engine, container, first, con):
+                    return self.cm.error(f'the instance {inst} was started but did not get ready within {READY_TIMEOUT} s (cx host ssh {inst} to look)')
                 if con:
                     print ('')
                     print (f'cMeta info: instance {inst} {"running" if status == "running" else "started"} ({engine} {engine_version}, image {acc.get("image", "?")}); shell: cx host ssh {inst}')
                 return {'return': 0, 'host': inst, 'container': container, 'image': acc.get('image', ''), 'made': False,
-                        'status': 'running' if status == 'running' else 'started', 'path': existing['path']}
+                        'status': 'running' if status == 'running' else 'started', 'path': existing['path'],
+                        'data_repos': [m['repo'] for m in (d.get('mounts') or []) if m.get('kind') == 'data']}
             if con:
                 print ('')
                 print (f'cMeta info: the container {container} of the instance {inst} is gone - made again')
@@ -220,8 +252,17 @@ class CTask(InitCTask):
                 return self.cm.error(f'repository "{alias}" is not plugged here (cx repo find "*")')
             if (a.get('cmeta') or {}).get('secrets'):
                 return self.cm.error(f'repository "{alias}" holds secrets (secrets: true in its _cmr.yaml) and is never mounted into an instance')
-            path = a.get('full_path') or a['path']
+            # the real path: a link (the Mac's ~/CMETA onto its external drive) is not followed by an engine's VM
+            path = os.path.realpath(a.get('full_path') or a['path'])
             mounts.append({'repo': a['cmeta_ref_parts'].get('artifact_alias') or alias, 'path': path, 'inside': f'{home}/repos/{a["cmeta_ref_parts"].get("artifact_alias") or alias}'})
+
+        # ---- the data repositories of this machine (config::task cache_repos: models, datasets - never the tools),
+        # mounted under <home>/data/<alias> and plugged inside; the inner config gets the same keys, pointing at them
+        r = self._data_mounts(data, home)
+        if r['return'] > 0:
+            return r
+        data_mounts, config_env = r['mounts'], r['env']
+
 
         # ---- the image, through the container category
         rb = self.cm.access({'category': CONTAINER_CATEGORY, 'command': 'build', 'arg1': name, 'engine': engine,
@@ -245,8 +286,13 @@ class CTask(InitCTask):
         if keep_id and user != 'root':
             run_args += ['--userns=keep-id']
         run_args += run_flags
-        for mnt in mounts:
+        for mnt in mounts + data_mounts:
             run_args += ['-v', f'{mnt["path"]}:{mnt["inside"]}']
+        if config_env:
+            # the entrypoint sets these config keys inside: task.cache_repos.<key> = the mounted alias
+            run_args += ['-e', 'CMETA_CONFIG_FROM_ENV=' + ';'.join(f'{cfg_key}={var}' for cfg_key, var, _ in config_env)]
+            for _, var, value in config_env:
+                run_args += ['-e', f'{var}={value}']
 
         engine_run(engine, ['rm', '-f', inst], timeout=120)           # a leftover of a failed attempt, if any
         cmd = ['run', '-d', '--name', inst] + run_args + [image] + KEEPALIVE
@@ -255,29 +301,26 @@ class CTask(InitCTask):
             print (f'RUN: {engine} ' + ' '.join(cmd))
         code, out, err = engine_run(engine, cmd, timeout=600)
         if code != 0:
-            return self.cm.error(f'{engine} run failed: {err.strip() or out.strip()}')
+            hint = ''
+            if engine == 'podman' and sys.platform == 'darwin' and 'statfs' in (err + out):
+                # podman machine shares only the folders it was made with (/Users, /private, /var/folders by default)
+                hint = (' - the podman machine does not share that folder: remake it with "podman machine init -v <folder>:<folder>" '
+                        '(the Mac mini: its external drive), or use --engine=docker')
+            return self.cm.error(f'{engine} run failed: {err.strip() or out.strip()}{hint}')
 
-        # ---- wait until the entrypoint has plugged the repositories and reindexed
+        # ---- wait until the entrypoint has plugged the repositories and built the index
         first = mounts[0]['repo'] if mounts else ''
-        ready = False
-        t0 = time.monotonic()
-        while time.monotonic() - t0 < 120:
-            probe = ['exec', inst, 'sh', '-lc', f'cx repo find {first}' if first else 'cx --version']
-            if engine_run(engine, probe, timeout=60)[0] == 0:
-                ready = True
-                break
-            time.sleep(2)
-        if not ready:
+        if not wait_ready(engine, inst, first, con):
             code, out, err = engine_run(engine, ['logs', '--tail', '8', inst], timeout=60)
             tail = ' | '.join(l.strip() for l in (out + err).splitlines()[-8:] if l.strip())
             engine_run(engine, ['rm', '-f', inst], timeout=120)
-            return self.cm.error(f'the instance {inst} started but cx inside did not see the repository {first or "(none)"} within 120 s; '
+            return self.cm.error(f'the instance {inst} started but its entrypoint did not finish (the repositories plugged and indexed) within {READY_TIMEOUT} s; '
                                  f'the container is removed; its last lines: {tail or "(none)"}')
 
         # ---- the readme inside
         made = datetime.datetime.now().astimezone().isoformat(timespec='minutes')
         cmeta_version = str(getattr(self.cm, 'version', '') or (ctx['tasks'].get('global', {}).get('init', {}) or {}).get('cmeta_version', '') or '')
-        text = readme(inst, engine, engine_version, image, name, params, compute, arch_norm, carrier, home, mounts, made, cmeta_version)
+        text = readme(inst, engine, engine_version, image, name, params, compute, arch_norm, carrier, home, mounts + data_mounts, made, cmeta_version)
         fd, tmp = tempfile.mkstemp(prefix='readme-cmeta-', suffix='.md')
         with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as f:
             f.write(text)
@@ -317,7 +360,7 @@ class CTask(InitCTask):
             'made_from': {'template': name, 'params': params, 'compute': compute, 'arch': arch_norm, 'engine': engine,
                           'engine_version': engine_version, 'image': image, 'image_id': rb.get('image_id', ''),
                           'carrier': carrier, 'made': made, 'cmeta_version': cmeta_version},
-            'mounts': mounts,
+            'mounts': mounts + data_mounts,
             'ai': {'notes': f'an instance made by "cx task run get-host--docker {name}" on {made}; its readme is {home}/readme-cmeta.md; '
                             f'remove it with "cx host destroy {inst}" (--image removes the image too)'},
         })
@@ -335,4 +378,52 @@ class CTask(InitCTask):
             print ('')
             print (f'cMeta info: instance {inst} ready ({engine} {engine_version}, image {image}); shell: cx host ssh {inst}; run: cx host run {inst} "cx --version"')
         return {'return': 0, 'host': inst, 'container': inst, 'image': image, 'made': True, 'status': 'running',
-                'path': apath, 'mounts': mounts}
+                'path': apath, 'mounts': mounts + data_mounts, 'data_repos': [m['repo'] for m in data_mounts]}
+
+    ############################################################
+    def _data_mounts(self, data, home):
+        """
+        The data repositories to give an instance: the repositories named by the keys of config::task cache_repos
+        (models, datasets: what the data tasks keep there), all of them, the subset --data names (keys or aliases),
+        or none ("none"). Each becomes a mount under <home>/data/<alias> and one config key inside, set by the
+        entrypoint from an environment variable (CMETA_CONFIG_FROM_ENV). The local repository and a repository
+        flagged secrets are refused, as for --repos.
+        """
+        wanted = None
+        if str(data or '').strip():
+            wanted = [x.strip() for x in str(data).split(',') if x.strip()]
+            if wanted == ['none']:
+                return {'return': 0, 'mounts': [], 'env': []}
+        r = self.cm.access({'category': CONFIG_CATEGORY, 'command': 'read', 'arg1': 'task', 'con': False})
+        cache_repos = ((r.get('config_cmeta') or {}).get('cache_repos') or {}) if r.get('return', 1) == 0 else {}
+        if not isinstance(cache_repos, dict):
+            cache_repos = {}
+        if wanted is not None:
+            # "data=my-models": a key and its repository for this instance, with or without the config key
+            for w in list(wanted):
+                if '=' in w:
+                    key, _, alias = w.partition('=')
+                    cache_repos[key.strip()] = alias.strip()
+                    wanted[wanted.index(w)] = key.strip()
+
+        mounts, env = [], []
+        for key, alias in cache_repos.items():
+            key, alias = str(key), str(alias)
+            if wanted is not None and alias not in wanted and key not in wanted:
+                continue
+            if alias == 'local':
+                return self.cm.error(f'config::task cache_repos.{key} names the local repository: a data repository is one of its own (cx repo init <alias>)')
+            a = self._find(REPO_CATEGORY, alias)
+            if not a:
+                return self.cm.error(f'the data repository "{alias}" (config::task cache_repos.{key}) is not plugged here (cx repo find "*")')
+            if (a.get('cmeta') or {}).get('secrets'):
+                return self.cm.error(f'the data repository "{alias}" holds secrets (secrets: true) and is never mounted into an instance')
+            name = a['cmeta_ref_parts'].get('artifact_alias') or alias
+            mounts.append({'repo': name, 'key': key, 'path': os.path.realpath(a.get('full_path') or a['path']),
+                           'inside': f'{home}/data/{name}', 'kind': 'data'})
+            env.append((f'task.cache_repos.{key}', 'CMETA_CACHE_REPO_' + re.sub(r'[^A-Za-z0-9]', '_', key).upper(), name))
+        if wanted is not None:
+            missing = [w for w in wanted if w not in cache_repos and w not in [str(v) for v in cache_repos.values()]]
+            if missing:
+                return self.cm.error(f'no data repository "{", ".join(missing)}" in config::task cache_repos (cx config set task --meta.cache_repos.<key>=<alias>)')
+        return {'return': 0, 'mounts': mounts, 'env': env}

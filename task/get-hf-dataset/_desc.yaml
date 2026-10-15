@@ -3,6 +3,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 store_global: True
 storage_key: "get-hf-dataset"
 cache: True
+cache_repo_key: data             # the entries go to the data repository named by config::task cache_repos.data (unset: local)
 
 params_map:
   arg2: repo

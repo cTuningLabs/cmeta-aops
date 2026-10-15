@@ -14,7 +14,9 @@ Every verb is built on four driver primitives - status, up/down, run, push/pull 
 is one more branch in _cmd_run/_status/_up/_down and all the verbs work on it at once.
 """
 
+import fnmatch
 import os
+import re
 import sys
 import shutil
 import socket
@@ -90,6 +92,7 @@ class Category(InitCategory):
         sort=None,          # accepted for compatibility with the base command
         skip_uids=False,    # accepted for compatibility with the base command
         project=None,      # one named project; omitted: global environment with project sub-rows
+        made=False,         # only the instances cMeta made (get-host--docker: made_from in their _desc.yaml)
     ):
         """
         The fleet as a table: host, type, machine, (status), OS, sudo, the Docker and Podman clients
@@ -101,6 +104,7 @@ class Category(InitCategory):
             cx host ls --tags=ubuntu
             cx host ls --machine=my-pc
             cx host ls --active                      # only what answers right now
+            cx host ls --made --status               # the instances cMeta made (docker, podman), up or stopped
 
         OS, cMeta and AOPS come from state.yaml, written by "cx host probe" - "-" means never probed.
         """
@@ -110,6 +114,8 @@ class Category(InitCategory):
         r = self._select(ctx, arg1, tags, machine, type, project=project)
         if self.cm.catch_error(r): return r
         hosts = r['hosts']
+        if made:
+            hosts = [h for h in hosts if h['desc'].get('made_from')]
 
         want_status = status or active
         if want_status:
@@ -145,6 +151,7 @@ class Category(InitCategory):
         details=False,      # add the time every check took, and what each parent of a moving device answered
         d=False,            # same as --details
         project=None,      # check only this project's server below each selected host
+        made=False,         # only the instances cMeta made (get-host--docker: made_from in their _desc.yaml)
     ):
         """
         Is each host reachable right now? "here" = this machine, "up"/"down" for the rest,
@@ -169,6 +176,8 @@ class Category(InitCategory):
         r = self._select(ctx, arg1, tags, machine, type, project=project)
         if self.cm.catch_error(r): return r
         hosts = r['hosts']
+        if made:
+            hosts = [h for h in hosts if h['desc'].get('made_from')]
 
         self._status_all(ctx, hosts, timeout=int(timeout), cmd_timeout=int(cmd_timeout))
         self._project_status_all(ctx, hosts, timeout=int(timeout), cmd_timeout=int(cmd_timeout))
@@ -778,8 +787,16 @@ class Category(InitCategory):
         if self.cm.catch_error(r): return r
         h = r['host']
 
+        if h['type'] in ('docker', 'wsl'):
+            # an instance on this machine: a local file or folder goes inside (docker cp / cp through wsl.exe)
+            if not to:
+                return self.cm.error('--to=<path inside> is required for an instance (a local file or folder goes to it)')
+            local = os.path.abspath(arg2)
+            if not os.path.exists(local):
+                return self.cm.error(f'"{arg2}" is not a local path (an instance mounts its repositories: push a file or a folder)')
+            return self._copy_instance(ctx, h, local, to, into=True, dry_run=dry_run, con=con)
         if h['type'] != 'ssh':
-            return self.cm.error(f'push works on ssh hosts for now ({h["alias"]} is {h["type"]})')
+            return self.cm.error(f'push works on ssh hosts and on docker / wsl instances ({h["alias"]} is {h["type"]})')
         if self._here(h):
             return self.cm.error(f'{h["alias"]} is this machine - nothing to push to')
 
@@ -870,12 +887,15 @@ class Category(InitCategory):
         if self.cm.catch_error(r): return r
         h = r['host']
 
+        local = os.path.abspath(to or '.')
+        if h['type'] in ('docker', 'wsl'):
+            os.makedirs(local, exist_ok=True)
+            return self._copy_instance(ctx, h, arg2, local, into=False, files=list(self._csv(files)), dry_run=dry_run, con=con)
         if h['type'] != 'ssh':
-            return self.cm.error(f'pull works on ssh hosts for now ({h["alias"]} is {h["type"]})')
+            return self.cm.error(f'pull works on ssh hosts and on docker / wsl instances ({h["alias"]} is {h["type"]})')
         if self._here(h):
             return self.cm.error(f'{h["alias"]} is this machine - nothing to pull from')
 
-        local = os.path.abspath(to or '.')
         os.makedirs(local, exist_ok=True)
 
         extra = list(self._csv(unparsed)) if isinstance(unparsed, str) else list(unparsed or [])
@@ -1136,18 +1156,20 @@ class Category(InitCategory):
     def destroy_(
         self,
         ctx,
-        arg1=None,          # the instance (a docker host made by cx task run get-host--docker)
+        arg1=None,          # the instance (a docker or WSL host made by cx task run get-host--docker / get-host--wsl)
         image=False,        # also remove its image (left alone when another container uses it)
-        keep_artifact=False,  # remove the container, keep the host artifact
-        force=False,        # a docker host declared by hand: remove its container anyway
+        keep_artifact=False,  # remove the container or distribution, keep the host artifact
+        force=False,        # a docker or wsl host declared by hand: remove its container or distribution anyway
     ):
         """
-        Destroy an instance cMeta made (cx task run get-host--docker): its container is stopped and removed
-        through the engine of its parent, the host artifact deleted, and with --image its image removed. A docker
-        host declared by hand needs --force; other types are refused. ("rm" and "remove" are the engine's names for
-        "delete", which removes an artifact alone - hence "destroy" for the whole instance.)
+        Destroy an instance cMeta made (cx task run get-host--docker / get-host--wsl): its container is stopped and
+        removed through the engine of its parent (a WSL distribution unregistered, its disk with it), the host
+        artifact deleted, and with --image its image removed. A docker or wsl host declared by hand needs --force;
+        other types are refused. ("rm" and "remove" are the engine's names for "delete", which removes an artifact
+        alone - hence "destroy" for the whole instance.)
 
             cx host destroy my-pc-docker-ubuntu-24.04 [--image]
+            cx host destroy my-pc-wsl-ubuntu-26.04
         """
         con = ctx['control'].get('con', False)
         if not arg1:
@@ -1155,18 +1177,22 @@ class Category(InitCategory):
         r = self._get_host(ctx, arg1)
         if r['return'] > 0: return r
         h = r['host']
-        if h['type'] != 'docker':
+        if h['type'] not in ('docker', 'wsl'):
             return self.cm.error(f'{h["alias"]} is a {h["type"]} host, not an instance: "cx host delete {h["alias"]}" removes an artifact alone')
         made = bool(h['desc'].get('made_from')) or 'made-by-cmeta' in (h['cmeta'].get('tags') or [])
         if not made and not force:
-            return self.cm.error(f'{h["alias"]} was not made by cMeta (no made_from): --force removes its container anyway')
+            return self.cm.error(f'{h["alias"]} was not made by cMeta (no made_from): --force removes its {"distribution" if h["type"] == "wsl" else "container"} anyway')
 
         acc = h['desc'].get('access') or {}
-        name = acc.get('container') or h['alias']
-        engine = self._engine(h)
-        cmds = [(f'{engine} rm -f {name}', 'container')]
-        if image and acc.get('image'):
-            cmds.append((f'{engine} rmi {acc["image"]}', 'image'))
+        if h['type'] == 'wsl':
+            distro = str(acc.get('distro') or h['alias'])
+            cmds = [(f'wsl.exe --terminate {distro}', 'stopped'), (f'wsl.exe --unregister {distro}', 'distribution')]
+        else:
+            name = acc.get('container') or h['alias']
+            engine = self._engine(h)
+            cmds = [(f'{engine} rm -f {name}', 'container')]
+            if image and acc.get('image'):
+                cmds.append((f'{engine} rmi {acc["image"]}', 'image'))
 
         parent = None
         if h.get('via'):
@@ -1195,6 +1221,296 @@ class Category(InitCategory):
         if con:
             print (f'cMeta info: {h["alias"]}: ' + '; '.join(done))
         return {'return': 0, 'alias': h['alias'], 'done': done}
+
+    ############################################################
+    def snapshot_(
+        self,
+        ctx,
+        arg1=None,          # the instance (a docker, podman or WSL host cMeta made)
+        name=None,          # the snapshot's name (default: the time, 20261015-2355)
+        note=None,          # a word about it, kept in the record
+        force=False,        # a docker or wsl host declared by hand
+    ):
+        """
+        Keep the state of an instance: a docker or podman container is committed to an image
+        (cmeta/snapshot:<instance>-<name>; the container keeps running), a WSL distribution exported to a tar
+        next to its disk (<location>/snapshots/<name>.tar). The host artifact records it under "snapshots"
+        (name, time, image or file, note); "cx host restore <instance> [--name=<snapshot>]" brings the instance
+        back to it, "cx host show <instance>" lists them.
+
+            cx host snapshot my-pc-docker-ubuntu-26.04
+            cx host snapshot my-pc-docker-ubuntu-26.04 --name=before-torch --note="the clean toolchain"
+        """
+        con = ctx['control'].get('con', False)
+        if not arg1:
+            return self.cm.error('cx host snapshot <instance> [--name=<name>] [--note=<text>]')
+        r = self._instance(ctx, arg1, force)
+        if r['return'] > 0: return r
+        h = r['host']
+        acc = h['desc'].get('access') or {}
+
+        snap = re.sub(r'[^A-Za-z0-9._-]+', '-', str(name or '')).strip('-.') or datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+        record = {'name': snap, 'time': datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+        if note:
+            record['note'] = str(note)
+
+        if h['type'] == 'wsl':
+            distro = str(acc.get('distro') or h['alias'])
+            folder = os.path.join(self._wsl_location(h, distro), 'snapshots')
+            try:
+                os.makedirs(folder, exist_ok=True)
+            except OSError as e:
+                return self.cm.error(f'cannot make {folder}: {e}')
+            record['file'] = os.path.join(folder, snap + '.tar')
+            cmd = f'wsl.exe --export {distro} {self.cm.utils.files.quote_path(record["file"])}'
+        else:
+            record['image'] = f'cmeta/snapshot:{h["alias"]}-{snap}'
+            cmd = f'{self._engine(h)} commit {acc.get("container") or h["alias"]} {record["image"]}'
+
+        rr = self._engine_cmd(ctx, h, cmd, timeout=1800)
+        if rr['return'] > 0: return rr
+        if rr.get('returncode', 1) != 0:
+            err = (rr.get('stderr') or '').strip()
+            hint = ''
+            if 'content digest' in err and 'not found' in err:
+                # Docker Desktop's image store: the container's image was rebuilt under the same tag while it ran
+                hint = ' - the instance\'s image was rebuilt under it: cx host destroy, then make it again before a snapshot'
+            return self.cm.error(f'"{cmd}" failed: {err}{hint}')
+
+        r = self._record_snapshot(h, record)
+        if r['return'] > 0: return r
+        if con:
+            print (f'cMeta info: {h["alias"]}: snapshot {snap} kept as {record.get("image") or record.get("file")}; back to it with "cx host restore {h["alias"]} --name={snap}"')
+        return {'return': 0, 'alias': h['alias'], 'snapshot': record}
+
+    ############################################################
+    def restore_(
+        self,
+        ctx,
+        arg1=None,          # the instance
+        name=None,          # the snapshot (default: the last one)
+        force=False,        # a docker or wsl host declared by hand
+    ):
+        """
+        Bring an instance back to a snapshot (the last one by default): a docker or podman container is removed
+        and made again from the snapshot's image with the instance's run arguments (its entrypoint plugs the
+        repositories and indexes again; what was set up inside after the snapshot is gone), a WSL distribution
+        unregistered and imported again from the snapshot's tar.
+
+            cx host restore my-pc-docker-ubuntu-26.04
+            cx host restore my-pc-docker-ubuntu-26.04 --name=before-torch
+        """
+        con = ctx['control'].get('con', False)
+        if not arg1:
+            return self.cm.error('cx host restore <instance> [--name=<snapshot>]')
+        r = self._instance(ctx, arg1, force)
+        if r['return'] > 0: return r
+        h = r['host']
+        acc = h['desc'].get('access') or {}
+
+        snapshots = [s for s in (h['desc'].get('snapshots') or []) if isinstance(s, dict)]
+        if not snapshots:
+            return self.cm.error(f'{h["alias"]} has no snapshot yet: cx host snapshot {h["alias"]}')
+        if name:
+            chosen = [s for s in snapshots if s.get('name') == str(name)]
+            if not chosen:
+                return self.cm.error(f'{h["alias"]} has no snapshot "{name}" (it has: {", ".join(str(s.get("name")) for s in snapshots)})')
+            record = chosen[-1]
+        else:
+            record = snapshots[-1]
+
+        if h['type'] == 'wsl':
+            distro = str(acc.get('distro') or h['alias'])
+            tar = str(record.get('file') or '')
+            if not os.path.isfile(tar):
+                return self.cm.error(f'the snapshot file {tar} is gone')
+            location = self._wsl_location(h, distro)
+            for cmd in (f'wsl.exe --terminate {distro}', f'wsl.exe --unregister {distro}',
+                        f'wsl.exe --import {distro} {self.cm.utils.files.quote_path(location)} {self.cm.utils.files.quote_path(tar)} --version 2'):
+                rr = self._engine_cmd(ctx, h, cmd, timeout=1800)
+                if rr['return'] > 0: return rr
+                if rr.get('returncode', 1) != 0 and not cmd.startswith('wsl.exe --terminate'):
+                    return self.cm.error(f'"{cmd}" failed: {(rr.get("stderr") or rr.get("stdout") or "").strip()}')
+        else:
+            engine = self._engine(h)
+            container = acc.get('container') or h['alias']
+            image = str(record.get('image') or '')
+            keep = acc.get('keepalive') or 'sleep infinity'
+            run_args = acc.get('run_args') or ''
+            for cmd in (f'{engine} rm -f {container}',
+                        f'{engine} run -d --name {container} {run_args} {image} {keep}'.replace('  ', ' ')):
+                rr = self._engine_cmd(ctx, h, cmd, timeout=600)
+                if rr['return'] > 0: return rr
+                if rr.get('returncode', 1) != 0:
+                    return self.cm.error(f'"{cmd}" failed: {(rr.get("stderr") or "").strip()}')
+            self._wait_ready(ctx, h)
+
+        if con:
+            print (f'cMeta info: {h["alias"]}: back to the snapshot {record.get("name")} of {record.get("time")}')
+        return {'return': 0, 'alias': h['alias'], 'snapshot': record}
+
+    def _copy_instance(self, ctx, h, src, dst, into, files=None, dry_run=False, con=False):
+        """
+        A file or folder between this machine and an instance on it: into the instance (push: a folder's contents
+        land in --to, a file lands at --to) or out of it (pull: into the local folder). docker: "docker cp", the
+        copied files given to the instance's user; wsl: cp through wsl.exe, this machine's drives seen as
+        /mnt/<drive>. An instance carried by another machine is refused: push to that machine first.
+        """
+        if h.get('via'):
+            rp = self._get_host(ctx, h['via'])
+            if rp['return'] > 0: return rp
+            if not self._here(rp['host']):
+                return self.cm.error(f'{h["alias"]} is carried by {h["via"]}: push to that machine, then copy there (cx host run {h["via"]} ...)')
+
+        acc = h['desc'].get('access') or {}
+        user = str(acc.get('user') or '')
+        home = '/root' if user == 'root' else (f'/home/{user}' if user else '')
+
+        def inside(path):
+            path = str(path).replace('\\', '/')
+            if path.startswith('~/'):
+                path = path[2:]
+            if not path.startswith('/'):
+                path = (home + '/' + path) if home else ('/' + path)
+            return path
+
+        q = shlex.quote
+        if into:
+            remote = inside(dst)
+            is_dir = os.path.isdir(src)
+            make = remote if is_dir else remote.rsplit('/', 1)[0] or '/'
+            if h['type'] == 'docker':
+                engine = self._engine(h)
+                container = acc.get('container') or h['alias']
+                cmds = [f'{engine} exec {container} mkdir -p {q(make)}',
+                        f'{engine} cp {self.cm.utils.files.quote_path(src + (os.sep + "." if is_dir else ""))} {container}:{remote}']
+                if user:
+                    cmds.append(f'{engine} exec -u root {container} chown -R {user}:{user} {q(remote)}')
+            else:
+                distro = str(acc.get('distro') or h['alias'])
+                mnt = self._wsl_mnt(src) + ('/.' if is_dir else '')
+                copy = f'mkdir -p {q(make)} && cp -r {q(mnt)} {q(remote)}'
+                cmds = [f'wsl.exe -d {distro}' + (f' --user {user}' if user else '') + f' -- sh -c "{copy}"']
+            what = {'host': h['alias'], 'local': src, 'remote': remote}
+        else:
+            remote = inside(src)
+            if h['type'] == 'docker':
+                engine = self._engine(h)
+                container = acc.get('container') or h['alias']
+                # a folder's contents into the local folder ("/." as docker cp reads it), a file into it
+                cmds = [f'{engine} cp {container}:{remote}/. {self.cm.utils.files.quote_path(dst)}',
+                        f'{engine} cp {container}:{remote} {self.cm.utils.files.quote_path(dst)}']
+            else:
+                distro = str(acc.get('distro') or h['alias'])
+                mnt = self._wsl_mnt(dst)
+                copy = f'if [ -d {q(remote)} ]; then cp -r {q(remote + "/.")} {q(mnt)}; else cp {q(remote)} {q(mnt + "/")}; fi'
+                cmds = [f'wsl.exe -d {distro}' + (f' --user {user}' if user else '') + f' -- sh -c "{copy}"']
+            what = {'host': h['alias'], 'remote': remote, 'local': dst}
+
+        if dry_run:
+            if con:
+                for cmd in cmds:
+                    print (f'DRY RUN: {cmd}')
+            return dict(what, **{'return': 0, 'dry_run': True, 'cmds': cmds})
+
+        for i, cmd in enumerate(cmds):
+            rr = self._run_local(cmd, capture=True, con=False, timeout=1800)
+            ok = rr.get('returncode', 1) == 0
+            if not into and h['type'] == 'docker':
+                if ok:
+                    break                                   # the folder form worked; the file form is the alternative
+                if i == 0:
+                    continue
+            if not ok:
+                return self.cm.error(f'"{cmd}" failed: {(rr.get("stderr") or rr.get("stdout") or "").strip()}')
+
+        # pull --files: keep only the matching files of what came
+        patterns = [p for p in (files or []) if p]
+        if not into and patterns and os.path.isdir(dst):
+            for folder, _, names in os.walk(dst):
+                for name in names:
+                    if not any(fnmatch.fnmatch(name, p) for p in patterns):
+                        try:
+                            os.remove(os.path.join(folder, name))
+                        except OSError:
+                            pass
+
+        if con:
+            print (f'{h["alias"]}: ' + (f'{src} -> {remote}' if into else f'{remote} -> {dst}'))
+        return dict(what, **{'return': 0})
+
+    @staticmethod
+    def _wsl_mnt(path):
+        """A path of this machine as WSL sees it: D:\\x\\y -> /mnt/d/x/y."""
+        p = os.path.abspath(path).replace('\\', '/')
+        if len(p) > 1 and p[1] == ':':
+            return '/mnt/' + p[0].lower() + p[2:]
+        return p
+
+    def _instance(self, ctx, arg1, force):
+        """An instance cMeta made (a docker or wsl host with made_from), or any docker/wsl host with --force."""
+        r = self._get_host(ctx, arg1)
+        if r['return'] > 0: return r
+        h = r['host']
+        if h['type'] not in ('docker', 'wsl'):
+            return self.cm.error(f'{h["alias"]} is a {h["type"]} host, not an instance (docker, podman or WSL)')
+        made = bool(h['desc'].get('made_from')) or 'made-by-cmeta' in (h['cmeta'].get('tags') or [])
+        if not made and not force:
+            return self.cm.error(f'{h["alias"]} was not made by cMeta (no made_from): --force takes it anyway')
+        return {'return': 0, 'host': h}
+
+    def _wsl_location(self, h, distro):
+        """The folder of a WSL instance's disk: made_from.location, else the default of get-host--wsl."""
+        return str((h['desc'].get('made_from') or {}).get('location') or
+                   os.path.join(os.environ.get('LOCALAPPDATA') or os.path.expanduser('~'), 'cmeta', 'wsl', distro))
+
+    def _engine_cmd(self, ctx, h, cmd, timeout=600):
+        """An engine or wsl.exe command for an instance, run here or on the parent that carries it; captured."""
+        parent = None
+        if h.get('via'):
+            rp = self._get_host(ctx, h['via'])
+            if rp['return'] > 0: return rp
+            if not self._here(rp['host']):
+                parent = rp['host']
+        if parent is not None:
+            rc = self._cmd_run(ctx, parent, cmd)
+            if rc['return'] > 0: return rc
+            cmd = rc['cmd']
+        rr = self._run_local(cmd, capture=True, con=False, timeout=timeout)
+        rr['return'] = 0
+        return rr
+
+    def _record_snapshot(self, h, record):
+        """The snapshot appended to the host artifact's _desc (yaml or json, whichever it has)."""
+        for name in ('_desc.yaml', '_desc.json'):
+            path = os.path.join(h['path'], name)
+            if os.path.isfile(path):
+                break
+        else:
+            return self.cm.error(f'{h["alias"]} has no _desc file to record the snapshot in')
+        r = self.cm.utils.files.safe_read_yaml_or_json(path)
+        if r['return'] > 0: return r
+        desc = r.get('data') or {}
+        desc.setdefault('snapshots', []).append(record)
+        return self.cm.utils.files.safe_write_file(path, desc, atomic=True, sort_keys=False, logger=self.logger)
+
+    def _wait_ready(self, ctx, h, timeout=600):
+        """
+        True once a container's entrypoint has plugged and indexed its repositories (the file ~/.cmeta-ready it
+        writes at the end; an image without that file in its entrypoint counts as ready at once): after "cx host
+        up" or a restore, so that the next command inside finds every artifact.
+        """
+        check = 'if grep -q cmeta-ready "$HOME/entrypoint.sh" 2>/dev/null; then test -f "$HOME/.cmeta-ready"; else true; fi'
+        r = self._cmd_run(ctx, h, check)
+        if r['return'] > 0:
+            return False
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < timeout:
+            rr = self._run_local(r['cmd'], capture=True, con=False, timeout=60)
+            if rr.get('returncode', 1) == 0:
+                return True
+            time.sleep(2)
+        return False
 
     def _cmeta_version_on(self, ctx, h):
         """The 'cMeta version X' a host reports, or None."""
@@ -2256,7 +2572,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             rr = self._run_local(cmd, capture=True, con=False)
             if rr.get('returncode', 1) != 0:
                 return self.cm.error(f'"{cmd}" failed: {rr.get("stderr", "").strip()}')
-            return {'return': 0, 'result': 'created and started' if status == 'missing' else 'started'}
+            ready = self._wait_ready(ctx, h)          # the entrypoint plugs and indexes the repositories again
+            return {'return': 0, 'result': ('created and started' if status == 'missing' else 'started') + ('' if ready else ' (its entrypoint did not finish in time)')}
 
         if t == 'ssh':
             return {'return': 0, 'result': f'{status} - an ssh host is not started from here (declare "commands: up" for a VM)'}

@@ -10,6 +10,7 @@ cx task run get-host--docker ubuntu --compute=cuda              # the template's
 cx task run get-host--docker ubuntu --arch=arm64                # --platform linux/arm64 (emulated on an x86 engine)
 cx task run get-host--docker ubuntu --instance=my-test          # a name of your own
 cx task run get-host--docker ubuntu --repos=ctuninglabs@cmeta-aops,fgg-hosts
+cx task run get-host--docker ubuntu --data=models               # the data repositories (config::task cache_repos) mounted under ~/data: all by default, a subset, key=alias, or none
 cx task run get-host--docker ubuntu --new_host                  # another instance of the same place (-2, -3 ...)
 cx task run get-host--docker ubuntu --engine=podman
 
@@ -28,9 +29,12 @@ What happens:
 2. The template's image is built through the container category when missing (`cx container build`).
 3. The container runs detached with `sleep infinity`, the labels `cmeta.container=1` and `cmeta.host=<instance>`,
    the repositories asked for mounted at `<home>/repos/<alias>` (the entrypoint plugs them and reindexes; the
-   local repository and a repository flagged `secrets: true` are never mounted), the GPU run flags of the compute
-   overlay when asked for, `--platform` for another architecture. On a Linux engine the user inside gets this
-   user's uid and gid, so the mounted repositories are writable (rootless podman: `--userns=keep-id`).
+   local repository and a repository flagged `secrets: true` are never mounted), the data repositories of this
+   machine (`config::task cache_repos`: models, datasets) mounted at `<home>/data/<alias>` with the same config
+   keys set inside, the GPU run flags of the compute overlay when asked for, `--platform` for another
+   architecture. On a Linux engine the user inside gets this user's uid and gid, so the mounted repositories are
+   writable (rootless podman: `--userns=keep-id`). The task waits for the entrypoint to plug and index them (a
+   bind mount through Docker Desktop reads thousands of files slowly: minutes for the first index).
 4. `<home>/readme-cmeta.md` inside says what it is, how it was made, how to reach it and how to rebuild it.
 5. The host artifact in the local repository: `type: docker`, `access` (container, engine, image, run_args, so
    that `cx host up` can make the container again - every `cx host` command speaks podman to a podman instance),

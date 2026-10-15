@@ -11,6 +11,7 @@ cx task run test-on-hosts --cmds="..." --hosts=lab-laptop-ubuntu,lab-mac-mini-ma
 cx task run test-on-hosts --action=peek --id=yq1 [--hosts=...]                                     # running or done, the steps
 cx task run test-on-hosts --action=collect --id=yq1 [--files=*.jsonl] [--to=<folder>]              # the results here
 cx task run test-on-hosts --action=remove --id=yq1                                                 # the hosts' folders removed
+cx task run test-on-hosts --cmds="task run test-python -q" --hosts="docker:ubuntu,docker:debian,wsl,lab-laptop-ubuntu"   # a matrix of OS images and hosts
 ```
 
 ## Launch
@@ -22,7 +23,11 @@ The parameters:
   `!uv run --no-project --with pytest ... python -m pytest $TREE/tests`.
 - **`--hosts`:** host aliases separated by `,`. `here` is this machine. The default is the key `hosts` of the
   config artifact `task-test-on-hosts` (`cx config set task-test-on-hosts --meta.hosts=a,b,c`: the test machines of
-  a fleet, never a production host), else `here`.
+  a fleet, never a production host), else `here`. A ref of the run-on-any-host design - `docker:ubuntu`,
+  `podman:debian`, `wsl`, with `--on_*` words after it (`docker:ubuntu --on_template.os_version=24.04`) - is the
+  instance of that template on this machine, made on first use (`get-host--docker`, `get-host--wsl`): the round
+  runs inside it, and when the tree is the repository the instance carries, nothing is pushed - the runner reads
+  it where it is mounted. An instance made this way stays (`cx host ls --made`, `cx host destroy <instance>`).
 - **`--tree`:** the repository folder that is tested. The default is the local clone of `ctuninglabs@cmeta-aops`,
   as it is now, released or not.
 - **`--id`:** the name of the round. The default is the time; the other actions need it.

@@ -1,0 +1,14 @@
+artifact: a3396a4efa35460b
+category: task,c36be4b9314a45e0
+tags:
+  - host
+  - wsl
+  - container
+  - run-on-any-host
+authors: Grigori Fursin
+creation_timestamp: '2026-10-15T21:33:47.804187+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.300
+  via: cmeta 0.37.1
+  by: Grigori Fursin

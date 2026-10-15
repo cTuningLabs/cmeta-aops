@@ -464,6 +464,11 @@ def write_repro(cm, ctx, result, cmeta_version = None):
            'python': platform.python_version(),
            'tools': len(tools)}
 
+    # A run delegated with --on (the task category's _run_on sets these inside): where it ran, from where
+    if os.environ.get('CMETA_ON_HOST'):
+        run['run_on'] = {'host': os.environ.get('CMETA_ON_HOST'), 'from': os.environ.get('CMETA_ON_FROM', ''),
+                         'engine': os.environ.get('CMETA_ON_ENGINE', ''), 'image': os.environ.get('CMETA_ON_IMAGE', '')}
+
     folder = os.path.join(pwd, REPRO_FOLDER, stamp)
     try:
         os.makedirs(folder, exist_ok = True)
@@ -1558,6 +1563,9 @@ def build_record(mode, program, target_tmp, target_path, compute, global_ctx, lo
         'effective': {'static': bool(static_effective)},
         'resolved': collect_resolved(global_ctx),
     }
+    if os.environ.get('CMETA_ON_HOST'):      # a run delegated with --on: where it ran, from where (the task category sets these inside)
+        record['run_on'] = {'host': os.environ.get('CMETA_ON_HOST'), 'from': os.environ.get('CMETA_ON_FROM', ''),
+                            'engine': os.environ.get('CMETA_ON_ENGINE', ''), 'image': os.environ.get('CMETA_ON_IMAGE', '')}
     if isinstance(entry, dict) and (entry.get('uid') or entry.get('alias')):
         record['program']['entry'] = {k: entry.get(k) for k in ('alias', 'uid', 'request', 'request_digest') if entry.get(k) is not None}
     if note:

@@ -44,7 +44,7 @@ The Azure host was renamed on 2026-10-10; its underlying machine alias remains `
 ## Commands
 
 ```
-cx host ls [--tags=ubuntu] [--machine=my-pc] [--type=ssh] [--status|--active]
+cx host ls [--tags=ubuntu] [--machine=my-pc] [--type=ssh] [--status|--active] [--made]   (--made: the instances cMeta made, also for status)
                                       columns: HOST TYPE MACHINE (STATUS) OS SUDO DOCKER PODMAN CMETA AOPS PROBED
                                       (DOCKER/PODMAN: the client version the probe saw, "-" = not installed,
                                       "(daemon down)" = a Docker client without a running daemon)
@@ -61,6 +61,9 @@ cx host run <host> --script=<file>    a local script on the host's shell stdin (
 cx host run <host> "<command>" --interactive   a terminal for the command (ssh -t / docker exec -it): it can ask its questions; needs a terminal here (not with --capture or --script)
 cx host ssh <host> [--x11] [--forward=1455,8080:80] [--dry_run]   interactive shell (also: shell, login)
 cx host up|down <host>                WSL distro, container (created from its image on the first up), or "commands: up/down"
+cx host destroy <instance> [--image] [--keep_artifact] [--force]   an instance cMeta made (get-host--docker / get-host--wsl): the container (or the WSL distribution and its disk), the artifact, with --image its image
+cx host snapshot <instance> [--name=<name>] [--note=<text>]       the instance's state kept: docker/podman commit to cmeta/snapshot:<instance>-<name>, a WSL export next to its disk; recorded under "snapshots" in its _desc
+cx host restore <instance> [--name=<snapshot>]                    the instance back to a snapshot (the last one by default): the container made again from the image, the distribution imported again
 cx host restart <host> [--yes] [--no-wait] [--timeout=600] [--skip_after] [--dry_run]   (also: reboot)
 cx host sync [host|selection] [--repos=a,b] [--resync [--resync_mode=newer|path1|path2]] [--unlock] [--dry_run] [--skip_after]
 cx host push <host> <repo> --dirs=task/x/,tool/y/ [--dry_run] [--delete] [--index-]   then "cx --reindex" on the host (a second), so a new artifact is found there
