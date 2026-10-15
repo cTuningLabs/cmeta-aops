@@ -1036,8 +1036,8 @@ class Category(InitCategory):
         return {'return': 0, 'name': name, 'container_id': cid, 'image': spec['image'], 'url': url, 'ready': ok}
 
     def _wait_url(self, url, seconds, engine, name, con):
-        t0 = time.time()
-        while time.time() - t0 < max(seconds, 1):
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < max(seconds, 1):
             try:
                 with urllib.request.urlopen(url, timeout=3) as resp:
                     if 200 <= resp.status < 500:

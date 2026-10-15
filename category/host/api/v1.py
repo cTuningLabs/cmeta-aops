@@ -231,7 +231,7 @@ class Category(InitCategory):
                 if con: print(f'{alias:32} skipped ({h["status"]})')
                 continue
 
-            t0 = time.time()
+            t0 = time.monotonic()
             r = self._probe_one(ctx, h, int(timeout), verbose)
             if r['return'] > 0:
                 if explicit: return r
@@ -252,7 +252,7 @@ class Category(InitCategory):
             if con:
                 repos = st.get('repos', {})
                 print(f'{alias:32} {st.get("os", "?"):28} cMeta {st.get("cmeta_version") or "-":9} '
-                      f'aops {st.get("aops_version") or "-":8} {len(repos)} repos  ({time.time() - t0:.1f}s)')
+                      f'aops {st.get("aops_version") or "-":8} {len(repos)} repos  ({time.monotonic() - t0:.1f}s)')
 
         return {'return': 0, 'probed': results}
 
@@ -702,10 +702,10 @@ class Category(InitCategory):
 
             changed = False
             for name, entry in selected:
-                t0 = time.time()
+                t0 = time.monotonic()
                 r = self._sync_repo(ctx, h, name, entry, resync=resync, resync_mode=resync_mode, unlock=unlock,
                                     dry_run=dry_run, con=con, verbose=verbose)
-                elapsed = f'{time.time() - t0:.0f}s'
+                elapsed = f'{time.monotonic() - t0:.0f}s'
                 if r['return'] > 0:
                     report.append([alias, name, entry['method'], 'FAILED: ' + r['error'], elapsed])
                     if con: print(f'*** STOPPED: {alias} / {name} failed - {r["error"]}')
@@ -824,12 +824,12 @@ class Category(InitCategory):
             cmd = 'cx --reindex'
             r = self._cmd_run(ctx, h, cmd)
             if self.cm.catch_error(r): return r
-            t0 = time.time()
+            t0 = time.monotonic()
             rr = self._run_local(r['cmd'], capture=not verbose, con=con, verbose=verbose, timeout=300)
-            result['index'] = {'cmd': cmd, 'returncode': rr.get('returncode'), 'seconds': round(time.time() - t0, 1)}
+            result['index'] = {'cmd': cmd, 'returncode': rr.get('returncode'), 'seconds': round(time.monotonic() - t0, 1)}
             if con:
                 if rr.get('returncode', 0) == 0:
-                    print(f'INDEX ({h["alias"]}): {cmd} - ok ({time.time() - t0:.1f}s)')
+                    print(f'INDEX ({h["alias"]}): {cmd} - ok ({time.monotonic() - t0:.1f}s)')
                 else:
                     print(f'WARNING: "{cmd}" on {h["alias"]} returned {rr.get("returncode")} - run it there by hand')
 
@@ -1477,18 +1477,18 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
         def ask(item):
             alias, p, error = item
-            t0 = time.time()
+            t0 = time.monotonic()
             if p is None:
                 return alias, None, f'{alias}: {error}', 0.0
             parent = None if self._here(p) else p
             if parent is not None:
                 ps = self._status(ctx, parent, timeout, cmd_timeout)
                 if ps != 'up':
-                    return alias, None, f'{alias} {ps}', time.time() - t0
+                    return alias, None, f'{alias} {ps}', time.monotonic() - t0
             if h['type'] != 'adb':
-                return alias, {}, f'{alias}: up', time.time() - t0        # another type with several parents: up is enough
+                return alias, {}, f'{alias}: up', time.monotonic() - t0        # another type with several parents: up is enough
             devices, reason = self._adb_devices(ctx, parent, cmd_timeout)
-            dt = time.time() - t0
+            dt = time.monotonic() - t0
             if devices is None:
                 return alias, None, f'{alias}: {reason}', dt
             if (serial and serial in devices) or (not serial and devices):
@@ -1644,12 +1644,12 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         from concurrent.futures import ThreadPoolExecutor
 
         def one(h):
-            t0 = time.time()
+            t0 = time.monotonic()
             try:
                 h['status'] = self._status(ctx, h, timeout, cmd_timeout)
             except Exception as e:
                 h['status'] = f'error: {e}'
-            h['status_time'] = time.time() - t0
+            h['status_time'] = time.monotonic() - t0
 
         if not hosts:
             return
