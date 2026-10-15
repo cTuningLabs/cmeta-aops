@@ -154,8 +154,8 @@ class Projects(unittest.TestCase):
             name: dict(base, server={'url': address})
             for name, address in {'redirect': url, 'error': url + '/error', 'refused': 'http://127.0.0.1:1/'}.items()}
 
-        def temp_script(script):
-            path = self.path / 'status.sh'
+        def temp_script(script, suffix='.sh'):
+            path = self.path / ('status' + suffix)
             path.write_text(script)
             return {'return': 0, 'path': str(path)}
         self.cat._temp_script = temp_script
