@@ -169,7 +169,47 @@ class CTool(InitCTool):
             return self.cm.error(f'unknown Visual Studio Build Tools release "{year}" '
                                  f'(--with.year: {", ".join(BUILD_TOOLS_WINGET_IDS)})')
 
-        return {'return': 0, 'install_cmd': (install_cmd or '').replace('@VS_BUILD_TOOLS@', winget_id)}
+        cmd = (install_cmd or '').replace('@VS_BUILD_TOOLS@', winget_id)
+
+        # Where the Build Tools go (--with.install_path, --with.shared_path, --with.cache_path: the installer's
+        # --installPath and --path shared=/cache=), for a machine that keeps big installs off C:; the Windows SDK
+        # always goes to C:\Program Files (x86)\Windows Kits. The folders are passed to the installer inside the
+        # --override string, after the components
+        paths = ''
+        for key, flag in (('install_path', '--installPath {p}'), ('shared_path', '--path shared={p}'), ('cache_path', '--path cache={p}')):
+            p = str(params.get('with', {}).get(key) or '').strip()
+            if p:
+                if ' ' in p:
+                    return self.cm.error(f'--with.{key}: a path with a space cannot be passed to the Visual Studio installer through winget ({p})')
+                paths += ' ' + flag.format(p = p)
+        if paths and '--override "' in cmd:
+            cmd = cmd.replace('--includeRecommended"', '--includeRecommended' + paths + '"', 1)
+
+        return {'return': 0, 'install_cmd': cmd}
+
+    ############################################################
+    def post_install(self,
+                     ctx: dict,
+                     params: dict,
+    ):
+        """
+        After the Build Tools are installed: the Windows SDK they brought is set up (the dependency the _desc.yaml
+        skips on an --install run), so that the detection that follows records the SDK in the Build Tools' cache
+        entry as on any other run. A missing SDK is said, not fatal: the Build Tools are detected all the same.
+        """
+
+        if (params.get('result') or {}).get('failed'):
+            return {'return': 0}
+
+        c = params.get('control', {})
+        r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'setup,a2f9b61079ce4333',
+                            'name': 'microsoft.sdk,8a47d88b2b974243', 'ctx': ctx,
+                            'con': c.get('con', False), 'quiet': c.get('quiet', False), 'verbose': c.get('verbose', False)})
+        if r['return'] > 0 and c.get('con', False):
+            print ('')
+            print (f'{c.get("space", "")}cMeta warning: the Windows SDK was not found after the Build Tools install ({r.get("error", "")}); run "cx tool setup microsoft.sdk" once it is there')
+
+        return {'return': 0}
 
     ############################################################
     def filter_tool_cache_artifacts(self,

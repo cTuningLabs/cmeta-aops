@@ -3,13 +3,13 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 names:
   - vcvars{{global.host.os.bits}}{{global.host.vars.file_ext_bat}}
 
-cache_params_use: 
+cache_params_use:
   windows:
     microsoft-sdk:
-      version: "{{global.microsoft-sdk.version}}" # This version must be already resolved here, therefore not fuzzy
-      path: "{{global.microsoft-sdk.path}}"
+      version: "{{global.microsoft-sdk.version|}}" # This version must be already resolved here, therefore not fuzzy
+      path: "{{global.microsoft-sdk.path|}}"       # (empty on an --install run that found the Build Tools already there)
 
-match_version: 
+match_version:
   - regex: 'version\s*([\d.]+)'
     group: 1
 
@@ -18,9 +18,14 @@ cmd_call_script: '{{tool_path}} {{global.microsoft-sdk.version}} '
 cmd: ''
 cmd_get_version: 'cl.exe'
 
+# The Windows SDK is a component the Build Tools install, so it is not asked for before an install: with
+# --install the dependency waits, and post_install (api_v1.py) sets the SDK up once the installer is done, before
+# the Build Tools are detected and their cache entry made. Before 2026-10-15 a machine without the SDK could not
+# install the Build Tools through this tool at all (the dependency failed first; found on the NucBox).
 uses:
   - task: setup,a2f9b61079ce4333
     name: microsoft.sdk,8a47d88b2b974243
+    if: '"{{params.install|False}}" != "True"'
 
 # api_v1.py find_paths() lists the installations with vswhere and the usual folders (Program
 # Files and Program Files (x86), C: and D:); these recursive searches are the last resort
@@ -33,6 +38,9 @@ extra_paths:
 #   cx tool setup microsoft.visual-studio --install                 # the newest (2026)
 #   cx tool setup microsoft.visual-studio --install --with.year=2022
 #   cx tool setup microsoft.visual-studio --version="<19.50"        # the release whose cl.exe has it: 2022
+#   cx tool setup microsoft.visual-studio --install --with.install_path=D:\Apps\VisualStudio\BuildTools --with.shared_path=D:\SDKs\VisualStudio --with.cache_path=D:\Caches\VisualStudio
+#                                                                   # off C: (api_v1.py: the installer's --installPath and
+#                                                                   # --path shared=/cache=; the Windows SDK stays on C:)
 # The version of this tool is cl.exe's (19.5x is 2026, 19.3x-19.4x 2022, 19.2x 2019, 19.1x 2017):
 # nvcc asks for the range its toolkit supports. A version no release has installs nothing.
 # The Visual Studio installer asks for administrator rights (UAC).
