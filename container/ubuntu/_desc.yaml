@@ -23,6 +23,8 @@ template:
   cmeta_extras: server          # the web pages need [server]
   cmeta_local_path: ""          # cmeta_source=local: the checkout to tar (default: the engine this cx runs from)
   user: cmeta                   # non-root user with passwordless sudo; "root" to skip
+  uid: ""                       # the user's uid and gid inside: on a Linux engine the machine user's (get-host--docker
+  gid: ""                       # passes them: a bind mount keeps the machine's ownership); empty = a system user
   python_package: python3
 
 package_manager: apt

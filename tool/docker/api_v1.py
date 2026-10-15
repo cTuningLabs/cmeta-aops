@@ -123,4 +123,35 @@ class CTool(InitCTool):
                 print (f'{space}cMeta warning: could not add {user} to the "{GROUP}" group (sudo without a password?). Run it yourself, then log in again:')
                 print (f'{space}               sudo usermod -aG {GROUP} {user}')
 
+        return self._buildx(ctx, params)
+
+    ############################################################
+    def _buildx(self, ctx, params):
+        """
+        BuildKit builds (cx container build: secret mounts, multi-platform) need the buildx plugin, which the
+        distribution's docker.io package leaves out: on Debian and Ubuntu the package docker-buildx is installed
+        after the engine (found 2026-10-15 on Ubuntu 26.04: "BuildKit is enabled but the buildx component is
+        missing or broken"); elsewhere the missing plugin is said, not installed.
+        """
+        if _output(['docker', 'buildx', 'version']).strip():
+            return {'return': 0}
+
+        c = params.get('control', {})
+        con = c.get('con', False)
+        space = c.get('space', '')
+        os_id = str(((ctx['tasks']['global'].get('host') or {}).get('os_extra') or {}).get('id') or '').lower()
+
+        if os_id in ('ubuntu', 'debian'):
+            r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'ctx': ctx, 'arg1': 'cmd,c9ba0a88df394d7f',
+                                'cmd': 'sudo -n apt-get install -y -q docker-buildx', 'env': params.get('env'),
+                                'con': con, 'quiet': c.get('quiet', False), 'verbose': c.get('verbose', False),
+                                'text_cmd': 'RUN:', 'fail_if_nonzero_return_code': False})
+            if self.cm.catch_error(r): return r
+            if r.get('returncode', 1) == 0 and con:
+                print (f'{space}cMeta info: the buildx plugin (docker-buildx) is installed: BuildKit builds work')
+                return {'return': 0}
+
+        if con:
+            print (f'{space}cMeta warning: docker has no buildx plugin here: "docker build" with BuildKit (cx container build) will fail until it is installed (Debian/Ubuntu: docker-buildx; else the docker-buildx-plugin of Docker CE)')
+
         return {'return': 0}

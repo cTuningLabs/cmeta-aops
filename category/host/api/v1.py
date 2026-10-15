@@ -1129,6 +1129,69 @@ class Category(InitCategory):
 
         return {'return': 0, 'results': results}
 
+    def destroy_(
+        self,
+        ctx,
+        arg1=None,          # the instance (a docker host made by cx task run get-host--docker)
+        image=False,        # also remove its image (left alone when another container uses it)
+        keep_artifact=False,  # remove the container, keep the host artifact
+        force=False,        # a docker host declared by hand: remove its container anyway
+    ):
+        """
+        Destroy an instance cMeta made (cx task run get-host--docker): its container is stopped and removed
+        through the engine of its parent, the host artifact deleted, and with --image its image removed. A docker
+        host declared by hand needs --force; other types are refused. ("rm" and "remove" are the engine's names for
+        "delete", which removes an artifact alone - hence "destroy" for the whole instance.)
+
+            cx host destroy my-pc-docker-ubuntu-24.04 [--image]
+        """
+        con = ctx['control'].get('con', False)
+        if not arg1:
+            return self.cm.error('cx host destroy <instance> [--image] [--keep_artifact]')
+        r = self._get_host(ctx, arg1)
+        if r['return'] > 0: return r
+        h = r['host']
+        if h['type'] != 'docker':
+            return self.cm.error(f'{h["alias"]} is a {h["type"]} host, not an instance: "cx host delete {h["alias"]}" removes an artifact alone')
+        made = bool(h['desc'].get('made_from')) or 'made-by-cmeta' in (h['cmeta'].get('tags') or [])
+        if not made and not force:
+            return self.cm.error(f'{h["alias"]} was not made by cMeta (no made_from): --force removes its container anyway')
+
+        acc = h['desc'].get('access') or {}
+        name = acc.get('container') or h['alias']
+        engine = str((h['desc'].get('made_from') or {}).get('engine') or 'docker')
+        cmds = [(f'{engine} rm -f {name}', 'container')]
+        if image and acc.get('image'):
+            cmds.append((f'{engine} rmi {acc["image"]}', 'image'))
+
+        parent = None
+        if h.get('via'):
+            rp = self._get_host(ctx, h['via'])
+            if rp['return'] > 0: return rp
+            if not self._here(rp['host']):
+                parent = rp['host']
+
+        done = []
+        for cmd, what in cmds:
+            run = cmd
+            if parent is not None:
+                rc = self._cmd_run(ctx, parent, cmd)
+                if rc['return'] > 0: return rc
+                run = rc['cmd']
+            rr = self._run_local(run, capture=True, con=False)
+            ok = rr.get('returncode', 1) == 0
+            note = '' if ok else (rr.get('stderr', '') or '').strip().splitlines()[-1:] or ['failed']
+            done.append(f'{what}: ' + ('removed' if ok else f'not removed ({note[0] if note else "failed"})'))
+
+        if not keep_artifact:
+            rd = self.cm.access({'category': 'host,' + self.cmeta['artifact'], 'command': 'delete', 'arg1': h['alias'], 'force': True, 'con': False})
+            if rd['return'] > 0: return rd
+            done.append('artifact: deleted')
+
+        if con:
+            print (f'cMeta info: {h["alias"]}: ' + '; '.join(done))
+        return {'return': 0, 'alias': h['alias'], 'done': done}
+
     def _cmeta_version_on(self, ctx, h):
         """The 'cMeta version X' a host reports, or None."""
         r = self._cmd_run(ctx, h, 'cx --version')

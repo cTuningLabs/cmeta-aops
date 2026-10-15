@@ -24,7 +24,8 @@ default_version: '29.9.1'
 
 # On Linux the distribution's own Docker (docker.io on Debian and Ubuntu, docker on Fedora: the engine and
 # the CLI, enabled as a service by the package); the socket needs the "docker" group, which the post_install
-# hook of api_v1.py gives the user after the install (a new login applies it).
+# hook of api_v1.py gives the user after the install (a new login applies it); the same hook installs the
+# buildx plugin (docker-buildx on Debian and Ubuntu), which the package leaves out and BuildKit builds need.
 package_name: 'docker.io'
 package_name_os_id:
   fedora: docker

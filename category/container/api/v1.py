@@ -447,7 +447,20 @@ class Category(InitCategory):
             if user == 'root':
                 cmeta['user_block'] = ''
             else:
-                cmeta['user_block'] = (f'RUN groupadd -r {user} && useradd -r -m -d /home/{user} -g {user} -s /bin/bash {user} '
+                # The uid rule: a Linux engine keeps the machine's ownership on a bind mount, so the user inside takes
+                # the machine user's uid and gid when asked for (--template.uid=1000 --template.gid=1000, what
+                # get-host--docker passes on Linux; a system uid could not even plug a mounted repository) - a user
+                # or group the base image already has under that number (ubuntu, uid 1000 in ubuntu:24.04) goes
+                # first; without uid, a system user as before. Docker Desktop and podman machine need nothing.
+                uid = str(cmeta.get('uid') or '').strip()
+                gid = str(cmeta.get('gid') or uid).strip()
+                if uid:
+                    make = (f'(u=$(getent passwd {uid} | cut -d: -f1); [ -z "$u" ] || userdel -r "$u" || true) '
+                            f'&& (g=$(getent group {gid} | cut -d: -f1); [ -z "$g" ] || groupdel "$g" || true) '
+                            f'&& groupadd -g {gid} {user} && useradd -u {uid} -m -d /home/{user} -g {user} -s /bin/bash {user}')
+                else:
+                    make = f'groupadd -r {user} && useradd -r -m -d /home/{user} -g {user} -s /bin/bash {user}'
+                cmeta['user_block'] = (f'RUN {make} '
                                        f'&& echo "{user} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/{user} && chmod 0440 /etc/sudoers.d/{user}')
             from_tpl = bcomp.get('from') or cmeta.get('from') or ''
             if not from_tpl:

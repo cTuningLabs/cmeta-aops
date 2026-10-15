@@ -15,6 +15,8 @@ template:
   cmeta_extras: server
   cmeta_local_path: ""
   user: cmeta
+  uid: ""                       # the user's uid and gid inside: on a Linux engine the machine user's (get-host--docker
+  gid: ""                       # passes them: a bind mount keeps the machine's ownership); empty = a system user
   python_package: python3
 
 package_manager: apt

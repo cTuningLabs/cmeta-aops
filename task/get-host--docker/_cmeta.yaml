@@ -1,0 +1,14 @@
+﻿artifact: 08e0250b15e2486a
+category: task,c36be4b9314a45e0
+tags:
+  - host
+  - docker
+  - container
+  - run-on-any-host
+authors: Grigori Fursin
+creation_timestamp: '2026-10-15T14:54:45.667006+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.299
+  via: cmeta 0.37.1
+  by: Grigori Fursin
