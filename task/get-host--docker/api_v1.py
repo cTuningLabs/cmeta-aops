@@ -14,10 +14,14 @@ resolver of the "run on any host" design (an instance of a template is a host li
      repository and a repository flagged secrets are never mounted), the GPU run flags of the template's compute
      overlay when asked for, --platform for another architecture;
   4. writes <home>/readme-cmeta.md inside (what it is, how it was made, how to reach it, how to rebuild it);
-  5. records the host artifact in the local repository: type docker, access (container, image, run_args - so that
-     "cx host up" can make the container again), via = this machine's host artifact, made_from (template, params,
-     compute, arch, engine, image, time, cMeta version), mounts, the tag made-by-cmeta.
+  5. records the host artifact in the local repository: type docker, access (container, engine, image, run_args - so
+     that "cx host up" can make the container again, with podman when the engine is podman), via = this machine's
+     host artifact, made_from (template, params, compute, arch, engine, image, time, cMeta version), mounts, the
+     tag made-by-cmeta;
+  6. probes it (cx host probe), so that "cx host ls" shows its OS and the cMeta and AOPS versions inside.
 
+The uid rule: on a Linux engine the user inside gets this user's uid and gid (a bind mount keeps the machine's
+ownership); rootless podman maps this user to root inside unless told to keep the id (--userns=keep-id).
 Everything runs through the engine's own commands (docker run / inspect / start / exec / cp), printed with -v.
 """
 
@@ -160,10 +164,13 @@ class CTask(InitCTask):
 
         # The uid rule: on a Linux engine a bind mount keeps the machine's ownership, so the user inside gets this
         # user's uid and gid (a system uid cannot even plug a mounted repository: cMeta's lock file next to _cmr.yaml
-        # is refused). Docker Desktop and podman machine map the ownership themselves: nothing there.
-        if os.name == 'posix' and sys.platform != 'darwin' and hasattr(os, 'getuid'):
+        # is refused). Docker Desktop and podman machine map the ownership themselves: nothing there. Rootless
+        # podman maps this user to root inside by default: --userns=keep-id keeps the number (root: a system user)
+        keep_id = False
+        if os.name == 'posix' and sys.platform != 'darwin' and hasattr(os, 'getuid') and os.getuid() != 0:
             params.setdefault('uid', str(os.getuid()))
             params.setdefault('gid', str(os.getgid()))
+            keep_id = engine == 'podman'
         tparams.update(params)
         os_version = str(tparams.get('os_version') or '')
         user = str(tparams.get('user') or 'cmeta')
@@ -235,6 +242,8 @@ class CTask(InitCTask):
                     '--label', f'cmeta.template={name}', '-e', 'CMETA_REINDEX=1']
         if platform_str:
             run_args += ['--platform', platform_str]
+        if keep_id and user != 'root':
+            run_args += ['--userns=keep-id']
         run_args += run_flags
         for mnt in mounts:
             run_args += ['-v', f'{mnt["path"]}:{mnt["inside"]}']
@@ -301,7 +310,7 @@ class CTask(InitCTask):
         if carrier_uid:
             desc['via'] = f'host,{HOST_CATEGORY.split(",")[1]}::{carrier},{carrier_uid}'
         desc.update({
-            'access': {'container': inst, 'image': image, 'keepalive': ' '.join(KEEPALIVE),
+            'access': {'container': inst, 'engine': engine, 'image': image, 'keepalive': ' '.join(KEEPALIVE),
                        'run_args': ' '.join(run_args), 'user': user, 'shell': 'bash -l'},
             'cmeta': {'home': f'{home}/CMETA', 'install': 'uv-tool'},
             'sync': {'default': 'none'},
@@ -315,6 +324,12 @@ class CTask(InitCTask):
         r = self.cm.utils.files.safe_write_file(os.path.join(apath, '_desc.yaml'), desc, atomic=True, sort_keys=False, logger=self.logger)
         if r['return'] > 0:
             return r
+
+        # ---- the probe: "cx host ls" shows the instance's OS and the versions inside (a probe that fails is said, never fatal)
+        r = self.cm.access({'category': HOST_CATEGORY, 'command': 'probe', 'arg1': inst, 'con': False})
+        if r['return'] > 0 and con:
+            print ('')
+            print (f'cMeta warning: the probe of {inst} failed ({r.get("error", "")}) - run "cx host probe {inst}" later')
 
         if con:
             print ('')

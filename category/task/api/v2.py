@@ -101,6 +101,7 @@ class Category(InitCategory):
             'check_versions',
             'cv',
             'skip_clean_local',
+            'on',                # run on any host: --on=<host | docker[:template] | podman[:template]>; its options are --on_<name>
         ]
 
         # Passed further to customization APIs ...
@@ -223,6 +224,14 @@ class Category(InitCategory):
         ctx_tasks = ctx.setdefault('tasks', {})
         nested_call = ctx_tasks.setdefault('nested_call', 0)
         space = '  ' * nested_call if verbose else ''
+
+        # "Run on any host": --on=<ref> on the outermost task of a command line delegates the whole command line, as
+        # typed, to that host (a fleet host, or an instance of a container template made on the way) and returns
+        # its result; the inner run carries CMETA_ON=here and never delegates again. cx program run, cx tool setup
+        # and cx app run all pass through here, so one word serves them all.
+        on = params.get('on')
+        if on and nested_call == 0 and str(on).strip() != 'here' and os.environ.get('CMETA_ON', '') != 'here':
+            return self._run_on(ctx, params, str(on).strip(), con, quiet, verbose)
 
         check_versions = params.get('check_versions')
         if check_versions is None:
@@ -351,7 +360,7 @@ class Category(InitCategory):
         uparams = {}
 
         for key in params:
-            if key in self.control1 + self.control2:
+            if key in self.control1 + self.control2 or (isinstance(key, str) and key.startswith('on_')):
                 cparams[key] = params[key]
             elif key != 'ctx':
                 uparams[key] = params[key]
@@ -1842,6 +1851,98 @@ class Category(InitCategory):
 
         return {'return':0}
 
+    def _run_on(self, ctx, params, ref, con, quiet, verbose):
+        """
+        The "run on any host" delegation (the design of 2026-10-15, phase 3, first slice). The words of the command
+        line as typed - minus --on and its --on_<name> options - run on the host that --on names, through
+        "cx host run", with CMETA_ON=here in front so that the inner run never delegates again:
+
+            --on=<alias>                       a host artifact (a fleet host, an instance made before)
+            --on=docker[:<template>]           an instance of the template (ubuntu by default) on this machine's docker,
+            --on=podman[:<template>]           made or found by get-host--docker (--on_instance, --on_repos, --on_arch,
+                                               --on_new_host, --on_template.<key>=<value> go to it); the compute word
+                                               of the run picks the template's overlay when it has one (cuda, rocm)
+            --on=here                          nothing: here, as without the word (the inner run's own value)
+
+        The host's shell is a POSIX one (a Windows host is refused by this slice); -q and -v travel as typed, and
+        a terminal here is a terminal there (ssh -t, docker exec -it): the inner run asks its questions as a local
+        run would. The result is the inner exit code, and run_on (the host, the words, the engine, whether the
+        instance was made now, the terminal), also kept in ctx['on'] for provenance.
+        """
+        import shlex
+        import sys
+
+        words = list(((ctx.get('origin') or {}).get('cli') or {}).get('cmd') or [])
+        if not words:
+            return self.cm.error('--on delegates a command line: it needs one (cx task run / program run / tool setup ... --on=<host>)')
+        inner_words = [w for w in words if not (isinstance(w, str) and (w == '--on' or w.startswith('--on=') or w.startswith('--on_') or w.startswith('-on=')))]
+        options = {k[3:]: v for k, v in params.items() if isinstance(k, str) and k.startswith('on_')}
+
+        host_category = 'host,e4e49c251c814f6d'
+        engine, host, made = '', None, None
+
+        if ref in ('docker', 'podman') or ref.startswith('docker:') or ref.startswith('podman:'):
+            engine, _, template = ref.partition(':')
+            compute = str(params.get('compute') or 'cpu')
+            if compute not in ('cuda', 'rocm'):
+                compute = 'cpu'
+            r = self.cm.access({'category': 'task,' + self.cmeta['artifact'], 'command': 'run', 'arg1': 'get-host--docker,08e0250b15e2486a',
+                                'name': template or 'ubuntu', 'engine': engine, 'template': options.get('template') or {},
+                                'compute': compute, 'arch': str(options.get('arch') or ''), 'instance': str(options.get('instance') or ''),
+                                'repos': str(options.get('repos') or ''), 'new_host': bool(options.get('new_host', False)),
+                                'con': con, 'quiet': quiet, 'verbose': verbose})
+            if r['return'] > 0:
+                return r
+            host, made = r['host'], r
+        elif ref == 'wsl' or ref.startswith('wsl:'):
+            return self.cm.error('--on=wsl is not built yet: --on=docker, --on=podman or a host artifact (cx host ls)')
+        else:
+            r = self.cm.access({'category': host_category, 'command': 'find', 'arg1': ref, 'con': False})
+            if r['return'] > 0 or not r.get('artifacts'):
+                return self.cm.error(f'no host "{ref}" (cx host ls); a container template needs its engine: --on=docker:{ref}')
+            a = r['artifacts'][0]
+            host = a['cmeta_ref_parts'].get('artifact_alias') or ref
+            d = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(a['path'], '_desc'))
+            if d['return'] == 0 and str((d.get('data') or {}).get('os', '')).lower() in ('windows', 'win'):
+                return self.cm.error(f'{host} runs Windows: this slice of --on quotes the words for a POSIX shell (a Windows host comes next)')
+
+        # A terminal here (someone at the keyboard) is a terminal there - ssh -t, docker exec -it - so that the inner
+        # run asks its questions (install a tool?) as a local run would; a run without one (a script, a test round)
+        # stays without one, and -q answers there as it does here
+        try:
+            terminal = bool(con) and sys.stdin.isatty() and sys.stdout.isatty()
+        except (AttributeError, ValueError):
+            terminal = False
+
+        inner = 'CMETA_ON=here cx ' + ' '.join(shlex.quote(str(w)) for w in inner_words)
+        run_on = {'host': host, 'ref': ref, 'engine': engine, 'words': inner, 'instance_made': bool(made and made.get('made')),
+                  'image': (made or {}).get('image', ''), 'terminal': terminal}
+        ctx['on'] = run_on
+
+        if con:
+            print ('')
+            print (f'cMeta info: running on {host}: {inner}')
+            print ('')
+
+        rr = self.cm.access({'category': host_category, 'command': 'run', 'arg1': host, 'arg2': inner, 'interactive': terminal,
+                             'con': con, 'quiet': quiet, 'verbose': verbose})
+        outputs = (rr.get('outputs') or {}).get(host) or {}
+        rc = outputs.get('returncode')
+        if rc is None:
+            rc = rr.get('return', 1)
+        run_on['returncode'] = rc
+
+        if rc != 0:
+            return {'return': rc if isinstance(rc, int) and 0 < rc < 256 else 1,
+                    'error': f'the run on {host} ended with exit code {rc}' + (f' ({rr.get("error")})' if rr.get('return', 0) > 0 and not outputs else ''),
+                    'run_on': run_on}
+
+        if con:
+            print ('')
+            print (f'cMeta info: ran on {host}' + (f' ({engine}, image {run_on["image"]})' if engine else '') + f'; shell: cx host ssh {host}')
+        return {'return': 0, 'run_on': run_on}
+
+    ############################################################
     def _relocate_cached_result(self, result, here):
         """
         A cached result reused from another place than it was saved in: the entry moved, or it is shared

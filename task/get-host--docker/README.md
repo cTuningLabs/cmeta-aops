@@ -29,12 +29,18 @@ What happens:
 3. The container runs detached with `sleep infinity`, the labels `cmeta.container=1` and `cmeta.host=<instance>`,
    the repositories asked for mounted at `<home>/repos/<alias>` (the entrypoint plugs them and reindexes; the
    local repository and a repository flagged `secrets: true` are never mounted), the GPU run flags of the compute
-   overlay when asked for, `--platform` for another architecture.
+   overlay when asked for, `--platform` for another architecture. On a Linux engine the user inside gets this
+   user's uid and gid, so the mounted repositories are writable (rootless podman: `--userns=keep-id`).
 4. `<home>/readme-cmeta.md` inside says what it is, how it was made, how to reach it and how to rebuild it.
-5. The host artifact in the local repository: `type: docker`, `access` (container, image, run_args, so that
-   `cx host up` can make the container again), `via` = this machine's host artifact, `made_from` (template,
-   parameters, compute, architecture, engine, image, time, cMeta version), `mounts`, the tag `made-by-cmeta`.
+5. The host artifact in the local repository: `type: docker`, `access` (container, engine, image, run_args, so
+   that `cx host up` can make the container again - every `cx host` command speaks podman to a podman instance),
+   `via` = this machine's host artifact, `made_from` (template, parameters, compute, architecture, engine, image,
+   time, cMeta version), `mounts`, the tag `made-by-cmeta`.
+6. The instance is probed (`cx host probe`): `cx host ls` shows its OS and the cMeta and AOPS versions inside.
 
 The cMeta home inside is the instance's own: its cache is never shared with the machine (stability); the
 repositories mounted are the machine's (live). Everything runs through the engine's own commands (`docker run`,
 `inspect`, `start`, `exec`, `cp`), printed with `-v`.
+
+The instance is what `--on=docker` / `--on=podman` of any `cx task run`, `cx program run`, `cx tool setup` or
+`cx app run` makes and uses (`docs/cmeta-aops/task-engine.md`, "Running the same words elsewhere").

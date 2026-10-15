@@ -149,6 +149,30 @@ task's `cmeta-task-cached-ctx.json`, or run with `-v`.
 so `--use.llvm.version=...` changes nothing there. A version given through `--use` also enters the
 cache identity of that sub-task, so it gets its own cache entry and the default one stays.
 
+## Running the same words elsewhere: `--on`
+
+`--on=<host>` on any `cx task run` / `cx program run` / `cx tool setup` / `cx app run` hands the whole
+command line, as typed, to a host and returns its result:
+
+```bash
+cx program run test-nmm-c-cpu cpu -q --on=docker            # an instance of the container template ubuntu on this machine's docker, made on first use
+cx program run test-nmm-c-cpu cpu -q --on=docker:debian     # another template; --on=podman[:<template>] the same with podman
+cx tool setup gcc --install -q --on=lab-thinkpad-ubuntu      # a fleet host (cx host ls)
+cx task run test-python --on=docker --on_template.os_version=24.04 --on_repos=ctuninglabs@cmeta-aops,my-repo
+```
+
+How it works (`v2.py`, `_run_on`): the outermost task of a command line started from the CLI sees the word,
+resolves the host - a host artifact, or `get-host--docker` for `docker` / `podman` (`--on_instance`,
+`--on_repos`, `--on_arch`, `--on_new_host` and `--on_template.<key>` go to it; the compute word of the run
+picks the template's overlay when it has one: `cuda`, `rocm`) - and runs `CMETA_ON=here cx <the words
+minus --on and --on_*>` there through `cx host run`. The inner run never delegates again. `-q` and `-v`
+travel as typed; a terminal here is a terminal there (`ssh -t`, `docker exec -it`), so the inner run asks
+its questions as a local run would, and a run without one (a script) stays without one. The result is the
+inner exit code plus `run_on` (host, words, engine, image, whether the instance was made now, the terminal),
+also in `ctx['on']`; one closing line says where it ran and how to open a shell there. An instance's cMeta
+home and cache are its own, never the machine's; the repositories mounted into it are the machine's, live.
+Not yet: `--on=wsl`, a Windows host, the results pulled back here.
+
 ## Two reuse layers
 
 - **In-memory memo (per run):** `store_global: True` + `storage_key: <key>`. A later

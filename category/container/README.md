@@ -20,7 +20,7 @@ cx container ps | logs <name> | stop <name> | clean <template or name> [--images
 
 | Template | Kind | What it is |
 |---|---|---|
-| `ubuntu` | base | Ubuntu (24.04 by default, `--template.os_version=26.04`) + tools + uv + cMeta, the user `cmeta` with sudo. `--compute=cuda` swaps in `nvidia/cuda:<version>-<flavour>-ubuntu<os>` and adds the GPU run flags. |
+| `ubuntu` | base | Ubuntu (26.04 by default, `--template.os_version=24.04`) + tools + uv + cMeta, the user `cmeta` with sudo. `--compute=cuda` swaps in `nvidia/cuda:<version>-<flavour>-ubuntu<os>` and adds the GPU run flags. |
 | `debian`, `rockylinux`, `amazonlinux`, `azurelinux` | base | The same recipe on Debian 12, Rocky Linux 9 (dnf), Amazon Linux 2023 (dnf), Azure Linux 3.0 (tdnf). |
 | `cmeta-test` | app | A base image plus a shell: the smoke tests (`cx --version`, `cx repo find`, `cx category find`, `/etc/os-release`, `nvidia-smi` on CUDA). |
 | `cmeta-cserver` | app | The cMeta internal web server with `cmeta-aops` baked in; a repository mounted with `--repo=<alias>` is plugged in at start. Port 8004. |

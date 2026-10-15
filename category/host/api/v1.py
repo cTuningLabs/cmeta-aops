@@ -270,6 +270,7 @@ class Category(InitCategory):
         timeout=None,       # seconds
         capture=False,      # return the output instead of streaming it to the terminal
         raw=False,          # do not wrap the command in the host's shell (ssh/docker: as given)
+        interactive=False,  # a terminal for the command (ssh -t / docker exec -it): it can ask questions; needs a terminal here
         project=None,      # named environment; omitted: the host's global environment
         unparsed=None,      # the command as the words after "--" (cx host run <host> -- <command>)
     ):
@@ -281,6 +282,7 @@ class Category(InitCategory):
             cx host run lab-laptop-ubuntu -- ls -la /tmp        # the words after "--", cMeta parses none of them
             cx host run --tags=ubuntu "uname -a"
             cx host run lab-thinkpad-ubuntu --script=check.sh
+            cx host run lab-thinkpad-ubuntu "cx task run test-python" --interactive   # a terminal there: the command can ask
 
         The command is passed through the local shell, then ssh, then the remote shell: keep it simple,
         and put anything with quotes of its own in a script (--script). After "--" the words are joined
@@ -311,6 +313,8 @@ class Category(InitCategory):
             return self.cm.error('nothing to run: cx host run <host> "<command>" (or --script=<file>)')
         if not selection and not arg1:
             return self.cm.error('no host given: cx host run <host> "<command>", or select hosts with --tags/--machine/--type/--all')
+        if interactive and (capture or script):
+            return self.cm.error('--interactive gives the command a terminal: not with --capture or --script')
 
         r = self._select(ctx, arg1, tags, machine, type, project=project)
         if self.cm.catch_error(r): return r
@@ -330,7 +334,7 @@ class Category(InitCategory):
             if stdin_file:
                 r = self._cmd_stdin(ctx, h, stdin_file)
             else:
-                r = self._cmd_run(ctx, h, cmd, raw=raw)
+                r = self._cmd_run(ctx, h, cmd, raw=raw, interactive=bool(interactive))
             if self.cm.catch_error(r): return r
 
             if con and (len(hosts) > 1 or verbose):
@@ -461,7 +465,7 @@ class Category(InitCategory):
             distro = str(acc.get('distro') or '')
             local_cmd = f'wsl.exe -t {distro} && wsl.exe -d {distro} -- true' if distro else 'wsl.exe --shutdown && wsl.exe -- true'
         elif t == 'docker':
-            local_cmd = f'docker restart {acc.get("container") or alias}'
+            local_cmd = f'{self._engine(h)} restart {acc.get("container") or alias}'
             if h.get('via'):
                 r = self._get_host(ctx, h['via'])
                 if r['return'] > 0: return r
@@ -1159,7 +1163,7 @@ class Category(InitCategory):
 
         acc = h['desc'].get('access') or {}
         name = acc.get('container') or h['alias']
-        engine = str((h['desc'].get('made_from') or {}).get('engine') or 'docker')
+        engine = self._engine(h)
         cmds = [(f'{engine} rm -f {name}', 'container')]
         if image and acc.get('image'):
             cmds.append((f'{engine} rmi {acc["image"]}', 'image'))
@@ -1773,14 +1777,15 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
         if t == 'docker':
             name = acc.get('container') or h['alias']
-            cmd = f'docker inspect -f "{{{{.State.Status}}}}" {name}'
+            engine = self._engine(h)
+            cmd = f'{engine} inspect -f "{{{{.State.Status}}}}" {name}'
             if parent is not None:
                 r = self._cmd_run(ctx, parent, cmd)
                 if r['return'] > 0: return 'error: ' + r['error']
                 cmd = r['cmd']
             rr = self._run_quick(cmd, cmd_timeout)
             if rr.get('timeout'):
-                return f'timeout ({int(cmd_timeout)}s, docker inspect' + (f' on {h["via"]}' if parent is not None else '') + ')'
+                return f'timeout ({int(cmd_timeout)}s, {engine} inspect' + (f' on {h["via"]}' if parent is not None else '') + ')'
             if rr.get('returncode', 1) != 0:
                 return 'missing'
             return 'up' if rr.get('stdout', '').strip() == 'running' else 'down'
@@ -1898,7 +1903,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if batch:
             opts += ['-o', 'BatchMode=yes']
         if tty:
-            opts.append('-t')
+            # a terminal forced for a command (cx host run --interactive): without the log level, ssh's own
+            # "Connection to <host> closed." would end every such run (errors and key warnings still show)
+            opts += ['-t', '-o', 'LogLevel=ERROR']
         if x11:
             opts.append('-X')
         for fw in forwards or []:
@@ -1919,6 +1926,15 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
     def _shell(self, h):
         acc = h['desc'].get('access') or {}
         return str(acc.get('shell') or DEFAULT_SHELL)
+
+    def _engine(self, h):
+        """
+        The container engine of a docker-type host: "access: engine: podman" (an instance made by get-host--docker
+        --engine=podman), else the engine of made_from, else docker. The commands a host needs (exec, inspect, run,
+        start, stop, restart, rm) are the same words for both engines.
+        """
+        acc = h['desc'].get('access') or {}
+        return str(acc.get('engine') or (h['desc'].get('made_from') or {}).get('engine') or 'docker')
 
     def _boot_stamp(self, ctx, h):
         """
@@ -2048,7 +2064,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             if interactive or cmd is None: flags += '-it '
             elif stdin: flags += '-i '
             if acc.get('user'): flags += f'-u {acc["user"]} '
-            local = f'docker exec {flags}{name} ' + (shell if cmd is None else wrapped)
+            local = f'{self._engine(h)} exec {flags}{name} ' + (shell if cmd is None else wrapped)
 
         elif t == 'adb':
             s = f'-s {acc["serial"]} ' if acc.get('serial') else ''
@@ -2227,9 +2243,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                     return self.cm.error(f'container "{name}" does not exist and no "access: image" is declared to create it')
                 keep = acc.get('keepalive') or 'sleep infinity'
                 run_args = acc.get('run_args') or ''
-                cmd = f'docker run -d --name {name} {run_args} {image} {keep}'.replace('  ', ' ')
+                cmd = f'{self._engine(h)} run -d --name {name} {run_args} {image} {keep}'.replace('  ', ' ')
             else:
-                cmd = f'docker start {name}'
+                cmd = f'{self._engine(h)} start {name}'
             if h.get('via'):
                 r = self._get_host(ctx, h['via'])
                 if r['return'] > 0: return r
@@ -2264,7 +2280,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if t == 'wsl':
             cmd = 'wsl.exe -t ' + str(acc.get('distro') or '')
         elif t == 'docker':
-            cmd = 'docker stop ' + str(acc.get('container') or h['alias'])
+            cmd = f'{self._engine(h)} stop ' + str(acc.get('container') or h['alias'])
             if h.get('via'):
                 r = self._get_host(ctx, h['via'])
                 if r['return'] > 0: return r
@@ -2551,7 +2567,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if t == 'wsl':
             return f'wsl {acc.get("distro", "?")}' + (f' via {h["via"]}' if h.get('via') else '')
         if t == 'docker':
-            return f'docker {acc.get("container") or h["alias"]}' + (f' via {h["via"]}' if h.get('via') else '')
+            return f'{self._engine(h)} {acc.get("container") or h["alias"]}' + (f' via {h["via"]}' if h.get('via') else '')
         if t == 'adb':
             via_list = h.get('via_list') or []
             text = f'adb {acc.get("serial", "?")}'

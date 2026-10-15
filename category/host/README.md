@@ -58,6 +58,7 @@ cx host run <host> "<command>"        locally when the host is this machine, els
 cx host run <host> -- <command words> the same, the words after "--" joined (cMeta parses none of them; a word with a space is quoted)
 cx host run --tags=ubuntu "<command>" the same on a selection (--machine, --type, --all)
 cx host run <host> --script=<file>    a local script on the host's shell stdin ("bash -l -s < file"; PowerShell: base64 lines on stdin, decoded as UTF-8 and run by an -EncodedCommand reader - never "-Command -")
+cx host run <host> "<command>" --interactive   a terminal for the command (ssh -t / docker exec -it): it can ask its questions; needs a terminal here (not with --capture or --script)
 cx host ssh <host> [--x11] [--forward=1455,8080:80] [--dry_run]   interactive shell (also: shell, login)
 cx host up|down <host>                WSL distro, container (created from its image on the first up), or "commands: up/down"
 cx host restart <host> [--yes] [--no-wait] [--timeout=600] [--skip_after] [--dry_run]   (also: reboot)
@@ -136,7 +137,7 @@ access:
   x11: true                    # ssh -X for "cx host ssh", optional
   shell: bash -l               # bash -l (default) | sh | powershell | cmd | none - wraps every command
   distro: ubuntu-24.04-on-usb-x        # wsl
-  container: cmeta-ubuntu24-amd64            # docker (+ image, keepalive, run_args for the first "up")
+  container: cmeta-ubuntu24-amd64            # docker (+ image, keepalive, run_args for the first "up"; engine: podman for a podman container)
   serial: R52Y80BXRAK                  # adb
 
 cmeta:
@@ -284,7 +285,8 @@ and reports `sudo: password` - `user` is not in its sudoers without a password (
 `1a-current-user-to-sudoers-without-password.sh` would change that). Its cMeta is a pip install in
 `/home/user/work999/.venv` (`cmeta: install: pip` + the literal `upgrade:` command).
 
-**Docker** (`type: docker`, `access: {container, image, keepalive, run_args, user, shell}`): `status` =
+**Docker** (`type: docker`, `access: {container, image, keepalive, run_args, user, shell, engine}`; `engine:
+podman` makes every command below a podman one - the two engines share the words): `status` =
 `docker inspect` (missing | down | up); the first `up` creates the container from `image` with
 `docker run -d --name <container> <run_args> <image> <keepalive>` (default `sleep infinity`), later `up`/`down`/
 `restart` = `docker start/stop/restart`; `run` = `docker exec <container> bash -l -c "..."`, `probe` adds `-i`
