@@ -1,0 +1,25 @@
+﻿artifact: fc0812696c6a4145
+category: category,dd9ea50e7f76467f
+tags:
+  - fleet
+  - asset
+authors: Grigori Fursin
+creation_timestamp: '2026-10-06T10:22:56.950933+00:00'
+generator:
+  method: agent
+  via: cmeta 0.33.0
+  agent: Claude Code 2.1.291
+  by: Grigori Fursin
+last_api_version: 1
+description: 'A physical or cloud machine as an asset: who owns it, what it is, when and how it was acquired, what it costs; its login endpoints are host artifacts'
+base_category_default_api_versions:
+  '1': 1
+uses_categories:
+  host: host,e4e49c251c814f6d
+last_update_timestamp: '2026-10-06T10:35:38.046712+00:00'
+last_generator:
+  method: agent
+  via: cmeta 0.33.0
+  agent: Claude Code 2.1.291
+  by: Grigori Fursin
+  date: '2026-10-06'

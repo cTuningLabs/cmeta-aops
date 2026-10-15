@@ -1,0 +1,35 @@
+﻿artifact: e4e49c251c814f6d
+category: category,dd9ea50e7f76467f
+tags:
+  - fleet
+authors: Grigori Fursin
+creation_timestamp: '2026-10-06T10:22:57.172337+00:00'
+generator:
+  method: agent
+  via: cmeta 0.33.0
+  agent: Claude Code 2.1.291
+  by: Grigori Fursin
+last_api_version: 1
+description: 'A login endpoint of a machine (an OS, a WSL distro, a container, a VM, a phone): how to reach it, what to sync there, what agents may do; points at its machine artifact'
+base_category_default_api_versions:
+  '1': 1
+command_aliases:
+  shell: ssh
+  login: ssh
+  start: up
+  stop: down
+  exec: run
+  reboot: restart
+uses_categories:
+  task: task,c36be4b9314a45e0
+  utils: utils,234ce5e3262e4d52
+  machine: machine,fc0812696c6a4145
+uses_artifacts:
+  task::rclone-to-ssh: rclone-to-ssh
+last_update_timestamp: '2026-10-06T12:11:39.368138+00:00'
+last_generator:
+  method: agent
+  via: cmeta 0.33.0
+  agent: Claude Code 2.1.291
+  by: Grigori Fursin
+  date: '2026-10-06'

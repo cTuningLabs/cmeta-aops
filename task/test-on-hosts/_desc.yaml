@@ -1,0 +1,15 @@
+authors: Grigori Fursin
+
+# cx commands on several hosts at once, each in a throwaway cMeta home (README.md):
+#
+#   cx task run test-on-hosts --cmds="task run explore-tool-versions yq;tool check-updates" [--hosts=a,b,here]
+#   cx task run test-on-hosts --action=peek --id=<round>
+#   cx task run test-on-hosts --action=collect --id=<round> [--files=*.jsonl] [--to=<folder>]
+#   cx task run test-on-hosts --action=remove --id=<round>
+
+cache: False
+store_global: False
+
+cli_params:
+  action:
+    values: [launch, peek, collect, remove]

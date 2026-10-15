@@ -1,0 +1,17 @@
+artifact: c6ead7869cfd461a
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-10-14T13:16:36.912138+00:00'
+desc: run cx commands on several hosts at once, each in a throwaway cMeta home with a repository's tree plugged in, detached from ssh, then see how they go and collect their results here - the fleet rounds of self-tests as one cx task
+generator:
+  method: agent
+  agent: Claude Code 2.1.299
+  model: claude-opus-5-5
+  via: cmeta 0.37.0
+  by: Grigori Fursin
+note: added on 2026-10-14 on the user's word ("use cx everywhere when possible to do self-tests and self-improvements and add automations inside cx"); it replaces the hand-written fleet scripts of the explorations of tool versions (fleet.ps1, explore-on-host.sh/.ps1)
+tags:
+  - task
+  - fleet
+  - hosts
+  - self-test
