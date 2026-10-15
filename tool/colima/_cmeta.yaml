@@ -1,0 +1,15 @@
+artifact: becf3a29352441a0
+category: tool,c393ba5c6fa14f66
+tags:
+  - tool
+  - container
+  - docker
+  - macos
+authors: Grigori Fursin
+desc: "colima - a Docker Engine inside a Lima VM on macOS and Linux (headless Docker on a Mac), from its release"
+creation_timestamp: '2026-10-15T12:45:22.336285+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.299
+  via: cmeta 0.37.1
+  by: Grigori Fursin
