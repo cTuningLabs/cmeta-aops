@@ -1296,7 +1296,7 @@ class Category(InitCategory):
                     # If not found but cache exists, often the path is outside cache and was deleted - need to recreate!
                     # similar to turning --update and or --clean option
                     if r['return'] == 0:
-                        result = r['data']
+                        result = self._relocate_cached_result(r['data'], path)
 
                         # Dynamic update to result (even if cached)
                         if task_api_code is not None and hasattr(task_api_code, 'finish_dynamic_result') and callable(getattr(task_api_code, 'finish_dynamic_result')):
@@ -1381,7 +1381,7 @@ class Category(InitCategory):
                     r = self.cm.utils.files.read_file(task_result_file)
                     if self.cm.catch_error(r): return r
 
-                    result = r['data']
+                    result = self._relocate_cached_result(r['data'], path)
                     
                     if result['return'] == 0:
                         if con and verbose:
@@ -1544,6 +1544,7 @@ class Category(InitCategory):
 
             else:
                 # No attempt of this process (the task was skipped: a usable result in --path): the files as before
+                result['_cmeta_entry_path'] = os.getcwd()
                 r = self.cm.utils.files.safe_write_file(self.CACHE_FILE_WITH_RESULTS, result)
                 if self.cm.catch_error(r): return r
                 r = self.cm.utils.files.safe_write_file(self.CACHE_FILE_WITH_CTX, ctx, safe_dump = True)
@@ -1841,6 +1842,57 @@ class Category(InitCategory):
 
         return {'return':0}
 
+    def _relocate_cached_result(self, result, here):
+        """
+        A cached result reused from another place than it was saved in: the entry moved, or it is shared
+        through a data repository mounted elsewhere (D:\\data\\cache\\<entry> on the orchestrator,
+        /home/cmeta/data/cache/<entry> inside a container, another home on another host). The save records
+        the entry's path as _cmeta_entry_path; at reuse every string of the result that starts with that path
+        (either separator) is rewritten to the entry's current path, the rest of it with this OS's separator,
+        and a quoted twin (qpath next to path, qpath_root next to path_root) is quoted again for this OS.
+        A result without the record, or reused where it was saved, is returned untouched - the entries made
+        before this record exist behave as before.
+        """
+
+        saved = result.get('_cmeta_entry_path') if isinstance(result, dict) else None
+        if not saved or not here:
+            return result
+
+        here = str(here).rstrip('/\\')
+        saved = str(saved).rstrip('/\\')
+        if os.path.normcase(saved.replace('\\', '/')) == os.path.normcase(here.replace('\\', '/')):
+            return result
+
+        # A path saved on Windows compares without case, whatever this OS is
+        fold = (os.name == 'nt') or ('\\' in saved) or (len(saved) > 1 and saved[1] == ':')
+        prefixes = sorted({saved, saved.replace('\\', '/'), saved.replace('/', '\\')}, key = len, reverse = True)
+
+        def fix(s):
+            for p in prefixes:
+                head = s[:len(p)]
+                if (head.lower() == p.lower() if fold else head == p) and (len(s) == len(p) or s[len(p)] in '/\\'):
+                    return here + s[len(p):].replace('\\', '/').replace('/', os.sep)
+            return s
+
+        def walk(x):
+            if isinstance(x, str):
+                return fix(x)
+            if isinstance(x, list):
+                return [walk(v) for v in x]
+            if isinstance(x, dict):
+                d = {k: walk(v) for k, v in x.items()}
+                for k, v in list(d.items()):
+                    if isinstance(k, str) and k.startswith('q') and isinstance(v, str) and isinstance(d.get(k[1:]), str):
+                        d[k] = self.cm.q(d[k[1:]])
+                return d
+            return x
+
+        result = walk(result)
+        result['_cmeta_entry_path'] = here
+
+        return result
+
+    ############################################################
     def _cache_lookup(self, ctx, uses_categories, find_query, new, cache_repo, cache_name, request_params, request_path,
                       task_api_code, uparams, artifact_alias, create_entry, con, verbose, space):
         """
@@ -1974,6 +2026,9 @@ class Category(InitCategory):
 
         files = self.cm.utils.files
 
+        # Where the result is saved: a reuse from another place (the entry moved, a data repository mounted
+        # elsewhere) rewrites the paths of the result to the entry's path then (_relocate_cached_result)
+        result['_cmeta_entry_path'] = os.getcwd()
         r = files.safe_write_file(self.CACHE_FILE_WITH_RESULTS, result)
         if self.cm.catch_error(r): return r
 
