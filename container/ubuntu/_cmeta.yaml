@@ -1,0 +1,11 @@
+﻿artifact: b55a84364fef45f8
+authors: Grigori Fursin
+category: container,ed08f0d107044479
+creation_timestamp: '2026-09-15T21:59:33.206807+00:00'
+desc: 'Base image: Ubuntu + tools + uv + cMeta as the user cmeta; --compute=cuda swaps
+  in the NVIDIA CUDA image of the same release.'
+last_update_timestamp: '2026-09-15T22:23:20.977735+00:00'
+tags:
+- base
+- ubuntu
+- cuda

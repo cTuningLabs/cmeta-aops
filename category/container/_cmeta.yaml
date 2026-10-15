@@ -1,0 +1,16 @@
+﻿artifact: ed08f0d107044479
+authors: Grigori Fursin
+base_category_default_api_versions:
+  '1': 1
+category: category,dd9ea50e7f76467f
+creation_timestamp: '2026-09-15T21:57:16.274627+00:00'
+desc: 'Build and run docker / podman containers from cMeta templates: OS bases with
+  cMeta installed, apps on top (web front-ends, tests), {{cmeta.*}} parameters, secrets,
+  mounted repositories, GPU variants.'
+last_api_version: 1
+last_update_timestamp: '2026-09-15T22:23:23.143178+00:00'
+tags:
+- container
+- docker
+- podman
+- template

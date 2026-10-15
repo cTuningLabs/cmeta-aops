@@ -1,0 +1,29 @@
+authors: Grigori Fursin
+
+# Base template: Amazon Linux 2023 + tools + uv + cMeta (dnf). The image ships curl-minimal, which provides
+# the curl binary the installers need - installing "curl" would conflict with it, so it is not listed.
+#
+#   cx container build amazonlinux                 # public.ecr.aws/amazonlinux/amazonlinux:2023
+
+kind: base
+
+template:
+  os_version: "2023"
+  from: "public.ecr.aws/amazonlinux/amazonlinux:{{cmeta.os_version}}"
+  cmeta_source: pypi
+  cmeta_version: ""
+  cmeta_extras: server
+  cmeta_local_path: ""
+  user: cmeta
+  python_package: python3
+
+package_manager: dnf
+packages: [ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow-utils, procps-ng, findutils, which]
+
+image: "cmeta/amazonlinux:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
+
+tests:
+  - cx --version
+  - cx repo find
+  - cx category find
+  - cat /etc/os-release

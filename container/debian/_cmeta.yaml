@@ -1,0 +1,9 @@
+﻿artifact: de3ed56849d3423f
+authors: Grigori Fursin
+category: container,ed08f0d107044479
+creation_timestamp: '2026-09-15T21:59:34.578730+00:00'
+desc: 'Base image: Debian + tools + uv + cMeta (apt).'
+last_update_timestamp: '2026-09-15T22:23:21.229559+00:00'
+tags:
+- base
+- debian

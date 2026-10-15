@@ -1,0 +1,11 @@
+﻿artifact: b7b72e16c77a4fb3
+authors: Grigori Fursin
+category: container,ed08f0d107044479
+creation_timestamp: '2026-09-15T21:59:35.635149+00:00'
+desc: The cMeta web front-end (cserver) with cmeta-aops baked in and any mounted repository
+  plugged in at start; port 8004.
+last_update_timestamp: '2026-09-15T22:23:22.219500+00:00'
+tags:
+- app
+- web
+- cserver

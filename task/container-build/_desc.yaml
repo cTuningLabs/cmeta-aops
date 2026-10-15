@@ -1,0 +1,37 @@
+authors: Grigori Fursin
+
+# Build one container image with docker or podman from a rendered build context.
+#
+# Called by the "container" category (cx container build|run|start|test); can also be driven by hand:
+#
+#   cx task run container-build --engine=docker --image=cmeta/ubuntu:24.04 --files.Containerfile="FROM ubuntu:24.04"
+#
+# Parameters (see api_v1.py): engine (docker|podman), image (tag), params_hash (identity of the rendered
+# inputs), files ({name: content} written into context/), copy ([{src, dst}] copied into context/),
+# build_args (extra CLI flags), secrets ({NAME: value} -> --secret id=NAME,src=<0600 temp file>, deleted after
+# the build; never an ARG or ENV), platform, no_cache, labels.
+#
+# The cache entry of this task keeps the rendered context, the build script (secrets masked) and record.json
+# (image id / digest / engine / params) - the reproducibility record of the image. The category passes
+# --update so that a rebuild refreshes the record; docker's own layer cache makes that cheap.
+
+cache: True
+cache_params:
+  - engine
+  - image
+
+params_map:
+  arg2: image
+
+uses:
+  # Bootstrap host (OS detection, env, vars) - normally already resolved from global
+  - task: runner,1e48cc0c5f6041a5
+
+  # The container engine as a cMeta tool (detected on the host; --install adds it through the install ladder)
+  - task: setup,a2f9b61079ce4333
+    name: docker,fd2bb541ed094b7a
+    if: '"{{params.engine|docker}}" == "docker"'
+
+  - task: setup,a2f9b61079ce4333
+    name: podman,aeb171c7e6574f88
+    if: '"{{params.engine|docker}}" == "podman"'

@@ -1,0 +1,29 @@
+authors: Grigori Fursin
+
+# Base template: Debian + tools + uv + cMeta (same recipe as ubuntu, apt).
+#
+#   cx container build debian                      # debian:12
+#   cx container build debian --template.os_version=13
+
+kind: base
+
+template:
+  os_version: "12"
+  from: "debian:{{cmeta.os_version}}"
+  cmeta_source: pypi
+  cmeta_version: ""
+  cmeta_extras: server
+  cmeta_local_path: ""
+  user: cmeta
+  python_package: python3
+
+package_manager: apt
+packages: [curl, ca-certificates, git, tar, xz-utils, gzip, sudo, openssh-client, procps]
+
+image: "cmeta/debian:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
+
+tests:
+  - cx --version
+  - cx repo find
+  - cx category find
+  - cat /etc/os-release

@@ -1,0 +1,29 @@
+authors: Grigori Fursin
+
+# Run one container with docker or podman.
+#
+# Called by the "container" category (cx container run|start|test|shell); can also be driven by hand:
+#
+#   cx task run container-run --engine=docker --image=cmeta/ubuntu:24.04-cmeta-latest --cmd.0=cx --cmd.1=--version
+#
+# Parameters (see api_v1.py): engine, image, name, detach, rm, interactive (-it), ports (["127.0.0.1:8004:8004"]),
+# volumes (["<host>:<container>[:ro]"]), env ({K: V}), env_secrets ({K: V} -> a temporary --env-file, deleted
+# after the start; never on the command line), run_flags (extra CLI flags, e.g. --gpus all), cmd (list),
+# labels, capture_output, timeout.
+#
+# Never memoized on disk: running a container is a side effect.
+
+cache: False
+
+uses:
+  # Bootstrap host (OS detection, env, vars) - normally already resolved from global
+  - task: runner,1e48cc0c5f6041a5
+
+  # The container engine as a cMeta tool
+  - task: setup,a2f9b61079ce4333
+    name: docker,fd2bb541ed094b7a
+    if: '"{{params.engine|docker}}" == "docker"'
+
+  - task: setup,a2f9b61079ce4333
+    name: podman,aeb171c7e6574f88
+    if: '"{{params.engine|docker}}" == "podman"'
