@@ -72,6 +72,22 @@ class CTool(InitCTool):
         return install_release(self, ctx, params, cmd, SPEC)
 
     ############################################################
+    def finish_dynamic_result(self,
+                              ctx: dict,
+                              result: dict = {},
+                              params: dict = {},
+    ):
+        """
+        The buildx plugin's version next to the client's, in the features of every result (reused ones too):
+        it is what BuildKit builds run on, so a build record that names the docker version names it as well.
+        """
+        out = _output(['docker', 'buildx', 'version'])
+        m = re.search(r'v?(\d+\.\d+\.\d+)', out)
+        features = result.setdefault('features', {})
+        features['buildx_version'] = m.group(1) if m else ''
+        return {'return': 0, 'result': result}
+
+    ############################################################
     def post_install(self,
                      ctx: dict,
                      params: dict,
