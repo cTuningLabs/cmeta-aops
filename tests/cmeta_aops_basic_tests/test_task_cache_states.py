@@ -567,6 +567,20 @@ def test_new_update_and_clean_as_before(cm, home, inv):
     assert all(s == 'ok' for s in st.values())
 
 
+def test_named_cache_entries_are_created_and_reused_independently(cm, home, inv):
+    assert run(cm, name='unrelated', version='1')['return'] == 0
+    for alias, version in ((f'task--{TASK}--named-a', '2'), (f'task--{TASK}--named-b', '3')):
+        result = run(cm, name='named', version=version, cache_name='local:' + alias)
+        assert result['return'] == 0, result
+        found = cm.access({'category': 'cache', 'command': 'find', 'arg1': 'local:' + alias, 'con': False})
+        assert found['return'] == 0 and len(found['artifacts']) == 1
+        path = found['artifacts'][0]['path']
+        assert count_in(path, 'attempts.txt') == 1
+        again = run(cm, name='named', version=version, cache_name='local:' + alias)
+        assert again['return'] == 0 and count_in(path, 'attempts.txt') == 1
+    inv.check(expected_entries=3)
+
+
 def test_show_and_clean_by_state(cm, home, inv):
     assert run(cm, name='theta', version='8')['return'] == 0
     assert run(cm, name='theta', version='9', fail_at='download', fail_times=99)['return'] == 1

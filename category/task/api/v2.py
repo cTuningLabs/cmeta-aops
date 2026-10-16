@@ -926,6 +926,7 @@ class Category(InitCategory):
 
             if cache_name:
                 cache_name = cache_name.lower() # Force lower to avoid various issues ...
+                ii['arg1'] = cache_name
             else:
                 ii['tags'] = cache_tags
                 ii['match'] = cache_meta
