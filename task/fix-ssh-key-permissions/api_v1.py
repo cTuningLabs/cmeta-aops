@@ -223,7 +223,10 @@ class CTask(InitCTask):
             else:
                 problem = posix_problem(p, forbidden)
 
+            # problem: what was wrong when looked at; left: what is still wrong after the fix, looked at again - before
+            # 2026-10-17 a fixed key kept its old problem in the row, and cx secret generate took it for a failure
             status = 'ok'
+            left = problem
             if problem:
                 n_open += 1
                 status = 'too open'
@@ -232,11 +235,17 @@ class CTask(InitCTask):
                         errors = windows_tighten(p, me, folder=False)
                         if errors:
                             return self.cm.error(f'cannot tighten {p}: {" ".join(errors)}')
+                        others, errors = windows_readers(p, me)
+                        left = ('readable by ' + ', '.join(others)) if others else ' '.join(errors or [])
                     else:
                         os.chmod(p, stat.S_IMODE(os.stat(p).st_mode) & ~forbidden)
-                    status = 'fixed'
-                    n_fixed += 1
-            rows.append({'path': p, 'kind': kind, 'status': status, 'problem': problem})
+                        left = posix_problem(p, forbidden)
+                    if left:
+                        status = 'still open'
+                    else:
+                        status = 'fixed'
+                        n_fixed += 1
+            rows.append({'path': p, 'kind': kind, 'status': status, 'problem': problem, 'left': left})
 
         if con:
             print ('')

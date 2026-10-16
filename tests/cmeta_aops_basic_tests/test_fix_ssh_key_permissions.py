@@ -72,3 +72,35 @@ def test_windows_rules_of_others_set_on_the_file_go_too(fix, tmp_path):
     others, error = fix['windows_readers'](str(key), me)
     assert others == [] and error == []
     assert key.read_bytes() == KEY                            # the user still reads it
+
+
+class FakeCM:
+    def error(self, text, code=1):
+        return {'return': code, 'error': text}
+
+
+def task(fix):
+    t = fix['CTask'].__new__(fix['CTask'])
+    t.cm = FakeCM()
+    return t
+
+
+def test_a_fixed_key_says_nothing_is_left(fix, tmp_path):
+    # What cx secret generate reads: before 2026-10-17 a key the task had fixed still carried the problem it was
+    # found with, and generate reported "its permissions could not be tightened" (GitHub's Windows runner)
+    key = tmp_path / 'id_x'
+    key.write_bytes(KEY)
+    if os.name == 'nt':
+        subprocess.run(['icacls', str(key), '/grant', '*S-1-3-4:F'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, check=True)
+    else:
+        key.chmod(0o644)
+
+    r = task(fix).run({'control': {'con': False}}, target=str(key))
+    assert r['return'] == 0, r
+    row = r['files'][0]
+    assert row['status'] == 'fixed' and row['problem'] and row['left'] == '' and r['fixed'] == 1
+
+    # looked at again: nothing to fix, nothing left
+    r = task(fix).run({'control': {'con': False}}, target=str(key), check=True)
+    assert r['files'][0]['status'] == 'ok' and r['files'][0]['left'] == ''

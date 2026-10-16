@@ -140,7 +140,9 @@ class Category(InitCategory):
         if r['return'] > 0:
             return f'permissions not checked: {r.get("error", "")}'
         rows = r.get('files') or []
-        return rows[0].get('problem', '') if rows else ''
+
+        # what is still wrong after the task (a fixed key's earlier problem is not a failure)
+        return (rows[0].get('left', rows[0].get('problem', '')) or '') if rows else ''
 
     def _tighten(self, ctx, path):
         """A private key readable by its owner alone, through the task fix-ssh-key-permissions."""
