@@ -181,14 +181,19 @@ class CTask(InitCTask):
                             'echo "started on $(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null): pid $!"\n')
             return path
 
+        # Where an instance mounts the tree already, nothing is pushed but the runner - the paths compared as they
+        # really are (the Mac's ~/CMETA is a link onto its external drive, which the instance mounts by its real path)
+        real = lambda p: os.path.normcase(os.path.realpath(p)) if p else ''
+        inside_of = {h: (self.instances.get(h, {}).get('tree_inside') or '')
+                     if real(tree) == real(self.instances.get(h, {}).get('tree_local')) else '' for h in remote_hosts}
+
         # The tree once, for every remote host that does not carry it already
         tarball = os.path.join(local, 'tree.tar.gz')
-        if any(not self.instances.get(h, {}).get('tree_inside') for h in remote_hosts):
+        if any(not inside_of[h] for h in remote_hosts):
             tar_tree(tree, tarball)
 
         for h in remote_hosts:
-            inside = self.instances.get(h, {}).get('tree_inside') if os.path.normcase(os.path.normpath(tree)) == \
-                     os.path.normcase(os.path.normpath(self.instances.get(h, {}).get('tree_local') or '')) else ''
+            inside = inside_of[h]
             files = [runner] if inside else [tarball, runner]
             for path in files:
                 r = self.host('push', arg1 = h, arg2 = path, to = f'{remote}/{os.path.basename(path)}')
