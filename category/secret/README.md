@@ -9,9 +9,9 @@ host, never zipped, never read by an agent, and has no public remote.
 
 Written 2026-10-15 as the example of the "run on any host" design (the work item "improving default tool versions
 in cmeta-aops", `20261015.summary-on-design5.md`). The category moves to cmeta-aops with its UID when the design is
-built; the artifacts stay private. Today the engine's generic commands work (`cx secret find`, `cx secret ls` and
-`cx secret show` of `api/v1.py` print references only; `cx secret check` looks at the files); `import`, `generate`,
-`use`, `render` and the channels into containers and hosts come with the implementation.
+built; the artifacts stay private. `cx secret ls` and `cx secret show` print references only, `check` looks at the files,
+`import` copies them in, `generate` makes a key pair, `use` and `render` give a git identity to a clone or a machine (since
+2026-10-17); the channels into containers and hosts come next.
 
 ## Kinds
 
@@ -45,7 +45,7 @@ key), `agent` = the key has a passphrase and must come from an ssh-agent (a quie
 starting), `none` = the key has no passphrase (automation, containers, hosts). Never a value here. An identity with
 `ask` or `agent` is refused by a quiet run (`-q`) with the cure: use its `without-pass` twin.
 
-## Commands (today and planned)
+## Commands
 
 ```
 cx secret ls                                   # alias, kind, repository, hosts, used by - never a value
@@ -53,10 +53,10 @@ cx secret show <alias>                         # the references of one identity
 cx secret check [<alias>]                      # the files exist, the mode, passphrase as declared, the variables set
 cx secret import [<alias>] [--force]           # copy the files in from files.from (files.names), tighten the private
                                                # key, mark files.status imported (done 2026-10-15 for the four)
-cx secret generate <alias>                     # planned: a new key pair
-cx secret use <alias> --repo=<path> [--global] # planned: write the identity into a clone's .git/config (name, email,
-                                               #          core.sshCommand, gpg.format, user.signingkey, allowed signers)
-cx secret render <alias> --out=<file>          # planned: a standalone .gitconfig (+ the ssh config stanza)
+cx secret generate <alias> [--comment=..]      # a new ed25519 key pair without a passphrase at ssh.key (--force: over it)
+cx secret use <alias> --repo=<path>            # the identity into a clone's .git/config (name, email, core.sshCommand,
+cx secret use <alias> --git_global             # gpg.format, user.signingkey, commit.gpgsign, allowed signers), or the user's
+cx secret render <alias> --out=<file>          # a standalone git config include file (+ the ssh config stanza)
 ```
 
 With the "run on any host" design: `--secret=<alias>,<alias>` on a run, or `on: {secrets: [...]}` in a task, gives

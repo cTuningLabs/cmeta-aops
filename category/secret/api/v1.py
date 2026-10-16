@@ -7,8 +7,10 @@ holds references, never values; the files live inside the artifact (self-contain
     cx secret ls [<alias or wildcard>]      # alias, kind, repository, hosts, used by
     cx secret show <alias>                  # the references of one identity (never a value)
     cx secret check [<alias>]               # the files exist, their mode, the passphrase as declared, the variables set
-
-Example of the "run on any host" design (2026-10-15); import, generate, use and render come with the implementation.
+    cx secret import [<alias>] [--force]    # the files copied in from files.from, the private key made owner-only
+    cx secret generate <alias>              # a new ed25519 key pair without a passphrase (automation, containers, hosts)
+    cx secret use <alias> --repo=<clone>    # the git identity written into a clone's .git/config (or --git_global)
+    cx secret render <alias> --out=<file>   # the same as a git config include file, with the ssh config stanza
 """
 
 import datetime
@@ -276,3 +278,193 @@ class Category(InitCategory):
                 print (f'{row[0]:<30} {row[1]:<16} {row[2]:<8} {row[3]}')
 
         return {'return': 0, 'rows': rows}
+
+    ############################################################
+    def _one(self, ctx, arg1, kinds, what):
+        """Exactly one secret of one of these kinds, or an error that says why."""
+        if not arg1:
+            return self.cm.error(f'cx secret {what} <alias>')
+        r = self._select(ctx, arg1)
+        if r['return'] > 0:
+            return r
+        if len(r['secrets']) != 1:
+            return self.cm.error(f'"{arg1}" matches {len(r["secrets"])} secrets: name one (cx secret ls)')
+        s = r['secrets'][0]
+        kind = str(s['desc'].get('kind') or '')
+        if kind not in kinds:
+            return self.cm.error(f'{s["alias"]} is a secret of kind "{kind}": {what} works on {" and ".join(kinds)}')
+        return {'return': 0, 'secret': s}
+
+    def _git_settings(self, s, quiet):
+        """
+        The git settings of a git identity, as (key, value) pairs: the name and email, the ssh key that pushes
+        (core.sshCommand with IdentitiesOnly), the signing key and its format, signing of commits, the allowed signers.
+        A key whose passphrase must be typed (ask) or come from an agent cannot serve a quiet run: refused with the cure.
+        """
+        d = s['desc']
+        name, email = _get(d, 'identity.name'), _get(d, 'identity.email')
+        if not name or not email:
+            return self.cm.error(f'{s["alias"]}: identity.name and identity.email are needed in its _desc.yaml')
+        if quiet and str(_get(d, 'ssh.passphrase') or '') in ('ask', 'agent'):
+            return self.cm.error(f'{s["alias"]}: its key has a passphrase ({_get(d, "ssh.passphrase")}), which a quiet run cannot give: '
+                                 f'use its without-pass twin')
+
+        pairs = [('user.name', str(name)), ('user.email', str(email))]
+        key = _get(d, 'ssh.key')
+        if key:
+            path = self._resolve(s, key)[0]
+            if not path or not os.path.isfile(path):
+                return self.cm.error(f'{s["alias"]}: its ssh key is not there ({key}): cx secret import {s["alias"]}')
+            pairs.append(('core.sshCommand', f'ssh -i "{path.replace(os.sep, "/")}" -o IdentitiesOnly=yes'))
+        skey = _get(d, 'signing.key')
+        if skey:
+            path = self._resolve(s, skey)[0]
+            if not path or not os.path.isfile(path):
+                return self.cm.error(f'{s["alias"]}: its signing key is not there ({skey})')
+            pairs += [('gpg.format', str(_get(d, 'signing.format') or 'ssh')), ('user.signingkey', path.replace(os.sep, '/'))]
+            if _get(d, 'signing.sign_commits'):
+                pairs.append(('commit.gpgsign', 'true'))
+            allowed = _get(d, 'signing.allowed_signers')
+            if allowed:
+                apath = self._resolve(s, allowed)[0]
+                if apath:
+                    pairs.append(('gpg.ssh.allowedSignersFile', apath.replace(os.sep, '/')))
+        return {'return': 0, 'pairs': pairs}
+
+    ############################################################
+    def generate_(self, ctx, arg1: str = None, comment: str = '', force: bool = False):
+        """
+        A new ed25519 key pair for an ssh or git secret, at the files its _desc.yaml names (ssh.key and
+        ssh.public_key, inside the artifact), without a passphrase - the key of automation, containers and hosts
+        (a key with a passphrase is the human's: made by them with ssh-keygen). The private key is made owner-only
+        (fix-ssh-key-permissions). Only the public key's path and fingerprint are printed.
+
+            cx secret generate deploy-key-lab --comment=lab-ci
+            cx secret generate deploy-key-lab --force     # a new pair over the old one
+        """
+        r = self._one(ctx, arg1, ('ssh', 'git'), 'generate')
+        if r['return'] > 0:
+            return r
+        s = r['secret']
+        d = s['desc']
+        con = ctx['control'].get('con', False)
+
+        if str(_get(d, 'ssh.passphrase') or 'none') != 'none':
+            return self.cm.error(f'{s["alias"]}: ssh.passphrase is {_get(d, "ssh.passphrase")} - a key with a passphrase is made by '
+                                 f'you (ssh-keygen -t ed25519 -f <file>), then imported; generate makes keys without one')
+        key = _get(d, 'ssh.key')
+        if not key or ':' in str(key):
+            return self.cm.error(f'{s["alias"]}: ssh.key must name a file inside the artifact (files/id_ed25519_x) to generate it')
+        path = self._resolve(s, key)[0]
+        pub = self._resolve(s, _get(d, 'ssh.public_key') or f'{key}.pub')[0]
+        if os.path.exists(path) and not force:
+            return self.cm.error(f'{s["alias"]}: {key} exists already (--force makes a new pair over it)')
+
+        keygen = shutil.which('ssh-keygen')
+        if not keygen:
+            return self.cm.error('ssh-keygen is not found: cx tool setup open-ssh')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        for p in (path, path + '.pub'):
+            if os.path.exists(p):
+                os.remove(p)
+        p = subprocess.run([keygen, '-q', '-t', 'ed25519', '-N', '', '-C', comment or s['alias'], '-f', path],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        if p.returncode != 0:
+            return self.cm.error(f'{s["alias"]}: ssh-keygen failed ({p.stderr.decode("utf-8", "replace").strip()})')
+        if pub and os.path.normcase(pub) != os.path.normcase(path + '.pub'):
+            shutil.move(path + '.pub', pub)
+        left = self._tighten(ctx, path)
+        if left:
+            return self.cm.error(f'{s["alias"]}: the key was made but its permissions could not be tightened ({left})')
+
+        fp = subprocess.run([keygen, '-l', '-f', pub or path + '.pub'], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, timeout=30).stdout.decode('utf-8', 'replace').strip()
+        if con:
+            print (f'cMeta info: {s["alias"]}: a new ed25519 key pair; the public key: {pub or path + ".pub"}')
+            print (f'            {fp}')
+        return {'return': 0, 'key': path, 'public_key': pub or path + '.pub', 'fingerprint': fp}
+
+    ############################################################
+    def use_(self, ctx, arg1: str = None, repo: str = '', git_global: bool = False):
+        """
+        Write a git identity into a clone's .git/config (--repo=<path>), or into the user's global git config
+        (--git_global): user.name, user.email, core.sshCommand (its key, IdentitiesOnly), the signing key and
+        format, commit.gpgsign, the allowed signers - through "git config". Paths and names are printed, never a
+        key's content.
+
+            cx secret use git-work-without-pass --repo=~/src/project
+            cx secret use git-work-without-pass --git_global
+        """
+        r = self._one(ctx, arg1, ('git',), 'use')
+        if r['return'] > 0:
+            return r
+        s = r['secret']
+        con = ctx['control'].get('con', False)
+        if bool(repo) == bool(git_global):
+            return self.cm.error('cx secret use <alias> --repo=<clone> | --git_global (one of them)')
+
+        rs = self._git_settings(s, ctx['control'].get('quiet', False))
+        if rs['return'] > 0:
+            return rs
+        git = shutil.which('git')
+        if not git:
+            return self.cm.error('git is not found: cx tool setup git')
+
+        if repo:
+            repo = os.path.abspath(os.path.expanduser(repo))
+            if not os.path.isdir(os.path.join(repo, '.git')):
+                return self.cm.error(f'{repo} is not a git clone (no .git)')
+            where = ['-C', repo, 'config', '--local']
+        else:
+            where = ['config', '--global']
+
+        for k, v in rs['pairs']:
+            p = subprocess.run([git] + where + [k, v], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+            if p.returncode != 0:
+                return self.cm.error(f'git config {k} failed: {p.stderr.decode("utf-8", "replace").strip()}')
+            if con:
+                print (f'  {k} = {v}')
+        if con:
+            print (f'cMeta info: {s["alias"]} is the git identity of ' + (repo if repo else 'this user (global)'))
+        return {'return': 0, 'set': dict(rs['pairs']), 'where': repo or 'global'}
+
+    ############################################################
+    def render_(self, ctx, arg1: str = None, out: str = ''):
+        """
+        A standalone git config of a git identity (the settings of "use", as an include file) and, in its comments,
+        the ssh config stanza of its hosts - for a machine or a container without cMeta:
+
+            cx secret render git-work-without-pass --out=~/work.gitconfig
+            git config --global include.path ~/work.gitconfig
+        """
+        r = self._one(ctx, arg1, ('git',), 'render')
+        if r['return'] > 0:
+            return r
+        s = r['secret']
+        con = ctx['control'].get('con', False)
+        rs = self._git_settings(s, False)
+        if rs['return'] > 0:
+            return rs
+
+        sections = {}
+        for k, v in rs['pairs']:
+            section, _, name = k.rpartition('.')
+            if section == 'gpg.ssh':
+                section = 'gpg "ssh"'
+            sections.setdefault(section, []).append((name, v))
+        lines = [f'# git identity {s["alias"]}, rendered by "cx secret render" on '
+                 f'{datetime.datetime.now().astimezone().isoformat(timespec="minutes")}']
+        for h in _get(s['desc'], 'ssh.hosts') or []:
+            path = self._resolve(s, _get(s['desc'], 'ssh.key'))[0]
+            lines += [f'# ssh config: Host {h}', f'#   IdentityFile {path}', '#   IdentitiesOnly yes']
+        for section, items in sections.items():
+            lines.append(f'[{section}]')
+            # a value in double quotes, its backslashes and quotes escaped (the git config file format)
+            lines += ['\t' + name + ' = "' + value.replace('\\', '\\\\').replace('"', '\\"') + '"' for name, value in items]
+
+        path = os.path.abspath(os.path.expanduser(out or f'{s["alias"]}.gitconfig'))
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write('\n'.join(lines) + '\n')
+        if con:
+            print (f'cMeta info: {s["alias"]}: {path} (git config --global include.path "{path}")')
+        return {'return': 0, 'path': path, 'set': dict(rs['pairs'])}
