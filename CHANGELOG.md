@@ -2,6 +2,20 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## Unreleased
+- **Cloudflare Tunnels: `tool::cloudflared` and `task::manage-cloudflare-tunnel`.** The tool detects an installed
+  cloudflared (the distribution package, brew, winget) or installs the pinned release, its SHA-256 checked against
+  the asset digests of GitHub's release API (upstream lists sums only in the release notes). The task manages the
+  remotely managed tunnel of a machine, whose routes are set in the Cloudflare dashboard. `status` (the default,
+  no root needed) reads the connector's own metrics server for its connections and routes, tries each route's
+  origin and asks each public hostname over HTTPS (a login, a Cloudflare Access redirect and an unreachable origin
+  are told apart); `--strict` turns a problem into an error for monitoring. `install --token_file=<file>` runs
+  cloudflared as a systemd unit (Linux) or a launchd daemon (macOS) with the token in a root-only file passed by
+  `--token-file`, so it never shows on a command line or in a unit file, and copies a release out of the cMeta
+  cache to `/usr/local/bin` first. `restart`, `upgrade` (through the channel the binary came from: apt, dnf, brew or
+  the release) and `uninstall` complete it; every action has `--plan`, checks `sudo -n` before changing anything
+  and waits for the connector, quoting cloudflared's last error when it does not come up. Windows: status only.
+
 ## 0.47.2
 - **A quiet run never answers a prompt of the system, on Windows too.** On Linux and macOS a quiet run (`-q`)
   already runs `sudo` as `sudo -n`, which fails at once instead of waiting at a password prompt nobody sees. Now
