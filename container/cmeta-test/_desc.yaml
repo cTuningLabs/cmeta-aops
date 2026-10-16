@@ -12,7 +12,7 @@ authors: Grigori Fursin
 #   cx container run cmeta-test -- cx --version
 
 kind: app
-bases: [ubuntu, debian, rockylinux, amazonlinux, azurelinux]
+bases: [ubuntu, debian, fedora, rockylinux, amazonlinux, azurelinux, opensuse]
 
 cmd: ["/bin/bash"]
 

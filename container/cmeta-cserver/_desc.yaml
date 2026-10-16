@@ -17,7 +17,7 @@ authors: Grigori Fursin
 # the app's own defaults (127.0.0.1:8004) would override CSERVER_HOST / CSERVER_PORT from the environment.
 
 kind: app
-bases: [ubuntu, debian, rockylinux, amazonlinux, azurelinux]
+bases: [ubuntu, debian, fedora, rockylinux, amazonlinux, azurelinux, opensuse]
 
 template:
   port: 8004                    # host side (published on 127.0.0.1 unless --expose_lan)

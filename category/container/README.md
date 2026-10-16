@@ -1,7 +1,7 @@
 # container: docker and podman containers from cMeta templates
 
-A `container` artifact is a template: an OS base with cMeta installed (`ubuntu`, `debian`, `rockylinux`,
-`amazonlinux`, `azurelinux`), or an app on top of one (`cmeta-test`, the smoke tests; `cmeta-cserver`, the cMeta
+A `container` artifact is a template: an OS base with cMeta installed (`ubuntu`, `debian`, `fedora`,
+`rockylinux`, `amazonlinux`, `azurelinux`, `opensuse`), or an app on top of one (`cmeta-test`, the smoke tests; `cmeta-cserver`, the cMeta
 web front-end with the AOps repository baked in). Every string of a template may use `{{cmeta.<key>}}` (the
 merged parameters) and `{{host.<key>}}`; the rendered Containerfile, entrypoint and build/run commands are plain
 files anyone can reuse without cMeta. The same words work with docker and podman, on Windows, Linux and macOS.
@@ -21,7 +21,7 @@ cx container ps | logs <name> | stop <name> | clean <template or name> [--images
 | Template | Kind | What it is |
 |---|---|---|
 | `ubuntu` | base | Ubuntu (26.04 by default, `--template.os_version=24.04`) + tools + uv + cMeta, the user `cmeta` with sudo. `--compute=cuda` swaps in `nvidia/cuda:<version>-<flavour>-ubuntu<os>` and adds the GPU run flags. |
-| `debian`, `rockylinux`, `amazonlinux`, `azurelinux` | base | The same recipe on Debian 12, Rocky Linux 9 (dnf), Amazon Linux 2023 (dnf), Azure Linux 3.0 (tdnf). |
+| `debian`, `fedora`, `rockylinux`, `amazonlinux`, `azurelinux`, `opensuse` | base | The same recipe on Debian 12, Fedora 44 (dnf), Rocky Linux 9 (dnf), Amazon Linux 2023 (dnf), Azure Linux 3.0 (tdnf), openSUSE Leap 16.0 (zypper; Tumbleweed with `--template.os_version=tumbleweed --template.from=opensuse/tumbleweed`). |
 | `cmeta-test` | app | A base image plus a shell: the smoke tests (`cx --version`, `cx repo find`, `cx category find`, `/etc/os-release`, `nvidia-smi` on CUDA). |
 | `cmeta-cserver` | app | The cMeta internal web server with `cmeta-aops` baked in; a repository mounted with `--repo=<alias>` is plugged in at start. Port 8004. |
 

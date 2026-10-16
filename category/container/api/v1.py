@@ -6,9 +6,9 @@ container - build and run docker / podman containers from cMeta templates (proto
 
 A template is an artifact of this category. Two kinds, told apart by `kind:` in _desc.yaml:
 
-    kind: base   an OS image with cMeta installed (ubuntu, debian, rockylinux, amazonlinux):
+    kind: base   an OS image with cMeta installed (ubuntu, debian, fedora, rockylinux, amazonlinux, opensuse ...):
                  `template:` defaults (os_version, cmeta_source pypi|git|local, cmeta_version, user, ...),
-                 `package_manager:` apt|dnf|microdnf|tdnf, `packages:`, optional `compute:` variants (cuda: a
+                 `package_manager:` apt|dnf|microdnf|tdnf|zypper, `packages:`, optional `compute:` variants (cuda: a
                  different FROM plus run flags), `image:` tag template, `tests:`.
     kind: app    something that runs on a base (cmeta-test, cmeta-cserver): `bases:` it
                  accepts, `template:` defaults (port, ...), `clone_repos:` baked into the image, `ports:`, `volumes:`,
@@ -159,6 +159,7 @@ PKG_BLOCKS = {
     'dnf': 'RUN dnf -y install {pkgs} && dnf clean all',
     'microdnf': 'RUN microdnf -y install {pkgs} && microdnf clean all',
     'tdnf': 'RUN tdnf -y install {pkgs} && tdnf clean all',
+    'zypper': 'RUN zypper --non-interactive install --no-recommends {pkgs} && zypper clean --all',
     'conda': 'RUN apt-get update && apt-get install -y --no-install-recommends {pkgs} && rm -rf /var/lib/apt/lists/*',
 }
 

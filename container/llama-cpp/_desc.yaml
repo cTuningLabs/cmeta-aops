@@ -20,7 +20,7 @@ authors: Grigori Fursin
 #   cx program run llama-cpp --on=wsl:llama-cpp                    # a WSL distribution of the same image (Windows)
 
 kind: app
-bases: [ubuntu, debian, rockylinux, amazonlinux, azurelinux]
+bases: [ubuntu, debian, fedora, rockylinux, amazonlinux, azurelinux, opensuse]
 
 template:
   llama_cpp_version: ""         # "" = the default_version of tool/llama-cpp; a build number (11324) pins it
