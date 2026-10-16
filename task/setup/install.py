@@ -318,11 +318,7 @@ def install_tool(self,
                     install_cmd = install_cmd.replace('{{major_version}}', major_version)
                     versioned = True
 
-        package_name = artifact_au
-        if 'package_name_os_id' in desc and os_id in desc['package_name_os_id']:
-            package_name = desc['package_name_os_id'][os_id]
-        elif 'package_name' in desc:
-            package_name = desc['package_name']
+        package_name = upgrade.package_name_for(desc, host, artifact_au)
 
 #        package_name = desc['package_name'] if 'package_name' in desc else artifact_au
 

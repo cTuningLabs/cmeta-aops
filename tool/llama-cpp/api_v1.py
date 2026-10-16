@@ -7,6 +7,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 
 import os
 import re
+import shutil
 from pathlib import Path
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
@@ -599,6 +600,25 @@ class CTool(InitCTool):
 
             rx = self.cm.access(ii)
             if self.cm.catch_error(rx): return rx
+
+        # The Linux CPU release comes from an Ubuntu 22.04 runner: on an older C++ runtime (Rocky Linux 9 and 8, Debian 11:
+        # "GLIBCXX_3.4.30 not found") it does not start. Tried once here; a release that does not start is removed and the
+        # tool is built from source instead - before, the dead binary stayed next to the build and hid it from the
+        # detection (seen 2026-10-16 on Rocky Linux 9). Amazon Linux 2023, with an older glibc, runs it: no glibc rule
+        if uname == 'linux' and backend == 'cpu' and not android:
+            import subprocess
+            try:
+                rr = subprocess.run([path_to_llama, '--version'], stdin = subprocess.DEVNULL, stdout = subprocess.PIPE,
+                                    stderr = subprocess.PIPE, timeout = 60, cwd = os.path.dirname(path_to_llama))
+                why = '' if rr.returncode == 0 else (rr.stderr or rr.stdout).decode('utf-8', 'replace').strip().splitlines()[:1]
+            except (OSError, subprocess.SubprocessError) as e:
+                why = [str(e)]
+            if why:
+                shutil.rmtree(os.path.join(os.getcwd(), directory), ignore_errors = True)
+                return {'return': 16,
+                        'error': f'the llama.cpp release b{version_simple} does not run here ({why[0] if why else "?"}): '
+                                 f'built from source instead',
+                        'install_cmd': cmd}
 
         # The build of an Android release, which cannot run here to tell it (detect_versions)
         if android:

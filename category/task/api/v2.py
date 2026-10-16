@@ -253,6 +253,18 @@ class Category(InitCategory):
             use = {}
 
         ctx_use = ctx_tasks.setdefault('use', {})
+
+        # The machine's own defaults of --use (config::task "use": cx config set task --meta.use.python.tool_path=...;
+        # an instance of a stack template gets them from its template, so that a program inside takes the image's own
+        # Python), read once by the outermost task of a command line; the command line's --use wins
+        if nested_call == 0 and not ctx_tasks.get('use_defaults_read'):
+            ctx_tasks['use_defaults_read'] = True
+            rc = self.cm.access({'category': 'config,cc6bfe174be847ed', 'command': 'get', 'arg1': 'task', 'con': False})
+            defaults = ((rc.get('config_cmeta') or {}).get('use') if rc.get('return', 1) == 0 else None) or {}
+            if isinstance(defaults, dict) and defaults:
+                ctx_use = self.cm.utils.common.deep_merge(copy.deepcopy(defaults), ctx_use, append_lists=True)
+                ctx_tasks['use'] = ctx_use
+
         if use:
             ctx_use = self.cm.utils.common.deep_merge(ctx_use, copy.deepcopy(use), append_lists=True)
 

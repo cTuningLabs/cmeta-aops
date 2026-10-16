@@ -610,16 +610,28 @@ def _install_uses(self, ctx, desc):
     return uses
 
 
+def package_name_for(desc, host, default):
+    """
+    The package a tool's install commands name on this machine: package_name_os_id of the distribution's ID, else of
+    a distribution it is like (ID_LIKE: Rocky Linux is "rhel centos fedora", Amazon Linux "fedora") - Linux only, the
+    macOS facts carry a compatibility ID_LIKE - else package_name, else the default (the tool's alias).
+    """
+    names = desc.get('package_name_os_id') or {}
+    extra = host.get('os_extra', {}) or {}
+    keys = [extra.get('id')]
+    if (host.get('os', {}) or {}).get('uname') == 'linux':
+        keys += str(extra.get('id_like') or '').split()
+    for key in keys:
+        if key and key in names:
+            return names[key]
+    return desc.get('package_name', default)
+
+
 def resolve_package_name(self, ctx, desc, tool_read, params, call_hook = False):
     """The package {{name}} stands for in install commands - the choice task/setup/install.py makes."""
     host = ctx['tasks']['global']['host']
-    os_id = host.get('os_extra', {}).get('id')
 
-    name = tool_read['artifact_au']
-    if 'package_name_os_id' in desc and os_id in desc['package_name_os_id']:
-        name = desc['package_name_os_id'][os_id]
-    elif 'package_name' in desc:
-        name = desc['package_name']
+    name = package_name_for(desc, host, tool_read['artifact_au'])
 
     if call_hook:
         # 7z and xz pick the distro package in this hook

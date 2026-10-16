@@ -337,6 +337,14 @@ class CTask(InitCTask):
             return r
         data_mounts, config_env = r['mounts'], r['env']
 
+        # the template's own config inside its instances (instance_config: {"task.use.python.tool_path": "/opt/venv/bin/python3"}):
+        # a stack image tells cMeta inside which Python has its framework; set by the entrypoint like the data keys
+        instance_config = dict(bdesc.get('instance_config') or {})
+        if bdesc is not tdesc:
+            instance_config.update(tdesc.get('instance_config') or {})
+        for n, (cfg_key, value) in enumerate(sorted(instance_config.items())):
+            config_env.append((str(cfg_key), f'CMETA_INSTANCE_CONFIG_{n}', str(value)))
+
 
         # ---- the image, through the container category
         ib = {'category': CONTAINER_CATEGORY, 'command': 'build', 'arg1': name, 'engine': engine,

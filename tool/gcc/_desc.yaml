@@ -20,6 +20,11 @@ cmd_get_versions_regex: 'refs/tags/releases/gcc-([^^\s]+)(?:\^\{\})?$'
 
 package_name: gcc
 
+# Azure Linux's gcc leaves out binutils (ar, as, ld - the archiver is one of this tool's sub-tools)
+package_name_os_id:
+  azurelinux: 'gcc binutils'
+  mariner: 'gcc binutils'
+
 install_cmd:
   linux: '{{global.host.os_extra.install_cmd_sudo}}'
 

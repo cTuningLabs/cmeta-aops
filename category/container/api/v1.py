@@ -554,8 +554,18 @@ class Category(InitCategory):
                             f'&& groupadd -g {gid} {user} && useradd -u {uid} -m -d /home/{user} -g {user} -s /bin/bash {user}')
                 else:
                     make = f'groupadd -r {user} && useradd -r -m -d /home/{user} -g {user} -s /bin/bash {user}'
+                # sudo without its PAM account check for this user: under rootless podman (--userns=keep-id) the check
+                # fails on Rocky Linux 10, Amazon Linux 2023 and Azure Linux 3.0 ("PAM account management error"), so no
+                # package could be installed inside (seen 2026-10-16); kept only when this sudo knows the option
+                sudoers = f'/etc/sudoers.d/{user}'
                 cmeta['user_block'] = (f'RUN {make} '
-                                       f'&& echo "{user} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/{user} && chmod 0440 /etc/sudoers.d/{user}')
+                                       f'&& echo "{user} ALL=(ALL) NOPASSWD:ALL" > {sudoers} '
+                                       f'&& echo "Defaults:{user} !pam_acct_mgmt" >> {sudoers} && chmod 0440 {sudoers} '
+                                       f'&& (visudo -cf {sudoers} >/dev/null 2>&1 || sed -i "/pam_acct_mgmt/d" {sudoers})')
+            # root_lines: Containerfile lines of a base run as root once the user exists (a stack base: the image's own
+            # Python environment given to the user, so that cMeta inside may add to it)
+            cmeta['root_block'] = '\n'.join(R(str(x), 'root_lines') for x in self._as_list(b['desc'].get('root_lines')))
+
             from_tpl = bcomp.get('from') or cmeta.get('from') or ''
             if not from_tpl:
                 return self._err(f'"{b["alias"]}" defines no FROM image (template.from)')

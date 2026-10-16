@@ -5,6 +5,7 @@ FROM {{cmeta.from}}
 {{cmeta.env_block}}
 {{cmeta.install_packages_block}}
 {{cmeta.user_block}}
+{{cmeta.root_block}}
 USER {{cmeta.user}}
 ENV HOME={{cmeta.home}} CMETA_HOME={{cmeta.home}}/CMETA PATH={{cmeta.home}}/.local/bin:$PATH
 WORKDIR {{cmeta.home}}

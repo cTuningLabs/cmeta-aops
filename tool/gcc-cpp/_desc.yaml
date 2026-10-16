@@ -35,6 +35,15 @@ uses:
 
 package_name: 'g++'
 
+# The RPM distributions call the C++ compiler gcc-c++ (Rocky, Alma, CentOS and Amazon Linux are like fedora or rhel)
+package_name_os_id:
+  fedora: 'gcc-c++'
+  rhel: 'gcc-c++'
+  azurelinux: 'gcc-c++'
+  mariner: 'gcc-c++'
+  opensuse: 'gcc-c++'
+  suse: 'gcc-c++'
+
 install_cmd:
   linux: '{{global.host.os_extra.install_cmd_sudo}}'
 

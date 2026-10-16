@@ -30,6 +30,7 @@ are container images (a GPU inside WSL comes with the Windows driver): only cpu 
 
 import datetime
 import os
+import shlex
 import platform
 import re
 import subprocess
@@ -278,6 +279,11 @@ class CTask(InitCTask):
             return r
         data_mounts, config_keys = r['mounts'], r['keys']
 
+        # the template's own config inside (instance_config: {"task.use.python.tool_path": ...}), as get-host--docker does
+        instance_config = dict(bdesc.get('instance_config') or {})
+        if bdesc is not tdesc:
+            instance_config.update(tdesc.get('instance_config') or {})
+
         # ---- the image, through the container category
         ib = {'category': CONTAINER_CATEGORY, 'command': 'build', 'arg1': name, 'engine': engine,
               'compute': compute, 'template': params, 'pull': bool(pull), 'rebuild': bool(rebuild),
@@ -344,6 +350,8 @@ class CTask(InitCTask):
         text = readme(inst, image, engine, name, params, carrier, home, user, mounts + data_mounts, made, cmeta_version, folder)
         plug = ['set -e'] + [f'cx repo plug "{m["inside"]}" >/dev/null' for m in mounts + data_mounts] + [
             f'cx config set task --meta.cache_repos.{key}={alias} >/dev/null' for key, alias in config_keys] + [
+            f'cx config set {k.split(".", 1)[0]} --meta.{k.split(".", 1)[1]}={shlex.quote(str(v))} >/dev/null'
+            for k, v in sorted(instance_config.items()) if '.' in str(k)] + [
             'cx --reindex >/dev/null',
             f"cat > {home}/readme-cmeta.md <<'CMETA_README_END'",
             text,
