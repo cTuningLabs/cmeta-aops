@@ -172,8 +172,10 @@ class CTask(InitCTask):
             ctx: dict,
             name: str = DEFAULT_TEMPLATE,    # the container template (ubuntu, debian, ...)
             template: dict = {},             # --template.<key>=<value>: the template's parameters (os_version, cmeta_version, ...)
+            distro: str = '',                # an app template (llama-cpp, vllm-cuda ...): the base it is built on (default: the first of its bases)
+            compute: str = 'cpu',            # cpu, or cuda: the template's CUDA overlay (its CUDA libraries; WSL gives the distribution the GPU itself)
             engine: str = 'docker',          # the engine that builds and exports the image: docker or podman
-            instance: str = '',              # the instance's name (default: <this host>-wsl-<template>-<os_version>)
+            instance: str = '',              # the instance's name (default: <this host>-wsl-<template>[-<base>]-<os_version>[-<compute>])
             repos: str = '',                 # repositories of this machine plugged inside, comma-separated (default: ctuninglabs@cmeta-aops)
             data: str = '',                  # data repositories (config::task cache_repos) plugged inside from their drive mounts: all by default, a subset, "key=alias", or "none"
             location: str = '',              # the folder of the distribution's disk (default: config task-get-host--wsl, key location)
@@ -196,7 +198,31 @@ class CTask(InitCTask):
         if not t:
             return self.cm.error(f'container template "{name}" not found (cx container find "*")')
         tdesc = self._desc(t['path'])
-        tparams = dict(tdesc.get('template') or {})
+
+        # an app template (a stack) is built on one of its bases: the base gives the OS version, the user and the
+        # compute overlays, the app its own parameters and lines (as in get-host--docker)
+        bdesc = tdesc
+        base_name = ''
+        if str(tdesc.get('kind') or 'base').lower() == 'app':
+            allowed = [str(x) for x in (tdesc.get('bases') or ['ubuntu'])]
+            base_name = str(distro or allowed[0])
+            if base_name not in allowed:
+                return self.cm.error(f'the app template "{name}" is built on {", ".join(allowed)}, not "{base_name}"')
+            b = self._find(CONTAINER_CATEGORY, base_name)
+            if not b:
+                return self.cm.error(f'the base template "{base_name}" of "{name}" is not found (cx container find "*")')
+            bdesc = self._desc(b['path'])
+        elif distro:
+            return self.cm.error(f'"{name}" is a base template: --distro is for an app template')
+        tparams = dict(bdesc.get('template') or {})
+        overlays = dict(bdesc.get('compute') or {})
+        if bdesc is not tdesc:
+            tparams.update(tdesc.get('template') or {})
+            overlays.update(tdesc.get('compute') or {})
+        compute = str(compute or 'cpu')
+        if compute != 'cpu' and compute not in overlays:
+            return self.cm.error(f'the template "{name}" has no compute overlay "{compute}" (it has: {", ".join(overlays.keys()) or "none"})')
+
         params = {str(k): str(v) for k, v in (template or {}).items()}
         tparams.update(params)
         os_version = str(tparams.get('os_version') or '')
@@ -205,14 +231,15 @@ class CTask(InitCTask):
 
         # ---- the place and the instance's name
         carrier, carrier_uid, machine = self._carrier()
-        base_name = clean_name(instance) if instance else clean_name(f'{carrier}-wsl-{name}-{os_version}')
-        inst = base_name
+        stem = clean_name(instance) if instance else clean_name(f'{carrier}-wsl-{name}' + (f'-{base_name}' if base_name else '')
+                                                               + f'-{os_version}' + (f'-{compute}' if compute != 'cpu' else ''))
+        inst = stem
         existing = self._find(HOST_CATEGORY, inst)
         if existing and new_host:
             n = 2
-            while self._find(HOST_CATEGORY, f'{base_name}-{n}'):
+            while self._find(HOST_CATEGORY, f'{stem}-{n}'):
                 n += 1
-            inst = f'{base_name}-{n}'
+            inst = f'{stem}-{n}'
             existing = None
 
         # ---- an existing instance: registered, or gone
@@ -252,9 +279,12 @@ class CTask(InitCTask):
         data_mounts, config_keys = r['mounts'], r['keys']
 
         # ---- the image, through the container category
-        rb = self.cm.access({'category': CONTAINER_CATEGORY, 'command': 'build', 'arg1': name, 'engine': engine,
-                             'compute': 'cpu', 'template': params, 'pull': bool(pull), 'rebuild': bool(rebuild),
-                             'con': con and not quiet, 'quiet': quiet})
+        ib = {'category': CONTAINER_CATEGORY, 'command': 'build', 'arg1': name, 'engine': engine,
+              'compute': compute, 'template': params, 'pull': bool(pull), 'rebuild': bool(rebuild),
+              'con': con and not quiet, 'quiet': quiet}
+        if base_name:
+            ib['distro'] = base_name
+        rb = self.cm.access(ib)
         if rb['return'] > 0:
             return rb
         image = rb.get('image', '')
@@ -346,7 +376,7 @@ class CTask(InitCTask):
             'access': {'distro': inst, 'user': user, 'shell': 'bash -l'},
             'cmeta': {'home': f'{home}/CMETA', 'install': 'uv-tool'},
             'sync': {'default': 'none'},
-            'made_from': {'template': name, 'params': params, 'compute': 'cpu', 'engine': engine, 'image': image,
+            'made_from': {'template': name, 'base': base_name, 'params': params, 'compute': compute, 'engine': engine, 'image': image,
                           'image_id': rb.get('image_id', ''), 'location': folder, 'carrier': carrier, 'made': made,
                           'cmeta_version': cmeta_version},
             'mounts': mounts + data_mounts,

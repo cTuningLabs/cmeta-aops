@@ -1,0 +1,16 @@
+artifact: 478b3e652f784160
+category: container,ed08f0d107044479
+authors: Grigori Fursin
+creation_timestamp: '2026-10-16T21:11:41.511764+00:00'
+desc: 'llama.cpp set up by cMeta inside the image (CPU, or built with CUDA on the devel image): instances ready to run llama.cpp programs and servers.'
+generator:
+  method: agent
+  agent: Claude Code
+  model: claude-opus-5-5
+  via: cmeta 0.37.1
+  by: Grigori Fursin
+tags:
+- app
+- stack
+- llama-cpp
+- llm

@@ -1959,6 +1959,7 @@ class Category(InitCategory):
                 compute = 'cpu'
             r = self.cm.access({'category': 'task,' + self.cmeta['artifact'], 'command': 'run', 'arg1': 'get-host--docker,08e0250b15e2486a',
                                 'name': template or 'ubuntu', 'engine': engine, 'template': options.get('template') or {},
+                                'distro': str(options.get('distro') or ''),
                                 'compute': compute, 'arch': str(options.get('arch') or ''), 'instance': str(options.get('instance') or ''),
                                 'repos': str(options.get('repos') or ''), 'data': str(options.get('data') or ''),
                                 'new_host': bool(options.get('new_host', False)) or bool(options.get('rm', False)),
@@ -1970,8 +1971,11 @@ class Category(InitCategory):
             if os.name != 'nt':
                 return self.cm.error('--on=wsl needs Windows (WSL): --on=docker, --on=podman or a host artifact (cx host ls)')
             engine, _, template = ref.partition(':')
+            compute = 'cuda' if str(params.get('compute') or '') == 'cuda' else 'cpu'
             r = self.cm.access({'category': 'task,' + self.cmeta['artifact'], 'command': 'run', 'arg1': 'get-host--wsl,a3396a4efa35460b',
                                 'name': template or 'ubuntu', 'template': options.get('template') or {},
+                                'distro': str(options.get('distro') or ''), 'compute': compute,
+                                'location': str(options.get('location') or ''),
                                 'instance': str(options.get('instance') or ''), 'repos': str(options.get('repos') or ''),
                                 'data': str(options.get('data') or ''),
                                 'new_host': bool(options.get('new_host', False)) or bool(options.get('rm', False)),

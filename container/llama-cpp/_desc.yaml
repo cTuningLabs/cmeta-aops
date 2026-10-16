@@ -1,0 +1,48 @@
+authors: Grigori Fursin
+
+# App template (a stack): llama.cpp set up by cMeta inside the image, so that an instance runs llama.cpp programs
+# and servers at once - nothing to download or build on first use. The tool is set up the cMeta way (tool/llama-cpp:
+# the release build, or built from source - CUDA with the nvcc of NVIDIA's devel image) from the cmeta-aops branch
+# named below; that clone is removed again in the same step, and an instance mounts the machine's own cmeta-aops,
+# which finds the tool already set up in the image's cache (same tool, same request). The models come at run time:
+# a data repository of the machine (config::task cache_repos) is mounted into every instance, so a model is
+# downloaded once per machine.
+#
+#   cx container build llama-cpp                                   # ubuntu 26.04, CPU
+#   cx container build llama-cpp --distro=debian                   # on another base
+#   cx container build llama-cpp --compute=cuda                    # llama.cpp built with CUDA (devel image, several GB)
+#   cx container build llama-cpp --template.llama_cpp_version=11324
+#
+#   cx program run llama-cpp --on=docker:llama-cpp                 # an instance of it (made on first use), the program inside
+#   cx program run llama-cpp --compute=cuda --on=docker:llama-cpp  # the CUDA build on the GPU (Docker Desktop, or Linux
+#                                                                  # with tool/nvidia-container-toolkit)
+#   cx program run llama-cpp --on=podman:llama-cpp --on_distro=debian
+#   cx program run llama-cpp --on=wsl:llama-cpp                    # a WSL distribution of the same image (Windows)
+
+kind: app
+bases: [ubuntu, debian, rockylinux, amazonlinux, azurelinux]
+
+template:
+  llama_cpp_version: ""         # "" = the default_version of tool/llama-cpp; a build number (11324) pins it
+  aops_checkout: main           # the cmeta-aops branch, tag or commit the tool is set up from at build time
+
+# CUDA: llama.cpp is compiled with nvcc, which only NVIDIA's devel image has
+compute:
+  cuda:
+    template:
+      cuda_flavour: devel
+
+# One step, so that the build-time clone of cmeta-aops never stays in a layer: clone, set the tool up for this
+# compute, unplug and remove the clone (the tool's cache entry stays in the image's local repository)
+app_lines:
+  - >-
+    RUN set -e;
+    cx repo get cmeta-aops --checkout={{cmeta.aops_checkout}} --depth=1 -q;
+    V="{{cmeta.llama_cpp_version}}";
+    cx tool setup llama-cpp ${V:+--version=$V} --with.compute={{cmeta.compute}} -q;
+    A=$(cx repo find 3cb4ee4f444048f6 | tail -1);
+    cx repo unplug 3cb4ee4f444048f6 -q;
+    rm -rf "$A"
+
+tests:
+  - cx cache find "*setup--llama-cpp*"

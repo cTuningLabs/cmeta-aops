@@ -86,7 +86,7 @@ def wait_ready(engine, inst, first_repo, con):
     return False
 
 
-def readme(instance, engine, engine_version, image, name, params, compute, arch, carrier, home, mounts, made, cmeta_version):
+def readme(instance, engine, engine_version, image, name, params, compute, arch, carrier, home, mounts, made, cmeta_version, base=''):
     """The readme-cmeta.md written into the instance's home."""
     lines = [
         f'# {instance}',
@@ -98,9 +98,9 @@ def readme(instance, engine, engine_version, image, name, params, compute, arch,
         '## How it was made',
         '',
         f'- image: {image} ({engine} {engine_version})',
-        f'- template: {name}' + (f', parameters {params}' if params else '') + f', compute {compute}' + (f', architecture {arch}' if arch else ''),
+        f'- template: {name}' + (f' on {base}' if base else '') + (f', parameters {params}' if params else '') + f', compute {compute}' + (f', architecture {arch}' if arch else ''),
         f'- the container runs "sleep infinity"; the entrypoint plugs the repositories under {home}/repos and reindexes',
-        f'- rebuild it: cx container build {name}' + ''.join(f' --template.{k}={v}' for k, v in (params or {}).items()) + (f' --compute={compute}' if compute != 'cpu' else ''),
+        f'- rebuild it: cx container build {name}' + (f' --distro={base}' if base else '') + ''.join(f' --template.{k}={v}' for k, v in (params or {}).items()) + (f' --compute={compute}' if compute != 'cpu' else ''),
         '',
         '## What is mounted from the machine',
         '',
@@ -176,7 +176,8 @@ class CTask(InitCTask):
             compute: str = 'cpu',            # cpu, or an overlay of the template (cuda): its base image and GPU run flags
             arch: str = '',                  # arm64 / amd64: --platform linux/<arch> (emulated when the engine is another one)
             engine: str = 'docker',          # docker or podman
-            instance: str = '',              # the instance's name (default: <this host>-<engine>-<template>-<os_version>[-<compute>][-<arch>])
+            distro: str = '',                # an app template (llama-cpp, vllm-cuda ...): the base it is built on (default: the first of its bases)
+            instance: str = '',              # the instance's name (default: <this host>-<engine>-<template>[-<base>]-<os_version>[-<compute>][-<arch>])
             repos: str = '',                 # repositories of this machine mounted inside, comma-separated (default: ctuninglabs@cmeta-aops)
             data: str = '',                  # data repositories (config::task cache_repos) mounted under <home>/data/<alias>: all by default, a subset, or "none"
             new_host: bool = False,          # another instance of the same place (-2, -3 ...) instead of the existing one
@@ -193,12 +194,32 @@ class CTask(InitCTask):
         m = re.search(r'version v?(\d+\.\d+\.\d+)', out)
         engine_version = m.group(1) if m else out.strip()
 
-        # ---- the template and its parameters
+        # ---- the template and its parameters; an app template (a stack: llama-cpp, vllm-cuda ...) is built on one of
+        # its bases (--base, else the first it lists): the base gives the OS version, the user and the compute
+        # overlays, the app adds its own parameters and lines
         t = self._find(CONTAINER_CATEGORY, name)
         if not t:
             return self.cm.error(f'container template "{name}" not found (cx container find "*")')
         tdesc = self._desc(t['path'])
-        tparams = dict(tdesc.get('template') or {})
+        bdesc = tdesc
+        base_name = ''
+        if str(tdesc.get('kind') or 'base').lower() == 'app':
+            allowed = [str(x) for x in (tdesc.get('bases') or ['ubuntu'])]
+            base_name = str(distro or allowed[0])
+            if base_name not in allowed:
+                return self.cm.error(f'the app template "{name}" is built on {", ".join(allowed)}, not "{base_name}"')
+            b = self._find(CONTAINER_CATEGORY, base_name)
+            if not b:
+                return self.cm.error(f'the base template "{base_name}" of "{name}" is not found (cx container find "*")')
+            bdesc = self._desc(b['path'])
+        elif distro:
+            return self.cm.error(f'"{name}" is a base template: --distro is for an app template')
+        tparams = dict(bdesc.get('template') or {})
+        if bdesc is not tdesc:
+            tparams.update(tdesc.get('template') or {})
+        overlays = dict(bdesc.get('compute') or {})
+        if bdesc is not tdesc:
+            overlays.update(tdesc.get('compute') or {})
         params = {str(k): str(v) for k, v in (template or {}).items()}
 
         # The uid rule: on a Linux engine a bind mount keeps the machine's ownership, so the user inside gets this
@@ -214,8 +235,9 @@ class CTask(InitCTask):
         os_version = str(tparams.get('os_version') or '')
         user = str(tparams.get('user') or 'cmeta')
         home = '/root' if user == 'root' else f'/home/{user}'
-        if compute != 'cpu' and compute not in (tdesc.get('compute') or {}):
-            return self.cm.error(f'the template "{name}" has no compute overlay "{compute}" (it has: {", ".join((tdesc.get("compute") or {}).keys()) or "none"})')
+        if compute != 'cpu' and compute not in overlays:
+            return self.cm.error(f'the template "{name}"{f" on {base_name}" if base_name else ""} has no compute overlay "{compute}" '
+                                 f'(it has: {", ".join(overlays.keys()) or "none"})')
 
         # A CUDA instance on a Linux engine needs the NVIDIA Container Toolkit (docker: the "nvidia" runtime, podman:
         # the CDI file of the GPUs) - asked for explicitly, so a machine without it fails here with the cure instead
@@ -225,19 +247,21 @@ class CTask(InitCTask):
                                  f'missing or {engine} is not configured for it - '
                                  f'"cx tool setup nvidia-container-toolkit --install" (sudo), then try again')
 
-        arch_norm =ARCHES.get(str(arch).lower(), str(arch).lower()) if arch else ''
+        arch_norm = ARCHES.get(str(arch).lower(), str(arch).lower()) if arch else ''
         platform_str = f'linux/{arch_norm}' if arch_norm else ''
 
         # ---- the place and the instance's name
         carrier, carrier_uid, machine = self._carrier()
-        base_name = clean_name(instance) if instance else clean_name(f'{carrier}-{engine}-{name}-{os_version}' + (f'-{compute}' if compute != 'cpu' else '') + (f'-{arch_norm}' if arch_norm else ''))
-        inst = base_name
+        stem = clean_name(instance) if instance else clean_name(f'{carrier}-{engine}-{name}' + (f'-{base_name}' if base_name else '')
+                                                               + f'-{os_version}' + (f'-{compute}' if compute != 'cpu' else '')
+                                                               + (f'-{arch_norm}' if arch_norm else ''))
+        inst = stem
         existing = self._find(HOST_CATEGORY, inst)
         if existing and new_host:
             n = 2
-            while self._find(HOST_CATEGORY, f'{base_name}-{n}'):
+            while self._find(HOST_CATEGORY, f'{stem}-{n}'):
                 n += 1
-            inst = f'{base_name}-{n}'
+            inst = f'{stem}-{n}'
             existing = None
 
         # ---- an existing instance: running, stopped, or gone
@@ -285,9 +309,12 @@ class CTask(InitCTask):
 
 
         # ---- the image, through the container category
-        rb = self.cm.access({'category': CONTAINER_CATEGORY, 'command': 'build', 'arg1': name, 'engine': engine,
-                             'compute': compute, 'template': params, 'platform': platform_str,
-                             'pull': bool(pull), 'rebuild': bool(rebuild), 'con': con and not quiet, 'quiet': quiet})
+        ib = {'category': CONTAINER_CATEGORY, 'command': 'build', 'arg1': name, 'engine': engine,
+              'compute': compute, 'template': params, 'platform': platform_str,
+              'pull': bool(pull), 'rebuild': bool(rebuild), 'con': con and not quiet, 'quiet': quiet}
+        if base_name:
+            ib['distro'] = base_name
+        rb = self.cm.access(ib)
         if rb['return'] > 0:
             return rb
         image = rb.get('image', '')
@@ -295,7 +322,7 @@ class CTask(InitCTask):
         # ---- the container, detached and persistent
         run_flags = []
         if compute != 'cpu':
-            rf = ((tdesc.get('compute') or {}).get(compute) or {}).get('run_flags') or []
+            rf = (overlays.get(compute) or {}).get('run_flags') or []
             if isinstance(rf, dict):
                 rf = rf.get(engine) or []
             run_flags = [str(x) for x in rf]
@@ -340,7 +367,7 @@ class CTask(InitCTask):
         # ---- the readme inside
         made = datetime.datetime.now().astimezone().isoformat(timespec='minutes')
         cmeta_version = str(getattr(self.cm, 'version', '') or (ctx['tasks'].get('global', {}).get('init', {}) or {}).get('cmeta_version', '') or '')
-        text = readme(inst, engine, engine_version, image, name, params, compute, arch_norm, carrier, home, mounts + data_mounts, made, cmeta_version)
+        text = readme(inst, engine, engine_version, image, name, params, compute, arch_norm, carrier, home, mounts + data_mounts, made, cmeta_version, base_name)
         fd, tmp = tempfile.mkstemp(prefix='readme-cmeta-', suffix='.md')
         with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as f:
             f.write(text)
@@ -377,7 +404,7 @@ class CTask(InitCTask):
                        'run_args': ' '.join(run_args), 'user': user, 'shell': 'bash -l'},
             'cmeta': {'home': f'{home}/CMETA', 'install': 'uv-tool'},
             'sync': {'default': 'none'},
-            'made_from': {'template': name, 'params': params, 'compute': compute, 'arch': arch_norm, 'engine': engine,
+            'made_from': {'template': name, 'base': base_name, 'params': params, 'compute': compute, 'arch': arch_norm, 'engine': engine,
                           'engine_version': engine_version, 'image': image, 'image_id': rb.get('image_id', ''),
                           'carrier': carrier, 'made': made, 'cmeta_version': cmeta_version},
             'mounts': mounts + data_mounts,
