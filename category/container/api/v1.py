@@ -243,7 +243,9 @@ class Category(InitCategory):
                        + (' and the classic builder (DOCKER_BUILDKIT=0)' if os.environ.get('DOCKER_BUILDKIT') == '0' else ''))
         return p
 
-    def _pick_engine(self, engine=''):
+    def _pick_engine(self, engine='', need_binary=True):
+        """The engine of a command; need_binary=False for render, which writes files only: the engine named, or
+        found, or docker's files when none is installed here (a CI runner without podman, a Mac without docker)."""
         engine = (engine or '').strip().lower()
         if not engine:
             r = self.cm.access({'category': CONFIG_CATEGORY, 'command': 'get', 'arg1': 'container', 'con': False})
@@ -254,10 +256,12 @@ class Category(InitCategory):
                 if self._engine_path(e):
                     engine = e
                     break
+        if not engine and not need_binary:
+            engine = ENGINES[0]
         if engine not in ENGINES:
             return self._err(f'unknown or missing container engine "{engine}" - use --engine=docker or --engine=podman '
                              f'(install: cx tool setup docker --install / cx tool setup podman --install)')
-        if not self._engine_path(engine):
+        if need_binary and not self._engine_path(engine):
             return self._err(f'"{engine}" is not installed on this host (cx tool setup {engine} --install)')
         return {'return': 0, 'engine': engine}
 
@@ -429,8 +433,8 @@ class Category(InitCategory):
 
     def _resolve(self, ctx, name, base='', engine='', compute='', template=None, secret=None, port=None,
                  repo=None, repos_dir='', input=None, env=None, volume=None, platform='', expose_lan=False,
-                 no_clone=False, unparsed=None, bake=None):
-        re_ = self._pick_engine(engine)
+                 no_clone=False, unparsed=None, bake=None, need_binary=True):
+        re_ = self._pick_engine(engine, need_binary=need_binary)
         if re_['return'] > 0:
             return re_
         engine = re_['engine']
@@ -1015,7 +1019,8 @@ class Category(InitCategory):
         if not arg1:
             return self._err('cx container render <template> [--distro=...] [--template.<key>=<value>] [--out=<dir>]')
         spec = self._resolve(ctx, arg1, distro, engine, compute, template, secret, port, self._repo_refs(repo, repos), repos_dir, input, env,
-                             volume, platform, expose_lan, no_clone, unparsed, bake=self._repo_refs(copy_repo, copy_repos))
+                             volume, platform, expose_lan, no_clone, unparsed, bake=self._repo_refs(copy_repo, copy_repos),
+                             need_binary=False)
         if spec['return'] > 0:
             return spec
         print('')

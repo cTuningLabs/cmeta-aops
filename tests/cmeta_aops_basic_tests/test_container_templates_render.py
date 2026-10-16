@@ -69,3 +69,25 @@ def test_template_keys_reach_the_containerfile(cm, tmp_path):
 def test_podman_gets_full_image_names(cm, tmp_path):
     assert 'FROM docker.io/library/fedora:44\n' in render(cm, tmp_path / 'p1', 'fedora', engine='podman')
     assert 'FROM docker.io/opensuse/leap:16.0\n' in render(cm, tmp_path / 'p2', 'opensuse', engine='podman')
+
+
+def container_module():
+    import sys
+    for m in list(sys.modules.values()):
+        if (getattr(m, '__file__', '') or '').replace('\\', '/').endswith('category/container/api/v1.py'):
+            return m
+    return None
+
+
+def test_render_needs_no_engine_here(cm, tmp_path, monkeypatch):
+    # GitHub's macOS runners have no docker, its Windows runners no podman: render writes files only; build refuses
+    render(cm, tmp_path / 'warm', 'debian')
+    m = container_module()
+    assert m is not None
+    monkeypatch.setattr(m.Category, '_engine_path', lambda self, engine: None)
+
+    assert 'FROM docker.io/library/fedora:44\n' in render(cm, tmp_path / 'n1', 'fedora', engine='podman')
+    assert 'FROM fedora:44\n' in render(cm, tmp_path / 'n2', 'fedora', engine='')       # none found: docker's files
+
+    r = cm.access({'category': 'container', 'command': 'build', 'arg1': 'fedora', 'engine': 'podman', 'con': False})
+    assert r['return'] > 0 and 'is not installed' in r['error']
