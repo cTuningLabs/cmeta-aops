@@ -52,3 +52,23 @@ def test_the_package_of_a_distribution(upgrade, desc, h, expected):
 def test_the_own_id_wins_over_a_like(upgrade):
     desc = {'package_name_os_id': {'rocky': 'own', 'rhel': 'like'}}
     assert upgrade.package_name_for(desc, host('rocky', 'rhel centos fedora'), 'x') == 'own'
+
+
+def real_desc(tool):
+    import yaml
+    with open(REPO_ROOT / 'tool' / tool / '_desc.yaml', encoding='utf-8') as f:
+        return yaml.safe_load(f)
+
+
+@pytest.mark.parametrize('h, expected', [
+    (host('ubuntu', 'debian'), 'libssl-dev'),
+    (host('fedora'), 'openssl-devel'),                                # 2026-10-17: Debian's name before
+    (host('rocky', 'rhel centos fedora'), 'openssl-devel'),
+    (host('almalinux', 'rhel centos fedora'), 'openssl-devel'),
+    (host('opensuse-leap', 'suse opensuse'), 'libopenssl-devel'),     # 2026-10-17: Debian's name before
+    (host('opensuse-tumbleweed', 'opensuse suse'), 'libopenssl-devel'),
+    (host('azurelinux'), 'openssl-devel'),
+])
+def test_the_openssl_headers_on_each_family(upgrade, h, expected):
+    # The matrix rounds of Fedora and openSUSE asked for libssl-dev there and the matmul tests could not build
+    assert upgrade.package_name_for(real_desc('lib-openssl'), h, 'lib-openssl') == expected

@@ -9,7 +9,13 @@ import os
 import shlex
 
 from program_22788f3c30d04e6d.api.cprogram import InitCProgram
+from program_22788f3c30d04e6d.api import common_build
 from program_22788f3c30d04e6d.api import common_llama_cpp
+
+# The RAM of one compile job of llama.cpp, for the default number of jobs (common_build.default_max_jobs). Measured
+# 2026-10-17: a C/C++ job peaks at about 0.65 GiB (GCC 13), a CUDA job at about 0.85 GiB (cicc; 16 jobs together
+# 6 GiB) - so 1 GiB and 1.5 GiB with a margin; PyTorch's figures of common_build would halve the jobs of a laptop
+LLAMA_CPP_JOB_GIB = {'cpu': 1.0, 'cuda': 1.5, 'rocm': 1.5}
 
 class CProgram(InitCProgram):
     """
@@ -276,10 +282,12 @@ class CProgram(InitCProgram):
         if 'CMAKE_CXX_COMPILER' in d:
             build_env['CXX'] = str(d['CMAKE_CXX_COMPILER']).strip('"')
 
-        # --max_jobs=N: parallel compile jobs (Ninja's default is the CPU count plus 2, which can
-        # take more memory than a busy machine has)
-        if params.get('max_jobs'):
-            build_env['CMAKE_BUILD_PARALLEL_LEVEL'] = str(params['max_jobs'])
+        # --max_jobs=N: parallel compile jobs. Without it, the jobs that fit the RAM available now: Ninja's default,
+        # the CPU count plus 2, took more memory than a small or busy machine has - two builds in the Mac's 8 GB
+        # Docker VM, the compiler killed (2026-10-17); a machine with RAM to spare keeps one job per CPU
+        device = 'cuda' if 'cuda' in compute else 'rocm' if ('rocm' in compute or 'hip' in compute) else 'cpu'
+        jobs = params.get('max_jobs') or common_build.default_max_jobs(device, per_job_gib = LLAMA_CPP_JOB_GIB[device])
+        build_env['CMAKE_BUILD_PARALLEL_LEVEL'] = str(jobs)
         _local['llama_cpp_build_env'] = build_env
 
 #        _local['cmake_d_vars'] = " ".join(f"-D{k}={shlex.quote(str(v))}" for k, v in d.items())

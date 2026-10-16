@@ -25,6 +25,12 @@ package_name_os_id:
   azurelinux: 'openssl-devel'
   amzn: 'openssl-devel'
   rocky: 'openssl-devel'
+  fedora: 'openssl-devel'
+  rhel: 'openssl-devel'           # Alma, CentOS and the other RHEL rebuilds through their ID_LIKE
+  suse: 'libopenssl-devel'        # openSUSE Leap and Tumbleweed, SLES (ID_LIKE suse)
+  opensuse: 'libopenssl-devel'
+  alpine: 'openssl-dev'
+  arch: 'openssl'
 
 install_cmd:
   linux: '{{global.host.os_extra.install_cmd_sudo}}'
