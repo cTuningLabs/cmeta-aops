@@ -191,6 +191,11 @@ cx host run web "kill -- -$(cat ~/cmeta-detached/<run id>.pid)"      # stop it
 
 POSIX hosts and instances only for now (a Windows host refuses `--on_detach`).
 
+An ssh host runs the words on its own clones and home. `--on_isolated` runs them on THIS machine's repositories
+instead (`ctuninglabs@cmeta-aops`, or `--on_isolated=<repo>,<repo>`): they are copied to `~/cmeta-tests/on-<run id>`,
+a throwaway cMeta home there plugs them, the run uses it (the host's own engine, its own home untouched) and the
+folder goes afterwards (`--on_keep` keeps it). A repository flagged `secrets: true` never leaves this machine.
+
 An artifact can carry its own route, so that no word is needed - a task's `_desc.yaml`, or a program's (the
 program category hands it to the task):
 

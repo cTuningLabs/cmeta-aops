@@ -62,6 +62,14 @@ class FakeCM:
                                                     'cmeta_ref_parts': {'artifact_alias': i['arg1']}}]}
             return {'return': 0, 'artifacts': []}
 
+        if category.startswith('repo,') and command == 'find':
+            secret = i['arg1'] == 'my-secrets'
+            return {'return': 0, 'artifacts': [{'path': '/repos/' + i['arg1'], 'cmeta': {'secrets': True} if secret else {},
+                                                'cmeta_ref_parts': {'artifact_alias': i['arg1']}}]}
+
+        if category.startswith('host,') and command == 'push':
+            return {'return': 0}
+
         if category.startswith('host,') and command == 'run':
             rc = self.returncode
             return {'return': 0 if rc == 0 else 1, 'outputs': {i['arg1']: {'returncode': rc, 'stdout': '', 'stderr': ''}}}
@@ -273,6 +281,33 @@ def test_detach_is_refused_where_it_cannot_work(module):
     _, r = run_on(c, ['task', 'run', 'test-python', '--on=docker', '--on_detach', '--on_rm'], 'docker',
                   {'on_detach': True, 'on_rm': True})
     assert r['return'] == 1 and '--on_rm' in r['error']
+
+
+def test_isolated_runs_on_this_machines_repositories_in_a_throwaway_home(module):
+    """--on_isolated: the repositories pushed to ~/cmeta-tests/on-<id>, a home of its own there, removed after."""
+    c = category(module)
+    _, r = run_on(c, ['task', 'run', 'test-python', '--on=lab-thinkpad-ubuntu', '--on_isolated', '-q'], 'lab-thinkpad-ubuntu',
+                  {'on_isolated': True})
+    assert r['return'] == 0, r
+    pushes = [i for i in c.cm.calls if i['category'].startswith('host,') and i['command'] == 'push']
+    assert len(pushes) == 1 and pushes[0]['arg2'] == '/repos/ctuninglabs@cmeta-aops'
+    assert pushes[0]['to'].startswith('cmeta-tests/on-') and pushes[0]['to'].endswith('/repos/ctuninglabs@cmeta-aops')
+    runs = [i for i in c.cm.calls if i['category'].startswith('host,') and i['command'] == 'run']
+    cmd = runs[0]['arg2']
+    assert 'cx repo plug "$HOME/cmeta-tests/on-' in cmd and 'CMETA_HOME="$HOME/cmeta-tests/on-' in cmd
+    assert 'cx task run test-python -q' in cmd
+    assert runs[-1]['arg2'].startswith('rm -rf "$HOME/cmeta-tests/on-') and r['run_on']['isolated'].startswith('~/cmeta-tests/on-')
+
+
+def test_isolated_is_refused_for_an_instance_and_for_a_secret_repository(module):
+    c = category(module)
+    _, r = run_on(c, ['task', 'run', 'test-python', '--on=docker', '--on_isolated'], 'docker', {'on_isolated': True})
+    assert r['return'] == 1 and 'ssh hosts' in r['error']
+
+    c = category(module)
+    _, r = run_on(c, ['task', 'run', 'test-python', '--on=lab-thinkpad-ubuntu', '--on_isolated=my-secrets'], 'lab-thinkpad-ubuntu',
+                  {'on_isolated': 'my-secrets'})
+    assert r['return'] == 1 and 'secrets' in r['error']
 
 
 def test_without_a_command_line_nothing_is_delegated(module):

@@ -2035,10 +2035,41 @@ class Category(InitCategory):
         # app) - in a session of its own, its output in ~/cmeta-detached/<run id>.log and its process group in a .pid
         # file next to it; POSIX hosts and instances (a Windows host: not yet)
         detach = bool(options.get('detach', False))
+
+        # --on_isolated[=<repo>,<repo>]: an ssh host runs the words on THIS machine's repositories (cmeta-aops by default)
+        # in a throwaway home of its own (~/cmeta-tests/on-<run id>), not on its own clones and home - the exact code
+        # of here, nothing of the host's home touched; removed after the run unless --on_keep
+        isolated = options.get('isolated')
+        isolated_repos = []
+        if isolated not in (None, False, '', 'false', 'False', 'no'):
+            if engine:
+                return self.cm.error('--on_isolated is for ssh hosts: an instance mounts this machine\'s repositories already')
+            if shell == 'powershell':
+                return self.cm.error(f'--on_isolated runs on POSIX hosts; {host} is a Windows host (not yet)')
+            names = [x.strip() for x in str(isolated).split(',') if x.strip() and x.strip().lower() not in ('true', 'yes', '1')]
+            for alias in names or ['ctuninglabs@cmeta-aops']:
+                ra = self.cm.access({'category': 'repo,f4f792ab40c7498f', 'command': 'find', 'arg1': alias, 'con': False})
+                if ra.get('return', 1) > 0 or not ra.get('artifacts'):
+                    return self.cm.error(f'--on_isolated: repository "{alias}" is not plugged here')
+                a = ra['artifacts'][0]
+                if (a.get('cmeta') or {}).get('secrets'):
+                    return self.cm.error(f'--on_isolated: repository "{alias}" holds secrets and never leaves this machine')
+                isolated_repos.append((a['cmeta_ref_parts'].get('artifact_alias') or alias, a.get('full_path') or a['path']))
         if detach and shell == 'powershell':
             return self.cm.error(f'--on_detach runs on POSIX hosts and instances; {host} is a Windows host (not yet)')
         if detach and (pull or bool(options.get('rm', False))):
             return self.cm.error('--on_detach keeps the run going there: --on_pull and --on_rm would wait for it or remove it')
+
+        if isolated_repos:
+            # the repositories go to ~/cmeta-tests/on-<run id>/repos/<alias> (rclone copy through cx host push, the
+            # usual blacklist: no .git, no caches); the home there is set up by the first cx and plugs them
+            iso = f'cmeta-tests/on-{run_id}'
+            for alias, local in isolated_repos:
+                rp = self.cm.access({'category': host_category, 'command': 'push', 'arg1': host, 'arg2': local,
+                                     'to': f'{iso}/repos/{alias}', 'con': False, 'quiet': True})
+                if rp.get('return', 1) > 0:
+                    return self.cm.error(f'--on_isolated: {alias} could not be pushed to {host} ({rp.get("error", "")})')
+            env_pairs.append(('CMETA_HOME', f'$HOME/{iso}/home'))
 
         if shell == 'powershell':
             import re
@@ -2048,7 +2079,13 @@ class Category(InitCategory):
             if work:
                 inner = f'New-Item -ItemType Directory -Force {sq("~/" + work)} | Out-Null; Set-Location {sq("~/" + work)}; ' + inner
         else:
-            inner = ' '.join(f'{k}={shlex.quote(v)}' for k, v in env_pairs) + ' cx ' + ' '.join(shlex.quote(str(w)) for w in inner_words)
+            # $HOME stays unquoted in a value that starts with it (the isolated home), every other value is quoted
+            qv = lambda v: ('"' + v.replace('"', '\\"') + '"') if v.startswith('$HOME/') else shlex.quote(v)
+            inner = ' '.join(f'{k}={qv(v)}' for k, v in env_pairs) + ' cx ' + ' '.join(shlex.quote(str(w)) for w in inner_words)
+            if isolated_repos:
+                plug = ' && '.join(f'CMETA_HOME="$HOME/{iso}/home" cx repo plug "$HOME/{iso}/repos/{alias}" -q >/dev/null'
+                                   for alias, _ in isolated_repos)
+                inner = f'{plug} && cd "$HOME/{iso}" && ' + inner
             if work:
                 inner = f'mkdir -p ~/{work} && cd ~/{work} && ' + inner
             if detach:
@@ -2097,6 +2134,14 @@ class Category(InitCategory):
             if con:
                 print ('')
                 print (f'cMeta info: the run\'s folder ~/{work} of {host} ' + (f'is here: {pulled}' if run_on['pulled'] else f'could not be pulled ({rp.get("error", "")})'))
+
+        # --on_isolated: the throwaway home and the copies go, unless --on_keep
+        if isolated_repos:
+            run_on['isolated'] = f'~/{iso}'
+            if not bool(options.get('keep', False)):
+                rr2 = self.cm.access({'category': host_category, 'command': 'run', 'arg1': host, 'arg2': f'rm -rf "$HOME/{iso}"',
+                                      'capture': True, 'con': False, 'quiet': True})
+                run_on['isolated_removed'] = rr2.get('return', 1) == 0
 
         # --on_rm: a throwaway instance (made for this run, --on_new_host implied), gone with its artifact now
         if engine and bool(options.get('rm', False)):

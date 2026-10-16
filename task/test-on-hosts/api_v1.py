@@ -196,7 +196,7 @@ class CTask(InitCTask):
                     started[h] = f'push failed: {r.get("error")}'
                     break
             else:
-                r = self.host('run', arg1 = h, script = launcher_for(inside or 'tree.tar.gz', wsl = self.instances.get(h, {}).get('engine') == 'wsl'),
+                r = self.host('run', arg1 = h, script = launcher_for(inside or 'tree.tar.gz', wsl = self.is_wsl(h)),
                               capture = True)
                 out = (r.get('outputs') or {}).get(h, {}).get('stdout', '')
                 started[h] = out.strip().splitlines()[-1] if r['return'] == 0 and out.strip() else f'start failed: {r.get("error")}'
@@ -380,6 +380,18 @@ class CTask(InitCTask):
             if con:
                 print (f'  {ref} -> {alias}' + (f' (the tree mounted at {inst["tree_inside"]})' if inst.get('tree_inside') else ''))
         return {'return': 0, 'hosts': hosts, 'instances': instances, 'failed': failed}
+
+    ############################################################
+    def is_wsl(self, h):
+        """A WSL distribution - an instance made by get-host--wsl, or a host artifact of type wsl (a distribution of the
+        user's): there only a new session (setsid) outlives the wsl.exe session that started the runner."""
+        if self.instances.get(h, {}).get('engine') == 'wsl':
+            return True
+        r = self.cm.access({'category': 'host', 'command': 'find', 'arg1': h, 'con': False})
+        if r.get('return', 1) > 0 or not r.get('artifacts'):
+            return False
+        rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(r['artifacts'][0]['path'], '_desc'))
+        return rd.get('return', 1) == 0 and str((rd.get('data') or {}).get('type') or '') == 'wsl'
 
     ############################################################
     def host(self, command, **params):
