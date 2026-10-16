@@ -1,0 +1,15 @@
+artifact: bc27270ee3ef4e56
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-10-16T12:24:02.144406+00:00'
+generator:
+  agent: OpenAI Codex 0.162.1
+  by: Grigori Fursin
+  method: agent
+  via: cmeta 0.37.1
+tags:
+- ssl
+- tls
+- letsencrypt
+- apache
+- certbot

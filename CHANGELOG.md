@@ -24,6 +24,35 @@ All notable changes to cMeta AOps are documented here, newest first.
   install keeps application data, and a failed build invalidates its deploy receipt.
   Android SDK detection includes Android Studio's standard user directories and
   reads installed package revisions, preserving command detection for older layouts.
+- **Apache certificates through `setup-ssl-certificate` and `tool::certbot`.**
+  Discover enabled Apache hostnames, issue/install Let's Encrypt certificates,
+  renew existing lineages without losing their SANs, and test renewal. Plans and
+  staging dry-runs are separate from installation; all-domain selection is distinct
+  from wildcard certificates, which require a configured DNS-01 plugin. Certbot
+  detects an installed version first or installs a pinned Python environment with
+  the matching Apache plugin. Scheduled renewal remains owned by the host.
+- **Reusable `sync` definitions and `task::sync`.** Describe local/local or
+  local/SSH directory and repository pairs, run ordered batches, and list them
+  when no name is given. Bisync initializes on first use and keeps its listings
+  in permanent cMeta result artifacts; copy and mirror are also supported.
+  Previews, confirmation, backups and explicit recovery protect established state.
+  Plans show full selected repository paths; `exclude_categories` optionally omits
+  whole category directories across selected repositories without deleting them.
+  Optional `initial_mode: mirror` seeds from the source with destination backups
+  before the first successful baseline, then automatically uses ordinary bisync.
+  Explicit `--initialize` and `--require-initialized` separate first use from
+  regular bisync; legacy task-sync cache state is imported without resetting it.
+  Optional `--live` displays rclone file operations and statistics during the run,
+  retaining the complete log in the result artifact.
+  Existing fleet sync and `rclone-to-ssh` entry points retain their behavior.
+- **Add `tool::cmeta` for a selected Python.** Detect an existing engine or install
+  from PyPI, a Git ref or a local development source. The declared default pin,
+  available versions, status, upgrade and check-updates use the shared tool setup
+  framework. The runtime command uses the selected interpreter's `-m cmeta`.
+- **Fix named task cache lookup.** API v2 now passes `cache_name` to the cache find,
+  as API v1 does. Previously a named request could search all cache entries and reuse
+  an unrelated result, including when selecting a named Python environment. Regression
+  coverage creates two named entries alongside an unrelated entry and verifies independent reuse.
 - **Cloudflare Tunnels: `tool::cloudflared` and `task::manage-cloudflare-tunnel`.** The tool detects an installed
   cloudflared (the distribution package, brew, winget) or installs the pinned release, its SHA-256 checked against
   the asset digests of GitHub's release API (upstream lists sums only in the release notes). The task manages the

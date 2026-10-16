@@ -1,0 +1,16 @@
+authors: Grigori Fursin
+cache: false
+store_global: false
+params_map:
+  arg2: domains
+  domain: domains
+  cert-name: cert_name
+  dry-run: dry_run
+  force-renewal: force_renewal
+  dns-plugin: dns_plugin
+  dns-credentials: dns_credentials
+  apache-ctl: apache_ctl
+  test-renewal: test_renewal
+cli_params:
+  action: {values: [ensure, renew, list]}
+  timeout: {type: int, min: 1}
