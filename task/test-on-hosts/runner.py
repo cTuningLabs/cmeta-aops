@@ -56,7 +56,21 @@ def main():
         with open(steps, 'a') as f:
             f.write('%s: exit %d in %d s: %s\n' % (n, code, round(time.monotonic() - t0), command))
 
-    step('plug', 'repo plug', 'cx repo plug "%s" -q' % tree)
+    # A host whose cx sets a home of its own (a wrapper script exporting CMETA_HOME) runs the commands in that home,
+    # with what is plugged there: said in steps.txt, and the tree is not plugged into the user's home. An engine
+    # older than 0.35.2 has no --print-home and its answer is no folder: the tree is plugged as before
+    r = subprocess.run('cx --print-home', shell = True, cwd = work, env = env, stdout = subprocess.PIPE,
+                       stderr = subprocess.DEVNULL, stdin = subprocess.DEVNULL, universal_newlines = True)
+    lines = r.stdout.strip().splitlines() if r.returncode == 0 else []
+    used = lines[-1].strip() if lines else ''
+    real = lambda p: os.path.normcase(os.path.realpath(p))
+
+    if used and os.path.isabs(used) and os.path.isdir(used) and real(used) != real(home):
+        with open(steps, 'a') as f:
+            f.write('home: the host\'s cx keeps its own home %s - the commands run there, with the repositories '
+                    'plugged there; the tree is not plugged\n' % used)
+    else:
+        step('plug', 'repo plug', 'cx repo plug "%s" -q' % tree)
 
     for n, command in enumerate(commands, 1):
         line = command[1:] if command.startswith('!') else 'cx ' + command
