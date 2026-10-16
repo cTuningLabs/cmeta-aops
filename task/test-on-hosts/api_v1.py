@@ -10,6 +10,7 @@ only (push -q, run --script, pull -q) - never hand-written ssh or scp.
 
 import datetime
 import fnmatch
+import json
 import os
 import shutil
 import subprocess
@@ -26,6 +27,7 @@ CONFIG_ALIAS = 'task-test-on-hosts'
 HERE = 'here'
 TREE_REPO = 'ctuninglabs@cmeta-aops'
 REMOTE_BASE = 'cmeta-tests'          # under the host's login home: every remote test lives there
+ROUND_FILE = 'round.json'            # the round as launched (its hosts, instances, refs that failed), in its local folder
 SKIP = {'.git', '__pycache__', '.pytest_cache'}
 SESSION_ENV = 'CMETA_TEST_SESSION'
 
@@ -61,6 +63,7 @@ class CTask(InitCTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
         self.instances = {}
+        self.failed_refs = {}
 
     ############################################################
     def run(self,
@@ -84,24 +87,41 @@ class CTask(InitCTask):
 
         con = ctx['control'].get('con', False)
 
-        host_list = [h.strip() for h in str(hosts or default_hosts(self.cm)).split(',') if h.strip()]
-
         if action not in ('launch', 'peek', 'collect', 'remove'):
             return self.cm.error(f'test-on-hosts: unknown action "{action}" (launch, peek, collect, remove)')
         if action != 'launch' and not id:
             return self.cm.error(f'test-on-hosts --action={action}: name the round (--id=<round>, printed at its launch)')
 
-        # A host ref of the run-on-any-host design (docker[:template], podman[:template], wsl[:template]) is the
-        # instance of that template on this machine, made on first use: the round runs inside it, with the tree
-        # already mounted there when it is the repository the instance carries
-        r = self.resolve_refs(con, host_list)
-        if r['return'] > 0: return r
-        host_list = r['hosts']
-        self.instances = r['instances']
-
         rid = id or datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
         local = self.local_folder(rid)
         remote = f'{REMOTE_BASE}/test-on-hosts-{rid}'
+
+        # peek, collect and remove without --hosts: the hosts the launch resolved (round.json), so that a ref of an
+        # instance is not made again and a ref that failed at the launch is not tried again
+        saved = {}
+        if action != 'launch' and not hosts:
+            try:
+                with open(os.path.join(local, ROUND_FILE), encoding = 'utf-8') as f:
+                    saved = json.load(f)
+            except (OSError, ValueError):
+                saved = {}
+        if saved.get('hosts'):
+            host_list = list(saved['hosts'])
+            self.instances = saved.get('instances') or {}
+        else:
+            host_list = [h.strip() for h in str(hosts or default_hosts(self.cm)).split(',') if h.strip()]
+
+            # A host ref of the run-on-any-host design (docker[:template], podman[:template], wsl[:template]) is the
+            # instance of that template on this machine, made on first use: the round runs inside it, with the tree
+            # already mounted there when it is the repository the instance carries. At a launch, a ref that cannot be
+            # made (an image that does not build) is said and left out: the rest of a matrix runs
+            r = self.resolve_refs(con, host_list, tolerant = action == 'launch')
+            if r['return'] > 0: return r
+            host_list = r['hosts']
+            self.instances = r['instances']
+            self.failed_refs = r.get('failed') or {}
+            if not host_list:
+                return self.cm.error('test-on-hosts: no host to run on' + (f' - every ref failed: {self.failed_refs}' if self.failed_refs else ''))
 
         if action == 'launch':
             return self.launch(con, rid, local, remote, host_list, cmds, tree)
@@ -199,12 +219,20 @@ class CTask(InitCTask):
             if con:
                 print (f'  {HERE}: {started[HERE]}')
 
-        if con:
-            print ('')
-            print (f'cMeta info: then: cx task run test-on-hosts --action=peek --id={rid}' +
-                   (f' --hosts={",".join(host_list)}' if host_list != default_hosts(self.cm).split(',') else ''))
+        # The round as launched, for peek / collect / remove without --hosts
+        record = {'id': rid, 'hosts': host_list, 'instances': self.instances, 'failed_refs': self.failed_refs,
+                  'commands': commands, 'tree': tree, 'started': started,
+                  'launched': datetime.datetime.now().astimezone().isoformat(timespec = 'seconds')}
+        with open(os.path.join(local, ROUND_FILE), 'w', encoding = 'utf-8') as f:
+            json.dump(record, f, indent = 2)
 
-        return {'return': 0, 'id': rid, 'local': local, 'remote': remote, 'started': started}
+        if con:
+            for ref, why in self.failed_refs.items():
+                print (f'  {ref}: NOT made - {why}')
+            print ('')
+            print (f'cMeta info: then: cx task run test-on-hosts --action=peek --id={rid}')
+
+        return {'return': 0, 'id': rid, 'local': local, 'remote': remote, 'started': started, 'failed_refs': self.failed_refs}
 
     ############################################################
     def peek(self, con, rid, local, remote, host_list):
@@ -295,14 +323,15 @@ class CTask(InitCTask):
         return {'return': 0, 'id': rid, 'removed': removed}
 
     ############################################################
-    def resolve_refs(self, con, host_list):
+    def resolve_refs(self, con, host_list, tolerant = False):
         """
         The host list with every ref of a template instance (docker[:template], podman[:template], wsl[:template],
         and the --on_* words after it: "docker:debian --on_template.os_version=13") replaced by the instance's
         alias, made or found through get-host--docker / get-host--wsl; for each instance, where the tree repository
-        (ctuninglabs@cmeta-aops) is mounted inside, so that a round runs on it without a push.
+        (ctuninglabs@cmeta-aops) is mounted inside, so that a round runs on it without a push. Tolerant (a launch): a
+        ref that cannot be made goes into 'failed' with its error, the others go on.
         """
-        hosts, instances = [], {}
+        hosts, instances, failed = [], {}, {}
         for ref in host_list:
             words = ref.split()
             head = words[0]
@@ -328,7 +357,12 @@ class CTask(InitCTask):
                 ii['compute'] = options.get('compute', 'cpu')
             r = self.cm.access(ii)
             if r['return'] > 0:
-                return r
+                if not tolerant:
+                    return r
+                failed[ref] = str(r.get('error', ''))[-300:]
+                if con:
+                    print (f'  {ref}: NOT made - {failed[ref]}')
+                continue
             alias = r['host']
             hosts.append(alias)
             # the tree repository inside the instance, from its host artifact
@@ -345,7 +379,7 @@ class CTask(InitCTask):
             instances[alias] = inst
             if con:
                 print (f'  {ref} -> {alias}' + (f' (the tree mounted at {inst["tree_inside"]})' if inst.get('tree_inside') else ''))
-        return {'return': 0, 'hosts': hosts, 'instances': instances}
+        return {'return': 0, 'hosts': hosts, 'instances': instances, 'failed': failed}
 
     ############################################################
     def host(self, command, **params):

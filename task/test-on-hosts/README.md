@@ -28,6 +28,9 @@ The parameters:
   instance of that template on this machine, made on first use (`get-host--docker`, `get-host--wsl`): the round
   runs inside it, and when the tree is the repository the instance carries, nothing is pushed - the runner reads
   it where it is mounted. An instance made this way stays (`cx host ls --made`, `cx host destroy <instance>`).
+  A ref whose instance cannot be made (an image that does not build) is said and left out: the rest of a matrix
+  runs. The launch records the round in `round.json` of its local folder (the hosts, the instances, the refs that
+  failed): peek, collect and remove without `--hosts` take the hosts from there.
 - **`--tree`:** the repository folder that is tested. The default is the local clone of `ctuninglabs@cmeta-aops`,
   as it is now, released or not.
 - **`--id`:** the name of the round. The default is the time; the other actions need it.
