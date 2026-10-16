@@ -1,0 +1,20 @@
+artifact: 2fb5a52690194034
+category: tool,c393ba5c6fa14f66
+authors: Grigori Fursin
+creation_timestamp: '2026-10-16T20:39:32.779966+00:00'
+desc: 'The NVIDIA Container Toolkit (nvidia-ctk) on Linux - detected, or installed from NVIDIA''s package repository
+  at the pinned version; docker and podman are then configured for the GPU.'
+generator:
+  method: agent
+  agent: Claude Code
+  model: claude-opus-5-5
+  via: cmeta 0.37.1
+  by: Grigori Fursin
+note: get-host--docker checks it before a CUDA instance on Linux (Docker Desktop on Windows passes the GPU itself).
+tags:
+- nvidia
+- container
+- gpu
+- cuda
+- docker
+- podman

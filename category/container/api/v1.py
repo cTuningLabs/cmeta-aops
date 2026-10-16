@@ -136,6 +136,21 @@ def headless_docker_config():
     atexit.register(shutil.rmtree, folder, ignore_errors=True)
     return folder
 
+def qualified_image(name):
+    """
+    An image name with its registry, as docker reads a short one: "ubuntu:26.04" is docker.io/library/ubuntu:26.04,
+    "nvidia/cuda:13.3.1-base-ubuntu26.04" is docker.io/nvidia/cuda:... - podman refuses a short name that its
+    registries.conf has no alias for (Ubuntu's podman knows ubuntu and debian, not nvidia/cuda: seen 2026-10-16).
+    A name whose first part is a registry (a dot, a port, localhost) is kept.
+    """
+    name = str(name or '').strip()
+    if not name:
+        return name
+    first, _, rest = name.partition('/')
+    if rest and ('.' in first or ':' in first or first == 'localhost'):
+        return name
+    return f'docker.io/{name}' if rest else f'docker.io/library/{name}'
+
 # one package-install fragment per package manager; {pkgs} = the space-separated package list
 PKG_BLOCKS = {
     'apt': 'RUN apt-get update && apt-get install -y --no-install-recommends {pkgs} && rm -rf /var/lib/apt/lists/*',
@@ -543,6 +558,8 @@ class Category(InitCategory):
             if not from_tpl:
                 return self._err(f'"{b["alias"]}" defines no FROM image (template.from)')
             cmeta['from'] = R(str(from_tpl), 'from')
+            if engine == 'podman':
+                cmeta['from'] = qualified_image(cmeta['from'])
 
             # ---- cMeta inside the image
             extras = str(cmeta['cmeta_extras'])

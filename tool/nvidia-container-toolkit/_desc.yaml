@@ -1,0 +1,63 @@
+authors: Grigori Fursin
+
+# The NVIDIA Container Toolkit: what lets a container on a Linux engine (Docker Engine, podman) use the NVIDIA GPU
+# of its machine - "docker run --gpus all" needs its runtime hook, "podman run --device nvidia.com/gpu=all" its CDI
+# description of the GPUs. Docker Desktop on Windows passes the GPU through WSL2 by itself and needs none of it.
+names:
+  - nvidia-ctk
+
+extra_paths:
+  linux:
+    - /usr/bin
+    - /usr/local/bin
+
+# "nvidia-ctk --version" prints "NVIDIA Container Toolkit CLI version 1.20.1" (and a commit line)
+cmd_get_version: '{{tool_path}} --version'
+match_version:
+  - regex: 'version\s+(\d+\.\d+\.\d+)'
+    group: 1
+
+# The releases (github.com/NVIDIA/nvidia-container-toolkit tags); release candidates are left out
+cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/NVIDIA/nvidia-container-toolkit'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: git,959d8c0fbc004bd0
+cmd_get_versions_regex: '\brefs/tags/v(\d+\.\d+\.\d+)$'
+
+# Installed when no --version is given: the four packages of this version from NVIDIA's own package repository
+# (nvidia.github.io/libnvidia-container, stable channel; apt on Debian/Ubuntu, dnf/yum/zypper on the RPM
+# distributions) - api_v1.py adds the repository and its signing key first
+default_version: '1.20.1'
+
+packages:
+  - nvidia-container-toolkit
+  - nvidia-container-toolkit-base
+  - libnvidia-container-tools
+  - libnvidia-container1
+
+repository:
+  key: https://nvidia.github.io/libnvidia-container/gpgkey
+  deb_list: https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list
+  rpm_repo: https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo
+  keyring: /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+# The commands post_install runs after the packages (and that get-host--docker names when they were not run):
+# docker gets the "nvidia" runtime and is restarted; podman reads the CDI file
+configure:
+  docker:
+    - nvidia-ctk runtime configure --runtime=docker
+    - systemctl restart docker
+  podman:
+    - nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+
+# the command itself is made by customize_install_cmd (api_v1.py): the repository, the key, the pinned packages
+install_cmd:
+  linux: 'nvidia-container-toolkit packages'
+
+requires_sudo:
+  linux: True
+
+install_help_text: |
+  The NVIDIA Container Toolkit is for Linux (Docker Engine, podman): "cx tool setup nvidia-container-toolkit --install"
+  adds NVIDIA's package repository, installs the pinned version and configures docker and podman for the GPU (sudo).
+  The NVIDIA driver must be installed first (nvidia-smi works). Docker Desktop on Windows needs none of it.

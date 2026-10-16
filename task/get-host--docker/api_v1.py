@@ -145,6 +145,19 @@ class CTask(InitCTask):
         r = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(path, '_desc'))
         return (r.get('data') or {}) if r['return'] == 0 else {}
 
+    @staticmethod
+    def _gpu_ready(engine):
+        """Linux: the engine can give a container the NVIDIA GPU - docker lists the "nvidia" runtime, podman finds the
+        CDI file of the GPUs (what tool/nvidia-container-toolkit sets up)."""
+        if engine == 'podman':
+            return any(os.path.isfile(p) for p in ('/etc/cdi/nvidia.yaml', '/var/run/cdi/nvidia.yaml', '/run/cdi/nvidia.yaml'))
+        try:
+            out = subprocess.run(['docker', 'info', '--format', '{{json .Runtimes}}'], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30).stdout
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return b'nvidia' in out
+
     def _carrier(self):
         """
         This machine as a fleet host (alias, uid, machine cRef) when it has a host artifact - "cx host whoami": by
@@ -204,7 +217,15 @@ class CTask(InitCTask):
         if compute != 'cpu' and compute not in (tdesc.get('compute') or {}):
             return self.cm.error(f'the template "{name}" has no compute overlay "{compute}" (it has: {", ".join((tdesc.get("compute") or {}).keys()) or "none"})')
 
-        arch_norm = ARCHES.get(str(arch).lower(), str(arch).lower()) if arch else ''
+        # A CUDA instance on a Linux engine needs the NVIDIA Container Toolkit (docker: the "nvidia" runtime, podman:
+        # the CDI file of the GPUs) - asked for explicitly, so a machine without it fails here with the cure instead
+        # of a container that starts without its GPU (Docker Desktop on Windows passes the GPU itself)
+        if compute == 'cuda' and sys.platform.startswith('linux') and not self._gpu_ready(engine):
+            return self.cm.error(f'{engine} here cannot give a container the NVIDIA GPU: the NVIDIA Container Toolkit is '
+                                 f'missing or {engine} is not configured for it - '
+                                 f'"cx tool setup nvidia-container-toolkit --install" (sudo), then try again')
+
+        arch_norm =ARCHES.get(str(arch).lower(), str(arch).lower()) if arch else ''
         platform_str = f'linux/{arch_norm}' if arch_norm else ''
 
         # ---- the place and the instance's name

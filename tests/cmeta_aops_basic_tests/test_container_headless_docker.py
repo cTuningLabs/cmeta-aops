@@ -5,7 +5,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 Offline tests of headless_docker_config (the container category): when Docker Desktop's credential store cannot
 be opened in this session (ssh with a key, a service), the docker commands get a copy of the config without the
 store and the classic builder, on macOS and on Windows alike; a store that answers, Linux and a DOCKER_CONFIG of
-the user's own are left alone.
+the user's own are left alone. And qualified_image: the registry podman needs in a short image name.
 """
 
 import importlib.util
@@ -93,3 +93,15 @@ def test_linux_and_a_config_of_ones_own_are_left_alone(module, home, monkeypatch
     monkeypatch.setenv('DOCKER_CONFIG', str(home / 'mine'))
     assert module.headless_docker_config() == ''
     assert not calls and 'DOCKER_BUILDKIT' not in os.environ
+
+
+@pytest.mark.parametrize('short, full', [
+    ('ubuntu:26.04', 'docker.io/library/ubuntu:26.04'),
+    ('nvidia/cuda:13.3.1-base-ubuntu26.04', 'docker.io/nvidia/cuda:13.3.1-base-ubuntu26.04'),
+    ('public.ecr.aws/amazonlinux/amazonlinux:2023', 'public.ecr.aws/amazonlinux/amazonlinux:2023'),
+    ('localhost/cmeta/ubuntu:26.04', 'localhost/cmeta/ubuntu:26.04'),
+    ('registry:5000/x/y:1', 'registry:5000/x/y:1'),
+    ('docker.io/library/debian:13', 'docker.io/library/debian:13'),
+])
+def test_podman_gets_the_registry_of_a_short_image_name(module, short, full):
+    assert module.qualified_image(short) == full
