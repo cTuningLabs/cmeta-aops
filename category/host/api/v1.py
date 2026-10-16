@@ -61,6 +61,13 @@ AOPS_REPO_UID = '3cb4ee4f444048f6'
 AOPS_REPO_NAME = 'cmeta-aops'
 
 
+def declared_project_states(saved, desc):
+    """The saved states of the projects the host still declares: a project taken out of _desc.yaml leaves
+    state.yaml at the next probe of the host (before 2026-10-16 its last state stayed there for ever)."""
+    declared = (desc or {}).get('projects') or {}
+    return {name: st for name, st in ((saved or {}).get('projects') or {}).items() if name in declared}
+
+
 class Category(InitCategory):
     """
     """
@@ -2706,7 +2713,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if h.get('project'):
             saved.setdefault('projects', {})[h['project']] = state
         else:
-            if saved.get('projects'): state['projects'] = saved['projects']
+            projects = declared_project_states(saved, h.get('desc'))
+            if projects: state['projects'] = projects
             saved = state
         r = self.cm.utils.files.safe_write_file(os.path.join(h['path'], STATE_FILE), saved, atomic=True,
                                                 sort_keys=False, logger=self.logger)

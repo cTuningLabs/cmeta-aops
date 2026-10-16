@@ -28,6 +28,9 @@ All notable changes to cMeta AOps are documented here, newest first.
   cache to `/usr/local/bin` first. `restart`, `upgrade` (through the channel the binary came from: apt, dnf, brew or
   the release) and `uninstall` complete it; every action has `--plan`, checks `sudo -n` before changing anything
   and waits for the connector, quoting cloudflared's last error when it does not come up. Windows: status only.
+- **`cx host probe` forgets a retired project.** A host's `state.yaml` kept the last state of every project the host
+  had ever declared, so a project taken out of its `_desc.yaml` went on showing its repositories in `cx host show`.
+  The probe now keeps the saved states of the declared projects only.
 
 ## 0.47.2
 - **A quiet run never answers a prompt of the system, on Windows too.** On Linux and macOS a quiet run (`-q`)
