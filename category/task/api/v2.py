@@ -309,7 +309,7 @@ class Category(InitCategory):
         if nested_call == 0 and os.environ.get('CMETA_ON', '') != 'here':
             on = str(params.get('on') or '').strip()
             if not on:
-                r_route = self._route_of(params.get('on_block') or cdesc.get('on'),
+                r_route = self._route_of(params.get('on_block') or cdesc.get('on') or cdesc.get(True),
                                          (artifact.get('cmeta_ref_parts') or {}).get('artifact_alias') or str(params.get('arg1') or 'the task'))
                 if self.cm.catch_error(r_route): return r_route
                 on = r_route['route']
@@ -1974,6 +1974,7 @@ class Category(InitCategory):
                                 'distro': str(options.get('distro') or ''),
                                 'compute': compute, 'arch': str(options.get('arch') or ''), 'instance': str(options.get('instance') or ''),
                                 'repos': str(options.get('repos') or ''), 'data': str(options.get('data') or ''),
+                                'ports': str(options.get('ports') or ''),
                                 'new_host': bool(options.get('new_host', False)) or bool(options.get('rm', False)),
                                 'con': con, 'quiet': quiet, 'verbose': verbose})
             if r['return'] > 0:
@@ -2030,6 +2031,15 @@ class Category(InitCategory):
         run_id = datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + '-'.join(w for w in inner_words[:3] if w and not w.startswith('-'))[:40]
         work = f'work/{run_id}' if pull else ''
 
+        # --on_detach: the run keeps running there after this command returns (a server: llama-server, vllm serve, an
+        # app) - in a session of its own, its output in ~/cmeta-detached/<run id>.log and its process group in a .pid
+        # file next to it; POSIX hosts and instances (a Windows host: not yet)
+        detach = bool(options.get('detach', False))
+        if detach and shell == 'powershell':
+            return self.cm.error(f'--on_detach runs on POSIX hosts and instances; {host} is a Windows host (not yet)')
+        if detach and (pull or bool(options.get('rm', False))):
+            return self.cm.error('--on_detach keeps the run going there: --on_pull and --on_rm would wait for it or remove it')
+
         if shell == 'powershell':
             import re
             sq = lambda s: "'" + s.replace("'", "''") + "'"                   # a value: always quoted (a bare word after = is a command there)
@@ -2041,10 +2051,26 @@ class Category(InitCategory):
             inner = ' '.join(f'{k}={shlex.quote(v)}' for k, v in env_pairs) + ' cx ' + ' '.join(shlex.quote(str(w)) for w in inner_words)
             if work:
                 inner = f'mkdir -p ~/{work} && cd ~/{work} && ' + inner
+            if detach:
+                # a session of its own (setsid; nohup where there is none: macOS), so that it survives the ssh / docker
+                # exec / wsl session that started it; $$ of the wrapper is the process group to stop
+                base = f'~/cmeta-detached/{run_id}'
+                wrapper = shlex.quote(f'echo $$ > {base}.pid; ' + inner)
+                inner = (f'mkdir -p ~/cmeta-detached && cd ~ && '
+                         f'if command -v setsid >/dev/null 2>&1; then setsid -f sh -c {wrapper} > {base}.log 2>&1 < /dev/null; '
+                         f'else nohup sh -c {wrapper} > {base}.log 2>&1 < /dev/null & fi; '
+                         f'sleep 2; echo "detached: {base}.log (stop: kill -- -$(cat {base}.pid))"')
         run_on = {'host': host, 'ref': ref, 'engine': engine, 'words': inner, 'instance_made': bool(made and made.get('made')),
                   'image': image, 'terminal': terminal}
         if work:
             run_on['work'] = work
+        if detach:
+            base = f'~/cmeta-detached/{run_id}'
+            run_on['detached'] = {'log': f'{base}.log', 'pid_file': f'{base}.pid',
+                                  'tail': f'cx host run {host} "tail -n 50 {base}.log"',
+                                  'stop': f'cx host run {host} "kill -- -$(cat {base}.pid)"'}
+            if made and made.get('ports'):
+                run_on['ports'] = made['ports']
         ctx['on'] = run_on
 
         if con:
@@ -2090,7 +2116,12 @@ class Category(InitCategory):
 
         if con:
             print ('')
-            print (f'cMeta info: ran on {host}' + (f' ({engine}, image {run_on["image"]})' if engine else '') + f'; shell: cx host ssh {host}')
+            if detach:
+                d = run_on['detached']
+                print (f'cMeta info: running on {host}, detached' + (f' (ports {", ".join(run_on["ports"])} on 127.0.0.1)' if run_on.get('ports') else '')
+                       + f'; its output: {d["tail"]}; stop it: {d["stop"]}')
+            else:
+                print (f'cMeta info: ran on {host}' + (f' ({engine}, image {run_on["image"]})' if engine else '') + f'; shell: cx host ssh {host}')
         return {'return': 0, 'run_on': run_on}
 
     ############################################################

@@ -177,17 +177,33 @@ in `ctx['on']`; the inner run's provenance and repro records carry `run_on` too 
 a shell there. An instance's cMeta home and cache are its own, never the machine's; the repositories mounted
 into it are the machine's, live. `--on_pull` makes the run work in `~/work/<run id>` there (its repro records,
 what `--save_here` writes) and brings that folder back into `on-runs/<run id>` here; `--on_rm` makes a
-throwaway instance for the run and destroys it after. Not yet: `--detach` (a service).
+throwaway instance for the run and destroys it after. `--on_detach` keeps the run going there after the command
+returns - a server: it runs in a session of its own, its output in `~/cmeta-detached/<run id>.log`, its process group
+in the `.pid` file next to it, and the closing line says how to read the output and how to stop it; `--on_ports=8080`
+(or `8080:80`, comma-separated) publishes ports of a new instance on 127.0.0.1 (a container cannot publish a port later:
+an instance made without it says so):
+
+```text
+cx tool run python --on=docker --on_instance=web --on_ports=8765 --on_detach -- -m http.server 8765
+cx host run web "tail -n 50 ~/cmeta-detached/<run id>.log"            # what it prints
+cx host run web "kill -- -$(cat ~/cmeta-detached/<run id>.pid)"      # stop it
+```
+
+POSIX hosts and instances only for now (a Windows host refuses `--on_detach`).
 
 An artifact can carry its own route, so that no word is needed - a task's `_desc.yaml`, or a program's (the
 program category hands it to the task):
 
 ```yaml
-on:
-  requires_os: [linux]          # the pipeline needs a Linux userland (test-sglang's ROCm route, OpenShell, TGI)
-  windows: wsl                  # the route on a Windows machine; darwin: docker for a Mac
+'on':                           # quoted: YAML 1.1 reads a bare on as the boolean true
+  requires_os: [linux]          # the pipeline needs a Linux userland (test-sglang, OpenShell, TGI)
+  windows: docker:sglang        # the route on a Windows machine (an instance of the stack template sglang)
+  darwin: docker:sglang         # and on a Mac
   default: docker:vllm-cuda     # the route everywhere when the command line names none (a stable stack image)
 ```
+
+The real ones: test-sglang (Linux only: Windows and macOS go into the SGLang stack, whose compute variant follows
+the run's `--compute`) and test-vllm (Linux and macOS natively, Windows into the ubuntu template's instance).
 
 The OS's own route wins, else `default`; nothing happens when this OS satisfies `requires_os` and no route is
 forced for it; an OS that is not allowed and has no route stops the run with the options. `--on=here` on the

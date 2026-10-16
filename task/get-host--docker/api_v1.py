@@ -209,6 +209,7 @@ class CTask(InitCTask):
             repos: str = '',                 # repositories of this machine mounted inside, comma-separated (default: ctuninglabs@cmeta-aops)
             data: str = '',                  # data repositories (config::task cache_repos) mounted under <home>/data/<alias>: all by default, a subset, or "none"
             new_host: bool = False,          # another instance of the same place (-2, -3 ...) instead of the existing one
+            ports: str = '',                 # ports published on 127.0.0.1 when the instance is made: "8000" or "8080:80", comma-separated (a server run with --on_detach)
             pull: bool = False,              # pull the base image again when building
             rebuild: bool = False,           # build the image again
     ):
@@ -294,10 +295,23 @@ class CTask(InitCTask):
             inst = f'{stem}-{n}'
             existing = None
 
+        # ---- the ports to publish (host:container, on 127.0.0.1): only a container that is made gets them
+        published = []
+        for p in [x.strip() for x in str(ports or '').split(',') if x.strip()]:
+            h, _, c = p.partition(':')
+            if not h.isdigit() or (c and not c.isdigit()):
+                return self.cm.error(f'--ports: "{p}" is not a port or host:container ports')
+            published.append(f'{h}:{c or h}')
+
         # ---- an existing instance: running, stopped, or gone
         if existing:
             d = self._desc(existing['path'])
             acc = d.get('access') or {}
+            missing = [p for p in published if p not in (acc.get('ports') or [])]
+            if missing:
+                return self.cm.error(f'the instance {inst} was made without the port{"s" if len(missing) > 1 else ""} '
+                                     f'{", ".join(missing)} (a container cannot publish a port later): --new_host makes another '
+                                     f'instance with them, or cx host destroy {inst} first')
             container = acc.get('container') or inst
             code, out, err = engine_run(engine, ['inspect', '-f', '{{.State.Status}}', container], timeout=60)
             status = out.strip() if code == 0 else 'missing'
@@ -310,7 +324,7 @@ class CTask(InitCTask):
                     print ('')
                     print (f'cMeta info: instance {inst} {"running" if status == "running" else "started"} ({engine} {engine_version}, image {acc.get("image", "?")}); shell: cx host ssh {inst}')
                 return {'return': 0, 'host': inst, 'container': container, 'image': acc.get('image', ''), 'made': False,
-                        'status': 'running' if status == 'running' else 'started', 'path': existing['path'],
+                        'status': 'running' if status == 'running' else 'started', 'path': existing['path'], 'ports': acc.get('ports') or [],
                         'data_repos': [m['repo'] for m in (d.get('mounts') or []) if m.get('kind') == 'data']}
             if con:
                 print ('')
@@ -364,7 +378,13 @@ class CTask(InitCTask):
             if isinstance(rf, dict):
                 rf = rf.get(engine) or []
             run_flags = [str(x) for x in rf]
-        run_args = ['--hostname', inst, '--label', 'cmeta.container=1', '--label', f'cmeta.host={inst}',
+        for p in published:
+            # loopback only: a server of an instance is this machine's until someone exposes it on purpose
+            h, _, c = p.partition(':')
+            run_flags += ['-p', f'127.0.0.1:{h}:{c}']
+        # --init: a small init as PID 1 reaps the orphans of what runs inside (sleep infinity does not): a multi-process
+        # program (vLLM's engine) stayed a zombie with live threads and its run never returned (seen 2026-10-17)
+        run_args = ['--init', '--hostname', inst, '--label', 'cmeta.container=1', '--label', f'cmeta.host={inst}',
                     '--label', f'cmeta.template={name}', '-e', 'CMETA_REINDEX=1']
         if platform_str:
             run_args += ['--platform', platform_str]
@@ -439,7 +459,7 @@ class CTask(InitCTask):
             desc['via'] = f'host,{HOST_CATEGORY.split(",")[1]}::{carrier},{carrier_uid}'
         desc.update({
             'access': {'container': inst, 'engine': engine, 'image': image, 'keepalive': ' '.join(KEEPALIVE),
-                       'run_args': ' '.join(run_args), 'user': user, 'shell': 'bash -l'},
+                       'run_args': ' '.join(run_args), 'user': user, 'shell': 'bash -l', 'ports': published},
             'cmeta': {'home': f'{home}/CMETA', 'install': 'uv-tool'},
             'sync': {'default': 'none'},
             'made_from': {'template': name, 'base': base_name, 'params': params, 'compute': compute, 'arch': arch_norm, 'engine': engine,
@@ -462,7 +482,7 @@ class CTask(InitCTask):
         if con:
             print ('')
             print (f'cMeta info: instance {inst} ready ({engine} {engine_version}, image {image}); shell: cx host ssh {inst}; run: cx host run {inst} "cx --version"')
-        return {'return': 0, 'host': inst, 'container': inst, 'image': image, 'made': True, 'status': 'running',
+        return {'return': 0, 'host': inst, 'container': inst, 'image': image, 'made': True, 'status': 'running', 'ports': published,
                 'path': apath, 'mounts': mounts + data_mounts, 'data_repos': [m['repo'] for m in data_mounts]}
 
     ############################################################

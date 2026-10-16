@@ -19,6 +19,7 @@ cx host run <instance> "cx --version"
 cx host ssh <instance>
 cx host down <instance>  /  cx host up <instance>               # the container keeps its cache across stop and start
 cx host destroy <instance> [--image]                                 # the container, the artifact, the image
+cx task run get-host--docker ubuntu --instance=web --ports=8080       # ports published on 127.0.0.1 (a server; --on_detach)
 ```
 
 What happens:

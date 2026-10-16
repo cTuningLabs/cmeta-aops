@@ -231,6 +231,50 @@ def test_the_on_block_of_an_artifact_gives_the_route(module, monkeypatch):
     assert route({'requires_os': 'linux', 'default': 'docker'})['route'] == 'docker'
 
 
+@pytest.mark.parametrize('system, sglang, vllm', [('Windows', 'docker:sglang', 'docker'), ('Darwin', 'docker:sglang', ''),
+                                                 ('Linux', '', '')])
+def test_the_on_blocks_of_the_real_programs(module, monkeypatch, system, sglang, vllm):
+    """The blocks as PyYAML reads them from _desc.yaml - where the key on: is the boolean True (YAML 1.1)."""
+    import yaml
+
+    c = category(module)
+    monkeypatch.setattr(module.platform, 'system', lambda: system)
+    for name, expected in (('test-sglang', sglang), ('test-vllm', vllm)):
+        with open(REPO_ROOT / 'program' / name / '_desc.yaml', encoding='utf-8') as f:
+            desc = yaml.safe_load(f)
+        block = desc.get('on') or desc.get(True)
+        assert isinstance(block, dict), name
+        r = c._route_of(block, name)
+        assert r['return'] == 0 and r['route'] == expected, (name, system, r)
+
+
+def test_detach_keeps_the_run_going_there_and_says_how_to_stop_it(module):
+    """--on_detach: a session of its own (setsid, else nohup), the output and the process group in ~/cmeta-detached."""
+    c = category(module)
+    words = ['tool', 'run', 'python', '--on=docker', '--on_ports=8765', '--on_detach', '--', '-m', 'http.server', '8765']
+    ctx, r = run_on(c, words, 'docker', {'on_ports': '8765', 'on_detach': True})
+
+    assert r['return'] == 0, r
+    assert instance_request(c)['ports'] == '8765'
+    cmd = host_run(c)['arg2']
+    assert 'setsid -f sh -c' in cmd and 'nohup sh -c' in cmd and 'echo $$ > ~/cmeta-detached/' in cmd
+    assert 'cx tool run python -- -m http.server 8765' in cmd and '--on_detach' not in cmd
+    d = r['run_on']['detached']
+    assert d['log'].startswith('~/cmeta-detached/') and d['log'].endswith('.log')
+    assert 'kill -- -$(cat' in d['stop'] and d['pid_file'] in d['stop']
+
+
+def test_detach_is_refused_where_it_cannot_work(module):
+    c = category(module, hosts=('nucbox',), host_os='windows', shell='powershell')
+    _, r = run_on(c, ['task', 'run', 'test-python', '--on=nucbox', '--on_detach'], 'nucbox', {'on_detach': True})
+    assert r['return'] == 1 and 'Windows host' in r['error']
+
+    c = category(module)
+    _, r = run_on(c, ['task', 'run', 'test-python', '--on=docker', '--on_detach', '--on_rm'], 'docker',
+                  {'on_detach': True, 'on_rm': True})
+    assert r['return'] == 1 and '--on_rm' in r['error']
+
+
 def test_without_a_command_line_nothing_is_delegated(module):
     c = category(module)
     r = c._run_on({'origin': {}}, {'on': 'lab-thinkpad-ubuntu'}, 'lab-thinkpad-ubuntu', False, False, False)

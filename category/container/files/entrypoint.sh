@@ -20,11 +20,14 @@ for d in "$HOME"/repos/*/ "$HOME"/data/*/; do
 done
 
 if [ -n "$CMETA_CONFIG_FROM_ENV" ]; then
-  printf '%s' "$CMETA_CONFIG_FROM_ENV" | tr ';' '\n' | while IFS='=' read -r key var; do
+  # one entry per line, the last one too (read fails on a last line without its newline: until 2026-10-17 the last
+  # entry - often the only one - was never set)
+  printf '%s\n' "$CMETA_CONFIG_FROM_ENV" | tr ';' '\n' | while IFS='=' read -r key var || [ -n "$key" ]; do
     [ -n "$key" ] && [ -n "$var" ] || continue
     cfg="${key%%.*}"; k="${key#*.}"
     val="$(printenv "$var" 2>/dev/null || true)"
-    [ -n "$val" ] && cx config set "$cfg" --meta."$k"="$val" >/dev/null 2>&1 || true
+    # -q and no stdin: the loop reads its keys from stdin, which a first "config set" (it creates the artifact) must not read
+    [ -n "$val" ] && cx config set "$cfg" --meta."$k"="$val" -q < /dev/null >/dev/null 2>&1 || true
   done
 fi
 

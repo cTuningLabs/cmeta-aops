@@ -84,7 +84,9 @@ class Category(InitCategory):
             rf = self.cm.access({'category': 'program,' + self.cmeta['artifact'], 'command': 'find', 'arg1': arg1, 'con': False})
             if rf.get('return', 1) == 0 and len(rf.get('artifacts') or []) == 1:
                 rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(rf['artifacts'][0]['path'], '_desc'))
-                block = ((rd.get('data') or {}).get('on') if rd.get('return', 1) == 0 else None)
+                # PyYAML (YAML 1.1) reads the key on: as the boolean True
+                data = (rd.get('data') or {}) if rd.get('return', 1) == 0 else {}
+                block = data.get('on') or data.get(True)
                 if isinstance(block, dict) and block:
                     p['on_block'] = block
 
