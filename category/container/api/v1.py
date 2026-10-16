@@ -118,9 +118,10 @@ def headless_docker_config():
     cfg.pop('credHelpers', None)
     with open(os.path.join(folder, 'config.json'), 'w', encoding='utf-8') as f:
         json.dump(cfg, f, indent=2)
-    if sys.platform == 'darwin' and not os.environ.get('DOCKER_BUILDKIT'):
-        # Docker Desktop on macOS pulls through its own backend, which asks the store whatever the config says;
-        # the classic builder pulls a public base image anonymously (checked over ssh on the Mac mini, 2026-10-15)
+    if not os.environ.get('DOCKER_BUILDKIT'):
+        # Docker Desktop pulls through its own backend, which asks the store whatever the config says; the
+        # classic builder pulls a public base image anonymously (checked over ssh on the Mac mini, 2026-10-15,
+        # and on a Windows host signed in with an ssh key, 2026-10-16)
         os.environ['DOCKER_BUILDKIT'] = '0'
     # the endpoints (Docker Desktop: desktop-linux) and the CLI plugins (buildx, compose) live next to the config
     for sub in ('contexts', 'cli-plugins'):

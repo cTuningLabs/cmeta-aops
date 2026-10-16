@@ -15,6 +15,7 @@ is one more branch in _cmd_run/_status/_up/_down and all the verbs work on it at
 """
 
 import fnmatch
+import hashlib
 import os
 import re
 import sys
@@ -66,6 +67,53 @@ def declared_project_states(saved, desc):
     state.yaml at the next probe of the host (before 2026-10-16 its last state stayed there for ever)."""
     declared = (desc or {}).get('projects') or {}
     return {name: st for name, st in ((saved or {}).get('projects') or {}).items() if name in declared}
+
+
+def system_id_of(raw):
+    """The hash recorded as system_id: the first 16 hex digits of sha256(the OS's own id, stripped, lowercase) -
+    the same as probe.sh and probe.ps1 print; '' for no id. The raw id itself is never written anywhere."""
+    raw = str(raw or '').strip().lower()
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()[:16] if raw else ''
+
+
+_LOCAL_SYSTEM_ID = None
+
+
+def local_system_id():
+    """
+    The system_id of the OS this process runs on (cached): Linux /etc/machine-id (else /var/lib/dbus/machine-id),
+    the macOS IOPlatformUUID, the Windows MachineGuid; '' when there is none (a container without a machine-id).
+    It stays across reboots and renames of the machine - a hostname does not (the Mac mini: Mac, Grigoris-Mac-mini,
+    Mac-001, Mac.lan) - and it is one per OS installation (a WSL distro has its own).
+    """
+    global _LOCAL_SYSTEM_ID
+    if _LOCAL_SYSTEM_ID is not None:
+        return _LOCAL_SYSTEM_ID
+
+    raw = ''
+    try:
+        if sys.platform == 'win32':
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Cryptography', 0,
+                                winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+                raw = str(winreg.QueryValueEx(key, 'MachineGuid')[0])
+        elif sys.platform == 'darwin':
+            out = subprocess.run(['ioreg', '-rd1', '-c', 'IOPlatformExpertDevice'], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20).stdout
+            m = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out.decode('utf-8', errors='replace'))
+            raw = m.group(1) if m else ''
+        else:
+            for p in ('/etc/machine-id', '/var/lib/dbus/machine-id'):
+                if os.path.isfile(p):
+                    with open(p, encoding='utf-8', errors='replace') as f:
+                        raw = f.read().strip()
+                    if raw:
+                        break
+    except Exception:
+        raw = ''
+
+    _LOCAL_SYSTEM_ID = system_id_of(raw)
+    return _LOCAL_SYSTEM_ID
 
 
 class Category(InitCategory):
@@ -803,16 +851,16 @@ class Category(InitCategory):
         to=None,            # remote path (required for a local path; default for a repository: its remote)
         dry_run=False,      # show what would be copied, copy nothing
         delete=False,       # rclone sync instead of copy: also delete remote files missing locally (within --dirs)
-        index=True,         # after a repository push: "cx --reindex" on the host, so a new artifact is found there (--index- skips it)
+        index=True,         # after a repository push: "cx repo reindex <repository>" on the host, so a new artifact is found there (--index- skips it)
         unparsed=None,      # everything after "--" goes to rclone
         project=None,      # named environment; omitted: the host's global environment
     ):
         """
         Copy a few directories of a repository (or any local path) to a host, one way, local -> host,
         without touching the bisync baseline - for a quick fix when a sync glitched, or when only one task
-        changed. Never deletes unless --delete. After a repository push the host's index is rebuilt
-        ("cx --reindex", a second or two), so an artifact new to the host is found by "cx <cat> find" at
-        once; --index- skips that (a push of category code or files only).
+        changed. Never deletes unless --delete. After a repository push that repository is rescanned on the host
+        ("cx repo reindex <repository>"; the whole index with a cMeta older than 0.34.0), so an artifact new to the
+        host is found by "cx <cat> find" at once; --index- skips that (a push of category code or files only).
 
             cx host push lab-thinkpad-ubuntu ctuninglabs@cmeta-aops --dirs=task/run-ai/,tool/agy/
             cx host push lab-laptop-ubuntu ctuninglabs@cmeta-aops --dirs=task/run-ai/ --dry_run
@@ -883,10 +931,14 @@ class Category(InitCategory):
         result = {'return': 0, 'host': h['alias'], 'local': local, 'remote': remote_path, 'dirs': whitelist}
 
         # A pushed folder is on the host's disk but not in its index until the index is rebuilt (seen 2026-10-06
-        # with new tools: invisible to "cx tool find" there). The engine has no per-artifact refresh of an
-        # existing path, and a full rebuild takes a second or two on the test hosts.
+        # with new tools: invisible to "cx tool find" there): only the pushed repository is rescanned ("cx repo
+        # reindex", cMeta 0.34.0+); a cMeta too old for it, or a repository it does not know by that alias, gets
+        # the whole index rebuilt as before
         if index and arg2 in entries and not dry_run:
-            cmd = 'cx --reindex'
+            if self._shell(h).strip() in ('powershell', 'pwsh'):
+                cmd = f"cx repo reindex {arg2} -q; if ($LASTEXITCODE -ne 0) {{ cx --reindex }}"
+            else:
+                cmd = f'cx repo reindex {shlex.quote(arg2)} -q || cx --reindex'
             r = self._cmd_run(ctx, h, cmd)
             if self.cm.catch_error(r): return r
             t0 = time.monotonic()
@@ -2181,15 +2233,71 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         return h.get('status') in ('up', 'here') or (h.get('type') == 'wsl' and h.get('status') == 'stopped')
 
     def _here(self, h):
-        """This host is the machine the command runs on: its declared hostname is the local one."""
+        """
+        This host is the machine the command runs on: the system_id its last probe recorded is the local one;
+        without one on either side (never probed, a container without a machine-id), its declared hostname is
+        the local one. A recorded system_id that differs decides "not here" even when the hostnames are equal
+        (two machines left with the same default hostname).
+        """
         if h['type'] != 'ssh':
             return False
+        recorded = str((h.get('state') or {}).get('system_id') or '').strip().lower()
+        mine = local_system_id()
+        if recorded and mine:
+            return recorded == mine
+
         acc = h['desc'].get('access') or {}
         name = acc.get('hostname')
         if not name:
             return False
         me = platform.node().split('.')[0].lower()
         return str(name).split('.')[0].lower() == me
+
+    ############################################################
+    def whoami_(
+        self,
+        ctx,
+    ):
+        """
+        The host artifact of the machine this command runs on: the ssh host whose probed system_id is the local
+        one (an id that stays across reboots and renames), else the one whose declared hostname is the local one.
+        Prints its alias; returns {'host': alias, 'uid', 'machine', 'by': 'system_id' | 'hostname'}, or
+        {'host': ''} when none is (an instance names itself after the hostname then).
+
+            cx host whoami
+        """
+        con = (ctx.get('control') or {}).get('con', False)
+        mine = local_system_id()
+
+        r = self._select(ctx)
+        if r['return'] > 0: return r
+
+        by_id = []
+        by_name = []
+        for h in r['hosts']:
+            if h['type'] != 'ssh':
+                continue
+            recorded = str((h.get('state') or {}).get('system_id') or '').strip().lower()
+            if mine and recorded == mine:
+                by_id.append(h)
+            elif self._here(h):
+                by_name.append(h)
+
+        found, by = (by_id, 'system_id') if by_id else (by_name, 'hostname')
+        if not found:
+            if con:
+                print(f'no host artifact is this machine ({platform.node()}): declare one with access: hostname, '
+                      f'then "cx host probe <alias>" records its system_id')
+            return {'return': 0, 'host': '', 'system_id': mine}
+
+        if len(found) > 1 and con:
+            print(f'cMeta warning: {len(found)} hosts match this machine by {by}: '
+                  f'{", ".join(x["alias"] for x in found)} - the first is taken')
+        h = found[0]
+        if con:
+            print(h['alias'])
+        return {'return': 0, 'host': h['alias'], 'uid': h.get('uid'), 'machine': h['desc'].get('machine'),
+                'by': by, 'system_id': mine}
 
     def _wsl_states(self):
         """{distro lower: 'running' | 'stopped'} - wsl.exe prints UTF-16."""

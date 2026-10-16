@@ -15,6 +15,15 @@ Line 'kernel' ("Windows " + [Environment]::OSVersion.Version)
 Line 'arch' $env:PROCESSOR_ARCHITECTURE
 Line 'uptime' ("up since " + $os.LastBootUpTime.ToString('yyyy-MM-dd HH:mm'))
 
+# The OS's own id (MachineGuid), which stays across reboots and renames: only its hash is printed - the first
+# 16 hex digits of sha256(the id in lowercase), as host/api/v1.py::system_id_of computes it
+$guid = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Cryptography' -Name MachineGuid).MachineGuid
+if ($guid) {
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("$guid".Trim().ToLowerInvariant()))
+  Line 'system_id' ((($bytes | ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 16))
+}
+
 # The login
 Line 'user' $env:USERNAME
 Line 'home' $env:USERPROFILE

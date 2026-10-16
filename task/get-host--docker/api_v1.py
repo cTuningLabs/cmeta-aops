@@ -146,15 +146,14 @@ class CTask(InitCTask):
         return (r.get('data') or {}) if r['return'] == 0 else {}
 
     def _carrier(self):
-        """This machine as a fleet host (alias, uid, machine cRef) when it has a host artifact, else its hostname."""
-        node = platform.node().lower()
-        r = self.cm.access({'category': HOST_CATEGORY, 'command': 'find', 'arg1': '*', 'con': False})
-        for a in (r.get('artifacts') or []) if r['return'] == 0 else []:
-            d = self._desc(a['path'])
-            if str((d.get('access') or {}).get('hostname', '')).lower() == node and d.get('type') == 'ssh':
-                parts = a['cmeta_ref_parts']
-                return parts['artifact_alias'], parts.get('artifact_uid'), d.get('machine')
-        return clean_name(node), None, None
+        """
+        This machine as a fleet host (alias, uid, machine cRef) when it has a host artifact - "cx host whoami": by
+        the system_id its probe recorded, else by the declared hostname - else its hostname.
+        """
+        r = self.cm.access({'category': HOST_CATEGORY, 'command': 'whoami', 'con': False})
+        if r['return'] == 0 and r.get('host'):
+            return r['host'], r.get('uid'), r.get('machine')
+        return clean_name(platform.node().lower()), None, None
 
     ############################################################
     def run(self,

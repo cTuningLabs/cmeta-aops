@@ -66,7 +66,7 @@ cx host snapshot <instance> [--name=<name>] [--note=<text>]       the instance's
 cx host restore <instance> [--name=<snapshot>]                    the instance back to a snapshot (the last one by default): the container made again from the image, the distribution imported again
 cx host restart <host> [--yes] [--no-wait] [--timeout=600] [--skip_after] [--dry_run]   (also: reboot)
 cx host sync [host|selection] [--repos=a,b] [--resync [--resync_mode=newer|path1|path2]] [--unlock] [--dry_run] [--skip_after]
-cx host push <host> <repo> --dirs=task/x/,tool/y/ [--dry_run] [--delete] [--index-]   then "cx --reindex" on the host (a second), so a new artifact is found there
+cx host push <host> <repo> --dirs=task/x/,tool/y/ [--dry_run] [--delete] [--index-]   then "cx repo reindex <repo>" on the host, so a new artifact is found there
 cx host push <host> <local path> --to=<remote path>      a folder goes under --to, a single file lands AT --to (rclone copyto)
 cx host pull <host> <remote file or folder> [--to=<local folder>] [--files=*.jsonl,steps.txt] [--dry_run]   the other way: host -> here (rclone copy --from_remote of rclone-to-ssh); nothing here is deleted
                                       (push and pull with -q set rclone up again when the cMeta cache was cleaned)

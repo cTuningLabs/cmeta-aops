@@ -18,6 +18,23 @@ fi
 
 echo "uptime=$(uptime 2>/dev/null | sed 's/^ *//')"
 
+# The OS's own id, which stays across reboots and renames (a hostname does not): only its hash is printed -
+# the first 16 hex digits of sha256(the id in lowercase), as host/api/v1.py::system_id_of computes it
+SID=""
+if [ -s /etc/machine-id ]; then SID=$(cat /etc/machine-id 2>/dev/null)
+elif [ -s /var/lib/dbus/machine-id ]; then SID=$(cat /var/lib/dbus/machine-id 2>/dev/null)
+elif command -v ioreg >/dev/null 2>&1; then SID=$(ioreg -rd1 -c IOPlatformExpertDevice 2>/dev/null | awk -F'"' '/"IOPlatformUUID"/ {print $4; exit}')
+fi
+SID=$(printf '%s' "$SID" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+
+if [ -n "$SID" ]; then
+  if command -v sha256sum >/dev/null 2>&1; then SH=$(printf '%s' "$SID" | sha256sum)
+  elif command -v shasum >/dev/null 2>&1; then SH=$(printf '%s' "$SID" | shasum -a 256)
+  else SH=""; fi
+  SH=$(printf '%s' "$SH" | cut -c1-16)
+  if [ -n "$SH" ]; then echo "system_id=$SH"; fi
+fi
+
 # The login
 echo "user=$(id -un 2>/dev/null)"
 echo "home=$HOME"

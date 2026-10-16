@@ -65,7 +65,7 @@ class Projects(unittest.TestCase):
     def test_fleet_selection_ignores_migration_stubs(self):
         real = {'cmeta': {}, 'path': '/real'}
         stub = {'cmeta': {'migrated_to': 'vm,1234'}, 'path': '/stub'}
-        self.cat._prepare_input_from_params = lambda params, **kwargs: params
+        self.cat._prepare_input_from_ctx = lambda ctx, **kwargs: {}
         self.cat.cm.access = lambda params: {'return': 0, 'artifacts': [stub, real]}
         self.cat._load_host = mock.Mock(return_value=self.host)
         result = self.cat._select({})
@@ -114,7 +114,9 @@ class Projects(unittest.TestCase):
         self.cat._probe_one({}, self.host, 5, False)
         saved = self.cat._read_yaml(self.path / 'state.yaml')
         self.assertIn('web', saved['projects'])
-        self.assertIn('other', saved['projects'])
+
+        # a project the host no longer declares leaves state.yaml at its next probe (72c644c)
+        self.assertNotIn('other', saved['projects'])
 
     @unittest.skipIf(os.name == 'nt', 'POSIX shell integration runs on the Linux host')
     def test_global_cx_on_the_host_ignores_an_activated_project(self):
