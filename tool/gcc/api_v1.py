@@ -27,6 +27,7 @@ class CTool(InitCTool):
         """
 
         new_paths = []
+        con = ctx['control'].get('con', False)
 
         for p in paths:
             # Parsing standard output
@@ -35,9 +36,14 @@ class CTool(InitCTool):
             path_tool = p['path']
             path_bin = os.path.dirname(path_tool)
 
+            # A gcc without its binutils (ar, as, ld) next to it builds nothing: not a candidate, so that the setup
+            # installs the whole toolchain - before, the run stopped here (Azure Linux 3.0, whose gcc package came
+            # without binutils into an instance made before the template listed them, 2026-10-17)
             path_tool_lib = os.path.join(path_bin, 'ar')
             if not os.path.isfile(path_tool_lib):
-                return self.cm.error(f'library sub-tool not found in "{path_tool_lib}"')
+                if con:
+                    print(f'cMeta warning: {path_tool} has no "ar" next to it (binutils missing) - not used')
+                continue
 
             _paths = {
                'bin': path_bin,
