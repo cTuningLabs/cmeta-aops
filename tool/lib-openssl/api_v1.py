@@ -224,6 +224,13 @@ class CTool(InitCTool):
              except Exception as e:
                  pass
 
+             # OpenSSL 1.1 and older have no OPENSSL_VERSION_MAJOR/MINOR/PATCH (3.0 brought them): the version text,
+             # "OpenSSL 1.1.1k  FIPS 25 Mar 2021" -> 1.1.1 (Rocky Linux 8, seen 2026-10-16)
+             if not version:
+                 m = re.search(r'OPENSSL_VERSION_TEXT\s+"OpenSSL\s+(\d+)\.(\d+)\.(\d+)', s)
+                 if m:
+                     version = '.'.join(m.groups())
+
              if not version:
                  continue
 

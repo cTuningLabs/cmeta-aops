@@ -198,6 +198,14 @@ class CProgram(InitCProgram):
         if fastest and 'GGML_NATIVE' not in d:
             d['GGML_NATIVE'] = 'ON'
 
+        # A native build whose assembler is older than the CPU (AVX-VNNI with binutils < 2.36: Rocky Linux 9 on a recent
+        # Intel CPU) builds without AVX-VNNI instead of failing at "unsupported instruction vpdpbusd"
+        if not android and 'cuda' not in compute and str(d.get('GGML_NATIVE', 'ON')).strip('"').upper() != 'OFF':
+            cc = str(d.get('CMAKE_C_COMPILER') or _global.get('compiler', {}).get('path') or '').strip('"')
+            if common_llama_cpp.native_needs_no_avxvnni(cc):
+                for k in ('CMAKE_C_FLAGS', 'CMAKE_CXX_FLAGS'):
+                    d[k] = (str(d.get(k, '')).strip('"') + ' -mno-avxvnni').strip()
+
         # HTTPS (llama.cpp's own -hf downloads; cMeta downloads models itself): OpenSSL when it
         # is installed, BoringSSL built along (--compile.boringssl, as the release binaries do),
         # else none - llama.cpp then only warns, as it does without OpenSSL

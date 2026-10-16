@@ -229,6 +229,39 @@ def finish_llama_run(program, ctx, desc = {}, **misc):
     return {'return': 0}
 
 
+
+def native_needs_no_avxvnni(cc):
+    """
+    A native x86_64 Linux build (-march=native, GGML_NATIVE) on a CPU with AVX-VNNI, by a compiler that knows AVX-VNNI
+    and an assembler that does not (binutils older than 2.36: Rocky Linux 9's 2.35 with GCC 11): the compiler emits
+    vpdpbusd and the assembler stops with "unsupported instruction" (seen 2026-10-16 on a Raptor Lake laptop). True when
+    the build needs -mno-avxvnni; a compiler that does not know the flag never emits the instruction.
+    """
+    import platform
+    import subprocess
+
+    if platform.system() != 'Linux' or platform.machine().lower() not in ('x86_64', 'amd64') or not cc:
+        return False
+    try:
+        with open('/proc/cpuinfo', encoding='utf-8', errors='replace') as f:
+            if ' avx_vnni' not in f.read():
+                return False
+    except OSError:
+        return False
+
+    def ok(args, source):
+        try:
+            r = subprocess.run([cc] + args + ['-c', '-o', os.devnull, '-'], input=source.encode(),
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return r.returncode == 0
+
+    if ok(['-x', 'assembler'], '{vex} vpdpbusd %ymm2, %ymm1, %ymm0\n') is not False:
+        return False
+    return bool(ok(['-mno-avxvnni', '-x', 'c'], 'int x;\n'))
+
+
 def optional_access(cm, ctx, ii):
     """
     Run a sub-task whose failure is acceptable (an optional dependency). A failed task returns
