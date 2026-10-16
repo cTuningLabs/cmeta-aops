@@ -26,6 +26,7 @@ uses_categories:
   machine: machine,fc0812696c6a4145
 uses_artifacts:
   task::rclone-to-ssh: rclone-to-ssh
+  task::keep-adb-connection-alive: keep-adb-connection-alive,58392c394a8f4ae3
 last_update_timestamp: '2026-10-06T12:11:39.368138+00:00'
 last_generator:
   method: agent

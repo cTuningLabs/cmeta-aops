@@ -273,6 +273,43 @@ class Category(InitCategory):
         return {'return': 0, 'probed': results}
 
     ############################################################
+    def connect_(self, ctx, arg1=None, endpoint=None, serial=None, pair: bool = False,
+                 pairing_endpoint=None, keepalive: bool = False, period=10, duration=0,
+                 timeout=15, instructions: bool = False):
+        """Connect an Android fleet host over Wi-Fi, optionally pair or keep reconnecting.
+
+        cx host connect <watch> --pair       # adb asks for the watch PIN in this terminal
+        cx host connect <watch> --endpoint=IP:port
+        cx host connect <watch> --keepalive  # foreground loop; stop with Ctrl+C
+
+        Runs on this host's declared local ADB controller. Pairing credentials stay with
+        adb; observed device identity and connection endpoint live in the host state.
+        """
+        if not arg1: return self.cm.error('which Android host? cx host connect <host>')
+        r = self._get_host(ctx, arg1)
+        if self.cm.catch_error(r): return r
+        h = r['host']
+        if h['type'] != 'adb': return self.cm.error('connect currently supports adb hosts')
+        parents = h.get('via_list') or []
+        if parents:
+            local_parent = False
+            for alias in parents:
+                r = self._get_host(ctx, alias)
+                if r.get('return') == 0 and self._here(r['host']):
+                    local_parent = True
+                    break
+            if not local_parent:
+                return self.cm.error('run connect on a declared ADB controller: ' + ', '.join(parents))
+        r = self.cm.access({'category': self.cmeta['uses_categories']['task'], 'command': 'run',
+                            'arg1': self.cmeta['uses_artifacts']['task::keep-adb-connection-alive'],
+                            'ctx': ctx, 'host': h['alias'] + ',' + h['uid'], 'ip': endpoint,
+                            'serial': serial or '', 'once': not keepalive, 'pair': pair,
+                            'pairing_endpoint': pairing_endpoint or '', 'period': period,
+                            'duration': duration, 'timeout': timeout, 'instructions': instructions})
+        self._host_cache.pop(h['alias'], None)
+        return r
+
+    ############################################################
     def run_(
         self,
         ctx,
@@ -1729,9 +1766,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if arg1 is not None and arg1 in self._host_cache and not (tags or machine or type or project):
             return {'return': 0, 'hosts': [self._host_cache[arg1]]}
 
-        p = self._prepare_input_from_params({'ctx': ctx, 'arg1': arg1, 'tags': tags}, base=True)
-        p['command'] = 'find'
-        p['con'] = False
+        # Program contexts contain loaded API modules, which cannot be deep-copied.
+        # Keep the context shared, as for other nested access() calls.
+        p = self._prepare_input_from_ctx(ctx, base=True)
+        p.update({'command': 'find', 'ctx': ctx, 'arg1': arg1, 'tags': tags, 'con': False})
         r = self.cm.access(p)
         if r['return'] > 0 and r['return'] != 16: return r
 
@@ -1772,6 +1810,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         alias = parts.get('artifact_alias') or parts.get('artifact_uid') or os.path.basename(path)
         desc = self._read_yaml(os.path.join(path, DESC_FILE))
         state = self._read_yaml(os.path.join(path, STATE_FILE))
+        # Wireless ports/transport names can change; the observed endpoint is state, not configuration.
+        if desc.get('type') == 'adb' and (desc.get('access') or {}).get('wireless'):
+            observed = state.get('adb_connection') or {}
+            if observed.get('serial'):
+                desc.setdefault('access', {})['serial'] = observed['serial']
         # "via" is one parent, or a list of candidate parents for a device that moves between machines
         # (a phone or a tablet plugged into whichever machine is at hand): then the parent that saw it
         # last (state.yaml via_now) is the working guess until _resolve_via asks around
@@ -2320,6 +2363,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         'here' is True when the host is this machine: the caller runs cmd as it is.
         """
         t = h['type']
+        wireless = (h['desc'].get('access') or {}).get('wireless')
+        if t == 'adb' and isinstance(wireless, dict) and wireless.get('auto_connect'):
+            r = self.connect_(ctx, h['alias'] + ',' + h['uid'])
+            if self.cm.catch_error(r): return r
+            h['desc'].setdefault('access', {})['serial'] = r['serial']
         acc = h['desc'].get('access') or {}
         shell = self._shell(h)
         if acc.get('x11'):
@@ -2715,6 +2763,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         else:
             projects = declared_project_states(saved, h.get('desc'))
             if projects: state['projects'] = projects
+            if h['type'] == 'adb' and (h['desc'].get('access') or {}).get('wireless'):
+                if saved.get('adb_connection'):
+                    state['adb_connection'] = saved['adb_connection']
             saved = state
         r = self.cm.utils.files.safe_write_file(os.path.join(h['path'], STATE_FILE), saved, atomic=True,
                                                 sort_keys=False, logger=self.logger)

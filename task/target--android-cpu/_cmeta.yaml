@@ -8,3 +8,6 @@ last_update_timestamp: '2026-04-20T09:11:42.188092+00:00'
 name: Android CPU
 sort: 3000
 
+uses_categories:
+  host: host,e4e49c251c814f6d
+

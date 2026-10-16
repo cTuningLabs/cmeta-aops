@@ -3,6 +3,14 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## Unreleased
+- **Wireless Android fleet connections.** `cx host connect` reuses
+  `keep-adb-connection-alive` for guided pairing, a verified one-shot connection
+  or a foreground reconnect loop. It follows advertised connection ports using
+  saved hardware identity, keeps non-secret connection state across fleet probes,
+  and can require watch hardware. Wireless host commands and an optional Android
+  CPU target `device_host` reconnect before use. Legacy endpoint/period loops and
+  USB host behavior remain supported; pairing PINs stay with interactive ADB.
+  Host selection also accepts program contexts containing loaded API modules.
 - **Android APKs through the program abstraction.** Programs inherit
   `template-android-gradle-app` and use the existing compile/run/cache/source
   tracking/provenance driver. The additive `android-app` target allows compilation
