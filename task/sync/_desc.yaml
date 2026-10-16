@@ -1,0 +1,25 @@
+authors: Grigori Fursin
+cache: false
+store_global: false
+params_map:
+  arg2: name
+  dry-run: dry_run
+  resync-mode: resync_mode
+  require-initialized: require_initialized
+  migrate-state: migrate_state
+cli_params:
+  passes: {type: int, min: 1, max: 10}
+
+# Operational defaults are queryable here, independent of the implementation.
+defaults:
+  mode: bisync
+  initial_mode: merge
+  initial_max_delete: 100
+  resync_mode: newer
+  max_delete_bisync: 50
+  max_delete_mirror: 100
+  transfers: 4
+  state_filters:
+    - '- **/sync--*/**'
+    - '- **/.cmeta-sync*'
+    - '- **/.cmeta-sync-backups/**'

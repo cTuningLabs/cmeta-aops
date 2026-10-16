@@ -1,0 +1,24 @@
+artifact: 5232474161e24333
+category: category,dd9ea50e7f76467f
+authors: Grigori Fursin
+creation_timestamp: '2026-10-15T13:17:14.301874+00:00'
+generator:
+  method: agent
+  agent: OpenAI Codex 0.162.1
+  via: cmeta 0.37.1
+  by: Grigori Fursin
+last_api_version: 1
+base_category_default_api_versions:
+  '1': 1
+description: Reusable directory and repository synchronization definitions.
+uses_categories:
+  task: task,c36be4b9314a45e0
+uses_artifacts:
+  task::sync: sync,15269eacbcda4190
+last_update_timestamp: '2026-10-15T13:23:24.806817+00:00'
+last_generator:
+  method: agent
+  agent: OpenAI Codex 0.162.1
+  via: cmeta 0.37.1
+  by: Grigori Fursin
+  date: '2026-10-15'
