@@ -16,6 +16,17 @@ import socket
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
+
+def normal_uarch(uarch):
+    """
+    One name per architecture, as Go and Docker spell them: amd64 and arm64. Linux says x86_64 and aarch64 where
+    Windows and macOS say amd64 and arm64, and the tools map amd64 / arm64 to their assets: with aarch64 an ARM Linux
+    machine (Graviton, Ampere, a Raspberry Pi, a Linux container on a Mac) found no asset of cmake, go, rustup,
+    openjdk, docker-compose ... (seen 2026-10-17). Other names (armv7l, riscv64, x86 ...) stay as they are.
+    """
+    return {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(uarch, uarch)
+
+
 class CTask(InitCTask):
     """
     """
@@ -165,11 +176,9 @@ class CTask(InitCTask):
 
                 host_os['release_name_with_kernel'] = f"{host_os['release_name']} ({kernel_version})"
 
-        if uarch == 'x86_64': uarch = 'amd64'
-
-        # May have armv6l, aarch64, riscv64 ...
-
-        host_os['uarch'] = uarch
+        # One name per architecture (see normal_uarch); the OS's own spelling is kept next to it
+        host_os['uarch_native'] = uarch
+        host_os['uarch'] = normal_uarch(uarch)
 
         # If Linux, detect extra env:
         if uname != 'windows':
