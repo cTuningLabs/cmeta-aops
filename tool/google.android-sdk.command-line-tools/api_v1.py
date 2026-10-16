@@ -6,6 +6,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
+import re
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 
@@ -15,6 +16,28 @@ class CTool(InitCTool):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
+
+    def detect_versions(self, ctx, paths, params=None):
+        """Use the installed SDK package's revision when every candidate has one.
+
+        Some Windows sdkmanager launchers mishandle ! in JAVA_HOME and print a
+        Java diagnostic even for --version. Never record that diagnostic as a version.
+        Legacy layouts without source.properties keep command-based detection.
+        """
+        versions = {}
+        for candidate in paths:
+            path = candidate[1:] if candidate.startswith('!') else candidate
+            properties = os.path.join(os.path.dirname(os.path.dirname(path)), 'source.properties')
+            try:
+                with open(properties, encoding='utf-8') as stream:
+                    text = stream.read()
+            except OSError:
+                return {'return': 0}
+            match = re.search(r'(?m)^Pkg\.Revision\s*=\s*(\d+(?:\.\d+)*)\s*$', text)
+            if not match:
+                return {'return': 0}
+            versions[candidate] = {'output': match.group(1)}
+        return {'return': 0, 'found_paths_with_versions': versions}
 
     ############################################################
     def finish_dynamic_result(self,

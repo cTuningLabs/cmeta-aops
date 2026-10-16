@@ -3,9 +3,9 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 names:
   - sdkmanager{{global.host.vars.file_ext_bat2}}
 
-match_version: 
-  - regex: '^\S+'
-    group: 0
+match_version:
+  - regex: '(?m)^\s*(\d+(?:\.\d+)*)\s*$'
+    group: 1
 
 cmd_get_version: '{{tool_path}} --version'
 
@@ -25,14 +25,17 @@ install_cmd_version:
 
 extra_paths:
   windows:
+    - "{{global.host.os_env.LOCALAPPDATA}}\\Android\\Sdk\\cmdline-tools\\*\\bin"
     - "C:\\Program Files\\Android\\**"
     - "C:\\Program Files (x86)\\Android*\\**"
     - "D:\\Program Files\\Android\\**"
     - "D:\\Program Files (x86)\\Android*\\**"
     - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
   linux:
+    - "{{user_home}}/Android/Sdk/cmdline-tools/*/bin"
     - "/home/linuxbrew/.linuxbrew/**"
   darwin:
+    - "{{user_home}}/Library/Android/sdk/cmdline-tools/*/bin"
     - "/opt/homebrew/opt/**"
 
 uses:

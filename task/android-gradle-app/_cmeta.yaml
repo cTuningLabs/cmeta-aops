@@ -1,0 +1,9 @@
+artifact: 175185dd757f45e1
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+min_cmeta_version_api: 0.37.0
+tags: [android, gradle, apk, build, deploy, adb]
+desc: Build a Gradle Android APK in cMeta cache, install it, or launch an installed app.
+uses_categories:
+  task: task,c36be4b9314a45e0
+  cache: cache,1ebdcc1cc30c4022

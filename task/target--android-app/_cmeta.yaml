@@ -1,0 +1,7 @@
+artifact: c3e23f8e02af47f7
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+name: Android application (APK)
+desc: 'Compute target: an Android application installed and launched through ADB; compilation needs no device.'
+sort: 250
+tags: [target, android, apk]

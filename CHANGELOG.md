@@ -3,6 +3,19 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## Unreleased
+- **Android APKs through the program abstraction.** Programs inherit
+  `template-android-gradle-app` and use the existing compile/run/cache/source
+  tracking/provenance driver. The additive `android-app` target allows compilation
+  without a device; command variants install or launch through ADB. Gradle,
+  Android XML and resource changes are tracked, and generated files live inside
+  the program build workspace. Native Android program targets keep their behavior.
+- **Android Gradle app lifecycle through `task::android-gradle-app`.** Build with
+  a project's own Gradle wrapper, install an APK with ADB, or launch an installed
+  activity. Sources resolve by cRef or an explicit directory; generated files and
+  verified build receipts live in cMeta cache. Device selection refuses ambiguity,
+  install keeps application data, and a failed build invalidates its deploy receipt.
+  Android SDK detection includes Android Studio's standard user directories and
+  reads installed package revisions, preserving command detection for older layouts.
 - **Cloudflare Tunnels: `tool::cloudflared` and `task::manage-cloudflare-tunnel`.** The tool detects an installed
   cloudflared (the distribution package, brew, winget) or installs the pinned release, its SHA-256 checked against
   the asset digests of GitHub's release API (upstream lists sums only in the release notes). The task manages the
