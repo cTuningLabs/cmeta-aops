@@ -3,14 +3,17 @@ authors: Grigori Fursin
 # Base template: Rocky Linux + tools + uv + cMeta (dnf). RHEL-compatible; AlmaLinux 9 is the same recipe
 # with from: "almalinux:{{cmeta.os_version}}".
 #
-#   cx container build rockylinux                  # rockylinux:9
+#   cx container build rockylinux                  # Rocky Linux 9
 #   cx container build rockylinux --template.os_version=10
+#   cx container build rockylinux --template.os_version=8     # its python is 3.6: uv fetches a newer one for cMeta
+#
+# The images are Rocky's own (docker.io/rockylinux/rockylinux: 8, 9, 10); the library image rockylinux stops at 9.
 
 kind: base
 
 template:
   os_version: "9"
-  from: "rockylinux:{{cmeta.os_version}}"
+  from: "rockylinux/rockylinux:{{cmeta.os_version}}"
   cmeta_source: pypi
   cmeta_version: ""
   cmeta_extras: server

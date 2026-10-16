@@ -30,6 +30,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -146,6 +147,33 @@ class CTask(InitCTask):
         return (r.get('data') or {}) if r['return'] == 0 else {}
 
     @staticmethod
+    def _keep_user_manager(con):
+        """
+        Rootless podman on Linux: the containers of a user belong to the user's systemd manager, which stops when the
+        user's last session ends unless "linger" is on - an instance started over ssh was stopped with the session
+        (seen 2026-10-16 on the T470p: every instance of a test round "Created" again). Linger on for this user
+        (loginctl enable-linger, else through a passwordless sudo), said once; a warning with the cure when neither
+        works. Undo: loginctl disable-linger.
+        """
+        user = os.environ.get('USER') or os.environ.get('LOGNAME') or ''
+        if not user or user == 'root' or not shutil.which('loginctl'):
+            return
+        code, out, _ = engine_run('loginctl', ['show-user', user, '-p', 'Linger'], timeout=30)
+        if code != 0 or out.strip().lower() == 'linger=yes':
+            return
+        for cmd in (['loginctl', 'enable-linger', user], ['sudo', '-n', 'loginctl', 'enable-linger', user]):
+            if engine_run(cmd[0], cmd[1:], timeout=60)[0] == 0:
+                if con:
+                    print ('')
+                    print (f'cMeta info: linger is on for {user} (loginctl enable-linger): rootless podman instances outlive the '
+                           f'session that started them; "loginctl disable-linger" undoes it')
+                return
+        if con:
+            print ('')
+            print (f'cMeta warning: linger is off for {user}: a rootless podman instance stops when your last session ends '
+                   f'- "sudo loginctl enable-linger {user}" keeps it running')
+
+    @staticmethod
     def _gpu_ready(engine):
         """Linux: the engine can give a container the NVIDIA GPU - docker lists the "nvidia" runtime, podman finds the
         CDI file of the GPUs (what tool/nvidia-container-toolkit sets up)."""
@@ -193,6 +221,8 @@ class CTask(InitCTask):
             return self.cm.error(f'{engine} is not usable here ({err.strip() or out.strip() or "not found"}): cx tool setup {engine} --install')
         m = re.search(r'version v?(\d+\.\d+\.\d+)', out)
         engine_version = m.group(1) if m else out.strip()
+        if engine == 'podman' and sys.platform.startswith('linux'):
+            self._keep_user_manager(con)
 
         # ---- the template and its parameters; an app template (a stack: llama-cpp, vllm-cuda ...) is built on one of
         # its bases (--base, else the first it lists): the base gives the OS version, the user and the compute

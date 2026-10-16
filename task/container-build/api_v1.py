@@ -138,7 +138,16 @@ class CTask(InitCTask):
         parts.append(self.cm.q(context))
         cmd = ' '.join(parts)
 
-        env = {'DOCKER_BUILDKIT': '1'} if engine == 'docker' else {}
+        # BuildKit, unless this process chose the classic builder (DOCKER_BUILDKIT=0: Docker Desktop without a desktop
+        # session pulls a base image anonymously only through it - see the container category's headless_docker_config)
+        # and the build needs no secret mount, which only BuildKit has
+        env = {}
+        if engine == 'docker':
+            env = {'DOCKER_BUILDKIT': '0' if os.environ.get('DOCKER_BUILDKIT') == '0' and not secret_flags else '1'}
+            if os.environ.get('DOCKER_BUILDKIT') == '0' and secret_flags and con:
+                print('')
+                print(f'{space}cMeta warning: this build mounts secrets, which needs BuildKit: a session without a desktop '
+                      f'(Docker Desktop over ssh) may fail to pull its base image')
 
         if con:
             print('')

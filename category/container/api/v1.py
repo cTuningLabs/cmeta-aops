@@ -151,6 +151,8 @@ def qualified_image(name):
         return name
     return f'docker.io/{name}' if rest else f'docker.io/library/{name}'
 
+MIN_PYTHON = '3.9'   # the oldest Python cMeta supports: a distro with an older one gets a Python fetched by uv
+
 # one package-install fragment per package manager; {pkgs} = the space-separated package list
 PKG_BLOCKS = {
     'apt': 'RUN apt-get update && apt-get install -y --no-install-recommends {pkgs} && rm -rf /var/lib/apt/lists/*',
@@ -565,25 +567,33 @@ class Category(InitCategory):
             extras = str(cmeta['cmeta_extras'])
             version = str(cmeta['cmeta_version'] or '')
             cmeta['cmeta_pin'] = f'=={version}' if version else ''
-            # uv installs cMeta on the distro's python unless a version is asked for (then uv fetches a managed one)
+            # uv installs cMeta on the distro's python unless a version is asked for (then uv fetches a managed one); a
+            # distro whose python is older than cMeta supports (Rocky Linux 8: 3.6) gets one fetched by uv - the same
+            # install again with a version range, run only when the first one failed (seen 2026-10-16)
             cmeta.setdefault('python_version', '')
             pyv = str(cmeta['python_version'] or '')
-            cmeta['uv_python_flag'] = f' --python {pyv}' if pyv else ''
+            cmeta['uv_python_flag'] = f' --python "{pyv}"' if pyv else ''
+
+            def uv_install(spec):
+                line = f'uv tool install "{spec}"{cmeta["uv_python_flag"]} --with markdown'
+                return line if pyv else f'{line} || uv tool install "{spec}" --python ">={MIN_PYTHON}" --with markdown'
+
             copy_files = []      # [{'src': host path, 'dst': name in the build context}]
             source = str(cmeta['cmeta_source']).lower()
             if source == 'pypi':
-                cmeta['install_cmeta_block'] = f'RUN uv tool install "cmeta[{extras}]{cmeta["cmeta_pin"]}"{cmeta["uv_python_flag"]} --with markdown'
+                cmeta['install_cmeta_block'] = 'RUN ' + uv_install(f'cmeta[{extras}]{cmeta["cmeta_pin"]}')
             elif source == 'local':
                 rt = self._tar_engine_checkout(str(cmeta['cmeta_local_path'] or ''))
                 if rt['return'] > 0:
                     return rt
                 copy_files.append({'src': rt['tar'], 'dst': 'cmeta_src.tar.gz'})
+                src_spec = f'cmeta[{extras}] @ {cmeta["home"]}/cmeta-src'
                 cmeta['cmeta_local_sha256'] = rt['sha256']
                 cmeta['cmeta_local_checkout'] = rt['checkout']
                 cmeta['install_cmeta_block'] = (
                     f'COPY --chown={user} cmeta_src.tar.gz /tmp/cmeta_src.tar.gz\n'
                     f'RUN mkdir -p {cmeta["home"]}/cmeta-src && tar -xzf /tmp/cmeta_src.tar.gz -C {cmeta["home"]}/cmeta-src '
-                    f'&& uv tool install "cmeta[{extras}] @ {cmeta["home"]}/cmeta-src"{cmeta["uv_python_flag"]} --with markdown && rm -f /tmp/cmeta_src.tar.gz')
+                    f'&& ({uv_install(src_spec)}) && rm -f /tmp/cmeta_src.tar.gz')
             elif source == 'git':
                 ref = str(cmeta['cmeta_git_ref'] or '')
                 url = str(cmeta['cmeta_git_url']).replace('https://', '')
@@ -591,7 +601,7 @@ class Category(InitCategory):
                 mount = '--mount=type=secret,id=GITHUB_TOKEN ' if tok else ''
                 cmeta['install_cmeta_block'] = (
                     f"RUN {mount}sh -c 'T=$(cat /run/secrets/GITHUB_TOKEN 2>/dev/null); "
-                    f'uv tool install "cmeta[{extras}] @ git+https://${{T:+$T@}}{url}{("@" + ref) if ref else ""}"{cmeta["uv_python_flag"]} --with markdown\'')
+                    + uv_install(f'cmeta[{extras}] @ git+https://${{T:+$T@}}{url}{("@" + ref) if ref else ""}') + "'")
             else:
                 return self._err(f'cmeta_source must be pypi, git or local (got "{source}")')
 

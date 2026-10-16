@@ -175,10 +175,10 @@ class CTask(InitCTask):
                         'cd "$ROOT" || exit 1\n')
                 if wsl:
                     f.write(f'setsid -f {words} > "$ROOT/run.out" 2>&1 < /dev/null\n'
-                            'echo "started on $(hostname) (a new session)"\n')
+                            'echo "started on $(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null) (a new session)"\n')
                 else:
                     f.write(f'nohup {words} > "$ROOT/run.out" 2>&1 < /dev/null &\n'
-                            'echo "started on $(hostname): pid $!"\n')
+                            'echo "started on $(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null): pid $!"\n')
             return path
 
         # The tree once, for every remote host that does not carry it already
