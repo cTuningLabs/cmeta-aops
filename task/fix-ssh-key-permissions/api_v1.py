@@ -94,6 +94,15 @@ def windows_readers(path, me):
     return others, []
 
 
+def _icacls(path, args):
+    """icacls on one path: [] when done, else [what it said] - the reason ("Access is denied") with the summary."""
+    code, out = _run(['icacls', path] + args)
+    if code == 0:
+        return []
+    lines = [line.strip() for line in out.strip().splitlines() if line.strip()]
+    return ['; '.join(lines[-2:]) if lines else f'icacls exit {code}']
+
+
 def windows_tighten(path, me, folder):
     """The ACL of the user alone (full), SYSTEM and Administrators read; a folder passes it on to what is made inside."""
     inherit = '(OI)(CI)' if folder else ''
@@ -101,9 +110,19 @@ def windows_tighten(path, me, folder):
                  ['/grant:r', f'*{me}:{inherit}F'],
                  ['/grant:r', f'*{SYSTEM_SID}:{inherit}R'],
                  ['/grant:r', f'*{ADMINS_SID}:{inherit}R']):
-        code, out = _run(['icacls', path] + args)
-        if code != 0:
-            return out.strip().splitlines()[-1:] or [f'icacls exit {code}']
+        error = _icacls(path, args)
+        if error:
+            return error
+
+    # The rules of others set on the path itself (not inherited) stay through /inheritance:r: removed one by one
+    # (a key made on GitHub's Windows runner had a rule of its own for OWNER RIGHTS, S-1-3-4 - 2026-10-17)
+    others, error = windows_readers(path, me)
+    if others is None:
+        return error
+    for sid in others:
+        error = _icacls(path, ['/remove:g', f'*{sid}'])
+        if error:
+            return error
     return []
 
 
