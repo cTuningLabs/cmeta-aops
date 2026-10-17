@@ -20,16 +20,19 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **Hosts, machines and containers as artifacts.** The `host` and `machine` categories: `cx host ls` (`--made` for
   instances), `show`, `status`, `probe`, `run`, `ssh`, `push`, `pull`, `upgrade`, `restart`, `snapshot` / `restore`
   (docker: a committed image; WSL: an exported tar) and `destroy`. A host knows the machine it runs on by a system id
-  (a hash of the OS's machine id, recorded by the probe) before its hostname; `cx host whoami` names this machine's host
-  artifact; `cx host push` rescans only the pushed repository. The `container` category builds and runs docker and
-  podman containers from templates: base templates `ubuntu` (26.04 by default), `debian`, `fedora`, `rockylinux`,
-  `amazonlinux`, `azurelinux` and `opensuse` (zypper), with compute overlays (`cuda`, `rocm`); app templates on a base
-  (`cmeta-test`, `cmeta-cserver`, `llama-cpp` with llama.cpp set up by cMeta in the image); stack bases on a project's
-  own image (`vllm-cuda`, `sglang` per compute) with cMeta on top, pointed at the image's Python. The user inside
-  takes the machine user's uid on a Linux engine; a distribution whose Python is older than 3.9 gets one from uv; sudo
-  works under rootless podman; podman gets full image names; instances run with an init process; Docker Desktop over
-  ssh (macOS, Windows) uses a config without the credential store and the classic builder. `cx container render`
-  needs no engine installed. The `docker` stub category is gone.
+  (a hash of the OS's machine id, recorded by the probe) before its hostname; `cx host whoami` names this machine's
+  host artifact; `cx host push` rescans only the pushed repository. The `container` category builds and runs docker
+  and podman containers from templates: base templates `ubuntu` (26.04 by default), `debian`, `fedora`, `rockylinux`,
+  `amazonlinux`, `azurelinux` and `opensuse` (zypper), with compute overlays (`cuda`, `rocm`) and the OpenMP runtime
+  prebuilt binaries need; app templates on a base (`cmeta-test`, `cmeta-cserver`, `llama-cpp` with llama.cpp set up by
+  cMeta in the image); stack bases on a project's own image (`vllm-cuda`, `sglang` per compute) with cMeta on top,
+  pointed at the image's Python. The user inside takes the machine user's uid on a Linux engine; a distribution whose
+  Python is older than 3.9 gets one from uv; sudo works under rootless podman; podman gets full image names; instances
+  run with an init process; Docker Desktop over ssh (macOS, Windows) uses a config without the credential store and
+  the classic builder. An app's compute overlay adds to its base's: the keys the base declares (llama-cpp's CUDA
+  builds on the devel image), the base's GPU run flags kept; ubuntu's CUDA images name their CUDA version and flavour;
+  an instance made with other template keys (another FROM, CUDA version or flavour) has a name of its own.
+  `cx container render` needs no engine installed. The `docker` stub category is gone.
 - **Matrices with `test-on-hosts`.** `--hosts` takes instance refs (`docker:debian --on_template.os_version=13`,
   `podman:fedora`, `wsl`): each instance runs the commands in a throwaway cMeta home on the tree it mounts. A ref that
   cannot be made is said and left out while the others run; the round is recorded (`round.json`), so `peek`, `collect`
