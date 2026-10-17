@@ -2,6 +2,15 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## Unreleased
+- **Fix: `cx host pull --files` from a container or a WSL instance deleted local files.** The whole folder was copied
+  into the local folder (the current directory by default) and every file there that did not match the patterns was
+  then deleted - also the files that were there before the pull. Now only the matching files come, with their
+  sub-folders, and nothing else in the local folder is touched: a container's folder lands in a folder of its own
+  first (`docker cp` cannot choose files), a WSL instance copies the matching files alone (`find` + `cp --parents`) -
+  its copy of the whole folder also failed on names that differ by case only (NTFS), which broke the collect of
+  `test-on-hosts` rounds on WSL hosts. Tests: `test_host_pull_files.py`.
+
 ## 0.50.0
 - **Run any command on another host: `--on`.** `--on=<target>` on any `cx task run`, `cx program run`, `cx tool setup`
   or `cx app run` hands the whole command line, as typed, to another host and returns its result: a fleet host (ssh;
