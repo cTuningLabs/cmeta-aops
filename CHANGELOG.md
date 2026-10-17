@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## Unreleased
+## 0.50.1
 - **Fix: `cx host pull --files` from a container or a WSL instance deleted local files.** The whole folder was copied
   into the local folder (the current directory by default) and every file there that did not match the patterns was
   then deleted - also the files that were there before the pull. Now only the matching files come, with their
