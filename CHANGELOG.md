@@ -2,7 +2,8 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.50.1.1)
+## 0.51.0
+- **`tool/cmeta` installs cMeta 0.37.4 by default** (was 0.37.1).
 - **Optional persistent instance volumes for container templates:** `get-host--docker` accepts
   `instance_volumes` with `{instance}` / `{home}` placeholders. A template can keep its own CMETA on a named
   Linux volume across container recreation, without sharing the orchestrator's local repository or cache.

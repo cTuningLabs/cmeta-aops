@@ -39,9 +39,9 @@ sets up `tool::python-pip` only when needed.
 ```sh
 cx tool setup cmeta --version=known -q
 cx tool setup cmeta --version=latest -q
-cx tool setup cmeta --version=0.37.1 -q
+cx tool setup cmeta --version=0.37.4 -q
 cx tool setup cmeta --upgrade -q
-cx tool setup cmeta --with.url=git+https://github.com/ctuninglabs/cmeta --with.url_tag=v0.37.1 -q
+cx tool setup cmeta --with.url=git+https://github.com/ctuninglabs/cmeta --with.url_tag=v0.37.4 -q
 cx tool setup cmeta --with.file="/absolute/path/to/cmeta" --with.flags=-e -q
 ```
 
