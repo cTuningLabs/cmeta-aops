@@ -57,5 +57,20 @@ an instance is reused, each mounted repository whose first-level folders changed
 artifact added, moved or removed) is reindexed inside first, that repository only (`cx repo reindex <alias>`; the
 signatures are in `mounted-signatures.json` next to the instance's artifact). get-host--wsl does the same. Everything runs through the engine's own commands (`docker run`,
 `inspect`, `start`, `exec`, `cp`), printed with `-v`.
+
+A container template can optionally preserve directories in Docker named volumes:
+
+```yaml
+instance_volumes:
+  - name: '{instance}-cmeta'
+    target: '{home}/CMETA'
+```
+
+The placeholders are the instance name and its Linux home. Only named volumes and absolute container
+subdirectories are accepted. Existing templates behave as before. A volume belongs to this instance, keeps
+its own CMETA and Linux filesystem, and survives container deletion/recreation; `cx host up` retains its mount
+in the saved `access.run_args`. The orchestrator's `local` repository remains separate. Volumes are not deleted
+by stopping or destroying an instance. Back up durable application data before explicitly removing a volume.
+
 The instance is what `--on=docker` / `--on=podman` of any `cx task run`, `cx program run`, `cx tool setup` or
 `cx app run` makes and uses (`docs/cmeta-aops/task-engine.md`, "Running the same words elsewhere").

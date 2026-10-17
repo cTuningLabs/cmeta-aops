@@ -65,6 +65,29 @@ def clean_name(text):
     return re.sub(r'[^a-z0-9.]+', '-', str(text).lower()).strip('-.')
 
 
+def instance_volume_mounts(volumes, instance, home):
+    """Resolve optional named-volume mounts without allowing host-path mounts."""
+    if not isinstance(volumes, list):
+        raise ValueError('instance_volumes must be a list')
+    resolved = []
+    for volume in volumes:
+        if not isinstance(volume, dict):
+            raise ValueError('instance_volumes entries must contain name and target')
+        try:
+            name = str(volume.get('name') or '').format(instance=instance, home=home)
+            target = str(volume.get('target') or '').format(instance=instance, home=home)
+        except (KeyError, ValueError, IndexError):
+            raise ValueError('instance_volumes supports only {instance} and {home} placeholders')
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', name):
+            raise ValueError('instance_volumes requires a named volume, not a host path')
+        if not target.startswith('/') or target.strip('/') == '' or '..' in target.split('/') or ':' in target:
+            raise ValueError('instance_volumes target must be an absolute container subdirectory')
+        if any(m['target'].rstrip('/') == target.rstrip('/') for m in resolved):
+            raise ValueError('instance_volumes has duplicate targets')
+        resolved.append({'name': name, 'target': target})
+    return resolved
+
+
 def merge_overlays(base, app=None):
     """
     The compute overlays of a base with an app's added: an app's overlay adds to the base's of the same compute (its
@@ -441,6 +464,15 @@ class CTask(InitCTask):
         if keep_id and user != 'root':
             run_args += ['--userns=keep-id']
         run_args += run_flags
+        # Optional template-owned named volumes preserve an instance's state
+        # across recreation without sharing the orchestrator's local cache.
+        try:
+            instance_volumes = instance_volume_mounts(
+                tdesc.get('instance_volumes', bdesc.get('instance_volumes', [])), inst, home)
+        except ValueError as error:
+            return self.cm.error(str(error))
+        for volume in instance_volumes:
+            run_args += ['-v', f'{volume["name"]}:{volume["target"]}']
         for mnt in mounts + data_mounts:
             run_args += ['-v', f'{mnt["path"]}:{mnt["inside"]}']
         if config_env:
@@ -517,6 +549,7 @@ class CTask(InitCTask):
                           'carrier': carrier, 'made': made, 'cmeta_version': cmeta_version,
                           'cmeta_inside': rb.get('cmeta_inside', '')},
             'mounts': mounts + data_mounts,
+            'instance_volumes': instance_volumes,
             'ai': {'notes': f'an instance made by "cx task run get-host--docker {name}" on {made}; its readme is {home}/readme-cmeta.md; '
                             f'remove it with "cx host destroy {inst}" (--image removes the image too)'},
         })

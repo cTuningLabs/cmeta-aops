@@ -3,6 +3,9 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.50.1.1)
+- **Optional persistent instance volumes for container templates:** `get-host--docker` accepts
+  `instance_volumes` with `{instance}` / `{home}` placeholders. A template can keep its own CMETA on a named
+  Linux volume across container recreation, without sharing the orchestrator's local repository or cache.
 - **Tools at newer default versions**, after an exploration of the pinned and the newest versions on Windows, Linux
   and macOS (`cx tool check-updates`, `explore-tool-versions` on each machine through `test-on-hosts`, `--promote`):
   ansible 2.21.5, ansible-lint 26.10.1, az 2.91.0, cloudflared 2026.10.1, flux 2.9.6, golangci-lint 2.15.0, helm
