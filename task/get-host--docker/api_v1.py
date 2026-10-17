@@ -65,6 +65,24 @@ def clean_name(text):
     return re.sub(r'[^a-z0-9.]+', '-', str(text).lower()).strip('-.')
 
 
+def merge_overlays(base, app=None):
+    """
+    The compute overlays of a base with an app's added: an app's overlay adds to the base's of the same compute (its
+    template keys merged, its other keys added) - llama-cpp's cuda sets the devel flavour and the base's keeps the GPU
+    run flags; before 2026-10-17 the app's replaced the base's, and a CUDA stack instance started without its GPU.
+    get-host--wsl merges them the same way.
+    """
+    overlays = {str(k): dict(v or {}) for k, v in (base or {}).items()}
+    for k, v in (app or {}).items():
+        merged = overlays.setdefault(str(k), {})
+        for key, value in (v or {}).items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = dict(merged[key], **value)
+            else:
+                merged[key] = value
+    return overlays
+
+
 def template_keys_suffix(params):
     """
     '-t' and a short hash of the template keys other than the OS version (another FROM, a CUDA version or flavour,
@@ -262,9 +280,7 @@ class CTask(InitCTask):
         tparams = dict(bdesc.get('template') or {})
         if bdesc is not tdesc:
             tparams.update(tdesc.get('template') or {})
-        overlays = dict(bdesc.get('compute') or {})
-        if bdesc is not tdesc:
-            overlays.update(tdesc.get('compute') or {})
+        overlays = merge_overlays(bdesc.get('compute'), tdesc.get('compute') if bdesc is not tdesc else None)
         params = {str(k): str(v) for k, v in (template or {}).items()}
         keys_suffix = template_keys_suffix(params)          # the user's keys only: uid and gid below are this machine's
 

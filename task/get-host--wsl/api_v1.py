@@ -83,6 +83,19 @@ def clean_name(text):
     return re.sub(r'[^a-z0-9.]+', '-', str(text).lower()).strip('-.')
 
 
+def merge_overlays(base, app=None):
+    """The compute overlays of a base with an app's added to the base's of the same compute (as get-host--docker)."""
+    overlays = {str(k): dict(v or {}) for k, v in (base or {}).items()}
+    for k, v in (app or {}).items():
+        merged = overlays.setdefault(str(k), {})
+        for key, value in (v or {}).items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = dict(merged[key], **value)
+            else:
+                merged[key] = value
+    return overlays
+
+
 def template_keys_suffix(params):
     """'-t' and a short hash of the template keys other than the OS version: another image, another instance (as
     get-host--docker names them); '' without such keys."""
@@ -227,10 +240,9 @@ class CTask(InitCTask):
         elif distro:
             return self.cm.error(f'"{name}" is a base template: --distro is for an app template')
         tparams = dict(bdesc.get('template') or {})
-        overlays = dict(bdesc.get('compute') or {})
+        overlays = merge_overlays(bdesc.get('compute'), tdesc.get('compute') if bdesc is not tdesc else None)
         if bdesc is not tdesc:
             tparams.update(tdesc.get('template') or {})
-            overlays.update(tdesc.get('compute') or {})
         compute = str(compute or 'cpu')
         if compute != 'cpu' and compute not in overlays:
             return self.cm.error(f'the template "{name}" has no compute overlay "{compute}" (it has: {", ".join(overlays.keys()) or "none"})')
