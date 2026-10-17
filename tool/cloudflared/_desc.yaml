@@ -19,8 +19,7 @@ authors: Grigori Fursin
 names:
   - cloudflared{{global.host.vars.file_ext_exe}}
 
-default_version: '2026.10.0'
-
+default_version: '2026.10.1'
 match_version:
   - regex: 'cloudflared version (\d+\.\d+\.\d+)'
     group: 1
@@ -50,6 +49,13 @@ extra_paths:
 # Windows on Arm: no release asset upstream
 install_cmd:
   windows: "{{global.winget.qpath}} install --id=Cloudflare.cloudflared -e --no-upgrade --source winget {{global.init.winget_install_flags|}}"
+
+# Windows: the winget install needs administrator rights.
+# Cloudflare.cloudflared: the MSI winget picks first is per machine (the release download needs nothing).
+# A quiet run (-q) that is not elevated does not start it (task/setup/install.py, unattended_rights);
+# without -q, Windows asks (UAC).
+requires_sudo:
+  windows: True
 
 install_help_text: |
   Could not install cloudflared from its release automatically on this system.

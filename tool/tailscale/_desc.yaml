@@ -34,3 +34,9 @@ extra_paths:
     - "D:\\Program Files\\Tailscale\\**"
     - "{{global.host.os_env.LOCALAPPDATA}}\\Microsoft\\WinGet\\Packages\\**"
 
+# Windows: the winget install needs administrator rights.
+# Tailscale.Tailscale: a per-machine MSI only (it installs a service).
+# A quiet run (-q) that is not elevated does not start it (task/setup/install.py, unattended_rights);
+# without -q, Windows asks (UAC).
+requires_sudo:
+  windows: True

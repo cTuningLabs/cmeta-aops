@@ -158,10 +158,18 @@ def proposals_of(verdicts, descs, min_os = 2, today = None):
       - not available: a version newer than default_version that the channel of some machine does not offer (an
         older uv, a missing release asset) and that did not fail otherwise - a note, not a limit: "latest" there
         never takes a version the channel does not list.
-    A verdict counts by the version obtained (the one asked for when nothing was obtained).
+    A verdict counts by the version obtained (the one asked for when nothing was obtained). A failure that the known
+    version (default_version) has too, on the same operating system and with the same class of error, says that the
+    machine cannot run the tool at all (Ansible on Windows, a missing system library, no NPU), not that the newer
+    version is worse: it is neither a limit nor a reason to hold the newer version back.
     """
     today = today or datetime.date.today().isoformat()
     proposals = []
+
+    def classify(r):
+        # A generic class (the stage) is read again from the error: verdicts made before a better classifier gain from it
+        if not r.get('works') and r.get('error_class') in (None, 'setup', 'program'):
+            r['error_class'] = error_class(r.get('error'), r.get('error_class') or r.get('stage') or 'setup')
 
     by_tool = {}
     for v in verdicts:
@@ -176,17 +184,25 @@ def proposals_of(verdicts, descs, min_os = 2, today = None):
         if isinstance(limits, dict):
             limits = [limits]
 
+        # The failures of the known version: (operating system, class of the error)
+        known_fails = set()
+        for version, runs in by_tool[tool].items():
+            if known_v is not None and as_version(version) == known_v:
+                for r in runs:
+                    classify(r)
+                    if not r.get('works'):
+                        known_fails.add((r.get('host', {}).get('uname'), r.get('error_class')))
+
         candidates = []
         for version, runs in by_tool[tool].items():
             v = as_version(version)
             if v is None or (known_v is not None and v <= known_v):
                 continue
             ok = sorted({r.get('host', {}).get('uname') for r in runs if r.get('works')} - {None})
-            bad = [r for r in runs if not r.get('works')]
-            # A generic class (the stage) is read again from the error: verdicts made before a better classifier gain from it
-            for r in bad:
-                if r.get('error_class') in (None, 'setup', 'program'):
-                    r['error_class'] = error_class(r.get('error'), r.get('error_class') or r.get('stage') or 'setup')
+            for r in runs:
+                classify(r)
+            bad = [r for r in runs if not r.get('works')
+                   and (r.get('host', {}).get('uname'), r.get('error_class')) not in known_fails]
             broken = [r for r in bad if r.get('error_class') != 'not available']
             where = lambda rs: ', '.join(sorted({r.get('host', {}).get('uname') or '?' for r in rs}))
             if broken:

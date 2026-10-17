@@ -37,7 +37,7 @@ import sys
 import tempfile
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, changed_mounts, write_signatures
 
 CONTAINER_CATEGORY = 'container,ed08f0d107044479'
 HOST_CATEGORY = 'host,e4e49c251c814f6d'
@@ -63,6 +63,29 @@ def engine_run(engine, args, timeout=600):
 def clean_name(text):
     """A container and artifact name: lower case, letters, digits, dots and dashes."""
     return re.sub(r'[^a-z0-9.]+', '-', str(text).lower()).strip('-.')
+
+
+def instance_volume_mounts(volumes, instance, home):
+    """Resolve optional named-volume mounts without allowing host-path mounts."""
+    if not isinstance(volumes, list):
+        raise ValueError('instance_volumes must be a list')
+    resolved = []
+    for volume in volumes:
+        if not isinstance(volume, dict):
+            raise ValueError('instance_volumes entries must contain name and target')
+        try:
+            name = str(volume.get('name') or '').format(instance=instance, home=home)
+            target = str(volume.get('target') or '').format(instance=instance, home=home)
+        except (KeyError, ValueError, IndexError):
+            raise ValueError('instance_volumes supports only {instance} and {home} placeholders')
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', name):
+            raise ValueError('instance_volumes requires a named volume, not a host path')
+        if not target.startswith('/') or target.strip('/') == '' or '..' in target.split('/') or ':' in target:
+            raise ValueError('instance_volumes target must be an absolute container subdirectory')
+        if any(m['target'].rstrip('/') == target.rstrip('/') for m in resolved):
+            raise ValueError('instance_volumes has duplicate targets')
+        resolved.append({'name': name, 'target': target})
+    return resolved
 
 
 def merge_overlays(base, app=None):
@@ -244,6 +267,7 @@ class CTask(InitCTask):
             ports: str = '',                 # ports published on 127.0.0.1 when the instance is made: "8000" or "8080:80", comma-separated (a server run with --on_detach)
             pull: bool = False,              # pull the base image again when building
             rebuild: bool = False,           # build the image again
+            refresh_cmeta: bool = False,     # build the layers of uv and cMeta of the image again (a newer cMeta; the OS layers stay)
     ):
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
@@ -351,6 +375,23 @@ class CTask(InitCTask):
                 first = ((d.get('mounts') or [{}])[0]).get('repo', '') if status != 'running' else ''
                 if status != 'running' and not wait_ready(engine, container, first, con):
                     return self.cm.error(f'the instance {inst} was started but did not get ready within {READY_TIMEOUT} s (cx host ssh {inst} to look)')
+
+                # The repositories are mounted live, but the instance's index knows only what it saw: one where an
+                # artifact was added, moved or removed here since then is reindexed inside (that repository only).
+                # A started container's entrypoint indexed them all just now
+                mounted = d.get('mounts') or []
+                if status == 'running':
+                    for m in changed_mounts(existing['path'], mounted):
+                        if con:
+                            print ('')
+                            print (f'cMeta info: {m["repo"]} changed here since the instance indexed it: cx repo reindex {m["repo"]} inside')
+                        engine_run(engine, ['exec', '-u', str(acc.get('user') or 'cmeta'), container, 'bash', '-lc',
+                                            f'cx repo reindex {m["repo"]} -q'], timeout=READY_TIMEOUT)
+                write_signatures(existing['path'], mounted)
+                if refresh_cmeta and con:
+                    print ('')
+                    print (f'cMeta info: the instance {inst} keeps the image it was made from: --refresh_cmeta builds a new image '
+                           f'for a new instance (--new_host, or cx host destroy {inst} first)')
                 if con:
                     print ('')
                     print (f'cMeta info: instance {inst} {"running" if status == "running" else "started"} ({engine} {engine_version}, image {acc.get("image", "?")}); shell: cx host ssh {inst}')
@@ -394,7 +435,8 @@ class CTask(InitCTask):
         # ---- the image, through the container category
         ib = {'category': CONTAINER_CATEGORY, 'command': 'build', 'arg1': name, 'engine': engine,
               'compute': compute, 'template': params, 'platform': platform_str,
-              'pull': bool(pull), 'rebuild': bool(rebuild), 'con': con and not quiet, 'quiet': quiet}
+              'pull': bool(pull), 'rebuild': bool(rebuild), 'refresh_cmeta': bool(refresh_cmeta),
+              'con': con and not quiet, 'quiet': quiet}
         if base_name:
             ib['distro'] = base_name
         rb = self.cm.access(ib)
@@ -422,6 +464,15 @@ class CTask(InitCTask):
         if keep_id and user != 'root':
             run_args += ['--userns=keep-id']
         run_args += run_flags
+        # Optional template-owned named volumes preserve an instance's state
+        # across recreation without sharing the orchestrator's local cache.
+        try:
+            instance_volumes = instance_volume_mounts(
+                tdesc.get('instance_volumes', bdesc.get('instance_volumes', [])), inst, home)
+        except ValueError as error:
+            return self.cm.error(str(error))
+        for volume in instance_volumes:
+            run_args += ['-v', f'{volume["name"]}:{volume["target"]}']
         for mnt in mounts + data_mounts:
             run_args += ['-v', f'{mnt["path"]}:{mnt["inside"]}']
         if config_env:
@@ -495,14 +546,17 @@ class CTask(InitCTask):
             'sync': {'default': 'none'},
             'made_from': {'template': name, 'base': base_name, 'params': params, 'compute': compute, 'arch': arch_norm, 'engine': engine,
                           'engine_version': engine_version, 'image': image, 'image_id': rb.get('image_id', ''),
-                          'carrier': carrier, 'made': made, 'cmeta_version': cmeta_version},
+                          'carrier': carrier, 'made': made, 'cmeta_version': cmeta_version,
+                          'cmeta_inside': rb.get('cmeta_inside', '')},
             'mounts': mounts + data_mounts,
+            'instance_volumes': instance_volumes,
             'ai': {'notes': f'an instance made by "cx task run get-host--docker {name}" on {made}; its readme is {home}/readme-cmeta.md; '
                             f'remove it with "cx host destroy {inst}" (--image removes the image too)'},
         })
         r = self.cm.utils.files.safe_write_file(os.path.join(apath, '_desc.yaml'), desc, atomic=True, sort_keys=False, logger=self.logger)
         if r['return'] > 0:
             return r
+        write_signatures(apath, mounts + data_mounts)
 
         # ---- the probe: "cx host ls" shows the instance's OS and the versions inside (a probe that fails is said, never fatal)
         r = self.cm.access({'category': HOST_CATEGORY, 'command': 'probe', 'arg1': inst, 'con': False})

@@ -87,7 +87,7 @@ class CProgram(InitCProgram):
 
         _local = ctx['tasks']['local']
         exe_path = _local['target_path_exe']
-        checkout = _local.get('params', {}).get('checkout') or 'b11324'
+        checkout = _local.get('params', {}).get('checkout') or 'b11707'
         variant = f"source-{checkout}-{os.path.basename(os.path.normpath(_local['target_path']))}"
 
         if common_llama_cpp.target_run(self.cm, ctx, exe_path, variant):

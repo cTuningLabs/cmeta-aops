@@ -18,5 +18,8 @@ class CTool(InitCTool):
             constraint = '==' + self.cdesc['default_version']
         spec = {'name': 'certbot', 'package': 'certbot', 'python': '3.12',
                 'extra': ['certbot-apache' + constraint],
+
+                # python-augeas, which certbot-apache needs, publishes no wheels: built with cMeta's C compiler
+                'c_compiler': True,
                 'unsupported_os': {'windows': 'Certbot/Apache automation requires Linux or macOS; select the web host'}}
         return install_pyvenv(self, ctx, params, cmd, spec)

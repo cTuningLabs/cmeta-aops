@@ -2,6 +2,107 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.51.0
+- **`tool/cmeta` installs cMeta 0.37.4 by default** (was 0.37.1).
+- **Optional persistent instance volumes for container templates:** `get-host--docker` accepts
+  `instance_volumes` with `{instance}` / `{home}` placeholders. A template can keep its own CMETA on a named
+  Linux volume across container recreation, without sharing the orchestrator's local repository or cache.
+- **Tools at newer default versions**, after an exploration of the pinned and the newest versions on Windows, Linux
+  and macOS (`cx tool check-updates`, `explore-tool-versions` on each machine through `test-on-hosts`, `--promote`):
+  ansible 2.21.5, ansible-lint 26.10.1, az 2.91.0, cloudflared 2026.10.1, flux 2.9.6, golangci-lint 2.15.0, helm
+  4.3.1, hyperfine 2.0.0, kubelogin 0.2.21, kustomize 5.8.3, llama-cpp 11707 (the release tool, and `b11707` as the
+  default checkout of `build-llama-cpp`, built from source on Windows, Linux and macOS; the `llama-cpp` container
+  stack follows the tool), llvm 23.1.3 (with the C matmul program through clang), opentofu 1.13.1, rclone 1.75.2,
+  terraform 1.16.6. Ansible and ansible-lint stay Linux and macOS tools (no Windows
+  control node). `lib-litert-android` keeps 2.2.0: LiteRT 2.3.0 publishes no `litert_npu_runtime_libraries_jit.zip`,
+  which its install unpacks - a `latest_limits` entry (`>=2.3.0`) says so, and the install now names the missing file
+  instead of guessing that the GitHub API was unreachable. `flm` knows the checksums of 1.0.9 (an unknown release
+  failed at once; the default stays 1.0.7 until an NPU machine runs it).
+- **Windows installs that need administrator rights say so** (`requires_sudo: windows: True`): git, gh, cloudflared,
+  node-js, llvm, microsoft.windows.adk, podman, tailscale, vulkan-sdk and open-ssh, whose winget packages install per
+  machine or elevate themselves (read from the winget manifests). A quiet run (`-q`) that is not elevated no longer
+  starts their winget fallback with a UAC prompt nobody answers; the release downloads of cloudflared, llvm and
+  node-js need no rights and are not affected. open-ssh installs `Microsoft.OpenSSH.Preview` (winget renamed the
+  `Microsoft.OpenSSH.Beta` package).
+- **`explore-tool-versions --promote`: a failure the known version shares is no limit.** A newer version that failed
+  on an OS where the known version fails with the same class of error (Ansible on Windows, a missing system library,
+  no NPU) was proposed as a `latest_limits` entry and never as the next default; such a failure now says that the
+  machine cannot run the tool at all, and the newer version is promoted where it works. The README shows how to
+  explore a tool that another tool sets up with a version of its own (`llvm` under `clang`: `--use_key=compiler-c`).
+- **`test-on-hosts --action=peek|collect` from another directory.** The round's local folder is the sandbox of the
+  shell's test session, else the current directory: a peek from elsewhere made a `test-on-hosts-<id>` folder there
+  for its helper script (also inside a repository) and reported this machine's part as running, a collect copied
+  nothing without a word. The helper script now goes to a temporary folder, and both say where they looked. And
+  `--action=remove` removes this machine's part on Windows also when its cache holds a git clone (read-only object
+  files, which `shutil.rmtree` left: the round stayed on disk) - through the engine's `safe_delete_directory`.
+- **One compiler family per build** (task `compiler`). A request that names no compiler takes the family of the
+  other language's compiler of the same run - the one already set up, else the one asked for with
+  `--use.compiler-<lang>.name` (`compiler_families` in its `_desc.yaml`). `--use.compiler-c.name=clang` alone now
+  builds the C++ sources with clang-cpp too, whichever language a program sets up first; before, a build could get C
+  by clang and C++ by the OS's preferred compiler (MSVC on Windows: CMake stopped; gcc on Linux: an unresolved OpenMP
+  symbol at the link). An INFO line says which compiler leads, set up or asked for. And a request without a name is
+  cached as `selected: auto`: it never takes an entry made by a request that named a compiler, so one run with
+  clang no longer makes clang the default C compiler of every later run of the home. An entry made before has no
+  `selected` and counts as named: the first default request makes its own entry once.
+- **certbot 5.8.0 by default, installed on a bare system.** Its Apache plugin needs `python-augeas`, which has no
+  wheels: the new tool `lib-augeas` sets up the Augeas development files (the distribution's package with sudo:
+  Debian, Ubuntu, Fedora, RHEL, openSUSE, Alpine, Arch; brew on macOS), and the C extension is built with the C
+  compiler of cMeta's compiler task. `common_pyvenv` has a new SPEC key for that, `c_compiler: True`: the compiler is
+  set up first and passed to the build as `CC`, so a machine without `cc` on its PATH works too.
+- **Android NDK 30.0.16248370 by default** (was 29.0.14206865), and its version list reads both forms of
+  sdkmanager's package names (`ndk;<version>`, and `ndk/<version>` of the command-line tools 23.0).
+- **The Android SDK command-line tools download from Google's repository** (`cmdline-tools;<release>` of
+  `repository2-3.xml`, SHA-1 checked, unpacked as `cmdline-tools/latest` in the cache entry, no administrator
+  rights): winget no longer has their package, which was the only Windows route, and Linux no longer needs brew for
+  them; brew stays the macOS fallback. The default release is 22.0: in 23.0 sdkmanager is a shim of the new Android
+  CLI (`android sdk`), with other output and without the Java entry point the tools here use, so a `latest_limits`
+  entry keeps it out of `latest` until they are ported. On Windows the tool's command is sdkmanager's Java entry
+  point: Google's `sdkmanager.bat` drops every `!` of JAVA_HOME and of its own folder ("Java version 17 or higher is
+  required" with a JDK in such a folder). Its versions are listed from the same index (`--versions`, `check-updates`).
+- **LibTorch 2.14.1 prebuilt** (`torch-cpp-prebuilt`, and the prebuilt default of `torch-cpp`; was 2.7.1, which stays
+  pinned for `--version=2.7.1`): the archives of Linux (cpu, cu126, cu130, cu132, rocm7.2), Windows (cpu, cu126,
+  cu130, cu132, ARM64 cpu) and macOS arm64 with their SHA-256 and the GPU architectures of each CUDA build. The CUDA 13
+  builds have no code for Maxwell, Pascal and Volta GPUs, which take cu126. The Linux archives lost `cxx11-abi` from
+  their names (the C++11 ABI is the only one since 2.8).
+- **`test-on-hosts`: this machine's part of a round in a folder of its own choosing** (`cx config set
+  task-test-on-hosts --meta.here_dir=<folder>`, default `~/cmeta-tests`, as on the other hosts). On Windows a round
+  home under a deep session folder made MSVC fail on paths over 260 characters (C1083 in CMake's test compile of
+  build-llama-cpp); `D:\cmeta-tests` keeps them short. `round.json` records the folder, so peek, collect and remove
+  find it from any directory.
+- **Container images say the cMeta inside** (category `container`). A base built under a moving tag is read once
+  after its build and tagged with what it holds: `-cmeta-latest` (the newest PyPI release at its build) also gets
+  `-cmeta-0.37.4`, a git install is named apart as `-cmeta-git[-<ref>]` and also gets `-cmeta-git-<commit8>` (before,
+  a git build and a PyPI build overwrote each other's `-cmeta-latest`). The version comes from the image itself, not
+  from PyPI or a cTuning.ai service. Nothing is rebuilt for a new release: `--refresh_cmeta` (`build`, `run`,
+  `start`, `test`; `--on_refresh_cmeta` for an instance) builds the layers of uv and cMeta again with the OS layers
+  from the cache, and an image on a base is built again when the base image it was built on changed (label
+  `cmeta.base_image_id`). `cx container ps` lists one line per image with the cMeta inside; `cx container clean
+  --old` removes the images a newer build replaced (an image a container uses is kept). The refresh lines of
+  `Containerfile.base` are no part of a build's identity, so the images built before are used as they are.
+- **New tools: NVIDIA OpenShell and NemoClaw.** `tool/openshell` installs OpenShell's CLI and gateway from the pinned
+  release (0.1.4: the static CLI and the glibc gateway on Linux, both on macOS on Apple Silicon), each checked against
+  the release's SHA-256 list; Windows runs it in WSL2. `task/run-openshell-gateway` runs a gateway of this user
+  without upstream's package or service (`start`, `status`, `test`, `stop`, `remove`): its keys, configuration,
+  database and log in a folder of its own, plaintext on 127.0.0.1 only, telemetry off, a session of its own, the
+  registration with the CLI, a test sandbox. Without `--driver` it takes Docker when its daemon answers, else Podman
+  5 or newer (the gateway's own detection tried an old Podman first, and found no Docker Desktop); the Podman driver
+  starts the user's Podman socket when it is not running, and a sandbox that cannot reach the gateway through Docker
+  Desktop names the cure (its host networking).
+  `tool/nemoclaw` builds NemoClaw's CLI from the pinned release tag (0.0.135) with cMeta's git and Node.js, as
+  upstream's installer builds it but without its system changes (the npm package `nemoclaw` is a placeholder, not
+  NVIDIA's), and points it at cMeta's OpenShell.
+- **Fix: `--on=docker`, `--on=podman` and `--on=wsl` did not see an artifact added after the instance was made.**
+  The instance sees its repositories live, but its index knew only what it saw when it indexed them, so a tool added
+  that afternoon was "not found" inside. An instance that is reused now reindexes inside each repository whose
+  folders changed here since (a signature of its first-level folders, `mounted-signatures.json` next to the
+  instance's artifact; the repository only, `cx repo reindex <alias>`). `--on=<host>` does the same for a WSL host
+  of this machine that plugs this machine's repositories from `/mnt/<drive>`. `--on_refresh_cmeta` on an existing
+  instance says that the instance keeps its image.
+- **ollama 0.40.5 and obsidian 1.14.4 by default**; nginx keeps its stable line (1.30): a `latest_limits` entry
+  leaves out the 1.31 mainline. **Fix: an ollama next to a running Ollama server got the server's version** -
+  `ollama --version` names the server first and this binary only on a second line ("client version is"), which now
+  wins.
+
 ## 0.50.1
 - **Fix: `cx host pull --files` from a container or a WSL instance deleted local files.** The whole folder was copied
   into the local folder (the current directory by default) and every file there that did not match the patterns was

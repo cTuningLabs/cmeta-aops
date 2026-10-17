@@ -1,7 +1,7 @@
 authors: Grigori Fursin
 names:
   - certbot{{global.host.vars.file_ext_exe}}
-default_version: '4.0.0'
+default_version: '5.8.0'
 cmd_get_version: '{{tool_path}} --version'
 match_version:
   - regex: 'certbot (\d+\.\d+\.\d+)'
@@ -14,9 +14,21 @@ cmd_get_versions_regex: '\brefs/tags/v?(\d+\.\d+\.\d+)$'
 extra_paths:
   linux: [/usr/bin, /usr/local/bin, /snap/bin]
   darwin: [/opt/homebrew/bin, /usr/local/bin]
+
+# The Apache plugin (certbot-apache) needs python-augeas, which publishes no wheels: its build needs the
+# development files of Augeas and libxml2 - set up first (the system's package, with sudo; brew on macOS)
+install_uses:
+  linux:
+    - task: setup,a2f9b61079ce4333
+      name: lib-augeas,8f422dd78a434e59
+  darwin:
+    - task: setup,a2f9b61079ce4333
+      name: lib-augeas,8f422dd78a434e59
+
 install_help_text: |
   Certbot manages Let's Encrypt certificates. Existing system installations are
   detected first; a missing version is installed with certbot-apache into a
-  cMeta-managed Python environment. Apache and its system libraries (including
-  libaugeas on Linux) must already be installed. Windows: run on a Linux host.
+  cMeta-managed Python environment; the development files of Augeas that its
+  build needs come first (tool/lib-augeas: the system's package, or brew). Apache
+  itself must be installed (cx tool setup apache2). Windows: run on a Linux host.
   A cached installation does not itself configure a scheduled renewal service.

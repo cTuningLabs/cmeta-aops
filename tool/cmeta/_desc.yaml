@@ -1,6 +1,6 @@
 authors: Grigori Fursin
 storage_key: cmeta
-default_version: '0.37.1'
+default_version: '0.37.4'
 skip_common_install_uses: true
 force_tool_path: '{{global.python.path}}'
 path: '{{global.python.path}}'

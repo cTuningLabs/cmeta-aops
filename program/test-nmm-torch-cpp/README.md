@@ -22,7 +22,7 @@ ways; `--setup_torch_cpp.<option>` passes options to it.
 |---|---|---|
 | What | PyTorch built from source by [`program/build-torch-cpp`](../build-torch-cpp/) (CMake, Ninja) | PyTorch's official LibTorch archive, through [`tool/torch-cpp-prebuilt`](../../tool/torch-cpp-prebuilt/README.md) |
 | Time to set up | a long build (hours) | a download |
-| Versions | any release tag; the default is `default_checkout` of `tool/torch-cpp` (`v2.14.1`), `--setup_torch_cpp_task.version=<x.y.z>` builds the tag `v<x.y.z>` | the releases with pinned archives; the default is `default_version` (2.7.1) |
+| Versions | any release tag; the default is `default_checkout` of `tool/torch-cpp` (`v2.14.1`), `--setup_torch_cpp_task.version=<x.y.z>` builds the tag `v<x.y.z>` | the releases with pinned archives (2.14.1, 2.7.1); the default is `default_version` (2.14.1) |
 | Options | static builds, custom CMake options, compilers | the CPU build or a CUDA build; macOS: CPU and MPS |
 | Cache entries | `task--setup--torch-cpp--*`: the build tree in `build/`, the installed LibTorch (`lib`, `include`, `share/cmake/Torch`) in `build/install/` | `task--setup--torch-cpp-prebuilt--*`, one per build |
 
@@ -34,7 +34,7 @@ cx program run test-nmm-torch-cpp cuda --setup_torch_cpp.build=prebuilt --setup_
 cx program run test-nmm-torch-cpp cpu --setup_torch_cpp.build=prebuilt --setup_torch_cpp_task.version=2.7.1
 ```
 
-For `cuda`, the prebuilt CUDA build (cu118, cu126, cu128) is the newest one that has code for every
+For `cuda`, the prebuilt CUDA build (2.14.1: cu126, cu130, cu132) is the newest one that has code for every
 GPU of the machine and whose CUDA version the NVIDIA driver supports; `--setup_torch_cpp.variant`
 picks one.
 

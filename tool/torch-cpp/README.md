@@ -6,9 +6,9 @@ with its headers and CMake config) in one of two ways, each with its own default
 | | Source build (the default) | Prebuilt (`--with.build=prebuilt`) |
 |---|---|---|
 | How | PyTorch is cloned, configured, built and installed by [`program/build-torch-cpp`](../../program/build-torch-cpp/) (CMake, Ninja, the C and C++ compilers of cMeta) | PyTorch's official archive, downloaded and checked by [`tool/torch-cpp-prebuilt`](../torch-cpp-prebuilt/README.md) |
-| Default version | the git tag `default_checkout` of `_desc.yaml` (`v2.14.1`, the tested one) | `default_version` of `_desc.yaml` (`2.7.1`, the release whose archives are pinned) |
+| Default version | the git tag `default_checkout` of `_desc.yaml` (`v2.14.1`, the tested one) | `default_version` of `_desc.yaml` (`2.14.1`, the newest release whose archives are pinned) |
 | Another version | `--version=<x.y.z>` checks out the tag `v<x.y.z>` | `--version=<x.y.z>` needs a release with pinned archives |
-| Backends | those of the target (`--with.compute=cpu,cuda,...`): CUDA, ROCm, MPS and XPU are off unless asked for (`--with.strict_compute=False` lets PyTorch enable what it finds) | the CPU build, or a CUDA build chosen for the GPUs and the driver (`--with.variant=cu118|cu126|cu128`); macOS: CPU with MPS |
+| Backends | those of the target (`--with.compute=cpu,cuda,...`): CUDA, ROCm, MPS and XPU are off unless asked for (`--with.strict_compute=False` lets PyTorch enable what it finds) | the CPU build, or a CUDA build chosen for the GPUs and the driver (`--with.variant=cu126|cu130|cu132`, Linux also `rocm7.2`); macOS: CPU with MPS |
 | Static | `--with.static` | no (the archives have shared libraries only) |
 | Time | hours | a download |
 | Cache entry | `task--setup--torch-cpp--<uid>`: the build tree in `build/`, the installed LibTorch in `build/install/` (`lib`, `include`, `share/cmake/Torch`) | `task--setup--torch-cpp-prebuilt--<uid>`, one per build; the setup of `torch-cpp` with it is not cached |
@@ -17,7 +17,7 @@ with its headers and CMake config) in one of two ways, each with its own default
 cx tool setup torch-cpp                                   # a source build of v2.14.1 for the CPU
 cx tool setup torch-cpp --version=2.12.0                  # a source build of the tag v2.12.0
 cx tool setup torch-cpp --with.compute=cuda               # a source build with CUDA
-cx tool setup torch-cpp --with.build=prebuilt             # PyTorch's archive, 2.7.1
+cx tool setup torch-cpp --with.build=prebuilt             # PyTorch's archive, 2.14.1
 cx tool setup torch-cpp --with.build=prebuilt --with.compute=cuda --with.variant=cu126
 cx tool setup torch-cpp --versions                        # the release tags of PyTorch
 ```

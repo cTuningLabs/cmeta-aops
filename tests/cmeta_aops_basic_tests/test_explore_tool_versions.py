@@ -242,3 +242,26 @@ def test_a_generic_class_is_read_again_on_promotion(ev):
 
     proposals = ev["proposals_of"](records, {"python": {"default_version": "3.13.15"}}, min_os=1, today="2026-10-14")
     assert [p["change"] for p in proposals] == ["not available"] and proposals[0]["on"] == "linux"
+
+
+def test_a_failure_the_known_version_shares_is_no_limit(ev):
+    """A failure the known version has too, on the same OS with the same class, says the machine cannot run the tool
+    (Ansible on Windows, the fleet round of 2026-10-17): no limit for the newer version, which becomes known where it
+    works - and a newer version that fails where the known one works is still a limit."""
+    records = [verdict("ansible", "2.21.4", True, "linux"), verdict("ansible", "2.21.4", True, "darwin"),
+               verdict("ansible", "2.21.4", False, "windows", "setup", "Ansible does not run on Windows"),
+               verdict("ansible", "2.21.5", True, "linux"), verdict("ansible", "2.21.5", True, "darwin"),
+               verdict("ansible", "2.21.5", False, "windows", "setup", "Ansible does not run on Windows"),
+               verdict("flm", "1.0.7", True, "linux"),
+               verdict("flm", "1.0.7", False, "windows", "setup", "no NPU driver"),
+               verdict("flm", "1.0.9", False, "linux", "checksum", "no sha256 pinned"),
+               verdict("flm", "1.0.9", False, "windows", "setup", "no NPU driver")]
+
+    descs = {"ansible": {"default_version": "2.21.4"}, "flm": {"default_version": "1.0.7"}}
+    proposals = ev["proposals_of"](records, descs, min_os=2, today="2026-10-17")
+
+    assert {"tool": "ansible", "change": "default_version", "from": "2.21.4", "to": "2.21.5", "works_on": ["darwin", "linux"],
+            "evidence": 3, "first": False} in proposals
+    assert {"tool": "flm", "change": "latest_limits", "version": "1.0.9", "exclude": "==1.0.9",
+            "reason": "checksum on linux: no sha256 pinned", "since": "2026-10-17", "evidence": 2} in proposals
+    assert len(proposals) == 2

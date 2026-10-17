@@ -23,8 +23,7 @@ authors: Grigori Fursin
 names:
   - hyperfine{{global.host.vars.file_ext_exe}}
 
-default_version: '1.21.0'
-
+default_version: '2.0.0'
 match_version:
   - regex: 'hyperfine (\d+\.\d+\.\d+)'
     group: 1

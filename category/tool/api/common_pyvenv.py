@@ -33,6 +33,9 @@ SPEC keys:
   bin              {uname: folder of the environment} holding the command, for packages that install
                    their programs as data rather than console scripts (impi-rt on Windows: Library/bin);
                    default bin, or Scripts on Windows
+  c_compiler       True for a package that builds a C extension from source (python-augeas, which certbot's
+                   Apache plugin needs, publishes no wheels): the C compiler of cMeta's compiler task is set up
+                   first and passed to the build as CC - a machine without "cc" on its PATH works too
 
 The version is not a SPEC key: default_version in the tool's _desc.yaml is the one place that says which
 version cMeta installs by default (common_release.default_version reads it; a 'default_version' SPEC key of
@@ -75,8 +78,21 @@ def install_pyvenv(tool, ctx, params, cmd, spec):
     bindir = os.path.join(venv, 'Scripts' if uname == 'windows' else 'bin')
     python = os.path.join(bindir, 'python' + exe)
 
+    # A source build of a C extension: the C compiler of the pipeline (global "compiler-c"), set up if needed
+    env = {}
+    if spec.get('c_compiler'):
+        if 'compiler-c' not in _global:
+            r = tool.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'compiler,f3925b201c704bde',
+                                'ctx': ctx, 'lang': 'c', 'con': con, 'quiet': quiet, 'verbose': verbose})
+            if tool.cm.catch_error(r, fail16=True):
+                return r
+        cc = (_global.get('compiler-c') or {}).get('path')
+        if not cc:
+            return tool.cm.error(f'{spec["name"]} builds a C extension, but no C compiler was set up')
+        env['CC'] = cc
+
     def run(command, what):
-        rr = tool.cm.utils.sys.run(command, con=con, verbose=verbose, text_cmd='RUN', space=space)
+        rr = tool.cm.utils.sys.run(command, env=env or None, con=con, verbose=verbose, text_cmd='RUN', space=space)
         if rr['return'] > 0:
             return rr
         if rr.get('returncode', 0) != 0:

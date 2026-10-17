@@ -19,8 +19,9 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 def module(task):
     path = REPO_ROOT / 'task' / task / 'api_v1.py'
-    src = path.read_text(encoding='utf-8').replace('from task_c36be4b9314a45e0.api.ctask import InitCTask',
-                                                   'class InitCTask: pass')
+    src = path.read_text(encoding='utf-8').replace(
+        'from task_c36be4b9314a45e0.api.ctask import InitCTask, changed_mounts, write_signatures',
+        'class InitCTask: pass\nchanged_mounts = write_signatures = None')
     ns = {'__name__': f'{task}_under_test', '__file__': str(path)}
     exec(compile(src, str(path), 'exec'), ns)
     return ns

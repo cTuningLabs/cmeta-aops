@@ -19,14 +19,20 @@ Every string in a template may use {{cmeta.<key>}} (the merged parameters) and {
 Containerfile, entrypoint and build/run scripts are plain files anyone can reuse without cMeta.
 
     cx container render <template> [--distro=ubuntu] [--template.os_version=26.04] [--compute=cuda] [--out=<dir>]
-    cx container build  <template> [...] [--rebuild] [--pull] [--platform=linux/arm64]
+    cx container build  <template> [...] [--rebuild] [--refresh_cmeta] [--pull] [--platform=linux/arm64]
     cx container run    <template> [...] [--port=8010[:8004]] [--repo=<cMeta repo>] [--copy_repo=<cMeta repo>] [--input.<name>=<path>] [-- <cmd>]
                         --repo mounts a plugged repository of this machine (live edits, slow on Docker Desktop / podman
                         machine bind mounts); --copy_repo copies it into the image (fast, rebuilt when it changes)
     cx container start  <template> [...] [--open]          # build + run detached + wait for open_url
     cx container test   <template> [...]                   # build, run the template's tests, PASS/FAIL table
     cx container shell  <template or container name>       # interactive shell
-    cx container ps | logs <name> | stop <name> | clean <template or name> [--images]
+    cx container ps | logs <name> | stop <name> | clean <template or name> [--images] | clean --old
+
+Image names: a base image says the cMeta it was asked for - -cmeta-<version> (pinned), -cmeta-latest (the newest
+release on PyPI at its build), -cmeta-git[-<ref>] (a git install), -cmeta-local-<sha8> (an engine checkout). A
+build under a moving tag (-cmeta-latest, -cmeta-git...) is read once after the build and tagged with the cMeta it
+holds as well: -cmeta-0.37.4, -cmeta-git-<commit8>. Nothing is rebuilt for a new release: --refresh_cmeta builds
+the layers of uv and cMeta again (the OS layers stay cached), and the images on top of a base follow it.
 
 Engines: --engine=docker|podman (default: config `container.engine`, else docker, else podman). Secrets:
 --secret=<config alias> (values or "env:NAME"), never written into an image layer.
@@ -152,6 +158,70 @@ def qualified_image(name):
     return f'docker.io/{name}' if rest else f'docker.io/library/{name}'
 
 MIN_PYTHON = '3.9'   # the oldest Python cMeta supports: a distro with an older one gets a Python fetched by uv
+
+# The lines of Containerfile.base before uv and cMeta are installed: --refresh_cmeta passes another value, so the
+# layers from there on are built again and the OS layers stay cached. Left out of the identity of a build, so that
+# the images built before they existed are still recognized
+REFRESH_BLOCK = ('# cx container build --refresh_cmeta: the layers from here on (uv, cMeta) are built again\n'
+                 'ARG CMETA_REFRESH=0\n')
+
+# What an image built under a moving tag holds: the version and uv's record of the install (direct_url.json: the
+# commit of a git install), printed by the Python of cMeta's uv tool inside - no double quotes, no $, so that the
+# same words pass through cmd.exe and sh
+INSIDE_CODE = ("import importlib.metadata as m;d=m.distribution('cmeta');print(d.version);"
+               "print(d.read_text('direct_url.json') or '{}')")
+
+
+def version_tag(image, source, version, direct_url=None):
+    """
+    The tag that names the cMeta inside an image built under a moving tag, or None: <...>-cmeta-<version> for the
+    newest PyPI release (an image <...>-cmeta-latest), <moving tag>-<commit, 8 hex digits> for a git install
+    (-cmeta-git-1a2b3c4d, -cmeta-git-dev-1a2b3c4d). A docker tag takes letters, digits, "_", "." and "-" only.
+    """
+    if source == 'git':
+        commit = str(((direct_url or {}).get('vcs_info') or {}).get('commit_id') or '')
+        return f'{image}-{commit[:8]}' if re.fullmatch(r'[0-9a-f]{8,64}', commit) else None
+    version = re.sub(r'[^A-Za-z0-9_.-]', '-', str(version or '').strip())
+    if image.endswith('-cmeta-latest') and version:
+        return image[:-len('latest')] + version
+    return None
+
+
+def cmeta_of_tags(tags):
+    """The cMeta an image holds, read from its tags (-cmeta-0.37.4, -cmeta-git-<commit8>, -cmeta-local-<sha8>), or ''."""
+    found = ''
+    for tag in tags:
+        t = tag.rsplit(':', 1)[-1]
+        m = re.search(r'-cmeta-(git(?:-[^:]*)?-[0-9a-f]{8}|local-[0-9a-f]{8}|\d[A-Za-z0-9_.-]*)$', t)
+        if m:
+            found = m.group(1)
+            if found[0].isdigit():
+                return found
+    return found
+
+
+def build_identity(files, copy_files, local_sha256, from_image, platform, image):
+    """
+    The identity of a build (label cmeta.params_hash; an image with the same one is not built again): the rendered
+    files without the refresh lines, the files copied in (by their digests), the FROM image, the platform and the tag.
+    """
+    h = hashlib.sha256()
+    for k in sorted(files):
+        h.update(k.encode())
+        h.update((files[k].replace(REFRESH_BLOCK, '') if k == 'Containerfile' else files[k]).encode('utf-8'))
+    for c in copy_files:
+        h.update(c['dst'].encode())
+        if c['dst'] == 'cmeta_src.tar.gz':
+            h.update(str(local_sha256 or '').encode())
+        elif c.get('sha256'):
+            h.update(c['sha256'].encode())
+    h.update(json.dumps({'from': from_image, 'platform': platform, 'image': image}, sort_keys=True).encode())
+    return h.hexdigest()[:16]
+
+
+def short_image(name):
+    """An image name without the registry podman puts in front of a local one (localhost/cmeta/ubuntu:26.04)."""
+    return name[len('localhost/'):] if name.startswith('localhost/') else name
 
 # one package-install fragment per package manager; {pkgs} = the space-separated package list
 PKG_BLOCKS = {
@@ -286,6 +356,70 @@ class Category(InitCategory):
         if r.get('return', 1) > 0 or r.get('returncode', 1) != 0:
             return self._err(self._daemon_hint(engine, (r.get('stderr') or r.get('error') or '').strip()[:300]))
         return {'return': 0, 'version': (r.get('stdout') or '').strip()}
+
+    def _image_labels(self, engine, image):
+        """The labels of an existing image ({} without any), None when the image is absent."""
+        r = self._engine_run(engine, ['image', 'inspect', image, '--format', '{{json .Config.Labels}}'])
+        if r.get('return', 1) > 0 or r.get('returncode', 1) != 0:
+            return None
+        try:
+            return json.loads((r.get('stdout') or '').strip().splitlines()[-1]) or {}
+        except (ValueError, IndexError):
+            return {}
+
+    def _image_tags(self, engine, image):
+        """The id and the tags of an existing image: (id, [tags]), (None, []) when absent."""
+        r = self._engine_run(engine, ['image', 'inspect', image, '--format', '{{.Id}} {{json .RepoTags}}'])
+        if r.get('return', 1) > 0 or r.get('returncode', 1) != 0:
+            return None, []
+        line = ((r.get('stdout') or '').strip().splitlines() or [''])[-1]
+        iid, _, tags = line.partition(' ')
+        try:
+            return iid, [short_image(x) for x in (json.loads(tags) or [])]
+        except ValueError:
+            return iid, []
+
+    def _cmeta_inside(self, spec):
+        """The cMeta of an image, asked to the Python of cMeta's uv tool inside: {'version', 'direct_url'} or None."""
+        home = spec['cmeta']['home']
+        args = ['run', '--rm'] + (['--platform', spec['platform']] if spec.get('platform') else []) + [
+                '--entrypoint', f'{home}/.local/share/uv/tools/cmeta/bin/python', spec['image'], '-c', INSIDE_CODE]
+        r = self._engine_run(spec['engine'], args, timeout=300)
+        lines = [x for x in (r.get('stdout') or '').strip().splitlines() if x.strip()]
+        if r.get('return', 1) > 0 or r.get('returncode', 1) != 0 or len(lines) < 2:
+            return None
+        try:
+            direct_url = json.loads(lines[-1])
+        except ValueError:
+            direct_url = {}
+        return {'version': lines[-2].strip(), 'direct_url': direct_url}
+
+    def _tag_cmeta(self, ctx, spec):
+        """
+        An image built under a moving tag gets a tag that names the cMeta inside (read once, then kept): returns
+        that tag and the version, or ('', '') for an image whose tag already names it (pinned, local).
+        """
+        con = ctx['control'].get('con', False)
+        if not spec.get('cmeta_moving'):
+            return '', ''
+        engine, image = spec['engine'], spec['image']
+        iid, tags = self._image_tags(engine, image)
+        named = [t for t in tags if t != image and cmeta_of_tags([t]) and t.rsplit(':', 1)[0] == image.rsplit(':', 1)[0]]
+        if named:
+            return named[0], cmeta_of_tags(named)
+        inside = self._cmeta_inside(spec)
+        if not inside:
+            if con:
+                print(f'  cMeta warning: could not read the cMeta inside {image} (no extra tag)')
+            return '', ''
+        tag = version_tag(image, str(spec['cmeta'].get('cmeta_source', '')).lower(), inside['version'], inside['direct_url'])
+        if tag:
+            r = self._engine_run(engine, ['tag', image, tag])
+            if r.get('return', 1) > 0 or r.get('returncode', 1) != 0:
+                tag = ''
+        if con:
+            print(f'  cMeta inside: {inside["version"]}' + (f'  (tagged {tag})' if tag else ''))
+        return tag or '', inside['version']
 
     def _image_hash(self, engine, image):
         """The cmeta.params_hash label of an existing image, '' when the image exists without it, None when absent."""
@@ -632,6 +766,14 @@ class Category(InitCategory):
             if source == 'local':
                 cmeta['base_image'] = cmeta['base_image'].rsplit('-cmeta-', 1)[0] + '-cmeta-local-' + cmeta['cmeta_local_sha256'][:8]
 
+            # a git install is named apart from a PyPI one (they overwrote each other's -cmeta-latest before):
+            # -cmeta-git, -cmeta-git-<ref>; the build adds the commit (-cmeta-git-1a2b3c4d)
+            if source == 'git':
+                git_ref = re.sub(r'[^a-z0-9_.-]', '-', str(cmeta['cmeta_git_ref'] or '').lower()).strip('-.')
+                cmeta['base_image'] = (cmeta['base_image'].rsplit('-cmeta-', 1)[0] + '-cmeta-git'
+                                       + (f'-{git_ref}' if git_ref else ''))
+            cmeta_moving = kind == 'base' and (source == 'git' or (source == 'pypi' and not version))
+
             # ---- app facts
             build_secrets, run_env, run_secrets = {}, {}, {}
             ports, volumes, run_flags, tests = [], [], [], []
@@ -812,18 +954,7 @@ class Category(InitCategory):
             return self._err(str(e))
 
         # ---- identity of this build
-        h = hashlib.sha256()
-        for k in sorted(files):
-            h.update(k.encode())
-            h.update(files[k].encode('utf-8'))
-        for c in copy_files:
-            h.update(c['dst'].encode())
-            if c['dst'] == 'cmeta_src.tar.gz':
-                h.update(cmeta.get('cmeta_local_sha256', '').encode())
-            elif c.get('sha256'):
-                h.update(c['sha256'].encode())
-        h.update(json.dumps({'from': cmeta['from'], 'platform': platform, 'image': image}, sort_keys=True).encode())
-        params_hash = h.hexdigest()[:16]
+        params_hash = build_identity(files, copy_files, cmeta.get('cmeta_local_sha256', ''), cmeta['from'], platform, image)
 
         labels = {LABEL: '1', 'cmeta.template': t['alias'], 'cmeta.base': b['alias'], 'cmeta.kind': kind,
                   'cmeta.compute': compute, 'cmeta.params_hash': params_hash}
@@ -833,7 +964,7 @@ class Category(InitCategory):
             'template': t, 'base': b, 'app': app, 'kind': kind, 'engine': engine, 'compute': compute,
             'cmeta': cmeta, 'host': host, 'image': image, 'base_image': cmeta['base_image'],
             'files': files, 'copy_files': copy_files, 'build_secrets': build_secrets, 'platform': platform or '',
-            'params_hash': params_hash, 'labels': labels,
+            'params_hash': params_hash, 'labels': labels, 'cmeta_moving': cmeta_moving,
             'run': {'ports': ports_publish, 'volumes': volumes, 'env': run_env, 'env_secrets': run_secrets,
                     'run_flags': run_flags, 'cmd': cmd,
                     'name': (('' if t['alias'].startswith('cmeta') else 'cmeta-') + f'{t["alias"]}-{cmeta["base"]}'
@@ -938,37 +1069,63 @@ class Category(InitCategory):
     ############################################################
     # build / run through the two portable tasks
 
-    def _build_spec(self, ctx, spec, rebuild=False, pull=False, quiet_skip=False):
+    def _build_spec(self, ctx, spec, rebuild=False, pull=False, quiet_skip=False, refresh=False):
+        """
+        Build the image of a spec unless it exists with the same parameters (its base first). refresh: build the
+        layers of uv and cMeta of the base again (the OS layers stay cached) - an image on top follows its base: it is
+        built again when the base image it was built on is not the base image now (label cmeta.base_image_id).
+        """
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
         engine = spec['engine']
+        base_id, base_cmeta = '', ''
         if spec.get('base_spec'):
-            r = self._build_spec(ctx, spec['base_spec'], rebuild=rebuild, pull=pull, quiet_skip=quiet_skip)
+            r = self._build_spec(ctx, spec['base_spec'], rebuild=rebuild, pull=pull, quiet_skip=quiet_skip, refresh=refresh)
             if r['return'] > 0:
                 return r
-        existing = self._image_hash(engine, spec['image'])
-        if not rebuild and existing == spec['params_hash']:
+            base_id = self._image_tags(engine, spec['base_image'])[0] or ''
+            base_cmeta = r.get('cmeta_inside', '')
+        labels = self._image_labels(engine, spec['image'])
+        existing = None if labels is None else labels.get('cmeta.params_hash', '')
+        built_on = (labels or {}).get('cmeta.base_image_id', '')
+        base_changed = bool(base_id and built_on and built_on != base_id) or bool(refresh and spec.get('base_spec'))
+        refresh_here = bool(refresh) and not spec.get('base_spec')
+        if not rebuild and not refresh_here and not base_changed and existing == spec['params_hash']:
             if con and not quiet_skip:
-                print(f'  image exists: {spec["image"]}  ({engine}; --rebuild to rebuild)')
-            return {'return': 0, 'image': spec['image'], 'skipped': True}
-        if con and existing is not None and existing != spec['params_hash'] and not rebuild:
+                print(f'  image exists: {spec["image"]}  ({engine}; --rebuild to rebuild, --refresh_cmeta for a newer cMeta)')
+            tag, inside = self._tag_cmeta(ctx, spec)
+            return {'return': 0, 'image': spec['image'], 'skipped': True, 'image_id': self._image_tags(engine, spec['image'])[0] or '',
+                    'cmeta_tag': tag, 'cmeta_inside': inside or base_cmeta}
+        if con and base_changed and not rebuild:
+            print(f'  the base image of {spec["image"]} changed ({spec["base_image"]}) - building it again on that base')
+        elif con and existing is not None and existing != spec['params_hash'] and not rebuild and not refresh_here:
             print(f'  image {spec["image"]} was built from other parameters (hash {existing or "none"}) - rebuilding')
         rd = self._check_daemon(engine)
         if rd['return'] > 0:
             return rd
         build_args = ['--pull'] if pull else []
+        if refresh_here:
+            build_args += ['--build-arg', f'CMETA_REFRESH={time.time_ns()}']
+        build_labels = dict(spec['labels'])
+        if base_id:
+            build_labels['cmeta.base_image_id'] = base_id
+        # an image inherits the labels of its base: an app on a base built under a moving tag would carry that tag
+        # as its own (and "clean --old" would take it for a replaced base) - empty unless this build is moving
+        build_labels['cmeta.moving_tag'] = spec['image'] if spec.get('cmeta_moving') else ''
         ii = {'category': TASK_CATEGORY, 'command': 'run', 'arg1': TASK_BUILD,
               'engine': engine, 'image': spec['image'], 'params_hash': spec['params_hash'],
               'files': spec['files'], 'copy': spec['copy_files'], 'build_args': build_args,
               'secrets': spec['build_secrets'], 'platform': spec['platform'], 'no_cache': bool(rebuild),
-              'labels': spec['labels'], 'update': True,
+              'labels': build_labels, 'update': True,
               'con': TRACE, 'verbose': TRACE}
         if con:
-            print(f'  building {spec["image"]} with {engine} ...')
+            print(f'  building {spec["image"]} with {engine}' + (' (the layers of uv and cMeta again)' if refresh_here else '') + ' ...')
         r = self.cm.access(ii)
         if r.get('return', 1) > 0:
             return r
-        return {'return': 0, 'image': spec['image'], 'image_id': r.get('image_id', ''), 'context_path': r.get('context_path', '')}
+        tag, inside = self._tag_cmeta(ctx, spec)
+        return {'return': 0, 'image': spec['image'], 'image_id': r.get('image_id', ''), 'context_path': r.get('context_path', ''),
+                'cmeta_tag': tag, 'cmeta_inside': inside or base_cmeta}
 
     def _run_spec(self, ctx, spec, detach=False, rm=True, interactive=False, name='', cmd=None, capture=False,
                   extra_flags=None, timeout=None):
@@ -1065,13 +1222,16 @@ class Category(InitCategory):
                     json.dump({'image': s['image'], 'params': s['cmeta'], 'run': s['run'], 'tests': s['tests']}, f, indent=2, default=str)
             print('')
             print(f'written to {out}')
-        return {'return': 0, 'image': spec['image'], 'base_image': spec['base_image'], 'params': spec['cmeta'], 'tests': spec['tests']}
+        return {'return': 0, 'image': spec['image'], 'base_image': spec['base_image'], 'params': spec['cmeta'], 'tests': spec['tests'],
+                'params_hash': spec['params_hash'], 'files': spec['files']}
 
     def build_(self, ctx, arg1=None, distro='', engine='', compute='', template={}, secret=None, platform='',
-               rebuild=False, pull=False, no_clone=False, port=None, copy_repo=None, copy_repos=None, unparsed=None):
+               rebuild=False, pull=False, no_clone=False, port=None, copy_repo=None, copy_repos=None, refresh_cmeta=False,
+               unparsed=None):
         """
         Build the image of a template (its base image first when missing). Images carry the labels
-        cmeta.container=1, cmeta.template, cmeta.base, cmeta.compute, cmeta.params_hash.
+        cmeta.container=1, cmeta.template, cmeta.base, cmeta.compute, cmeta.params_hash (and cmeta.base_image_id,
+        cmeta.moving_tag). --refresh_cmeta builds the layers of uv and cMeta again: the newest release (or commit).
         """
         if not arg1:
             return self._err('cx container build <template> [--distro=...] [--engine=docker|podman] [--compute=cuda] [--rebuild]')
@@ -1084,18 +1244,21 @@ class Category(InitCategory):
             print('')
             self._print_spec(spec)
             print('')
-        r = self._build_spec(ctx, spec, rebuild=self._is_true(rebuild), pull=self._is_true(pull))
+        r = self._build_spec(ctx, spec, rebuild=self._is_true(rebuild), pull=self._is_true(pull), refresh=self._is_true(refresh_cmeta))
         if r['return'] > 0:
             return r
         if con:
             print('')
-            print(f'  ready: {spec["image"]}' + (f'  (id {r.get("image_id", "")[:19]})' if r.get('image_id') else ''))
+            print(f'  ready: {spec["image"]}' + (f'  (id {r.get("image_id", "")[:19]})' if r.get('image_id') else '')
+                  + (f'  cMeta {r["cmeta_inside"]}' if r.get('cmeta_inside') else ''))
         return {'return': 0, 'image': spec['image'], 'base_image': spec['base_image'], 'engine': spec['engine'],
-                'image_id': r.get('image_id', ''), 'context_path': r.get('context_path', '')}
+                'image_id': r.get('image_id', ''), 'context_path': r.get('context_path', ''),
+                'cmeta_tag': r.get('cmeta_tag', ''), 'cmeta_inside': r.get('cmeta_inside', '')}
 
     def run_(self, ctx, arg1=None, distro='', engine='', compute='', template={}, secret=None, port=None, repo=None, repos=None,
              repos_dir='', input={}, env={}, volume=None, platform='', expose_lan=False, no_clone=False, name='',
-             detach=False, keep=False, rebuild=False, interactive=False, i=False, copy_repo=None, copy_repos=None, unparsed=None):
+             detach=False, keep=False, rebuild=False, interactive=False, i=False, copy_repo=None, copy_repos=None,
+             refresh_cmeta=False, unparsed=None):
         """
         Run a template's container in the foreground (build first when the image is missing). Everything after
         "--" replaces the template's command; --detach returns at once; --keep leaves the container after exit.
@@ -1107,7 +1270,7 @@ class Category(InitCategory):
         if spec['return'] > 0:
             return spec
         con = ctx['control'].get('con', False)
-        r = self._build_spec(ctx, spec, rebuild=self._is_true(rebuild), quiet_skip=True)
+        r = self._build_spec(ctx, spec, rebuild=self._is_true(rebuild), quiet_skip=True, refresh=self._is_true(refresh_cmeta))
         if r['return'] > 0:
             return r
         detach = self._is_true(detach)
@@ -1135,7 +1298,7 @@ class Category(InitCategory):
 
     def start_(self, ctx, arg1=None, distro='', engine='', compute='', template={}, secret=None, port=None, repo=None, repos=None,
                repos_dir='', input={}, env={}, volume=None, platform='', expose_lan=False, no_clone=False, name='',
-               rebuild=False, open=False, wait=90, copy_repo=None, copy_repos=None, unparsed=None):
+               rebuild=False, open=False, wait=90, copy_repo=None, copy_repos=None, refresh_cmeta=False, unparsed=None):
         """
         Build if needed, run detached under a stable name (cmeta-<template>-<base>), wait until the template's
         open_url answers, print it (--open launches the browser). Stop with: cx container stop <name>.
@@ -1148,7 +1311,7 @@ class Category(InitCategory):
             return spec
         con = ctx['control'].get('con', False)
         name = name or spec['run']['name']
-        r = self._build_spec(ctx, spec, rebuild=self._is_true(rebuild), quiet_skip=True)
+        r = self._build_spec(ctx, spec, rebuild=self._is_true(rebuild), quiet_skip=True, refresh=self._is_true(refresh_cmeta))
         if r['return'] > 0:
             return r
         ex = self._engine_run(spec['engine'], ['ps', '-a', '--filter', f'name=^{name}$', '--format', '{{.ID}}'])
@@ -1201,7 +1364,8 @@ class Category(InitCategory):
         return False
 
     def test_(self, ctx, arg1=None, distro='', engine='', compute='', template={}, secret=None, platform='',
-              rebuild=False, no_clone=False, port=None, repo=None, repos=None, repos_dir='', wait=90, copy_repo=None, copy_repos=None, unparsed=None):
+              rebuild=False, no_clone=False, port=None, repo=None, repos=None, repos_dir='', wait=90, copy_repo=None, copy_repos=None,
+              refresh_cmeta=False, unparsed=None):
         """
         Build the template (and its base), then run every entry of its `tests:` inside a throw-away container and,
         for a template with an open_url, start it and probe the URL from the host. Prints PASS / FAIL per test;
@@ -1218,7 +1382,7 @@ class Category(InitCategory):
             print('')
             self._print_spec(spec)
             print('')
-        r = self._build_spec(ctx, spec, rebuild=self._is_true(rebuild))
+        r = self._build_spec(ctx, spec, rebuild=self._is_true(rebuild), refresh=self._is_true(refresh_cmeta))
         if r['return'] > 0:
             return r
         results = []
@@ -1295,12 +1459,62 @@ class Category(InitCategory):
                              'table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}'])
         print((r.get('stdout') or '').rstrip() or '  (none)')
         print('')
-        print(f'--- {eng} images created by cMeta')
+        print(f'--- {eng} images created by cMeta (one line per image: its tags, the cMeta inside, size, age)')
+        rows = self._image_rows(eng)
+        for row in rows:
+            print(f'  {", ".join(row["tags"]) or "<none>"}   cMeta {row["cmeta"] or "?"}   {row["size"]}   {row["created"]}')
+        if not rows:
+            print('  (none)')
+        return {'return': 0, 'images': rows}
+
+    def _image_rows(self, eng):
+        """
+        The images of cMeta, one per image id: its tags (the moving tag first), the cMeta inside - read from its
+        tags, or for an image on a base from the base it was built on (label cmeta.base_image_id) - size and age.
+        Untagged images are listed too (docker 29 shows them only with -a: a base replaced by a refresh), except the
+        intermediate layers of the classic builder, which carry the labels of their base: an image another one is
+        built on (its .Parent) is no image of its own.
+        """
         created = '{{.CreatedSince}}' if eng == 'docker' else '{{.Created}}'
-        r = self._engine_run(eng, ['images', '--filter', f'label={LABEL}=1', '--format',
-                             'table {{.Repository}}:{{.Tag}}\t{{.Size}}\t' + created])
-        print((r.get('stdout') or '').rstrip() or '  (none)')
-        return {'return': 0}
+        r = self._engine_run(eng, ['images', '-a', '--no-trunc', '--filter', f'label={LABEL}=1', '--format',
+                             '{{.ID}} ~~ {{.Repository}}:{{.Tag}} ~~ {{.Size}} ~~ ' + created])
+        by_id = {}
+        for line in (r.get('stdout') or '').splitlines():
+            parts = [x.strip() for x in line.split(' ~~ ')]
+            if len(parts) < 4:
+                continue
+            row = by_id.setdefault(parts[0], {'id': parts[0], 'tags': [], 'size': parts[2], 'created': parts[3]})
+            name = short_image(parts[1])
+            if not name.endswith(':<none>') and name not in row['tags']:
+                row['tags'].append(name)
+        if by_id:
+            # the plain JSON of inspect: a --format with .Parent fails on Docker Desktop's containerd image store (no
+            # such key), and docker and podman name the same fields alike in it (Id, Parent, Config.Labels)
+            ri = self._engine_run(eng, ['image', 'inspect'] + list(by_id))
+            try:
+                inspected = json.loads(ri.get('stdout') or '[]') or []
+            except ValueError:
+                inspected = []
+            parents = set()
+            for item in inspected:
+                iid, parent = str(item.get('Id') or ''), str(item.get('Parent') or '')
+                if parent:
+                    parents.add(parent.split(':')[-1])
+                labels = (item.get('Config') or {}).get('Labels') or item.get('Labels') or {}
+                for row in by_id.values():
+                    if row['id'] == iid or row['id'].endswith(iid.split(':')[-1]) or iid.endswith(row['id'].split(':')[-1]):
+                        row['labels'] = labels
+            by_id = {k: row for k, row in by_id.items() if row['tags'] or k.split(':')[-1] not in parents}
+        for row in by_id.values():
+            moving = (row.get('labels') or {}).get('cmeta.moving_tag', '')
+            row['tags'].sort(key=lambda t: (t != moving and bool(cmeta_of_tags([t])), t))
+            row['cmeta'] = cmeta_of_tags(row['tags'])
+        for row in by_id.values():
+            base = (row.get('labels') or {}).get('cmeta.base_image_id', '')
+            if not row['cmeta'] and base:
+                b = next((x for x in by_id.values() if x['id'].split(':')[-1] == base.split(':')[-1]), None)
+                row['cmeta'] = (b or {}).get('cmeta', '')
+        return sorted(by_id.values(), key=lambda x: (x['tags'] or ['~'])[0])
 
     def logs_(self, ctx, arg1=None, engine='', follow=False, tail='200'):
         """Logs of a container started by cMeta: cx container logs <name> [--follow]."""
@@ -1335,17 +1549,34 @@ class Category(InitCategory):
             print(f'  stopped{" and removed" if self._is_true(remove) else ""}: {n}')
         return {'return': 0, 'stopped': names}
 
-    def clean_(self, ctx, arg1=None, engine='', images=False, all=False):
+    def clean_(self, ctx, arg1=None, engine='', images=False, all=False, old=False):
         """
         Remove the containers (and with --images the images) that cMeta created for a template:
         cx container clean <template> [--images]; --all for everything labelled cmeta.container=1.
+        --old removes only the images a newer build replaced: built under a moving tag (-cmeta-latest, -cmeta-git)
+        that has moved on, or left without any tag - an image a container still uses is kept.
         """
         re_ = self._pick_engine(engine)
         if re_['return'] > 0:
             return re_
         eng = re_['engine']
+        if self._is_true(old):
+            removed, kept = [], []
+            for row in self._image_rows(eng):
+                labels = row.get('labels') or {}
+                moving = labels.get('cmeta.moving_tag', '') if labels.get('cmeta.kind') == 'base' else ''
+                if row['tags'] and (not moving or moving in row['tags']):
+                    continue
+                rr = self._engine_run(eng, ['rmi'] + (row['tags'] or [row['id']]))
+                ok = rr.get('returncode', 1) == 0
+                print(f'  {"removed" if ok else "kept (a container uses it?)"}: {", ".join(row["tags"]) or row["id"][:19]}'
+                      + (f'  cMeta {row["cmeta"]}' if row['cmeta'] else ''))
+                (removed if ok else kept).append(row['id'])
+            if not removed and not kept:
+                print('  no old images')
+            return {'return': 0, 'removed': removed, 'kept': kept}
         if not arg1 and not self._is_true(all):
-            return self._err('cx container clean <template> [--images] | --all [--images]')
+            return self._err('cx container clean <template> [--images] | --all [--images] | --old')
         flt = [f'label={LABEL}=1'] + ([] if self._is_true(all) else [f'label=cmeta.template={arg1}'])
         fargs = sum([['--filter', f] for f in flt], [])
         r = self._engine_run(eng, ['ps', '-a'] + fargs + ['--format', '{{.Names}}'])

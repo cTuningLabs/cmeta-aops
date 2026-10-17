@@ -12,31 +12,33 @@ SHA-256 pinned in `api_v1.py` and unpacked. [`tool/torch-cpp`](../torch-cpp/) us
 cx tool setup torch-cpp-prebuilt                         # the CPU build (macOS: CPU and MPS)
 cx tool setup torch-cpp-prebuilt --with.compute=cuda     # the CUDA build for this machine's GPUs
 cx tool setup torch-cpp-prebuilt --with.variant=cu126    # a given build
-cx tool setup torch-cpp-prebuilt --version=2.7.1         # a release with pinned archives
+cx tool setup torch-cpp-prebuilt --version=2.7.1         # an older release with pinned archives
 
 cx tool setup torch-cpp --with.build=prebuilt            # the same through tool/torch-cpp
 ```
 
 ## Builds
 
-| System | Builds (2.7.1) |
-|---|---|
-| Linux x86_64 | `cpu`, `cu118`, `cu126`, `cu128` |
-| Windows x64 | `cpu`, `cu118`, `cu126`, `cu128` |
-| Windows ARM64 | `cpu` |
-| macOS arm64 | `cpu` (with MPS, for Apple GPUs) |
+| System | Builds of 2.14.1 (the default) | Builds of 2.7.1 |
+|---|---|---|
+| Linux x86_64 | `cpu`, `cu126`, `cu130`, `cu132`, `rocm7.2` | `cpu`, `cu118`, `cu126`, `cu128`, `rocm6.3` |
+| Windows x64 | `cpu`, `cu126`, `cu130`, `cu132` | `cpu`, `cu118`, `cu126`, `cu128` |
+| Windows ARM64 | `cpu` | `cpu` |
+| macOS arm64 | `cpu` (with MPS, for Apple GPUs) | `cpu` (with MPS) |
 
-Other systems, versions and backends (ROCm, XPU) have no pinned archive: the setup says so, and
-`tool/torch-cpp` builds LibTorch from source for them.
+Other systems (Linux on ARM), versions and backends (XPU) have no pinned archive: the setup says so,
+and `tool/torch-cpp` builds LibTorch from source for them. Since 2.8 the Linux archives have the C++11
+ABI only, and their names no longer say `cxx11-abi`.
 
 **The CUDA build** for `--with.compute=cuda` is the newest one that has code for every GPU of the
 machine (their compute capability, from `tool/cuda`) and whose CUDA version the NVIDIA driver
 supports; with an older driver of the same CUDA major version, a build is still chosen (CUDA's minor
 version compatibility). The architectures each build has code for are listed in `api_v1.py`
 (`CUDA_BUILDS`), read with `cuobjdump --list-elf` from its CUDA library; code for compute capability
-X.y also runs on X.z for z >= y. For example, cu128 is the only 2.7.1 build with code for Blackwell
-GPUs (compute capability 10.0 and 12.0). The archives bring the CUDA run-time libraries they need;
-only the driver must be installed.
+X.y also runs on X.z for z >= y. For example, the CUDA 13 builds of 2.14.1 have no code for Maxwell,
+Pascal and Volta GPUs (compute capability 5.x to 7.0), so those take cu126, and cu128 is the only 2.7.1
+build with code for Blackwell GPUs (compute capability 10.0 and 12.0). The archives bring the CUDA
+run-time libraries they need; only the driver must be installed.
 
 Each build has a cache entry of its own (`with.variant` is part of its cache identity).
 
@@ -49,8 +51,8 @@ every request whose parameters it contains). The archive itself is cached here.
 
 ## Adding a release
 
-1. Find the archives of the release at <https://download.pytorch.org/libtorch/cpu/> (and `cu118/`,
-   `cu126/`, ...).
+1. Find the archives of the release at <https://download.pytorch.org/libtorch/cpu/> (and `cu126/`,
+   `cu130/`, `rocm7.2/`, ...).
 2. Add their file names and SHA-256 digests to `ARCHIVES` in `api_v1.py`: PyTorch publishes no
    checksums, so take them from the downloaded archives.
 3. Add the CUDA builds to `CUDA_BUILDS` with their architectures (`cuobjdump --list-elf` of

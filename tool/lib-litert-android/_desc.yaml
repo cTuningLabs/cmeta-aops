@@ -14,6 +14,13 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 
 default_version: '2.2.0'
 
+# LiteRT 2.3.0 changed the layout of its GitHub release: no litert_npu_runtime_libraries_jit.zip (nor the
+# AOT archive), which install() unpacks for the NPU dispatch libraries - the explore round of 2026-10-17
+latest_limits:
+  - exclude: '>=2.3.0'
+    reason: 'LiteRT 2.3.0 publishes no litert_npu_runtime_libraries_jit.zip on GitHub; install() needs a new source of the NPU dispatch libraries first'
+    since: '2026-10-17'
+
 cmd_get_versions: '{{global.curl.qpath}} -s https://dl.google.com/android/maven2/com/google/ai/edge/litert/litert/maven-metadata.xml'
 cmd_get_versions_uses:
   - task: setup,a2f9b61079ce4333

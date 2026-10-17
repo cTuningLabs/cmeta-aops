@@ -87,7 +87,8 @@ class CTool(InitCTool):
                             'ctx': ctx, 'name': 'google.android-sdk.command-line-tools,2ee8eb31da764eef',
                             'con': c.get('con', False), 'quiet': c.get('quiet', False), 'verbose': c.get('verbose', False)})
         if self.cm.catch_error(r): return r
-        q = ctx['tasks']['global']['google-android-sdk-command-line-tools']['qpath']
+        sdk = ctx['tasks']['global']['google-android-sdk-command-line-tools']
+        q = sdk.get('cmd') or sdk['qpath']
         return {'return': 16, 'error': why, 'install_cmd': f'{q} "ndk;{version}"'}
 
     ############################################################

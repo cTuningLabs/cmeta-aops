@@ -18,8 +18,7 @@ authors: Grigori Fursin
 names:
   - golangci-lint{{global.host.vars.file_ext_exe}}
 
-default_version: '2.14.0'
-
+default_version: '2.15.0'
 match_version:
   - regex: 'version v?(\d+\.\d+\.\d+)'
     group: 1

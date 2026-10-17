@@ -1,0 +1,10 @@
+artifact: 8f422dd78a434e59
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-10-17T14:29:02.791277+00:00'
+desc: "Augeas development files (augeas.h and its pkg-config file, with libxml2's), which the build of python-augeas needs (certbot's Apache plugin); installed through the system package manager or brew."
+generator:
+  agent: Claude Code 2.1.302
+  by: Grigori Fursin
+  method: agent
+  via: cmeta 0.37.3

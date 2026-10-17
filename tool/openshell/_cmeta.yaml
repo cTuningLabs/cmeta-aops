@@ -1,0 +1,19 @@
+artifact: 7990c822d96f41d4
+category: tool,c393ba5c6fa14f66
+authors: Grigori Fursin
+creation_timestamp: '2026-10-17T15:32:52.606912+00:00'
+desc: 'NVIDIA OpenShell, the sandbox runtime for AI agents: its CLI (openshell) and its gateway (openshell-gateway),
+  detected or installed from the pinned release (SHA-256 checked) on Linux and macOS on Apple Silicon; Windows through
+  WSL2.'
+generator:
+  method: agent
+  agent: Claude Code 2.1.302
+  model: claude-opus-5-5
+  via: cmeta 0.37.3
+  by: Grigori Fursin
+note: A local gateway of this user (start, status, a test sandbox, stop) is task/run-openshell-gateway.
+tags:
+- openshell
+- nvidia
+- sandbox
+- agents

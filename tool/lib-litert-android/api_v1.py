@@ -269,16 +269,22 @@ class CTool(InitCTool):
         digests[aar_name] = r['sha256']
 
         published = dict(PINNED.get(version, {}))
+        api_answered = False
         ra = fetch(RELEASE_API.format(v = version), f'release-v{version}.json', required = False)
         if ra.get('path') and os.path.isfile(ra['path']):
             with open(ra['path'], encoding = 'utf-8') as f:
                 try:
                     published.update(release_digests(f.read()))
+                    api_answered = True
                 except ValueError:
                     pass
         paths = {}
         for name in ASSETS:
             if name not in published:
+                if api_answered:
+                    # (LiteRT 2.3.0 publishes neither NPU runtime archive: the layout of the release changed)
+                    return self.cm.error(f'LiteRT {version} publishes no {name} on GitHub (this tool unpacks it): '
+                                         f'the release has {", ".join(sorted(published)) or "no assets"}')
                 return self.cm.error(f'no SHA-256 for {name} of LiteRT {version} (GitHub release API unreachable?)')
             r = fetch(GITHUB.format(v = version, name = name), name)
             if self.cm.catch_error(r): return r

@@ -20,8 +20,7 @@ cmd_get_versions_regex: '\brefs/tags/(?:[A-Za-z0-9_.-]*[-v])?(\d+\.\d+\.\d+)(?![
 # make the same command produce different results on different days. Bump this
 # line to move everyone forward; `cx tool setup rclone --versions` lists what is
 # available upstream.
-default_version: '1.75.0'
-
+default_version: '1.75.2'
 # rclone publishes the same archives on its own site and on GitHub releases.
 # api_v1.py hands BOTH to task/download-file, which walks them in order and
 # stops at the first success - so an outage on either host is survivable.

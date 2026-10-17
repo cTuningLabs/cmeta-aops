@@ -1,0 +1,34 @@
+authors: Grigori Fursin
+
+# run-openshell-gateway - a local NVIDIA OpenShell gateway of this user, the control plane the openshell CLI talks to,
+# without upstream's package or service (tool/openshell gives the binaries):
+#
+#   cx task run run-openshell-gateway                      # start (or find) the gateway "cmeta" and show its status
+#   cx task run run-openshell-gateway status
+#   cx task run run-openshell-gateway test                 # a sandbox that runs one command and is deleted
+#   cx task run run-openshell-gateway stop                 # the gateway process (its registration and folder stay)
+#   cx task run run-openshell-gateway remove               # stop, unregister, delete its folder
+#   cx tool run openshell -- -g cmeta sandbox list         # the CLI itself, afterwards
+#
+#   --name=cmeta --port=17691 --driver=docker|podman (default: Docker when it answers, else Podman 5+) --wait=120
+#   --workdir=<folder> (default ~/.local/state/openshell/cmeta-<name>)  --config_home=<folder> (the CLI's
+#   registrations elsewhere than ~/.config/openshell: a throwaway run)
+#
+# The gateway listens in plaintext on 127.0.0.1 only and lets local users in without a login (upstream's own Docker
+# compose setup); its keys (generate-certs), gateway.toml, database, log and pid file live in the work folder; its
+# telemetry is off (OPENSHELL_TELEMETRY_ENABLED=false). It runs in a session of its own, so it outlives the shell
+# (and an ssh connection) that started it. Linux and macOS; on Windows: --on=wsl.
+#
+# This task is never memoized (cache: False): every run looks at the machine.
+
+cache: False
+store_global: False
+
+params_map:
+  arg2: action
+
+cli_params:
+  action: {values: [start, status, test, stop, remove]}
+  port: {type: int, min: 1, max: 65535}
+  wait: {type: int, min: 0}
+  timeout: {type: int, min: 1}

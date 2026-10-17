@@ -248,12 +248,14 @@ cx program clean   test-hello-c-cpu                         # remove its build f
 cx program provenance test-hello-c-cpu                      # what the last run requested, resolved and loaded
 ```
 
-- **Use `--quiet` (or `--con`) for the first build in a non-interactive shell.** When the
-  host has several compilers for `lang-<lang>` (e.g. gcc + clang + msvc for C), the
-  `compiler` task **prompts to pick one** — which raises `EOFError` under CI/agents.
-  `--quiet` auto-selects `0`; `--con` lets you answer; or pin it (e.g.
-  `--use.compiler-c.name=gcc,...`). The first CPU build also **sets up a compiler
-  toolchain and can take minutes** (subsequent runs reuse it from the cache).
+- **The compiler is chosen without a question.** When the host has several compilers for
+  `lang-<lang>` (e.g. gcc + clang + msvc for C), the `compiler` task takes the preferred one
+  of the OS (MSVC on Windows, GCC on Linux, clang on macOS) and names it in an INFO line.
+  `--use.compiler-c.name=clang` picks another, and the C++ compiler of the same run then
+  follows its family (clang-cpp) unless `--use.compiler-cpp.name=<tool>` names one; a named
+  choice never becomes the default of later runs. Keep `--quiet` in non-interactive shells for
+  the other prompts (installs). The first CPU build also **sets up a compiler toolchain and can
+  take minutes** (subsequent runs reuse it from the cache).
 - `-j`/`--verbose` prints which tasks reused global/cache and the resolved compile/run
   commands (also saved as `tmp-cmeta-compile-program{ext}` / `tmp-cmeta-run-program{ext}`
   scripts in the build dir).

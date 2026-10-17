@@ -1,7 +1,33 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+# Installed SDKs (Android Studio's, brew's, an earlier winget's) are detected first. Otherwise api_v1.py downloads
+# the zip of default_version (or --version) for this OS and CPU from Google's repository, checks its SHA-1 against
+# Google's index and unpacks it into the cache entry (install ladder tier 1: no administrator rights, no winget or
+# brew); a macOS release without a zip for the CPU falls back to brew. Java comes from tool/openjdk.
+#
+#   cx tool setup google.android-sdk.command-line-tools
+#   cx tool run google.android-sdk.command-line-tools -- "ndk;30.0.16248370"
+
 names:
   - sdkmanager{{global.host.vars.file_ext_bat2}}
+
+# The releases are the "cmdline-tools;<release>" packages of https://dl.google.com/android/repository/repository2-3.xml
+default_version: '22.0'
+
+cmd_get_versions: '{{global.curl.qpath}} -s https://dl.google.com/android/repository/repository2-3.xml'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: curl,bfbb8526694d4f21
+cmd_get_versions_regex: 'path="cmdline-tools;(\d+\.\d+)"'
+
+# 23.0 deprecates sdkmanager: its launcher is a shim of the new Android CLI ("android sdk", the android binary of the
+# same folder), which lists packages as ndk/<version> instead of ndk;<version>, has no lib/sdkmanager-classpath.jar
+# (task android-gradle-app runs that Java entry point on Windows: Google's .bat corrupts paths with "!") and prints
+# "1.0.<build> (Android CLI)" for --version. Its users here need porting to the Android CLI first
+latest_limits:
+  - exclude: '>=23'
+    reason: 'sdkmanager of 23.0 is a shim of the Android CLI (other output, no sdkmanager-classpath.jar): port android-gradle-app and the NDK fallback to "android sdk" first'
+    since: '2026-10-17'
 
 match_version:
   - regex: '(?m)^\s*(\d+(?:\.\d+)*)\s*$'
@@ -13,14 +39,11 @@ cache_meta_const:
   skip_cache_version_check: True
 
 
+# The fallback of api_v1.py's download on macOS
 install_cmd:
-  windows: "{{global.winget.qpath}} install --id=Google.AndroidSDKCommandLineTools -e --no-upgrade --source winget {{global.init.winget_install_flags|}}"
-  linux: '{{global.brew.qpath}} install --cask android-commandlinetools'
   darwin: '{{global.brew.qpath}} install --cask android-commandlinetools'
 
 install_cmd_version:
-  windows: "{{global.winget.qpath}} install --id=Google.AndroidSDKCommandLineTools -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}"
-  linux: '{{global.brew.qpath}} install --cask android-commandlinetools@{{major_version}}'
   darwin: '{{global.brew.qpath}} install --cask android-commandlinetools@{{major_version}}'
 
 extra_paths:
@@ -44,8 +67,4 @@ uses:
     with:
       add_env: True
 
-install_uses:
-  linux:
-    - task: setup,a2f9b61079ce4333
-      name: brew,27859c999bdd4085
 

@@ -25,6 +25,13 @@ cmd_get_versions_uses:
 cmd_get_versions_regex: '\brefs/tags/release-(\d+\.\d+\.\d+)$'
 default_version: '1.30.6'
 
+# nginx numbers its stable line with an even minor (1.30) and its mainline with an odd one (1.31): the pin follows the
+# stable line, so latest does too
+latest_limits:
+  - exclude: '>=1.31,<1.32'
+    reason: '1.31 is nginx mainline; the pin follows the stable line (an even minor: 1.30, then 1.32)'
+    since: '2026-10-17'
+
 # Windows (api_v1.py): the official zip of nginx.org, the whole folder (nginx.exe needs conf/, html/, logs/ and temp/
 # next to it); nginx.org signs its files with PGP only: HTTPS
 windows_zip: 'https://nginx.org/download/nginx-{version}.zip'

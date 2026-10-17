@@ -99,7 +99,7 @@ updates:
           - task: clone-git-to-cache,86919b3cfdd443d2
             name: src-llama-cpp
             url: 'https://github.com/ggml-org/llama.cpp'
-            checkout: '{{params.checkout|b11324}}'
+            checkout: '{{params.checkout|b11707}}'
 
           - internal_func: customize_llama_cpp
             internal_func_from_local_key: selected-program

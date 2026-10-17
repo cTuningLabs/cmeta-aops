@@ -1,0 +1,18 @@
+artifact: 0094d7acfb3f405f
+category: tool,c393ba5c6fa14f66
+authors: Grigori Fursin
+creation_timestamp: '2026-10-17T15:39:22.927326+00:00'
+desc: 'NVIDIA NemoClaw, which runs OpenClaw, Hermes or LangChain Deep Agents inside OpenShell sandboxes: its CLI built
+  from the pinned release tag with cMeta''s Node.js (no npm package: the "nemoclaw" one on npmjs.org is a placeholder),
+  Linux and macOS; Windows through WSL2.'
+generator:
+  method: agent
+  agent: Claude Code 2.1.302
+  model: claude-opus-5-5
+  via: cmeta 0.37.3
+  by: Grigori Fursin
+tags:
+- nemoclaw
+- nvidia
+- openshell
+- agents

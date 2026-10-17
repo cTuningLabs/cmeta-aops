@@ -93,3 +93,80 @@ def test_peek_without_hosts_takes_the_hosts_of_the_launch(module, tmp_path):
     assert r['return'] == 0 and r['done'] and list(r['hosts']) == ['here-docker-debian-12']
     # no instance was made or looked for again: only the peek script ran on the recorded host
     assert not [c for c in t.cm.calls if c.get('category') == 'task']
+
+
+def test_a_peek_or_collect_from_another_directory_says_so_and_leaves_nothing(module, tmp_path, monkeypatch):
+    """Without the round's test session in the shell, the round's folder is looked for in the current directory: a peek
+    made a test-on-hosts-<id> folder there for its helper script (also inside a repository) and reported this machine's
+    part as running, a collect copied nothing without a word (2026-10-17). Now nothing is made and both say where they
+    looked."""
+    t = task(module)
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    t.local_folder = lambda rid: str(elsewhere / f'test-on-hosts-{rid}')
+
+    r = t.peek(False, 'm2', str(elsewhere / 'test-on-hosts-m2'), 'cmeta-tests/test-on-hosts-m2', ['here', 'fgg-t470p-ubuntu'])
+    assert r['return'] == 0 and not r['done']
+    assert r['hosts']['here']['lines'][0].startswith('unknown: ')
+    assert r['hosts']['fgg-t470p-ubuntu']['done']                      # the remote host answered through its script
+    assert list(elsewhere.iterdir()) == []                              # no folder made for the helper script
+
+    c = t.collect(False, 'm2', str(elsewhere / 'test-on-hosts-m2'), 'cmeta-tests/test-on-hosts-m2', ['here'], '*.jsonl',
+                  str(tmp_path / 'collected'))
+    assert c['hosts']['here'].startswith('not found: ')
+
+
+def test_the_remove_of_this_machines_part_takes_the_read_only_files_of_a_clone(module, tmp_path):
+    """A round's cache holds git clones, whose object files are read-only on Windows: shutil.rmtree left them, and the
+    round stayed on disk (2026-10-17). The engine's delete (utils.files.safe_delete_directory) removes them."""
+    import os
+    import stat
+    from cmeta import utils
+
+    t = task(module)
+    t.cm.utils = type('U', (), {'files': utils.files})()
+    local = tmp_path / 'test-on-hosts-m3'
+    objects = local / 'here' / 'home' / 'repos' / 'local' / 'cache' / 'clone' / '.git' / 'objects' / 'ab'
+    objects.mkdir(parents=True)
+    obj = objects / 'cdef'
+    obj.write_bytes(b'x')
+    os.chmod(obj, stat.S_IREAD)
+
+    r = t.remove(False, 'm3', str(local), 'cmeta-tests/test-on-hosts-m3', ['here'])
+    assert r['return'] == 0
+    assert not (local / 'here').exists()
+
+
+def test_this_machines_part_lives_in_here_dir_and_round_json_names_it(module, tmp_path):
+    """This machine's part of a round runs in <here_dir>/test-on-hosts-<id> (the key here_dir of task-test-on-hosts, else
+    ~/cmeta-tests, like a remote host): inside a test session's sandbox it was too deep for MSVC (2026-10-17). The
+    launch records it in round.json, so peek, collect and remove find it from any directory."""
+    import os
+
+    class ConfigCM(FakeCM):
+        def __init__(self, here):
+            super().__init__()
+            self.here = here
+
+        def access(self, p):
+            if p.get('category') == module.CONFIG_CATEGORY:
+                return {'return': 0, 'config_cmeta': {'here_dir': self.here} if self.here else {}}
+            return super().access(p)
+
+    assert module.here_dir(ConfigCM(str(tmp_path / 'short'))) == str(tmp_path / 'short')
+    assert module.here_dir(ConfigCM(None)) == os.path.join(os.path.expanduser('~'), 'cmeta-tests')
+
+    # a round whose part here is elsewhere: peek reads it where round.json says
+    part = tmp_path / 'short' / 'test-on-hosts-m4'
+    (part / 'work').mkdir(parents=True)
+    (part / 'DONE').write_text('done 2026-10-17T15:00:00Z\n')
+    (part / 'work' / 'steps.txt').write_text('1: exit 0 in 1 s: task run test-python -q\n')
+    local = tmp_path / 'sandbox' / 'test-on-hosts-m4'
+    local.mkdir(parents=True)
+    (local / module.ROUND_FILE).write_text(json.dumps({'hosts': ['here'], 'here_root': str(part)}))
+
+    t = task(module)
+    t.local_folder = lambda rid: str(local)
+    r = t.run({'control': {'con': False}}, action='peek', id='m4')
+    assert r['return'] == 0 and r['done'] and r['hosts']['here']['lines'][1].startswith('1: exit 0')

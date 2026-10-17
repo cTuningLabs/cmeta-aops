@@ -25,6 +25,13 @@ cmd_get_versions_uses:
 cmd_get_versions_regex: '\brefs/tags/(?:[A-Za-z0-9_.-]*[-v])?(\d+\.\d+\.\d+)(?![\w.-])'
 cmd_get_versions_regex_group: 1
 
+# Windows: the winget install needs administrator rights.
+# OpenJS.NodeJS.LTS: the MSI is per machine and elevates itself (the nodejs.org download needs nothing).
+# A quiet run (-q) that is not elevated does not start it (task/setup/install.py, unattended_rights);
+# without -q, Windows asks (UAC).
+requires_sudo:
+  windows: True
+
 install_help_text: |
   Could not download Node.js automatically.
   Install it per https://nodejs.org/en/download (the LTS release), or

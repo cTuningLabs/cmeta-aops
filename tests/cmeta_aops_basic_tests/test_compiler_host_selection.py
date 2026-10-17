@@ -312,3 +312,147 @@ def test_the_hook_is_wired():
     src = (REPO_ROOT / 'task' / 'compiler' / 'api_v1.py').read_text(encoding = 'utf-8')
     engine = (REPO_ROOT / 'category' / 'task' / 'api' / 'v2.py').read_text(encoding = 'utf-8')
     assert 'def filter_cache_artifacts(' in src and 'task_api_code.filter_cache_artifacts(' in engine
+
+
+###################################################################################################
+# One build, one compiler (2026-10-17): a compiler asked for by name is not the default of later runs, and a request
+# that names none follows the family of the other language's compiler of the same run
+
+def auto(e):
+    e['cmeta']['params']['selected'] = 'auto'
+    return e
+
+
+def with_partner(c, lang, name):
+    """A run whose compiler of `lang` (c or cpp) is set up already."""
+    c['tasks']['global']['compiler-' + lang] = {'tool': {'name': name}, 'version': '1.0'}
+    return c
+
+
+def test_a_request_without_a_name_is_cached_as_auto(compiler):
+    from cmeta.utils.common import check_params
+    import types
+    compiler.cm, saved = types.SimpleNamespace(check_params = lambda p, a, n: check_params(p, a, 'cmeta.utils.common'),
+                                               catch_error = lambda r: r['return'] > 0), compiler.cm
+    try:
+        p = {'lang': 'c'}
+        assert compiler.init({}, p)['return'] == 0 and p['selected'] == 'auto'
+        p = {'lang': 'c', 'name': 'clang', 'selected': 'auto'}
+        assert compiler.init({}, p)['return'] == 0 and 'selected' not in p
+    finally:
+        compiler.cm = saved
+
+
+def test_a_default_request_never_takes_an_entry_made_by_name(cm):
+    """The cache query of a request without a name carries selected=auto; an entry made by name (or before
+    2026-10-17) has none and does not match: --use.compiler-c.name=clang once does not make clang the default."""
+    import yaml
+    desc = yaml.safe_load((REPO_ROOT / 'task' / 'compiler' / '_desc.yaml').read_text(encoding = 'utf-8'))
+    assert 'selected' in desc['cache_params']
+    match = lambda data, query: cm.utils.common.matches_query(data, query, match_version_func = cm.repos.match_version_func,
+                                                             match_empty_version = True)
+    by_name = {'lang': 'c', 'name': 'clang', 'version': '23.1.3'}
+    chosen = {'lang': 'c', 'name': 'msvc', 'version': '19.51', 'selected': 'auto'}
+    assert not match(by_name, {'lang': 'c', 'selected': 'auto'})
+    assert match(chosen, {'lang': 'c', 'selected': 'auto'})
+    assert match(by_name, {'lang': 'c', 'name': 'clang'}) and match(chosen, {'lang': 'c', 'name': 'msvc'})   # named: either
+
+
+def test_the_cpp_compiler_follows_the_family_of_the_runs_c_compiler(compiler, capsys):
+    """Windows prefers MSVC, but the C compiler of this run is clang: the C++ entry of clang is taken."""
+    entries = [auto(entry('msvc', '19.51.36231', 'cpu')), auto(entry('clang-cpp', '23.1.3', 'cpu'))]
+    c = with_partner(ctx('windows', con = True), 'c', 'clang')
+    r = compiler.filter_cache_artifacts(c, entries, [], {'lang': 'cpp', 'compute': 'cpu', 'selected': 'auto'})
+    assert chosen(r) == ['clang-cpp 23.1.3']
+    assert 'the C compiler of this run is clang: taking the C++ compiler of its family' in capsys.readouterr().out
+
+    # the reverse: a C request after a C++ compiler (icpx: the family icx)
+    entries = [auto(entry('msvc', '19.51.36231', 'cpu', 'c')), auto(entry('icx', '2025.3.0', 'cpu', 'c'))]
+    r = compiler.filter_cache_artifacts(with_partner(ctx('windows'), 'cpp', 'icpx'), entries, [], {'lang': 'c', 'compute': 'cpu'})
+    assert chosen(r) == ['icx 2025.3.0']
+
+    # none of that family cached: none kept, so that run() chooses among the tools, the family first
+    r = compiler.filter_cache_artifacts(with_partner(ctx('windows'), 'c', 'clang'), [auto(entry('msvc', '19.51.36231', 'cpu'))], [],
+                                        {'lang': 'cpp', 'compute': 'cpu'})
+    assert r['artifacts'] == []
+
+    # a request that names its compiler is taken as it is
+    r = compiler.filter_cache_artifacts(with_partner(ctx('windows'), 'c', 'clang'), [entry('msvc', '19.51.36231', 'cpu')], [],
+                                        {'lang': 'cpp', 'compute': 'cpu', 'name': 'msvc'})
+    assert chosen(r) == ['msvc 19.51.36231']
+
+    # no partner yet: the preference of the OS, as before
+    r = compiler.filter_cache_artifacts(ctx('windows'), [auto(entry('clang-cpp', '23.1.3', 'cpu')), auto(entry('msvc', '19.51.36231', 'cpu'))], [],
+                                        {'lang': 'cpp', 'compute': 'cpu'})
+    assert chosen(r) == ['msvc 19.51.36231']
+
+
+def test_run_takes_the_family_of_the_runs_other_compiler(compiler, cm, capsys):
+    """Without cached compilers: the tool of the partner's family first, else the preferred one with an INFO line."""
+    class FakeCM:
+        repos = cm.repos
+        utils = cm.utils
+        found = []
+
+        def access(self, p):
+            if p.get('command') == 'find':
+                return {'return': 0, 'artifacts': list(self.found)}
+            return {'return': 0, 'version': '1.0', 'constraints': {'supports_compute': ['cpu']}}
+
+        def catch_error(self, r, fail16 = False):
+            return r['return'] > 0 and (r['return'] != 16 or fail16)
+
+    def tool(alias, sort):
+        return {'cmeta_ref_parts': {'artifact_alias': alias}, 'cmeta': {'sort': sort}, 'path': '/tool/' + alias}
+
+    t = object.__new__(type(compiler))
+    t.cm, t.cmeta, t.category_alias, t.category_uid = FakeCM(), compiler.cmeta, 'task', 'c36be4b9314a45e0'
+
+    def run(uname, found, partner):
+        FakeCM.found = found
+        c = with_partner(ctx(uname, con = True), 'c', partner)
+        c['tasks']['nested_call'] = 0
+        return t.run(c, lang = 'cpp', compute = 'cpu')
+
+    r = run('windows', [tool('msvc', 1000), tool('clang-cpp', 3000)], 'clang')
+    assert r['tool']['name'] == 'clang-cpp'
+    assert 'the C compiler of this run is clang: taking clang-cpp, the C++ compiler of its family' in capsys.readouterr().out
+
+    r = run('linux', [tool('gcc-cpp', 2000), tool('clang-cpp', 3000)], 'gcc')
+    assert r['tool']['name'] == 'gcc-cpp'
+
+    # nvcc's host compiler on Windows is MSVC alone: no clang-cpp suits the request - the preferred one, said
+    r = run('windows', [tool('msvc', 1000)], 'clang')
+    assert r['tool']['name'] == 'msvc'
+    assert 'the C compiler of this run is clang, but no C++ compiler of its family suits this request' in capsys.readouterr().out
+
+
+def test_every_c_and_cpp_compiler_tool_has_its_family():
+    """compiler_families in task/compiler/_desc.yaml lists every tool tagged lang-c or lang-cpp, each in one family."""
+    import yaml
+    desc = yaml.safe_load((REPO_ROOT / 'task' / 'compiler' / '_desc.yaml').read_text(encoding = 'utf-8'))
+    listed = [str(t) for tools in desc['compiler_families'].values() for t in tools.values()]
+    tools = set()
+    for meta in (REPO_ROOT / 'tool').glob('*/_cmeta.yaml'):
+        tags = (yaml.safe_load(meta.read_text(encoding = 'utf-8')) or {}).get('tags') or []
+        if 'lang-c' in tags or 'lang-cpp' in tags:
+            tools.add(meta.parent.name)
+    assert tools and tools <= set(listed), sorted(tools - set(listed))
+    assert all(f in desc['compiler_families'] for f in ('gcc', 'clang', 'msvc'))
+    assert set(desc['preferred_compilers']['windows']) <= set(desc['compiler_families'])
+
+
+def test_a_compiler_asked_for_by_name_leads_even_before_it_is_set_up(compiler, capsys):
+    """build-llama-cpp sets up its C++ compiler first: with --use.compiler-c.name=clang the C++ request (no name)
+    follows the C compiler asked for, not the preference of the OS (Windows: C by clang, C++ by MSVC - CMake failed,
+    the round of 2026-10-17)."""
+    entries = [auto(entry('msvc', '19.51.36231', 'cpu')), auto(entry('clang-cpp', '23.1.3', 'cpu'))]
+    c = ctx('windows', con = True, use = {'compiler-c': {'name': 'clang'}})
+    r = compiler.filter_cache_artifacts(c, entries, [], {'lang': 'cpp', 'compute': 'cpu'})
+    assert chosen(r) == ['clang-cpp 23.1.3']
+    assert 'the C compiler asked for is clang: taking the C++ compiler of its family' in capsys.readouterr().out
+
+    # a compiler set up in the run leads over one only asked for (the run's facts first)
+    c = with_partner(ctx('windows', use = {'compiler-c': {'name': 'clang'}}), 'c', 'msvc')
+    r = compiler.filter_cache_artifacts(c, entries, [], {'lang': 'cpp', 'compute': 'cpu'})
+    assert chosen(r) == ['msvc 19.51.36231']

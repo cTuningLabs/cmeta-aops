@@ -33,7 +33,7 @@ names:
   - az
 
 # "az --version" opens with a line like:
-#   azure-cli                         2.89.1
+#   azure-cli                         2.91.0
 # Anchored to the start of a line (the engine matches with re.MULTILINE) so the
 # per-dependency lines further down the same block cannot be picked up instead.
 match_version:
@@ -55,8 +55,7 @@ cmd_get_versions_regex: 'refs/tags/azure-cli-(\d+\.\d+\.\d+)(?:\^\{\})?$'
 # purpose: resolving "latest" over the network at install time would make the
 # same command produce different results on different days. Bump this line to
 # move everyone forward; `cx tool setup az --versions` lists what is available.
-default_version: '2.89.1'
-
+default_version: '2.91.0'
 # Download templates used by api_v1.py.
 #   - The Windows ZIP is published on Microsoft's blob store AND mirrored on the
 #     GitHub release, so both are handed to task/download-file, which walks them
@@ -128,7 +127,7 @@ install_help_text: |
   Install it by hand, put "az" on PATH, then re-run `cx tool setup az`:
 
     Windows: winget install --exact --id Microsoft.AzureCLI
-             (or unzip https://azcliprod.blob.core.windows.net/zip/azure-cli-2.89.1-x64.zip
+             (or unzip https://azcliprod.blob.core.windows.net/zip/azure-cli-2.91.0-x64.zip
               anywhere and add its "bin" folder to PATH - no admin rights needed)
     macOS  : brew update && brew install azure-cli
     Linux  : curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash    # Debian/Ubuntu
