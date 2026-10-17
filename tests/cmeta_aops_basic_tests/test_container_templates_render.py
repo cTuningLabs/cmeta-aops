@@ -91,3 +91,33 @@ def test_render_needs_no_engine_here(cm, tmp_path, monkeypatch):
 
     r = cm.access({'category': 'container', 'command': 'build', 'arg1': 'fedora', 'engine': 'podman', 'con': False})
     assert r['return'] > 0 and 'is not installed' in r['error']
+
+
+def test_a_cuda_stack_gets_the_devel_base_and_a_tag_of_its_own(cm, tmp_path):
+    # llama-cpp's CUDA overlay asks its base for the devel image (nvcc): before 2026-10-17 the base was rendered from
+    # the command line's keys alone, came from the base flavour, and the stack's build found no CUDA compiler
+    out = tmp_path / 'stack'
+    r = cm.access({'category': 'container', 'command': 'render', 'arg1': 'llama-cpp', 'engine': 'docker', 'out': str(out),
+                   'compute': 'cuda', 'con': False})
+    assert r['return'] == 0, r
+    base = (out / 'ubuntu' / 'Containerfile').read_text(encoding='utf-8')
+    app = (out / 'llama-cpp' / 'Containerfile').read_text(encoding='utf-8')
+    assert 'FROM nvidia/cuda:13.3.1-devel-ubuntu26.04\n' in base
+    assert r['base_image'] == 'cmeta/ubuntu:26.04-cuda13.3.1-devel-cmeta-latest'
+    assert 'FROM cmeta/ubuntu:26.04-cuda13.3.1-devel-cmeta-latest\n' in app
+    assert 'aops_checkout' not in base                     # the app's own keys stay out of the base
+
+
+def test_cuda_images_name_their_version_and_flavour(cm, tmp_path):
+    r = cm.access({'category': 'container', 'command': 'render', 'arg1': 'ubuntu', 'engine': 'docker', 'out': str(tmp_path / 'b'),
+                   'compute': 'cuda', 'con': False})
+    assert r['return'] == 0 and r['image'] == 'cmeta/ubuntu:26.04-cuda13.3.1-base-cmeta-latest'
+
+    r = cm.access({'category': 'container', 'command': 'render', 'arg1': 'ubuntu', 'engine': 'docker', 'out': str(tmp_path / 'd'),
+                   'compute': 'cuda', 'template': {'cuda_flavour': 'devel', 'cuda_version': '13.2.0'}, 'con': False})
+    assert r['return'] == 0 and r['image'] == 'cmeta/ubuntu:26.04-cuda13.2.0-devel-cmeta-latest'
+
+    # without an overlay nothing changes
+    r = cm.access({'category': 'container', 'command': 'render', 'arg1': 'ubuntu', 'engine': 'docker', 'out': str(tmp_path / 'c'),
+                   'con': False})
+    assert r['return'] == 0 and r['image'] == 'cmeta/ubuntu:26.04-cmeta-latest'

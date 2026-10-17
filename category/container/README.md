@@ -36,8 +36,9 @@ A template's `_desc.yaml` starts with its own examples. Two kinds, told apart by
   `volumes:`, `env:`, `secrets:` (names only), `config_from_env:`, `cmd:`, `open_url:`, `tests:`; `inherits:`
   another app. A private template lives in a private repository next to what it serves.
 
-Image tags carry the parameters: `cmeta/ubuntu:26.04-cmeta-0.37.1`, `cmeta/ubuntu:24.04-cuda-cmeta-latest`,
-`cmeta/cmeta-cserver:ubuntu-24.04`.
+Image tags carry the parameters: `cmeta/ubuntu:26.04-cmeta-0.37.1`, `cmeta/cmeta-cserver:ubuntu-24.04`; a compute overlay
+may name its own (`cmeta/ubuntu:24.04-cuda13.3.1-base-cmeta-latest`: the CUDA version and flavour). An app's compute
+overlay sets the keys its base declares (llama-cpp's CUDA builds on the devel image).
 
 ## Engines, repositories, secrets
 

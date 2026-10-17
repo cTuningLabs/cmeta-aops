@@ -25,9 +25,11 @@ cx task run get-host--docker ubuntu --instance=web --ports=8080       # ports pu
 What happens:
 
 1. The instance is named after the place: `<this host>-<engine>-<template>-<os_version>[-<compute>][-<arch>]`,
-   this host being its fleet alias when this machine has a host artifact, else its hostname. The same request
-   finds the same instance: running, it is returned; stopped, it is started; gone, it is made again; `this host`
-   is found by `cx host whoami` (the system_id its probe recorded, then the hostname).
+   this host being its fleet alias when this machine has a host artifact, else its hostname, and `-t<hash>` when
+   other template keys are given (`--template.cuda_version=12.9.1`, another `from`): they make another image, so
+   another instance. The same request finds the same instance: running, it is returned; stopped, it is started;
+   gone, it is made again; `this host` is found by `cx host whoami` (the system_id its probe recorded, then the
+   hostname).
    A CUDA instance on a Linux engine needs the NVIDIA Container Toolkit (docker's `nvidia` runtime, podman's CDI
    file): without it the task stops with the cure, `cx tool setup nvidia-container-toolkit --install`.
 2. The template's image is built through the container category when missing (`cx container build`).

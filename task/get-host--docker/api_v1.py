@@ -26,6 +26,7 @@ Everything runs through the engine's own commands (docker run / inspect / start 
 """
 
 import datetime
+import hashlib
 import json
 import os
 import platform
@@ -62,6 +63,19 @@ def engine_run(engine, args, timeout=600):
 def clean_name(text):
     """A container and artifact name: lower case, letters, digits, dots and dashes."""
     return re.sub(r'[^a-z0-9.]+', '-', str(text).lower()).strip('-.')
+
+
+def template_keys_suffix(params):
+    """
+    '-t' and a short hash of the template keys other than the OS version (another FROM, a CUDA version or flavour,
+    a cmeta-aops checkout): they make another image, so another instance - before 2026-10-17 a request with other
+    keys reused the instance made from the first ones. '' without such keys: the names of before. get-host--wsl
+    names its instances the same way.
+    """
+    extra = {str(k): str(v) for k, v in params.items() if str(k) != 'os_version'}
+    if not extra:
+        return ''
+    return '-t' + hashlib.sha256(json.dumps(extra, sort_keys=True).encode('utf-8')).hexdigest()[:6]
 
 
 def wait_ready(engine, inst, first_repo, con):
@@ -205,7 +219,7 @@ class CTask(InitCTask):
             arch: str = '',                  # arm64 / amd64: --platform linux/<arch> (emulated when the engine is another one)
             engine: str = 'docker',          # docker or podman
             distro: str = '',                # an app template (llama-cpp, vllm-cuda ...): the base it is built on (default: the first of its bases)
-            instance: str = '',              # the instance's name (default: <this host>-<engine>-<template>[-<base>]-<os_version>[-<compute>][-<arch>])
+            instance: str = '',              # the instance's name (default: <this host>-<engine>-<template>[-<base>]-<os_version>[-<compute>][-<arch>][-t<hash of the other template keys>])
             repos: str = '',                 # repositories of this machine mounted inside, comma-separated (default: ctuninglabs@cmeta-aops)
             data: str = '',                  # data repositories (config::task cache_repos) mounted under <home>/data/<alias>: all by default, a subset, or "none"
             new_host: bool = False,          # another instance of the same place (-2, -3 ...) instead of the existing one
@@ -252,6 +266,7 @@ class CTask(InitCTask):
         if bdesc is not tdesc:
             overlays.update(tdesc.get('compute') or {})
         params = {str(k): str(v) for k, v in (template or {}).items()}
+        keys_suffix = template_keys_suffix(params)          # the user's keys only: uid and gid below are this machine's
 
         # The uid rule: on a Linux engine a bind mount keeps the machine's ownership, so the user inside gets this
         # user's uid and gid (a system uid cannot even plug a mounted repository: cMeta's lock file next to _cmr.yaml
@@ -285,7 +300,7 @@ class CTask(InitCTask):
         carrier, carrier_uid, machine = self._carrier()
         stem = clean_name(instance) if instance else clean_name(f'{carrier}-{engine}-{name}' + (f'-{base_name}' if base_name else '')
                                                                + f'-{os_version}' + (f'-{compute}' if compute != 'cpu' else '')
-                                                               + (f'-{arch_norm}' if arch_norm else ''))
+                                                               + (f'-{arch_norm}' if arch_norm else '') + keys_suffix)
         inst = stem
         existing = self._find(HOST_CATEGORY, inst)
         if existing and new_host:

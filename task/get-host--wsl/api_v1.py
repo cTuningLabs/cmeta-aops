@@ -29,6 +29,8 @@ are container images (a GPU inside WSL comes with the Windows driver): only cpu 
 """
 
 import datetime
+import hashlib
+import json
 import os
 import shlex
 import platform
@@ -79,6 +81,15 @@ def wsl_distributions():
 def clean_name(text):
     """A distribution and artifact name: lower case, letters, digits, dots and dashes."""
     return re.sub(r'[^a-z0-9.]+', '-', str(text).lower()).strip('-.')
+
+
+def template_keys_suffix(params):
+    """'-t' and a short hash of the template keys other than the OS version: another image, another instance (as
+    get-host--docker names them); '' without such keys."""
+    extra = {str(k): str(v) for k, v in params.items() if str(k) != 'os_version'}
+    if not extra:
+        return ''
+    return '-t' + hashlib.sha256(json.dumps(extra, sort_keys=True).encode('utf-8')).hexdigest()[:6]
 
 
 def mnt_path(path):
@@ -233,7 +244,8 @@ class CTask(InitCTask):
         # ---- the place and the instance's name
         carrier, carrier_uid, machine = self._carrier()
         stem = clean_name(instance) if instance else clean_name(f'{carrier}-wsl-{name}' + (f'-{base_name}' if base_name else '')
-                                                               + f'-{os_version}' + (f'-{compute}' if compute != 'cpu' else ''))
+                                                               + f'-{os_version}' + (f'-{compute}' if compute != 'cpu' else '')
+                                                               + template_keys_suffix(params))
         inst = stem
         existing = self._find(HOST_CATEGORY, inst)
         if existing and new_host:

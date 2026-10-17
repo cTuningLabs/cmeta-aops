@@ -620,8 +620,10 @@ class Category(InitCategory):
             else:
                 return self._err(f'cmeta_source must be pypi, git or local (got "{source}")')
 
-            # ---- base image tag
-            base_image_tpl = b['desc'].get('image') or 'cmeta/{{cmeta.base_alias}}:{{cmeta.os_version|latest}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}'
+            # ---- base image tag: a compute overlay may name its images itself (ubuntu's CUDA: the CUDA version and the
+            # image flavour, so that a devel build and a base build are two images, not one tag rebuilt in turn)
+            base_image_tpl = (bcomp.get('image') or b['desc'].get('image') or
+                              'cmeta/{{cmeta.base_alias}}:{{cmeta.os_version|latest}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}')
             cmeta['base_image'] = R(str(base_image_tpl), 'image of ' + b['alias']).lower()
             # the engine's renderer leaves an empty value empty ({{x|latest}} is the default of a MISSING key): no
             # version asked = the newest release, said in the tag; dashes between every part (cmeta-0.37.1, cmeta-latest)
@@ -839,9 +841,17 @@ class Category(InitCategory):
                     'open_url': open_url},
             'tests': tests,
         }
-        # the base of an app is a spec of its own (rendered the same way, so that build can make it first)
+        # the base of an app is a spec of its own (rendered the same way, so that build can make it first). It gets
+        # the keys it declares from the app (the app's compute overlay: llama-cpp's CUDA needs the devel image - before,
+        # the base was built from the command line's keys alone and came without nvcc, 2026-10-17), then the command
+        # line's; the app's own keys stay out of it
         if app:
-            rb = self._resolve(ctx, b['alias'], engine=engine, compute=compute, template=cli_template, secret=secret,
+            declared = set(self._as_dict(b['desc'].get('template'))) | set(self._as_dict(bcomp.get('template')))
+            base_template = {}
+            for src in (self._as_dict(app['desc'].get('template')), self._as_dict(acomp.get('template'))):
+                base_template.update({k: v for k, v in src.items() if k in declared})
+            base_template.update(cli_template)
+            rb = self._resolve(ctx, b['alias'], engine=engine, compute=compute, template=base_template, secret=secret,
                                platform=platform)
             if rb['return'] > 0:
                 return rb

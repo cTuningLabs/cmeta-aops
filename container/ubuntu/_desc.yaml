@@ -36,6 +36,8 @@ packages: [curl, ca-certificates, git, tar, xz-utils, gzip, sudo, openssh-client
 compute:
   cuda:
     from: "nvidia/cuda:{{cmeta.cuda_version}}-{{cmeta.cuda_flavour}}-ubuntu{{cmeta.os_version}}"
+    # the tag names the CUDA version and the flavour: a devel image (nvcc, for builds) and a base one are two images
+    image: "cmeta/ubuntu:{{cmeta.os_version}}-cuda{{cmeta.cuda_version}}-{{cmeta.cuda_flavour}}-cmeta-{{cmeta.cmeta_version|latest}}"
     template:
       cuda_version: "13.3.1"
       cuda_flavour: base        # base | runtime | devel | cudnn-devel  (devel images are several GB)
