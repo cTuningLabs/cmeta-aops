@@ -73,6 +73,15 @@ def test_open_close_nearest(deadlines):
     assert deadlines.time_left(passed) == 0
 
 
+def test_a_deadline_just_opened_has_its_whole_length_left(deadlines):
+    # The clock just below a power of two (512 s after a boot, a fresh CI runner): the clock + 60 takes a coarser
+    # exponent and rounds up - 60.00000000000006 s were left, said 61 (Windows, Python 3.9 on CI, 2026-10-17)
+    for clock in (500.123, 1000.5, 2040.7, 4090.001, 131050.25):
+        entry = {"name": "build", "seconds": 60, "until": clock + 60, "option": "--build_timeout"}
+        assert deadlines.time_left(entry, now = clock) == 60, clock
+        assert deadlines.time_left(entry, now = clock + 0.25) == 60 and deadlines.time_left(entry, now = clock + 1) == 59
+
+
 # task/cmd with a deadline
 
 def test_without_a_deadline_nothing_changes(cm, tmp_path):

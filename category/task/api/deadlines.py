@@ -57,7 +57,9 @@ def nearest(ctx):
 
 def time_left(entry, now = None):
     """The seconds left to a deadline, rounded up, at least 0 (`now`: a time.monotonic() value)."""
-    left = entry['until'] - (time.monotonic() if now is None else now)
+    # (rounded to the microsecond first: `until` = the clock + N, and just below a power of two - 512 s after a boot -
+    # the sum takes a coarser exponent, so a deadline of 60 s just opened had 60.00000000000006 s left and said 61)
+    left = round(entry['until'] - (time.monotonic() if now is None else now), 6)
     return max(0, int(left) + (1 if left > int(left) else 0))
 
 
