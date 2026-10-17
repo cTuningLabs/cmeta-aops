@@ -2,6 +2,19 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.50.1
+- **Fix: `cx host pull --files` from a container or a WSL instance deleted local files.** The whole folder was copied
+  into the local folder (the current directory by default) and every file there that did not match the patterns was
+  then deleted - also the files that were there before the pull. Now only the matching files come, with their
+  sub-folders, and nothing else in the local folder is touched: a container's folder lands in a folder of its own
+  first (`docker cp` cannot choose files), a WSL instance copies the matching files alone (`find` + `cp --parents`) -
+  its copy of the whole folder also failed on names that differ by case only (NTFS), which broke the collect of
+  `test-on-hosts` rounds on WSL hosts. Tests: `test_host_pull_files.py`.
+- **Fix: a deadline just opened has its whole length left.** A deadline ends at the monotonic clock + N seconds; with
+  the clock just below a power of two (512 s after a boot - a fresh CI runner) the sum takes a coarser exponent and
+  rounds up, and a deadline of 60 s just opened had 60.00000000000006 s left, reported as 61 (`test_compile_deadline`
+  failed now and then on CI). The time left is rounded to the microsecond before it is rounded up to whole seconds.
+
 ## 0.50.0
 - **Run any command on another host: `--on`.** `--on=<target>` on any `cx task run`, `cx program run`, `cx tool setup`
   or `cx app run` hands the whole command line, as typed, to another host and returns its result: a fleet host (ssh;

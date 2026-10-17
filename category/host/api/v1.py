@@ -29,6 +29,7 @@ import threading
 import copy
 import json
 import shlex
+import tempfile
 
 from cmeta.category import InitCategory
 
@@ -1471,6 +1472,8 @@ class Category(InitCategory):
             return path
 
         q = shlex.quote
+        patterns = [p for p in (files or []) if p] if not into else []
+        landing = dst
         if into:
             remote = inside(dst)
             is_dir = os.path.isdir(src)
@@ -1493,13 +1496,25 @@ class Category(InitCategory):
             if h['type'] == 'docker':
                 engine = self._engine(h)
                 container = acc.get('container') or h['alias']
+                # docker cp cannot choose files: with --files the folder lands in a folder of its own inside the local
+                # one, and only the matching files move on. Before 2026-10-17 it landed in the local folder itself
+                # and every file there that did not match was deleted - also the files that were there before
+                if patterns and not dry_run:
+                    landing = tempfile.mkdtemp(prefix='.cmeta-pull-', dir=dst)
                 # a folder's contents into the local folder ("/." as docker cp reads it), a file into it
-                cmds = [f'{engine} cp {container}:{remote}/. {self.cm.utils.files.quote_path(dst)}',
-                        f'{engine} cp {container}:{remote} {self.cm.utils.files.quote_path(dst)}']
+                cmds = [f'{engine} cp {container}:{remote}/. {self.cm.utils.files.quote_path(landing)}',
+                        f'{engine} cp {container}:{remote} {self.cm.utils.files.quote_path(landing)}']
             else:
                 distro = str(acc.get('distro') or h['alias'])
                 mnt = self._wsl_mnt(dst)
-                copy = f'if [ -d {q(remote)} ]; then cp -r {q(remote + "/.")} {q(mnt)}; else cp {q(remote)} {q(mnt + "/")}; fi'
+                if patterns:
+                    # only the matching files, with their sub-folders: the rest is not wanted, and a whole folder can
+                    # hold names a drive of this machine cannot take (two that differ by case only, on NTFS)
+                    names = ' -o '.join(f'-name {q(p)}' for p in patterns)
+                    folder = f'cd {q(remote)} && find . -type f \\( {names} \\) -exec cp --parents -t {q(mnt)} {{}} +'
+                else:
+                    folder = f'cp -r {q(remote + "/.")} {q(mnt)}'
+                copy = f'if [ -d {q(remote)} ]; then {folder}; else cp {q(remote)} {q(mnt + "/")}; fi'
                 cmds = [f'wsl.exe -d {distro}' + (f' --user {user}' if user else '') + f' -- sh -c "{copy}"']
             what = {'host': h['alias'], 'remote': remote, 'local': dst}
 
@@ -1509,27 +1524,33 @@ class Category(InitCategory):
                     print (f'DRY RUN: {cmd}')
             return dict(what, **{'return': 0, 'dry_run': True, 'cmds': cmds})
 
-        for i, cmd in enumerate(cmds):
-            rr = self._run_local(cmd, capture=True, con=False, timeout=1800)
-            ok = rr.get('returncode', 1) == 0
-            if not into and h['type'] == 'docker':
-                if ok:
-                    break                                   # the folder form worked; the file form is the alternative
-                if i == 0:
-                    continue
-            if not ok:
-                return self.cm.error(f'"{cmd}" failed: {(rr.get("stderr") or rr.get("stdout") or "").strip()}')
+        file_form = False
+        try:
+            for i, cmd in enumerate(cmds):
+                rr = self._run_local(cmd, capture=True, con=False, timeout=1800)
+                ok = rr.get('returncode', 1) == 0
+                if not into and h['type'] == 'docker':
+                    if ok:
+                        file_form = i == 1
+                        break                               # the folder form worked; the file form is the alternative
+                    if i == 0:
+                        continue
+                if not ok:
+                    return self.cm.error(f'"{cmd}" failed: {(rr.get("stderr") or rr.get("stdout") or "").strip()}')
 
-        # pull --files: keep only the matching files of what came
-        patterns = [p for p in (files or []) if p]
-        if not into and patterns and os.path.isdir(dst):
-            for folder, _, names in os.walk(dst):
-                for name in names:
-                    if not any(fnmatch.fnmatch(name, p) for p in patterns):
-                        try:
-                            os.remove(os.path.join(folder, name))
-                        except OSError:
-                            pass
+            # pull --files from a container: the matching files of what came move into the local folder with their
+            # sub-folders (a file named by itself comes whatever its name); nothing else there is touched
+            if landing != dst:
+                for folder, _, names in os.walk(landing):
+                    rel = os.path.relpath(folder, landing)
+                    for name in names:
+                        if file_form or any(fnmatch.fnmatch(name, p) for p in patterns):
+                            target = os.path.normpath(os.path.join(dst, rel))
+                            os.makedirs(target, exist_ok=True)
+                            os.replace(os.path.join(folder, name), os.path.join(target, name))
+        finally:
+            if landing != dst:
+                shutil.rmtree(landing, ignore_errors=True)
 
         if con:
             print (f'{h["alias"]}: ' + (f'{src} -> {remote}' if into else f'{remote} -> {dst}'))
