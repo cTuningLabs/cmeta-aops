@@ -89,6 +89,12 @@ def test_render_needs_no_engine_here(cm, tmp_path, monkeypatch):
     assert 'FROM docker.io/library/fedora:44\n' in render(cm, tmp_path / 'n1', 'fedora', engine='podman')
     assert 'FROM fedora:44\n' in render(cm, tmp_path / 'n2', 'fedora', engine='')       # none found: docker's files
 
+    # an app template too: its base is rendered on the way (a macOS runner without docker, 2026-10-17)
+    r = cm.access({'category': 'container', 'command': 'render', 'arg1': 'llama-cpp', 'engine': 'docker', 'compute': 'cuda',
+                   'out': str(tmp_path / 'n3'), 'con': False})
+    assert r['return'] == 0, r
+    assert (tmp_path / 'n3' / 'ubuntu' / 'Containerfile').is_file() and (tmp_path / 'n3' / 'llama-cpp' / 'Containerfile').is_file()
+
     r = cm.access({'category': 'container', 'command': 'build', 'arg1': 'fedora', 'engine': 'podman', 'con': False})
     assert r['return'] > 0 and 'is not installed' in r['error']
 

@@ -852,7 +852,7 @@ class Category(InitCategory):
                 base_template.update({k: v for k, v in src.items() if k in declared})
             base_template.update(cli_template)
             rb = self._resolve(ctx, b['alias'], engine=engine, compute=compute, template=base_template, secret=secret,
-                               platform=platform)
+                               platform=platform, need_binary=need_binary)
             if rb['return'] > 0:
                 return rb
             spec['base_spec'] = rb
