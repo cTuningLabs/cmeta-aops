@@ -93,3 +93,25 @@ def test_peek_without_hosts_takes_the_hosts_of_the_launch(module, tmp_path):
     assert r['return'] == 0 and r['done'] and list(r['hosts']) == ['here-docker-debian-12']
     # no instance was made or looked for again: only the peek script ran on the recorded host
     assert not [c for c in t.cm.calls if c.get('category') == 'task']
+
+
+def test_a_peek_or_collect_from_another_directory_says_so_and_leaves_nothing(module, tmp_path, monkeypatch):
+    """Without the round's test session in the shell, the round's folder is looked for in the current directory: a peek
+    made a test-on-hosts-<id> folder there for its helper script (also inside a repository) and reported this machine's
+    part as running, a collect copied nothing without a word (2026-10-17). Now nothing is made and both say where they
+    looked."""
+    t = task(module)
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    t.local_folder = lambda rid: str(elsewhere / f'test-on-hosts-{rid}')
+
+    r = t.peek(False, 'm2', str(elsewhere / 'test-on-hosts-m2'), 'cmeta-tests/test-on-hosts-m2', ['here', 'fgg-t470p-ubuntu'])
+    assert r['return'] == 0 and not r['done']
+    assert r['hosts']['here']['lines'][0].startswith('unknown: ')
+    assert r['hosts']['fgg-t470p-ubuntu']['done']                      # the remote host answered through its script
+    assert list(elsewhere.iterdir()) == []                              # no folder made for the helper script
+
+    c = t.collect(False, 'm2', str(elsewhere / 'test-on-hosts-m2'), 'cmeta-tests/test-on-hosts-m2', ['here'], '*.jsonl',
+                  str(tmp_path / 'collected'))
+    assert c['hosts']['here'].startswith('not found: ')

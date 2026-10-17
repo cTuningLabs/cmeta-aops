@@ -18,8 +18,7 @@ authors: Grigori Fursin
 names:
   - helm{{global.host.vars.file_ext_exe}}
 
-default_version: '4.3.0'
-
+default_version: '4.3.1'
 match_version:
   - regex: 'v(\d+\.\d+\.\d+)'
     group: 1

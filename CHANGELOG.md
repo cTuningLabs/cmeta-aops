@@ -2,6 +2,34 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.50.1.1)
+- **Tools at newer default versions**, after an exploration of the pinned and the newest versions on Windows, Linux
+  and macOS (`cx tool check-updates`, `explore-tool-versions` on each machine through `test-on-hosts`, `--promote`):
+  ansible 2.21.5, ansible-lint 26.10.1, az 2.91.0, cloudflared 2026.10.1, flux 2.9.6, golangci-lint 2.15.0, helm
+  4.3.1, hyperfine 2.0.0, kubelogin 0.2.21, kustomize 5.8.3, llama-cpp 11707 (the release tool, and `b11707` as the
+  default checkout of `build-llama-cpp`, built from source on Windows, Linux and macOS; the `llama-cpp` container
+  stack follows the tool), llvm 23.1.3 (with the C matmul program through clang), opentofu 1.13.1, rclone 1.75.2,
+  terraform 1.16.6. Ansible and ansible-lint stay Linux and macOS tools (no Windows
+  control node). `lib-litert-android` keeps 2.2.0: LiteRT 2.3.0 publishes no `litert_npu_runtime_libraries_jit.zip`,
+  which its install unpacks - a `latest_limits` entry (`>=2.3.0`) says so, and the install now names the missing file
+  instead of guessing that the GitHub API was unreachable. `flm` knows the checksums of 1.0.9 (an unknown release
+  failed at once; the default stays 1.0.7 until an NPU machine runs it).
+- **Windows installs that need administrator rights say so** (`requires_sudo: windows: True`): git, gh, cloudflared,
+  node-js, llvm, microsoft.windows.adk, podman, tailscale, vulkan-sdk and open-ssh, whose winget packages install per
+  machine or elevate themselves (read from the winget manifests). A quiet run (`-q`) that is not elevated no longer
+  starts their winget fallback with a UAC prompt nobody answers; the release downloads of cloudflared, llvm and
+  node-js need no rights and are not affected. open-ssh installs `Microsoft.OpenSSH.Preview` (winget renamed the
+  `Microsoft.OpenSSH.Beta` package).
+- **`explore-tool-versions --promote`: a failure the known version shares is no limit.** A newer version that failed
+  on an OS where the known version fails with the same class of error (Ansible on Windows, a missing system library,
+  no NPU) was proposed as a `latest_limits` entry and never as the next default; such a failure now says that the
+  machine cannot run the tool at all, and the newer version is promoted where it works. The README shows how to
+  explore a tool that another tool sets up with a version of its own (`llvm` under `clang`: `--use_key=compiler-c`).
+- **`test-on-hosts --action=peek|collect` from another directory.** The round's local folder is the sandbox of the
+  shell's test session, else the current directory: a peek from elsewhere made a `test-on-hosts-<id>` folder there
+  for its helper script (also inside a repository) and reported this machine's part as running, a collect copied
+  nothing without a word. The helper script now goes to a temporary folder, and both say where they looked.
+
 ## 0.50.1
 - **Fix: `cx host pull --files` from a container or a WSL instance deleted local files.** The whole folder was copied
   into the local folder (the current directory by default) and every file there that did not match the patterns was

@@ -12,6 +12,7 @@ cx task run explore-tool-versions yq --versions=4.53.6,4.54.1,latest   # these v
 cx task run explore-tool-versions yq --last=3                          # the three newest released versions the tool lists
 cx task run explore-tool-versions python --versions=3.12.14,3.14.8 --program=test-nmm-python-cpu
 cx task run explore-tool-versions clang --versions=21.1.8,22.1.7 --program=test-nmm-c-cpu --use.compiler-c.name=clang
+cx task run explore-tool-versions llvm --program=test-nmm-c-cpu --use_key=compiler-c --use.compiler-c.name=clang   # the pin of llvm: the compiler's version, which clang hands to llvm
 cx task run explore-tool-versions --promote --verdicts=<file.jsonl|folder>[,...] [--min_os=2]
 ```
 
@@ -40,7 +41,10 @@ The first lines of a run name each version and why it is tried, e.g. `4.53.6 (kn
   judged. The entry is removed afterwards unless `--keep`. A failed attempt stays as a `failed` entry
   (`cx cache clean --failed` removes those). A program run keeps its entries.
 - **With `--program`:** the program runs with `--use.<use_key>.version=<version>`. `use_key` is the tool's alias
-  unless named, e.g. `compiler-c`. The `--use` words of this command line reach the program too.
+  unless named, e.g. `compiler-c`. The `--use` words of this command line reach the program too. A tool that another
+  tool sets up with a version of its own needs the key of the one asked for: `llvm` under `clang` takes
+  `--use_key=compiler-c` (the compiler's version, which clang hands to llvm); `--use.llvm.version` alone leaves the
+  compiler asking for the clang of the known llvm, and every newer version fails (the round of 2026-10-17).
 - **A crash is a verdict:** a sub-task that raises gives a failed verdict of class `crash`, and the other versions
   are still tried.
 

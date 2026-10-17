@@ -19,9 +19,14 @@ install_cmd_version:
   darwin: 'xcode-select --install'
   windows: "{{global.winget.qpath}} install --id=Git.Git -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
+# Windows: the winget install needs administrator rights.
+# Git.Git: its installer elevates itself (ElevationRequirement elevatesSelf).
+# A quiet run (-q) that is not elevated does not start it (task/setup/install.py, unattended_rights);
+# without -q, Windows asks (UAC).
 requires_sudo:
   linux: True
   darwin: True
+  windows: True
 
 extra_paths:
   linux:

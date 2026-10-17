@@ -18,8 +18,7 @@ authors: Grigori Fursin
 names:
   - kustomize{{global.host.vars.file_ext_exe}}
 
-default_version: '5.8.1'
-
+default_version: '5.8.3'
 match_version:
   - regex: 'v?(\d+\.\d+\.\d+)'
     group: 1

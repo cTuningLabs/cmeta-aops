@@ -22,3 +22,9 @@ extra_paths:
 
 win_only: True
 
+# Windows: the winget install needs administrator rights.
+# Microsoft.WindowsADK: a per-machine installer only.
+# A quiet run (-q) that is not elevated does not start it (task/setup/install.py, unattended_rights);
+# without -q, Windows asks (UAC).
+requires_sudo:
+  windows: True

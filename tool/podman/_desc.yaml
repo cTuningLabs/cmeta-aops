@@ -17,8 +17,13 @@ install_cmd:
   darwin: '{{global.brew.qpath}} install podman'
   windows: "{{global.winget.qpath}} install --id=RedHat.Podman -e --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
+# Windows: the winget install needs administrator rights.
+# RedHat.Podman: a per-machine bundle only.
+# A quiet run (-q) that is not elevated does not start it (task/setup/install.py, unattended_rights);
+# without -q, Windows asks (UAC).
 requires_sudo:
   linux: True
+  windows: True
 
 install_help_text: |
   Podman was not found: "cx tool setup podman --install" (the distribution's package on Linux, Homebrew on

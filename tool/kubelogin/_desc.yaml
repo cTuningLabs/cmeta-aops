@@ -18,8 +18,7 @@ authors: Grigori Fursin
 names:
   - kubelogin{{global.host.vars.file_ext_exe}}
 
-default_version: '0.2.20'
-
+default_version: '0.2.21'
 match_version:
   - regex: 'v(\d+\.\d+\.\d+)'
     group: 1

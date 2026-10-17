@@ -19,6 +19,13 @@ install_cmd:
 install_cmd_version:
   windows: "{{global.winget.qpath}} install --id=GitHub.cli -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
+# Windows: the winget install needs administrator rights.
+# GitHub.cli: the MSI winget picks first is per machine.
+# A quiet run (-q) that is not elevated does not start it (task/setup/install.py, unattended_rights);
+# without -q, Windows asks (UAC).
+requires_sudo:
+  windows: True
+
 install_help_text:
   Please check https://github.com/cli/cli?tab=readme-ov-file !
 

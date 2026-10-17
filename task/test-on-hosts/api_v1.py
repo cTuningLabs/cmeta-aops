@@ -241,21 +241,33 @@ class CTask(InitCTask):
 
     ############################################################
     def peek(self, con, rid, local, remote, host_list):
-        script = os.path.join(local, 'peek.sh')
-        os.makedirs(local, exist_ok = True)
+        # The helper script in a folder of its own: a peek from another directory than the round's (no test session
+        # in the shell) made a test-on-hosts-<id> folder there just for it - also inside a repository (2026-10-17)
+        import tempfile
+        script_dir = tempfile.mkdtemp(prefix = f'cmeta-peek-{rid}-')
+        script = os.path.join(script_dir, 'peek.sh')
         with open(script, 'w', encoding = 'utf-8', newline = '\n') as f:
             f.write('#!/bin/bash\n'
                     f'ROOT="$HOME/{remote}"\n'
                     'cat "$ROOT/DONE" 2>/dev/null || echo running\n'
                     'cat "$ROOT/work/steps.txt" 2>/dev/null\n'
                     'true\n')
+        try:
+            return self._peek(con, rid, local, remote, host_list, script)
+        finally:
+            import shutil
+            shutil.rmtree(script_dir, ignore_errors = True)
 
+    def _peek(self, con, rid, local, remote, host_list, script):
         states = {}
         for h in host_list:
             if h == HERE:
                 root = os.path.join(local, HERE)
                 text = ''
-                for name in ('DONE', os.path.join('work', 'steps.txt')):
+                if not os.path.isdir(root):
+                    # (the round was launched from another directory or test session: its part here is elsewhere)
+                    text = f'unknown: this machine\'s part of the round is not in {root} - peek from the shell of the round\'s test session or from the directory it was launched in\n'
+                for name in (('DONE', os.path.join('work', 'steps.txt')) if not text else ()):
                     path = os.path.join(root, name)
                     if os.path.isfile(path):
                         with open(path, encoding = 'utf-8', errors = 'replace') as f:
@@ -291,6 +303,12 @@ class CTask(InitCTask):
             dest = os.path.join(target, h)
             if h == HERE:
                 work = os.path.join(local, HERE, 'work')
+                if not os.path.isdir(work):
+                    # (the round was launched from another directory or test session: nothing to copy from here)
+                    collected[h] = f'not found: this machine\'s part of the round is not in {work} - collect from the shell of the round\'s test session or from the directory it was launched in'
+                    if con:
+                        print (f'  {h}: {collected[h]}')
+                    continue
                 count = 0
                 for folder, _, names in os.walk(work):
                     for name in names:

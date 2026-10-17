@@ -205,7 +205,7 @@ with `--resume <id>` (`hermes sessions list`, `hermes sessions export --format j
 
 ```bash
 cx tool setup az --install               # detect or install the CLI
-cx tool run az -- --version              # azure-cli 2.89.1
+cx tool run az -- --version              # azure-cli 2.91.0
 cx tool setup az --versions              # every published release
 cx tool setup az --version=2.88.0 --install
 

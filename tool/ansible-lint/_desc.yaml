@@ -20,8 +20,7 @@ authors: Grigori Fursin
 names:
   - ansible-lint{{global.host.vars.file_ext_exe}}
 
-default_version: '26.9.0'
-
+default_version: '26.10.1'
 match_version:
   - regex: 'ansible-lint (\d+\.\d+\.\d+)'
     group: 1

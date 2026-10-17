@@ -17,6 +17,8 @@ RELEASES = 'https://github.com/ROCm/FastFlowLM/releases/download/v{version}/{ass
 ASSETS = {
     ('1.0.7', 'linux', 'amd64'): ('fastflowlm_1.0.7_linux.tar.gz', 'e5a0725284a845178b6e1136fc99efd6cd6cba0dcd55fc319ab7edfeb04b8433'),
     ('1.0.7', 'windows', 'amd64'): ('fastflowlm_1.0.7_windows_amd64.zip', '0377e501afe3595d491cde1ff91923f225240053437d6e55b47c6e86fadc54d8'),
+    ('1.0.9', 'linux', 'amd64'): ('fastflowlm_1.0.9_linux.tar.gz', '6ecd27d59f1f17650faaedc11787c4b755912a1725508ef15a772a6cc98a582e'),
+    ('1.0.9', 'windows', 'amd64'): ('fastflowlm_1.0.9_windows_amd64.zip', '5edd8a04919aa907af5f53ff81464726210291d601c144615ddc5b2cb4f0afc7'),
 }
 
 

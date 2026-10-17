@@ -60,6 +60,13 @@ install_cmd:
 install_cmd_version:
   windows: '{{global.winget.qpath}} install --id=KhronosGroup.VulkanSDK -e --version={{simple_version}} --source winget {{global.init.winget_install_flags|}}'
 
+# Windows: the winget install needs administrator rights.
+# KhronosGroup.VulkanSDK: a per-machine installer only.
+# A quiet run (-q) that is not elevated does not start it (task/setup/install.py, unattended_rights);
+# without -q, Windows asks (UAC).
+requires_sudo:
+  windows: True
+
 install_help_text: |
   Could not install the Vulkan SDK automatically on this system.
   Install it from https://vulkan.lunarg.com/sdk/home (or your distribution's
