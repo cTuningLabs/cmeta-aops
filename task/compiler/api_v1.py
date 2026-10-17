@@ -45,8 +45,16 @@ class CTask(InitCTask):
                 'with',
                 'tool_with',
                 'version',
+                'selected',
             ], __name__)
         if self.cm.catch_error(r): return r
+
+        # A request that names no compiler is cached as "selected: auto" and takes only entries chosen the same way
+        # (cache_params in _desc.yaml): a compiler asked for by name once is not the default of later runs
+        if params.get('name'):
+            params.pop('selected', None)
+        else:
+            params['selected'] = 'auto'
 
         # "with" for the setup of the compiler tool, e.g. the JDK vendor of javac: only the keys that
         # have a value. It is not part of the cache identity: a program that passes it runs this step
@@ -132,31 +140,82 @@ class CTask(InitCTask):
         ones, in the repository's order of their tools.
         """
 
-        table = getattr(self, '_preferred_compilers_table', None)
-
-        if table is None:
-            table = {}
-
-            desc_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml')
-            if os.path.isfile(desc_file):
-                r = self.cm.utils.files.safe_read_file(desc_file)
-                if r.get('return', 1) == 0 and isinstance(r.get('data'), dict):
-                    table = r['data'].get('preferred_compilers') or {}
-
-            self._preferred_compilers_table = table
+        table = self._desc_data().get('preferred_compilers') or {}
 
         order = table.get(uname) if isinstance(table, dict) else None
 
         return [str(x) for x in order] if isinstance(order, list) else []
 
     ############################################################
-    @staticmethod
-    def _family(tool_name):
-        """The compiler family of a tool alias: gcc-cpp -> gcc, clang-cpp -> clang, msvc -> msvc."""
+    def _desc_data(self):
+        """This task's _desc.yaml (read once): preferred_compilers, compiler_families."""
+
+        data = getattr(self, '_desc_data_cache', None)
+
+        if data is None:
+            data = {}
+
+            desc_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml')
+            if os.path.isfile(desc_file):
+                r = self.cm.utils.files.safe_read_file(desc_file)
+                if r.get('return', 1) == 0 and isinstance(r.get('data'), dict):
+                    data = r['data']
+
+            self._desc_data_cache = data
+
+        return data
+
+    ############################################################
+    def _family(self, tool_name):
+        """
+        The compiler family of a tool alias (compiler_families in _desc.yaml: icpx -> icx, gcc-cpp -> gcc,
+        msvc -> msvc); a tool not listed: its alias without "-cpp".
+        """
 
         name = str(tool_name or '')
 
+        families = self._desc_data().get('compiler_families') or {}
+        for family, tools in (families.items() if isinstance(families, dict) else []):
+            if isinstance(tools, dict) and name in [str(t) for t in tools.values()]:
+                return str(family)
+
         return name[:-4] if name.endswith('-cpp') else name
+
+    ############################################################
+    @staticmethod
+    def _lang_title(lang):
+        return {'c': 'C', 'cpp': 'C++'}.get(str(lang), str(lang))
+
+    ############################################################
+    def _run_family(self, ctx, lang, params):
+        """
+        The compiler family a request without a name follows, so that one build never mixes two compilers: the
+        family of the other language's compiler of this run (the C compiler for a C++ request, the C++ compiler for
+        a C one) - the one set up already, else the one asked for by name (--use.compiler-<lang>.name: a program
+        that sets up its C++ compiler first, then a C compiler asked for as clang, gets clang-cpp too) - with that
+        compiler's tool and the words that say where it comes from, for the INFO lines ("the C compiler of this run
+        is clang", "the C compiler asked for is clang"). (None, None, None) for a request that names its compiler,
+        for a language other than C and C++, and in a run that has neither.
+        """
+
+        other = {'c': 'cpp', 'cpp': 'c'}.get(str(lang))
+        if not other or params.get('name'):
+            return None, None, None
+
+        tasks = ctx.get('tasks') or {}
+        compiler = (tasks.get('global') or {}).get('compiler-' + other) or {}
+        partner = (compiler.get('tool') or {}).get('name') if isinstance(compiler, dict) else None
+        said = f'the {self._lang_title(other)} compiler of this run is {partner}'
+
+        if not partner:
+            asked = (tasks.get('use') or {}).get('compiler-' + other) or {}
+            partner = asked.get('name') if isinstance(asked, dict) else None
+            said = f'the {self._lang_title(other)} compiler asked for is {partner}'
+
+        if not partner:
+            return None, None, None
+
+        return self._family(partner), partner, said
 
     ############################################################
     def _rank(self, uname, tool_name, sort, version = None):
@@ -206,6 +265,10 @@ class CTask(InitCTask):
             limit is then reported where it comes from, with the way out;
           * a compiler whose tool lacks the request's extra_tags or fails its extra_match (neither is
             part of the cache identity, so such entries matched before).
+        A request that names no compiler sees only the entries made the same way ("selected: auto" in the cache
+        query, see init), and in a run whose other language's compiler is set up (the C compiler for a C++
+        request, and the reverse) only the entries of that compiler's family; when none of that family is cached,
+        none is kept, and run() chooses among the tools with that family first (one build, one compiler).
         Then the choice among the rest, without a question:
           * a compiler tool already set up in this run (the toolkit of the cuda target, a C compiler of
             the same family) keeps the entries of its version only: the run stays consistent;
@@ -285,6 +348,18 @@ class CTask(InitCTask):
 
         kept = [a for a in artifacts if why_unusable(a) is None]
         kept_tmp = [a for a in tmp_artifacts if why_unusable(a) is None]
+
+        # The family of the other language's compiler of this run (one build, one compiler): its entries only; none
+        # cached - none kept, and run() chooses among the tools with that family first
+        family, partner, said = self._run_family(ctx, lang, params)
+        if family and kept:
+            same = [a for a in kept if self._family(params_of(a).get('name')) == family]
+
+            if con and same and len(same) != len(kept):
+                print (f"{space}INFO: {said}: taking the {self._lang_title(lang)} compiler of its family "
+                       f"(--use.compiler-{lang}.name=<tool> picks another)")
+
+            kept = same
 
         if len(kept) > 1 and not version and any(set_up_in_run(a) for a in kept):
             kept = [a for a in kept if set_up_in_run(a)]
@@ -395,9 +470,22 @@ class CTask(InitCTask):
 
             candidates = sorted(candidates, key = rank_tool)
 
+            # One build, one compiler: the family of the other language's compiler of this run comes first
+            family, partner, said = self._run_family(ctx, lang, params)
+            same = [a for a in candidates if self._family(a['cmeta_ref_parts']['artifact_alias']) == family] if family else []
+            if same:
+                candidates = same + [a for a in candidates if a not in same]
+
             name = candidates[0]['cmeta_ref_parts']['artifact_alias']
 
-            if len(candidates) > 1 and con:
+            if con and family:
+                if same:
+                    print (f"{space}INFO: {said}: taking {name}, the {self._lang_title(lang)} compiler of its family "
+                           f"(--use.compiler-{lang}.name=<tool> picks another)")
+                else:
+                    print (f"{space}INFO: {said}, but no {self._lang_title(lang)} compiler of its family suits this "
+                           f"request: taking {name}")
+            elif len(candidates) > 1 and con:
                 others = [a['cmeta_ref_parts']['artifact_alias'] for a in candidates[1:]]
                 print (f"{space}INFO: {len(candidates)} {lang} compiler tools suit this run: taking {name} "
                        f"({', '.join(others)} also would; --use.compiler-{lang}.name=<tool> picks another)")

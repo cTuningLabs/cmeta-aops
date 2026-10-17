@@ -40,7 +40,7 @@ import sys
 import tempfile
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, changed_mounts, write_signatures
 
 CONTAINER_CATEGORY = 'container,ed08f0d107044479'
 HOST_CATEGORY = 'host,e4e49c251c814f6d'
@@ -273,6 +273,16 @@ class CTask(InitCTask):
             acc = d.get('access') or {}
             distro = str(acc.get('distro') or inst)
             if distro in wsl_distributions():
+                # The repositories are plugged from the drive mounts, live; one where an artifact was added, moved or
+                # removed here since the instance indexed it is reindexed inside (that repository only)
+                mounted = d.get('mounts') or []
+                for m in changed_mounts(existing['path'], mounted):
+                    if con:
+                        print ('')
+                        print (f'cMeta info: {m["repo"]} changed here since the instance indexed it: cx repo reindex {m["repo"]} inside')
+                    run_cmd(['wsl.exe', '-d', distro, '-u', str(acc.get('user') or 'cmeta'), '--', 'bash', '-lc',
+                             f'cx repo reindex {m["repo"]} -q'], timeout=1800)
+                write_signatures(existing['path'], mounted)
                 if con:
                     print ('')
                     print (f'cMeta info: instance {inst} registered (WSL distribution {distro}); shell: cx host ssh {inst}')
@@ -418,6 +428,7 @@ class CTask(InitCTask):
         r = self.cm.utils.files.safe_write_file(os.path.join(apath, '_desc.yaml'), desc, atomic=True, sort_keys=False, logger=self.logger)
         if r['return'] > 0:
             return r
+        write_signatures(apath, mounts + data_mounts)
 
         # ---- the probe: "cx host ls" shows the instance's OS and the versions inside (a probe that fails is said, never fatal)
         r = self.cm.access({'category': HOST_CATEGORY, 'command': 'probe', 'arg1': inst, 'con': False})

@@ -10,10 +10,10 @@ release (--version, default in _desc.yaml) for this system, CPU and build is dow
 cache, checked against its SHA-256 pinned below and unpacked; tool/torch-cpp --with.build=prebuilt
 uses it.
 
-The build ("variant") is cpu or a CUDA build (cu118, cu126, cu128). For --with.compute=cuda it is the
-newest CUDA build that has code for every GPU of this machine (their compute capability, from
-tool/cuda) and whose CUDA version the driver supports; --with.variant=<build> picks one. macOS has one
-build, for the CPU and for Apple GPUs (MPS).
+The build ("variant") is cpu, a CUDA build (2.14.1: cu126, cu130, cu132) or, on Linux, the ROCm
+build. For --with.compute=cuda it is the newest CUDA build that has code for every GPU of this
+machine (their compute capability, from tool/cuda) and whose CUDA version the driver supports;
+--with.variant=<build> picks one. macOS has one build, for the CPU and for Apple GPUs (MPS).
 """
 
 import os
@@ -29,8 +29,38 @@ BASE = 'https://download.pytorch.org/libtorch'
 
 # The archives of each release: (system, CPU, build) -> (file, SHA-256 of the file). The URL is
 # <BASE>/<build>/<file> with "+" as %2B. PyTorch publishes no checksums: the digests are those of
-# the archives as downloaded.
+# the archives as downloaded. A release added here needs its CUDA_BUILDS below (cuobjdump of each
+# CUDA archive) and its default_version in _desc.yaml.
 ARCHIVES = {
+    # The Linux archives have the C++11 ABI only since 2.8: their names lost "cxx11-abi". No CUDA 11.8 or
+    # 12.8 build any more; the ROCm line is 7.2 (6.1 GB). Pinned 2026-10-17
+    '2.14.1': {
+        ('linux', 'amd64', 'cpu'): ('libtorch-shared-with-deps-2.14.1+cpu.zip',
+                                    '0f02329a5266153cffa9dc12926ff2221fa626207b894d40bd61905cc2079821'),
+        ('linux', 'amd64', 'cu126'): ('libtorch-shared-with-deps-2.14.1+cu126.zip',
+                                      '78409e1d17eb439efab01bbdde385ef3531ac3fc651ceda1117317ae9903dc7c'),
+        ('linux', 'amd64', 'cu130'): ('libtorch-shared-with-deps-2.14.1+cu130.zip',
+                                      'fcd7c4ef28dc9db65ab3e8037c9bbba0bb38f7aa21e56b281e9fc9196ab479fb'),
+        ('linux', 'amd64', 'cu132'): ('libtorch-shared-with-deps-2.14.1+cu132.zip',
+                                      '3406504c45e2a2d3b74da9cc0579f86d599b8569f991aa76a93fc27945ae3228'),
+        ('linux', 'amd64', 'rocm7.2'): ('libtorch-shared-with-deps-2.14.1+rocm7.2.zip',
+                                        'cde5cde36fd08548d143096c07385a3a5961de46d795aaeeb9a9d9d56a78a944'),
+
+        ('windows', 'amd64', 'cpu'): ('libtorch-win-shared-with-deps-2.14.1+cpu.zip',
+                                      '28ffdde0a7ff3b431139709b4a91b8b6d59fde3be67b76fd88d0c913ef8973f7'),
+        ('windows', 'amd64', 'cu126'): ('libtorch-win-shared-with-deps-2.14.1+cu126.zip',
+                                        '7e65f208302ebd8501fe6beba69ce2a8b582a3d1caf17b3f00fc0b7ecd20d6e8'),
+        ('windows', 'amd64', 'cu130'): ('libtorch-win-shared-with-deps-2.14.1+cu130.zip',
+                                        'b86d779a49928a30d24bd13b386b2843ed2fda8e93ea9abb625b2bba1928fd2a'),
+        ('windows', 'amd64', 'cu132'): ('libtorch-win-shared-with-deps-2.14.1+cu132.zip',
+                                        '396dc4285490df8ab1ee8a8e67bebb42b6766e3b07bd65d227994aa165a02e22'),
+        ('windows', 'arm64', 'cpu'): ('libtorch-win-arm64-shared-with-deps-2.14.1+cpu.zip',
+                                      '7b068e63e30285c7342ad72bf26b921c04622315c5caf3313afda254b5fd102c'),
+
+        ('darwin', 'arm64', 'cpu'): ('libtorch-macos-arm64-2.14.1.zip',
+                                     '6ab4e92bed813981cb26434db0ea12aaae7ce7c548d031a5b25032a286de1b58'),
+    },
+
     '2.7.1': {
         ('linux', 'amd64', 'cpu'): ('libtorch-cxx11-abi-shared-with-deps-2.7.1+cpu.zip',
                                     '63d572598c8d532128a335018913e795c1bbb32602ce378896dc8cfbb5590976'),
@@ -63,6 +93,16 @@ ARCHIVES = {
 # (compute capability x10) their CUDA library has code for (cuobjdump --list-elf of libtorch_cuda.so,
 # torch_cuda.dll). Code for X.y also runs on X.z, z >= y.
 CUDA_BUILDS = {
+    # CUDA 13 dropped Maxwell, Pascal and Volta (sm_50-sm_70): those GPUs take cu126
+    '2.14.1': {
+        ('linux', 'cu126'): (126, [50, 60, 70, 75, 80, 86, 89, 90]),
+        ('linux', 'cu130'): (130, [75, 80, 86, 89, 90, 100, 103, 120, 121]),
+        ('linux', 'cu132'): (132, [75, 80, 86, 89, 90, 100, 103, 120, 121]),
+        ('windows', 'cu126'): (126, [50, 60, 61, 70, 75, 80, 86, 89, 90]),
+        ('windows', 'cu130'): (130, [75, 80, 86, 89, 90, 100, 103, 120, 121]),
+        ('windows', 'cu132'): (132, [75, 80, 86, 89, 90, 100, 103, 120, 121]),
+    },
+
     '2.7.1': {
         ('linux', 'cu118'): (118, [37, 50, 60, 70, 75, 80, 86]),
         ('linux', 'cu126'): (126, [50, 60, 70, 75, 80, 86, 89, 90]),

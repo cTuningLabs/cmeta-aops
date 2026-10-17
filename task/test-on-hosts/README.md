@@ -39,7 +39,11 @@ How it runs:
 
 - The tree is packed once (without `.git` and caches). It is pushed with `runner.py` to `~/cmeta-tests/test-on-hosts-<id>/`
   of each host and started there with `nohup python3 runner.py`, so a dropped ssh connection does not stop it.
-- `here` runs the same runner on this machine, detached, with the tree folder as it is.
+- `here` runs the same runner on this machine, detached, with the tree folder as it is, in
+  `<here_dir>/test-on-hosts-<id>/`: the key `here_dir` of the config artifact `task-test-on-hosts`, else
+  `~/cmeta-tests` as on a remote host (`cx config set task-test-on-hosts --meta.here_dir=D:\cmeta-tests`). Keep it
+  short on Windows: MSVC writes no file beyond 260 characters, and a round's home inside a test session's sandbox
+  was too deep for a CMake build. The launch records the folder in `round.json`.
 - The runner gives each host a throwaway home (`<root>/home`) and plugs the tree into it. It runs each command in
   `<root>/work`, writes `step-<n>.log` and a line of `steps.txt` per command, then `DONE`.
 - The host's own home, cache and repositories are never touched.
@@ -53,5 +57,6 @@ How it runs:
 - **remove:** the round's folder on each host is removed, and here the `here` copy.
 
 The round's local folder is `test-on-hosts-<id>` in the sandbox of the shell's test session (`CMETA_TEST_SESSION`),
-else in the current directory. It holds the tarball, the generated launcher and peek scripts, and the collected
-results.
+else in the current directory. It holds `round.json`, the tarball, the generated launchers and the collected
+results; peek, collect and remove look for it there (from another directory they say where they looked, and make
+nothing). This machine's part runs in `here_dir` (above), which `round.json` names.

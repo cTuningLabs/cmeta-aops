@@ -124,6 +124,19 @@ libraries, compilers, profilers and run wrapping. Two consumers filter on it:
    honoured stops the run. With two Visual Studios installed, the installation follows the
    compiler's version; when none decides it (clang's dependency `msvc`), the newest is taken
    without a question (`--use.microsoft-visual-studio.version=<version>` picks another).
+
+   **One compiler family per build.** The C and the C++ compiler of one run come from the same
+   family (`compiler_families` in `task/compiler/_desc.yaml`: gcc and gcc-cpp, clang and
+   clang-cpp, MSVC, icx and icpx, aocc and aocc-cpp, the NDK's clang and clang-cpp). A request
+   that names no compiler follows the other language's compiler of the run: the one already set
+   up, else the one asked for with `--use.compiler-<lang>.name`. So
+   `--use.compiler-c.name=clang` alone builds the C++ sources with clang-cpp too, whichever
+   language the program sets up first; an INFO line says so, and `--use.compiler-cpp.name=<tool>`
+   picks another. When the family has no tool that suits the request, the preferred order
+   applies and the INFO line says that too. A request that names no compiler is cached as
+   `selected: auto`, and it never takes an entry made by a request that named one: a run that
+   asked for clang does not make clang the default compiler of the later runs of the same cMeta
+   home.
 2. **The compiler tool** carries per-OS `features.flags` (see
    [tool-abstraction.md](tool-abstraction.md)) — the abstraction that makes one template
    work across toolchains. A cached compiler entry carries the flags of the time it was

@@ -20,12 +20,15 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 names:
   - ollama{{global.host.vars.file_ext_exe}}
 
-default_version: '0.35.0'
+default_version: '0.40.5'
 
-# "ollama --version": "ollama version is 0.35.0" (server running) or
-# "Warning: client version is 0.35.0" (no server)
+# "ollama --version" names the SERVER it reaches first ("ollama version is 0.40.0"), then this binary when it differs
+# ("Warning: client version is 0.40.5"); without a server only the client line: the client line first, else the
+# other (a machine running its own Ollama server made every other copy look like the server's version, 2026-10-17)
 match_version:
-  - regex: '(?:version is|client version is)\s+v?(\d+\.\d+\.\d+)'
+  - regex: 'client version is\s+v?(\d+\.\d+\.\d+)'
+    group: 1
+  - regex: 'version is\s+v?(\d+\.\d+\.\d+)'
     group: 1
 
 cmd_get_version: '{{tool_path}} --version'

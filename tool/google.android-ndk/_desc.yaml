@@ -11,7 +11,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #   cx tool setup google.android-ndk --version=30.0.16248370 --new
 #   cx tool setup google.android-ndk --versions        # the revisions (needs the command-line tools)
 
-default_version: '29.0.14206865'
+default_version: '30.0.16248370'
 
 names:
   - ndk-which{{global.host.vars.file_ext_cmd2}}
@@ -22,13 +22,14 @@ match_version:
 
 cmd_get_version: 'more {{root_tool_path}}{{os_sep}}source.properties'
 
-# The NDKs the Android SDK offers (sdkmanager --list: "ndk;30.0.16248370 | ..."), for --versions,
+# The NDKs the Android SDK offers (sdkmanager --list: "ndk;30.0.16248370 | ...", "ndk/30.0.16248370" since the
+# command-line tools 23.0), for --versions,
 # --status and --upgrade; NDKs install side by side
-cmd_get_versions: '{{global.google-android-sdk-command-line-tools.qpath}} --list'
+cmd_get_versions: '{{global.google-android-sdk-command-line-tools.cmd}} --list'
 cmd_get_versions_uses:
   - task: setup,a2f9b61079ce4333
     name: google.android-sdk.command-line-tools,2ee8eb31da764eef
-cmd_get_versions_regex: '\bndk;(\d+\.\d+\.\d+)\b'
+cmd_get_versions_regex: '\bndk[;/](\d+\.\d+\.\d+)\b'
 
 extra_paths:
   windows:

@@ -20,6 +20,7 @@ cx host ssh <instance>
 cx host down <instance>  /  cx host up <instance>               # the container keeps its cache across stop and start
 cx host destroy <instance> [--image]                                 # the container, the artifact, the image
 cx task run get-host--docker ubuntu --instance=web --ports=8080       # ports published on 127.0.0.1 (a server; --on_detach)
+cx task run get-host--docker ubuntu --refresh_cmeta                  # the image's uv and cMeta built again (a newer release; --on_refresh_cmeta)
 ```
 
 What happens:
@@ -45,12 +46,16 @@ What happens:
 5. The host artifact in the local repository: `type: docker`, `access` (container, engine, image, run_args, so
    that `cx host up` can make the container again - every `cx host` command speaks podman to a podman instance),
    `via` = this machine's host artifact, `made_from` (template, parameters, compute, architecture, engine, image,
-   time, cMeta version), `mounts`, the tag `made-by-cmeta`.
+   time, cMeta version here, `cmeta_inside` - the cMeta of the image), `mounts`, the tag `made-by-cmeta`. An
+   existing instance keeps the image it was made from: after `--refresh_cmeta`, `--new_host` (or `cx host destroy`
+   first) makes one from the refreshed image.
 6. The instance is probed (`cx host probe`): `cx host ls` shows its OS and the cMeta and AOPS versions inside.
 
 The cMeta home inside is the instance's own: its cache is never shared with the machine (stability); the
-repositories mounted are the machine's (live). Everything runs through the engine's own commands (`docker run`,
+repositories mounted are the machine's (live). Their files are live, but the index inside knows only what it saw: when
+an instance is reused, each mounted repository whose first-level folders changed here since it was indexed (an
+artifact added, moved or removed) is reindexed inside first, that repository only (`cx repo reindex <alias>`; the
+signatures are in `mounted-signatures.json` next to the instance's artifact). get-host--wsl does the same. Everything runs through the engine's own commands (`docker run`,
 `inspect`, `start`, `exec`, `cp`), printed with `-v`.
-
 The instance is what `--on=docker` / `--on=podman` of any `cx task run`, `cx program run`, `cx tool setup` or
 `cx app run` makes and uses (`docs/cmeta-aops/task-engine.md`, "Running the same words elsewhere").

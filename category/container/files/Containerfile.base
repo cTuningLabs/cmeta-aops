@@ -9,6 +9,8 @@ FROM {{cmeta.from}}
 USER {{cmeta.user}}
 ENV HOME={{cmeta.home}} CMETA_HOME={{cmeta.home}}/CMETA PATH={{cmeta.home}}/.local/bin:$PATH
 WORKDIR {{cmeta.home}}
+# cx container build --refresh_cmeta: the layers from here on (uv, cMeta) are built again
+ARG CMETA_REFRESH=0
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 {{cmeta.install_cmeta_block}}
 COPY --chown={{cmeta.user}} entrypoint.sh {{cmeta.home}}/entrypoint.sh

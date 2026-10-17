@@ -1,0 +1,19 @@
+artifact: 2e243058d1ae4f2b
+category: task,c36be4b9314a45e0
+authors: Grigori Fursin
+creation_timestamp: '2026-10-17T15:32:52.784697+00:00'
+desc: 'A local NVIDIA OpenShell gateway of this user, without its system package: started as a background process
+  (Docker or Podman driver, plaintext on 127.0.0.1, telemetry off, its keys and state in a folder of its own),
+  registered with the openshell CLI; status, a test sandbox, stop and remove. Linux and macOS; Windows through WSL2.'
+generator:
+  method: agent
+  agent: Claude Code 2.1.302
+  model: claude-opus-5-5
+  via: cmeta 0.37.3
+  by: Grigori Fursin
+tags:
+- openshell
+- nvidia
+- sandbox
+- agents
+- gateway

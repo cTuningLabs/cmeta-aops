@@ -13,6 +13,12 @@ cache_params:
   - "@version" # Treat @keys as fuzzy versions or versions with conditions during cMeta search!
   - name
 
+  # "auto" for a request that names no compiler (set by init): it takes only the entries chosen the same way, never
+  # one made by a request that named its compiler - otherwise one --use.compiler-c.name=clang became the default C
+  # compiler of every later run of the home while the C++ compiler was chosen fresh (two compilers in one build).
+  # An entry made before has no "selected" and counts as made by name: a request without a name makes its own once
+  - selected
+
 cache_extra_params:
   compute: '{{global.target.compute|$None}}'
 
@@ -30,6 +36,19 @@ preferred_compilers:
   windows: [msvc, clang, icx]
   linux: [gcc, clang, icx]
   darwin: [clang]
+
+# The C and the C++ tool of each compiler family. A request that names no compiler takes the family of the other
+# language's compiler of the same run - the C++ compiler of a build whose C compiler is clang is clang-cpp, whatever
+# the OS prefers - so one build never mixes two compilers; a request that names its compiler is taken as it is.
+# A family without a tool that suits the request (nvcc's host compiler on Windows is MSVC alone) falls back to the
+# preferred order above, said in an INFO line. A test checks that every C and C++ compiler tool is listed.
+compiler_families:
+  gcc: {c: gcc, cpp: gcc-cpp}
+  clang: {c: clang, cpp: clang-cpp}
+  msvc: {c: msvc, cpp: msvc}
+  icx: {c: icx, cpp: icpx}
+  aocc: {c: aocc, cpp: aocc-cpp}
+  android-ndk: {c: google.android-ndk.clang, cpp: google.android-ndk.clang-cpp}
 
 uses_before_init:
   - task: runner,1e48cc0c5f6041a5

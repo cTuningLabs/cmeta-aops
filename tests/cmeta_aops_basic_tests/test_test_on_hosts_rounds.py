@@ -136,3 +136,37 @@ def test_the_remove_of_this_machines_part_takes_the_read_only_files_of_a_clone(m
     r = t.remove(False, 'm3', str(local), 'cmeta-tests/test-on-hosts-m3', ['here'])
     assert r['return'] == 0
     assert not (local / 'here').exists()
+
+
+def test_this_machines_part_lives_in_here_dir_and_round_json_names_it(module, tmp_path):
+    """This machine's part of a round runs in <here_dir>/test-on-hosts-<id> (the key here_dir of task-test-on-hosts, else
+    ~/cmeta-tests, like a remote host): inside a test session's sandbox it was too deep for MSVC (2026-10-17). The
+    launch records it in round.json, so peek, collect and remove find it from any directory."""
+    import os
+
+    class ConfigCM(FakeCM):
+        def __init__(self, here):
+            super().__init__()
+            self.here = here
+
+        def access(self, p):
+            if p.get('category') == module.CONFIG_CATEGORY:
+                return {'return': 0, 'config_cmeta': {'here_dir': self.here} if self.here else {}}
+            return super().access(p)
+
+    assert module.here_dir(ConfigCM(str(tmp_path / 'short'))) == str(tmp_path / 'short')
+    assert module.here_dir(ConfigCM(None)) == os.path.join(os.path.expanduser('~'), 'cmeta-tests')
+
+    # a round whose part here is elsewhere: peek reads it where round.json says
+    part = tmp_path / 'short' / 'test-on-hosts-m4'
+    (part / 'work').mkdir(parents=True)
+    (part / 'DONE').write_text('done 2026-10-17T15:00:00Z\n')
+    (part / 'work' / 'steps.txt').write_text('1: exit 0 in 1 s: task run test-python -q\n')
+    local = tmp_path / 'sandbox' / 'test-on-hosts-m4'
+    local.mkdir(parents=True)
+    (local / module.ROUND_FILE).write_text(json.dumps({'hosts': ['here'], 'here_root': str(part)}))
+
+    t = task(module)
+    t.local_folder = lambda rid: str(local)
+    r = t.run({'control': {'con': False}}, action='peek', id='m4')
+    assert r['return'] == 0 and r['done'] and r['hosts']['here']['lines'][1].startswith('1: exit 0')

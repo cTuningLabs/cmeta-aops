@@ -46,13 +46,30 @@ def sh_quote(text):
     return "'" + str(text).replace("'", "'\"'\"'") + "'"
 
 
+def config_value(cm, key):
+    """A key of the config artifact task-test-on-hosts (cx config set task-test-on-hosts --meta.<key>=...), or None."""
+    r = cm.access({'category': CONFIG_CATEGORY, 'command': 'read', 'arg1': CONFIG_ALIAS, 'con': False})
+    return (r.get('config_cmeta') or {}).get(key) if r.get('return', 1) == 0 else None
+
+
 def default_hosts(cm):
     """The hosts of a round without --hosts: the key "hosts" of the config artifact task-test-on-hosts, else here."""
-    r = cm.access({'category': CONFIG_CATEGORY, 'command': 'read', 'arg1': CONFIG_ALIAS, 'con': False})
-    hosts = (r.get('config_cmeta') or {}).get('hosts') if r.get('return', 1) == 0 else None
+    hosts = config_value(cm, 'hosts')
     if isinstance(hosts, list):
         hosts = ','.join(str(h) for h in hosts)
     return str(hosts).strip() if hosts else HERE
+
+
+def here_dir(cm):
+    """
+    Where this machine's part of a round runs: <here_dir>/test-on-hosts-<id>, as ~/cmeta-tests/test-on-hosts-<id> on
+    a remote host. The key "here_dir" of the config artifact task-test-on-hosts, else ~/cmeta-tests. A short path
+    on purpose: inside the sandbox of a test session the round's home was too deep for MSVC on Windows (object files
+    beyond 260 characters, 2026-10-17) - cx config set task-test-on-hosts --meta.here_dir=D:\\cmeta-tests
+    """
+    folder = config_value(cm, 'here_dir')
+    return os.path.abspath(os.path.expanduser(str(folder).strip())) if folder else \
+        os.path.join(os.path.expanduser('~'), REMOTE_BASE)
 
 
 class CTask(InitCTask):
@@ -99,13 +116,19 @@ class CTask(InitCTask):
         # peek, collect and remove without --hosts: the hosts the launch resolved (round.json), so that a ref of an
         # instance is not made again and a ref that failed at the launch is not tried again
         saved = {}
-        if action != 'launch' and not hosts:
+        if action != 'launch':
             try:
                 with open(os.path.join(local, ROUND_FILE), encoding = 'utf-8') as f:
                     saved = json.load(f)
             except (OSError, ValueError):
                 saved = {}
-        if saved.get('hosts'):
+
+        # This machine's part of the round: <here_dir>/test-on-hosts-<id> (see here_dir), recorded at the launch; a
+        # round launched before 2026-10-17 has it in its local folder
+        self.here_root = os.path.join(here_dir(self.cm), f'test-on-hosts-{rid}') if action == 'launch' else \
+            (saved.get('here_root') or os.path.join(local, HERE))
+
+        if saved.get('hosts') and not hosts:
             host_list = list(saved['hosts'])
             self.instances = saved.get('instances') or {}
         else:
@@ -211,9 +234,9 @@ class CTask(InitCTask):
             if con:
                 print (f'  {h}: {started[h]}')
 
-        # This machine: the same runner, detached, with the tree as it is
+        # This machine: the same runner, detached, with the tree as it is, in <here_dir>/test-on-hosts-<id>
         if HERE in host_list:
-            root = os.path.join(local, HERE)
+            root = self.here_root_of(local)
             os.makedirs(root, exist_ok = True)
             flags = {'creationflags': subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' \
                     else {'start_new_session': True}
@@ -227,6 +250,7 @@ class CTask(InitCTask):
         # The round as launched, for peek / collect / remove without --hosts
         record = {'id': rid, 'hosts': host_list, 'instances': self.instances, 'failed_refs': self.failed_refs,
                   'commands': commands, 'tree': tree, 'started': started,
+                  'here_root': self.here_root_of(local) if HERE in host_list else None,
                   'launched': datetime.datetime.now().astimezone().isoformat(timespec = 'seconds')}
         with open(os.path.join(local, ROUND_FILE), 'w', encoding = 'utf-8') as f:
             json.dump(record, f, indent = 2)
@@ -262,7 +286,7 @@ class CTask(InitCTask):
         states = {}
         for h in host_list:
             if h == HERE:
-                root = os.path.join(local, HERE)
+                root = self.here_root_of(local)
                 text = ''
                 if not os.path.isdir(root):
                     # (the round was launched from another directory or test session: its part here is elsewhere)
@@ -302,7 +326,7 @@ class CTask(InitCTask):
         for h in host_list:
             dest = os.path.join(target, h)
             if h == HERE:
-                work = os.path.join(local, HERE, 'work')
+                work = os.path.join(self.here_root_of(local), 'work')
                 if not os.path.isdir(work):
                     # (the round was launched from another directory or test session: nothing to copy from here)
                     collected[h] = f'not found: this machine\'s part of the round is not in {work} - collect from the shell of the round\'s test session or from the directory it was launched in'
@@ -333,7 +357,7 @@ class CTask(InitCTask):
         removed = {}
         for h in host_list:
             if h == HERE:
-                root = os.path.join(local, HERE)
+                root = self.here_root_of(local)
                 # The engine's delete: shutil.rmtree cannot remove the read-only files of a git clone on Windows (the
                 # objects of a clone in the round's cache), and the round stayed on disk (2026-10-17)
                 if os.path.isdir(root):
@@ -425,6 +449,11 @@ class CTask(InitCTask):
         p = {'category': 'host', 'command': command, 'con': False, 'quiet': True}
         p.update({k: v for k, v in params.items() if v is not None})
         return self.cm.access(p)
+
+    ############################################################
+    def here_root_of(self, local):
+        """This machine's part of the round: set by run() (here_dir, or round.json), else in the local folder."""
+        return getattr(self, 'here_root', None) or os.path.join(local, HERE)
 
     ############################################################
     def local_folder(self, rid):

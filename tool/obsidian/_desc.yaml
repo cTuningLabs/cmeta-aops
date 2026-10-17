@@ -28,7 +28,7 @@ cmd_get_versions_regex: '\brefs/tags/v(\d+\.\d+\.\d+)(?![\w.-])'
 
 # Linux installs the AppImage of this release when no version is asked for (api_v1.py install());
 # bump it to move everyone forward.
-default_version: '1.9.14'
+default_version: '1.14.4'
 download_url_templates:
   - 'https://github.com/obsidianmd/obsidian-releases/releases/download/v{version}/{filename}'
 

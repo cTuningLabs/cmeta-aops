@@ -1665,6 +1665,34 @@ class Category(InitCategory):
     # What decides among the entries that are equal on those keys: the one made last comes first
     CACHE_SORT_KEY_NEWEST = 'cmeta.creation_timestamp-'
 
+    def _reindex_live_repositories(self, host_category, host, apath, con):
+        """
+        The repositories a WSL host of this machine plugs from /mnt/<drive>/... ("cx repo find" there): each one whose
+        first-level folders changed here since that host indexed it is reindexed there (cx repo reindex <alias>); the
+        signatures are kept next to the host's artifact, as for an instance (ctask.changed_mounts).
+        """
+        import re
+        from task_c36be4b9314a45e0.api.ctask import changed_mounts, write_signatures
+
+        rr = self.cm.access({'category': host_category, 'command': 'run', 'arg1': host, 'arg2': 'cx repo find',
+                             'capture': True, 'con': False, 'quiet': True})
+        out = (((rr.get('outputs') or {}).get(host) or {}).get('stdout') or '') if rr.get('return', 1) == 0 else ''
+        mounts = []
+        for line in out.splitlines():
+            m = re.match(r'^/mnt/([a-zA-Z])/(.+?)/?$', line.strip())
+            if m:
+                local = m.group(1).upper() + ':\\' + m.group(2).replace('/', '\\')
+                if os.path.isdir(local):
+                    mounts.append({'repo': os.path.basename(local), 'path': local})
+        for m in changed_mounts(apath, mounts):
+            if con:
+                print ('')
+                print (f'cMeta info: {m["repo"]} changed here since {host} indexed it: cx repo reindex {m["repo"]} there')
+            self.cm.access({'category': host_category, 'command': 'run', 'arg1': host,
+                            'arg2': f'cx repo reindex {m["repo"]} -q', 'capture': True, 'con': False, 'quiet': True})
+        if mounts:
+            write_signatures(apath, mounts)
+
     def _cache_selection_keys(self, cdesc):
         """
         The sort keys of the selection among the usable entries of a request, as (equal_keys, sort_keys):
@@ -1935,7 +1963,8 @@ class Category(InitCategory):
             --on=<alias>                       a host artifact (a fleet host, an instance made before)
             --on=docker[:<template>]           an instance of the template (ubuntu by default) on this machine's docker,
             --on=podman[:<template>]           made or found by get-host--docker (--on_instance, --on_repos, --on_data,
-                                               --on_arch, --on_new_host, --on_template.<key>=<value> go to it); the
+                                               --on_arch, --on_new_host, --on_template.<key>=<value> go to it;
+                                               --on_refresh_cmeta builds the image's uv and cMeta again first); the
                                                compute word of the run picks the template's overlay when it has one
             --on=wsl[:<template>]              the same as a WSL distribution of this Windows machine (get-host--wsl)
             --on=here                          nothing: here, as without the word (the inner run's own value)
@@ -1976,6 +2005,7 @@ class Category(InitCategory):
                                 'repos': str(options.get('repos') or ''), 'data': str(options.get('data') or ''),
                                 'ports': str(options.get('ports') or ''),
                                 'new_host': bool(options.get('new_host', False)) or bool(options.get('rm', False)),
+                                'refresh_cmeta': str(options.get('refresh_cmeta', '')).strip().lower() in ('1', 'true', 'yes', 'on'),
                                 'con': con, 'quiet': quiet, 'verbose': verbose})
             if r['return'] > 0:
                 return r
@@ -2005,6 +2035,12 @@ class Category(InitCategory):
             d = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(a['path'], '_desc'))
             desc = (d.get('data') or {}) if d['return'] == 0 else {}
             declared = str((desc.get('access') or {}).get('shell') or '').strip().lower()
+
+            # A WSL distribution of this machine sees this machine's repositories live through /mnt/<drive>, but its
+            # index knows only what it saw: one where an artifact was added here since is reindexed there first
+            if str(desc.get('type') or '').lower() == 'wsl' and os.name == 'nt':
+                self._reindex_live_repositories(host_category, host, a['path'], con)
+
             if declared in ('powershell', 'pwsh'):
                 shell = 'powershell'
             elif declared == 'cmd' or (not declared and str(desc.get('os', '')).lower() in ('windows', 'win')):

@@ -165,8 +165,9 @@ cx task run test-python --on=docker --on_template.os_version=24.04 --on_repos=ct
 
 How it works (`v2.py`, `_run_on`): the outermost task of a command line started from the CLI sees the word,
 resolves the host - a host artifact, `get-host--docker` for `docker` / `podman`, `get-host--wsl` for `wsl`
-(`--on_instance`, `--on_repos`, `--on_data`, `--on_arch`, `--on_new_host` and `--on_template.<key>` go to
-them; the compute word of the run picks the template's overlay when it has one: `cuda`, `rocm`) - and runs
+(`--on_instance`, `--on_repos`, `--on_data`, `--on_arch`, `--on_new_host`, `--on_refresh_cmeta` (the image's uv and
+cMeta built again, a newer release) and `--on_template.<key>` go to them; the compute word of the run picks the
+template's overlay when it has one: `cuda`, `rocm`) - and runs
 `CMETA_ON=here cx <the words minus --on and --on_*>` there through `cx host run`, quoted for the host's
 shell (POSIX, or PowerShell). The inner run never delegates again. `-q` and `-v` travel as typed; a terminal
 here is a terminal there (`ssh -t`, `docker exec -it`), so the inner run asks its questions as a local run

@@ -186,6 +186,53 @@ def generator_via():
         return 'cmeta'
 
 
+def tree_signature(path):
+    """
+    A cheap signature of a repository on this machine: the modification times of its folder and of its first-level
+    folders (a category folder changes when an artifact is added, moved or removed in it) - one directory listing.
+    os.stat of each folder itself: on Windows a listing's entry carries the time the parent's index cached, which NTFS
+    updates later (a tool added a moment ago did not show).
+    """
+    try:
+        stamps = [os.stat(path).st_mtime_ns]
+        with os.scandir(path) as entries:
+            stamps += [os.stat(e.path).st_mtime_ns for e in entries
+                       if e.is_dir(follow_symlinks=False) and not e.name.startswith('.')]
+        return str(max(stamps))
+    except OSError:
+        return ''
+
+
+MOUNTED_SIGNATURES = 'mounted-signatures.json'
+
+
+def write_signatures(folder, mounts):
+    """
+    The signatures of repositories seen live by another system (an instance, a WSL distribution: [{repo, path}]) as
+    that system has just indexed them, into <folder>/mounted-signatures.json (the folder of its host artifact).
+    """
+    import json
+    try:
+        with open(os.path.join(folder, MOUNTED_SIGNATURES), 'w', encoding='utf-8') as f:
+            json.dump({m['repo']: tree_signature(m['path']) for m in mounts if m.get('path')}, f, indent=1, sort_keys=True)
+    except OSError:
+        pass
+
+
+def changed_mounts(folder, mounts):
+    """
+    The repositories of mounts that changed here since the other system indexed them: its index knows only what it
+    saw, so these are reindexed there before a run (cx repo reindex <alias>). Never recorded: all of them.
+    """
+    import json
+    try:
+        with open(os.path.join(folder, MOUNTED_SIGNATURES), encoding='utf-8') as f:
+            known = json.load(f) or {}
+    except (OSError, ValueError):
+        known = {}
+    return [m for m in mounts if m.get('path') and known.get(m['repo']) != tree_signature(m['path'])]
+
+
 class InitCTask:
     """
     """

@@ -1,0 +1,49 @@
+authors: Grigori Fursin
+
+# The development files of Augeas, the C library that certbot's Apache plugin reads Apache's configuration with:
+# augeas.h and its pkg-config file, which the build of python-augeas needs (it publishes no wheels). The packages of
+# the distributions bring libxml2's development files with them; pkg-config comes too, so that the build finds both.
+# Linux and macOS (Windows has no certbot automation in cMeta).
+#
+#   cx tool setup lib-augeas
+
+names:
+  - augeas.h
+
+match_version:
+  - regex: '^.*$'
+    group: 0
+
+extra_paths:
+  linux:
+    - "/usr/include"
+    - "/usr/local/include"
+    - "/home/linuxbrew/.linuxbrew/include"
+  darwin:
+    - "/opt/homebrew/include"
+    - "/usr/local/include"
+
+# Debian and Ubuntu: libaugeas-dev depends on libxml2-dev
+package_name: 'libaugeas-dev pkg-config'
+package_name_os_id:
+  fedora: 'augeas-devel pkgconf-pkg-config'
+  rhel: 'augeas-devel pkgconf-pkg-config'
+  rocky: 'augeas-devel pkgconf-pkg-config'
+  amzn: 'augeas-devel pkgconf-pkg-config'
+  azurelinux: 'augeas-devel pkgconf'
+  suse: 'augeas-devel pkg-config'
+  opensuse: 'augeas-devel pkg-config'
+  alpine: 'augeas-dev pkgconf'
+  arch: 'augeas pkgconf'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+  darwin: '{{global.brew.qpath}} install augeas pkgconf'
+
+requires_sudo:
+  linux: True
+
+install_help_text: |
+  Could not install the development files of Augeas. Install them with the system's package manager (Debian and
+  Ubuntu: sudo apt-get install libaugeas-dev pkg-config; Fedora and RHEL: sudo dnf install augeas-devel; macOS: brew
+  install augeas), then run "cx tool setup lib-augeas" again.

@@ -137,6 +137,29 @@ def test_choose_variant(prebuilt, system, compute, gpus, driver, variant, expect
     assert error is None and build == expected
 
 
+@pytest.mark.parametrize("system, compute, gpus, driver, variant, expected", [
+    (("linux", "amd64"), ["cpu"], [], None, None, "cpu"),
+    (("windows", "arm64"), ["cpu"], [], None, None, "cpu"),
+    (("darwin", "arm64"), ["metal"], [], None, None, "cpu"),
+    (("windows", "amd64"), ["cuda"], [120], 133, None, "cu132"),     # Blackwell, a CUDA 13.3 driver
+    (("linux", "amd64"), ["cuda"], [86], 133, None, "cu132"),
+    (("linux", "amd64"), ["cuda"], [86], 130, None, "cu130"),
+    (("linux", "amd64"), ["cuda"], [86], 128, None, "cu126"),        # a CUDA 12 driver: the CUDA 12 build
+    (("linux", "amd64"), ["cuda"], [61], 133, None, "cu126"),        # Pascal: CUDA 13 has no code for it
+    (("windows", "amd64"), ["cuda"], [86, 61], 133, None, "cu126"),  # code for every GPU
+    (("linux", "amd64"), ["rocm"], [], None, None, "rocm7.2"),
+])
+def test_choose_variant_2_14(prebuilt, system, compute, gpus, driver, variant, expected):
+    build, error = prebuilt["choose_variant"]("2.14.1", system, compute, gpus = gpus, driver_cuda = driver, variant = variant)
+    assert error is None and build == expected
+
+
+def test_default_versions_are_pinned(prebuilt):
+    """The default release of tool/torch-cpp-prebuilt and the prebuilt default of tool/torch-cpp have archives."""
+    for tool in ("tool/torch-cpp-prebuilt/_desc.yaml", "tool/torch-cpp/_desc.yaml"):
+        assert desc(tool)["default_version"] in prebuilt["ARCHIVES"]
+
+
 @pytest.mark.parametrize("version, system, compute, gpus, driver, variant, message", [
     ("2.7.1", ("linux", "amd64"), ["cuda"], [35], None, None, "has code for the GPUs"),
     ("2.7.1", ("linux", "amd64"), ["cuda"], [120], 118, None, "older than the CUDA builds"),

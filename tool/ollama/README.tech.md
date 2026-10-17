@@ -10,7 +10,7 @@ Targets are chosen with `--compute` (or `--target`); see [task/target/README.tec
 ## The release: tool/ollama
 
 ```bash
-cx tool setup ollama                        # the pinned release (0.35.0), else what is installed
+cx tool setup ollama                        # the pinned release (0.40.5), else what is installed
 cx tool setup ollama --version=<x.y.z>      # another release
 cx tool setup ollama --versions             # the released versions
 cx tool setup ollama --with.variant=rocm    # rocm, mlx, jetpack6: the other Linux/Windows builds
