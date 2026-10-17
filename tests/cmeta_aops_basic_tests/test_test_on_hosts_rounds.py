@@ -115,3 +115,24 @@ def test_a_peek_or_collect_from_another_directory_says_so_and_leaves_nothing(mod
     c = t.collect(False, 'm2', str(elsewhere / 'test-on-hosts-m2'), 'cmeta-tests/test-on-hosts-m2', ['here'], '*.jsonl',
                   str(tmp_path / 'collected'))
     assert c['hosts']['here'].startswith('not found: ')
+
+
+def test_the_remove_of_this_machines_part_takes_the_read_only_files_of_a_clone(module, tmp_path):
+    """A round's cache holds git clones, whose object files are read-only on Windows: shutil.rmtree left them, and the
+    round stayed on disk (2026-10-17). The engine's delete (utils.files.safe_delete_directory) removes them."""
+    import os
+    import stat
+    from cmeta import utils
+
+    t = task(module)
+    t.cm.utils = type('U', (), {'files': utils.files})()
+    local = tmp_path / 'test-on-hosts-m3'
+    objects = local / 'here' / 'home' / 'repos' / 'local' / 'cache' / 'clone' / '.git' / 'objects' / 'ab'
+    objects.mkdir(parents=True)
+    obj = objects / 'cdef'
+    obj.write_bytes(b'x')
+    os.chmod(obj, stat.S_IREAD)
+
+    r = t.remove(False, 'm3', str(local), 'cmeta-tests/test-on-hosts-m3', ['here'])
+    assert r['return'] == 0
+    assert not (local / 'here').exists()

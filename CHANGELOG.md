@@ -28,7 +28,9 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **`test-on-hosts --action=peek|collect` from another directory.** The round's local folder is the sandbox of the
   shell's test session, else the current directory: a peek from elsewhere made a `test-on-hosts-<id>` folder there
   for its helper script (also inside a repository) and reported this machine's part as running, a collect copied
-  nothing without a word. The helper script now goes to a temporary folder, and both say where they looked.
+  nothing without a word. The helper script now goes to a temporary folder, and both say where they looked. And
+  `--action=remove` removes this machine's part on Windows also when its cache holds a git clone (read-only object
+  files, which `shutil.rmtree` left: the round stayed on disk) - through the engine's `safe_delete_directory`.
 
 ## 0.50.1
 - **Fix: `cx host pull --files` from a container or a WSL instance deleted local files.** The whole folder was copied

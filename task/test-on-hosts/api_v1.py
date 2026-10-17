@@ -334,7 +334,10 @@ class CTask(InitCTask):
         for h in host_list:
             if h == HERE:
                 root = os.path.join(local, HERE)
-                shutil.rmtree(root, ignore_errors = True)
+                # The engine's delete: shutil.rmtree cannot remove the read-only files of a git clone on Windows (the
+                # objects of a clone in the round's cache), and the round stayed on disk (2026-10-17)
+                if os.path.isdir(root):
+                    self.cm.utils.files.safe_delete_directory(root)
                 removed[h] = not os.path.exists(root)
             else:
                 r = self.host('run', arg1 = h, arg2 = f'rm -rf ~/{remote}', capture = True)
