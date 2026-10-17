@@ -20,7 +20,8 @@ template:
   python_package: python3
 
 package_manager: apt
-packages: [curl, ca-certificates, git, tar, xz-utils, gzip, sudo, openssh-client, procps]
+# libgomp1: the OpenMP runtime of prebuilt binaries (llama.cpp's release needs libgomp.so.1)
+packages: [curl, ca-certificates, git, tar, xz-utils, gzip, sudo, openssh-client, procps, libgomp1]
 
 image: "cmeta/debian:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
 

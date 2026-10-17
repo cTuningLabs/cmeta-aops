@@ -24,7 +24,8 @@ template:
 package_manager: dnf
 # The image ships curl (or curl-minimal, which provides the same binary - listing "curl" could conflict with it).
 # shadow-utils provides groupadd/useradd; procps-ng gives ps; findutils/which are used by installers.
-packages: [ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow-utils, procps-ng, findutils, which]
+# libgomp: the OpenMP runtime of prebuilt binaries (llama.cpp's release needs libgomp.so.1)
+packages: [ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow-utils, procps-ng, findutils, which, libgomp]
 
 image: "cmeta/fedora:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
 

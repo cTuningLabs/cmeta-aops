@@ -26,7 +26,8 @@ template:
 package_manager: dnf
 # The image ships curl-minimal (it provides the curl binary; installing "curl" conflicts with it, so it is not
 # listed). shadow-utils provides groupadd/useradd; procps-ng gives ps; findutils/which are used by installers.
-packages: [ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow-utils, procps-ng, findutils, which]
+# libgomp: the OpenMP runtime of prebuilt binaries (llama.cpp's release needs libgomp.so.1)
+packages: [ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow-utils, procps-ng, findutils, which, libgomp]
 
 image: "cmeta/rockylinux:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
 

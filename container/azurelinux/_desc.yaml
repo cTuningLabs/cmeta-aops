@@ -21,7 +21,8 @@ template:
 
 package_manager: tdnf
 # the core image is minimal: curl and tar are needed by the uv installer, shadow-utils for useradd, sudo for the user
-packages: [curl, ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow-utils, procps-ng, findutils, which, awk]
+# libgomp: the OpenMP runtime of prebuilt binaries (llama.cpp's release needs libgomp.so.1)
+packages: [curl, ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow-utils, procps-ng, findutils, which, awk, libgomp]
 
 image: "cmeta/azurelinux:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
 

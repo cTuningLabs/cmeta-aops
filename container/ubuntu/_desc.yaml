@@ -28,7 +28,8 @@ template:
   python_package: python3
 
 package_manager: apt
-packages: [curl, ca-certificates, git, tar, xz-utils, gzip, sudo, openssh-client, procps]
+# libgomp1: the OpenMP runtime of prebuilt binaries (llama.cpp's release needs libgomp.so.1)
+packages: [curl, ca-certificates, git, tar, xz-utils, gzip, sudo, openssh-client, procps, libgomp1]
 
 # --compute=cuda swaps the base image for NVIDIA's CUDA image of the same Ubuntu release and adds the GPU
 # run flags (Docker Desktop on Windows passes the GPU through its WSL2 backend; podman needs CDI on Linux).

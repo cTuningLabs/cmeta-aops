@@ -24,7 +24,8 @@ template:
 
 package_manager: zypper
 # shadow provides groupadd/useradd; procps gives ps; findutils/which are used by installers; gawk for scripts
-packages: [curl, ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow, procps, findutils, which, gawk]
+# libgomp1: the OpenMP runtime of prebuilt binaries (llama.cpp's release needs libgomp.so.1)
+packages: [curl, ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow, procps, findutils, which, gawk, libgomp1]
 
 image: "cmeta/opensuse:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
 
