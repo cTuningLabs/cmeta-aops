@@ -11,6 +11,15 @@ authors: Grigori Fursin
 # published route is its docker image (lmsysorg/sglang:<version>-rocm*), where the venv of the image
 # holds SGLang already: cMeta installed in the container runs this program on that python (the last
 # command above, see README.md). Its own venv per set of targets otherwise.
+# Run on any host (the "on:" block): SGLang runs on Linux; started without --on on Windows or macOS, the run goes into
+# an instance of the container template sglang - its CPU image, or with --compute=cuda its CUDA image (Docker Desktop
+# passes the GPU on Windows). --on=<host | docker | wsl ...> chooses another place; on Linux it runs here as before.
+# the key is quoted: YAML 1.1 reads a bare on as the boolean true
+'on':
+  requires_os: [linux]
+  windows: docker:sglang
+  darwin: docker:sglang
+
 ###################################################################################################
 inherits:
   - template-c-cpu,649899ef3f004e4a

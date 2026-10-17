@@ -1,0 +1,17 @@
+artifact: 3f9abfd1866449eb
+category: container,ed08f0d107044479
+authors: Grigori Fursin
+creation_timestamp: '2026-10-16T21:11:41.798853+00:00'
+desc: 'vLLM''s own CUDA image with cMeta layered on top: instances ready to run vLLM programs and servers on NVIDIA GPUs.'
+generator:
+  method: agent
+  agent: Claude Code
+  model: claude-opus-5-5
+  via: cmeta 0.37.1
+  by: Grigori Fursin
+tags:
+- app
+- stack
+- vllm
+- cuda
+- llm

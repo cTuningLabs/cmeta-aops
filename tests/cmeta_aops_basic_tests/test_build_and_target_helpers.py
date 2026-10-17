@@ -75,6 +75,19 @@ def test_default_max_jobs(common_build, monkeypatch, cpus, ram, available, devic
     assert common_build.default_max_jobs(device, nvcc_threads) == expected
 
 
+@pytest.mark.parametrize("cpus, ram, available, per_job, expected", [
+    (10, 16.0, 7.2, 1.0, 5),        # the Mac's 8 GB Docker VM, llama.cpp alone: 5 jobs, not Ninja's 12
+    (10, 16.0, 3.9, 1.0, 1),        # ... next to another build
+    (16, 31.5, 28.0, 1.0, 16),      # a big machine keeps every CPU
+    (10, 16.0, None, 1.0, 10),      # macOS (the RAM available unknown): the machine's RAM
+])
+def test_default_max_jobs_of_a_lighter_project(common_build, monkeypatch, cpus, ram, available, per_job, expected):
+    monkeypatch.setattr(common_build.os, "cpu_count", lambda: cpus)
+    monkeypatch.setattr(common_build, "total_ram_gib", lambda: ram)
+    monkeypatch.setattr(common_build, "available_ram_gib", lambda: available)
+    assert common_build.default_max_jobs("cpu", per_job_gib = per_job) == expected
+
+
 def test_ram_gib_on_this_machine(common_build):
     ram = common_build.total_ram_gib()
     assert ram is None or ram > 0.5
@@ -88,10 +101,14 @@ def test_ram_gib_on_this_machine(common_build):
 # --------------------------------------------------------------------------------------------
 # install.SUDO_PREFIX
 
+# The module-level code of install.py only, without its imports: its package sibling upgrade.py and the task API (ask),
+# which only a run of cMeta can load - so the file passes alone, not only after other tests loaded the engine
+INSTALL_IMPORTS = ["from . import upgrade", "from task_c36be4b9314a45e0.api.ctask import ask"]
+
+
 @pytest.fixture(scope = "module")
 def sudo_prefix():
-    # The module-level code only: install.py imports its package sibling upgrade.py
-    return load_head("task/setup/install.py", "\ndef install_tool", ["from . import upgrade"]).SUDO_PREFIX
+    return load_head("task/setup/install.py", "\ndef install_tool", INSTALL_IMPORTS).SUDO_PREFIX
 
 
 @pytest.mark.parametrize("cmd, expected", [
@@ -109,7 +126,7 @@ def test_quiet_installs_use_sudo_n(sudo_prefix, cmd, expected):
 
 @pytest.fixture(scope = "module")
 def unattended_rights():
-    return load_head("task/setup/install.py", "\ndef install_tool", ["from . import upgrade"]).unattended_rights
+    return load_head("task/setup/install.py", "\ndef install_tool", INSTALL_IMPORTS).unattended_rights
 
 
 @pytest.mark.parametrize("uname, quiet, needs_admin, passwordless_sudo, elevated, expected", [

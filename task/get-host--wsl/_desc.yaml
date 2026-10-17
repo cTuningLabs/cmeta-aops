@@ -1,0 +1,26 @@
+authors: Grigori Fursin
+
+# get-host--wsl - a WSL 2 distribution made from a container template, recorded as a host artifact: the WSL resolver
+# of the "run on any host" design (Windows only). The template's image is built (docker by default), exported as a
+# root file system and imported as a distribution under the location of the config artifact task-get-host--wsl
+# (key location; else %LOCALAPPDATA%\cmeta\wsl); inside, the template's user is the default user, the Windows PATH
+# stays out, CMETA_HOME is set, the repositories of this machine are plugged from their /mnt/<drive> paths (nothing
+# copied), a readme-cmeta.md says how it was made; the host artifact in the local repository (type wsl, made_from,
+# mounts, the tags made-by-cmeta and wsl) is what every "cx host" command works on afterwards.
+#
+#   cx task run get-host--wsl                                     # the template ubuntu, this machine's docker for the image
+#   cx task run get-host--wsl ubuntu --template.os_version=24.04
+#   cx task run get-host--wsl ubuntu --instance=my-test           # the instance's name; default: <this host>-wsl-<template>-<os_version>
+#   cx task run get-host--wsl ubuntu --repos=ctuninglabs@cmeta-aops,fgg-hosts   # plugged inside (default: ctuninglabs@cmeta-aops)
+#   cx task run get-host--wsl ubuntu --location=X:\WSL\cmeta      # the folder of the distribution's disk
+#   cx task run get-host--wsl ubuntu --engine=podman              # the image built and exported with podman
+#
+# Then: cx host ls --made | cx host run <instance> "cx --version" | cx host ssh <instance>
+#       cx host down <instance> (wsl --terminate) | cx host destroy <instance> (wsl --unregister)
+#
+# Never memoized (cache: False): the distribution itself is the state, found through its host artifact and wsl.exe.
+
+cache: False
+
+params_map:
+  arg2: name

@@ -1,0 +1,28 @@
+authors: Grigori Fursin
+
+# get-host--docker - a docker (or podman) instance of a container template, recorded as a host artifact: the first
+# resolver of the "run on any host" design. The instance is a persistent container (sleep infinity) made from the
+# template's image (built when missing), with repositories of this machine mounted under the user's home inside and
+# plugged by the entrypoint, a readme-cmeta.md in that home that says how it was made, and a host artifact in the
+# local repository (type docker, made_from, mounts, the tag made-by-cmeta) that every "cx host" command works on
+# afterwards. Asked again for the same place it finds the instance, starts it when stopped, and returns it.
+#
+#   cx task run get-host--docker                                    # this machine's docker, the template ubuntu
+#   cx task run get-host--docker ubuntu --template.os_version=26.04
+#   cx task run get-host--docker ubuntu --compute=cuda              # the template's CUDA overlay and its GPU run flags
+#   cx task run get-host--docker ubuntu --arch=arm64                # --platform linux/arm64 (emulated on an x86 engine)
+#   cx task run get-host--docker ubuntu --instance=my-test          # the instance's name; default:
+#                                                                   # <this host>-<engine>-<template>-<os_version>[-<compute>][-<arch>]
+#   cx task run get-host--docker ubuntu --repos=ctuninglabs@cmeta-aops,fgg-hosts   # mounted inside (default: ctuninglabs@cmeta-aops)
+#   cx task run get-host--docker ubuntu --new_host                  # another instance of the same place (-2, -3 ...)
+#   cx task run get-host--docker ubuntu --engine=podman
+#
+# Then: cx host ls --tags=made-by-cmeta | cx host run <instance> "cx --version" | cx host ssh <instance>
+#       cx host down <instance> | cx host up <instance> | cx host destroy <instance> [--image]
+#
+# Never memoized (cache: False): the instance itself is the state, found through its host artifact and the engine.
+
+cache: False
+
+params_map:
+  arg2: name

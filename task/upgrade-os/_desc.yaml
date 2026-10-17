@@ -16,7 +16,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #
 # Root: the system steps run with "sudo -n" (never a hidden prompt) unless the run is interactive (a terminal,
 # not -q), where sudo may ask once; without passwordless sudo a non-interactive run says so and stops. On a
-# fleet: "cx host upgrade <host> --os [--firmware] [--check]" runs this task on the host (cmeta-aops-ext2).
+# fleet: "cx host upgrade <host> --os [--firmware] [--check]" runs this task on the host (the host category).
 #
 # This task is never memoized (cache: False): every run is a real run.
 

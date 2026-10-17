@@ -43,6 +43,14 @@ class CTask(InitCTask):
         env = params.get('env')
         serial = params.get('serial')
 
+        # Optional fleet selection also reconnects wireless devices before enumerating adb transports.
+        device_host = params.get('device_host')
+        if device_host:
+            r = self.cm.access({'category': self.cmeta['uses_categories']['host'], 'command': 'connect',
+                                'arg1': str(device_host).split('::')[-1], 'serial': serial or '', 'ctx': ctx})
+            if self.cm.catch_error(r, fail16=True): return r
+            serial = r['serial']
+
         ###########################################################################################
         # Get connected devices
         cmd = f'{adb_path} devices'

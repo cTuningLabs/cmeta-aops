@@ -520,4 +520,8 @@ def as_flags(record):
     if target_tmp:
         flags.append(f'--target_tmp={target_tmp}')
 
+    run_on = record.get('run_on') or {}
+    if run_on.get('host'):
+        flags.append(f'--on={run_on["host"]}')
+
     return ' '.join(flags)

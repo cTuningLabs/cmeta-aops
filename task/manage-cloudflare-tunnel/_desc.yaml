@@ -1,0 +1,28 @@
+authors: Grigori Fursin
+
+# manage-cloudflare-tunnel - the Cloudflare Tunnel service of THIS machine: a remotely managed tunnel (token
+# based, the routes set in the Cloudflare dashboard) run by cloudflared as a system service - systemd on Linux,
+# a launchd daemon on macOS - with the token in a root-only file (/etc/cloudflared/token), never on a command line.
+#
+#   cxt manage-cloudflare-tunnel                          # status: binary, service, connector, routes, origins, public answer
+#   cxt manage-cloudflare-tunnel --strict -q              # the same, an error when something is not right (monitoring)
+#   cxt manage-cloudflare-tunnel install --token_file=<file> [--force] [--plan]
+#   cxt manage-cloudflare-tunnel restart | upgrade [--version=<v>] | uninstall   [--plan]
+#   cx host run <host> "cxt manage-cloudflare-tunnel -q"  # a fleet host
+#
+# The routes come from the connector's own metrics server (http://127.0.0.1:20241/config), so the status needs
+# no root and no dashboard. Windows: status only for now.
+#
+# This task is never memoized (cache: False): every run looks at the machine.
+
+cache: False
+store_global: False
+
+params_map:
+  arg2: action
+  token-file: token_file
+
+cli_params:
+  action: {values: [status, install, uninstall, restart, upgrade]}
+  timeout: {type: int, min: 1}
+  wait: {type: int, min: 0}

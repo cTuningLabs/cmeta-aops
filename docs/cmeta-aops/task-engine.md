@@ -149,6 +149,94 @@ task's `cmeta-task-cached-ctx.json`, or run with `-v`.
 so `--use.llvm.version=...` changes nothing there. A version given through `--use` also enters the
 cache identity of that sub-task, so it gets its own cache entry and the default one stays.
 
+## Running the same words elsewhere: `--on`
+
+`--on=<host>` on any `cx task run` / `cx program run` / `cx tool setup` / `cx app run` hands the whole
+command line, as typed, to a host and returns its result:
+
+```bash
+cx program run test-nmm-c-cpu cpu -q --on=docker            # an instance of the container template ubuntu on this machine's docker, made on first use
+cx program run test-nmm-c-cpu cpu -q --on=docker:debian     # another template; --on=podman[:<template>] the same with podman
+cx program run test-nmm-nvcc-cuda cuda -q --on=docker --on_template.cuda_flavour=devel   # the template's CUDA overlay (the GPU through the engine)
+cx task run test-python -q --on=wsl                          # a WSL distribution made from the same template (Windows)
+cx tool setup gcc --install -q --on=lab-thinkpad-ubuntu      # a fleet host (cx host ls); a Windows host needs "access: shell: powershell"
+cx task run test-python --on=docker --on_template.os_version=24.04 --on_repos=ctuninglabs@cmeta-aops,my-repo
+```
+
+How it works (`v2.py`, `_run_on`): the outermost task of a command line started from the CLI sees the word,
+resolves the host - a host artifact, `get-host--docker` for `docker` / `podman`, `get-host--wsl` for `wsl`
+(`--on_instance`, `--on_repos`, `--on_data`, `--on_arch`, `--on_new_host` and `--on_template.<key>` go to
+them; the compute word of the run picks the template's overlay when it has one: `cuda`, `rocm`) - and runs
+`CMETA_ON=here cx <the words minus --on and --on_*>` there through `cx host run`, quoted for the host's
+shell (POSIX, or PowerShell). The inner run never delegates again. `-q` and `-v` travel as typed; a terminal
+here is a terminal there (`ssh -t`, `docker exec -it`), so the inner run asks its questions as a local run
+would, and a run without one (a script) stays without one. The result is the inner exit code plus `run_on`
+(host, words, engine, image, whether the instance was made now, the terminal, the data repositories), also
+in `ctx['on']`; the inner run's provenance and repro records carry `run_on` too (host, from, engine, image;
+`cx program provenance --as_flags` adds `--on=<host>`); one closing line says where it ran and how to open
+a shell there. An instance's cMeta home and cache are its own, never the machine's; the repositories mounted
+into it are the machine's, live. `--on_pull` makes the run work in `~/work/<run id>` there (its repro records,
+what `--save_here` writes) and brings that folder back into `on-runs/<run id>` here; `--on_rm` makes a
+throwaway instance for the run and destroys it after. `--on_detach` keeps the run going there after the command
+returns - a server: it runs in a session of its own, its output in `~/cmeta-detached/<run id>.log`, its process group
+in the `.pid` file next to it, and the closing line says how to read the output and how to stop it; `--on_ports=8080`
+(or `8080:80`, comma-separated) publishes ports of a new instance on 127.0.0.1 (a container cannot publish a port later:
+an instance made without it says so):
+
+```text
+cx tool run python --on=docker --on_instance=web --on_ports=8765 --on_detach -- -m http.server 8765
+cx host run web "tail -n 50 ~/cmeta-detached/<run id>.log"            # what it prints
+cx host run web "kill -- -$(cat ~/cmeta-detached/<run id>.pid)"      # stop it
+```
+
+POSIX hosts and instances only for now (a Windows host refuses `--on_detach`).
+
+An ssh host runs the words on its own clones and home. `--on_isolated` runs them on THIS machine's repositories
+instead (`ctuninglabs@cmeta-aops`, or `--on_isolated=<repo>,<repo>`): they are copied to `~/cmeta-tests/on-<run id>`,
+a throwaway cMeta home there plugs them, the run uses it (the host's own engine, its own home untouched) and the
+folder goes afterwards (`--on_keep` keeps it). A repository flagged `secrets: true` never leaves this machine.
+
+An artifact can carry its own route, so that no word is needed - a task's `_desc.yaml`, or a program's (the
+program category hands it to the task):
+
+```yaml
+'on':                           # quoted: YAML 1.1 reads a bare on as the boolean true
+  requires_os: [linux]          # the pipeline needs a Linux userland (test-sglang, OpenShell, TGI)
+  windows: docker:sglang        # the route on a Windows machine (an instance of the stack template sglang)
+  darwin: docker:sglang         # and on a Mac
+  default: docker:vllm-cuda     # the route everywhere when the command line names none (a stable stack image)
+```
+
+The real ones: test-sglang (Linux only: Windows and macOS go into the SGLang stack, whose compute variant follows
+the run's `--compute`) and test-vllm (Linux and macOS natively, Windows into the ubuntu template's instance).
+
+The OS's own route wins, else `default`; nothing happens when this OS satisfies `requires_os` and no route is
+forced for it; an OS that is not allowed and has no route stops the run with the options. `--on=here` on the
+command line keeps a run local whatever the block says; `--on=<ref>` wins over it.
+
+Instances are kept and managed by the host category: `cx host ls --made`, `cx host snapshot <instance>
+[--name=..]` (docker: a committed image; WSL: an exported tar) and `cx host restore <instance> [--name=..]`,
+`cx host push / pull <instance> ...` (docker cp, or cp through wsl.exe), `cx host destroy <instance>`. A
+test-on-hosts round takes instance refs in `--hosts` (`docker:ubuntu,docker:debian,wsl`): the matrix of OS
+images runs on the carriers that have an engine, with the tree where the instance mounts it.
+
+## Data repositories: models and datasets apart from the tools
+
+A data task says where its entries belong with `cache_repo_key` in its `_desc.yaml` (`get-hf-model` and
+`get-hf-dataset`: `data`); a caller can say it for a generic step in the `uses` entry (`cache_repo_key: data`
+on a `download-file` or `clone-git-to-cache` step). The key is resolved through `cache_repos` of
+`config::task` - `cx config set task --meta.cache_repos.data=my-models` after `cx repo init my-models
+--path=D:\models` - or for one run with `--use.init.cache_repos.data=my-models`; an explicit `--cache_repo`
+or the run-wide `default_cache_repo` still wins. Nothing set: the entries stay in `local`, as before. A lookup
+spans every plugged repository, so an entry is found wherever it lives.
+
+With `--on`, every repository of `cache_repos` is mounted into the instance under `$HOME/data/<alias>` and
+plugged there, the config inside gets the same keys (`--on_data=data,models` restricts the set,
+`--on_data=data=my-models` names one without the config key, `--on_data=none` mounts nothing), and after the
+run each data repository is indexed here again: a model fetched inside lands where one fetched here does,
+and the entry made on one OS is reused on another (the cached result's paths are rewritten to the entry's
+current place at reuse). The tools of a run never go there: each environment keeps its own.
+
 ## Two reuse layers
 
 - **In-memory memo (per run):** `store_global: True` + `storage_key: <key>`. A later

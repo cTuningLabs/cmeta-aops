@@ -1,0 +1,38 @@
+authors: Grigori Fursin
+
+# Base template: Rocky Linux + tools + uv + cMeta (dnf). RHEL-compatible; AlmaLinux 9 is the same recipe
+# with from: "almalinux:{{cmeta.os_version}}".
+#
+#   cx container build rockylinux                  # Rocky Linux 9
+#   cx container build rockylinux --template.os_version=10
+#   cx container build rockylinux --template.os_version=8     # its python is 3.6: uv fetches a newer one for cMeta
+#
+# The images are Rocky's own (docker.io/rockylinux/rockylinux: 8, 9, 10); the library image rockylinux stops at 9.
+
+kind: base
+
+template:
+  os_version: "9"
+  from: "rockylinux/rockylinux:{{cmeta.os_version}}"
+  cmeta_source: pypi
+  cmeta_version: ""
+  cmeta_extras: server
+  cmeta_local_path: ""
+  user: cmeta
+  uid: ""                       # the user's uid and gid inside: on a Linux engine the machine user's (get-host--docker
+  gid: ""                       # passes them: a bind mount keeps the machine's ownership); empty = a system user
+  python_package: python3
+
+package_manager: dnf
+# The image ships curl-minimal (it provides the curl binary; installing "curl" conflicts with it, so it is not
+# listed). shadow-utils provides groupadd/useradd; procps-ng gives ps; findutils/which are used by installers.
+# libgomp: the OpenMP runtime of prebuilt binaries (llama.cpp's release needs libgomp.so.1)
+packages: [ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow-utils, procps-ng, findutils, which, libgomp]
+
+image: "cmeta/rockylinux:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
+
+tests:
+  - cx --version
+  - cx repo find
+  - cx category find
+  - cat /etc/os-release

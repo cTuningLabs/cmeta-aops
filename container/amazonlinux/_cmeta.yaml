@@ -1,0 +1,10 @@
+﻿artifact: 4edb83e4f74e440d
+authors: Grigori Fursin
+category: container,ed08f0d107044479
+creation_timestamp: '2026-09-15T21:59:35.115474+00:00'
+desc: 'Base image: Amazon Linux 2023 + tools + uv + cMeta (dnf).'
+last_update_timestamp: '2026-09-15T22:23:21.726970+00:00'
+tags:
+- base
+- amazonlinux
+- aws

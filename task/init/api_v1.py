@@ -35,6 +35,7 @@ class CTask(InitCTask):
     def run(self,
             ctx: dict,              # cMeta context
             default_cache_repo: str = None,
+            cache_repos: dict = None,        # --use.init.cache_repos.<key>=<repo>: the repositories of the data tasks' entries for this run (else the key cache_repos of config::task)
             file_cache: str = None,          # the folder(s) of large downloads and clones for this run (else the key file_cache of config::task)
             version_policy: str = None,      # known | latest | ask for every tool of the run (else CMETA_VERSION_POLICY, else config::task)
             versions_ttl_hours: str = None,  # hours a cached lookup of a newest version is trusted (else CMETA_VERSIONS_TTL_HOURS, else config::task; 24)
@@ -67,6 +68,10 @@ class CTask(InitCTask):
         # the same one config::task may set
         if default_cache_repo:
             result['default_cache_repo'] = default_cache_repo
+
+        # --use.init.cache_repos.data=<repo>: where the data tasks (cache_repo_key: data) keep their entries this run
+        if isinstance(cache_repos, dict) and cache_repos:
+            result['cache_repos'] = dict(result.get('cache_repos') or {}, **{str(k): str(v) for k, v in cache_repos.items() if v})
 
         # --use.init.file_cache=<folder>: the file cache of this run (clone-git-to-cache, get-hf-model, ...)
         if file_cache:

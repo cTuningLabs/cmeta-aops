@@ -1,0 +1,42 @@
+authors: Grigori Fursin
+
+# App template: the cMeta engine's internal web server ("cserver") serving the cMeta AOps repository, plus any
+# repository mounted from the host - the generic web front-end demo.
+#
+#   cx container start cmeta-cserver                         # http://127.0.0.1:8004/  (docker, ubuntu 24.04)
+#   cx container start cmeta-cserver --port=8010 --engine=podman --distro=debian
+#   cx container start cmeta-cserver --repo=<alias>                  # + a repository plugged on this machine
+#   cx container run   cmeta-cserver -- cx repo find          # any command on the same image
+#   cx container stop  cmeta-cserver-ubuntu-24.04
+#
+# Everything mounted with --repo=<path> lands in /home/cmeta/repos/<alias> and is plugged in by the entrypoint
+# on every start, so the same image serves any set of repositories - private ones included, without a
+# build-time secret. The index and the cache live on a named volume (cmeta-cserver-home) and survive restarts.
+#
+# Host and port are passed as parameters of the cserver app (cx app run cserver --param.host=... --param.port=...):
+# the app's own defaults (127.0.0.1:8004) would override CSERVER_HOST / CSERVER_PORT from the environment.
+
+kind: app
+bases: [ubuntu, debian, fedora, rockylinux, amazonlinux, azurelinux, opensuse]
+
+template:
+  port: 8004                    # host side (published on 127.0.0.1 unless --expose_lan)
+  container_port: 8004
+
+# repositories baked into the image at build time
+clone_repos:
+  - cmeta-aops                  # cx repo get cmeta-aops (public)
+
+ports: ["{{cmeta.port}}:{{cmeta.container_port}}"]
+
+volumes:
+  - "cmeta-cserver-cache:/home/cmeta/CMETA/cache"   # named volume for the cMeta cache (downloads, builds); index and
+                                                    # registry stay in the container so a rebuilt image is never hidden
+
+cmd: ["cx", "app", "run", "cserver", "--param.host=0.0.0.0", "--param.port={{cmeta.container_port}}", "--param.flags=--no-use-colors"]
+
+open_url: "http://127.0.0.1:{{cmeta.port}}/"
+
+tests:
+  - cx repo find
+  - cx task find test-python

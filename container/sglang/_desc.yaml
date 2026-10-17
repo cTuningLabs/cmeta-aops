@@ -1,0 +1,62 @@
+authors: Grigori Fursin
+
+# Base template (a stack): SGLang's own images (lmsysorg/sglang: Ubuntu with SGLang and PyTorch) with cMeta layered on
+# top - the user "cmeta", uv, cMeta, the entrypoint that plugs the repositories. One template, one image per compute:
+# the CPU build (-xeon, x86_64), CUDA 13 (-cu130-runtime), ROCm for MI300/MI325 (-rocm10-mi30x). The image's Python
+# environment becomes the user's /opt/cmeta-venv (the image's own venv, or a venv that sees its system packages), and
+# the instances tell cMeta inside to take it (config::task use.python.tool_path): an SGLang program runs on the SGLang
+# of the image. The version below is SGLang's release (the image's tag).
+#
+#   cx container build sglang                                        # lmsysorg/sglang:v0.5.21-xeon + cMeta (CPU)
+#   cx container build sglang --compute=cuda                         # the CUDA 13 runtime image
+#   cx container build sglang --compute=rocm                         # the ROCm image (MI300X class)
+#   cx program run test-sglang --compute=cuda --on=docker:sglang     # test-sglang inside, on the image's SGLang
+#   cx task run get-host--docker sglang --compute=cuda               # just the instance: cx host ssh <instance>, python -m sglang.launch_server ...
+
+kind: base
+
+template:
+  os_version: "0.5.21"            # here: the SGLang release (lmsysorg/sglang:v<release>-<flavour>)
+  from: "lmsysorg/sglang:v{{cmeta.os_version}}-xeon"
+  cmeta_source: pypi
+  cmeta_version: ""
+  cmeta_extras: server
+  user: cmeta
+  uid: ""
+  gid: ""
+  python_package: ""              # the image's python3 has SGLang: the distribution's package must not replace it
+
+package_manager: apt
+packages: [curl, ca-certificates, git, tar, xz-utils, gzip, sudo, openssh-client, procps]
+
+# The image's Python environment for the user: its venv (linked as /opt/cmeta-venv), or a venv on its system Python that
+# sees its packages; the folders the image points uv at belong to the user too
+root_lines:
+  - >-
+    RUN set -e;
+    P=$(python3 -c "import sys; print(sys.prefix if sys.prefix != sys.base_prefix else '')");
+    if [ -n "$P" ]; then ln -s "$P" /opt/cmeta-venv; chown -R {{cmeta.user}}:{{cmeta.user}} "$P";
+    else python3 -m venv --system-site-packages --without-pip /opt/cmeta-venv; chown -R {{cmeta.user}}:{{cmeta.user}} /opt/cmeta-venv; fi;
+    for d in /opt/uv /usr/local/share/uv; do [ ! -d "$d" ] || chown -R {{cmeta.user}}:{{cmeta.user}} "$d"; done
+
+compute:
+  cuda:
+    from: "lmsysorg/sglang:v{{cmeta.os_version}}-cu130-runtime"
+    run_flags:
+      docker: [--gpus, all, --ipc=host, --shm-size, 16g, --ulimit, memlock=-1, --ulimit, stack=67108864]
+      podman: [--device, nvidia.com/gpu=all, --ipc=host, --shm-size, 16g]
+  rocm:
+    from: "lmsysorg/sglang:v{{cmeta.os_version}}-rocm10-mi30x"
+    run_flags: [--device=/dev/kfd, --device=/dev/dri, --group-add, video, --ipc=host, --shm-size, 16g,
+                --security-opt, seccomp=unconfined]
+
+# Inside every instance: the Python of the image for every cMeta run (the command line's --use still wins)
+instance_config:
+  task.use.python.tool_path: /opt/cmeta-venv/bin/python3
+
+image: "cmeta/sglang:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
+
+tests:
+  - cx --version
+  - /opt/cmeta-venv/bin/python3 -c "import sglang; print('sglang', sglang.__version__)"
+  - {if_compute: cuda, cmd: nvidia-smi}

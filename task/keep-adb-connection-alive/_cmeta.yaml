@@ -6,3 +6,5 @@ creation_timestamp: '2026-02-01T15:29:13.399124+00:00'
 desc: "Reconnect adb to a device over Wi-Fi at a given address every few seconds so long sessions do not drop."
 last_update_timestamp: '2026-04-14T10:23:38.694129+00:00'
 
+uses_categories:
+  host: host,e4e49c251c814f6d

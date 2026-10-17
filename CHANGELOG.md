@@ -2,6 +2,135 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.50.0
+- **Run any command on another host: `--on`.** `--on=<target>` on any `cx task run`, `cx program run`, `cx tool setup`
+  or `cx app run` hands the whole command line, as typed, to another host and returns its result: a fleet host (ssh;
+  a Windows host through PowerShell), or an instance made on first use from a container template - `docker[:<template>]`,
+  `podman[:<template>]` (rootless, kept alive by lingering), `wsl[:<template>]` (a WSL 2 distribution made from the
+  template's image). An instance is a host artifact named after the machine that carries it
+  (`<machine>-docker-<template>-<version>`); its cMeta home and cache are its own, the machine's repositories are
+  mounted into it live. `--on_template.<key>` (an OS version, another FROM, the cmeta-aops checkout of a stack),
+  `--on_distro` (the base of an app template), `--on_instance`, `--on_repos`, `--on_data`, `--on_arch`, `--on_pull`
+  (the run's folder comes back), `--on_rm` (a throwaway instance), `--on_detach` with `--on_ports` (a server kept
+  running, its ports on 127.0.0.1), `--on_isolated` (this machine's repositories in a throwaway home on an ssh host)
+  and `--on=here` (stay local) shape it. The inner run's provenance and repro records carry `run_on`. An artifact may
+  carry its own route in an `'on':` block of its `_desc.yaml` (`requires_os`, a route per OS, `default`): test-sglang
+  goes into the SGLang stack on Windows and macOS, test-vllm into docker on Windows. `cx host run --interactive` and
+  the terminal pass-through let a delegated run ask its questions.
+- **Hosts, machines and containers as artifacts.** The `host` and `machine` categories: `cx host ls` (`--made` for
+  instances), `show`, `status`, `probe`, `run`, `ssh`, `push`, `pull`, `upgrade`, `restart`, `snapshot` / `restore`
+  (docker: a committed image; WSL: an exported tar) and `destroy`. A host knows the machine it runs on by a system id
+  (a hash of the OS's machine id, recorded by the probe) before its hostname; `cx host whoami` names this machine's
+  host artifact; `cx host push` rescans only the pushed repository. The `container` category builds and runs docker
+  and podman containers from templates: base templates `ubuntu` (26.04 by default), `debian`, `fedora`, `rockylinux`,
+  `amazonlinux`, `azurelinux` and `opensuse` (zypper), with compute overlays (`cuda`, `rocm`) and the OpenMP runtime
+  prebuilt binaries need; app templates on a base (`cmeta-test`, `cmeta-cserver`, `llama-cpp` with llama.cpp set up by
+  cMeta in the image); stack bases on a project's own image (`vllm-cuda`, `sglang` per compute) with cMeta on top,
+  pointed at the image's Python. The user inside takes the machine user's uid on a Linux engine; a distribution whose
+  Python is older than 3.9 gets one from uv; sudo works under rootless podman; podman gets full image names; instances
+  run with an init process; Docker Desktop over ssh (macOS, Windows) uses a config without the credential store and
+  the classic builder. An app's compute overlay adds to its base's: the keys the base declares (llama-cpp's CUDA
+  builds on the devel image), the base's GPU run flags kept; ubuntu's CUDA images name their CUDA version and flavour;
+  an instance made with other template keys (another FROM, CUDA version or flavour) has a name of its own.
+  `cx container render` needs no engine installed. The `docker` stub category is gone.
+- **Matrices with `test-on-hosts`.** `--hosts` takes instance refs (`docker:debian --on_template.os_version=13`,
+  `podman:fedora`, `wsl`): each instance runs the commands in a throwaway cMeta home on the tree it mounts. A ref that
+  cannot be made is said and left out while the others run; the round is recorded (`round.json`), so `peek`, `collect`
+  and `remove` need no `--hosts`; a WSL host starts the round with `setsid`; a host whose `cx` keeps a home of its own
+  is said in the round and its home is not plugged into.
+- **Data repositories and portable cached results.** A data task (get-hf-model, get-hf-dataset: `cache_repo_key:
+  data`) keeps its entries in the repository named by `cache_repos.<key>` of `config::task` (or
+  `--use.init.cache_repos.<key>=<repo>`); with `--on` those repositories are mounted into the instance and indexed
+  again after the run. A cached result reused from another place (a moved entry, another mount path, another OS) has
+  its paths rewritten to the entry's current place.
+- **Secrets.** The `secret` category keeps identities and credentials as artifacts with their files inside (a
+  repository flagged `secrets: true` is never synced or mounted): `cx secret ls`, `show`, `check`, `import`, and
+  `generate` (an ed25519 pair without a passphrase where the identity names it), `use` (a git identity in one clone,
+  or `--git_global`), `render` (a git include file). `task fix-ssh-key-permissions` gives a private key the
+  permissions OpenSSH wants on any OS (on Windows an ACL of the user, SYSTEM and Administrators by SIDs, rules of
+  others set on the file itself removed) and with `--check` says who else can read it.
+- **GPU containers and machine defaults.** `tool::nvidia-container-toolkit` (Linux: NVIDIA's repository, the pinned
+  packages, docker's `nvidia` runtime and podman's CDI file); a CUDA instance on a Linux engine without it stops with
+  that cure. `use` in `config::task` holds a machine's own defaults of `--use` (the command line wins).
+- **New tools: `apache2`, `nginx`, `lima`, `colima`.** Apache and nginx from the distribution's packages with their
+  service enabled where systemd runs, Homebrew, winget, nginx's own zip on Windows. tool/docker installs the client on
+  macOS and Windows from Docker's static release and adds the user to the docker group on Linux;
+  tool/microsoft.visual-studio installs on a machine without the Windows SDK.
+- **Fixes found by running the matrix across distributions and architectures.** `host.os.uarch` is `arm64` on ARM
+  Linux too (it was `aarch64`, which the tools did not know; the OS's own name is in `uarch_native`). A package name
+  falls back through the distribution's `ID_LIKE` (Rocky, Alma and Amazon Linux get their family's `gcc-c++` and
+  `openssl-devel`); Fedora and openSUSE get their own. A gcc without binutils next to it, or on Linux without the C
+  library headers, is not taken, so the setup installs the toolchain. tool/lib-openssl reads OpenSSL 1.1's version.
+  tool/llama-cpp builds from source when the release binary does not start (an older C++ runtime), without AVX-VNNI
+  where the assembler predates it; build-llama-cpp sizes its parallel compile jobs to the free RAM. `'on':` keys are
+  quoted (YAML 1.1 reads a bare `on` as true). The host and container code measures durations on the monotonic clock.
+  run-ai orders conversations started in the same second by their id.
+- **Wireless Android fleet connections.** `cx host connect` reuses
+  `keep-adb-connection-alive` for guided pairing, a verified one-shot connection
+  or a foreground reconnect loop. It follows advertised connection ports using
+  saved hardware identity, keeps non-secret connection state across fleet probes,
+  and can require watch hardware. Wireless host commands and an optional Android
+  CPU target `device_host` reconnect before use. Legacy endpoint/period loops and
+  USB host behavior remain supported; pairing PINs stay with interactive ADB.
+  Host selection also accepts program contexts containing loaded API modules.
+- **Android APKs through the program abstraction.** Programs inherit
+  `template-android-gradle-app` and use the existing compile/run/cache/source
+  tracking/provenance driver. The additive `android-app` target allows compilation
+  without a device; command variants install or launch through ADB. Gradle,
+  Android XML and resource changes are tracked, and generated files live inside
+  the program build workspace. Native Android program targets keep their behavior.
+- **Android Gradle app lifecycle through `task::android-gradle-app`.** Build with
+  a project's own Gradle wrapper, install an APK with ADB, or launch an installed
+  activity. Sources resolve by cRef or an explicit directory; generated files and
+  verified build receipts live in cMeta cache. Device selection refuses ambiguity,
+  install keeps application data, and a failed build invalidates its deploy receipt.
+  Android SDK detection includes Android Studio's standard user directories and
+  reads installed package revisions, preserving command detection for older layouts.
+- **Apache certificates through `setup-ssl-certificate` and `tool::certbot`.**
+  Discover enabled Apache hostnames, issue/install Let's Encrypt certificates,
+  renew existing lineages without losing their SANs, and test renewal. Plans and
+  staging dry-runs are separate from installation; all-domain selection is distinct
+  from wildcard certificates, which require a configured DNS-01 plugin. Certbot
+  detects an installed version first or installs a pinned Python environment with
+  the matching Apache plugin. Scheduled renewal remains owned by the host.
+- **Reusable `sync` definitions and `task::sync`.** Describe local/local or
+  local/SSH directory and repository pairs, run ordered batches, and list them
+  when no name is given. Bisync initializes on first use and keeps its listings
+  in permanent cMeta result artifacts; copy and mirror are also supported.
+  Previews, confirmation, backups and explicit recovery protect established state.
+  Plans show full selected repository paths; `exclude_categories` optionally omits
+  whole category directories across selected repositories without deleting them.
+  Optional `initial_mode: mirror` seeds from the source with destination backups
+  before the first successful baseline, then automatically uses ordinary bisync.
+  Explicit `--initialize` and `--require-initialized` separate first use from
+  regular bisync; legacy task-sync cache state is imported without resetting it.
+  Optional `--live` displays rclone file operations and statistics during the run,
+  retaining the complete log in the result artifact.
+  Existing fleet sync and `rclone-to-ssh` entry points retain their behavior.
+- **Add `tool::cmeta` for a selected Python.** Detect an existing engine or install
+  from PyPI, a Git ref or a local development source. The declared default pin,
+  available versions, status, upgrade and check-updates use the shared tool setup
+  framework. The runtime command uses the selected interpreter's `-m cmeta`.
+- **Fix named task cache lookup.** API v2 now passes `cache_name` to the cache find,
+  as API v1 does. Previously a named request could search all cache entries and reuse
+  an unrelated result, including when selecting a named Python environment. Regression
+  coverage creates two named entries alongside an unrelated entry and verifies independent reuse.
+- **Cloudflare Tunnels: `tool::cloudflared` and `task::manage-cloudflare-tunnel`.** The tool detects an installed
+  cloudflared (the distribution package, brew, winget) or installs the pinned release, its SHA-256 checked against
+  the asset digests of GitHub's release API (upstream lists sums only in the release notes). The task manages the
+  remotely managed tunnel of a machine, whose routes are set in the Cloudflare dashboard. `status` (the default,
+  no root needed) reads the connector's own metrics server for its connections and routes, tries each route's
+  origin and asks each public hostname over HTTPS (a login, a Cloudflare Access redirect and an unreachable origin
+  are told apart); `--strict` turns a problem into an error for monitoring. `install --token_file=<file>` runs
+  cloudflared as a systemd unit (Linux) or a launchd daemon (macOS) with the token in a root-only file passed by
+  `--token-file`, so it never shows on a command line or in a unit file, and copies a release out of the cMeta
+  cache to `/usr/local/bin` first. `restart`, `upgrade` (through the channel the binary came from: apt, dnf, brew or
+  the release) and `uninstall` complete it; every action has `--plan`, checks `sudo -n` before changing anything
+  and waits for the connector, quoting cloudflared's last error when it does not come up. Windows: status only.
+- **`cx host probe` forgets a retired project.** A host's `state.yaml` kept the last state of every project the host
+  had ever declared, so a project taken out of its `_desc.yaml` went on showing its repositories in `cx host show`.
+  The probe now keeps the saved states of the declared projects only.
+
 ## 0.47.2
 - **A quiet run never answers a prompt of the system, on Windows too.** On Linux and macOS a quiet run (`-q`)
   already runs `sudo` as `sudo -n`, which fails at once instead of waiting at a password prompt nobody sees. Now

@@ -1,0 +1,26 @@
+artifact: dfce798b50954b24
+category: task,c36be4b9314a45e0
+authors: Grigori Fursin
+creation_timestamp: '2026-10-16T15:02:48.337943+00:00'
+desc: 'The Cloudflare Tunnel service of this machine: status (the service, the connector, the
+  routes set in the dashboard, their origins and public answers), install from a token file,
+  restart, upgrade and uninstall - systemd on Linux, launchd on macOS.'
+generator:
+  method: agent
+  agent: Claude Code 2.1.301
+  model: claude-opus-5-5
+  via: cmeta 0.37.1
+  by: Grigori Fursin
+last_update_timestamp: '2026-10-16T15:21:56.621634+00:00'
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.301
+  via: cmeta 0.37.1
+  by: Grigori Fursin
+  date: '2026-10-16'
+tags:
+- cloudflare
+- cloudflared
+- tunnel
+- service
+- network

@@ -1,0 +1,24 @@
+authors: Grigori Fursin
+
+# App template: the smoke tests of a cMeta host image - what the hand-made prototypes ran by hand
+# (cx --version, cx repo find, cx category find, cat /etc/os-release, nvidia-smi on CUDA). No content of its
+# own: the image is the base image plus a CMD, so the test matrix costs no extra layer.
+#
+#   cx container test cmeta-test                                 # ubuntu 24.04, docker
+#   cx container test cmeta-test --distro=rockylinux --engine=podman
+#   cx container test cmeta-test --compute=cuda                  # adds the nvidia-smi row
+#   cx container test cmeta-test --template.cmeta_source=local   # an unreleased engine from this machine
+#   cx container shell cmeta-test --distro=debian
+#   cx container run cmeta-test -- cx --version
+
+kind: app
+bases: [ubuntu, debian, fedora, rockylinux, amazonlinux, azurelinux, opensuse]
+
+cmd: ["/bin/bash"]
+
+tests:
+  - cx --version
+  - cx repo find
+  - cx category find
+  - cat /etc/os-release
+  - {if_compute: cuda, cmd: nvidia-smi}

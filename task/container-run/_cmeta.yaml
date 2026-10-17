@@ -1,0 +1,12 @@
+﻿artifact: 1eeecb521ba540f2
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-09-15T21:57:16.766879+00:00'
+desc: 'Run one container with docker or podman: ports, volumes, environment, run-time
+  secrets through a temporary env-file, the command.'
+last_update_timestamp: '2026-09-15T22:23:22.915594+00:00'
+tags:
+- container
+- run
+- docker
+- podman

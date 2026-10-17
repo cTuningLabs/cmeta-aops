@@ -1,0 +1,59 @@
+authors: Grigori Fursin
+
+# Base template (a stack): vLLM's own CUDA image (vllm/vllm-openai: Ubuntu, vLLM and PyTorch in the system Python's
+# dist-packages) with cMeta layered on top - the user "cmeta", uv, cMeta, the entrypoint that plugs the repositories.
+# The image's Python environment becomes the user's /opt/cmeta-venv (see root_lines), and
+# the instances tell cMeta inside to take it (config::task use.python.tool_path), so a vLLM program runs on the vLLM of
+# the image: nothing to download but the model; a package a program adds goes into that venv. The version below is vLLM's
+# release (the image's tag); the GPU needs Docker Desktop on Windows, or tool/nvidia-container-toolkit on Linux.
+#
+#   cx container build vllm-cuda                                   # vllm/vllm-openai:v0.31.0 + cMeta
+#   cx container build vllm-cuda --template.os_version=0.30.0      # another vLLM release
+#   cx program run test-vllm --compute=cuda --on=docker:vllm-cuda  # test-vllm inside, on the image's vLLM
+#   cx task run get-host--docker vllm-cuda --compute=cuda          # just the instance: cx host ssh <instance>, vllm serve ...
+
+kind: base
+
+compute_default: cuda
+
+template:
+  os_version: "0.31.0"            # here: the vLLM release (vllm/vllm-openai:v<release>)
+  from: "vllm/vllm-openai:v{{cmeta.os_version}}"
+  cmeta_source: pypi
+  cmeta_version: ""
+  cmeta_extras: server
+  user: cmeta
+  uid: ""
+  gid: ""
+  python_package: ""              # the image's python3 has vLLM: the distribution's package must not replace it
+
+package_manager: apt
+packages: [curl, ca-certificates, git, tar, xz-utils, gzip, sudo, openssh-client, procps]
+
+# The image's Python environment for the user: its venv (linked as /opt/cmeta-venv; vLLM's images after 0.31 keep one in
+# /opt/venv), or a venv on its system Python that sees its packages (v0.31.0: vLLM and PyTorch in the system
+# dist-packages); the folders the image points uv at (/opt/uv: UV_CACHE_DIR, UV_PYTHON_INSTALL_DIR) belong to the user too
+root_lines:
+  - >-
+    RUN set -e;
+    P=$(python3 -c "import sys; print(sys.prefix if sys.prefix != sys.base_prefix else '')");
+    if [ -n "$P" ]; then ln -s "$P" /opt/cmeta-venv; chown -R {{cmeta.user}}:{{cmeta.user}} "$P";
+    else python3 -m venv --system-site-packages --without-pip /opt/cmeta-venv; chown -R {{cmeta.user}}:{{cmeta.user}} /opt/cmeta-venv; fi;
+    for d in /opt/uv /usr/local/share/uv; do [ ! -d "$d" ] || chown -R {{cmeta.user}}:{{cmeta.user}} "$d"; done
+
+compute:
+  cuda:
+    run_flags:
+      docker: [--gpus, all, --ipc=host, --ulimit, memlock=-1, --ulimit, stack=67108864]
+      podman: [--device, nvidia.com/gpu=all, --ipc=host]
+
+# Inside every instance: the Python of the image for every cMeta run (the command line's --use still wins)
+instance_config:
+  task.use.python.tool_path: /opt/cmeta-venv/bin/python3
+
+image: "cmeta/vllm-cuda:{{cmeta.os_version}}-cmeta-{{cmeta.cmeta_version|latest}}"
+
+tests:
+  - cx --version
+  - /opt/cmeta-venv/bin/python3 -c "import vllm; print('vllm', vllm.__version__)"
+  - {if_compute: cuda, cmd: nvidia-smi}

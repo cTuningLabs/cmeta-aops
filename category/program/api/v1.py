@@ -78,6 +78,18 @@ class Category(InitCategory):
         if arg1: p['name'] = arg1
         if arg2: p['compute'] = arg2
 
+        # The program's own route ("on:" in its _desc.yaml: requires_os, default, a route per OS) goes to the
+        # task category with the run, which delegates it like --on when the command line names no host
+        if arg1 and 'on' not in p and 'on_block' not in p:
+            rf = self.cm.access({'category': 'program,' + self.cmeta['artifact'], 'command': 'find', 'arg1': arg1, 'con': False})
+            if rf.get('return', 1) == 0 and len(rf.get('artifacts') or []) == 1:
+                rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(rf['artifacts'][0]['path'], '_desc'))
+                # PyYAML (YAML 1.1) reads the key on: as the boolean True
+                data = (rd.get('data') or {}) if rd.get('return', 1) == 0 else {}
+                block = data.get('on') or data.get(True)
+                if isinstance(block, dict) and block:
+                    p['on_block'] = block
+
         # --target is --compute by another name ("cx program targets" lists them); before, it was
         # ignored without a word and the program ran on the default CPU
         if 'target' in p:

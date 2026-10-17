@@ -29,6 +29,8 @@ package_name_os_id:
   amzn: 'ocl-icd'
   azurelinux: 'ocl-icd'
   alpine: 'opencl-icd-loader'
+  suse: 'libOpenCL1'              # openSUSE Leap and Tumbleweed, SLES (ID_LIKE suse)
+  opensuse: 'libOpenCL1'
   arch: 'ocl-icd'
 
 install_cmd:

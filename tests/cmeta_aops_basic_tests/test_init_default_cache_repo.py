@@ -46,6 +46,16 @@ def run(task, config = None, **params):
     return t.run({}, **params)
 
 
+def test_cache_repos_of_the_data_tasks(task):
+    """config::task cache_repos names the repositories of the data tasks; --use.init.cache_repos.<key> adds or replaces one."""
+    config = {"cache_repos": {"data": "models", "datasets": "sets"}}
+    assert run(task, config)["cache_repos"] == {"data": "models", "datasets": "sets"}
+    r = run(task, config, cache_repos = {"data": "other"})
+    assert r["cache_repos"] == {"data": "other", "datasets": "sets"}
+    assert "cache_repos" not in run(task, {})
+    assert run(task, {}, cache_repos = {"data": "only"})["cache_repos"] == {"data": "only"}
+
+
 def test_cli_value_is_stored_under_the_key_the_engine_reads(task):
     r = run(task, default_cache_repo = "myrepo")
     assert r["return"] == 0 and r["default_cache_repo"] == "myrepo"

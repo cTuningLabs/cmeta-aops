@@ -4,7 +4,8 @@ Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 
-Shared by the programs that build large projects from source (build-vllm, build-pytorch, build-pytorchvision):
+Shared by the programs that build large projects from source (build-vllm, build-pytorch, build-pytorchvision,
+build-llama-cpp with its own lighter figure per job):
 
     from program_22788f3c30d04e6d.api.common_build import default_max_jobs
 
@@ -81,16 +82,17 @@ def available_ram_gib():
     return None
 
 
-def default_max_jobs(device, nvcc_threads = 1):
-    """Parallel compile jobs that fit the RAM: 4 GiB per CUDA/ROCm job, 3 GiB per C++ job, after 2 GiB kept
-    for the system. The budget is the RAM available now when the OS says it (a build next to a browser, a
-    VM or another build gets fewer jobs), the machine's RAM otherwise; never more jobs than CPUs, never
-    fewer than one; one job per CPU, as the build systems do, when the RAM is unknown."""
+def default_max_jobs(device, nvcc_threads = 1, per_job_gib = None):
+    """Parallel compile jobs that fit the RAM: 4 GiB per CUDA/ROCm job, 3 GiB per C++ job (or per_job_gib, the
+    figure of a lighter project), after 2 GiB kept for the system. The budget is the RAM available now when
+    the OS says it (a build next to a browser, a VM or another build gets fewer jobs), the machine's RAM
+    otherwise; never more jobs than CPUs, never fewer than one; one job per CPU, as the build systems do,
+    when the RAM is unknown."""
     cpus = os.cpu_count() or 1
     ram = total_ram_gib()
     if ram is None:
         return cpus
     available = available_ram_gib()
     budget = ram if available is None else min(ram, available)
-    per_job = (CUDA_JOB_GIB if device in ('cuda', 'rocm') else CXX_JOB_GIB) * max(1, nvcc_threads)
+    per_job = (per_job_gib or (CUDA_JOB_GIB if device in ('cuda', 'rocm') else CXX_JOB_GIB)) * max(1, nvcc_threads)
     return max(1, min(cpus, int((budget - SYSTEM_RESERVE_GIB) / per_job)))

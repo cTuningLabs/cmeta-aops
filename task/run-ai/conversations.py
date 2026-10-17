@@ -116,9 +116,22 @@ def list_conversations(log_dir):
             d['_path'] = fp
             out.append(d)
 
-    # the times are kept to the second: among conversations of the same second the one started last comes first
-    out.sort(key=lambda d: (str(d.get('updated') or d.get('started') or ''), str(d.get('started') or ''), len(d['id']), d['id']), reverse=True)
+    # the times are kept to the second: among conversations of the same second the one started last comes first - by
+    # the stamp of its id, then its -N counter (an id's stamp is taken a moment before its "started" is written: a
+    # second boundary between them gave 20261016-230237-2 the "started" of 20261016-230238, and the id's length made
+    # the older one first; seen on CI 2026-10-17)
+    out.sort(key=lambda d: (str(d.get('updated') or d.get('started') or ''), str(d.get('started') or ''), _id_order(d['id'])),
+             reverse=True)
     return out
+
+
+def _id_order(cid):
+    """A conversation id's place in time: (its stamp, its -N counter; 1 without one) - 20261016-230237-2 comes after
+    20261016-230237 and before 20261016-230238."""
+    parts = str(cid).split('-')
+    if len(parts) >= 3 and parts[-1].isdigit():
+        return ('-'.join(parts[:-1]), int(parts[-1]))
+    return (str(cid), 1)
 
 
 def find_conversation(log_dir, wanted):

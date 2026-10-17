@@ -1,0 +1,33 @@
+authors: Grigori Fursin
+
+# Base template: Azure Linux (Microsoft's CBL-Mariner successor) + tools + uv + cMeta (tdnf).
+#
+#   cx container build azurelinux                  # mcr.microsoft.com/azurelinux/base/core:3.0
+#   cx container test  cmeta-test --distro=azurelinux
+
+kind: base
+
+template:
+  os_version: "3.0"
+  from: "mcr.microsoft.com/azurelinux/base/core:{{cmeta.os_version}}"
+  cmeta_source: pypi
+  cmeta_version: ""
+  cmeta_extras: server
+  cmeta_local_path: ""
+  user: cmeta
+  uid: ""                       # the user's uid and gid inside: on a Linux engine the machine user's (get-host--docker
+  gid: ""                       # passes them: a bind mount keeps the machine's ownership); empty = a system user
+  python_package: python3
+
+package_manager: tdnf
+# the core image is minimal: curl and tar are needed by the uv installer, shadow-utils for useradd, sudo for the user
+# libgomp: the OpenMP runtime of prebuilt binaries (llama.cpp's release needs libgomp.so.1)
+packages: [curl, ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow-utils, procps-ng, findutils, which, awk, libgomp]
+
+image: "cmeta/azurelinux:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
+
+tests:
+  - cx --version
+  - cx repo find
+  - cx category find
+  - cat /etc/os-release

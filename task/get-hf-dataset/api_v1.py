@@ -110,6 +110,8 @@ class CTask(InitCTask):
             ctx['tasks']['local']['includes'] = includes
 
             path_file_cache_list = ctx['tasks'].get('global', {}).get('init', {}).get('file_cache')
+            if (ctx['tasks'].get('local') or {}).get('in_data_repository'):
+                path_file_cache_list = None       # a data repository keeps the files inside the entry (portable, shared)
             if path_file_cache_list:
                 path_file_cache = None
 

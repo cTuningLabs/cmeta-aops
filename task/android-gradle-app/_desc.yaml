@@ -1,0 +1,24 @@
+authors: Grigori Fursin
+cache: False
+params_map:
+  arg2: action
+cli_params:
+  action:
+    values: [prepare, build, deploy, run]
+  variant:
+    values: [debug, release]
+uses:
+  - task: runner,1e48cc0c5f6041a5
+  - task: setup,a2f9b61079ce4333
+    if: '"{{params.action|build}}" == "build"'
+    name: jdk-temurin,2f081116a26c4826
+    with:
+      feature: '21'
+      add_env: True
+  - task: setup,a2f9b61079ce4333
+    if: '"{{params.action|build}}" == "build"'
+    name: google.android-sdk.command-line-tools,2ee8eb31da764eef
+    version: '>=17'
+  - task: setup,a2f9b61079ce4333
+    if: '"{{params.action|build}}" in ["deploy", "run"]'
+    name: adb,c80f2c9d7d5a4b93

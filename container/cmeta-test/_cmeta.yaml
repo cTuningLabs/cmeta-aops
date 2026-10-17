@@ -1,0 +1,10 @@
+﻿artifact: 4bc46b4d2a2d478b
+authors: Grigori Fursin
+category: container,ed08f0d107044479
+creation_timestamp: '2026-09-15T21:59:35.365536+00:00'
+desc: The smoke tests of a cMeta host image (cx --version, cx repo find, cx category
+  find, os-release, nvidia-smi on CUDA) on any base.
+last_update_timestamp: '2026-09-15T22:23:21.971427+00:00'
+tags:
+- app
+- test

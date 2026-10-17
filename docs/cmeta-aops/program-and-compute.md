@@ -195,6 +195,8 @@ and OS/compute libs `lib-openssl`, `lib-openmp`, `lib-cuda`, `lib-cudnn`,
 ## 8. Program taxonomy (all ~31)
 
 - **Template:** `template-c-cpu`.
+- **Android application template:** `template-android-gradle-app` builds a Gradle
+  APK and installs/launches its activity with ADB. See deep dive E below.
 - **`test-nmm-*` micro-benchmarks** (naive matmul, one per language/target):
   `c/cpp/go/java/mojo/python/rust/swift`-cpu, `objc-metal`, `nvcc-cuda`, `torch-cpp` —
   the canonical demonstration of the compute×language matrix over one template.
@@ -411,3 +413,37 @@ identical.
 libraries, compilers and profilers; and **`tool` artifacts** supply both the toolchains
 (via `compiler`'s `lang-*` tags + `features.flags`) and the libraries/runtimes/datasets
 (via `setup name:` and the `dataset`/`model` categories).
+
+## E. Android Gradle applications (`android-app`)
+
+An application program inherits
+`template-android-gradle-app,7c64f1611d5c4353`, declares the source project's cRef,
+application module, package and activity in `local_vars`, and subclasses
+`InitAndroidGradleProgram` from `category/program/api/common_android_gradle.py`.
+The [template README](../../program/template-android-gradle-app/README.md)
+contains the complete scaffold.
+
+The additive `android-app` target describes the Android application runtime
+without requiring a connected device during compilation. The normal program
+driver runs the template's `all`/`compile`/`run` pipelines: prepare source inputs,
+build with `task::android-gradle-app`, then install/launch through the same task.
+It retains the usual build entries, source tracking, compile reuse, clean and
+provenance commands. The native `android-cpu` executable workflow remains available.
+
+```bash
+cx program compile my-android-app -q
+cx program run my-android-app -q
+cx program run my-android-app --cmd=deploy --serial=DEVICE -q
+cx program run my-android-app --cmd=launch --serial=DEVICE -q
+cx program provenance my-android-app
+cx program clean my-android-app
+```
+
+Default run builds when needed, installs and launches. `deploy` installs without
+launching; `launch` skips compilation and opens an already installed activity.
+Compile choices use `--compile.*`, such as `--compile.variant=release` or
+`--compile.project_dir=<snapshot>`, so different builds have separate cache
+identities. Android XML/icons/Gradle files are declared as source inputs and
+participate in automatic rebuilds. All generated files live in the program cache;
+the source remains in its project artifact. The current binary provenance
+inspector covers ELF/PE/Mach-O, so it records an APK as outside that inspection.

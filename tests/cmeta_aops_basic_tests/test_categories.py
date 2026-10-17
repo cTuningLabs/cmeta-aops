@@ -12,9 +12,10 @@ import pytest
 # Categories that must exist AND contain at least one artifact.
 POPULATED_CATEGORIES = ["task", "tool", "program"]
 
-# Auxiliary categories that must exist as category definitions (may be stubs /
-# may or may not currently hold artifacts).
-ALL_CATEGORIES = POPULATED_CATEGORIES + ["model", "dataset", "docker"]
+# Auxiliary categories that must exist as category definitions (may or may not currently hold artifacts):
+# model and dataset, and since 2026-10-15 the fleet layer (host, machine) and the container templates
+# (the docker stub of the first prototype is gone)
+ALL_CATEGORIES = POPULATED_CATEGORIES + ["model", "dataset", "container", "host", "machine"]
 
 
 @pytest.mark.parametrize("category", ALL_CATEGORIES)

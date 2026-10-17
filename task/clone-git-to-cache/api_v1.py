@@ -38,6 +38,8 @@ class CTask(InitCTask):
         path = cparams.get('path') # If defined should be the same as work_dir
 
         path_file_cache_list = ctx['tasks'].get('global', {}).get('init', {}).get('file_cache')
+        if (ctx_tasks.get('local') or {}).get('in_data_repository'):
+            path_file_cache_list = None           # a data repository keeps the clone inside the entry (portable, shared)
         if path_file_cache_list:
             path_file_cache = None
 

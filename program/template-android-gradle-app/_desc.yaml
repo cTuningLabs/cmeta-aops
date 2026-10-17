@@ -1,0 +1,59 @@
+authors: Grigori Fursin
+local_vars:
+  android_module: app
+  src_file_names: []
+params:
+  compute: android-app
+  compile:
+    variant: debug
+all:
+  uses:
+    - task: target,94decb2ddd28441f
+      compute: '{{params.compute|android-app}}'
+    - internal_func: customize_android_project
+      internal_func_from_local_key: selected-program
+compile:
+  uses:
+    - task: android-gradle-app,175185dd757f45e1
+      storage_key: android-gradle-build
+      action: build
+      project_dir: '{{local.android_source_dir}}'
+      workspace_dir: '{{local.target_path}}'
+      module: '{{local.android_module|app}}'
+      variant: '{{params.compile.variant|debug}}'
+      sdk_root: '{{params.compile.sdk_root|}}'
+      sdk_packages: '{{params.compile.sdk_packages|}}'
+      timeout: '{{params.compile_timeout|1200}}'
+    - internal_func: finish_android_compile
+      internal_func_from_local_key: selected-program
+run:
+  uses:
+    - task: android-gradle-app,175185dd757f45e1
+      storage_key: android-gradle-run
+      action: deploy
+      launch: True
+      project_dir: '{{local.android_source_dir}}'
+      workspace_dir: '{{local.target_path}}'
+      module: '{{local.android_module|app}}'
+      variant: '{{params.compile.variant|debug}}'
+      package: '{{local.android_package}}'
+      activity: '{{local.android_activity|.MainActivity}}'
+      serial: '{{params.serial|}}'
+      timeout: '{{params.timeout|1200}}'
+    - internal_func: finish_android_run
+      internal_func_from_local_key: selected-program
+updates_cmd_keys: [run, deploy, launch]
+updates_cmd:
+  run: {}
+  deploy:
+    run:
+      uses:
+        - match: {task: 'android-gradle-app,175185dd757f45e1'}
+          update: {launch: False}
+  launch:
+    compile:
+      skip: True
+    run:
+      uses:
+        - match: {task: 'android-gradle-app,175185dd757f45e1'}
+          update: {action: run, launch: False}

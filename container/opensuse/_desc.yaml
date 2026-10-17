@@ -1,0 +1,36 @@
+authors: Grigori Fursin
+
+# Base template: openSUSE + tools + uv + cMeta (zypper). openSUSE Leap by version (15.6, 16.0), or the rolling
+# Tumbleweed with another FROM. Leap 15.6's python3 is 3.6: uv fetches a newer one for cMeta.
+#
+#   cx container build opensuse                    # openSUSE Leap 16.0
+#   cx container build opensuse --template.os_version=15.6
+#   cx container build opensuse --template.os_version=tumbleweed --template.from=opensuse/tumbleweed
+#   cx run ... --on=docker:opensuse --on_template.os_version=15.6
+
+kind: base
+
+template:
+  os_version: "16.0"
+  from: "opensuse/leap:{{cmeta.os_version}}"
+  cmeta_source: pypi
+  cmeta_version: ""
+  cmeta_extras: server
+  cmeta_local_path: ""
+  user: cmeta
+  uid: ""                       # the user's uid and gid inside: on a Linux engine the machine user's (get-host--docker
+  gid: ""                       # passes them: a bind mount keeps the machine's ownership); empty = a system user
+  python_package: python3
+
+package_manager: zypper
+# shadow provides groupadd/useradd; procps gives ps; findutils/which are used by installers; gawk for scripts
+# libgomp1: the OpenMP runtime of prebuilt binaries (llama.cpp's release needs libgomp.so.1)
+packages: [curl, ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow, procps, findutils, which, gawk, libgomp1]
+
+image: "cmeta/opensuse:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
+
+tests:
+  - cx --version
+  - cx repo find
+  - cx category find
+  - cat /etc/os-release

@@ -1,0 +1,27 @@
+authors: Grigori Fursin
+
+# fix-ssh-key-permissions - the permissions OpenSSH wants on a private key, made or checked on any OS: readable by its
+# owner alone. Linux and macOS: no group or other bits on a key (600), and nothing in ~/.ssh writable by others
+# (the folder, config, authorized_keys) - what ssh refuses, no more; Windows: an ACL of the user alone with read
+# access for SYSTEM and Administrators, written and checked by SIDs, so a localized or domain Windows is handled
+# the same (Windows OpenSSH looks at the keys alone).
+# Windows OpenSSH REFUSES a key other users can read ("UNPROTECTED PRIVATE KEY FILE") and tools built on it (rclone
+# over sftp, git) then fail with an unrelated message; Linux and macOS ssh refuse a key with group or world bits.
+#
+#   cx task run fix-ssh-key-permissions <file>                 # this private key (any file named explicitly is tightened)
+#   cx task run fix-ssh-key-permissions <folder> [--recursive] # every private key in it (found by its header; scripts,
+#                                                          # notes, .pub and .ppk files are left alone)
+#   cx task run fix-ssh-key-permissions --ssh_dir              # ~/.ssh: the keys owner-only; the folder, config and
+#                                                          # authorized_keys not writable by others
+#   cx task run fix-ssh-key-permissions <path> --check         # report only: ok / too open, with who else can read
+#
+# Used by "cx secret import" (the private key of an identity) and meant for every place cMeta writes a key: a host
+# set up by setup-cmeta-host, a key mounted into a container by the "run on any host" design.
+#
+# Never memoized (cache: False): every run looks at the files.
+
+cache: False
+
+# the file or folder is the word after the task name (or --target=...; "path" is every task's working-directory word)
+params_map:
+  arg2: target

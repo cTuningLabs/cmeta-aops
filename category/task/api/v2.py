@@ -101,14 +101,17 @@ class Category(InitCategory):
             'check_versions',
             'cv',
             'skip_clean_local',
+            'on',                # run on any host: --on=<host | docker[:template] | podman[:template] | wsl[:template]>; its options are --on_<name>
+            'on_block',          # the "on:" block of the artifact that started the run (a program's, handed over by the program category)
         ]
 
         # Passed further to customization APIs ...
         self.control2 = [
-            'path', 
-            'skip', 
-            'cache', 
-            'cache_repo', 
+            'path',
+            'skip',
+            'cache',
+            'cache_repo',
+            'cache_repo_key',    # the key of config::task cache_repos that names the repository of this task's cache entries (data tasks: data)
             'cache_name',
             'cache_extra_alias', 
             'cache_extra_params', 
@@ -224,6 +227,9 @@ class Category(InitCategory):
         nested_call = ctx_tasks.setdefault('nested_call', 0)
         space = '  ' * nested_call if verbose else ''
 
+        # "Run on any host": --on=<ref> (or the artifact's own "on:" block) on the outermost task of a command line
+        # delegates the whole command line to a host - see below, once the task's _desc.yaml is loaded
+
         check_versions = params.get('check_versions')
         if check_versions is None:
             check_versions = params.get('check_versions')
@@ -247,6 +253,18 @@ class Category(InitCategory):
             use = {}
 
         ctx_use = ctx_tasks.setdefault('use', {})
+
+        # The machine's own defaults of --use (config::task "use": cx config set task --meta.use.python.tool_path=...;
+        # an instance of a stack template gets them from its template, so that a program inside takes the image's own
+        # Python), read once by the outermost task of a command line; the command line's --use wins
+        if nested_call == 0 and not ctx_tasks.get('use_defaults_read'):
+            ctx_tasks['use_defaults_read'] = True
+            rc = self.cm.access({'category': 'config,cc6bfe174be847ed', 'command': 'get', 'arg1': 'task', 'con': False})
+            defaults = ((rc.get('config_cmeta') or {}).get('use') if rc.get('return', 1) == 0 else None) or {}
+            if isinstance(defaults, dict) and defaults:
+                ctx_use = self.cm.utils.common.deep_merge(copy.deepcopy(defaults), ctx_use, append_lists=True)
+                ctx_tasks['use'] = ctx_use
+
         if use:
             ctx_use = self.cm.utils.common.deep_merge(ctx_use, copy.deepcopy(use), append_lists=True)
 
@@ -279,6 +297,24 @@ class Category(InitCategory):
         cdesc = r['loaded_files']['_desc'].get('data', {})
 
         task_path = artifact['path']
+
+        ###########################################################################################
+        # RUN ON ANY HOST: --on=<ref> on the outermost task of a command line delegates the whole command line, as
+        # typed, to that host (a fleet host, or an instance of a container template made on the way) and returns
+        # its result; without the word, the artifact's own route ("on:" in its _desc.yaml - the task's, or the
+        # program's handed over by the program category) decides: requires_os, a route per OS, a default. The
+        # inner run carries CMETA_ON=here and never delegates again. cx program run, cx tool setup and cx app run
+        # all pass through here, so one word serves them all
+
+        if nested_call == 0 and os.environ.get('CMETA_ON', '') != 'here':
+            on = str(params.get('on') or '').strip()
+            if not on:
+                r_route = self._route_of(params.get('on_block') or cdesc.get('on') or cdesc.get(True),
+                                         (artifact.get('cmeta_ref_parts') or {}).get('artifact_alias') or str(params.get('arg1') or 'the task'))
+                if self.cm.catch_error(r_route): return r_route
+                on = r_route['route']
+            if on and on != 'here':
+                return self._run_on(ctx, params, on, con, quiet, verbose)
         cmeta = artifact['cmeta']
         cmeta_ref_parts = artifact['cmeta_ref_parts']
 
@@ -351,7 +387,7 @@ class Category(InitCategory):
         uparams = {}
 
         for key in params:
-            if key in self.control1 + self.control2:
+            if key in self.control1 + self.control2 or (isinstance(key, str) and key.startswith('on_')):
                 cparams[key] = params[key]
             elif key != 'ctx':
                 uparams[key] = params[key]
@@ -573,6 +609,20 @@ class Category(InitCategory):
         if self.cm.catch_error(r): return r
 
         ###########################################################################################
+        # A DATA TASK'S REPOSITORY, known before check_params chooses where its files go: cache_repo_key in the
+        # task's _desc.yaml (get-hf-model: data) or in the uses entry of its caller, resolved through the key
+        # cache_repos.<key> of config::task (task init; --use.init.cache_repos.<key>=<repo> for one run). The
+        # entry and its files stay together there (the task ignores file_cache): portable, shared with instances
+        # and other hosts. No key, or no repository for it: as before
+
+        if not cparams.get('cache_repo'):
+            cache_repo_key = cparams.get('cache_repo_key') or cdesc.get('cache_repo_key')
+            if cache_repo_key:
+                data_repo = (ctx_tasks.get('global', {}).get('init', {}).get('cache_repos') or {}).get(str(cache_repo_key))
+                if data_repo:
+                    ctx_tasks['local']['in_data_repository'] = str(data_repo)
+
+        ###########################################################################################
         # CHECK PARAMS INCLUDING FROM --use. ...
         # May do some basic tasks and stop
 
@@ -696,6 +746,11 @@ class Category(InitCategory):
         cache = cparams.get('cache')
 
         cache_repo = cparams.get('cache_repo')
+
+        # A data task's entries go to its data repository (resolved above, before check_params): models and datasets
+        # apart from the tools of this machine
+        if not cache_repo and ctx_tasks['local'].get('in_data_repository'):
+            cache_repo = ctx_tasks['local']['in_data_repository']
 
         # Check if was forced for the whole run: --use.init.default_cache_repo=<repo> or config::task (task init)
         x_cache_repo = ctx_tasks.get('global', {}).get('init', {}).get('default_cache_repo')
@@ -883,6 +938,7 @@ class Category(InitCategory):
 
             if cache_name:
                 cache_name = cache_name.lower() # Force lower to avoid various issues ...
+                ii['arg1'] = cache_name
             else:
                 ii['tags'] = cache_tags
                 ii['match'] = cache_meta
@@ -1296,7 +1352,7 @@ class Category(InitCategory):
                     # If not found but cache exists, often the path is outside cache and was deleted - need to recreate!
                     # similar to turning --update and or --clean option
                     if r['return'] == 0:
-                        result = r['data']
+                        result = self._relocate_cached_result(r['data'], path)
 
                         # Dynamic update to result (even if cached)
                         if task_api_code is not None and hasattr(task_api_code, 'finish_dynamic_result') and callable(getattr(task_api_code, 'finish_dynamic_result')):
@@ -1381,7 +1437,7 @@ class Category(InitCategory):
                     r = self.cm.utils.files.read_file(task_result_file)
                     if self.cm.catch_error(r): return r
 
-                    result = r['data']
+                    result = self._relocate_cached_result(r['data'], path)
                     
                     if result['return'] == 0:
                         if con and verbose:
@@ -1544,6 +1600,7 @@ class Category(InitCategory):
 
             else:
                 # No attempt of this process (the task was skipped: a usable result in --path): the files as before
+                result['_cmeta_entry_path'] = os.getcwd()
                 r = self.cm.utils.files.safe_write_file(self.CACHE_FILE_WITH_RESULTS, result)
                 if self.cm.catch_error(r): return r
                 r = self.cm.utils.files.safe_write_file(self.CACHE_FILE_WITH_CTX, ctx, safe_dump = True)
@@ -1841,6 +1898,329 @@ class Category(InitCategory):
 
         return {'return':0}
 
+    def _route_of(self, block, artifact_alias):
+        """
+        The route an artifact's "on:" block gives a run started without --on, on this OS:
+
+            on:
+              requires_os: [linux]        # the pipeline needs one of these (windows, linux, darwin)
+              default: docker:vllm-cuda   # the route when the command line names none: here | <ref of --on>
+              windows: wsl                # a route per OS of the machine, when it differs
+              darwin: docker
+
+        The OS's own route, else the default; nothing when this OS satisfies requires_os and no route is forced for
+        it; an error naming the options when this OS is not allowed and no route is given. Returns {'route': ''}
+        for "here".
+        """
+        if not isinstance(block, dict) or not block:
+            return {'return': 0, 'route': ''}
+        system = platform.system().lower()
+        if system not in ('windows', 'linux', 'darwin'):
+            system = 'linux'
+        route = str(block.get(system) or block.get('default') or '').strip()
+        requires = block.get('requires_os')
+        if requires:
+            allowed = [str(x).strip().lower() for x in (requires if isinstance(requires, list) else str(requires).split(','))]
+            if system not in allowed and not route:
+                return self.cm.error(f'"{artifact_alias}" needs {" or ".join(allowed)} (on: requires_os), not {system}: '
+                                     f'--on=docker, --on=wsl, --on=<host>, or a route for {system} in its "on:" block')
+        return {'return': 0, 'route': '' if route == 'here' else route}
+
+    def _run_on(self, ctx, params, ref, con, quiet, verbose):
+        """
+        The "run on any host" delegation (the design of 2026-10-15, phase 3, first slice). The words of the command
+        line as typed - minus --on and its --on_<name> options - run on the host that --on names, through
+        "cx host run", with CMETA_ON=here in front so that the inner run never delegates again:
+
+            --on=<alias>                       a host artifact (a fleet host, an instance made before)
+            --on=docker[:<template>]           an instance of the template (ubuntu by default) on this machine's docker,
+            --on=podman[:<template>]           made or found by get-host--docker (--on_instance, --on_repos, --on_data,
+                                               --on_arch, --on_new_host, --on_template.<key>=<value> go to it); the
+                                               compute word of the run picks the template's overlay when it has one
+            --on=wsl[:<template>]              the same as a WSL distribution of this Windows machine (get-host--wsl)
+            --on=here                          nothing: here, as without the word (the inner run's own value)
+            --on_pull                          the run works in ~/work/<run id> there and that folder comes back here
+                                               (on-runs/<run id> of the current directory)
+            --on_rm                            a throwaway instance: made for this run, destroyed after it
+
+        The data repositories of this machine (config::task cache_repos) are mounted into an instance and indexed
+        here again after the run: a model fetched inside lands in the same place as one fetched here.
+
+        The words are quoted for the host's shell: a POSIX one, or PowerShell for a Windows host whose artifact
+        declares "access: shell: powershell" (a cmd shell is refused); -q and -v travel as typed, and a terminal
+        here is a terminal there (ssh -t, docker exec -it): the inner run asks its questions as a local run would. The result is the inner exit code, and run_on (the host, the words, the engine, whether the
+        instance was made now, the terminal), also kept in ctx['on'] for provenance.
+        """
+        import shlex
+        import sys
+
+        words = list(((ctx.get('origin') or {}).get('cli') or {}).get('cmd') or [])
+        if not words:
+            return self.cm.error('--on delegates a command line: it needs one (cx task run / program run / tool setup ... --on=<host>)')
+        inner_words = [w for w in words if not (isinstance(w, str) and (w == '--on' or w.startswith('--on=') or w.startswith('--on_') or w.startswith('-on=')))]
+        options = {k[3:]: v for k, v in params.items() if isinstance(k, str) and k.startswith('on_')}
+
+        host_category = 'host,e4e49c251c814f6d'
+        engine, host, made = '', None, None
+        shell = 'posix'                    # the words are quoted for the host's shell: POSIX, or PowerShell for a Windows host
+
+        if ref in ('docker', 'podman') or ref.startswith('docker:') or ref.startswith('podman:'):
+            engine, _, template = ref.partition(':')
+            compute = str(params.get('compute') or 'cpu')
+            if compute not in ('cuda', 'rocm'):
+                compute = 'cpu'
+            r = self.cm.access({'category': 'task,' + self.cmeta['artifact'], 'command': 'run', 'arg1': 'get-host--docker,08e0250b15e2486a',
+                                'name': template or 'ubuntu', 'engine': engine, 'template': options.get('template') or {},
+                                'distro': str(options.get('distro') or ''),
+                                'compute': compute, 'arch': str(options.get('arch') or ''), 'instance': str(options.get('instance') or ''),
+                                'repos': str(options.get('repos') or ''), 'data': str(options.get('data') or ''),
+                                'ports': str(options.get('ports') or ''),
+                                'new_host': bool(options.get('new_host', False)) or bool(options.get('rm', False)),
+                                'con': con, 'quiet': quiet, 'verbose': verbose})
+            if r['return'] > 0:
+                return r
+            host, made = r['host'], r
+        elif ref == 'wsl' or ref.startswith('wsl:'):
+            if os.name != 'nt':
+                return self.cm.error('--on=wsl needs Windows (WSL): --on=docker, --on=podman or a host artifact (cx host ls)')
+            engine, _, template = ref.partition(':')
+            compute = 'cuda' if str(params.get('compute') or '') == 'cuda' else 'cpu'
+            r = self.cm.access({'category': 'task,' + self.cmeta['artifact'], 'command': 'run', 'arg1': 'get-host--wsl,a3396a4efa35460b',
+                                'name': template or 'ubuntu', 'template': options.get('template') or {},
+                                'distro': str(options.get('distro') or ''), 'compute': compute,
+                                'location': str(options.get('location') or ''),
+                                'instance': str(options.get('instance') or ''), 'repos': str(options.get('repos') or ''),
+                                'data': str(options.get('data') or ''),
+                                'new_host': bool(options.get('new_host', False)) or bool(options.get('rm', False)),
+                                'con': con, 'quiet': quiet, 'verbose': verbose})
+            if r['return'] > 0:
+                return r
+            host, made = r['host'], r
+        else:
+            r = self.cm.access({'category': host_category, 'command': 'find', 'arg1': ref, 'con': False})
+            if r['return'] > 0 or not r.get('artifacts'):
+                return self.cm.error(f'no host "{ref}" (cx host ls); a container template needs its engine: --on=docker:{ref}')
+            a = r['artifacts'][0]
+            host = a['cmeta_ref_parts'].get('artifact_alias') or ref
+            d = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(a['path'], '_desc'))
+            desc = (d.get('data') or {}) if d['return'] == 0 else {}
+            declared = str((desc.get('access') or {}).get('shell') or '').strip().lower()
+            if declared in ('powershell', 'pwsh'):
+                shell = 'powershell'
+            elif declared == 'cmd' or (not declared and str(desc.get('os', '')).lower() in ('windows', 'win')):
+                return self.cm.error(f'{host} runs Windows with the shell "{declared or "cmd"}": --on needs "access: shell: powershell" in its host artifact')
+
+        # A terminal here (someone at the keyboard) is a terminal there - ssh -t, docker exec -it - so that the inner
+        # run asks its questions (install a tool?) as a local run would; a run without one (a script, a test round)
+        # stays without one, and -q answers there as it does here
+        try:
+            terminal = bool(con) and sys.stdin.isatty() and sys.stdout.isatty()
+        except (AttributeError, ValueError):
+            terminal = False
+
+        # The inner run's provenance records where it ran and from where (write_repro reads these)
+        image = (made or {}).get('image', '')
+        env_pairs = [('CMETA_ON', 'here'), ('CMETA_ON_HOST', str(host)), ('CMETA_ON_FROM', platform.node())]
+        if engine:
+            env_pairs.append(('CMETA_ON_ENGINE', engine))
+        if image:
+            env_pairs.append(('CMETA_ON_IMAGE', str(image)))
+        # --on_pull: the run works in a folder of its own inside (~/work/<run id>: the repro records of the inner run,
+        # what --save_here writes, anything the words leave there) and that folder comes back here afterwards
+        pull = bool(options.get('pull', False))
+        run_id = datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + '-'.join(w for w in inner_words[:3] if w and not w.startswith('-'))[:40]
+        work = f'work/{run_id}' if pull else ''
+
+        # --on_detach: the run keeps running there after this command returns (a server: llama-server, vllm serve, an
+        # app) - in a session of its own, its output in ~/cmeta-detached/<run id>.log and its process group in a .pid
+        # file next to it; POSIX hosts and instances (a Windows host: not yet)
+        detach = bool(options.get('detach', False))
+
+        # --on_isolated[=<repo>,<repo>]: an ssh host runs the words on THIS machine's repositories (cmeta-aops by default)
+        # in a throwaway home of its own (~/cmeta-tests/on-<run id>), not on its own clones and home - the exact code
+        # of here, nothing of the host's home touched; removed after the run unless --on_keep
+        isolated = options.get('isolated')
+        isolated_repos = []
+        if isolated not in (None, False, '', 'false', 'False', 'no'):
+            if engine:
+                return self.cm.error('--on_isolated is for ssh hosts: an instance mounts this machine\'s repositories already')
+            if shell == 'powershell':
+                return self.cm.error(f'--on_isolated runs on POSIX hosts; {host} is a Windows host (not yet)')
+            names = [x.strip() for x in str(isolated).split(',') if x.strip() and x.strip().lower() not in ('true', 'yes', '1')]
+            for alias in names or ['ctuninglabs@cmeta-aops']:
+                ra = self.cm.access({'category': 'repo,f4f792ab40c7498f', 'command': 'find', 'arg1': alias, 'con': False})
+                if ra.get('return', 1) > 0 or not ra.get('artifacts'):
+                    return self.cm.error(f'--on_isolated: repository "{alias}" is not plugged here')
+                a = ra['artifacts'][0]
+                if (a.get('cmeta') or {}).get('secrets'):
+                    return self.cm.error(f'--on_isolated: repository "{alias}" holds secrets and never leaves this machine')
+                isolated_repos.append((a['cmeta_ref_parts'].get('artifact_alias') or alias, a.get('full_path') or a['path']))
+        if detach and shell == 'powershell':
+            return self.cm.error(f'--on_detach runs on POSIX hosts and instances; {host} is a Windows host (not yet)')
+        if detach and (pull or bool(options.get('rm', False))):
+            return self.cm.error('--on_detach keeps the run going there: --on_pull and --on_rm would wait for it or remove it')
+
+        if isolated_repos:
+            # the repositories go to ~/cmeta-tests/on-<run id>/repos/<alias> (rclone copy through cx host push, the
+            # usual blacklist: no .git, no caches); the home there is set up by the first cx and plugs them
+            iso = f'cmeta-tests/on-{run_id}'
+            for alias, local in isolated_repos:
+                rp = self.cm.access({'category': host_category, 'command': 'push', 'arg1': host, 'arg2': local,
+                                     'to': f'{iso}/repos/{alias}', 'con': False, 'quiet': True})
+                if rp.get('return', 1) > 0:
+                    return self.cm.error(f'--on_isolated: {alias} could not be pushed to {host} ({rp.get("error", "")})')
+            env_pairs.append(('CMETA_HOME', f'$HOME/{iso}/home'))
+
+        if shell == 'powershell':
+            import re
+            sq = lambda s: "'" + s.replace("'", "''") + "'"                   # a value: always quoted (a bare word after = is a command there)
+            psq = lambda s: s if s and not re.search(r'[^A-Za-z0-9_./:=@,+\\-]', s) else sq(s)
+            inner = '; '.join(f'$env:{k}={sq(v)}' for k, v in env_pairs) + '; cx ' + ' '.join(psq(str(w)) for w in inner_words)
+            if work:
+                inner = f'New-Item -ItemType Directory -Force {sq("~/" + work)} | Out-Null; Set-Location {sq("~/" + work)}; ' + inner
+        else:
+            # $HOME stays unquoted in a value that starts with it (the isolated home), every other value is quoted
+            qv = lambda v: ('"' + v.replace('"', '\\"') + '"') if v.startswith('$HOME/') else shlex.quote(v)
+            inner = ' '.join(f'{k}={qv(v)}' for k, v in env_pairs) + ' cx ' + ' '.join(shlex.quote(str(w)) for w in inner_words)
+            if isolated_repos:
+                plug = ' && '.join(f'CMETA_HOME="$HOME/{iso}/home" cx repo plug "$HOME/{iso}/repos/{alias}" -q >/dev/null'
+                                   for alias, _ in isolated_repos)
+                inner = f'{plug} && cd "$HOME/{iso}" && ' + inner
+            if work:
+                inner = f'mkdir -p ~/{work} && cd ~/{work} && ' + inner
+            if detach:
+                # a session of its own (setsid; nohup where there is none: macOS), so that it survives the ssh / docker
+                # exec / wsl session that started it; $$ of the wrapper is the process group to stop
+                base = f'~/cmeta-detached/{run_id}'
+                wrapper = shlex.quote(f'echo $$ > {base}.pid; ' + inner)
+                inner = (f'mkdir -p ~/cmeta-detached && cd ~ && '
+                         f'if command -v setsid >/dev/null 2>&1; then setsid -f sh -c {wrapper} > {base}.log 2>&1 < /dev/null; '
+                         f'else nohup sh -c {wrapper} > {base}.log 2>&1 < /dev/null & fi; '
+                         f'sleep 2; echo "detached: {base}.log (stop: kill -- -$(cat {base}.pid))"')
+        run_on = {'host': host, 'ref': ref, 'engine': engine, 'words': inner, 'instance_made': bool(made and made.get('made')),
+                  'image': image, 'terminal': terminal}
+        if work:
+            run_on['work'] = work
+        if detach:
+            base = f'~/cmeta-detached/{run_id}'
+            run_on['detached'] = {'log': f'{base}.log', 'pid_file': f'{base}.pid',
+                                  'tail': f'cx host run {host} "tail -n 50 {base}.log"',
+                                  'stop': f'cx host run {host} "kill -- -$(cat {base}.pid)"'}
+            if made and made.get('ports'):
+                run_on['ports'] = made['ports']
+        ctx['on'] = run_on
+
+        if con:
+            print ('')
+            print (f'cMeta info: running on {host}: {inner}')
+            print ('')
+
+        rr = self.cm.access({'category': host_category, 'command': 'run', 'arg1': host, 'arg2': inner, 'interactive': terminal,
+                             'con': con, 'quiet': quiet, 'verbose': verbose})
+
+        # The data repositories the instance shares with this machine (models, datasets): what the run inside added
+        # to them is indexed here now (the index lives in each home, the folder is the same)
+        data_repos = list((made or {}).get('data_repos') or [])
+        for alias in data_repos:
+            self.cm.access({'category': 'repo,f4f792ab40c7498f', 'command': 'reindex', 'arg1': alias, 'con': False})
+        run_on['data_repos'] = data_repos
+
+        # --on_pull: the run's work folder comes back here, into on-runs/<run id> of the current directory
+        if work:
+            pulled = os.path.join(os.getcwd(), 'on-runs', run_id)
+            rp = self.cm.access({'category': host_category, 'command': 'pull', 'arg1': host, 'arg2': work, 'to': pulled,
+                                 'con': False, 'quiet': True})
+            run_on['pulled'] = pulled if rp.get('return', 1) == 0 else ''
+            if con:
+                print ('')
+                print (f'cMeta info: the run\'s folder ~/{work} of {host} ' + (f'is here: {pulled}' if run_on['pulled'] else f'could not be pulled ({rp.get("error", "")})'))
+
+        # --on_isolated: the throwaway home and the copies go, unless --on_keep
+        if isolated_repos:
+            run_on['isolated'] = f'~/{iso}'
+            if not bool(options.get('keep', False)):
+                rr2 = self.cm.access({'category': host_category, 'command': 'run', 'arg1': host, 'arg2': f'rm -rf "$HOME/{iso}"',
+                                      'capture': True, 'con': False, 'quiet': True})
+                run_on['isolated_removed'] = rr2.get('return', 1) == 0
+
+        # --on_rm: a throwaway instance (made for this run, --on_new_host implied), gone with its artifact now
+        if engine and bool(options.get('rm', False)):
+            rd = self.cm.access({'category': host_category, 'command': 'destroy', 'arg1': host, 'con': con, 'quiet': quiet})
+            run_on['destroyed'] = rd.get('return', 1) == 0
+
+        outputs = (rr.get('outputs') or {}).get(host) or {}
+        rc = outputs.get('returncode')
+        if rc is None:
+            rc = rr.get('return', 1)
+        run_on['returncode'] = rc
+
+        if rc != 0:
+            return {'return': rc if isinstance(rc, int) and 0 < rc < 256 else 1,
+                    'error': f'the run on {host} ended with exit code {rc}' + (f' ({rr.get("error")})' if rr.get('return', 0) > 0 and not outputs else ''),
+                    'run_on': run_on}
+
+        if con:
+            print ('')
+            if detach:
+                d = run_on['detached']
+                print (f'cMeta info: running on {host}, detached' + (f' (ports {", ".join(run_on["ports"])} on 127.0.0.1)' if run_on.get('ports') else '')
+                       + f'; its output: {d["tail"]}; stop it: {d["stop"]}')
+            else:
+                print (f'cMeta info: ran on {host}' + (f' ({engine}, image {run_on["image"]})' if engine else '') + f'; shell: cx host ssh {host}')
+        return {'return': 0, 'run_on': run_on}
+
+    ############################################################
+    def _relocate_cached_result(self, result, here):
+        """
+        A cached result reused from another place than it was saved in: the entry moved, or it is shared
+        through a data repository mounted elsewhere (D:\\data\\cache\\<entry> on the orchestrator,
+        /home/cmeta/data/cache/<entry> inside a container, another home on another host). The save records
+        the entry's path as _cmeta_entry_path; at reuse every string of the result that starts with that path
+        (either separator) is rewritten to the entry's current path, the rest of it with this OS's separator,
+        and a quoted twin (qpath next to path, qpath_root next to path_root) is quoted again for this OS.
+        A result without the record, or reused where it was saved, is returned untouched - the entries made
+        before this record exist behave as before.
+        """
+
+        saved = result.get('_cmeta_entry_path') if isinstance(result, dict) else None
+        if not saved or not here:
+            return result
+
+        here = str(here).rstrip('/\\')
+        saved = str(saved).rstrip('/\\')
+        if os.path.normcase(saved.replace('\\', '/')) == os.path.normcase(here.replace('\\', '/')):
+            return result
+
+        # A path saved on Windows compares without case, whatever this OS is
+        fold = (os.name == 'nt') or ('\\' in saved) or (len(saved) > 1 and saved[1] == ':')
+        prefixes = sorted({saved, saved.replace('\\', '/'), saved.replace('/', '\\')}, key = len, reverse = True)
+
+        def fix(s):
+            for p in prefixes:
+                head = s[:len(p)]
+                if (head.lower() == p.lower() if fold else head == p) and (len(s) == len(p) or s[len(p)] in '/\\'):
+                    return here + s[len(p):].replace('\\', '/').replace('/', os.sep)
+            return s
+
+        def walk(x):
+            if isinstance(x, str):
+                return fix(x)
+            if isinstance(x, list):
+                return [walk(v) for v in x]
+            if isinstance(x, dict):
+                d = {k: walk(v) for k, v in x.items()}
+                for k, v in list(d.items()):
+                    if isinstance(k, str) and k.startswith('q') and isinstance(v, str) and isinstance(d.get(k[1:]), str):
+                        d[k] = self.cm.q(d[k[1:]])
+                return d
+            return x
+
+        result = walk(result)
+        result['_cmeta_entry_path'] = here
+
+        return result
+
+    ############################################################
     def _cache_lookup(self, ctx, uses_categories, find_query, new, cache_repo, cache_name, request_params, request_path,
                       task_api_code, uparams, artifact_alias, create_entry, con, verbose, space):
         """
@@ -1974,6 +2354,9 @@ class Category(InitCategory):
 
         files = self.cm.utils.files
 
+        # Where the result is saved: a reuse from another place (the entry moved, a data repository mounted
+        # elsewhere) rewrites the paths of the result to the entry's path then (_relocate_cached_result)
+        result['_cmeta_entry_path'] = os.getcwd()
         r = files.safe_write_file(self.CACHE_FILE_WITH_RESULTS, result)
         if self.cm.catch_error(r): return r
 

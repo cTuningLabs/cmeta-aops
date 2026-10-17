@@ -1,0 +1,15 @@
+artifact: 756226a90d2f48bf
+category: task,c36be4b9314a45e0
+tags:
+  - ssh
+  - keys
+  - permissions
+  - security
+authors: Grigori Fursin
+desc: "The permissions OpenSSH wants on private keys (owner alone: mode 600, or an owner-only ACL by SIDs on Windows), made or checked on any OS - a file, a folder, ~/.ssh"
+creation_timestamp: '2026-10-15T14:04:36.859820+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.299
+  via: cmeta 0.37.1
+  by: Grigori Fursin

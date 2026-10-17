@@ -1,0 +1,32 @@
+authors: Grigori Fursin
+
+# Base template: Debian + tools + uv + cMeta (same recipe as ubuntu, apt).
+#
+#   cx container build debian                      # debian:12
+#   cx container build debian --template.os_version=13
+
+kind: base
+
+template:
+  os_version: "12"
+  from: "debian:{{cmeta.os_version}}"
+  cmeta_source: pypi
+  cmeta_version: ""
+  cmeta_extras: server
+  cmeta_local_path: ""
+  user: cmeta
+  uid: ""                       # the user's uid and gid inside: on a Linux engine the machine user's (get-host--docker
+  gid: ""                       # passes them: a bind mount keeps the machine's ownership); empty = a system user
+  python_package: python3
+
+package_manager: apt
+# libgomp1: the OpenMP runtime of prebuilt binaries (llama.cpp's release needs libgomp.so.1)
+packages: [curl, ca-certificates, git, tar, xz-utils, gzip, sudo, openssh-client, procps, libgomp1]
+
+image: "cmeta/debian:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
+
+tests:
+  - cx --version
+  - cx repo find
+  - cx category find
+  - cat /etc/os-release

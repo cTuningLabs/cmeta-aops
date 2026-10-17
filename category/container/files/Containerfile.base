@@ -1,0 +1,19 @@
+# Rendered by cMeta from the container template "{{cmeta.template_alias}}" - do not edit, re-render with
+#   cx container render {{cmeta.template_alias}} [--template.<key>=<value>] [--compute={{cmeta.compute}}]
+# Base image: an OS plus tools, uv and cMeta ({{cmeta.cmeta_source}}), running as the user "{{cmeta.user}}".
+FROM {{cmeta.from}}
+{{cmeta.env_block}}
+{{cmeta.install_packages_block}}
+{{cmeta.user_block}}
+{{cmeta.root_block}}
+USER {{cmeta.user}}
+ENV HOME={{cmeta.home}} CMETA_HOME={{cmeta.home}}/CMETA PATH={{cmeta.home}}/.local/bin:$PATH
+WORKDIR {{cmeta.home}}
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+{{cmeta.install_cmeta_block}}
+COPY --chown={{cmeta.user}} entrypoint.sh {{cmeta.home}}/entrypoint.sh
+RUN chmod +x {{cmeta.home}}/entrypoint.sh \
+    && mkdir -p {{cmeta.home}}/CMETA {{cmeta.home}}/repos {{cmeta.home}}/inputs {{cmeta.home}}/work \
+    && cx --version
+ENTRYPOINT ["{{cmeta.home}}/entrypoint.sh"]
+CMD ["/bin/bash"]

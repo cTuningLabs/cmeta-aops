@@ -1,0 +1,12 @@
+﻿artifact: cb638ed296334871
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-09-15T21:57:16.511285+00:00'
+desc: Build one container image with docker or podman from rendered files; the cache
+  entry keeps the context, the build script and the record of the image.
+last_update_timestamp: '2026-09-15T22:23:22.679030+00:00'
+tags:
+- container
+- build
+- docker
+- podman

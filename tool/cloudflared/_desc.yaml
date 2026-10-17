@@ -1,0 +1,57 @@
+authors: Grigori Fursin
+
+# cloudflared, the Cloudflare Tunnel client - https://github.com/cloudflare/cloudflared (Apache-2.0).
+#
+# Installed from the pinned upstream release (install ladder tier 1) by the shared helper
+# category/tool/api/common_release.py: a bare binary on Linux and Windows, a .tgz on macOS.
+# Upstream lists SHA-256 sums only in the release notes (no checksum file), so api_v1.py pins
+# the asset digests of GitHub's release API per version.
+# An installation already on the PATH (the Debian package of pkg.cloudflare.com, brew, winget)
+# is detected and used first.
+#
+#   cx tool setup cloudflared                         # detect, else install the pinned release
+#   cx tool setup cloudflared --version=<x.y.z> --new # another release (HTTPS only if its digests are not pinned)
+#   cx tool setup cloudflared --versions              # the released versions
+#   cx tool run cloudflared -- --version
+#
+# The tunnel service of a host: cxt manage-cloudflare-tunnel (status, routes, install, restart, upgrade).
+
+names:
+  - cloudflared{{global.host.vars.file_ext_exe}}
+
+default_version: '2026.10.0'
+
+match_version:
+  - regex: 'cloudflared version (\d+\.\d+\.\d+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/cloudflare/cloudflared'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: git,959d8c0fbc004bd0
+cmd_get_versions_regex: '\brefs/tags/(\d{4}\.\d+\.\d+)$'
+
+extra_paths:
+  linux:
+    - '/usr/local/bin'
+    - '/usr/bin'
+    - '/home/linuxbrew/.linuxbrew/bin'
+  darwin:
+    - '/opt/homebrew/bin'
+    - '/usr/local/bin'
+  windows:
+    - 'C:\Program Files (x86)\cloudflared'
+    - 'C:\Program Files\cloudflared'
+    - '{{global.host.os_env.LOCALAPPDATA}}\Microsoft\WinGet\Links'
+    - '{{global.host.os_env.LOCALAPPDATA}}\Microsoft\WinGet\Packages\**'
+
+# Windows on Arm: no release asset upstream
+install_cmd:
+  windows: "{{global.winget.qpath}} install --id=Cloudflare.cloudflared -e --no-upgrade --source winget {{global.init.winget_install_flags|}}"
+
+install_help_text: |
+  Could not install cloudflared from its release automatically on this system.
+  Install it as described at https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+  and run "cx tool setup cloudflared" again.

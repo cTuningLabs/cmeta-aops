@@ -1,0 +1,17 @@
+artifact: ef57f939c32243e6
+category: tool,c393ba5c6fa14f66
+authors: Grigori Fursin
+creation_timestamp: '2026-10-16T23:02:32.213043+00:00'
+desc: 'The Apache HTTP Server (apache2 / httpd) - detected, or installed with the package manager (apt, dnf/yum/tdnf,
+  zypper), Homebrew on macOS, winget (Apache Lounge) on Windows; on Linux its service is enabled and started.'
+generator:
+  method: agent
+  agent: Claude Code
+  model: claude-opus-5-5
+  via: cmeta 0.37.1
+  by: Grigori Fursin
+note: Certificates for it come from task/setup-ssl-certificate (Let's Encrypt through tool/certbot).
+tags:
+- apache
+- httpd
+- web-server

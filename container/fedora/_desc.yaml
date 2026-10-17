@@ -1,0 +1,36 @@
+authors: Grigori Fursin
+
+# Base template: Fedora + tools + uv + cMeta (dnf). Fedora's own images (registry.fedoraproject.org mirrors them
+# as docker.io/library/fedora); a release lives about 13 months, so the two or three newest are the ones to test.
+#
+#   cx container build fedora                      # Fedora 44
+#   cx container build fedora --template.os_version=42
+#   cx run ... --on=docker:fedora --on_template.os_version=43
+
+kind: base
+
+template:
+  os_version: "44"
+  from: "fedora:{{cmeta.os_version}}"
+  cmeta_source: pypi
+  cmeta_version: ""
+  cmeta_extras: server
+  cmeta_local_path: ""
+  user: cmeta
+  uid: ""                       # the user's uid and gid inside: on a Linux engine the machine user's (get-host--docker
+  gid: ""                       # passes them: a bind mount keeps the machine's ownership); empty = a system user
+  python_package: python3
+
+package_manager: dnf
+# The image ships curl (or curl-minimal, which provides the same binary - listing "curl" could conflict with it).
+# shadow-utils provides groupadd/useradd; procps-ng gives ps; findutils/which are used by installers.
+# libgomp: the OpenMP runtime of prebuilt binaries (llama.cpp's release needs libgomp.so.1)
+packages: [ca-certificates, git, tar, xz, gzip, sudo, openssh-clients, shadow-utils, procps-ng, findutils, which, libgomp]
+
+image: "cmeta/fedora:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
+
+tests:
+  - cx --version
+  - cx repo find
+  - cx category find
+  - cat /etc/os-release

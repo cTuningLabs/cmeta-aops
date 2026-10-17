@@ -1,0 +1,10 @@
+﻿artifact: 95686ce884bb448d
+authors: Grigori Fursin
+category: container,ed08f0d107044479
+creation_timestamp: '2026-09-15T21:59:34.853406+00:00'
+desc: 'Base image: Rocky Linux + tools + uv + cMeta (dnf).'
+last_update_timestamp: '2026-09-15T22:23:21.476145+00:00'
+tags:
+- base
+- rockylinux
+- rhel

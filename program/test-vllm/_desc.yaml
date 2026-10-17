@@ -1,5 +1,13 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+# Run on any host (the "on:" block): vLLM runs on Linux and macOS (CPU); started without --on on Windows, the run goes
+# into an instance of the ubuntu template, where its venv gets vLLM's CPU or CUDA wheels (--compute=cuda: Docker Desktop
+# passes the GPU). --on=docker:vllm-cuda takes vLLM's own image instead; on Linux and macOS it runs here as before.
+# the key is quoted: YAML 1.1 reads a bare on as the boolean true
+'on':
+  requires_os: [linux, darwin]
+  windows: docker
+
 inherits:
   - template-c-cpu,649899ef3f004e4a
 

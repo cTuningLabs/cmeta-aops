@@ -1,0 +1,8 @@
+authors: Grigori Fursin
+store_global: True
+storage_key: target--android-app
+cache: False
+env:
+  CMETA_TARGET_ANDROID_APP: 1
+env_if_not_used:
+  CMETA_TARGET_ANDROID_APP: 0

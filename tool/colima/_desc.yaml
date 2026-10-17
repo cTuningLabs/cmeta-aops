@@ -1,0 +1,70 @@
+authors: Grigori Fursin
+
+# colima (https://github.com/abiosoft/colima, MIT): "containers on Lima" - a Docker Engine (or containerd, incus)
+# inside a Lima virtual machine on macOS and Linux, with the docker socket on the host, so the docker client and
+# compose work unchanged: the usual free, headless Docker on a Mac, no GUI and no first launch to click through.
+# One binary from the pinned upstream release (install ladder tier 1, api_v1.py), its SHA-256 checked against the
+# .sha256sum published next to the asset; limactl comes from tool/lima (uses). A Homebrew colima is detected first.
+#
+#   cx tool setup colima                                                      # detect, else install (and lima)
+#   cx tool run colima -- start --cpu 4 --memory 8 --disk 100 --vm-type vz --mount-type virtiofs
+#   cx tool run colima -- status | list | stop | delete
+#   cx tool run docker -- context use colima                                  # the client talks to it (tool/docker
+#                                                                             # installs a client on macOS)
+#
+# State: ~/.colima (profiles, the VM disk under ~/.colima/_lima, the docker socket ~/.colima/default/docker.sock);
+# COLIMA_HOME moves it, e.g. onto a large drive, or make ~/.colima a link before the first start. The guest image
+# is cached by Lima (~/Library/Caches/lima). Removal: "colima delete", then the cache entry and ~/.colima.
+# Docker Desktop and colima can both be installed: two docker contexts (desktop-linux, colima).
+
+names:
+  - colima
+
+default_version: '0.10.3'
+
+# "colima version v0.10.3" (a v before the number since 0.10)
+match_version:
+  - regex: 'version v?(\d+\.\d+\.\d+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} version'
+
+cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/abiosoft/colima'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: git,959d8c0fbc004bd0
+cmd_get_versions_regex: '\brefs/tags/v(\d+\.\d+\.\d+)(?![\w.-])'
+
+# limactl on the PATH of every colima command (and installed first when missing); not on Windows, where colima
+# does not exist (so "cx tool setup colima --versions" still answers there). add_tool_path_to_env is a parameter
+# of the setup task itself (next to name), not a key under with: (with: carries parameters for the TOOL's hooks)
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: lima,1ed604a83fc04feb
+    if: '"{{global.host.os.uname}}" != "windows"'
+    add_tool_path_to_env: True
+
+  # the docker client too, on macOS: "colima start" creates the docker context "colima" with it (tool/docker
+  # installs the static client there when Docker Desktop is absent)
+  - task: setup,a2f9b61079ce4333
+    name: docker,fd2bb541ed094b7a
+    if_os: darwin
+    add_tool_path_to_env: True
+
+# Fallback when the release cannot be downloaded: Homebrew (macOS and Linuxbrew)
+install_cmd:
+  darwin: 'brew install colima'
+  linux: 'brew install colima'
+
+extra_paths:
+  darwin:
+    - '/opt/homebrew/bin'
+    - '/usr/local/bin'
+  linux:
+    - '/usr/local/bin'
+    - '{{user_home}}/.local/bin'
+    - '/home/linuxbrew/.linuxbrew/bin'
+
+install_help_text: |
+  Could not install colima from its release automatically on this system.
+  Install it per https://github.com/abiosoft/colima (brew install colima) and run "cx tool setup colima" again.

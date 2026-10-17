@@ -1,0 +1,22 @@
+artifact: 15269eacbcda4190
+category: task,c36be4b9314a45e0
+authors: Grigori Fursin
+creation_timestamp: '2026-10-15T13:17:14.491283+00:00'
+generator:
+  method: agent
+  agent: OpenAI Codex 0.162.1
+  via: cmeta 0.37.1
+  by: Grigori Fursin
+description: Run named sync definitions with persistent bisync state and previews.
+uses_categories:
+  sync: sync,5232474161e24333
+  cache: cache,1ebdcc1cc30c4022
+  result: result,6567e4df4d04488a
+  host: host,e4e49c251c814f6d
+last_update_timestamp: '2026-10-15T14:43:56.098361+00:00'
+last_generator:
+  method: agent
+  agent: OpenAI Codex 0.162.1
+  via: cmeta 0.37.1
+  by: Grigori Fursin
+  date: '2026-10-15'

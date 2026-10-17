@@ -1,0 +1,58 @@
+authors: Grigori Fursin
+
+# Base template: Ubuntu + tools + uv + cMeta, running as the non-root user "cmeta" (passwordless sudo).
+#
+#   cx container build ubuntu                              # ubuntu:26.04, cMeta from PyPI (latest)
+#   cx container build ubuntu --template.os_version=24.04
+#   cx container build ubuntu --template.cmeta_version=0.32.1
+#   cx container build ubuntu --template.cmeta_source=local    # the engine checkout of this machine, tarred in
+#   cx container test  ubuntu --compute=cuda                    # nvidia/cuda base image + nvidia-smi test
+#   cx container shell ubuntu
+#
+# Every key under template: is a {{cmeta.<key>}} in the Containerfile and can be overridden with
+# --template.<key>=<value>. The Containerfile itself is the category default (files/Containerfile.base): the
+# package-install line is chosen by package_manager, the cMeta install line by cmeta_source.
+
+kind: base
+
+template:
+  os_version: "26.04"
+  from: "ubuntu:{{cmeta.os_version}}"
+  cmeta_source: pypi            # pypi | git | local
+  cmeta_version: ""             # "" = latest release on PyPI; "0.32.1" pins it
+  cmeta_extras: server          # the web pages need [server]
+  cmeta_local_path: ""          # cmeta_source=local: the checkout to tar (default: the engine this cx runs from)
+  user: cmeta                   # non-root user with passwordless sudo; "root" to skip
+  uid: ""                       # the user's uid and gid inside: on a Linux engine the machine user's (get-host--docker
+  gid: ""                       # passes them: a bind mount keeps the machine's ownership); empty = a system user
+  python_package: python3
+
+package_manager: apt
+# libgomp1: the OpenMP runtime of prebuilt binaries (llama.cpp's release needs libgomp.so.1)
+packages: [curl, ca-certificates, git, tar, xz-utils, gzip, sudo, openssh-client, procps, libgomp1]
+
+# --compute=cuda swaps the base image for NVIDIA's CUDA image of the same Ubuntu release and adds the GPU
+# run flags (Docker Desktop on Windows passes the GPU through its WSL2 backend; podman needs CDI on Linux).
+# NVIDIA publishes Ubuntu 26.04 images from CUDA 13.3.0 on, and an image refuses a driver older than its CUDA.
+compute:
+  cuda:
+    from: "nvidia/cuda:{{cmeta.cuda_version}}-{{cmeta.cuda_flavour}}-ubuntu{{cmeta.os_version}}"
+    # the tag names the CUDA version and the flavour: a devel image (nvcc, for builds) and a base one are two images
+    image: "cmeta/ubuntu:{{cmeta.os_version}}-cuda{{cmeta.cuda_version}}-{{cmeta.cuda_flavour}}-cmeta-{{cmeta.cmeta_version|latest}}"
+    template:
+      cuda_version: "13.3.1"
+      cuda_flavour: base        # base | runtime | devel | cudnn-devel  (devel images are several GB)
+    packages: [zlib1g-dev, libzstd-dev]
+    run_flags:
+      docker: [--gpus, all, --ipc=host, --ulimit, memlock=-1, --ulimit, stack=67108864]
+      podman: [--device, nvidia.com/gpu=all, --ipc=host]
+
+image: "cmeta/ubuntu:{{cmeta.os_version}}{{cmeta.compute_suffix}}-cmeta-{{cmeta.cmeta_version|latest}}"
+
+tests:
+  - cx --version
+  - cx repo find
+  - cx category find
+  - cat /etc/os-release
+  - sudo -n true && echo "sudo ok"
+  - {if_compute: cuda, cmd: nvidia-smi}

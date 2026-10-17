@@ -1,0 +1,14 @@
+artifact: 1ed604a83fc04feb
+category: tool,c393ba5c6fa14f66
+tags:
+  - tool
+  - container
+  - vm
+authors: Grigori Fursin
+desc: "Lima - Linux virtual machines on macOS and Linux (the VM layer under colima), from its release archives"
+creation_timestamp: '2026-10-15T12:45:22.146206+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.299
+  via: cmeta 0.37.1
+  by: Grigori Fursin

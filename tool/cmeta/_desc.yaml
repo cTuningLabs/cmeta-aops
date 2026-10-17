@@ -1,0 +1,39 @@
+authors: Grigori Fursin
+storage_key: cmeta
+default_version: '0.37.1'
+skip_common_install_uses: true
+force_tool_path: '{{global.python.path}}'
+path: '{{global.python.path}}'
+cmd: '{{global.python.qpath}} -m cmeta'
+cmd_filename: '{{global.python.filename}} -m cmeta'
+cmd_get_version: '{{global.python.qpath}} -m cmeta --version'
+cmd_get_versions: >-
+  {{global.python.qpath}} -c "import json, urllib.request; print('\n'.join(json.load(urllib.request.urlopen('https://pypi.org/pypi/cmeta/json', timeout=30))['releases']))"
+cmd_get_versions_regex: '^(\d+\.\d+\.\d+(?:\.\d+)?)$'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: python,c00fb574d8ca4463
+install_cmd:
+  all: '{{global.python.qpath}} -m pip install cmeta'
+install_cmd_version:
+  all: '{{global.python.qpath}} -m pip install "cmeta{{pip_version}}"'
+install_uses:
+  all:
+    - task: setup,a2f9b61079ce4333
+      name: python-pip,28399f0bb52c4148
+match_version:
+  - regex: '([0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?)'
+    group: 1
+cache_params:
+  - with.file
+  - with.url
+  - with.url_tag
+  - with.flags
+cache_params_use:
+  all:
+    python:
+      version: '{{global.python.version}}'
+      path: '{{global.python.path}}'
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: python,c00fb574d8ca4463
