@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## Unreleased
+## 0.50.0
 - **Run any command on another host: `--on`.** `--on=<target>` on any `cx task run`, `cx program run`, `cx tool setup`
   or `cx app run` hands the whole command line, as typed, to another host and returns its result: a fleet host (ssh;
   a Windows host through PowerShell), or an instance made on first use from a container template - `docker[:<template>]`,
