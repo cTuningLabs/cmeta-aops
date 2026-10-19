@@ -28,7 +28,9 @@ repos, command naming, return contract).
 
 - **License:** **Apache-2.0** (`LICENSE`, `COPYRIGHT`) — the same license as the
   cMeta engine. New files get the standard Apache header; copy it from a sibling
-  artifact (see §8).
+  artifact (see §8). For new code/metadata, the user's attribution rule in §8.1
+  takes precedence: licence pointer only, `authors: Grigori Fursin`, no new
+  per-file copyright line or company attribution.
   **Exception:** the vendored third-party sources listed in
   [`THIRD-PARTY.md`](THIRD-PARTY.md) are **not** Apache-2.0 and keep their own
   upstream notices verbatim — never rewrite those headers.
@@ -326,12 +328,12 @@ When you generate, modify or move code, metadata or scripts in this project:
 - **Never remove or rewrite an existing copyright header or attribution.** If you
   split a module, carry its header into the new file. If you move an artifact,
   keep its `authors` / `copyright` fields intact.
-- **New source files** get the standard header:
+- **New source files** use the licence pointer only (user instruction reaffirmed
+  2026-10-19). Do not add a per-file copyright line or "and cTuning Labs" to new
+  work. The user's Dapple-supported contributions are under Grigori Fursin's name.
 
   ```python
   """
-  Copyright (C) 2025-2026 Grigori Fursin and cTuning Labs.
-
   Licensed under the Apache License, Version 2.0.
   See the COPYRIGHT and LICENSE files in the project root for details.
   """
@@ -340,10 +342,13 @@ When you generate, modify or move code, metadata or scripts in this project:
 - **New artifacts and categories** record provenance in their `_cmeta.*`:
 
   ```yaml
-  authors: '[Grigori Fursin](https://cTuning.ai/@gfursin)'
-  copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and
-    LICENSE files in the project root for details.
+  authors: Grigori Fursin
   ```
+
+  New `_cmeta.*` / `_desc.*` omit the `copyright` key. Remove it if artifact
+  creation copied an older repository/environment default. The repository-level
+  COPYRIGHT and LICENSE still apply. Existing historical and third-party notices
+  are retained; this rule governs additions and newly generated files/metadata.
 
   In a **downstream** repo, set `authors` / `copyright` to that repo's own owner
   instead — but keep any cmeta-aops-derived material's original notices.
