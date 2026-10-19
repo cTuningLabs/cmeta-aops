@@ -3,6 +3,9 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## Unreleased
+- **`cx host status` / `cx host ls`: project rows in the host columns:** the projects of a host are printed
+  aligned under its row (status, health URL, versions after the last column). The host rows returned to
+  programs also carry the address, the artifact UID, the tags and whether the host was made from a template.
 - **Website instances in the invoking cMeta home:** a `project.yaml` with `home: current` describes a site that
   runs in the home that calls it (one site on a machine with its global repositories) instead of in a project
   home of its own. `manage-cmeta-project` checks the declared repositories, creates the instance's `state`
