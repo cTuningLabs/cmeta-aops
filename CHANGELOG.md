@@ -13,6 +13,10 @@ All notable changes to cMeta AOps are documented here, newest first.
   declared repositories read-only by alias, the state's data read-write (shared with native runs) and its
   secrets read-only, and keeps an empty-seeded persistent local repository in the state. `{state}`,
   `{secrets}` and `{cmeta_home}` in the declared parameters expand per mode. Project homes keep their behavior.
+- **sync: optional removal of empty directories:** `remove_empty_dirs: true` in a bisync definition (or
+  `--remove-empty-dirs` for one run) removes the included empty directories on both endpoints after a
+  successful run, including the empty ancestors of deleted artifacts. Transfer roots, excluded and nonempty
+  directories are kept, a dry run only previews, and an established baseline needs no resync. Off by default.
 - **Standalone cMeta projects:** `manage-cmeta-project` bootstraps/adopts a project home,
   discovers its repositories and generates thin root shell scripts for setup, reindex,
   Git updates and native/Docker execution. Optional new venvs inherit the invoking
