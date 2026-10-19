@@ -1,0 +1,6 @@
+# Complete release archive plus extracted libraries, plugins and bundled JDK, in GB.
+sizes:
+  - if: {method: install}
+    peak: 5
+    kept: 3.5
+  - peak: 5

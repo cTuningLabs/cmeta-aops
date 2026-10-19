@@ -1,0 +1,12 @@
+artifact: a1527eb1311a489a
+category: tool,c393ba5c6fa14f66
+authors: Grigori Fursin
+creation_timestamp: '2026-10-18T10:21:15.961741+00:00'
+generator:
+  method: agent
+  agent: OpenAI Codex 0.162.1
+  via: cmeta 0.37.4
+  by: Grigori Fursin
+tags:
+- search-engine
+- elasticsearch

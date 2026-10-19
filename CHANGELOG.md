@@ -2,6 +2,15 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## Unreleased
+- **Elasticsearch and OpenSearch tools:** detect existing installations or install checked official archives
+  with their bundled Java runtimes. Defaults live in each tool's description, with standard explicit-version,
+  version-list and update controls. Setup does not start a service or configure security/data storage.
+  Windows launchers avoid cmd delayed-expansion damage to paths containing `!`.
+- **Complete release distributions:** the shared release installer can retain a full archive tree and check
+  per-asset SHA-512 files, alongside its existing single-binary/SHA-256 behavior. Extraction rejects escaping
+  paths/links and special files.
+
 ## 0.51.0
 - **`tool/cmeta` installs cMeta 0.37.4 by default** (was 0.37.1).
 - **Optional persistent instance volumes for container templates:** `get-host--docker` accepts
