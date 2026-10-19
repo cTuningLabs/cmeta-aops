@@ -3,6 +3,23 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## Unreleased
+- **Website instances in the invoking cMeta home:** a `project.yaml` with `home: current` describes a site that
+  runs in the home that calls it (one site on a machine with its global repositories) instead of in a project
+  home of its own. `manage-cmeta-project` checks the declared repositories, creates the instance's `state`
+  artifact (data, secrets, runtime) and generates `__info`, `__run_server`, `__run_server_in_docker` and
+  `__run_server_nohup.sh`, plus `___sync_all.bat`/`.sh` from a `syncs:` list (`host::` steps run
+  `cx host sync`, the others `sync --require-initialized --live`). A native run starts in the background with
+  `--detach` and answers `--status`, `--logs` and `--stop` (the whole process tree). A Docker run mounts the
+  declared repositories read-only by alias, the state's data read-write (shared with native runs) and its
+  secrets read-only, and keeps an empty-seeded persistent local repository in the state. `{state}`,
+  `{secrets}` and `{cmeta_home}` in the declared parameters expand per mode. Project homes keep their behavior.
+- **Standalone cMeta projects:** `manage-cmeta-project` bootstraps/adopts a project home,
+  discovers its repositories and generates thin root shell scripts for setup, reindex,
+  Git updates and native/Docker execution. Optional new venvs inherit the invoking
+  Python/cMeta unless explicitly overridden; existing environments are preserved.
+  `run-website` can use these projects or run natively in the current home. Docker
+  data is seeded once into a persistent host local repository; legacy website state
+  deployments remain compatible. No automatic remote deployment or sync is added.
 - **Windows-owned website deployments:** `run-website --mode=docker` can create protected state in the
   Windows orchestrator while its legacy runtime uses an artifact-owned Linux volume. `get-host--docker`
   supports optional state-volume storage, persistent UID-based ownership records and labels, refusal of

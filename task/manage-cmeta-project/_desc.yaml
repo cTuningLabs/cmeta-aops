@@ -1,0 +1,23 @@
+authors: Grigori Fursin
+description: Bootstrap and manage a standalone cMeta home, or run a declared application in the current home.
+cache: false
+store_global: false
+params_map:
+  arg2: action
+  project-home: project_home
+  current-env: current_env
+  latest-deps: latest_deps
+  env-file: env_file
+  public-url: public_url
+  generate-scripts: generate_scripts
+cli_params:
+  action:
+    values: [plan, init, bootstrap, adopt, setup, scripts, reindex, config, info, update-git-repos, run, status, stop, logs]
+  mode:
+    values: [native, docker]
+dependencies:
+  uv: uv,92f171fc18714ebd
+  docker: docker,fd2bb541ed094b7a
+  cmd: cmd,c9ba0a88df394d7f
+  setup: setup,a2f9b61079ce4333
+  cmeta: cmeta,318b08e8007e43c4

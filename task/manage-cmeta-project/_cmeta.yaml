@@ -1,0 +1,11 @@
+artifact: 9df2b3a416e84c75
+category: task,c36be4b9314a45e0
+authors: '[Grigori Fursin](https://cTuning.ai/@gfursin)'
+uses_categories:
+  task: task,c36be4b9314a45e0
+  website: website,403883118dbc473a
+  repo: repo,f4f792ab40c7498f
+  state: state,a1ed1ed7ca7043b6
+  container: container,ed08f0d107044479
+  tool: tool,c393ba5c6fa14f66
+  config: config,cc6bfe174be847ed
