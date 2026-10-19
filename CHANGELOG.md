@@ -3,6 +3,24 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## Unreleased
+- **Windows-owned website deployments:** `run-website --mode=docker` can create protected state in the
+  Windows orchestrator while its legacy runtime uses an artifact-owned Linux volume. `get-host--docker`
+  supports optional state-volume storage, persistent UID-based ownership records and labels, refusal of
+  missing/foreign volumes, and retained volumes across container recreation. Existing bind mounts remain
+  compatible. Portable source/diagnostics and completed backup results stay visible in Windows; generated
+  Bash launch scripts use LF line endings. Host recreation checks registered volumes before starting.
+- **Website deployments inside cMeta:** new protected `state` category holds mutable deployed source,
+  private repositories/environments and service volumes. `run-website` stages a movable recipe and its
+  checked result inputs once, then runs that same task natively or through Docker with separate result
+  backup histories. Private-home paths rebase when state moves; source edits survive preparation.
+  Optional declared Linux software capture supports native execution without installing host services.
+  Selected Docker mounts now also accept contained state subdirectories; existing result/cache roots
+  and named volumes retain their behavior.
+- **Selected artifact mounts for Docker instances:** container templates can declare `instance_artifacts`,
+  or tasks can pass `--on_artifacts.<key>=result::local:<name>`, to bind individual host cache/result roots.
+  Writable results are created if missing; read-only mounts must exist. The container receives paths in
+  `CMETA_ARTIFACT_MOUNTS`. Real paths support state on another disk without sharing the host's local repo.
+  Existing named-volume instances retain their mounts; saved Docker arguments replay correctly on Windows.
 - **Elasticsearch and OpenSearch tools:** detect existing installations or install checked official archives
   with their bundled Java runtimes. Defaults live in each tool's description, with standard explicit-version,
   version-list and update controls. Setup does not start a service or configure security/data storage.

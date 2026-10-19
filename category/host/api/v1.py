@@ -2738,6 +2738,30 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if t == 'docker':
             name = acc.get('container') or h['alias']
             if status == 'missing':
+                # Artifact-owned volumes must survive container recreation; never replace lost data silently.
+                for volume in h['desc'].get('artifact_mounts') or []:
+                    if volume.get('storage') != 'volume':
+                        continue
+                    volume_name = volume.get('volume') or ''
+                    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', volume_name):
+                        return self.cm.error('Invalid registered artifact volume name')
+                    check = f'{self._engine(h)} volume inspect {volume_name}'
+                    if h.get('via'):
+                        parent = self._get_host(ctx, h['via'])
+                        if parent['return'] > 0: return parent
+                        if not self._here(parent['host']):
+                            routed = self._cmd_run(ctx, parent['host'], check)
+                            if routed['return'] > 0: return routed
+                            check = routed['cmd']
+                    observed = self._run_local(check, capture=True, con=False)
+                    if observed.get('returncode', 1) != 0:
+                        return self.cm.error(f'Registered state volume {volume_name} is missing; restore a backup before recreating this container')
+                    try:
+                        labels = json.loads(observed['stdout'])[0].get('Labels') or {}
+                    except (KeyError, ValueError, IndexError, TypeError):
+                        return self.cm.error('Cannot verify registered artifact volume: ' + volume_name)
+                    if labels.get('cmeta.artifact') != volume.get('uid') or labels.get('cmeta.subpath') != volume.get('subpath'):
+                        return self.cm.error('Registered volume belongs to another artifact: ' + volume_name)
                 image = acc.get('image')
                 if not image:
                     return self.cm.error(f'container "{name}" does not exist and no "access: image" is declared to create it')

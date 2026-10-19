@@ -1,0 +1,19 @@
+artifact: b6c8dbe5108a4320
+category: task,c36be4b9314a45e0
+authors: Grigori Fursin
+creation_timestamp: '2026-10-18T15:35:30.403445+00:00'
+generator:
+  method: agent
+  agent: OpenAI Codex 0.162.1
+  via: cmeta 0.37.4
+  by: Grigori Fursin
+
+uses_categories:
+  state: state,a1ed1ed7ca7043b6
+  result: result,6567e4df4d04488a
+  task: task,c36be4b9314a45e0
+  repo: repo,f4f792ab40c7498f
+  category: category,dd9ea50e7f76467f
+  host: host,e4e49c251c814f6d
+  container: container,ed08f0d107044479
+  website: website,403883118dbc473a

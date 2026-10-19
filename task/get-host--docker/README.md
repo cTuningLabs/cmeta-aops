@@ -74,3 +74,58 @@ by stopping or destroying an instance. Back up durable application data before e
 
 The instance is what `--on=docker` / `--on=podman` of any `cx task run`, `cx program run`, `cx tool setup` or
 `cx app run` makes and uses (`docs/cmeta-aops/task-engine.md`, "Running the same words elsewhere").
+
+## Bind individual host artifacts
+
+Protected state subdirectories can alternatively use artifact-owned Linux named volumes:
+
+~~~yaml
+instance_artifacts:
+  state:
+    cref: state::local:my-application/volumes/app
+    storage: volume
+    mode: rw
+~~~
+
+The resolver records the engine, volume name and state UID in
+`volumes/app/.cmeta-volume.json` inside the host state entry. The placeholder directory must be empty
+on first use; changing a populated bind directory to volume storage requires explicit migration.
+The actual application data stays in the engine's Linux filesystem. This enables a Windows
+orchestrator to own Linux application storage without putting legacy files on NTFS.
+Volume names are stable for the artifact UID/subpath; labels verify ownership, and loss of a
+registered volume is refused. Stopping/destroying a container never removes these volumes.
+
+For general task/program/tool delegation, pass the same selection as
+`--on_artifacts.state.cref=state::local:my-application/volumes/app --on_artifacts.state.storage=volume`.
+`CMETA_ARTIFACT_MOUNTS` includes `storage`, `volume`, `engine` and `filesystem: linux` for this case,
+alongside the controller's `source_os`. Applications must check the physical storage type instead of
+rejecting Linux volumes solely because their controller runs Windows. Existing string declarations
+and `storage: bind` keep their previous behavior. Completed archives can bind to separate host results.
+
+Use this for host-owned application state without mounting the orchestrator's entire local repository:
+
+```yaml
+instance_artifacts:
+  state:
+    cref: result::local:my-application-state
+    mode: rw
+```
+
+Or pass `--artifacts.state=result::local:my-application-state` to this resolver;
+task execution forwards `--on_artifacts.state=result::local:my-application-state`.
+Mappings can use `{cref: ..., mode: ro}` for read-only inputs. Cache/result references accept root artifacts.
+Protected state artifacts also accept ordinary contained subpaths, such as
+`state::local:my-application/volumes/app`; parent traversal and escaping symlinks are rejected.
+A writable artifact is created when missing (results and state are permanent);
+a read-only artifact must already exist. Symlinks resolve to the actual host directory before mounting.
+
+The mount is `<home>/artifacts/<key>`. `CMETA_ARTIFACT_MOUNTS` is a JSON object keyed by that name,
+containing `cref`, `path` (inside), `host_path`, `mode` and `source_os`. Application tasks can use it to
+find the same state they use natively and print a host-accessible backup path. They still need to validate
+their filesystem/platform requirements. The generic resolver supports Windows paths; a legacy Linux
+database/application may require a Linux filesystem.
+
+Mount descriptions are retained in the host artifact and recreation arguments. An existing artifact-mounted
+instance refuses changed selections: use another instance or deliberately recreate it. Existing instances
+without this feature, including named-volume instances, keep their previous mounts despite newer template
+defaults. Removing a container does not remove its separately owned host result.

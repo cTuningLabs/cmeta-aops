@@ -2004,6 +2004,7 @@ class Category(InitCategory):
                                 'compute': compute, 'arch': str(options.get('arch') or ''), 'instance': str(options.get('instance') or ''),
                                 'repos': str(options.get('repos') or ''), 'data': str(options.get('data') or ''),
                                 'ports': str(options.get('ports') or ''),
+                                'artifacts': options.get('artifacts') or {},
                                 'new_host': bool(options.get('new_host', False)) or bool(options.get('rm', False)),
                                 'refresh_cmeta': str(options.get('refresh_cmeta', '')).strip().lower() in ('1', 'true', 'yes', 'on'),
                                 'con': con, 'quiet': quiet, 'verbose': verbose})

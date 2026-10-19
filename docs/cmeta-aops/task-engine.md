@@ -151,6 +151,22 @@ cache identity of that sub-task, so it gets its own cache entry and the default 
 
 ## Running the same words elsewhere: `--on`
 
+Docker/Podman instances have their own cMeta engine, home, index and local tool cache. Selected
+recipe repositories are live bind mounts of the caller's filesystem, not duplicate clones: ordinary
+edits are visible on both sides without a sync operation. `--on_repos=a,b` selects those repositories;
+the default is the public AOps repository. The caller's whole `local` repository and repositories
+flagged `secrets` are not mounted. Configured data repositories can also be shared (`--on_data=none`
+disables them); individual state/result artifacts can be shared with `--on_artifacts`.
+There is no automatic whole-CMETA copy or bisync. Windows Python environments/tool binaries are not
+reused as Linux tools; the image's engine resolves its own tools and cache.
+
+Protected state subpaths can use `--on_artifacts.state.storage=volume` together with
+`--on_artifacts.state.cref=state::local:my-app/volumes/app`; the host retains an ownership registration,
+and the files physically live in a Linux engine volume. See the resolver guide for backup/lifecycle.
+With no `--on`, execution stays local unless an artifact's `on:` block supplies a route.
+`--on=here` forces local execution. A template requires its engine prefix, such as `docker:ubuntu`,
+`podman:debian` or `wsl:ubuntu`; a bare name denotes an existing host artifact.
+
 `--on=<host>` on any `cx task run` / `cx program run` / `cx tool setup` / `cx app run` hands the whole
 command line, as typed, to a host and returns its result:
 
@@ -191,6 +207,16 @@ cx host run web "kill -- -$(cat ~/cmeta-detached/<run id>.pid)"      # stop it
 ```
 
 POSIX hosts and instances only for now (a Windows host refuses `--on_detach`).
+
+Docker templates can declare `instance_artifacts` to bind individual host cache/result roots, or a run
+can select them with `--on_artifacts.state=result::local:my-application-state`. A writable result is
+created when absent; the container sees it at `<home>/artifacts/state` and receives its reference,
+inside/host paths, mode and source OS in `CMETA_ARTIFACT_MOUNTS`. The host's entire local repository
+remains private. This supports durable application data shared between native and container execution
+without keeping that data in the container's writable layer. Mounts persist in recreation arguments;
+an existing instance refuses changed mount selections. Existing instances without artifact mounts keep
+their previous mounts. See [get-host--docker](../../task/get-host--docker/README.md) for declarations
+and filesystem requirements.
 
 An ssh host runs the words on its own clones and home. `--on_isolated` runs them on THIS machine's repositories
 instead (`ctuninglabs@cmeta-aops`, or `--on_isolated=<repo>,<repo>`): they are copied to `~/cmeta-tests/on-<run id>`,
