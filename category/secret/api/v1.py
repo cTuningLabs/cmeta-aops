@@ -27,7 +27,10 @@ DESC_FILE = '_desc.yaml'
 
 # The keys of _desc.yaml that name a file (dotted), with what the file is
 FILE_KEYS = {'ssh.key': 'private key', 'ssh.public_key': 'public key', 'signing.key': 'signing key',
-             'signing.allowed_signers': 'allowed signers', 'token.file': 'token file'}
+             'signing.allowed_signers': 'allowed signers', 'token.file': 'token file', 'file.path': 'file'}
+
+# The files that hold a secret value: readable by their owner alone (check reports any other reader)
+OWNER_ONLY_KEYS = ('ssh.key', 'token.file', 'file.path')
 
 
 def _get(d, dotted):
@@ -250,7 +253,7 @@ class Category(InitCategory):
                         rows.append((s['alias'], what, 'MISSING', f'import from {source}' if source else 'no file, no files.from'))
                         continue
 
-                if key == 'ssh.key':
+                if key in OWNER_ONLY_KEYS:
                     # The owner-only check of the task fix-ssh-key-permissions: the mode on Linux and macOS, the ACL by SIDs on Windows
                     problem = self._key_permissions(ctx, path, check=True)
                     if problem:

@@ -20,7 +20,7 @@ kind: git       a whole git identity: identity (name, email, accounts), ssh (tra
                 hosts), signing (format, key, allowed signers, sign_commits)
 kind: ssh       one ssh key: key, public_key, passphrase, hosts, users
 kind: token     one secret value by reference: env: NAME, or a file inside: files/token
-kind: file      any file by reference (a certificate, a keystore): files: {...}
+kind: file      any file by reference (a certificate, a keystore, a dotenv): file: {path: files/<name>}
 ```
 
 ## Where the files are
