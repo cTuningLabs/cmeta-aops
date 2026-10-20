@@ -1,0 +1,14 @@
+artifact: a1ed1ed7ca7043b6
+category: category,dd9ea50e7f76467f
+authors: Grigori Fursin
+creation_timestamp: '2026-10-18T15:35:30.177289+00:00'
+generator:
+  method: agent
+  agent: OpenAI Codex 0.162.1
+  via: cmeta 0.37.4
+  by: Grigori Fursin
+last_api_version: 1
+permanent: true
+desc: Durable mutable deployment state; separate from caches and completed results.
+base_category_default_api_versions:
+  '1': 1

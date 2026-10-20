@@ -55,6 +55,8 @@ def test_list_and_category_wrapper(cm, tmp_path):
     ({'initial_mode': 'miror'}, 'initial_mode'),
     ({'mode': 'copy', 'initial_mode': 'mirror'}, 'requires bisync'),
     ({'initial_max_delete': -1}, 'initial_max_delete'),
+    ({'remove_empty_dirs': 'yes'}, 'must be a boolean'),
+    ({'mode': 'copy', 'remove_empty_dirs': True}, 'only for bisync'),
 ])
 def test_bad_definitions_fail_before_effects(cm, tmp_path, extra, message):
     r = run(cm, definition(cm, tmp_path, **extra))
@@ -78,6 +80,17 @@ def test_sequence_preserves_duplicates(cm, tmp_path):
     r = run(cm, None, names=[name, name])
     assert r['return'] == 0, r
     assert [p['alias'] for p in r['plans']] == [name, name]
+
+
+def test_empty_directory_policy_is_opt_in_and_overridable(cm, tmp_path):
+    name = definition(cm, tmp_path)
+    assert run(cm, name)['plans'][0]['remove_empty_dirs'] is False
+    assert run(cm, name, remove_empty_dirs=True)['plans'][0]['remove_empty_dirs'] is True
+    name = definition(cm, tmp_path, remove_empty_dirs=True)
+    assert run(cm, name)['plans'][0]['remove_empty_dirs'] is True
+    assert run(cm, name, remove_empty_dirs=False)['plans'][0]['remove_empty_dirs'] is False
+    name = definition(cm, tmp_path, mode='mirror')
+    assert 'only for bisync' in run(cm, name, remove_empty_dirs=True)['error']
 
 
 @pytest.mark.parametrize('repos,prefixes', [(['local', 'team'], ['local', 'team']), ('*', ['*'])])

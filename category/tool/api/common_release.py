@@ -22,9 +22,9 @@ and whose _desc.yaml pins the version installed when none is asked for:
 What it does, with the Python standard library only (no tar/unzip binaries needed):
   1. picks the asset for this OS and CPU from the templates ({version}, {os}, {arch}, {ext}, {exe});
   2. downloads it with the download-file task (so proxies, mirrors and retries behave as for every other tool);
-  3. verifies its SHA-256 when upstream publishes one - a "<hash>  <file>" list, a per-asset file, or
+  3. verifies its SHA-256 (or a selected per-asset SHA-512) when upstream publishes one - a "<hash>  <file>" list, a per-asset file, or
      yq's multi-hash table - and fails on a mismatch;
-  4. unpacks one member of a .zip/.tar.gz (or takes a bare binary as is) and names it "<name>[.exe]";
+  4. unpacks one binary, or retains a whole distribution when tree=True;
   5. does the same for the "extra" binaries some tools ship next to the main one (kwok for kwokctl).
 
 A spec may leave an OS or CPU out; install_release then returns 16 with the declarative install_cmd,
@@ -47,16 +47,25 @@ SPEC keys:
   version_tag      tag/version spelling in the URL if it differs, e.g. 'kustomize/v{version}'
   unsupported      [[uname, uarch], ...] pairs upstream publishes nothing for (e.g. ['windows', 'arm64'])
   extra            list of {'name', 'url', 'checksum', 'member', 'ext'} fetched into the same folder
+  tree             True: retain the entire distribution, including JDK/libraries/configuration;
+                   requires member, the relative path to the launcher inside the archive
+  checksum.algorithm  'sha256' (default) or 'sha512' for a per-asset checksum file
 
 The version is not a SPEC key: default_version in the tool's _desc.yaml is the one place that says which
 version cMeta installs by default, so that the description of a tool can be queried (cx tool show <tool>);
 a 'default_version' SPEC key of a tool written before 0.46.1 is still read when the description has none.
 """
 
+import ctypes
 import hashlib
 import os
 import stat
+import subprocess
+import sys
+from pathlib import Path, PurePosixPath
+import shutil
 import tarfile
+import tempfile
 import zipfile
 
 
@@ -106,7 +115,7 @@ def _sha256(path):
 
 
 def _expected_sha256(tool, ctx, params, checksum, v, asset, directory):
-    """The SHA-256 upstream publishes for `asset`, or None when it publishes none."""
+    """Upstream checksum; the legacy sha256 result key also carries a selected per-file SHA-512."""
     if not checksum:
         return {'return': 0, 'sha256': None}
     if 'sha256' in checksum:
@@ -171,6 +180,67 @@ def _unpack(archive, member, name, dest):
     return False
 
 
+def _unpack_tree(archive, member, directory):
+    """Retain a checked distribution. Reject traversal, special files and escaping links."""
+    root = Path(directory).resolve()
+
+    def safe_name(name):
+        parts = PurePosixPath(name.replace('\\', '/')).parts
+        if not parts or any(p in ('.', '..', '/') or ':' in p for p in parts):
+            raise ValueError('Unsafe release archive member: ' + name)
+        return parts
+
+    selected = safe_name(member)
+    if len(selected) < 2:
+        raise ValueError('A tree release must have a distribution root and a launcher member')
+    with tempfile.TemporaryDirectory(prefix='.unpack-', dir=str(root)) as temporary:
+        stage = Path(temporary)
+        if archive.endswith('.zip'):
+            with zipfile.ZipFile(archive) as source:
+                for info in source.infolist():
+                    parts = safe_name(info.filename)
+                    if parts[0] != selected[0] or stat.S_ISLNK(info.external_attr >> 16):
+                        raise ValueError('Unexpected release archive root or zip symbolic link')
+                    target = stage.joinpath(*parts)
+                    if info.is_dir():
+                        target.mkdir(parents=True, exist_ok=True)
+                    else:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with source.open(info) as src, target.open('wb') as dst:
+                            shutil.copyfileobj(src, dst)
+                        mode = (info.external_attr >> 16) & 0o777
+                        if mode:
+                            target.chmod(mode)
+        else:
+            with tarfile.open(archive, 'r:*') as source:
+                for info in source.getmembers():
+                    parts = safe_name(info.name)
+                    if parts[0] != selected[0] or not (info.isfile() or info.isdir() or info.issym() or info.islnk()):
+                        raise ValueError('Unexpected release archive root or special file')
+                    target = stage.joinpath(*parts)
+                    if not target.resolve().is_relative_to(stage):
+                        raise ValueError('Release archive member escapes extraction directory')
+                    if info.issym() or info.islnk():
+                        if Path(info.linkname).is_absolute() or ':' in info.linkname or '\\' in info.linkname:
+                            raise ValueError('Unsafe release archive link')
+                        link = (target.parent if info.issym() else stage) / info.linkname
+                        if not link.resolve().is_relative_to(stage / selected[0]):
+                            raise ValueError('Release archive link escapes distribution')
+                    # All paths/links are checked above, including on Python versions without data_filter.
+                    if hasattr(tarfile, 'data_filter'):
+                        source.extract(info, str(stage), filter='data')
+                    else:
+                        source.extract(info, str(stage))
+        launcher = stage.joinpath(*selected)
+        if not launcher.is_file():
+            raise ValueError('Launcher was not found in release archive: ' + member)
+        destination = root / selected[0]
+        if destination.exists():
+            raise ValueError('Distribution already exists; use a fresh tool cache entry: ' + str(destination))
+        (stage / selected[0]).rename(destination)
+    return str(root.joinpath(*selected))
+
+
 def _fetch_one(tool, ctx, params, item, v, directory, con, space):
     """Download, verify and place one binary; returns {'return': 0, 'path': <binary>}."""
     ext = _pick(item.get('ext'), v['uname'])
@@ -182,24 +252,42 @@ def _fetch_one(tool, ctx, params, item, v, directory, con, space):
     r = _download(tool, ctx, params, url, directory, asset)
     if r['return'] > 0:
         return r
-    rs = _expected_sha256(tool, ctx, params, item.get('checksum'), dict(vv, url=url), asset, directory)
+    checksum = item.get('checksum') or {}
+    algorithm = checksum.get('algorithm', 'sha256')
+    algorithm_label = 'SHA-' + algorithm[3:]
+    if algorithm not in ('sha256', 'sha512') or (algorithm == 'sha512' and 'file' not in checksum):
+        return tool.cm.error('Release checksum must be SHA-256 or a per-asset SHA-512 file')
+    rs = _expected_sha256(tool, ctx, params, checksum, dict(vv, url=url), asset, directory)
     if rs['return'] > 0:
         return rs
     if rs['sha256']:
-        got = _sha256(r['path'])
+        digest = hashlib.new(algorithm)
+        with open(r['path'], 'rb') as stream:
+            for chunk in iter(lambda: stream.read(1 << 20), b''):
+                digest.update(chunk)
+        got = digest.hexdigest()
         if got != rs['sha256']:
             # Drop the bad download, or download-file would hand it back on the next attempt
             try:
                 os.remove(r['path'])
             except OSError:
                 pass
-            return tool.cm.error(f'SHA-256 mismatch for {asset}: expected {rs["sha256"]}, got {got}')
+            return tool.cm.error(f'{algorithm_label} mismatch for {asset}: expected {rs["sha256"]}, got {got}')
         if con:
-            print(f'{space}INFO: SHA-256 verified ({got[:16]}...)')
+            print(f'{space}INFO: {algorithm_label} verified ({got[:16]}...)')
     elif con:
         print(f'{space}INFO: upstream publishes no checksum for {asset} (downloaded over HTTPS)')
 
     target = os.path.join(os.getcwd(), directory, item['name'] + v['host_exe'])
+    if item.get('tree'):
+        try:
+            member = item['member'].format(**vv)
+            target = _unpack_tree(r['path'], member, os.path.join(os.getcwd(), directory))
+        except (KeyError, ValueError, OSError, tarfile.TarError, zipfile.BadZipFile) as error:
+            return tool.cm.error(str(error))
+        os.remove(r['path'])
+        os.chmod(target, os.stat(target).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        return {'return': 0, 'path': target}
     if ext:
         member = item.get('member')
         member = member.format(**vv) if member else None
@@ -249,7 +337,7 @@ def install_release(tool, ctx, params, cmd, spec):
 
     directory = 'content'
     os.makedirs(os.path.join(os.getcwd(), directory), exist_ok=True)
-    main = {k: spec[k] for k in ('name', 'url', 'ext', 'member', 'checksum') if k in spec}
+    main = {k: spec[k] for k in ('name', 'url', 'ext', 'member', 'checksum', 'tree') if k in spec}
     r = _fetch_one(tool, ctx, params, main, v, directory, con, space)
     if r['return'] > 0:
         return r
@@ -259,3 +347,102 @@ def install_release(tool, ctx, params, cmd, spec):
         if rx['return'] > 0:
             return rx
     return {'return': 0, 'install_cmd': None, 'found_path': found}
+
+
+# Windows search distributions need their Java entrypoints: vendor .bat files corrupt ! in paths.
+def install_windows_search_launcher(launcher, kind):
+    launcher = Path(launcher)
+    script = launcher.parent / ('cmeta-' + kind + '.py')
+    shutil.copyfile(__file__, script)
+    wrapper = launcher.parent / ('cmeta-' + kind + '.cmd')
+    wrapper.write_text('@echo off\nsetlocal DisableDelayedExpansion\n"' + sys.executable +
+                       '" "%~dp0' + script.name + '" ' + kind + ' %*\nexit /b %errorlevel%\n', encoding='utf-8')
+    return str(wrapper)
+
+
+def _windows_jvm_options(value):
+    """Use Windows' argument parser for the quoted options emitted by the Java JVM-options parser."""
+    if not value.strip():
+        return []
+    argc = ctypes.c_int()
+    parse = ctypes.windll.shell32.CommandLineToArgvW
+    parse.argtypes = [ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_int)]
+    parse.restype = ctypes.POINTER(ctypes.c_wchar_p)
+    pointer = parse('java ' + value, ctypes.byref(argc))
+    if not pointer:
+        raise OSError('Cannot parse JVM options')
+    try:
+        return [pointer[i] for i in range(1, argc.value)]
+    finally:
+        free = ctypes.windll.kernel32.LocalFree
+        free.argtypes = [ctypes.c_void_p]
+        free(pointer)
+
+
+def _windows_search_command(kind, home, args, env, temporary):
+    elastic = kind == 'elasticsearch'
+    if not elastic and env.get('OPENSEARCH_FIPS_MODE', '').lower() == 'true':
+        raise ValueError('The cMeta Windows launcher does not configure OpenSearch FIPS mode; use the upstream FIPS workflow')
+    prefix = 'ES' if elastic else 'OPENSEARCH'
+    conf = str(Path(env.get(prefix + '_PATH_CONF') or home / 'config').resolve())
+    java_home = env.get(prefix + '_JAVA_HOME')
+    if not elastic:
+        java_home = java_home or env.get('JAVA_HOME')
+    java = str(Path(java_home or home / 'jdk') / 'bin/java.exe')
+    if not Path(java).is_file():
+        raise ValueError('Java executable does not exist: ' + java)
+    env.update({prefix + '_HOME': str(home), prefix + '_PATH_CONF': conf,
+                prefix + '_DISTRIBUTION_TYPE': 'zip', 'HOSTNAME': env.get('COMPUTERNAME', '')})
+    env.pop('JAVA_TOOL_OPTIONS', None)
+    if elastic:
+        env.pop('_JAVA_OPTIONS', None)
+        env.update(JAVA=java, ES_JAVA_HOME=str(Path(java).parent.parent),
+                   JAVA_TYPE='ES_JAVA_HOME' if java_home else 'bundled JDK')
+        cli = ['-Xms4m', '-Xmx64m', '-XX:+UseSerialGC'] + _windows_jvm_options(env.get('CLI_JAVA_OPTS', ''))
+        env['CLI_JAVA_OPTS'] = subprocess.list2cmdline(cli)
+        if (home / 'lib/tools/server-launcher').is_dir():
+            return [java, *cli, '-cp', str(home / 'lib/tools/server-launcher/*'),
+                    'org.elasticsearch.server.launcher.ServerLauncher', *args]
+        if (home / 'lib/cli-launcher').is_dir():
+            return [java, *cli, '-Dcli.name=server', '-Dcli.script=' + str(home / 'bin/elasticsearch.bat'),
+                    '-Dcli.libs=lib/tools/server-cli', '-Des.path.home=' + str(home), '-Des.path.conf=' + conf,
+                    '-Des.distribution.type=zip', '-Des.java.type=' + env['JAVA_TYPE'],
+                    '-cp', str(home / 'lib/*') + ';' + str(home / 'lib/cli-launcher/*'),
+                    'org.elasticsearch.launcher.CliToolLauncher', *args]
+    # Elasticsearch 7 and OpenSearch use the upstream JVM-options parser and bootstrap directly.
+    (home / 'logs').mkdir(exist_ok=True)
+    env.setdefault(prefix + '_TMPDIR', temporary)
+    namespace = 'elasticsearch' if elastic else 'opensearch'
+    classpath = str(home / 'lib/*')
+    parser = subprocess.run([java, '-cp', classpath, 'org.' + namespace + '.tools.launchers.JvmOptionsParser', conf],
+                            cwd=str(home), env=env, text=True, stdout=subprocess.PIPE)
+    if parser.returncode:
+        raise ValueError('Upstream JVM-options parser failed with code ' + str(parser.returncode))
+    options = _windows_jvm_options(parser.stdout.strip())
+    return [java, *options, '-D' + namespace, '-D' + namespace + '.path.home=' + str(home),
+            '-D' + namespace + '.path.conf=' + conf, '-D' + namespace + '.distribution.type=zip',
+            '-D' + namespace + '.bundled_jdk=true', *(['-Des.distribution.flavor=default'] if elastic else []),
+            '-cp', classpath, 'org.' + namespace + '.bootstrap.' + ('Elasticsearch' if elastic else 'OpenSearch'), *args]
+
+
+def _windows_search_main():
+    kind = sys.argv[1]
+    if kind not in ('elasticsearch', 'opensearch') or os.name != 'nt':
+        raise ValueError('This launcher is for Elasticsearch/OpenSearch on Windows')
+    home = Path(__file__).resolve().parent.parent
+    env = dict(os.environ)
+    with tempfile.TemporaryDirectory(prefix='cmeta-' + kind + '-') as temporary:
+        argv = _windows_search_command(kind, home, sys.argv[2:], env, temporary)
+        # The old launchers pipe the keystore password; preserve the explicit environment interface.
+        password = env.get('KEYSTORE_PASSWORD')
+        if password is not None:
+            return subprocess.run(argv, cwd=str(home), env=env, input=password + '\n', text=True).returncode
+        return subprocess.call(argv, cwd=str(home), env=env)
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(_windows_search_main())
+    except (ValueError, OSError) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)

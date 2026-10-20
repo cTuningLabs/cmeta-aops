@@ -188,7 +188,7 @@ class Category(InitCategory):
             cols = LIST_COLUMNS if want_status else [c for c in LIST_COLUMNS if c != 'STATUS']
             show = bool(details) or bool(d)
             self._print_table(cols, rows, details=self._status_details(hosts) if want_status and show else None,
-                              projects=self._project_details(hosts))
+                              projects=self._project_details(hosts, cols))
             if not hosts:
                 print('no hosts' + (' match' if (arg1 or tags or machine or type or active) else ' yet - add one with "cx host add <repo>:<alias>" and write its _desc.yaml'))
 
@@ -248,7 +248,7 @@ class Category(InitCategory):
                     line.append(f'{h.get("status_time", 0):.1f}s')
                 table.append(line)
             self._print_table(columns, table, details=self._status_details(hosts) if verbose else None,
-                              projects=self._project_details(hosts))
+                              projects=self._project_details(hosts, columns))
 
         return {'return': 0, 'hosts': rows}
 
@@ -1764,11 +1764,28 @@ class Category(InitCategory):
                          'status': server.get('status', 'not checked'), 'probed': st.get('probed_at')})
         return rows
 
-    def _project_details(self, hosts):
-        return {h['alias']: [f'{p["alias"]}  server: {p["status"]}  cMeta: {p["cmeta"]}  '
-                             f'AOPS: {p["aops"]}  {p["server"].get("url", "")}'
-                             + (' (last probe)' if p['server'] and not h.get('project_status') else '')
-                             for p in self._project_rows(h)] for h in hosts}
+    def _project_details(self, hosts, columns):
+        """{host alias: [project row]}: the cells of each project by table column, printed aligned under its
+        host's row (a server row: its status, health URL and versions); the text left over follows the last column."""
+        out = {}
+        for h in hosts:
+            declared = (h.get('host_desc') or h['desc']).get('projects') or {}
+            rows = []
+            for p in self._project_rows(h):
+                # a host that is down or a failed check has no URL in its result: show the declared one
+                url = (p['server'] or {}).get('url') or ((declared.get(p['alias']) or {}).get('server') or {}).get('url', '')
+                probed = p['probed'] or ''
+                row = {'alias': '  * ' + p['alias'], 'type': 'server' if url else 'project', 'status': p['status'],
+                       'cmeta': p['cmeta'], 'aops': p['aops'], 'probed': probed[:16].replace('T', ' ')}
+                if 'ADDRESS' in columns:
+                    row['address'] = url
+                    row['extra'] = f'(cMeta: {p["cmeta"]}  AOPS: {p["aops"]})'
+                else:
+                    # cx host ls: the versions have their own columns; without STATUS, the status saved by the last check
+                    row['extra'] = url + ('' if 'STATUS' in columns or not p['server'] else f'  ({p["status"]} at the last check)')
+                rows.append(row)
+            out[h['alias']] = rows
+        return out
 
     def _project_status_all(self, ctx, hosts, timeout=DEFAULT_STATUS_TIMEOUT, cmd_timeout=DEFAULT_STATUS_CMD_TIMEOUT):
         """One bounded remote HTTP check batch per reachable host; never start a project server."""
@@ -2738,6 +2755,30 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if t == 'docker':
             name = acc.get('container') or h['alias']
             if status == 'missing':
+                # Artifact-owned volumes must survive container recreation; never replace lost data silently.
+                for volume in h['desc'].get('artifact_mounts') or []:
+                    if volume.get('storage') != 'volume':
+                        continue
+                    volume_name = volume.get('volume') or ''
+                    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', volume_name):
+                        return self.cm.error('Invalid registered artifact volume name')
+                    check = f'{self._engine(h)} volume inspect {volume_name}'
+                    if h.get('via'):
+                        parent = self._get_host(ctx, h['via'])
+                        if parent['return'] > 0: return parent
+                        if not self._here(parent['host']):
+                            routed = self._cmd_run(ctx, parent['host'], check)
+                            if routed['return'] > 0: return routed
+                            check = routed['cmd']
+                    observed = self._run_local(check, capture=True, con=False)
+                    if observed.get('returncode', 1) != 0:
+                        return self.cm.error(f'Registered state volume {volume_name} is missing; restore a backup before recreating this container')
+                    try:
+                        labels = json.loads(observed['stdout'])[0].get('Labels') or {}
+                    except (KeyError, ValueError, IndexError, TypeError):
+                        return self.cm.error('Cannot verify registered artifact volume: ' + volume_name)
+                    if labels.get('cmeta.artifact') != volume.get('uid') or labels.get('cmeta.subpath') != volume.get('subpath'):
+                        return self.cm.error('Registered volume belongs to another artifact: ' + volume_name)
                 image = acc.get('image')
                 if not image:
                     return self.cm.error(f'container "{name}" does not exist and no "access: image" is declared to create it')
@@ -3129,6 +3170,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         }
         row['projects'] = self._project_rows(h)
         if h.get('project'): row['project'] = h['project']
+        # for programs that show the fleet (a web page): what the console prints in ADDRESS, and the artifact itself
+        row['address'] = self._address_text(h)
+        row['uid'] = str((h.get('cmeta') or {}).get('artifact') or h.get('uid') or '').split(',')[-1]
+        row['tags'] = list((h.get('cmeta') or {}).get('tags') or [])
+        row['made'] = bool((h.get('desc') or {}).get('made_from'))
         if with_status:
             row['status'] = h.get('status') or '-'
             if h.get('status_time') is not None:
@@ -3161,7 +3207,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         return by_name
 
     def _print_table(self, columns, rows, details=None, projects=None):
-        """The table; `details` = {first cell (the host): [lines]} printed indented under that row."""
+        """The table; `projects` = {first cell (the host): [project rows]} aligned in the same columns under
+        that row (their "extra" text after the last column); `details` = {host: [lines]} printed indented."""
         keys = {'HOST': 'alias', 'TYPE': 'type', 'MACHINE': 'machine', 'STATUS': 'status', 'OS': 'os',
                 'SUDO': 'sudo', 'DOCKER': 'docker', 'PODMAN': 'podman', 'CMETA': 'cmeta', 'AOPS': 'aops',
                 'PROBED': 'probed'}
@@ -3171,15 +3218,18 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 table.append([str(row.get(keys.get(c, c.lower()), '-')) for c in columns])
             else:
                 table.append([str(x) for x in row])
+        sub = {host: [([str(p.get(keys.get(c, c.lower()), '')) for c in columns], str(p.get('extra', '')))
+                      for p in lines] for host, lines in (projects or {}).items()}
         widths = [len(c) for c in columns]
-        for row in table:
+        for row in table + [cells for lines in sub.values() for cells, _ in lines]:
             for i, cell in enumerate(row):
                 widths[i] = max(widths[i], len(cell))
         fmt = '  '.join('{:<' + str(w) + '}' for w in widths)
         print(fmt.format(*columns).rstrip())
         for row in table:
             print(fmt.format(*row).rstrip())
-            for line in (projects or {}).get(row[0], []) or []:
-                print('  * ' + str(line))
+            for cells, extra in sub.get(row[0], []):
+                line = fmt.format(*cells)
+                print((line + '  ' + extra).rstrip() if extra else line.rstrip())
             for line in (details or {}).get(row[0], []) or []:
                 print('    * ' + str(line))

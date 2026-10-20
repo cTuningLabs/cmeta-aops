@@ -32,6 +32,7 @@ import os
 import platform
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -43,6 +44,8 @@ CONTAINER_CATEGORY = 'container,ed08f0d107044479'
 HOST_CATEGORY = 'host,e4e49c251c814f6d'
 REPO_CATEGORY = 'repo,f4f792ab40c7498f'
 CONFIG_CATEGORY = 'config,cc6bfe174be847ed'
+ARTIFACT_CATEGORIES = {'result': 'result,6567e4df4d04488a', 'cache': 'cache,1ebdcc1cc30c4022',
+                       'state': 'state,a1ed1ed7ca7043b6'}
 
 DEFAULT_TEMPLATE = 'ubuntu'
 DEFAULT_REPOS = 'ctuninglabs@cmeta-aops'
@@ -59,6 +62,51 @@ def engine_run(engine, args, timeout=600):
         return 1, '', str(e)
     return r.returncode, r.stdout.decode('utf-8', errors='replace'), r.stderr.decode('utf-8', errors='replace')
 
+
+def ensure_artifact_volumes(engine, mounts):
+    """Create owned Linux volumes once; a lost registered volume requires explicit recovery."""
+    for mount in mounts:
+        if mount.get('storage') != 'volume':
+            continue
+        marker = os.path.join(mount['path'], '.cmeta-volume.json')
+        expected = {'format': 1, 'storage': 'volume', 'filesystem': 'linux', 'engine': engine,
+                    'volume': mount['volume'], 'artifact_uid': mount['uid'], 'subpath': mount['subpath']}
+        if os.path.isfile(marker):
+            with open(marker, encoding='utf-8') as stream:
+                saved = json.load(stream)
+            if saved != expected:
+                raise ValueError('Volume registration differs; migrate/restore explicitly: ' + marker)
+        code, out, err = engine_run(engine, ['volume', 'inspect', mount['volume']], timeout=60)
+        if code:
+            if os.path.isfile(marker):
+                raise ValueError('Registered volume is missing: ' + mount['volume'] +
+                                 '. Restore a backup; refusing to create empty replacement storage.')
+            if mount['mode'] == 'ro':
+                raise ValueError('Read-only volume does not exist: ' + mount['volume'])
+            labels = ['--label', 'cmeta.artifact=' + mount['uid'],
+                      '--label', 'cmeta.subpath=' + mount['subpath']]
+            code, out, err = engine_run(engine, ['volume', 'create'] + labels + [mount['volume']], timeout=60)
+            if code:
+                raise ValueError('Cannot create artifact volume: ' + (err.strip() or out.strip()))
+            code, out, err = engine_run(engine, ['volume', 'inspect', mount['volume']], timeout=60)
+        if code:
+            raise ValueError('Cannot inspect artifact volume: ' + mount['volume'])
+        observed = json.loads(out)[0]
+        labels = observed.get('Labels') or {}
+        if labels.get('cmeta.artifact') != mount['uid'] or labels.get('cmeta.subpath') != mount['subpath']:
+            raise ValueError('Volume belongs to another artifact: ' + mount['volume'])
+        if not os.path.isfile(marker):
+            temporary = marker + '.part'
+            with open(temporary, 'w', encoding='utf-8') as stream:
+                json.dump(expected, stream, indent=2)
+                stream.write('\n')
+            os.replace(temporary, marker)
+
+
+def artifact_mount_identity(mounts):
+    """Old bind declarations retain the same identity; volume handles add storage identity."""
+    return [dict({k: m.get(k) for k in ('key', 'cref', 'path', 'inside', 'mode')},
+                 storage=m.get('storage', 'bind'), volume=m.get('volume', '')) for m in mounts]
 
 def clean_name(text):
     """A container and artifact name: lower case, letters, digits, dots and dashes."""
@@ -201,6 +249,69 @@ class CTask(InitCTask):
         r = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(path, '_desc'))
         return (r.get('data') or {}) if r['return'] == 0 else {}
 
+    def _artifact_mounts(self, declarations, home, engine='docker'):
+        """Share selected work artifacts, including local ones, without sharing a repository/index."""
+        if not isinstance(declarations, dict):
+            raise ValueError('instance_artifacts/artifacts must map names to state/result/cache references')
+        mounts = []
+        for key, declaration in declarations.items():
+            if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', str(key)):
+                raise ValueError('Artifact mount names must contain letters, digits, underscores or hyphens')
+            if not isinstance(declaration, (str, dict)):
+                raise ValueError('Artifact mount must be a reference or a mapping with cref/mode')
+            value = {'cref': declaration} if isinstance(declaration, str) else declaration
+            cref, mode = str(value.get('cref') or ''), str(value.get('mode') or 'rw')
+            storage = str(value.get('storage') or 'bind')
+            if storage not in ('bind', 'volume'):
+                raise ValueError('Artifact storage must be bind or volume')
+            category, separator, reference = cref.partition('::')
+            kind = category.split(',')[0]
+            reference, slash, suffix = reference.replace('\\', '/').partition('/')
+            if not separator or kind not in ARTIFACT_CATEGORIES or not reference or (slash and kind != 'state'):
+                raise ValueError('Artifact mounts require a state/result/cache reference; only state supports volume subpaths')
+            parts = suffix.split('/') if slash else []
+            if any(not p or p in ('.', '..') or ':' in p for p in parts):
+                raise ValueError('State volume subpaths must contain ordinary relative components')
+            if mode not in ('rw', 'ro'):
+                raise ValueError('Artifact mount mode must be rw or ro')
+            request = dict(category=ARTIFACT_CATEGORIES[kind], command='get' if mode == 'rw' else 'find',
+                           arg1=reference, con=False, quiet=True)
+            if mode == 'rw':
+                request['meta'] = {'tags': ['container-state'], **({'permanent': True} if kind in ('result', 'state') else {})}
+            result = self.cm.access(request)
+            if result.get('return'):
+                raise ValueError(result.get('error', 'Cannot resolve artifact mount: ' + cref))
+            matches = [result['artifact']] if result.get('artifact') else result.get('artifacts', [])
+            if len(matches) != 1:
+                raise ValueError('Artifact mount must resolve to exactly one artifact: ' + cref)
+            artifact = matches[0]
+            root = os.path.realpath(artifact['path'])
+            path = os.path.realpath(os.path.join(root, *parts))
+            if os.path.commonpath([root, path]) != root:
+                raise ValueError('State volume subpath escapes its artifact')
+            if mode == 'rw':
+                os.makedirs(path, exist_ok=True)
+            if ',' in path or '\n' in path or not os.path.isdir(path):
+                raise ValueError('Artifact mount path must be an existing directory without commas/newlines')
+            mount = dict(key=str(key), cref=cref, uid=artifact.get('cmeta', {}).get('artifact', ''),
+                         path=path, inside=home + '/artifacts/' + str(key), mode=mode)
+            marker = os.path.join(path, '.cmeta-volume.json')
+            if storage == 'volume':
+                if kind != 'state':
+                    raise ValueError('Named artifact volumes require a protected state reference')
+                uid = (artifact.get('cmeta_ref_parts') or {}).get('artifact_uid') or str((artifact.get('cmeta') or {}).get('artifact') or '').split(',')[-1]
+                if not re.fullmatch(r'[0-9a-fA-F]{16}', uid):
+                    raise ValueError('State volume ownership requires the artifact UID')
+                if not os.path.isfile(marker) and os.listdir(path):
+                    raise ValueError('Volume storage requires an empty state subdirectory; migrate existing data explicitly')
+                digest = hashlib.sha256((uid + '/' + suffix).encode('utf-8')).hexdigest()[:12]
+                mount.update(storage='volume', volume='cmeta-state-' + uid + '-' + digest,
+                             uid=uid, subpath=suffix, filesystem='linux', engine=engine)
+            elif os.path.isfile(marker):
+                raise ValueError('This directory represents a Linux volume; use storage=volume or restore a separate deployment')
+            mounts.append(mount)
+        return mounts
+
     @staticmethod
     def _keep_user_manager(con):
         """
@@ -263,6 +374,7 @@ class CTask(InitCTask):
             instance: str = '',              # the instance's name (default: <this host>-<engine>-<template>[-<base>]-<os_version>[-<compute>][-<arch>][-t<hash of the other template keys>])
             repos: str = '',                 # repositories of this machine mounted inside, comma-separated (default: ctuninglabs@cmeta-aops)
             data: str = '',                  # data repositories (config::task cache_repos) mounted under <home>/data/<alias>: all by default, a subset, or "none"
+            artifacts: dict = {},            # selected state/result/cache artifacts; optional owned Linux volumes for state subpaths
             new_host: bool = False,          # another instance of the same place (-2, -3 ...) instead of the existing one
             ports: str = '',                 # ports published on 127.0.0.1 when the instance is made: "8000" or "8080:80", comma-separated (a server run with --on_detach)
             pull: bool = False,              # pull the base image again when building
@@ -358,9 +470,25 @@ class CTask(InitCTask):
                 return self.cm.error(f'--ports: "{p}" is not a port or host:container ports')
             published.append(f'{h}:{c or h}')
 
+        declared_artifacts = dict(bdesc.get('instance_artifacts') or {})
+        if bdesc is not tdesc:
+            declared_artifacts.update(tdesc.get('instance_artifacts') or {})
+        declared_artifacts.update(artifacts or {})
+
         # ---- an existing instance: running, stopped, or gone
         if existing:
             d = self._desc(existing['path'])
+            if d.get('artifact_mounts') or artifacts:
+                try:
+                    requested = self._artifact_mounts(declared_artifacts, home, engine)
+                except ValueError as error:
+                    return self.cm.error(str(error))
+                if artifact_mount_identity(requested) != artifact_mount_identity(d.get('artifact_mounts') or []):
+                    return self.cm.error(f'{inst} was made with different artifact mounts; use --new_host or recreate the container')
+                try:
+                    ensure_artifact_volumes(engine, requested)
+                except (OSError, ValueError) as error:
+                    return self.cm.error(str(error))
             acc = d.get('access') or {}
             missing = [p for p in published if p not in (acc.get('ports') or [])]
             if missing:
@@ -432,6 +560,12 @@ class CTask(InitCTask):
             config_env.append((str(cfg_key), f'CMETA_INSTANCE_CONFIG_{n}', str(value)))
 
 
+        try:
+            artifact_mounts = self._artifact_mounts(declared_artifacts, home, engine)
+            ensure_artifact_volumes(engine, artifact_mounts)
+        except (OSError, ValueError) as error:
+            return self.cm.error(str(error))
+
         # ---- the image, through the container category
         ib = {'category': CONTAINER_CATEGORY, 'command': 'build', 'arg1': name, 'engine': engine,
               'compute': compute, 'template': params, 'platform': platform_str,
@@ -475,6 +609,16 @@ class CTask(InitCTask):
             run_args += ['-v', f'{volume["name"]}:{volume["target"]}']
         for mnt in mounts + data_mounts:
             run_args += ['-v', f'{mnt["path"]}:{mnt["inside"]}']
+        for mnt in artifact_mounts:
+            source = mnt['volume'] if mnt.get('storage') == 'volume' else mnt['path']
+            kind = 'volume' if mnt.get('storage') == 'volume' else 'bind'
+            run_args += ['--mount', f'type={kind},src={source},dst={mnt["inside"]}' + (',readonly' if mnt['mode'] == 'ro' else '')]
+        if artifact_mounts:
+            mapping = {m['key']: {'cref': m['cref'], 'path': m['inside'], 'host_path': m['path'],
+                                  'mode': m['mode'], 'source_os': sys.platform,
+                                  **({k: m[k] for k in ('storage', 'volume', 'filesystem', 'engine')}
+                                     if m.get('storage') == 'volume' else {})} for m in artifact_mounts}
+            run_args += ['-e', 'CMETA_ARTIFACT_MOUNTS=' + json.dumps(mapping, separators=(',', ':'))]
         if config_env:
             # the entrypoint sets these config keys inside: task.cache_repos.<key> = the mounted alias
             run_args += ['-e', 'CMETA_CONFIG_FROM_ENV=' + ';'.join(f'{cfg_key}={var}' for cfg_key, var, _ in config_env)]
@@ -503,6 +647,14 @@ class CTask(InitCTask):
             engine_run(engine, ['rm', '-f', inst], timeout=120)
             return self.cm.error(f'the instance {inst} started but its entrypoint did not finish (the repositories plugged and indexed) within {READY_TIMEOUT} s; '
                                  f'the container is removed; its last lines: {tail or "(none)"}')
+
+        # A new Linux volume starts owned by root; give only its root directory to the image user.
+        for mount in artifact_mounts:
+            if mount.get('storage') == 'volume' and mount['mode'] == 'rw':
+                code, out, err = engine_run(engine, ['exec', '-u', 'root', inst, 'sh', '-c',
+                    'chown "$(id -u "$1"):$(id -g "$1")" "$2"', 'sh', user, mount['inside']], timeout=60)
+                if code:
+                    return self.cm.error('Cannot initialize artifact volume ownership: ' + (err.strip() or out.strip()))
 
         # ---- the readme inside
         made = datetime.datetime.now().astimezone().isoformat(timespec='minutes')
@@ -541,7 +693,8 @@ class CTask(InitCTask):
             desc['via'] = f'host,{HOST_CATEGORY.split(",")[1]}::{carrier},{carrier_uid}'
         desc.update({
             'access': {'container': inst, 'engine': engine, 'image': image, 'keepalive': ' '.join(KEEPALIVE),
-                       'run_args': ' '.join(run_args), 'user': user, 'shell': 'bash -l', 'ports': published},
+                       'run_args': subprocess.list2cmdline(run_args) if os.name == 'nt' else shlex.join(run_args),
+                       'user': user, 'shell': 'bash -l', 'ports': published},
             'cmeta': {'home': f'{home}/CMETA', 'install': 'uv-tool'},
             'sync': {'default': 'none'},
             'made_from': {'template': name, 'base': base_name, 'params': params, 'compute': compute, 'arch': arch_norm, 'engine': engine,
@@ -550,6 +703,7 @@ class CTask(InitCTask):
                           'cmeta_inside': rb.get('cmeta_inside', '')},
             'mounts': mounts + data_mounts,
             'instance_volumes': instance_volumes,
+            'artifact_mounts': artifact_mounts,
             'ai': {'notes': f'an instance made by "cx task run get-host--docker {name}" on {made}; its readme is {home}/readme-cmeta.md; '
                             f'remove it with "cx host destroy {inst}" (--image removes the image too)'},
         })

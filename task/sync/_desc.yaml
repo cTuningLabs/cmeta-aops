@@ -7,8 +7,10 @@ params_map:
   resync-mode: resync_mode
   require-initialized: require_initialized
   migrate-state: migrate_state
+  remove-empty-dirs: remove_empty_dirs
 cli_params:
   passes: {type: int, min: 1, max: 10}
+  remove_empty_dirs: bool
 
 # Operational defaults are queryable here, independent of the implementation.
 defaults:
@@ -19,6 +21,7 @@ defaults:
   max_delete_bisync: 50
   max_delete_mirror: 100
   transfers: 4
+  remove_empty_dirs: false
   state_filters:
     - '- **/sync--*/**'
     - '- **/.cmeta-sync*'

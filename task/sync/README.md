@@ -129,6 +129,16 @@ the new selection. Adding or removing exclusions never silently resets a baselin
 
 ## Modes and first run
 
+Bisync can remove included empty directories on both endpoints after a successful
+run. Enable it in the sync definition with `remove_empty_dirs: true`, or override
+it for a run with `--remove-empty-dirs` (`--remove-empty-dirs=no` disables it).
+The compatible default is false. Transfer roots, excluded directories, nonempty
+directories and files are preserved. It also removes empty ancestor directories
+left by deleted artifacts; categories with metadata are nonempty and remain.
+Dry runs only preview the removals. This uses rclone bisync's existing
+`--remove-empty-dirs` behavior and does not change the file selection or require
+a resync of an established baseline. It is a bisync option, not a copy/mirror one.
+
 | Mode | Behavior |
 |---|---|
 | `bisync` (default) | Changes and deletions propagate both ways relative to the last successful baseline. |

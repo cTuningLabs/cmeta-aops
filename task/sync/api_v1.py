@@ -159,7 +159,8 @@ class CTask(InitCTask):
         d = self.read(Path(a['path']) / '_desc.yaml')
         allowed = {'authors', 'description', 'mode', 'source', 'destination', 'repos',
                    'dirs', 'exclude', 'exclude_categories', 'resync_mode', 'max_delete',
-                   'initial_mode', 'initial_max_delete', 'transfers', 'bwlimit', 'also'}
+                   'initial_mode', 'initial_max_delete', 'transfers', 'bwlimit', 'also',
+                   'remove_empty_dirs'}
         if not isinstance(d, dict) or set(d) - allowed:
             raise ValueError('unknown sync description fields: ' + str(set(d) - allowed))
         also = d.get('also', [])
@@ -170,6 +171,11 @@ class CTask(InitCTask):
         if mode not in ('bisync', 'copy', 'oneway', 'mirror'):
             raise ValueError('mode must be bisync, copy/oneway, or mirror')
         mode = 'copy' if mode == 'oneway' else mode
+        remove_empty_dirs = d.get('remove_empty_dirs', defaults.get('remove_empty_dirs', False))
+        if not isinstance(remove_empty_dirs, bool):
+            raise ValueError('remove_empty_dirs must be a boolean')
+        if remove_empty_dirs and mode != 'bisync':
+            raise ValueError('remove_empty_dirs is supported only for bisync')
         repos = d.get('repos')
         if repos is not None and repos != '*' and (not isinstance(repos, list) or not repos):
             raise ValueError('repos must be a nonempty list of directory names or "*"')
@@ -240,7 +246,8 @@ class CTask(InitCTask):
                     source=sides[0], destination=sides[1], mode=mode, filters=filters,
                     resync_mode=initial, max_delete=max_delete,
                     initial_mode=initial_mode, initial_max_delete=initial_max_delete,
-                    transfers=transfers, bwlimit=str(d.get('bwlimit', '')), also=also)
+                    transfers=transfers, bwlimit=str(d.get('bwlimit', '')), also=also,
+                    remove_empty_dirs=remove_empty_dirs)
 
     def expanded_plans(self, ctx, refs, ancestors=()):
         # Resolve every linked definition before any transfer or state update.
@@ -282,6 +289,8 @@ class CTask(InitCTask):
         if plan['mode'] == 'bisync':
             argv += ['--workdir', str(workdir), '--max-delete', str(plan['max_delete']),
                      '--resilient', '--recover', '--conflict-resolve', 'none', '--conflict-loser', 'num']
+            if plan.get('remove_empty_dirs', False):
+                argv += ['--remove-empty-dirs']
             if initial:
                 argv += ['--resync', '--resync-mode', plan['resync_mode']]
         elif plan['mode'] == 'mirror':
@@ -466,7 +475,8 @@ class CTask(InitCTask):
     def run(self, ctx: dict, name: str = None, names: list = None,
             plan: bool = False, dry_run: bool = False, resync: bool = False,
             resync_mode: str = None, passes: int = 1, initialize: bool = False,
-            require_initialized: bool = False, migrate_state: bool = False, live: bool = False):
+            require_initialized: bool = False, migrate_state: bool = False, live: bool = False,
+            remove_empty_dirs: bool = None):
         """Run reusable sync artifacts; omit name to list them.
 
         cxt sync NAME [--plan | --dry-run] [-q]
@@ -483,6 +493,9 @@ class CTask(InitCTask):
         --resync is explicit recovery after reviewing changed filters or lost state.
         --live shows file operations and periodic statistics while rclone runs;
         the complete log is still saved. Works with -q and --dry-run.
+        --remove-empty-dirs opts bisync into cleaning included empty directories
+        on both sides; excluded directories and the transfer roots are preserved.
+        The default remains unchanged unless enabled in a definition or on the CLI.
         """
         try:
             if initialize and require_initialized:
@@ -509,6 +522,11 @@ class CTask(InitCTask):
             if not 1 <= int(passes) <= 10:
                 raise ValueError('passes must be between 1 and 10')
             plans = self.expanded_plans(ctx, refs)
+            if remove_empty_dirs is not None:
+                for p in plans:
+                    p['remove_empty_dirs'] = bool(remove_empty_dirs)
+                    if p['remove_empty_dirs'] and p['mode'] != 'bisync':
+                        raise ValueError('remove_empty_dirs is supported only for bisync')
             if resync_mode:
                 if resync_mode not in ('newer', 'older', 'path1', 'path2', 'larger', 'smaller'):
                     raise ValueError('invalid resync_mode')
@@ -528,6 +546,8 @@ class CTask(InitCTask):
                     else:
                         print('  initial winner: ' + p['resync_mode'] + '; overwritten files backed up')
                     print('  filters: ' + ', '.join(p['filters']))
+                    if p.get('remove_empty_dirs'):
+                        print('  remove included empty directories on both sides after successful bisync')
                     print('  state: result::' + p['state_ref'])
             if plan:
                 return {'return': 0, 'plans': plans}

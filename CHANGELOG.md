@@ -2,6 +2,61 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.52.0
+- **tool/cmeta: cMeta 0.37.5 by default** (declarative website task adapters in the engine).
+- **secret: a secret of kind file names its file as `file: {path: files/<name>}`:** `cx secret show` and
+  `cx secret check` see it, and `check` reports any other reader of a token or a file secret the way it did
+  for a private key.
+- **`cx host status` / `cx host ls`: project rows in the host columns:** the projects of a host are printed
+  aligned under its row (status, health URL, versions after the last column). The host rows returned to
+  programs also carry the address, the artifact UID, the tags and whether the host was made from a template.
+- **Website instances in the invoking cMeta home:** a `project.yaml` with `home: current` describes a site that
+  runs in the home that calls it (one site on a machine with its global repositories) instead of in a project
+  home of its own. `manage-cmeta-project` checks the declared repositories, creates the instance's `state`
+  artifact (data, secrets, runtime) and generates `__info`, `__run_server`, `__run_server_in_docker` and
+  `__run_server_nohup.sh`, plus `___sync_all.bat`/`.sh` from a `syncs:` list (`host::` steps run
+  `cx host sync`, the others `sync --require-initialized --live`). A native run starts in the background with
+  `--detach` and answers `--status`, `--logs` and `--stop` (the whole process tree). A Docker run mounts the
+  declared repositories read-only by alias, the state's data read-write (shared with native runs) and its
+  secrets read-only, and keeps an empty-seeded persistent local repository in the state. `{state}`,
+  `{secrets}` and `{cmeta_home}` in the declared parameters expand per mode. Project homes keep their behavior.
+- **sync: optional removal of empty directories:** `remove_empty_dirs: true` in a bisync definition (or
+  `--remove-empty-dirs` for one run) removes the included empty directories on both endpoints after a
+  successful run, including the empty ancestors of deleted artifacts. Transfer roots, excluded and nonempty
+  directories are kept, a dry run only previews, and an established baseline needs no resync. Off by default.
+- **Standalone cMeta projects:** `manage-cmeta-project` bootstraps/adopts a project home,
+  discovers its repositories and generates thin root shell scripts for setup, reindex,
+  Git updates and native/Docker execution. Optional new venvs inherit the invoking
+  Python/cMeta unless explicitly overridden; existing environments are preserved.
+  `run-website` can use these projects or run natively in the current home. Docker
+  data is seeded once into a persistent host local repository; legacy website state
+  deployments remain compatible. No automatic remote deployment or sync is added.
+- **Windows-owned website deployments:** `run-website --mode=docker` can create protected state in the
+  Windows orchestrator while its legacy runtime uses an artifact-owned Linux volume. `get-host--docker`
+  supports optional state-volume storage, persistent UID-based ownership records and labels, refusal of
+  missing/foreign volumes, and retained volumes across container recreation. Existing bind mounts remain
+  compatible. Portable source/diagnostics and completed backup results stay visible in Windows; generated
+  Bash launch scripts use LF line endings. Host recreation checks registered volumes before starting.
+- **Website deployments inside cMeta:** new protected `state` category holds mutable deployed source,
+  private repositories/environments and service volumes. `run-website` stages a movable recipe and its
+  checked result inputs once, then runs that same task natively or through Docker with separate result
+  backup histories. Private-home paths rebase when state moves; source edits survive preparation.
+  Optional declared Linux software capture supports native execution without installing host services.
+  Selected Docker mounts now also accept contained state subdirectories; existing result/cache roots
+  and named volumes retain their behavior.
+- **Selected artifact mounts for Docker instances:** container templates can declare `instance_artifacts`,
+  or tasks can pass `--on_artifacts.<key>=result::local:<name>`, to bind individual host cache/result roots.
+  Writable results are created if missing; read-only mounts must exist. The container receives paths in
+  `CMETA_ARTIFACT_MOUNTS`. Real paths support state on another disk without sharing the host's local repo.
+  Existing named-volume instances retain their mounts; saved Docker arguments replay correctly on Windows.
+- **Elasticsearch and OpenSearch tools:** detect existing installations or install checked official archives
+  with their bundled Java runtimes. Defaults live in each tool's description, with standard explicit-version,
+  version-list and update controls. Setup does not start a service or configure security/data storage.
+  Windows launchers avoid cmd delayed-expansion damage to paths containing `!`.
+- **Complete release distributions:** the shared release installer can retain a full archive tree and check
+  per-asset SHA-512 files, alongside its existing single-binary/SHA-256 behavior. Extraction rejects escaping
+  paths/links and special files.
+
 ## 0.51.0
 - **`tool/cmeta` installs cMeta 0.37.4 by default** (was 0.37.1).
 - **Optional persistent instance volumes for container templates:** `get-host--docker` accepts

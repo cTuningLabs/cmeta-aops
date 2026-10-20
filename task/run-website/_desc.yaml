@@ -1,0 +1,39 @@
+authors: Grigori Fursin
+description: Run a website from a protected state artifact, with its own source snapshot and optional private cMeta home.
+
+cache: false
+store_global: false
+
+params_map:
+  arg2: website
+  arg3: action
+  state-cref: state_cref
+  project-home: project_home
+  current-env: current_env
+  env-file: env_file
+  public-url: public_url
+
+cli_params:
+  mode:
+    values: [native, docker]
+  repositories:
+    values: [isolated, global]
+  storage:
+    values: [bind, volume]
+  action:
+    values: [plan, prepare, run, status, stop, backup, index, export-native]
+
+dependencies:
+  project: manage-cmeta-project,9df2b3a416e84c75
+  resolver: get-host--docker,08e0250b15e2486a
+  cmeta: cmeta,318b08e8007e43c4
+  setup: setup,a2f9b61079ce4333
+
+layout:
+  source: src
+  inputs: inputs
+  home: CMETA
+  volume: volumes/app
+  diagnostics: diagnostics
+  native_software: tools/native
+  environment: .venv
