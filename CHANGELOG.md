@@ -2,7 +2,11 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## Unreleased
+## 0.52.0
+- **tool/cmeta: cMeta 0.37.5 by default** (declarative website task adapters in the engine).
+- **secret: a secret of kind file names its file as `file: {path: files/<name>}`:** `cx secret show` and
+  `cx secret check` see it, and `check` reports any other reader of a token or a file secret the way it did
+  for a private key.
 - **`cx host status` / `cx host ls`: project rows in the host columns:** the projects of a host are printed
   aligned under its row (status, health URL, versions after the last column). The host rows returned to
   programs also carry the address, the artifact UID, the tags and whether the host was made from a template.
