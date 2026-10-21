@@ -15,7 +15,7 @@ from cmeta.category import InitCategory
 
 DESC_FILE = '_desc.yaml'
 
-LIST_COLUMNS = ['MACHINE', 'OWNER', 'KIND', 'MODEL', 'ACQUIRED', 'HOSTS']
+LIST_COLUMNS = ['MACHINE', 'OWNER', 'KIND', 'STATUS', 'MODEL', 'ACQUIRED', 'HOSTS']
 
 
 class Category(InitCategory):
@@ -58,6 +58,7 @@ class Category(InitCategory):
             d = m['desc']
             hosts = by_machine.get(m['alias'], [])
             rows.append([m['alias'], str(d.get('owner', '-')), str(d.get('kind', '-')),
+                         'retired' if d.get('retired') is True else '-',
                          str(d.get('model') or d.get('name') or '-'), str(d.get('acquired', '-')),
                          ', '.join(hosts) if hosts else '-'])
 
@@ -73,7 +74,9 @@ class Category(InitCategory):
             if not rows:
                 print('no machines' + (' match' if (arg1 or tags or owner or kind) else ' yet'))
 
-        return {'return': 0, 'machines': [{'alias': m['alias'], 'desc': m['desc'], 'hosts': by_machine.get(m['alias'], [])}
+        return {'return': 0, 'machines': [{'alias': m['alias'], 'desc': m['desc'], 'hosts': by_machine.get(m['alias'], []),
+                                          'retired': m['desc'].get('retired') is True,
+                                          'status': 'retired' if m['desc'].get('retired') is True else '-'}
                                           for m in machines]}
 
     ############################################################
@@ -112,7 +115,9 @@ class Category(InitCategory):
             print('')
             print('# hosts: ' + (', '.join(hosts) if hosts else 'none yet'))
 
-        return {'return': 0, 'machine': {'alias': m['alias'], 'path': m['path'], 'desc': m['desc'], 'hosts': hosts}}
+        return {'return': 0, 'machine': {'alias': m['alias'], 'path': m['path'], 'desc': m['desc'], 'hosts': hosts,
+                                         'retired': m['desc'].get('retired') is True,
+                                         'status': 'retired' if m['desc'].get('retired') is True else '-'}}
 
     ############################################################
     def _select(self, ctx, arg1=None, tags=None, owner=None, kind=None):

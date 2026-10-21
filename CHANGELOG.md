@@ -2,6 +2,13 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.53.0
+- **Retired hosts and machines:** `retired: true` in a host's or a machine's `_desc.yaml` keeps its record
+  without contacting its old endpoint. `cx host ls` and `cx host status` show `retired` (status skips the
+  transport and project-server checks; `--active` leaves it out), `cx machine ls` gets a STATUS column, and
+  JSON rows and `show` carry `retired` and `status`. Retirement is declared, never inferred from a failed
+  connection or an alias; a machine and its hosts are retired separately.
+
 ## 0.52.0
 - **tool/cmeta: cMeta 0.37.5 by default** (declarative website task adapters in the engine).
 - **secret: a secret of kind file names its file as `file: {path: files/<name>}`:** `cx secret show` and

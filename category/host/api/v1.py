@@ -185,7 +185,8 @@ class Category(InitCategory):
             rows.append(self._row(h, want_status))
 
         if con:
-            cols = LIST_COLUMNS if want_status else [c for c in LIST_COLUMNS if c != 'STATUS']
+            show_status = want_status or any(self._retired(h) for h in hosts)
+            cols = LIST_COLUMNS if show_status else [c for c in LIST_COLUMNS if c != 'STATUS']
             show = bool(details) or bool(d)
             self._print_table(cols, rows, details=self._status_details(hosts) if want_status and show else None,
                               projects=self._project_details(hosts, cols))
@@ -1759,6 +1760,8 @@ class Category(InitCategory):
             p = desc['projects'][name]
             st = h['state'] if h.get('project') else ((h.get('state') or {}).get('projects') or {}).get(name, {})
             server = (h.get('project_status') or {}).get(name) or st.get('server') or {}
+            if self._retired(h):
+                server = {'status': 'retired', 'url': (p.get('server') or {}).get('url')}
             rows.append({'alias': name, 'path': p.get('path'), 'cmeta': st.get('cmeta_version', '-'),
                          'aops': st.get('aops_version', '-'), 'server': server,
                          'status': server.get('status', 'not checked'), 'probed': st.get('probed_at')})
@@ -1795,6 +1798,9 @@ class Category(InitCategory):
             desc = h.get('host_desc') or h['desc']
             names = [h['project']] if h.get('project') else list(desc.get('projects') or {})
             if not names: return
+            if self._retired(h):
+                h['project_status'] = {name: {'status': 'retired'} for name in names}
+                return
             if not self._usable(h):
                 h['project_status'] = {name: {'status': 'host ' + str(h.get('status') or 'down')} for name in names}
                 return
@@ -2162,6 +2168,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
     # Status
     ############################################################
 
+    @staticmethod
+    def _retired(h):
+        """Retirement is declared, never inferred from a failed connection or an alias."""
+        return (h.get('host_desc') or h.get('desc') or {}).get('retired') is True
+
     def _status_all(self, ctx, hosts, timeout=DEFAULT_STATUS_TIMEOUT, cmd_timeout=DEFAULT_STATUS_CMD_TIMEOUT):
         """Fill h['status'] (and h['status_time'], seconds) for every host, all checks at once."""
         from concurrent.futures import ThreadPoolExecutor
@@ -2184,6 +2195,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             self._adb_batch = None
 
     def _status(self, ctx, h, timeout=DEFAULT_STATUS_TIMEOUT, cmd_timeout=DEFAULT_STATUS_CMD_TIMEOUT):
+        if self._retired(h):
+            return 'retired'
         t = h['type']
         acc = h['desc'].get('access') or {}
 
@@ -3175,8 +3188,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         row['uid'] = str((h.get('cmeta') or {}).get('artifact') or h.get('uid') or '').split(',')[-1]
         row['tags'] = list((h.get('cmeta') or {}).get('tags') or [])
         row['made'] = bool((h.get('desc') or {}).get('made_from'))
-        if with_status:
-            row['status'] = h.get('status') or '-'
+        row['retired'] = self._retired(h)
+        if with_status or row['retired']:
+            row['status'] = 'retired' if row['retired'] else (h.get('status') or '-')
             if h.get('status_time') is not None:
                 row['status_time'] = round(h['status_time'], 2)
             if h.get('parents'):
