@@ -8,6 +8,15 @@ All notable changes to cMeta AOps are documented here, newest first.
   transport and project-server checks; `--active` leaves it out), `cx machine ls` gets a STATUS column, and
   JSON rows and `show` carry `retired` and `status`. Retirement is declared, never inferred from a failed
   connection or an alias; a machine and its hosts are retired separately.
+- **run-website: the repositories in place for Docker:** `--repositories=global` now works in Docker too: the
+  repositories of the website task, of its inputs and of the tooling are mounted into the instance and
+  plugged into its own home, and the worker comes from there. A state prepared that way keeps no `src/`,
+  `inputs/` or tooling copy, so an edited or synced recipe is what the next start runs; a state without
+  copies refuses an isolated run. Natively, `global` runs the orchestrator's launcher instead of a copy.
+  Isolated deployments are unchanged.
+- **run-website: `deployment.data`:** a website task may name a result for what the site changes while it
+  runs (logs, uploads); it is made on first use, bind-mounted read-write like the backups (a host folder,
+  also on Windows) and described in `CMETA_ARTIFACT_MOUNTS` as `data`.
 
 ## 0.52.0
 - **tool/cmeta: cMeta 0.37.5 by default** (declarative website task adapters in the engine).
