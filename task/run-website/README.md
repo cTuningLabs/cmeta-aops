@@ -92,9 +92,9 @@ state entry/
   _desc.yaml                declared recipe, layout and links
   deployment.json           portable deployment manifest
   execution.json            last execution mode and parameters
-  src/                      private recipe/source repository
-  inputs/                   private repository of checked result histories
-  CMETA/                    private cMeta home; repositories/indexes
+  src/                      private recipe/source repository (isolated only)
+  inputs/                   private repository of checked result histories (isolated only)
+  CMETA/                    private cMeta home; repositories/indexes (isolated only)
   volumes/app/              writable application files and service data
   tools/native/             optional captured native software
   diagnostics/              launch requests and logs
@@ -111,9 +111,12 @@ not provide an automatic source-upgrade/merge operation. Choose a new deployment
 deliberately. Container-image recipes are resolved by the orchestrator; changing a staged Containerfile
 alone does not rebuild the software image.
 
-`--repositories=isolated` is the default. `--repositories=global --mode=native` selects the orchestrator's
-repositories for a development run; Docker uses isolated repositories. Only the child process changes
-CMETA_HOME. The caller's environment stays in effect. `--venv --mode=native` creates a runner venv inside
+`--repositories=isolated` is the default. `--repositories=global` uses the orchestrator's repositories in
+place instead of copies: natively it runs with the orchestrator's home; in Docker the repositories of the
+task, of its inputs and of the tooling are mounted into the instance and plugged into its own home. A state
+prepared that way keeps no `src/`, `inputs/` or tooling copy, so a recipe edited on this machine, or synced
+to it, is what the next start runs. Recreate an existing instance after switching (`cx host destroy
+<state name>`; its volumes and the state stay). Only the child process changes CMETA_HOME. The caller's environment stays in effect. `--venv --mode=native` creates a runner venv inside
 the state and installs cMeta through the standard setup task, without installing into the orchestrator's
 Python. The application recipe still owns its own software/dependency setup.
 
@@ -130,7 +133,8 @@ under `tools/native`, then native runs reuse them without installing host servic
 Linux x86_64 migration aid, not a cross-OS binary translator. Use a Linux/WSL filesystem for legacy sites
 with case-sensitive names. Linux/WSL execution can be selected from Windows with `--on=<host>`.
 
-Docker binds the whole workspace plus its `volumes/app` subdirectory and separate backup result. It
+Docker binds the whole workspace plus its `volumes/app` subdirectory, the separate backup result and the
+data result when declared. It
 publishes the application port on host loopback. Stopping Docker execution also stops its container,
 releasing that port for native execution. Detached startup reports the launch log; use `status` to check
 readiness, especially while restoring/indexing. These recipes do not install boot autostart.
@@ -154,8 +158,13 @@ deployment:
     port: 8138
   inputs:
     - result::example-snapshots,<uid>
+  data: result::local:example-data       # optional
 ~~~
 
+`deployment.data` names a result for what the site changes while it runs (logs, uploads): it is made on
+first use, bind-mounted read-write like the backups (a host folder, also on Windows), shared by the
+site's deployments on that machine, and small enough to sync between machines.
+
 It accepts `action` and `state_cref`, and `backup_cref` for backup. `CMETA_ARTIFACT_MOUNTS` describes
-workspace/state/backups paths. Private legacy examples live in the separately movable website recipes.
+workspace/state/backups paths, and data when declared. Private legacy examples live in the separately movable website recipes.
 `--params.<name>=<value>` passes their own options without adding them to this generic launcher.

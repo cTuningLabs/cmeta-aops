@@ -89,6 +89,55 @@ class CTask(InitCTask):
     assert str((relocated / 'CMETA/repos/extra-private').resolve()) in registered
 
 
+def test_global_repositories_run_the_recipe_in_place_with_its_data(cm, tmp_path):
+    source = tmp_path / 'recipes'
+    task = source / 'task/probe-in-place'
+    task.mkdir(parents=True)
+    (source / '_cmr.yaml').write_text('artifact: in-place-recipes,5b7e0c2a9d114f3e\ncategory: repo,f4f792ab40c7498f\n')
+    (task / '_cmeta.yaml').write_text('artifact: 7c1d2e3f4a5b6c7d\ncategory: task,c36be4b9314a45e0\n')
+    (task / '_desc.yaml').write_text('cache: false\ndeployment:\n  name: probe\n  mode: native\n  params: {}\n'
+                                     '  data: result::local:website-probe-data\n')
+    (task / 'message.txt').write_text('original')
+    (task / 'api_v1.py').write_text('''from task_c36be4b9314a45e0.api.ctask import InitCTask
+import json, os
+from pathlib import Path
+class CTask(InitCTask):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,module_file_path=__file__,**kwargs)
+    def run(self,ctx,action='run',state_cref=''):
+        mounts=json.loads(os.environ['CMETA_ARTIFACT_MOUNTS'])
+        (Path(mounts['data']['path'])/'event.log').write_text('written by the site')
+        (Path(mounts['state']['path'])/'observed.json').write_text(json.dumps({'home':str(self.cm.home_path),
+            'source':__file__,'message':Path(__file__).with_name('message.txt').read_text(),'data':mounts['data']['path']}))
+        return {'return':0}
+''')
+    assert cm.access(dict(category='repo', command='plug', arg1=str(source), con=False))['return'] == 0
+    request = dict(category='task', command='run', arg1='run-website,b6c8dbe5108a4320', website='task::probe-in-place',
+                   deployment='unit', mode='native', repositories='global', quiet=True, con=False)
+    prepared = cm.access(dict(request, action='prepare'))
+    assert prepared['return'] == 0, prepared
+    root = Path(prepared['path'])
+    manifest = json.loads((root / 'deployment.json').read_text())
+    assert manifest['repositories'] == [] and manifest['worker'] == ''
+    assert not any((root / name).exists() for name in ('src', 'inputs', 'CMETA'))
+
+    # The recipe runs where it is: an edit is what the next start runs
+    (task / 'message.txt').write_text('edited in place')
+    executed = cm.access(dict(request, action='run'))
+    assert executed['return'] == 0, executed
+    observed = json.loads((root / 'volumes/app/observed.json').read_text())
+    assert observed['message'] == 'edited in place'
+    assert Path(observed['source']).resolve() == (task / 'api_v1.py').resolve()
+    assert Path(observed['home']).resolve() == Path(cm.home_path).resolve()
+    data = Path(cm.home_path) / 'repos/local/result/website-probe-data'
+    assert Path(observed['data']).resolve() == data.resolve()
+    assert (data / 'event.log').read_text() == 'written by the site'
+
+    # A state without copies is never run on copies
+    refused = cm.access(dict(request, action='run', repositories='isolated'))
+    assert refused['return'] != 0 and 'in place' in refused['error']
+
+
 def test_state_volume_subpaths_are_contained(cm, tmp_path):
     loaded = cm.access(dict(category='task', command='load', arg1='get-host--docker', con=False))
     assert loaded['return'] == 0

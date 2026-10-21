@@ -77,6 +77,15 @@ cx host upgrade <host> [--engine-] --system [--firmware] [--check]   the OS pack
 
 ## Status: what is checked, and how long it takes
 
+Set `retired: true` in a host's `_desc.yaml` to keep its historical record without
+checking its old endpoint. Both `cx host ls` and `cx host status` show `retired`;
+`status` skips transport and project-server checks, and `--active` excludes it.
+JSON rows include `retired: true`, including saved listings. A failed connection
+or an alias containing `destroyed` does not declare retirement. Remove the flag
+or set it to `false` when reusing a host with its new connection details.
+The linked machine has its own `retired: true` declaration: retiring an OS host
+does not automatically retire a machine that may still have other active hosts.
+
 `status` (and `ls --status`) checks every host at once: an ssh host is a TCP connect to its port
 (`--timeout`, 3 s); a WSL distro `wsl -l -v`; a container `docker inspect`; an adb device `adb devices` on
 its parent, through the parent's ssh when the parent is another machine - and a device that moves asks all

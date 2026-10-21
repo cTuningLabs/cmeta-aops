@@ -138,8 +138,15 @@ def worker(root, request_name):
     os.environ['CMETA_ARTIFACT_MOUNTS'] = json.dumps(mounts)
     os.environ['CMETA_WEBSITE_WORKSPACE'] = str(root)
 
+    # isolated: the state's private home and copies; global: the orchestrator's home natively, and in Docker the
+    # instance's own home, where the entrypoint plugged the orchestrator's repositories mounted in place
     isolated = request['repositories'] == 'isolated'
-    home = root / 'CMETA' if isolated else Path(request['orchestrator_home'])
+    if isolated:
+        home = root / 'CMETA'
+    elif request.get('mode') == 'docker':
+        home = Path(os.environ.get('CMETA_HOME') or Path.home() / 'CMETA')
+    else:
+        home = Path(request['orchestrator_home'])
     if isolated and (home / 'repos.json').exists():
         # The private index is derived. Rebase its registered paths when moving between host/container
         # namespaces, retaining every registered repository inside the deployment.
@@ -242,15 +249,19 @@ if __name__ != '__main__':
                     'artifact: ' + alias + ',' + uuid.uuid4().hex[:16] + '\n'
                     'category: ' + self.cmeta['uses_categories']['repo'] + '\nauthors: Grigori Fursin\n', encoding='utf-8')
 
-        def prepare(self, root, artifact, profile, state_cref, backups):
+        def prepare(self, root, artifact, profile, state_cref, backups, repositories='isolated'):
             with PathLock(root / 'prepare.lock'):
                 path = root / 'deployment.json'
                 if path.exists():
                     manifest = read(path)
                     if manifest['task'].split(',')[-1] != artifact['cmeta_ref_parts']['artifact_uid']:
                         raise ValueError('This state belongs to another task; select another deployment')
+                    if repositories == 'isolated' and not manifest['repositories']:
+                        raise ValueError('This state uses the repositories in place (--repositories=global); select another deployment for copies')
                     self.describe_state(root, manifest)
                     return manifest
+                # A state for the repositories in place keeps no copies: only its volumes and records.
+                copies = repositories == 'isolated'
                 # Resolve category ownership rather than pinning the AOPS repository's name.
                 category = self.access('category', 'find', arg1=self.cmeta['uses_categories']['task'])['artifacts'][0]
                 owner = category['cmeta_ref_parts']['repo_uid']
@@ -259,16 +270,17 @@ if __name__ != '__main__':
                     raise ValueError('A secrets repository cannot be used as deployed tooling')
                 alias = tooling['cmeta_ref_parts']['artifact_alias']
                 tooling_relative = 'CMETA/repos/' + alias
-                copy_once(Path(tooling.get('full_path') or tooling['path']), root / tooling_relative, repository=True)
-                self.seed_repo(root / 'src', 'website-' + root.name + '-source')
-                self.seed_repo(root / 'inputs', 'website-' + root.name + '-inputs')
+                if copies:
+                    copy_once(Path(tooling.get('full_path') or tooling['path']), root / tooling_relative, repository=True)
+                    self.seed_repo(root / 'src', 'website-' + root.name + '-source')
+                    self.seed_repo(root / 'inputs', 'website-' + root.name + '-inputs')
                 refs = ['task::' + artifact['cmeta_ref_parts']['artifact_alias'] + ',' + artifact['cmeta_ref_parts']['artifact_uid']]
                 _, runner = self.find('task::' + self.cmeta['artifact'])
                 runner_ref = 'task::' + runner['cmeta_ref_parts']['artifact_alias'] + ',' + runner['cmeta_ref_parts']['artifact_uid']
                 refs.append(runner_ref)
                 if profile.get('container'):
                     refs.append(profile['container'])
-                for cref in refs:
+                for cref in refs if copies else []:
                     kind, selected = self.find(cref)
                     selected_alias = selected['cmeta_ref_parts']['artifact_alias']
                     copy_once(Path(selected['path']), root / 'src' / kind / selected_alias)
@@ -280,12 +292,13 @@ if __name__ != '__main__':
                     kind, selected = self.find(cref)
                     if kind != 'result':
                         raise ValueError('Website inputs must be completed result histories')
-                    copy_once(Path(selected['path']), root / 'inputs/result' / selected['cmeta_ref_parts']['artifact_alias'])
+                    if copies:
+                        copy_once(Path(selected['path']), root / 'inputs/result' / selected['cmeta_ref_parts']['artifact_alias'])
                 (root / 'volumes/app').mkdir(parents=True, exist_ok=True)
                 manifest = dict(format=1, task=refs[0].partition('::')[2], container=profile.get('container'),
                     name=profile['name'], params=profile.get('params', {}), state_cref=state_cref,
-                    backups=backups, repositories=[tooling_relative, 'src', 'inputs'],
-                    worker='src/task/' + runner['cmeta_ref_parts']['artifact_alias'] + '/api_v1.py',
+                    backups=backups, repositories=[tooling_relative, 'src', 'inputs'] if copies else [],
+                    worker='src/task/' + runner['cmeta_ref_parts']['artifact_alias'] + '/api_v1.py' if copies else '',
                     categories=self.cmeta['uses_categories'], native_export=profile.get('native_export', {}))
                 write(path, manifest)
                 self.describe_state(root, manifest)
@@ -329,7 +342,10 @@ if __name__ != '__main__':
                 if worker_request:
                     root = Path(workspace).resolve()
                     manifest = read(root / 'deployment.json')
-                    code = subprocess.call([sys.executable, str(contained(root, manifest['worker'])), str(root), worker_request])
+                    # global: the worker of this launcher, from the repositories mounted in place; isolated: the state's copy
+                    global_request = read(contained(root, worker_request)).get('repositories') == 'global'
+                    worker_file = Path(__file__) if global_request else contained(root, manifest['worker'])
+                    code = subprocess.call([sys.executable, str(worker_file), str(root), worker_request])
                     return {'return': code, **({'error': 'Website worker failed; inspect its diagnostics'} if code else {})}
                 kind, selected = self.find(website)
                 description = self.desc(selected)
@@ -360,9 +376,11 @@ if __name__ != '__main__':
                 backup = self.access('result', 'get', arg1=backup_ref.partition('::')[2],
                                      meta={'permanent': True, 'tags': ['website-backups', profile['name']]})['artifact']
                 backup_root = Path(backup['path']).resolve()
-                manifest = self.prepare(root, selected, profile, state_cref, backup_ref)
                 active = read(root / 'execution.json') if (root / 'execution.json').exists() else {}
                 repositories = repositories or active.get('repositories') or 'isolated'
+                if repositories not in ('isolated', 'global'):
+                    raise ValueError('repositories must be isolated (copies in the state) or global (the repositories in place)')
+                manifest = self.prepare(root, selected, profile, state_cref, backup_ref, repositories)
                 params = dict(active.get('params') or {}, **params)
                 mode = mode or active.get('mode') or profile.get('mode', 'docker')
                 if action == 'export-native':
@@ -385,6 +403,18 @@ if __name__ != '__main__':
                     'workspace': dict(cref=state_cref, path=str(root), host_path=str(root), mode='rw', source_os=sys.platform, native=True),
                     'state': dict(cref=state_cref + '/volumes/app', path=str(root / 'volumes/app'), host_path=str(root / 'volumes/app'), mode='rw', source_os=sys.platform, native=True),
                     'backups': dict(cref=backup_ref, path=str(backup_root), host_path=str(backup_root), mode='rw', source_os=sys.platform, native=True)}
+
+                # deployment.data: a result for what the site changes while it runs (logs, uploads), shared by its
+                # deployments on this machine and bind-mounted like the backups (a folder of the host, also on Windows)
+                data_ref = profile.get('data')
+                if data_ref:
+                    data_kind, separator, data_reference = str(data_ref).partition('::')
+                    if not separator or data_kind.split(',')[0] != 'result' or '/' in data_reference or '\\' in data_reference:
+                        raise ValueError('deployment.data must name a root result artifact')
+                    data_root = Path(self.access('result', 'get', arg1=data_reference,
+                        meta={'permanent': True, 'tags': ['website-data', profile['name']]})['artifact']['path']).resolve()
+                    mounts['data'] = dict(cref=data_ref, path=str(data_root), host_path=str(data_root), mode='rw',
+                                          source_os=sys.platform, native=True)
                 diagnostic = root / 'diagnostics'
                 diagnostic.mkdir(exist_ok=True)
                 request_name = 'diagnostics/request-' + uuid.uuid4().hex + '.json'
@@ -405,7 +435,8 @@ if __name__ != '__main__':
                         self.access('task', 'run', arg1=self.cdesc['dependencies']['setup'],
                                     name=self.cdesc['dependencies']['cmeta'], use=use)
                         python = str(executable)
-                    argv = [python, str(contained(root, manifest['worker'])), str(root), request_name]
+                    worker_file = Path(__file__) if repositories == 'global' else contained(root, manifest['worker'])
+                    argv = [python, str(worker_file), str(root), request_name]
                     env = os.environ.copy()
                     env.pop('CMETA_ARTIFACT_MOUNTS', None)
                     if detach and action == 'run':
@@ -418,14 +449,21 @@ if __name__ != '__main__':
                     if action == 'stop' and not code:
                         write(root / 'execution.json', dict(active, stopped=True))
                     return {'return': code, 'state': state_cref, **({'error': 'Native website action failed'} if code else {})}
-                if mode != 'docker' or repositories != 'isolated':
-                    raise ValueError('Docker execution uses isolated deployed repositories')
+                if mode != 'docker':
+                    raise ValueError('Unknown execution mode: ' + str(mode))
                 owner = self.access('category', 'find', arg1=self.cmeta['uses_categories']['task'])['artifacts'][0]['cmeta_ref_parts']['repo_uid']
+                repos = [owner]
+                if repositories == 'global':
+                    # The repositories of the task and of its inputs are mounted in place: no copy can diverge
+                    for cref in ['task::' + manifest['task']] + list(profile.get('inputs', [])):
+                        uid = self.find(cref)[1]['cmeta_ref_parts']['repo_uid']
+                        if uid not in repos:
+                            repos.append(uid)
+                artifacts = {'workspace': state_cref, 'state': dict(cref=state_cref + '/volumes/app', storage=storage),
+                             'backups': backup_ref, **({'data': data_ref} if data_ref else {})}
                 resolved = self.access('task', 'run', arg1=self.cdesc['dependencies']['resolver'],
-                    name=manifest['container'].partition('::')[2], instance=root.name, repos=owner, data='none',
-                    ports=str(params.get('port', manifest['params'].get('port', 8128))),
-                    artifacts={'workspace': state_cref,
-                               'state': dict(cref=state_cref + '/volumes/app', storage=storage), 'backups': backup_ref})
+                    name=manifest['container'].partition('::')[2], instance=root.name, repos=','.join(repos), data='none',
+                    ports=str(params.get('port', manifest['params'].get('port', 8128))), artifacts=artifacts)
                 inside = '/home/cmeta/artifacts/workspace'
                 words = ['cx', 'task', 'run', 'run-website,' + self.cmeta['artifact'].split(',')[-1],
                          '--workspace=' + inside, '--worker_request=' + request_name, '-q']
