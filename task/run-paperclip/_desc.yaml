@@ -1,0 +1,31 @@
+authors: Grigori Fursin
+
+# run-paperclip - a Paperclip server of this user (tool/paperclip gives the CLI), without upstream's service:
+#
+#   cx task run run-paperclip                      # start (or find) the instance "default", then its status
+#   cx task run run-paperclip status
+#   cx task run run-paperclip stop                 # its process group (its data stays)
+#   cx task run run-paperclip --bind=tailnet       # reachable on the tailnet, with a login (authenticated mode)
+#   cx task run run-paperclip --on=<host>          # on another machine (Windows: --on=wsl)
+#
+#   --instance=default --port=3100 --bind=loopback|lan|tailnet --data_dir=<folder> (default ~/.local/state/paperclip)
+#   --wait=180 --version=<a version of the CLI>
+#
+# The first start onboards the instance with Paperclip's quickstart defaults (an embedded PostgreSQL, local storage,
+# no LLM provider) and starts it; later starts run it ("paperclipai run": a doctor with repair, then the server). It
+# runs in a session of its own, so it outlives the shell (and an ssh connection) that started it; its telemetry is
+# off, no browser is opened, and its data, log and pid file live in the data folder. Linux and macOS.
+#
+# This task is never memoized (cache: False): every run looks at the machine.
+
+cache: False
+store_global: False
+
+params_map:
+  arg2: action
+
+cli_params:
+  action: {values: [start, status, stop]}
+  bind: {values: [loopback, lan, tailnet]}
+  port: {type: int, min: 1, max: 65535}
+  wait: {type: int, min: 0}

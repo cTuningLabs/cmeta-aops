@@ -31,6 +31,13 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **secret: `cx secret which` and `cx secret check --fix`:** `which <category>::<artifact>/<file>` names the secret
   holding a copy of that file and its path; `check --fix` makes a key of the artifact that others can read
   owner-only (a copy over sftp arrives as 664). `cx secret ls` shows the repository of each secret again.
+- **tool/paperclip and task/run-paperclip:** [Paperclip](https://github.com/paperclipai/paperclip) (MIT), a
+  control plane for teams of AI agents. The tool installs its npm CLI `paperclipai` (2026.1012.0) into the cache
+  entry with cMeta's Node.js 24.11+ (an older Node found is replaced by the node-js tool's LTS), with a launcher that
+  turns its telemetry off. The task runs a server of this user: onboarded with the quickstart defaults the first time
+  (an embedded PostgreSQL), then `paperclipai run`, in a session of its own, its data in `~/.local/state/paperclip`
+  (`--data_dir`), loopback by default (`--bind=lan|tailnet` with a login), until `/api/health` answers; `status` and
+  `stop`. Linux and macOS (Windows: `--on=wsl` or a host).
 
 ## 0.53.0
 - **Retired hosts and machines:** `retired: true` in a host's or a machine's `_desc.yaml` keeps its record
