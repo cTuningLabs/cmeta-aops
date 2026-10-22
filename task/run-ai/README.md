@@ -677,6 +677,11 @@ first (`-q`: without asking). The words are facts of each tool's `_desc.yaml`: `
 A login needs a terminal (it asks, or shows a code): run in a background or without one, `--login` refuses with
 the way to do it. Through `--on=<host>` from a terminal, the terminal goes along (ssh -t).
 
+Codex's device code needs "device code sign-in" turned on in ChatGPT's Settings > Security (a workspace: by its
+admin); until then ChatGPT answers "Enable device code sign-in for Codex ... in ChatGPT Security Settings". Without
+that setting, sign in with Codex's browser login through a forwarded port: `cx host ssh <host> --forward=1455`, then
+there `cx tool run codex -- login`, and open the URL it prints in this machine's browser.
+
 ## Several machines: the `!AI` folder in a sync
 
 `!AI` travels with the project (a bisync between two machines, a copy to another): run-ai resolves the project and
