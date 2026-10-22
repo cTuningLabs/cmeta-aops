@@ -10,6 +10,8 @@ authors: Grigori Fursin
 #   cxt run-ai --new / --conversation=<id> / --conversations
 #   cxt run-ai --summarize                          # !AI/log/<id>.summary.md, read first at the next hand-over
 #   cxt run-ai --dry_run                            # everything that would be given to the harness; nothing runs
+#   cxt run-ai --login [--harness=codex]            # sign the harness in on this machine (its tool set up first)
+#   cxt run-ai --login --on=<host>                  # ... on another machine, from a terminal here; --login_status checks
 #
 # The sub-task is chosen at run time from --harness (the old --agent still works), so it is called from api_v1.py,
 # not listed here. --model=<model>[,<effort>] and --effort are turned into the harness flags from the tool's

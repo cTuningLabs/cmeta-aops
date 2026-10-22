@@ -43,6 +43,12 @@ All notable changes to cMeta AOps are documented here, newest first.
   double quote, `^`, `%` or a line break travels base64-encoded to a POSIX host and runs there from a temporary
   script. Before, cmd.exe stripped the double quotes on the way to ssh.exe and bash saw `'''...'''` ("syntax error
   near unexpected token `('").
+- **run-ai: `--login` and `--login_status`:** a harness signed in on this machine, in this terminal, through its tool
+  (`cx tool run <tool> -- <words>`: the tool set up first when missing) - the words are facts of each tool's
+  `_desc.yaml` (`login:`, `login_status:`): claude `auth login` / `auth status`, codex `login --device-auth` (a URL
+  and a code, no callback port: works over ssh) / `login status`, opencode `auth login` / `auth list`, openclaw
+  `onboard` / `models status`, hermes `model`, antigravity and gemini an interactive start. With `--on=<host>` from a
+  terminal it signs the harness in there. `--login_status` needs no terminal.
 
 ## 0.53.0
 - **Retired hosts and machines:** `retired: true` in a host's or a machine's `_desc.yaml` keeps its record

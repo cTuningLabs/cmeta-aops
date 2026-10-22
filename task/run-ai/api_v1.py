@@ -1210,6 +1210,61 @@ class CTask(InitCTask):
             print(text)
         return {'return': 0, 'conversations': [{k: v for k, v in c.items() if not k.startswith('_')} for c in convs], 'text': text}
 
+    def _login(self, ctx, harness, tool_ref, sign_in, con):
+        """
+        --login: the harness signed in on this machine, in this terminal - its tool set up first when missing ("cx tool
+        run", -q installs without asking), then the words of "login:" in the tool's _desc.yaml (claude: auth login,
+        codex: login --device-auth, ...); then, and with --login_status alone, the words of "login_status:" when the tool
+        has them. From another machine in a terminal: add --on=<host>, the login then runs there with this terminal.
+        """
+        path = self._artifact_path(TOOL_CATEGORY, tool_ref)
+        desc = self._read_desc(path) if path else {}
+        if 'login' not in desc:
+            return self.cm.error('the tool of the harness "%s" (%s) says nothing about its login ("login:" in its _desc.yaml)' % (harness, tool_ref))
+
+        def words(key):
+            value = desc.get(key)
+            if value is None:
+                return None
+            return [str(w) for w in value] if isinstance(value, (list, tuple)) else str(value).split()
+
+        tool = tool_ref.split(',')[0]
+        quiet = bool(ctx['control'].get('quiet', False))
+        out = {'return': 0, 'harness': harness, 'tool': tool_ref}
+
+        if sign_in:
+            # a login asks something or shows a code to enter: a terminal, never a background run
+            try:
+                terminal = sys.stdin.isatty() and sys.stdout.isatty()
+            except (AttributeError, ValueError):
+                terminal = False
+            if not terminal:
+                return self.cm.error('a login needs a terminal (it asks, or shows a URL and a code): run "cxt run-ai --login%s" in one; '
+                                     'for another machine add --on=<host> there' % ('' if harness == 'claude' else ' --harness=' + harness))
+            w = words('login')
+            if con:
+                print('')
+                print('RUN-AI: signing %s in on this machine: cx tool run %s -- %s' % (harness, tool, ' '.join(w)) +
+                      (' (an interactive start: sign in, then quit)' if not w else ''))
+            r = self.cm.access({'category': TOOL_CATEGORY, 'command': 'run', 'arg1': tool_ref, 'unparsed': w, 'ctx': ctx,
+                                'con': True, 'quiet': quiet})
+            if r.get('return', 1) > 0:
+                return r
+            out['login'] = w
+
+        s = words('login_status')
+        if s:
+            if con:
+                print('')
+                print('RUN-AI: is %s signed in here? cx tool run %s -- %s' % (harness, tool, ' '.join(s)))
+            r = self.cm.access({'category': TOOL_CATEGORY, 'command': 'run', 'arg1': tool_ref, 'unparsed': s, 'ctx': ctx,
+                                'con': True, 'quiet': quiet})
+            out['status'] = s
+            out['status_return'] = r.get('return', 1)
+        elif con and not sign_in:
+            print('RUN-AI: %s has no status command: start it (cx tool run %s) to see whether it is signed in' % (harness, tool))
+        return out
+
     @staticmethod
     def _recover_sessions(conv, project_path):
         """A run that crashed before its native session was discovered left "session: ''": try again from its start time."""
@@ -1359,6 +1414,8 @@ class CTask(InitCTask):
             w: bool = False,                # short alias of "write=all" (-w)
             context_guard: str = '',        # a direct change in a used artifact's memory or skills, after the run: ask (keep it? else, and with nobody to ask, as restore) | restore (kept as a proposal, the file put back) | report | keep (kept and recorded) | off; the default follows --write (ask, restore, keep, restore)
             other_runs: str = '',           # a run of this project recorded as running on another machine (the sync brought its marker): report (the default: one line, no question) | ask | refuse; the config key "other_runs" is this machine's default
+            login: bool = False,            # sign the harness in on this machine, in this terminal (its tool set up first when missing; the words of "login:" in the tool's _desc.yaml), then its status; --on=<host> does it there
+            login_status: bool = False,     # say whether the harness is signed in on this machine (the words of "login_status:" in its tool's _desc.yaml), then stop
             unparsed: list = None,          # extra flags for the harness (everything after "--")
     ):
         """Run a coding agent on a cMeta artifact; its memory, skills, logs and conversations live in the artifact's !AI folder."""
@@ -1377,6 +1434,9 @@ class CTask(InitCTask):
 
         if list_models or models:
             return self._list_models(given, con)
+
+        if login or login_status:
+            return self._login(ctx, harness, tool_ref, bool(login), con)
 
         # the harness must have its task before anything is written
         if not self._artifact_path(TASK_CATEGORY, task_ref):

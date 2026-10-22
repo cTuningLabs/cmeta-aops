@@ -790,6 +790,51 @@ def test_apply_pending_asks_for_all_changes_or_one_by_one(fresh, monkeypatch):
             put(path, text)
 
 
+# ---------------------------------------------------------------------------------------------- signing a harness in
+def test_every_harness_says_how_it_signs_in(task_namespace):
+    import yaml
+    harnesses = task_namespace("run-ai")["HARNESSES"]
+    for name, refs in harnesses.items():
+        desc = yaml.safe_load(read(pathlib.Path(__file__).resolve().parents[2] / "tool" / refs["tool"].split(",")[0] / "_desc.yaml"))
+        assert isinstance(desc.get("login"), list), name
+        assert desc.get("login_status") is None or isinstance(desc["login_status"], list), name
+    assert yaml.safe_load(read(pathlib.Path(__file__).resolve().parents[2] / "tool" / "codex" / "_desc.yaml"))["login"] == ["login", "--device-auth"]
+
+
+def test_login_runs_the_tools_words_in_a_terminal_and_then_its_status(task_namespace, tmp_path, monkeypatch):
+    import sys
+    CTask = task_namespace("run-ai")["CTask"]
+    task = CTask.__new__(CTask)
+    calls = []
+    task.cm = type("CM", (), {"access": lambda self, i: calls.append(i) or {"return": 0},
+                              "error": lambda self, text: {"return": 1, "error": text}})()
+    tool = put(tmp_path / "tool" / "_desc.yaml", "login: [auth, login]\nlogin_status: [auth, status]\n").parent
+    task._artifact_path = lambda category, ref: str(tool)
+    ctx = {"control": {"quiet": True}}
+
+    # no terminal: refused with the way to do it, nothing run
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising = False)
+    r = task._login(ctx, "codex", "codex,cdbf5f6e6882460f", True, False)
+    assert r["return"] > 0 and "needs a terminal" in r["error"] and "--harness=codex" in r["error"] and calls == []
+
+    # --login_status needs none: the status words through the tool
+    r = task._login(ctx, "claude", "claude,383841b240c74e88", False, False)
+    assert r["return"] == 0 and [c["unparsed"] for c in calls] == [["auth", "status"]] and calls[0]["arg1"] == "claude,383841b240c74e88"
+    assert calls[0]["category"].startswith("tool,") and calls[0]["command"] == "run" and calls[0]["quiet"] is True
+
+    # in a terminal: the login words, then the status words
+    calls.clear()
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True, raising = False)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True, raising = False)
+    r = task._login(ctx, "claude", "claude,383841b240c74e88", True, False)
+    assert r["return"] == 0 and [c["unparsed"] for c in calls] == [["auth", "login"], ["auth", "status"]]
+
+    # a tool that says nothing about its login
+    put(tool / "_desc.yaml", "names: [x]\n")
+    r = task._login(ctx, "x", "x,0123456789abcdef", True, False)
+    assert r["return"] > 0 and "says nothing about its login" in r["error"]
+
+
 # ---------------------------------------------------------------------------------------------- the machines and the sync
 def host():
     import socket

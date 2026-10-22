@@ -653,6 +653,30 @@ when applying); `REFUSED` a path outside `memory/` and `skills/`.
 - `--add-dir` still gives Claude write access to the used artifacts; the guard is what undoes a write, not what
   prevents it.
 
+## Signing a harness in: `--login`, `--login_status`
+
+```
+cxt run-ai --login                                  # claude: its tool set up when missing, then "claude auth login"
+cxt run-ai --login --harness=codex                  # codex login --device-auth: a URL and a code, any browser
+cxt run-ai --login --on=<host>                      # on another machine, from a terminal here
+cxt run-ai --login_status [--harness=...] [--on=<host>]    # is it signed in there?
+```
+
+A login goes through the harness's tool (`cx tool run <tool> -- <words>`), so a machine without the tool gets it
+first (`-q`: without asking). The words are facts of each tool's `_desc.yaml`: `login:` and `login_status:`.
+
+| Harness | `login:` | `login_status:` |
+|---|---|---|
+| claude | `auth login` (a URL to open, a code to paste back) | `auth status` |
+| codex | `login --device-auth` (a URL and a one-time code: no local callback port, so it works over ssh, the code can be entered on a phone) | `login status` |
+| opencode | `auth login` (a provider's key) | `auth list` |
+| openclaw | `onboard` (its guided setup) | `models status` |
+| hermes | `model` (an inference provider) | - |
+| antigravity, gemini | an interactive start: sign in, then quit | - |
+
+A login needs a terminal (it asks, or shows a code): run in a background or without one, `--login` refuses with
+the way to do it. Through `--on=<host>` from a terminal, the terminal goes along (ssh -t).
+
 ## Several machines: the `!AI` folder in a sync
 
 `!AI` travels with the project (a bisync between two machines, a copy to another): run-ai resolves the project and
