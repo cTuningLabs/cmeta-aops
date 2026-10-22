@@ -2073,6 +2073,12 @@ class Category(InitCategory):
         # file next to it; POSIX hosts and instances (a Windows host: not yet)
         detach = bool(options.get('detach', False))
 
+        # A detached run returns at once and writes to its log: no terminal for it. From a Windows machine the words
+        # then reach the host on stdin, from a temporary script (cx host run), where cmd.exe cannot strip the double
+        # quotes of the wrapper and of a quoted word (seen 2026-10-22: "syntax error near unexpected token `('")
+        if detach:
+            terminal = False
+
         # --on_isolated[=<repo>,<repo>]: an ssh host runs the words on THIS machine's repositories (cmeta-aops by default)
         # in a throwaway home of its own (~/cmeta-tests/on-<run id>), not on its own clones and home - the exact code
         # of here, nothing of the host's home touched; removed after the run unless --on_keep

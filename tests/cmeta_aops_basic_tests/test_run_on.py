@@ -272,6 +272,37 @@ def test_detach_keeps_the_run_going_there_and_says_how_to_stop_it(module):
     assert 'kill -- -$(cat' in d['stop'] and d['pid_file'] in d['stop']
 
 
+def test_a_detached_run_asks_for_no_terminal_even_from_one(module, monkeypatch):
+    """From a terminal, a run asks for one there - but a detached run returns at once and writes to its log: with no
+    terminal, a Windows machine sends its words on stdin, where cmd.exe cannot strip their double quotes (2026-10-22)."""
+    import sys
+
+    class Tty:
+        def isatty(self):
+            return True
+
+        def write(self, text):
+            return len(text)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(sys, 'stdin', Tty())
+    monkeypatch.setattr(sys, 'stdout', Tty())
+    words = ['task', 'run', 'run-ai', '--project=work::a b c', '--new', '-q', "what's (in) here?", '--on=lab-thinkpad-ubuntu']
+
+    c = category(module)
+    r = c._run_on({'origin': {'cli': {'cmd': list(words)}}}, {'on': 'lab-thinkpad-ubuntu'}, 'lab-thinkpad-ubuntu', True, False, False)
+    assert r['return'] == 0 and host_run(c)['interactive'] is True        # a terminal here: a terminal there
+
+    c = category(module)
+    r = c._run_on({'origin': {'cli': {'cmd': list(words) + ['--on_detach']}}}, {'on': 'lab-thinkpad-ubuntu', 'on_detach': True},
+                     'lab-thinkpad-ubuntu', True, False, False)
+    run = host_run(c)
+    assert r['return'] == 0 and run['interactive'] is False and r['run_on']['terminal'] is False
+    assert 'setsid -f sh -c' in run['arg2'] and '--on_detach' not in run['arg2']
+
+
 def test_detach_is_refused_where_it_cannot_work(module):
     c = category(module, hosts=('nucbox',), host_os='windows', shell='powershell')
     _, r = run_on(c, ['task', 'run', 'test-python', '--on=nucbox', '--on_detach'], 'nucbox', {'on_detach': True})

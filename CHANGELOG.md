@@ -38,6 +38,11 @@ All notable changes to cMeta AOps are documented here, newest first.
   (an embedded PostgreSQL), then `paperclipai run`, in a session of its own, its data in `~/.local/state/paperclip`
   (`--data_dir`), loopback by default (`--bind=lan|tailnet` with a login), until `/api/health` answers; `status` and
   `stop`. Linux and macOS (Windows: `--on=wsl` or a host).
+- **`--on_detach` and `cx host run` from a Windows terminal keep quoted words intact:** a detached run asks for no
+  terminal, so its words reach the host on stdin from a temporary script; a command run WITH a terminal that holds a
+  double quote, `^`, `%` or a line break travels base64-encoded to a POSIX host and runs there from a temporary
+  script. Before, cmd.exe stripped the double quotes on the way to ssh.exe and bash saw `'''...'''` ("syntax error
+  near unexpected token `('").
 
 ## 0.53.0
 - **Retired hosts and machines:** `retired: true` in a host's or a machine's `_desc.yaml` keeps its record

@@ -70,6 +70,11 @@ AOPS_REPO_UID = '3cb4ee4f444048f6'
 AOPS_REPO_NAME = 'cmeta-aops'
 
 
+def windows_here():
+    """Whether this machine runs Windows: a command line then goes through cmd.exe to ssh.exe (its own quoting rules)."""
+    return os.name == 'nt'
+
+
 def declared_project_states(saved, desc):
     """The saved states of the projects the host still declares: a project taken out of _desc.yaml leaves
     state.yaml at the next probe of the host (before 2026-10-16 its last state stayed there for ever)."""
@@ -2634,10 +2639,16 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             # quote is run by cmd.exe itself (seen 2026-10-06: "'head' is not recognized"). Such a command
             # goes to the host's shell on stdin instead, from a temporary script.
             # (not when the caller feeds the host's stdin itself: the script route needs stdin too)
-            if cmd is not None and not interactive and not stdin and os.name == 'nt' and any(c in cmd for c in '"^%\n\r'):
+            if cmd is not None and not interactive and not stdin and windows_here() and any(c in cmd for c in '"^%\n\r'):
                 r = self._temp_script(cmd)
                 if r['return'] > 0: return r
                 return self._cmd_stdin(ctx, h, r['path'])
+
+            # The same command WITH a terminal: stdin is the user's keyboard, so it travels base64-encoded instead and
+            # runs there from a temporary script (a POSIX host; seen 2026-10-22 with a quoted word of --on)
+            if (cmd is not None and interactive and not stdin and not raw and windows_here() and any(c in cmd for c in '"^%\n\r')
+                    and shell.strip() not in ('powershell', 'pwsh', 'cmd', 'none', 'raw')):
+                wrapped = self._encoded_posix_command(shell, cmd)
             r = self._ssh_parts(h, batch=not interactive, tty=interactive and cmd is not None,
                                 x11=x11 and interactive, forwards=forwards if interactive else None)
             if r['return'] > 0: return r
@@ -2679,6 +2690,17 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             local = r['cmd']
 
         return {'return': 0, 'cmd': local, 'here': False}
+
+    @staticmethod
+    def _encoded_posix_command(shell, cmd):
+        """
+        A command for a POSIX host that keeps the terminal (ssh -t) yet holds no character cmd.exe could misread on
+        its way to ssh.exe: the command base64-encoded, decoded there into a temporary script that the host's shell
+        runs, then removed (base64 -d: GNU coreutils, macOS 13+).
+        """
+        import base64
+        b64 = base64.b64encode(cmd.encode('utf-8')).decode('ascii')
+        return f'f=$(mktemp) && echo {b64} | base64 -d > $f && {shell.strip()} $f; rc=$?; rm -f $f; exit $rc'
 
     def _temp_script(self, cmd, suffix='.sh'):
         """A command as a one-off script file (LF endings) in the temp dir, removed when the process exits."""
