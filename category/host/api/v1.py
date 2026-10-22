@@ -52,6 +52,13 @@ DEFAULT_RCLONE_FLAGS = ['--transfers=4', '--checkers=4']
 
 SYNC_METHODS = ('bisync', 'copy', 'git', 'none')
 
+# A partial repository (a sync entry with "artifacts:"): only the artifacts its cRef patterns select travel. The
+# rclone rules they give are kept beside the bisync listings (a bisync whose rules changed needs --resync), and
+# PARTIAL.md in the host's copy says what it holds.
+PARTIAL_NOTE = 'PARTIAL.md'
+GLOB_CHARS = re.compile(r'([\[\]{}\\])')        # escaped in a rule; * and ? are escaped too where a part is literal
+UID_SUFFIX = re.compile(r',[0-9a-f]{16}$')
+
 # Columns of the fleet table (list); DOCKER and PODMAN = the client versions the probe saw ("-" = not
 # installed, "(daemon down)" when the Docker client is there but no daemon answers)
 LIST_COLUMNS = ['HOST', 'TYPE', 'MACHINE', 'STATUS', 'OS', 'SUDO', 'DOCKER', 'PODMAN', 'CMETA', 'AOPS', 'PROBED']
@@ -848,12 +855,14 @@ class Category(InitCategory):
         self,
         ctx,
         arg1=None,          # host alias
-        arg2=None,          # a repository name from the host's sync list, or a local path (then --to)
+        arg2=None,          # a repository name from the host's sync list, a repository registered here (its alias), or a local path (then --to)
         dirs=None,          # only these directories/files of it (comma-separated, relative, "task/run-ai/")
+        artifacts=None,     # only these artifacts: cRef patterns separated by ";" ("work::2026*;fgg.project::cMeta/!AI"); a partial repository's own by default
         to=None,            # remote path (required for a local path; default for a repository: its remote)
         dry_run=False,      # show what would be copied, copy nothing
         delete=False,       # rclone sync instead of copy: also delete remote files missing locally (within --dirs)
-        index=True,         # after a repository push: "cx repo reindex <repository>" on the host, so a new artifact is found there (--index- skips it)
+        index=True,         # after a repository push: "cx repo reindex <repository>" on the host (plugged there the first time), so a new artifact is found there (--index- skips it)
+        secrets=False,      # a repository of secrets (secrets: true in its _cmr.yaml) goes only with this flag and --artifacts naming the secrets
         unparsed=None,      # everything after "--" goes to rclone
         project=None,      # named environment; omitted: the host's global environment
     ):
@@ -861,14 +870,20 @@ class Category(InitCategory):
         Copy a few directories of a repository (or any local path) to a host, one way, local -> host,
         without touching the bisync baseline - for a quick fix when a sync glitched, or when only one task
         changed. Never deletes unless --delete. After a repository push that repository is rescanned on the host
-        ("cx repo reindex <repository>"; the whole index with a cMeta older than 0.34.0), so an artifact new to the
-        host is found by "cx <cat> find" at once; --index- skips that (a push of category code or files only).
+        ("cx repo reindex <repository>", plugged there when the host does not know it yet; the whole index with a
+        cMeta older than 0.34.0), so an artifact new to the host is found by "cx <cat> find" at once; --index- skips
+        that (a push of category code or files only).
 
             cx host push lab-thinkpad-ubuntu ctuninglabs@cmeta-aops --dirs=task/run-ai/,tool/agy/
             cx host push lab-laptop-ubuntu ctuninglabs@cmeta-aops --dirs=task/run-ai/ --dry_run
             cx host push lab-mac-mini-macos D:\\tmp\\check.sh --to=/Users/user/cmeta-tests/check.sh
+            cx host push lab-laptop-ubuntu my-repo --artifacts="work::2026*;my.project::x/!AI"
+            cx host push lab-laptop-ubuntu my-secrets --artifacts="secret::git-work-without-pass" --secrets
 
-        The repository's blacklist (tmp*/, __pycache__/, .venv/, .git/ ...) still applies.
+        The repository's blacklist (tmp*/, __pycache__/, .venv/, .git/ ...) still applies. A partial repository
+        (artifacts: in the host's sync entry) goes as its selection, never whole; --artifacts writes PARTIAL.md there.
+        A repository of secrets goes only by name, with --secrets: into a folder only the host's user can read, then
+        "cx secret check --fix" there makes every private key owner-only (the transfer does not keep the mode).
         """
 
         con = ctx['control'].get('con', False)
@@ -896,19 +911,41 @@ class Category(InitCategory):
 
         entries = self._sync_entries(h)
         blacklist = list(DEFAULT_BLACKLIST)
+        patterns = self._patterns(artifacts)
+        repository = ''
         if arg2 in entries:
             entry = entries[arg2]
             local = entry['local']
             remote_path = to or entry['remote']
             blacklist = entry['blacklist']
-        else:
+            repository = arg2
+            if not patterns and not dirs:
+                patterns = entry.get('artifacts') or []         # a partial repository goes as declared, never whole
+        elif os.path.exists(arg2):
             local = os.path.abspath(arg2)
-            if not os.path.exists(local):
-                return self.cm.error(f'"{arg2}" is neither a repository of {h["alias"]} '
-                                     f'({", ".join(entries) or "none declared"}) nor a local path')
             if not to:
                 return self.cm.error('--to=<remote path> is required for a local path')
             remote_path = to
+        else:
+            # a repository registered here that the host does not sync (a repository of secrets): by its alias
+            r = self.cm.access({'category': 'repo,f4f792ab40c7498f', 'command': 'find', 'arg1': arg2, 'con': False})
+            arts = (r.get('artifacts') or []) if r.get('return', 1) == 0 else []
+            if len(arts) != 1 or not os.path.isdir(arts[0]['path']):
+                return self.cm.error(f'"{arg2}" is neither a repository of {h["alias"]} '
+                                     f'({", ".join(entries) or "none declared"}), nor a repository registered here, nor a local path')
+            local = arts[0]['path']
+            repository = arg2
+            remote_path = to or (self._sync_repos_path(h, h['desc'].get('sync') or {})[0].rstrip('/') + '/' + os.path.basename(local))
+
+        # a repository of secrets: only by name, only on purpose
+        holds_secrets = bool(repository) and bool(self._repo_desc(local).get('secrets'))
+        if holds_secrets and not (secrets and patterns):
+            return self.cm.error(f'{arg2} holds secrets (secrets: true in its _cmr.yaml): name the secrets {h["alias"]} needs and say so - '
+                                 f'cx host push {h["alias"]} {arg2} --artifacts="secret::<alias>;..." --secrets')
+
+        extra = list(self._csv(unparsed)) if isinstance(unparsed, str) else list(unparsed or [])
+        if dry_run:
+            extra.append('--dry-run')
 
         whitelist = []
         for d in self._csv(dirs):
@@ -916,10 +953,23 @@ class Category(InitCategory):
             if not d.startswith('/'):
                 d = '/' + d          # anchored: "task/run-ai/" means the top-level one, not every match
             whitelist.append(d)
+        if patterns and not whitelist:
+            r = self._selection_rules(local, patterns)
+            if self.cm.catch_error(r): return r
+            whitelist = r['rules']
+            extra.append('--ignore-case')
+            if con:
+                print(f'PUSH ({h["alias"]}): {len(patterns)} artifact pattern(s) of {arg2} -> {len(whitelist)} rule(s)')
 
-        extra = list(self._csv(unparsed)) if isinstance(unparsed, str) else list(unparsed or [])
-        if dry_run:
-            extra.append('--dry-run')
+        if holds_secrets and not dry_run and self._shell(h).strip() not in ('powershell', 'pwsh', 'cmd'):
+            # the folder first, readable by the host's user alone: the keys are never readable by others there, not even
+            # for the moment between the copy (rclone's sftp does not keep a file's mode) and "cx secret check --fix"
+            q = self._sh_path(remote_path)
+            r = self._cmd_run(ctx, h, f'mkdir -p {q} && chmod 700 {q}')
+            if self.cm.catch_error(r): return r
+            rr = self._run_local(r['cmd'], capture=True, con=con, verbose=verbose, timeout=120)
+            if rr.get('returncode', 1) != 0:
+                return self.cm.error(f'the folder {remote_path} could not be made owner-only on {h["alias"]}: {rr.get("stderr", "")}'.strip())
 
         # a single file lands AT --to (rclone copyto); "copy" would make a folder of that name with the file
         # inside (seen 2026-10-07: --to=.../decode_test.py gave decode_test.py/decode_test.py)
@@ -932,25 +982,28 @@ class Category(InitCategory):
 
         result = {'return': 0, 'host': h['alias'], 'local': local, 'remote': remote_path, 'dirs': whitelist}
 
+        if patterns and not dry_run:
+            r = self._write_partial_note(ctx, h, arg2, remote_path, patterns, whitelist, 'push', verbose)
+            if r['return'] > 0 and con:
+                print(f'WARNING: {PARTIAL_NOTE} was not written on {h["alias"]}: {r.get("error")}')
+
         # A pushed folder is on the host's disk but not in its index until the index is rebuilt (seen 2026-10-06
         # with new tools: invisible to "cx tool find" there): only the pushed repository is rescanned ("cx repo
-        # reindex", cMeta 0.34.0+); a cMeta too old for it, or a repository it does not know by that alias, gets
-        # the whole index rebuilt as before
-        if index and arg2 in entries and not dry_run:
-            if self._shell(h).strip() in ('powershell', 'pwsh'):
-                cmd = f"cx repo reindex {arg2} -q; if ($LASTEXITCODE -ne 0) {{ cx --reindex }}"
-            else:
-                cmd = f'cx repo reindex {shlex.quote(arg2)} -q || cx --reindex'
-            r = self._cmd_run(ctx, h, cmd)
+        # reindex", cMeta 0.34.0+), plugged when the host does not know it yet; a cMeta too old for it gets the
+        # whole index rebuilt as before
+        if index and repository and not dry_run:
+            r = self._index_on_host(ctx, h, arg2, remote_path, con, verbose)
             if self.cm.catch_error(r): return r
-            t0 = time.monotonic()
-            rr = self._run_local(r['cmd'], capture=not verbose, con=con, verbose=verbose, timeout=300)
-            result['index'] = {'cmd': cmd, 'returncode': rr.get('returncode'), 'seconds': round(time.monotonic() - t0, 1)}
-            if con:
-                if rr.get('returncode', 0) == 0:
-                    print(f'INDEX ({h["alias"]}): {cmd} - ok ({time.monotonic() - t0:.1f}s)')
-                else:
-                    print(f'WARNING: "{cmd}" on {h["alias"]} returned {rr.get("returncode")} - run it there by hand')
+            result['index'] = {k: r[k] for k in ('cmd', 'returncode', 'seconds')}
+
+        # the private keys made owner-only there, and what is there checked (the table shows the references, never a value)
+        if holds_secrets and not dry_run:
+            r = self._cmd_run(ctx, h, 'cx secret check --fix')
+            if self.cm.catch_error(r): return r
+            rr = self._run_local(r['cmd'], capture=False, con=con, verbose=verbose, timeout=300)
+            result['secret_check'] = rr.get('returncode')
+            if rr.get('returncode', 0) != 0 and con:
+                print(f'WARNING: "cx secret check --fix" on {h["alias"]} returned {rr.get("returncode")}')
 
         return result
 
@@ -2379,8 +2432,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         """
         The ssh key file: given as <category>::<artifact>/<file> (a cMeta reference, resolved on this
         machine) or as a path (absolute, ~ and environment variables expanded). A reference whose artifact
-        is not on this machine - another orchestrator without that private repository - falls back to a
-        file of the same name in ~/.ssh.
+        is not on this machine - another orchestrator without that private repository - is the copy a secret
+        artifact holds of that file ("cx secret which": its files.from and files.names name it); without one,
+        as before 2026-10-22, a file of the same name in ~/.ssh, with a warning (names in ~/.ssh can collide).
         """
         if not key:
             return {'return': 0, 'path': None}
@@ -2401,10 +2455,17 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             if len(arts) == 1:
                 path = os.path.join(arts[0]['path'], *rel.split('/'))
             else:
-                path = os.path.join(os.path.expanduser('~'), '.ssh', os.path.basename(rel))
-                if not os.path.isfile(path):
-                    return self.cm.error(f'key artifact "{cref}" is not on this machine and ~/.ssh/{os.path.basename(rel)} '
-                                         f'does not exist either (from "{key}")')
+                rs = self.cm.access({'category': self.cmeta['uses_categories'].get('secret', 'secret,9d63451ea1f14010'), 'command': 'which',
+                                     'arg1': key, 'con': False})
+                if rs.get('return', 1) == 0 and rs.get('path'):
+                    path = rs['path']
+                else:
+                    path = os.path.join(os.path.expanduser('~'), '.ssh', os.path.basename(rel))
+                    if not os.path.isfile(path):
+                        return self.cm.error(f'key artifact "{cref}" is not on this machine, no secret holds a copy of the key '
+                                             f'("cx secret which {key}") and ~/.ssh/{os.path.basename(rel)} does not exist either')
+                    print(f'cMeta warning: the key "{key}" is taken from {path} (its artifact is not on this machine and no '
+                          f'secret holds a copy: "cx secret which")')
         else:
             path = os.path.expanduser(os.path.expandvars(key))
         if not os.path.isfile(path):
@@ -2990,9 +3051,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
     def _sync_entries(self, h):
         """
-        {name: {'method', 'local', 'remote', 'blacklist', 'workdir'}} from the host's "sync:" block.
-        An entry is a name, or {name: {method, remote, blacklist, workdir}}. The remote folder of a
-        repository is its own `remote`, else `<repos path>/<name>` (see _sync_repos_path).
+        {name: {'method', 'local', 'remote', 'blacklist', 'workdir', 'artifacts'}} from the host's "sync:" block.
+        An entry is a name, or {name: {method, remote, blacklist, workdir, artifacts}}. The remote folder of a
+        repository is its own `remote`, else `<repos path>/<name>` (see _sync_repos_path). With `artifacts` (cRef
+        patterns) only those artifacts travel: a partial repository (see _selection_rules).
         """
         sync = h['desc'].get('sync') or {}
         repos_path, source = self._sync_repos_path(h, sync)
@@ -3019,8 +3081,189 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 'workdir': opts.get('workdir', workdir),
                 'repos_path': repos_path,           # where the repositories of the host are, and why
                 'repos_path_from': source,
+                'artifacts': self._patterns(opts.get('artifacts')),
             }
         return entries
+
+    @staticmethod
+    def _patterns(value):
+        """The artifacts of a partial repository: a list, or one string with ";" between the patterns (a cRef holds commas)."""
+        if not value:
+            return []
+        items = value if isinstance(value, (list, tuple)) else str(value).split(';')
+        return [str(x).strip().replace('\\', '/') for x in items if str(x).strip()]
+
+    @staticmethod
+    def _glob(text, wildcards=False):
+        """A path part as part of an rclone rule: its glob characters escaped (with wildcards, * and ? stay wildcards)
+        and a comma as "?" (rclone-to-ssh splits its whitelist at commas)."""
+        out = GLOB_CHARS.sub(r'\\\1', str(text))
+        out = re.sub(r'\*+', '*', out) if wildcards else out.replace('*', '\\*').replace('?', '\\?')
+        return out.replace(',', '?')
+
+    def _shard_globs(self, alias, slices):
+        """The shard folders above an artifact pattern, as the engine names them (shard_name: the alias's first
+        characters in lower case): literal where the pattern's literal start covers the slice, else that start and "*"."""
+        if not slices:
+            return []
+        literal = re.match(r'[^*?]*', alias).group(0)
+        r = self.cm.utils.files.shard_name(literal, slices)
+        full = r.get('parts', [])[:-1] if r.get('return', 1) == 0 else []
+        out, start = [], 0
+        for i, length in enumerate(slices):
+            end = start + int(length)
+            if end <= len(literal) and i < len(full):
+                out.append(self._glob(full[i]))
+            else:
+                part = literal[start:end].lower().replace(' ', '_') if start < len(literal) else ''
+                out.append(self._glob(part) + '*')
+            start = end
+        return out
+
+    def _repo_desc(self, local):
+        """The _cmr.yaml of a local repository (an empty dict when unreadable)."""
+        rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(local, '_cmr'))
+        data = rd.get('data') if rd.get('return', 1) == 0 else None
+        return data if isinstance(data, dict) else {}
+
+    def _selection_rules(self, local, patterns):
+        """
+        The anchored rclone whitelist of a partial repository from its artifact patterns,
+        "<category>::<artifact>[/<path inside>]" - cRefs whose aliases compare without case, with * and ? as wildcards:
+
+            fgg.project::cMeta/!AI      that artifact's !AI folder, and its _cmeta and _desc
+            fgg.project::cmeta-aops     the whole artifact (it must exist here)
+            work::2026*                 every artifact of the category whose alias starts with 2026 - a folder glob
+                                        through the category's shard folders, so an artifact made later on either
+                                        side is in it and the rules do not change between runs
+
+        The repository's _cmr.yaml and the definitions of the categories it holds itself come along (the copy is a
+        repository the host's cMeta can index). -> {'rules': [...]}
+        """
+        rules = ['/_cmr.yaml']
+        desc = self._repo_desc(local)
+        repo_slices = {str(k): v for k, v in (desc.get('sharding_slices') or {}).items()}
+        repo_uid = str(desc.get('artifact') or '').split(',')[-1].strip()
+
+        def ours(a):
+            """An artifact of this repository, by its repository's UID: a repository nested in this folder (the engine's
+            internal repository inside a source tree) is another repository."""
+            uid = str((a.get('cmeta_ref_parts') or {}).get('repo_uid') or '')
+            return uid == repo_uid if (uid and repo_uid) else self.cm.utils.files.is_path_within(local, a['path'])
+
+        def add(rule):
+            if rule not in rules:
+                rules.append(rule)
+
+        def found(category, name):
+            r = self.cm.access({'category': category, 'command': 'find', 'arg1': name, 'con': False})
+            return (r.get('artifacts') or []) if r.get('return', 1) == 0 else []
+
+        for pattern in patterns:
+            if '::' not in pattern:
+                return self.cm.error(f'"{pattern}": an artifact pattern is <category>::<artifact>[/<path inside>]')
+            cat_part, rest = pattern.split('::', 1)
+            art_part, _, inside = rest.partition('/')
+            cat_part, art_part, inside = UID_SUFFIX.sub('', cat_part.strip()), art_part.strip(), inside.strip('/')
+            wild = any(c in art_part for c in '*?')
+
+            # the category, or every category folder of the repository a wildcard matches
+            if any(c in cat_part for c in '*?'):
+                names = sorted(d for d in os.listdir(local) if os.path.isdir(os.path.join(local, d)) and d != 'category'
+                               and not d.startswith(('.', '_')) and fnmatch.fnmatch(d.lower(), cat_part.lower()))
+            else:
+                names = [cat_part]
+            cats = [a[0] for a in (found(self.cmeta['uses_categories'].get('category', 'category,dd9ea50e7f76467f'), n) for n in names) if len(a) == 1]
+            if not cats:
+                return self.cm.error(f'"{pattern}": no category "{cat_part}" (in {local})')
+
+            for cat in cats:
+                parts = cat['cmeta_ref_parts']
+                cat_alias, cat_uid = parts['artifact_alias'], parts['artifact_uid']
+                if ours(cat):
+                    add('/' + os.path.relpath(cat['path'], local).replace(os.sep, '/') + '/')
+
+                if wild:
+                    slices = repo_slices.get(cat_uid) or (cat.get('cmeta') or {}).get('sharding_slices')
+                    base = '/' + '/'.join([self._glob(cat_alias)] + self._shard_globs(UID_SUFFIX.sub('', art_part), slices) +
+                                          [self._glob(UID_SUFFIX.sub('', art_part), wildcards=True)])
+                else:
+                    arts = [a for a in found(f'{cat_alias},{cat_uid}', art_part) if ours(a)]
+                    if not arts:
+                        if len(cats) == 1:
+                            return self.cm.error(f'"{pattern}": no artifact "{art_part}" of {cat_alias} in {local}')
+                        continue
+                    base = '/' + '/'.join(self._glob(p) for p in os.path.relpath(arts[0]['path'], local).split(os.sep))
+
+                if not inside:
+                    add(base + '/')
+                    continue
+                add(base + '/_cmeta.*')
+                add(base + '/_desc.*')
+                inner = '/'.join(self._glob(p) for p in inside.split('/'))
+                is_file = not wild and os.path.isfile(os.path.join(local, *base.strip('/').split('/'), *inside.split('/')))
+                add(base + '/' + inner + ('' if is_file else '/'))
+
+        return {'return': 0, 'rules': rules}
+
+    def _selection_file(self, h, name, entry):
+        """The rules of the last bisync of a partial repository, beside rclone's listings of that host."""
+        return os.path.join(self._bisync_workdir(h, entry), f'cmeta-selection-{name}.txt')
+
+    @staticmethod
+    def _sh_path(path):
+        """A remote path for a POSIX shell: quoted, a leading ~/ kept as the home."""
+        path = str(path)
+        return '"$HOME"/' + shlex.quote(path[2:]) if path.startswith('~/') else shlex.quote(path)
+
+    def _index_on_host(self, ctx, h, name, remote, con, verbose):
+        """
+        After files of a repository arrived on a host: that repository rescanned there ("cx repo reindex"), plugged
+        when the host does not know it yet (a first push or sync), else the whole index rebuilt (a cMeta older than
+        0.34.0). -> {'cmd', 'returncode', 'seconds'}
+        """
+        if self._shell(h).strip() in ('powershell', 'pwsh'):
+            path = str(remote).replace("'", "''")
+            cmd = (f"cx repo reindex {name} -q; if ($LASTEXITCODE -ne 0) {{ cx repo plug '{path}' -q }}; "
+                   f"if ($LASTEXITCODE -ne 0) {{ cx --reindex }}")
+        else:
+            cmd = f'cx repo reindex {shlex.quote(name)} -q || cx repo plug {self._sh_path(remote)} -q || cx --reindex'
+        r = self._cmd_run(ctx, h, cmd)
+        if self.cm.catch_error(r): return r
+        t0 = time.monotonic()
+        rr = self._run_local(r['cmd'], capture=not verbose, con=con, verbose=verbose, timeout=300)
+        out = {'return': 0, 'cmd': cmd, 'returncode': rr.get('returncode'), 'seconds': round(time.monotonic() - t0, 1)}
+        if con:
+            if rr.get('returncode', 0) == 0:
+                print(f'INDEX ({h["alias"]}): {cmd} - ok ({out["seconds"]:.1f}s)')
+            else:
+                print(f'WARNING: "{cmd}" on {h["alias"]} returned {rr.get("returncode")} - run it there by hand')
+        return out
+
+    def _write_partial_note(self, ctx, h, name, remote, patterns, rules, how, verbose):
+        """PARTIAL.md at the root of the host's copy of a partial repository: what it holds, from where, since when.
+        Outside the rules, so a bisync never brings it back."""
+        now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+        lines = [f'# A partial copy of the repository {name}', '',
+                 'This folder holds only the artifacts selected below. The rest of the repository stays on the machine it',
+                 f'comes from, which writes this file at every "cx host {how}".', '',
+                 '| | |', '|---|---|',
+                 f'| from | {socket.gethostname()} (`cx host {how}`) |',
+                 f'| written | {now} |', '',
+                 '## The selection', '', '`artifacts:` of the sync entry of this host, or `--artifacts` of a push:', '']
+        lines += [f'- `{p}`' for p in patterns]
+        lines += ['', '## The rclone rules it gives', '', '```'] + rules + ['```', '',
+                  'An artifact made here outside these rules does not travel back. A file of the selection changed on both',
+                  'machines between two runs of a bisync comes back as two copies, `<name>.conflict1` and `<name>.conflict2`',
+                  '(run-ai merges its own records and lists the others for the agent). This file is not synced.', '']
+        folder = tempfile.mkdtemp(prefix='cmeta-partial-')
+        try:
+            path = os.path.join(folder, PARTIAL_NOTE)
+            with open(path, 'w', encoding='utf-8', newline='\n') as f:
+                f.write('\n'.join(lines))
+            return self._rclone(ctx, h, 'copyto', path, str(remote).rstrip('/') + '/' + PARTIAL_NOTE, con=False, verbose=verbose)
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
 
     def _bisync_workdir(self, h, entry):
         """Where rclone keeps the bisync listings and lock of this host: declared, or bisync-<alias>."""
@@ -3061,22 +3304,66 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if not os.path.isdir(local):
             return self.cm.error(f'local repository not found: {local}')
 
+        # a repository of secrets never travels with a sync: the secrets a host needs go there once, by name
+        if self._repo_desc(local).get('secrets'):
+            return self.cm.error(f'{name} holds secrets (secrets: true in its _cmr.yaml) and is never synced - push the ones '
+                                 f'{h["alias"]} needs: cx host push {h["alias"]} {name} --artifacts="secret::<alias>;..." --secrets')
+
         extra = list(DEFAULT_RCLONE_FLAGS)
         if dry_run: extra.append('--dry-run')
 
-        if method == 'copy':
-            return self._rclone(ctx, h, 'copy', local, entry['remote'], blacklist=entry['blacklist'],
-                                extra=extra, con=con, verbose=verbose)
+        # a partial repository: only the artifacts its patterns select, the aliases compared without case as cMeta does
+        rules = []
+        if entry.get('artifacts'):
+            r = self._selection_rules(local, entry['artifacts'])
+            if r['return'] > 0: return r
+            rules = r['rules']
+            extra.append('--ignore-case')
+            if con:
+                print(f'    a partial repository: {len(entry["artifacts"])} artifact pattern(s) -> {len(rules)} rule(s); '
+                      f'{PARTIAL_NOTE} there says which')
 
-        # bisync
+        if method == 'copy':
+            r = self._rclone(ctx, h, 'copy', local, entry['remote'], whitelist=rules, blacklist=entry['blacklist'],
+                             extra=extra, con=con, verbose=verbose)
+            if r['return'] > 0 or not rules or dry_run: return r
+            return self._after_partial(ctx, h, name, entry, rules, 'sync', con, verbose)
+
+        # bisync: rclone's listings hold only what the rules let through, so a run with other rules than the last one
+        # would read the difference as deletions - it needs --resync
+        selection = self._selection_file(h, name, entry) if rules else ''
+        if rules and not resync:
+            try:
+                with open(selection, encoding='utf-8') as f:
+                    last = f.read()
+            except OSError:
+                last = None
+            if last != '\n'.join(rules) + '\n':
+                return self.cm.error(f'{name}: the selection of artifacts ' + ('changed since the last sync' if last is not None else
+                                     'has not been synced with these rules yet') + ' - run once with --resync (--resync_mode=path1: '
+                                     'this machine wins where both sides have a file)')
         if resync:
             mode = str(resync_mode or 'newer')
             if mode not in ('newer', 'older', 'path1', 'path2', 'larger', 'smaller'):
                 return self.cm.error(f'unknown --resync_mode "{mode}" (newer | older | path1 | path2 | larger | smaller)')
             extra += ['--resync-mode', mode]
-        return self._rclone(ctx, h, 'resync' if resync else 'bisync', local, entry['remote'],
-                            blacklist=entry['blacklist'], extra=extra, con=con, verbose=verbose,
-                            workdir=self._bisync_workdir(h, entry), unlock=unlock)
+        r = self._rclone(ctx, h, 'resync' if resync else 'bisync', local, entry['remote'], whitelist=rules,
+                         blacklist=entry['blacklist'], extra=extra, con=con, verbose=verbose,
+                         workdir=self._bisync_workdir(h, entry), unlock=unlock)
+        if r['return'] > 0 or not rules or dry_run: return r
+        os.makedirs(os.path.dirname(selection), exist_ok=True)
+        with open(selection, 'w', encoding='utf-8', newline='\n') as f:
+            f.write('\n'.join(rules) + '\n')
+        return self._after_partial(ctx, h, name, entry, rules, 'sync', con, verbose)
+
+    def _after_partial(self, ctx, h, name, entry, rules, how, con, verbose):
+        """After a partial repository reached a host: PARTIAL.md there, and the repository indexed (plugged the first time)."""
+        r = self._write_partial_note(ctx, h, name, entry['remote'], entry['artifacts'], rules, how, verbose)
+        if r['return'] > 0 and con:
+            print(f'WARNING: {PARTIAL_NOTE} was not written on {h["alias"]}: {r.get("error")}')
+        r = self._index_on_host(ctx, h, name, entry['remote'], con, verbose)
+        if self.cm.catch_error(r): return r
+        return {'return': 0}
 
     def _rclone(self, ctx, h, command, local, remote_path, whitelist=None, blacklist=None, extra=None,
                 con=True, verbose=False, workdir=None, unlock=False, from_remote=False):

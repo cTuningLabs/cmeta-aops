@@ -50,7 +50,9 @@ starting), `none` = the key has no passphrase (automation, containers, hosts). N
 ```
 cx secret ls                                   # alias, kind, repository, hosts, used by - never a value
 cx secret show <alias>                         # the references of one identity
-cx secret check [<alias>]                      # the files exist, the mode, passphrase as declared, the variables set
+cx secret check [<alias>] [--fix]              # the files exist, the mode, passphrase as declared, the variables set;
+                                               # --fix makes a key of the artifact that others can read owner-only
+cx secret which <cat>::<artifact>/<file>       # the secret holding a copy of that file, and its path (since 2026-10-22)
 cx secret import [<alias>] [--force]           # copy the files in from files.from (files.names), tighten the private
                                                # key, mark files.status imported (done 2026-10-15 for the four)
 cx secret generate <alias> [--comment=..]      # a new ed25519 key pair without a passphrase at ssh.key (--force: over it)
@@ -58,6 +60,22 @@ cx secret use <alias> --repo=<path>            # the identity into a clone's .gi
 cx secret use <alias> --git_global             # gpg.format, user.signingkey, commit.gpgsign, allowed signers), or the user's
 cx secret render <alias> --out=<file>          # a standalone git config include file (+ the ssh config stanza)
 ```
+
+## On another machine: a copy of the keys a host references
+
+A host artifact names its ssh key by a reference into a private repository that stays on the first machine
+(`key: fgg.crypt::ssh-x/2026/id_ed25519`). A secret whose `files.from` is that folder (`fgg.crypt::ssh-x/2026`) and
+whose `files.names` list the file holds a copy of it once imported; on a machine that has the secret and not the
+private repository, `cx secret which fgg.crypt::ssh-x/2026/id_ed25519` names that copy, and `cx host` uses it.
+The secrets a second orchestrator needs go there once, by name:
+
+```
+cx host push <host> my-secrets --artifacts="secret::git-work-without-pass;secret::ssh-cloud-vm" --secrets
+```
+
+into a folder readable by the host's user alone, followed there by `cx secret check --fix` (a copy over sftp
+arrives readable by the group: 664). Nothing of the private repository travels, and `cx host sync` never takes a
+repository with `secrets: true`.
 
 With the "run on any host" design: `--secret=<alias>,<alias>` on a run, or `on: {secrets: [...]}` in a task, gives
 an instance the identity through one of four channels chosen by host type: a build-time secret mount (an image that

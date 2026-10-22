@@ -6,7 +6,8 @@ holds references, never values; the files live inside the artifact (self-contain
 
     cx secret ls [<alias or wildcard>]      # alias, kind, repository, hosts, used by
     cx secret show <alias>                  # the references of one identity (never a value)
-    cx secret check [<alias>]               # the files exist, their mode, the passphrase as declared, the variables set
+    cx secret check [<alias>] [--fix]       # the files exist, their mode, the passphrase as declared, the variables set
+    cx secret which <cat>::<art>/<file>     # the secret holding a copy of that file (a host key on another orchestrator)
     cx secret import [<alias>] [--force]    # the files copied in from files.from, the private key made owner-only
     cx secret generate <alias>              # a new ed25519 key pair without a passphrase (automation, containers, hosts)
     cx secret use <alias> --repo=<clone>    # the git identity written into a clone's .git/config (or --git_global)
@@ -39,6 +40,18 @@ def _get(d, dotted):
     return d
 
 
+def _ref_key(ref):
+    """<category>::<artifact>[/<path inside>] -> (category alias, artifact alias, path inside): the aliases without
+    their UIDs and in lower case, the path with "/" and no slash at its ends - two spellings of one place compare equal."""
+    cat, _, rest = str(ref or '').replace('\\', '/').partition('::')
+    art, _, inside = rest.partition('/')
+
+    def alias(x):
+        return re.sub(r',[0-9a-f]{16}$', '', x.strip()).lower()
+
+    return alias(cat), alias(art), inside.strip('/')
+
+
 class Category(InitCategory):
     """
     """
@@ -58,7 +71,7 @@ class Category(InitCategory):
             rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(a['path'], '_desc'))
             desc = rd.get('data') or {} if rd['return'] == 0 else {}
             found.append({'alias': a['cmeta_ref_parts']['artifact_alias'], 'path': a['path'],
-                          'repo': a['cmeta_ref_parts'].get('artifact_repo_alias', ''), 'desc': desc})
+                          'repo': a['cmeta_ref_parts'].get('repo_alias') or a['cmeta_ref_parts'].get('artifact_repo_alias', ''), 'desc': desc})
         return {'return': 0, 'secrets': found}
 
     ############################################################
@@ -222,10 +235,52 @@ class Category(InitCategory):
         return {'return': 0, 'imported': done}
 
     ############################################################
-    def check_(self, ctx, arg1: str = None):
+    def which_(self, ctx, arg1: str = None):
+        """
+        The secret that holds a copy of a file named by a reference into another artifact, and the copy's path:
+        the secret whose files.from is the file's folder and whose files.names list the file, imported into its
+        files/. A host's "key: fgg.crypt::ssh-x/2026/id_ed25519" is found this way on a machine that has the secret
+        and not the fgg.crypt artifact (another orchestrator). Prints the secret and the path - never a value.
+
+            cx secret which fgg.crypt::ssh-universal4-without-pass/20250130-without-pass/id_ed25519_fgg_universal4
+        """
+        ref = str(arg1 or '').replace('\\', '/').strip()
+        if '::' not in ref or '/' not in ref.split('::', 1)[1]:
+            return self.cm.error('cx secret which <category>::<artifact>/<the file\'s path inside it>')
+        folder, name = ref.rsplit('/', 1)
+        want = _ref_key(folder)
+
+        r = self._select(ctx)
+        if r['return'] > 0:
+            return r
+
+        found = []
+        for s in r['secrets']:
+            d = s['desc']
+            source = str(_get(d, 'files.from') or '')
+            if '::' not in source or _ref_key(source) != want:
+                continue
+            names = [str(x) for x in (_get(d, 'files.names') or [])] or \
+                    [os.path.basename(str(_get(d, key))) for key in FILE_KEYS if _get(d, key)]
+            path = os.path.join(s['path'], 'files', name)
+            if name in names and os.path.isfile(path):
+                found.append({'secret': s['alias'], 'repo': s['repo'], 'path': path})
+
+        if not found:
+            return {'return': 16, 'error': f'no secret holds a copy of {ref} (its files.from and files.names name the file, imported into files/)'}
+
+        con = ctx['control'].get('con', False)
+        if con:
+            print (f'{found[0]["secret"]} ({found[0]["repo"]}): {found[0]["path"]}')
+        return {'return': 0, 'secret': found[0]['secret'], 'path': found[0]['path'], 'found': found}
+
+    ############################################################
+    def check_(self, ctx, arg1: str = None, fix: bool = False):
         """
         The files of each secret exist, a private key has the declared passphrase policy (ssh-keygen asks it
         with an empty passphrase: refused = a passphrase is set; the output is never printed), the mode is 600.
+        --fix tightens a file of the artifact that others can read (after a copy to another machine, whose
+        transfer does not keep the mode) through the task fix-ssh-key-permissions; a source file is left alone.
         """
         r = self._select(ctx, arg1)
         if r['return'] > 0:
@@ -256,6 +311,9 @@ class Category(InitCategory):
                 if key in OWNER_ONLY_KEYS:
                     # The owner-only check of the task fix-ssh-key-permissions: the mode on Linux and macOS, the ACL by SIDs on Windows
                     problem = self._key_permissions(ctx, path, check=True)
+                    if problem and fix and status == 'ok':
+                        left = self._tighten(ctx, path)
+                        problem = f'tightened (was: {problem})' if not left else f'{problem}; --fix could not tighten it: {left}'
                     if problem:
                         notes.append(problem)
                 if key == 'ssh.key':

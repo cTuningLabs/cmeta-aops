@@ -143,7 +143,8 @@ access:
   user: user
   key: fgg.crypt::ssh-universal4-without-pass/20250130-without-pass/id_ed25519_fgg_universal4
                                # <category>::<artifact>/<file>, or a path: C:\keys\id_ed25519, ~/.ssh/id_ed25519, %USERPROFILE%\...
-                               # a reference whose artifact is not on this machine falls back to ~/.ssh/<file name>
+                               # a reference whose artifact is not on this machine: the copy a secret holds ("cx secret
+                               # which"), else ~/.ssh/<file name> with a warning (see "Another orchestrator")
   port: 22                     # optional
   options: "-o ..."            # extra ssh flags, optional
   x11: true                    # ssh -X for "cx host ssh", optional
@@ -169,6 +170,8 @@ sync:
     - myorg@my-private-repo: {method: copy}
     - dappledev@dapple-lab-emulation: {blacklist: [runs/, dle.egg-info/]}
     - some-repo: {remote: /other/path, workdir: ...}
+    - my-big-repo:             # a PARTIAL repository: only these artifacts travel (cRef patterns, see below)
+        artifacts: [my.project::x/!AI, work::2026*, machine::*]
   after: [cx --reindex]        # run on the host after a sync that did something
 
 commands:                      # optional
@@ -265,10 +268,54 @@ token: true for an OpenSSH login of a member of Administrators, false for a UAC-
 `workdir`); when one side was replaced behind rclone's back (a `git archive | tar`, a fresh clone), the
 next run stops with "Safety abort: all files were changed" - run it once with `--resync` (`--resync_mode`:
 `newer` = the newer file wins on each side, `path1` = this machine wins, `path2` = the host wins), as the
-old `_7-resync-*.bat` did. A partial sync is always a one-way **push** (`rclone copy` with an anchored
-whitelist), never a filtered bisync: rclone's listings go stale when the filter changes between runs.
+old `_7-resync-*.bat` did. A few directories once are a one-way **push** (`rclone copy` with an anchored
+whitelist, `--dirs`).
 
 `--dry_run` shows what would move and changes nothing (rclone `--dry-run`, `git fetch --dry-run`).
+
+### A partial repository: `artifacts:`
+
+A repository too big to copy (a personal one of hundreds of GB) can travel as a selection of its artifacts, two-way
+like any other, with `artifacts:` in its sync entry (or `--artifacts="a;b"` on a push) - cRef patterns whose
+aliases compare without case, `*` and `?` as wildcards:
+
+```
+fgg.project::cMeta/!AI     the !AI folder of that artifact, with its _cmeta and _desc (not the rest of it)
+fgg.project::cmeta-aops    the whole artifact (it must exist on this machine)
+work::2026*                every artifact of the category whose alias starts with 2026 - a folder glob through
+                           the category's shard folders (work/2026/2026*), so an artifact made later on EITHER
+                           side is in it
+machine::*                 every artifact of that category
+```
+
+The repository's `_cmr.yaml` and the definitions of the categories it holds itself come along (an artifact found
+in the folder of a nested repository - the engine's internal repository inside a source tree - is not one of
+it), so the copy is a repository the host's cMeta indexes: the first sync or push plugs it there, later ones
+reindex it. rclone filters by the anchored rules the patterns give (`--ignore-case`, as cMeta's aliases).
+
+A **filtered bisync** is safe only while the filter stays the same - rclone's listings hold what it let through,
+and other rules would read the difference as deletions. The rules depend on the patterns, not on which artifacts
+exist, and `cx host sync` keeps the rules of the last run next to the listings (`cmeta-selection-<repo>.txt` in
+the bisync workdir): a run whose rules changed - or the first one - stops and asks for one
+`--resync --resync_mode=path1`. After every sync or push the host's copy gets `PARTIAL.md` at its root: what it
+holds, from which machine, since when (outside the rules, so it never comes back). An artifact made on the host
+outside the patterns stays there.
+
+A partial repository is never pushed whole: `cx host push <host> <repo>` without `--dirs` takes its patterns.
+
+### A repository of secrets
+
+A repository whose `_cmr.yaml` says `secrets: true` (the `secret` category's identities and keys) is never synced -
+`cx host sync` refuses it - and goes to a host only by name, on purpose:
+
+```
+cx host push <host> my-secrets --artifacts="secret::git-work-without-pass;secret::ssh-azure-x" --secrets
+```
+
+The folder there is made readable by the host's user alone first (`chmod 700`), then the secrets are copied,
+the repository is plugged, and `cx secret check --fix` there makes every private key owner-only (rclone's sftp
+does not keep a file's mode: the keys arrive as 664). The repository is not a registered repository of the host's
+sync list: `push` finds it by its alias here and sends it to `<repos path>/<folder>` there.
 
 ## Drivers
 
@@ -320,5 +367,21 @@ quoting (seen on a server: every line "not found", no servers after the reboot).
 
 The artifacts are not tied to one machine: whichever machine runs `cx host` sees the host whose
 `access.hostname` is its own as "here" and reaches the others over ssh. For that it needs the repository
-with the host artifacts, `cx`, `rclone` (set up by the first sync) and the keys - as the `fgg.crypt`
-artifacts, or copied into `~/.ssh` under the same file names (the fallback).
+with the host artifacts, `cx`, `rclone` (set up by the first sync) and the keys.
+
+**The keys of another orchestrator** (since 2026-10-22). A host names its key by a reference into a private
+repository (`key: fgg.crypt::ssh-x/2026/id_ed25519`) that stays on the first machine. The second one gets the
+`secret` artifacts that hold copies of those keys - their `files.from` names the referenced folder and
+`files.names` the file - pushed once with `--secrets` (above). `cx host` then finds a key whose artifact is not
+there through `cx secret which <the reference>`; a key without such a secret falls back, as before, to
+`~/.ssh/<file name>`, with a warning (names in `~/.ssh` can collide).
+
+**Its known hosts.** The new machine has never seen the servers' host keys, and a batch ssh refuses an unknown
+host ("Host key verification failed") - before any key is tried. Compare what it sees
+(`ssh-keyscan -t ed25519 <address> | ssh-keygen -lf -`) with the fingerprint the first machine trusts
+(`ssh-keygen -lF <address>`) and add only a key that matches; never `StrictHostKeyChecking=no`.
+
+**The orchestrator's own repositories.** The second machine works on a partial copy of the first one's private
+repository (`artifacts:`, above) and keeps its own `local` repository (its cache, its test sessions). The first
+machine stays the hub that runs the syncs and holds the git clones: what the second one changes comes back by
+bisync.

@@ -13,6 +13,24 @@ All notable changes to cMeta AOps are documented here, newest first.
   to merge for memories and skills. The orientation tells every harness to write a location inside an artifact as
   `{{{<category>::<alias>,<UID>}}}/<relative path>`, which resolves on any machine; `--project=<cRef>` with the task
   engine's `--on=<host> --on_detach` starts a run on another machine that outlives this one.
+- **host: a partial repository (`artifacts:`):** a repository too big to copy travels as a selection of its
+  artifacts, two-way like any other: `artifacts:` in its sync entry (or `--artifacts="a;b"` on a push) takes cRef
+  patterns - `fgg.project::cMeta/!AI` (a path inside an artifact, with its `_cmeta` and `_desc`), `work::2026*` (a
+  folder glob through the category's shard folders, so an artifact made later on either side is in it). The
+  repository's `_cmr.yaml` and the definitions of the categories it holds itself come along (not those of a
+  repository nested in its folder), and the first sync or push plugs it on the host. A filtered bisync is kept safe:
+  the rules of the last run are recorded beside rclone's listings and a run whose rules changed stops and asks for
+  `--resync`. `PARTIAL.md` at the root of the host's copy says what it holds, from where and since when. A partial
+  repository is never pushed whole.
+- **host: the keys of another orchestrator, and a repository of secrets:** a host key named by a reference whose
+  artifact is not on this machine (`key: fgg.crypt::ssh-x/2026/id_ed25519` on a second orchestrator) is the copy a
+  `secret` artifact holds (its `files.from` and `files.names`), before the old fallback to `~/.ssh/<name>`, which now
+  warns. A repository with `secrets: true` is never synced; `cx host push <host> <repo> --artifacts="secret::a;..."
+  --secrets` sends the secrets a host needs, by name, into a folder only its user can read, plugs it and runs
+  `cx secret check --fix` there. `cx host push` also takes a repository registered here by its alias.
+- **secret: `cx secret which` and `cx secret check --fix`:** `which <category>::<artifact>/<file>` names the secret
+  holding a copy of that file and its path; `check --fix` makes a key of the artifact that others can read
+  owner-only (a copy over sftp arrives as 664). `cx secret ls` shows the repository of each secret again.
 
 ## 0.53.0
 - **Retired hosts and machines:** `retired: true` in a host's or a machine's `_desc.yaml` keeps its record
