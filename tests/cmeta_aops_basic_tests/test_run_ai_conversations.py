@@ -353,3 +353,96 @@ def test_hand_over_names_the_transcript_and_the_reason(tmp_path):
 
     # the title is the first words of the first request: quoted in front of a prompt it would read as an instruction
     assert "Which file is the largest?" not in text
+
+
+# ---------------------------------------------------------------------------------------------- the machines and the sync
+def test_this_process_is_alive_a_finished_one_is_not_and_the_host_has_a_name():
+    import subprocess
+    import sys
+    assert C.pid_alive(os.getpid()) is True
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait()
+    assert C.pid_alive(p.pid) is False
+    assert C.pid_alive("x") is None and C.pid_alive(0) is None
+    assert C.host_name() and C.host_name() == C.host_name().lower() and "." not in C.host_name()
+
+
+def test_markers_of_this_machine_are_checked_by_pid_and_those_of_others_reported_with_their_age(tmp_path):
+    log = tmp_path / "log"
+    mine = C.write_running(str(log), "20261022-100000", "20261022-100000", "claude")
+    data = json.loads(pathlib.Path(mine).read_text(encoding = "utf-8"))
+    assert data["host"] == C.host_name() and data["pid"] == os.getpid() and data["conversation"] == "20261022-100000"
+
+    # a run of this machine that is gone, a fresh run on another machine, and one on another machine long ago
+    put(log / "20261022-090000.running", [{"stamp": "20261022-090000", "host": C.host_name(), "pid": 999999999, "harness": "codex", "started": "2026-10-22T09:00:00"}])
+    put(log / "20261022-080000.running", [{"stamp": "20261022-080000", "host": "p14s-gen4", "pid": 4242, "harness": "claude", "started": C.now_iso(), "conversation": "x"}])
+    put(log / "20261001-080000.running", [{"stamp": "20261001-080000", "host": "p14s-gen4", "pid": 4243, "harness": "claude", "started": "2026-10-01T08:00:00"}])
+    elsewhere, here, cleared = C.other_runs(str(log), mine = mine)
+    assert here == [] and [d["stamp"] for d in cleared] == ["20261022-090000"] and not (log / "20261022-090000.running").exists()
+    assert [(d["stamp"], d["host"]) for d in elsewhere] == [("20261001-080000", "p14s-gen4"), ("20261022-080000", "p14s-gen4")]
+    assert elsewhere[0]["hours"] > C.STALE_HOURS and elsewhere[1]["hours"] < 1
+    assert (log / "20261022-080000.running").exists(), "a marker of another machine is never removed here"
+
+    # without "mine", this process's own marker is a live run of this machine
+    elsewhere, here, cleared = C.other_runs(str(log))
+    assert [d["stamp"] for d in here] == ["20261022-100000"] and cleared == []
+    C.remove_running(mine)
+    assert not pathlib.Path(mine).exists()
+    C.remove_running("")                                               # nothing to remove: no error
+
+
+def test_two_versions_of_a_conversation_record_are_merged_into_one(tmp_path):
+    log = tmp_path / "log"
+    a = C.new_conversation(str(log), "20261022-100000", "D:/p", "work::p", "a title")
+    a["runs"] = [{"stamp": "20261022-100000", "harness": "claude", "started": "2026-10-22T10:00:00", "finished": "2026-10-22T10:05:00", "host": "laptop"},
+                 {"stamp": "20261022-110000", "harness": "claude", "started": "2026-10-22T11:00:00", "host": "laptop"}]        # no end on this side
+    a["sessions"] = {"claude": {"id": "s1", "started": "2026-10-22T10:00:00", "runs": 2}}
+    a["updated"] = "2026-10-22T11:00:00"
+    a_data = {k: v for k, v in a.items() if not k.startswith("_")}
+    b = json.loads(json.dumps(a_data))
+    b["runs"] = [dict(a["runs"][0]), dict(a["runs"][1], finished = "2026-10-22T11:09:00"),
+                 {"stamp": "20261022-120000", "harness": "codex", "started": "2026-10-22T12:00:00", "finished": "2026-10-22T12:30:00", "host": "p14s-gen4"}]
+    b["sessions"] = {"claude": {"id": "s2", "started": "2026-10-22T12:00:00", "runs": 1, "previous": [{"id": "s1", "started": "2026-10-22T10:00:00", "runs": 2}]},
+                     "codex": {"id": "t1", "started": "2026-10-22T12:00:00", "runs": 1}}
+    b["updated"] = "2026-10-22T12:30:00"
+    b["summary"] = {"runs": 3}
+
+    # the sync renamed both sides away: only the two copies are left, and the conversation is invisible
+    put(log / "20261022-100000.conversation.json.conflict1", [a_data])
+    put(log / "20261022-100000.conversation.json.conflict2", [b])
+    assert C.list_conversations(str(log)) == []
+    notes = C.consolidate_log(str(log))
+    assert len(notes) == 1 and "2 copies" in notes[0] and "3 run(s)" in notes[0] and "claude 2 session(s)" in notes[0], notes
+    assert not list(log.glob("*.conflict*"))
+    convs = C.list_conversations(str(log))
+    assert [c["id"] for c in convs] == ["20261022-100000"]
+    m = convs[0]
+    assert [r["stamp"] for r in m["runs"]] == ["20261022-100000", "20261022-110000", "20261022-120000"]
+    assert m["runs"][1]["finished"] == "2026-10-22T11:09:00", "the version of a run that has an end wins"
+    assert [r.get("host") for r in m["runs"]] == ["laptop", "laptop", "p14s-gen4"]
+    assert m["sessions"]["claude"]["id"] == "s2" and [p["id"] for p in m["sessions"]["claude"]["previous"]] == ["s1"]
+    assert m["sessions"]["codex"]["id"] == "t1" and m["updated"] == "2026-10-22T12:30:00" and m["summary"] == {"runs": 3}
+    assert m["started"] == a_data["started"] and m["title"] == "a title"
+    assert C.consolidate_log(str(log)) == [], "nothing left to fold"
+    assert C.merge_conversations([]) is None
+
+
+def test_the_transcript_keeps_the_longest_copy_of_a_segment_the_sync_left(tmp_path, monkeypatch):
+    log = tmp_path / "log"
+    conv = conversation(log, "20261022-100000")
+    conv["sessions"] = {"claude": {"id": "gone-1", "started": "2026-10-22T10:00:00", "runs": 1}}
+    monkeypatch.setattr(C, "export_session", lambda h, sid, project: None)      # no store on this machine
+    head = "# Conversation 20261022-100000\n\n---\n\n## claude - session `gone-1` (started 2026-10-22T10:00:00, 1 run(s))\n\n"
+    put(log / "20261022-100000.transcript.md.conflict1", [head + "**User:** a\n\n**Claude:** b\n\n"])
+    put(log / "20261022-100000.transcript.md.conflict2", [head + "**User:** a\n\n**Claude:** b\n\n**User:** c\n\n**Claude:** d\n\n"])
+    path, notes = C.write_transcript(conv, str(log))
+    text = pathlib.Path(path).read_text(encoding = "utf-8")
+    assert "**User:** c" in text and "**Claude:** d" in text and text.count("session `gone-1`") == 1
+    assert "# Conversation 20261022-100000\n\n---" not in text.split("session `gone-1`")[1], "a copy's own head is not part of the segment"
+    assert not list(log.glob("*.conflict*")) and any("2 copies" in n for n in notes), notes
+
+    # the copies of other files are left alone
+    put(log / "other.md.conflict1", ["x"])
+    C.write_transcript(conv, str(log))
+    assert (log / "other.md.conflict1").exists()
+    assert [(pathlib.Path(o).name, [pathlib.Path(c).name for c in cs]) for o, cs in C.conflict_copies(str(log))] == [("other.md", ["other.md.conflict1"])]

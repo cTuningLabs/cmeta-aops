@@ -788,3 +788,127 @@ def test_apply_pending_asks_for_all_changes_or_one_by_one(fresh, monkeypatch):
         shutil.rmtree(used_ai)
         for path, text in original.items():
             put(path, text)
+
+
+# ---------------------------------------------------------------------------------------------- the machines and the sync
+def host():
+    import socket
+    return socket.gethostname().split(".")[0].lower()
+
+
+def marker(log, stamp, **fields):
+    data = {"stamp": stamp, "conversation": "x", "harness": "claude", "host": "p14s-gen4", "pid": 4242,
+            "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    data.update(fields)
+    return put(log / (stamp + ".running"), json.dumps(data))
+
+
+def test_a_run_names_its_host_and_leaves_a_marker_only_while_it_lives(fresh, monkeypatch):
+    lab = fresh
+    session(lab, monkeypatch, """
+        import glob
+        names = sorted(os.path.basename(p) for p in glob.glob(os.path.join(os.environ["RUN_FAKE_LOG"], "*.running")))
+        with open(os.environ["RUN_FAKE_SEEN"], "w") as f:
+            f.write("\\n".join(names))
+        """)
+    monkeypatch.setenv("RUN_FAKE_LOG", str(lab.project / "!AI" / "log"))
+    monkeypatch.setenv("RUN_FAKE_SEEN", str(lab.scratch / "seen.txt"))
+    r = lab.run(prompt = "hello")
+    assert r["return"] == 0, r.get("error")
+    log = lab.project / "!AI" / "log"
+    assert read(lab.scratch / "seen.txt").split() == [r["conversation"] + ".running"], "the marker is there while the harness runs"
+    assert not list(log.glob("*.running")), "and gone with the run"
+    data = json.loads(read(log / (r["conversation"] + ".conversation.json")))
+    assert data["runs"][0]["host"] == host() and "| host | %s |" % host() in read(r["record"])
+    assert "  on %s" % host() in lab.run(conversations = True)["text"]
+
+    # the orientation tells every harness how a location inside an artifact is written
+    prompt = read(lab.scratch / "prompt.txt")
+    assert "{{{<category>::<artifact alias>,<artifact UID>}}}/<relative path" in prompt and "names its machine" in prompt
+
+    # a marker is also gone when the harness dies (its exception goes through run-ai)
+    session(lab, monkeypatch, "raise RuntimeError('the harness died')")
+    with pytest.raises(RuntimeError):
+        lab.run(prompt = "crash")
+    assert not list(log.glob("*.running"))
+
+
+def test_a_marker_of_another_machine_is_reported_and_only_on_request_refused(fresh):
+    lab = fresh
+    first = lab.run(prompt = "start")
+    log = lab.project / "!AI" / "log"
+    marker(log, "20261022-080000", conversation = first["conversation"])
+    now16 = time.strftime("%Y-%m-%dT%H:%M")
+
+    # report (the default): a line in the record, the listing and the prompt - no question, the run goes on
+    r = lab.run(prompt = "go on")
+    assert r["return"] == 0, r.get("error")
+    rec = read(r["record"])
+    assert "recorded as running on p14s-gen4: 20261022-080000 (claude, conversation %s" % first["conversation"] in rec and "go on with care" in rec
+    assert "running on another machine (p14s-gen4 since %s" % now16 in read(lab.scratch / "prompt.txt")
+    assert (log / "20261022-080000.running").exists(), "a marker of another machine is never removed here"
+    assert "NOTE: a run of this project is recorded as running on p14s-gen4" in lab.run(conversations = True)["text"]
+
+    # refuse; ask without a terminal (the suite has none) refuses too, --yes goes on; the config key is the default
+    r = lab.run(prompt = "again", other_runs = "refuse")
+    assert r["return"] > 0 and "recorded as running on p14s-gen4" in r["error"] and "--other_runs=report" in r["error"]
+    assert lab.run(prompt = "again", other_runs = "ask")["return"] > 0
+    r = lab.run(prompt = "again", other_runs = "ask", yes = True)
+    assert r["return"] == 0 and "continued (--yes)" in read(r["record"])
+    r = lab.cm.access({"category": "config", "command": "set", "arg1": "task-run-ai", "con": False, "meta": {"other_runs": "refuse"}})
+    assert r["return"] == 0, r.get("error")
+    assert lab.run(prompt = "again")["return"] > 0
+    lab.config({})
+    assert lab.run(prompt = "again")["return"] == 0
+    r = lab.run(prompt = "wrong", other_runs = "maybe")
+    assert r["return"] > 0 and "--other_runs must be one of" in r["error"]
+    assert lab.run(dry_run = True, other_runs = "refuse")["running_elsewhere"][0]["stamp"] == "20261022-080000", "a dry run reports, never refuses"
+
+    # a marker of another machine that is days old is probably a run that is over: reported, never refused
+    marker(log, "20261022-080000", started = "2026-01-01T08:00:00")
+    r = lab.run(prompt = "later", other_runs = "refuse")
+    assert r["return"] == 0 and "probably over" in read(r["record"])
+
+    # a marker of this machine whose process is gone is removed
+    marker(log, "20261022-090000", host = host(), pid = 999999999, harness = "codex")
+    r = lab.run(prompt = "cleared")
+    assert r["return"] == 0 and not (log / "20261022-090000.running").exists() and "is gone - removed" in read(r["record"])
+
+
+def test_the_copies_the_sync_kept_are_merged_for_records_and_listed_for_memories(fresh):
+    lab = fresh
+    first = lab.run(prompt = "one")
+    lab.run(prompt = "two")
+    log = lab.project / "!AI" / "log"
+    cid = first["conversation"]
+    data = json.loads(read(log / (cid + ".conversation.json")))
+
+    # the sync renamed both sides of the record and of the transcript away (the other side has a run of its own),
+    # and kept two versions of a memory and of the index
+    other = json.loads(json.dumps(data))
+    other["runs"] = other["runs"][:1] + [{"stamp": "20261022-120000", "harness": "codex", "started": other["runs"][0]["started"],
+                                          "finished": other["runs"][0]["started"], "host": "p14s-gen4", "prompt": "three"}]
+    (log / (cid + ".conversation.json")).rename(log / (cid + ".conversation.json.conflict1"))
+    put(log / (cid + ".conversation.json.conflict2"), json.dumps(other))
+    (log / (cid + ".transcript.md")).rename(log / (cid + ".transcript.md.conflict1"))
+    put(log / (cid + ".transcript.md.conflict2"), "# Conversation\n")
+    put(lab.project / "!AI" / "memory" / "fact.md.conflict1", "a\n")
+    put(lab.project / "!AI" / "memory" / "fact.md.conflict2", "b\n")
+    put(lab.project / "!AI" / "memory" / "MEMORY.md.conflict1", "- a\n")
+    listing = lab.run(conversations = True)
+    assert listing["conversations"][0]["id"] == cid, "the listing folds the record back first"
+    assert "NOTE: conversation %s: 2 copies the sync kept of its record were merged (3 run(s)" % cid in listing["text"]
+    assert "NOTE: conversation %s: 2 copies the sync kept of the transcript were folded into it and removed" % cid in listing["text"]
+    assert "NOTE: the sync kept two versions of 2 file(s)" in listing["text"]
+    assert not list(log.glob("*.conflict*")), "the copies of run-ai's own records are folded back at once"
+
+    r = lab.run(prompt = "four")
+    assert r["return"] == 0 and r["conversation"] == cid, r.get("error")
+    merged = json.loads(read(log / (cid + ".conversation.json")))
+    assert sorted(x["prompt"] for x in merged["runs"]) == ["four", "one", "three", "two"] and merged["runs"][-1]["prompt"] == "four"
+    prompt = read(lab.scratch / "prompt.txt")
+    assert "memory/MEMORY.md (MEMORY.md.conflict1); memory/fact.md (fact.md.conflict1, fact.md.conflict2)" in prompt
+    assert "merge each pair into the file's own name and delete the copies" in prompt
+    assert "the sync kept two versions of 2 file(s)" in read(r["record"])
+    assert (lab.project / "!AI" / "memory" / "fact.md.conflict2").exists(), "a memory's copies are the agent's to merge"
+    assert [c[0] for c in lab.run(dry_run = True)["conflicts"]] == ["memory/MEMORY.md", "memory/fact.md"]

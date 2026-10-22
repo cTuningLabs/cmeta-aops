@@ -158,6 +158,8 @@ CONFIG_ARTIFACT = 'task-run-ai'
 LOCAL_AI_USES_KEY = 'local_ai_uses'
 CONFIG_TOKENS_KEY = 'max_context_tokens'
 CONFIG_TRIM_KEY = 'trim_context'        # true: --trim_context on every run of this machine
+CONFIG_OTHER_RUNS_KEY = 'other_runs'    # report (default) | ask | refuse: a run of this project recorded as running on another machine
+OTHER_RUNS_MODES = ('report', 'ask', 'refuse')
 SUMMARY_CLAUDE_MODEL = 'haiku'          # --summarize with claude and no --model: Claude Code's alias of its current Haiku
 SUMMARY_INLINE_CHARS = 120000           # a longer transcript is read by the agent from its file instead of in the prompt
 
@@ -899,12 +901,15 @@ class CTask(InitCTask):
         return '\n'.join(lines) + '\n'
 
     @staticmethod
-    def _orientation(ai_root, conv, conv_how, log_dir, own_skills, sources=(), guard='ask', own_workspace='', write='ask'):
+    def _orientation(ai_root, conv, conv_how, log_dir, own_skills, sources=(), guard='ask', own_workspace='', write='ask',
+                     conflicts=(), elsewhere=()):
         """What every harness is told first: where this project keeps its memory, skills and conversations, and which
         conversation this run is - so that "what was our last conversation?" is answered from !AI/log and not from the
         harness's own history (~/.claude/projects, CODEX_HOME, ...) - and how a change to a used artifact is proposed
         (guard "keep": that it may be made directly). own_workspace: the harness works in a folder of its own, not in
-        the project (OpenClaw), and is told where the project is. write "none": the run is read-only."""
+        the project (OpenClaw), and is told where the project is. write "none": the run is read-only. conflicts: the
+        files of !AI the sync kept two versions of [(path under !AI, [copies])]; elsewhere: the runs of this project
+        recorded as running on other machines."""
         posix = ai_root.replace('\\', '/')
         lines = ['# This project is run through cMeta run-ai']
         if write == 'none':
@@ -969,6 +974,18 @@ class CTask(InitCTask):
                      'Markdown file in %s/%s/ with a line added to MEMORY.md (Claude Code does this by itself there); a new skill is '
                      '%s/%s/<name>/SKILL.md (loaded on the next run), not ~/.claude/skills or .claude/skills.' % (
                          AI_DIR, posix, MEMORY_DIR, posix, SKILLS_DIR))
+        lines.append('- The %s folder travels between machines. A location inside a cMeta artifact - in a memory, a skill, a record or '
+                     'a reply - is written as {{{<category>::<artifact alias>,<artifact UID>}}}/<relative path, forward slashes>: the '
+                     'braces stand for that artifact\'s folder on whichever machine reads it ("cx utils find_by_cid" resolves them; a '
+                     'repository root is {{{repo::<alias>,<UID>}}}). A path outside cMeta stays a full path and names its machine.' % AI_DIR)
+        if elsewhere:
+            lines.append('- A run of this project is recorded as running on another machine (%s): until the next sync its memory files '
+                         'may change under this run. Add to the memories rather than rewrite them.' % ', '.join(
+                             '%s since %s' % (d.get('host') or '?', str(d.get('started') or '?')[:16]) for d in elsewhere))
+        if conflicts:
+            lines.append('- The sync kept two versions of these files of %s (changed on two machines): %s. Before anything else, merge '
+                         'each pair into the file\'s own name and delete the copies; for %s, rebuild the index from the memory files.' % (
+                             AI_DIR, '; '.join('%s (%s)' % (o, ', '.join(cs)) for o, cs in conflicts), INDEX_FILE))
         return '\n'.join(lines) + '\n\n'
 
     @staticmethod
@@ -1168,9 +1185,10 @@ class CTask(InitCTask):
         return {'return': 0, 'list_models': True, 'harness': harness, 'text': text}
 
     # ------------------------------------------------------------------ conversations
-    def _list_conversations(self, log_dir, project_path, con):
+    def _list_conversations(self, log_dir, project_path, con, notes=()):
         convs = CONV.list_conversations(log_dir)
         lines = ['RUN-AI: conversations of %s (%s)' % (project_path, log_dir)]
+        lines += ['  NOTE: ' + n for n in notes]
         if not convs:
             lines.append('  none yet - the next run starts the first one')
         for c in convs:
@@ -1340,6 +1358,7 @@ class CTask(InitCTask):
             write: str = '',                # what the run may write: ask (the harness asks; the default) | project (no questions) | all (also the used artifacts' memory, directly) | none (read-only); the config key "write" is the default
             w: bool = False,                # short alias of "write=all" (-w)
             context_guard: str = '',        # a direct change in a used artifact's memory or skills, after the run: ask (keep it? else, and with nobody to ask, as restore) | restore (kept as a proposal, the file put back) | report | keep (kept and recorded) | off; the default follows --write (ask, restore, keep, restore)
+            other_runs: str = '',           # a run of this project recorded as running on another machine (the sync brought its marker): report (the default: one line, no question) | ask | refuse; the config key "other_runs" is this machine's default
             unparsed: list = None,          # extra flags for the harness (everything after "--")
     ):
         """Run a coding agent on a cMeta artifact; its memory, skills, logs and conversations live in the artifact's !AI folder."""
@@ -1419,8 +1438,53 @@ class CTask(InitCTask):
         stamp, stamp_lock = self._new_stamp(log_dir, False)
         stamp_made = []
 
+        # 1b. the !AI folder as the sync left it: the two copies it keeps of a file changed on two machines are merged
+        #     back when the file is a record of run-ai's own, and listed for the agent when it is a memory or a skill;
+        #     a run of this project recorded as running elsewhere is reported (--other_runs: report | ask | refuse - a
+        #     line and no question by default); a marker left on this machine by a run that is gone is removed
+        sync_notes = CONV.consolidate_log(log_dir)
+        conflicts = [(os.path.relpath(o, ai_root).replace('\\', '/'), [os.path.basename(c) for c in cs])
+                     for o, cs in CONV.conflict_copies(ai_root)] if os.path.isdir(ai_root) else []
+        elsewhere, here, cleared = CONV.other_runs(log_dir) if os.path.isdir(log_dir) else ([], [], [])
+        for d in cleared:
+            sync_notes.append('the marker of run %s (%s) was left by a run of this machine that is gone - removed' % (d.get('stamp'), d.get('harness') or '?'))
+        for d in here:
+            sync_notes.append('another run of this project is running on this machine: %s (%s, conversation %s, since %s)' % (
+                d.get('stamp'), d.get('harness') or '?', d.get('conversation') or '?', str(d.get('started') or '?')[11:16]))
+        for d in elsewhere:
+            age = d.get('hours')
+            stale = age is not None and age >= CONV.STALE_HOURS
+            sync_notes.append('a run of this project is recorded as running on %s: %s (%s, conversation %s, started %s%s) - %s' % (
+                d.get('host') or 'another machine', d.get('stamp'), d.get('harness') or '?', d.get('conversation') or '?',
+                str(d.get('started') or '?')[:16], (', %.0f h ago' % age) if age is not None else '',
+                ('probably over and its end not synced yet: delete %s if so' % os.path.basename(d['_path'])) if stale else
+                'if it still runs, the memory files of this project may change under this one - work in another project, or go on with care'))
+        if conflicts:
+            sync_notes.append('the sync kept two versions of %d file(s) of %s (changed on two machines) - to consolidate: %s' % (
+                len(conflicts), AI_DIR, '; '.join('%s (%s)' % (o, ', '.join(cs)) for o, cs in conflicts[:8]) + (' ...' if len(conflicts) > 8 else '')))
+        live = [d for d in elsewhere if d.get('hours') is None or d['hours'] < CONV.STALE_HOURS]
+        other_mode = str(other_runs or self._run_ai_config().get(CONFIG_OTHER_RUNS_KEY) or 'report').strip().lower()
+        if other_mode not in OTHER_RUNS_MODES:
+            return self.cm.error('--other_runs must be one of %s (got "%s")' % (', '.join(OTHER_RUNS_MODES), other_mode))
+        if live and other_mode != 'report' and not (_truthy(conversations) or _truthy(cs) or _truthy(summarize) or dry_run):
+            what = 'a run of this project is recorded as running on %s (%s)' % (
+                ', '.join(sorted({str(d.get('host') or '?') for d in live})), ', '.join(os.path.basename(d['_path']) for d in live))
+            if other_mode == 'ask' and yes:
+                sync_notes.append('%s; continued (--yes)' % what)
+            elif other_mode == 'refuse' or ctx['control'].get('quiet', False) or not con or not bool(getattr(sys.stdin, 'isatty', lambda: False)()):
+                return self.cm.error('%s - delete its marker if that run is over; --other_runs=report goes on regardless' % what)
+            else:
+                try:
+                    answer = input('RUN-AI: %s. Continue anyway? [y/N] ' % what).strip().lower()
+                except Exception:
+                    answer = ''
+                if answer not in ('y', 'yes'):
+                    return self.cm.error('stopped: %s' % what)
+                sync_notes.append('%s; continued on the user\'s word' % what)
+        notes += sync_notes
+
         if _truthy(conversations) or _truthy(cs):
-            return self._list_conversations(log_dir, project_path, con)
+            return self._list_conversations(log_dir, project_path, con, sync_notes)
         if _truthy(summarize):
             return self._summarize(ctx, log_dir, conversation, harness, task_ref, extra, model_name, project_path, con, verbose, space)
 
@@ -1557,7 +1621,8 @@ class CTask(InitCTask):
             def estimate(kept):
                 return self._estimate([
                     ('orientation', self._orientation(ai_root, conv, conv_how, log_dir, own_skills, kept, guard_mode,
-                                                      own_workspace='~/.openclaw/workspace' if hk == 'openclaw' else '', write=write_mode), ''),
+                                                      own_workspace='~/.openclaw/workspace' if hk == 'openclaw' else '', write=write_mode,
+                                                      conflicts=conflicts, elsewhere=elsewhere), ''),
                     ('memory index', index_now, ''), ('skills', ' '.join('%s %s' % (n, d) for n, d, fp in own_skills), ''),
                     ('context sources', self._render_context(kept, True, guard_mode == 'keep') if kept else '', ''),
                     ('hand-over', handover, ''), ('prompt', prompt or '', '')])[1]
@@ -1575,7 +1640,8 @@ class CTask(InitCTask):
         # directory: it is told where the project is. Its workspace is not moved to the project, since OpenClaw keeps
         # its persona files there (AGENTS.md, SOUL.md, ...)
         orientation = self._orientation(ai_root, conv, conv_how, log_dir, own_skills, sources, guard_mode,
-                                        own_workspace='~/.openclaw/workspace' if hk == 'openclaw' else '', write=write_mode)
+                                        own_workspace='~/.openclaw/workspace' if hk == 'openclaw' else '', write=write_mode,
+                                        conflicts=conflicts, elsewhere=elsewhere)
         context_text = ''
 
         # with --no_log the files of the run go to the temp directory under names nobody can guess, and are removed after it
@@ -1806,7 +1872,9 @@ class CTask(InitCTask):
                     'new_session': new_sid, 'handover': handover, 'skills': [s[0] for s in own_skills], 'plugin_dirs': plugin_dirs,
                     'tokens_estimated': est_total, 'token_limit': limit, 'token_limit_from': limit_from, 'context_depth': context_depth,
                     'params': params, 'flags': extra, 'env': env, 'settings': settings, 'context': sources, 'context_skipped': skipped,
-                    'write': write_mode, 'write_from': write_from, 'context_guard': guard_mode, 'notes': notes}
+                    'write': write_mode, 'write_from': write_from, 'context_guard': guard_mode, 'notes': notes,
+                    'other_runs': other_mode, 'running_elsewhere': [{k: v for k, v in d.items() if not k.startswith('_')} for d in elsewhere],
+                    'conflicts': conflicts}
 
         if over:
             quiet = bool(ctx['control'].get('quiet', False))
@@ -1856,7 +1924,7 @@ class CTask(InitCTask):
             s['last'] = CONV.now_iso()
             run_entry = {'stamp': stamp, 'harness': harness, 'mode': 'interactive' if interactive else 'prompt', 'model': model_name,
                          'effort': effort_name, 'prompt': CONV.title_from_prompt(prompt or (('file ' + os.path.basename(prompt_file)) if prompt_file else ''), interactive, stamp),
-                         'started': CONV.now_iso(), 'session': sid_now, 'resumed': bool(native_sid), 'handover': bool(handover),
+                         'started': CONV.now_iso(), 'host': CONV.host_name(), 'session': sid_now, 'resumed': bool(native_sid), 'handover': bool(handover),
                          'tokens_estimated': est_total, 'token_limit': limit}
             conv.setdefault('runs', []).append(run_entry)
             CONV.save_conversation(conv)
@@ -1868,6 +1936,7 @@ class CTask(InitCTask):
                      '| project | `%s` |' % project_path,
                      '| resolved | %s%s |' % (how, (' - `%s`' % cref) if cref else ''),
                      '| started | %s |' % datetime.datetime.now().isoformat(timespec='seconds'),
+                     '| host | %s |' % CONV.host_name(),
                      '| mode | %s |' % ('interactive' if interactive else 'one prompt (-p)'),
                      '| model | %s |' % (('`%s`' % model_name) if model_name else 'the harness default'),
                      '| effort | %s |' % (('`%s`' % effort_name) if effort_name else 'the harness default'),
@@ -1890,6 +1959,10 @@ class CTask(InitCTask):
                 f.write('\n'.join(lines) + '\n')
         self._release_stamp(stamp_lock)     # the stamp is taken by the records now
 
+        # the marker of this run while it lives (<stamp>.running: the conversation, the harness, this host, the pid): a
+        # run of the same project on this machine sees it, a run on another machine sees it once the sync carried it
+        running = CONV.write_running(log_dir, stamp, conv['id'], harness) if (conv is not None and record) else ''
+
         # 5. run the harness's task inside the project folder (the engine's "path" control: cd there, back afterwards)
         before = CONV.capture_before(harness, project_path)
 
@@ -1905,6 +1978,7 @@ class CTask(InitCTask):
             rr = self.cm.access(dict(params, category=TASK_CATEGORY, command='run', arg1=task_ref, ctx=ctx,
                                      path=project_path, unparsed=extra, con=con, verbose=verbose))
         finally:
+            CONV.remove_running(running)
             for k, v in saved.items():
                 if v is None:
                     os.environ.pop(k, None)

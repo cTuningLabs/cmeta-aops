@@ -84,6 +84,8 @@ as if it had been started there. A plain `claude` or `codex` started in a folder
     log/<id>.conversation.json         a conversation: its runs and, per harness, the native session it continues
     log/<id>.transcript.md             the whole conversation, re-exported from the harnesses' own stores after every run
     log/<id>.summary.md                its summary, written on request (--summarize) and read first at a hand-over
+    log/<stamp>.running                while a run lives: its conversation, harness, host and pid - a run of the project on another
+                                       machine sees it once the sync carried it (the section "Several machines")
     log/<stamp>.import.md              what import-ai brought in, from where
     log/<stamp>.apply_pending.md       what --apply_pending applied to the artifacts this project uses
     log/<stamp>.applied.json           what was applied to THIS artifact from a project that uses it (or kept by the guard)
@@ -443,11 +445,13 @@ cxt run-ai --project=<an artifact of that repository> --dry_run   # the source s
 | `max_context_tokens` | the limit of the context estimate when `--max_context_tokens` is not given (default 30,000); the older key `run_ai_max_context_tokens` of the config `default` is still read |
 | `trim_context` | `true`: every run leaves context sources out to fit the limit, as `--trim_context` does |
 | `write` | what a run may write when no flag says so: `ask` (the default), `project`, `all` or `none` (the next section) |
+| `other_runs` | a run of this project recorded as running on another machine: `report` (the default: one line, no question), `ask` or `refuse` (the section "Several machines") |
 
 ```bash
 cx config set task-run-ai --meta.max_context_tokens=40000
 cx config set task-run-ai --meta.trim_context=true
 cx config set task-run-ai --meta.write=all
+cx config set task-run-ai --meta.other_runs=ask
 cx config show task-run-ai
 ```
 
@@ -648,6 +652,48 @@ when applying); `REFUSED` a path outside `memory/` and `skills/`.
   stages them again - nothing is lost).
 - `--add-dir` still gives Claude write access to the used artifacts; the guard is what undoes a write, not what
   prevents it.
+
+## Several machines: the `!AI` folder in a sync
+
+`!AI` travels with the project (a bisync between two machines, a copy to another): run-ai resolves the project and
+its `ai_uses` by cRef on every run, the per-run files that name paths are rewritten by every run, and a
+conversation continues on any machine (the native session of a harness exists on the machine that made it;
+elsewhere the transcript is handed over). What run-ai does about two machines on one project:
+
+- **The host in every record.** Each run of a conversation says on which machine it was made (`runs[].host`, the
+  hostname; `--conversations` shows `on <host>`); the run record has a `host` row.
+- **A marker while a run lives.** `log/<stamp>.running` (the conversation, the harness, the host, the pid) exists
+  from the moment the records are written to the end of the run, also when the harness dies. The next run of the
+  project looks at the markers: one of this machine whose process is gone is removed; one of another machine is
+  reported - "a run of this project is recorded as running on <host> since ..." - in the console, the run record and
+  the orientation (the agent is told to add to the memories rather than rewrite them). No question by default:
+  `--other_runs=ask` asks (`-q` or no terminal: refuses; `--yes` goes on), `--other_runs=refuse` refuses; the config
+  key `other_runs` is this machine's default. A marker older than two days is reported as probably over (delete it
+  if so) and never refuses.
+- **The two copies the sync keeps.** rclone bisync keeps a file changed on both sides as `<name>.conflict1` and
+  `<name>.conflict2` and takes the name itself away. For run-ai's own records this is folded back at the start of
+  every run and of `--conversations`: the copies of `<id>.conversation.json` are merged into one (the runs by stamp -
+  a run with an end wins - every session of every harness, the one started last current) and removed; the copies of
+  `<id>.transcript.md` are read for the segments this machine cannot export (the longest copy of each) when the
+  transcript is written again, then removed. For memories and skills the copies are listed - in the console, the
+  run record and the orientation - and the agent is asked to merge each pair into the file's own name and delete
+  the copies (`MEMORY.md`: rebuilt from the memory files).
+- **A run on another machine, from here.** `--project=<cRef>` resolves the project on whichever machine runs it, so
+  the task engine's delegation starts a run-ai there and, with `--on_detach`, leaves it running after this
+  machine sleeps or goes away (a session of its own, its output in `~/cmeta-detached/<run id>.log` there):
+
+  ```
+  cxt run-ai --project="work::<item>" --new --write=project -q "<the request>" --on=<host> --on_detach
+  cx host run <host> "tail -n 30 ~/cmeta-detached/<run id>.log"      # how it goes
+  cx host sync <host> --repos=<repository> -q                          # its records, transcript and files back here
+  ```
+
+  The project's repository travels by a bisync (a partial one: `artifacts:` in the host's sync entry); the harness
+  is signed in on that machine once.
+- **Locations are written as references.** The orientation tells every harness to write a location inside a cMeta
+  artifact as `{{{<category>::<artifact alias>,<artifact UID>}}}/<relative path, forward slashes>` - the braces
+  stand for that artifact's folder on whichever machine reads the text (`cx utils find_by_cid` resolves them; a
+  repository root is `{{{repo::<alias>,<UID>}}}`) - and a path outside cMeta as a full path that names its machine.
 
 ## What stays as it is
 

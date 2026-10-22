@@ -2,6 +2,18 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.54.0
+- **run-ai on several machines:** a project's `!AI` folder can be bisynced between machines and worked on from
+  either. Every run record names its host (`--conversations` shows `on <host>`); `!AI/log/<stamp>.running` marks a
+  live run (removed when it ends, also when the harness dies), and the next run reports one of another machine in
+  one line - `--other_runs=ask|refuse` (config key `other_runs`) asks or refuses instead, a marker of this machine
+  whose process is gone is removed. The two copies rclone bisync keeps of a file changed on both sides
+  (`<name>.conflict1`, `.conflict2`) are folded back at the start of every run and of `--conversations` for run-ai's
+  own records (the conversation's runs and sessions merged, the transcript's segments kept) and listed for the agent
+  to merge for memories and skills. The orientation tells every harness to write a location inside an artifact as
+  `{{{<category>::<alias>,<UID>}}}/<relative path>`, which resolves on any machine; `--project=<cRef>` with the task
+  engine's `--on=<host> --on_detach` starts a run on another machine that outlives this one.
+
 ## 0.53.0
 - **Retired hosts and machines:** `retired: true` in a host's or a machine's `_desc.yaml` keeps its record
   without contacting its old endpoint. `cx host ls` and `cx host status` show `retired` (status skips the
