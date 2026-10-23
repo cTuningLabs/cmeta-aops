@@ -1066,6 +1066,371 @@ class Category(InitCategory):
         return {'return': 0, 'host': h['alias'], 'remote': arg2, 'local': local}
 
     ############################################################
+    def backup_(
+        self,
+        ctx,
+        arg1=None,          # host alias
+        to=None,            # the folder the dated backup goes into (default: the machine artifact's backup/<host>/)
+        dry_run=False,      # list what would be copied, with sizes; copy nothing
+        skip_commands=False,  # do not run the host's "backup: commands: before"
+        unparsed=None,      # everything after "--" goes to rclone
+        project=None,       # named environment; omitted: the host's global environment
+    ):
+        """
+        Copy what only this host has - its configuration, state, secrets and scripts, as the "backup:" block of its
+        _desc.yaml declares - into a dated folder of the machine artifact it belongs to:
+        <machine>/backup/<host>/<YYYYMMDD-HHMM>/, with backup.yaml saying what came and from where. The machine
+        artifact is the asset's record, so the files a rebuild needs sit next to it; "cx host restore" puts them
+        back on this host or on its replacement. Root-only files ("sudo_paths") are read through sudo into a
+        staging folder on the host first (passwordless sudo), then fetched and removed there.
+
+            cx host backup dapple-labs-azure-vm-ubuntu --dry_run      # the paths, their kind and size; nothing copied
+            cx host backup dapple-labs-azure-vm-ubuntu
+            cx host backup dapple-labs-azure-vm-ubuntu --to=D:\\backups\\vm
+        """
+
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        if not arg1:
+            return self.cm.error('which host? cx host backup <host> [--to=<folder>] [--dry_run]')
+
+        r = self._get_host(ctx, arg1, project=project)
+        if self.cm.catch_error(r): return r
+        h = r['host']
+        if h['type'] != 'ssh':
+            return self.cm.error(f'backup works on ssh hosts ({h["alias"]} is {h["type"]})')
+        if self._here(h):
+            return self.cm.error(f'{h["alias"]} is this machine - nothing to back up from')
+
+        r = self._backup_entries(h)
+        if self.cm.catch_error(r): return r
+        entries, block = r['entries'], r['block']
+
+        r = self._backup_root(ctx, h, to)
+        if self.cm.catch_error(r): return r
+        stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M')
+        dest = os.path.join(r['root'], stamp)
+
+        # the host says what each path is (a folder, a file, missing) and how big it is: one round trip
+        r = self._backup_stat(ctx, h, entries, verbose)
+        if self.cm.catch_error(r): return r
+        stat = r['stat']
+
+        if con:
+            print(f'=== {h["alias"]} ({self._address_text(h)}) -> {dest}' + (' - DRY RUN' if dry_run else ''))
+            for e in entries:
+                st = stat.get(e['path']) or {}
+                print(f'    {st.get("kind", "?"):>7}  {st.get("size", "?"):>9}  {e["path"]}' + (f'  (files: {", ".join(e["files"])})' if e['files'] else '')
+                      + ('  [sudo]' if e['sudo'] else ''))
+        missing = [e['path'] for e in entries if (stat.get(e['path']) or {}).get('kind') == 'missing'
+                   or ((stat.get(e['path']) or {}).get('kind') == 'files' and not (stat.get(e['path']) or {}).get('items'))]
+        if missing and con:
+            print(f'    not on the host, skipped: {", ".join(missing)}')
+        entries = [e for e in entries if e['path'] not in missing and (stat.get(e['path']) or {}).get('kind') in ('file', 'folder', 'files')]
+
+        if dry_run:
+            return {'return': 0, 'host': h['alias'], 'dest': dest, 'entries': entries, 'stat': stat, 'dry_run': True}
+
+        before = (block.get('commands') or {}).get('before') or []
+        if isinstance(before, str): before = [before]
+        if before and not skip_commands:
+            for cmd in before:
+                r = self._cmd_run(ctx, h, cmd)
+                if self.cm.catch_error(r): return r
+                if con: print(f'BEFORE ({h["alias"]}): {cmd}')
+                rr = self._run_local(r['cmd'], capture=not verbose, con=con, verbose=verbose, timeout=600)
+                if rr.get('returncode', 0) != 0:
+                    return self.cm.error(f'"{cmd}" on {h["alias"]} returned {rr.get("returncode")} - nothing backed up')
+
+        extra = list(self._csv(unparsed)) if isinstance(unparsed, str) else list(unparsed or [])
+        exclude = [str(x) for x in (block.get('exclude') or [])]
+        os.makedirs(dest, exist_ok=True)
+
+        # root-only files first: copied by sudo into a staging folder the host's user owns, fetched, removed there
+        sudo_entries = [e for e in entries if e['sudo']]
+        staging = f'.cmeta-backup-{stamp}'
+        if sudo_entries:
+            lines = ['set -e', f'rm -rf "$HOME"/{staging}', f'mkdir -p "$HOME"/{staging}']
+            for e in sudo_entries:
+                q = shlex.quote(e['path'].lstrip('/'))
+                lines.append(f'sudo mkdir -p "$HOME"/{staging}/$(dirname {q}) && sudo cp -a {shlex.quote(e["path"])} "$HOME"/{staging}/{q}')
+            lines.append(f'sudo chown -R "$(id -u):$(id -g)" "$HOME"/{staging} && chmod -R u+rX "$HOME"/{staging}')
+            r = self._backup_script(ctx, h, '\n'.join(lines) + '\n', verbose)
+            if self.cm.catch_error(r): return r
+            r = self._rclone(ctx, h, 'copy', os.path.join(dest, 'root'), staging, blacklist=exclude, extra=extra,
+                             con=con, verbose=verbose, from_remote=True)
+            self._backup_script(ctx, h, f'rm -rf "$HOME"/{staging}\n', verbose)       # whatever happened, nothing stays
+            if self.cm.catch_error(r): return r
+
+        # then the host user's own paths, each into its place under <dest>/home/
+        for e in entries:
+            if e['sudo']:
+                continue
+            kind = stat[e['path']]['kind']
+            if kind == 'files':
+                # the matched files of the folder, one by one (rclone would walk the whole folder for an include rule)
+                for item in stat[e['path']].get('items') or []:
+                    local = os.path.join(dest, 'home', *item.split('/'))
+                    os.makedirs(os.path.dirname(local), exist_ok=True)
+                    r = self._rclone(ctx, h, 'copyto', local, item, extra=extra, con=con, verbose=verbose, from_remote=True)
+                    if self.cm.catch_error(r): return r
+                continue
+            if kind == 'file':
+                # rclone copy of a remote file puts it into the local folder: the file's own folder here
+                local = os.path.join(dest, 'home', *e['path'].split('/')[:-1])
+            else:
+                local = os.path.join(dest, 'home', *e['path'].split('/'))
+            r = self._rclone(ctx, h, 'copy', local, e['path'], blacklist=exclude if kind == 'folder' else [],
+                             extra=extra, con=con, verbose=verbose, from_remote=True)
+            if self.cm.catch_error(r): return r
+
+        manifest = {
+            'host': f'{h["alias"]},{h["uid"]}',
+            'machine': h['desc'].get('machine'),
+            'address': self._address_text(h),
+            'backed_up': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
+            'home': stat.get('_home', ''),
+            'state': {k: (h.get('state') or {}).get(k) for k in ('os', 'cmeta_version', 'cmeta_home', 'aops_version', 'probed') if (h.get('state') or {}).get(k)},
+            'entries': [{'path': e['path'], 'kind': stat[e['path']]['kind'], 'size': stat[e['path']].get('size'),
+                         'mode': stat[e['path']].get('mode'), 'sudo': e['sudo'], 'files': e['files'],
+                         'items': stat[e['path']].get('items') or [],
+                         'local': ('root/' if e['sudo'] else 'home/') + e['path'].strip('/')} for e in entries],
+            'exclude': exclude,
+            'commands': block.get('commands') or {},
+            'made_by': 'cx host backup',
+        }
+        self._write_yaml(os.path.join(dest, 'backup.yaml'), manifest)
+
+        keep = block.get('keep')
+        removed = []
+        if isinstance(keep, int) and keep > 0:
+            root = os.path.dirname(dest)
+            older = sorted(d for d in os.listdir(root) if re.match(r'^\d{8}-\d{4}$', d) and os.path.isfile(os.path.join(root, d, 'backup.yaml')))
+            for d in older[:-keep]:
+                shutil.rmtree(os.path.join(root, d), ignore_errors=True)
+                removed.append(d)
+
+        if con:
+            print('')
+            print(f'backed up: {dest}' + (f'  (older backups removed: {", ".join(removed)})' if removed else ''))
+        return {'return': 0, 'host': h['alias'], 'dest': dest, 'entries': manifest['entries'], 'removed': removed}
+
+    ############################################################
+    def restore_(
+        self,
+        ctx,
+        arg1=None,          # host alias (or an instance cMeta made: back to a snapshot, see below)
+        source=None,        # the backup folder (default: the newest backup of this host in its machine artifact)
+        into=None,          # put everything under this folder on the host instead of its real place (a test, a look)
+        paths=None,         # only these paths of the backup (comma-separated, as backup.yaml names them)
+        dry_run=False,      # list what would go where; copy nothing
+        yes=False,          # a production host (ai: production: true) restores only with --yes
+        skip_commands=False,  # do not run the host's "backup: commands: after_restore"
+        name=None,          # an instance's snapshot name (cx host restore <instance> --name=<snapshot>)
+        force=False,        # an instance declared by hand (docker, wsl)
+        project=None,       # named environment; omitted: the host's global environment
+    ):
+        """
+        Put a backup back on a host: every path of "cx host backup" to where it came from, root-only ones through
+        sudo, then the host's "backup: commands: after_restore" (e.g. cx --reindex). The newest backup of the host
+        is taken from its machine artifact, --source names another (the backup of the host this one replaces). With
+        --into=<folder> everything lands under that folder on the host - a look, or a test on a disposable host.
+
+            cx host restore dapple-labs-azure-vm-ubuntu --dry_run
+            cx host restore new-vm-ubuntu --source=<machine>/backup/dapple-labs-azure-vm-ubuntu/20261023-1130 --yes
+            cx host restore lab-laptop-ubuntu --source=<that folder> --into=cmeta-tests/restore-test
+
+        An instance cMeta made (docker, wsl) goes back to a snapshot instead: cx host restore <instance> [--name=<snapshot>].
+        """
+
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        if not arg1:
+            return self.cm.error('which host? cx host restore <host> [--source=<backup folder>] [--into=<folder>] [--dry_run]')
+
+        r = self._get_host(ctx, arg1, project=project)
+        if self.cm.catch_error(r): return r
+        h = r['host']
+        if h['type'] in ('docker', 'wsl'):
+            return self._restore_instance(ctx, arg1, name, force)
+        if h['type'] != 'ssh':
+            return self.cm.error(f'restore works on ssh hosts and on instances cMeta made ({h["alias"]} is {h["type"]})')
+        if self._here(h):
+            return self.cm.error(f'{h["alias"]} is this machine - restore by hand here')
+
+        if source:
+            src = os.path.abspath(source)
+        else:
+            r = self._backup_root(ctx, h, None)
+            if self.cm.catch_error(r): return r
+            stamps = sorted(d for d in (os.listdir(r['root']) if os.path.isdir(r['root']) else [])
+                            if re.match(r'^\d{8}-\d{4}$', d) and os.path.isfile(os.path.join(r['root'], d, 'backup.yaml')))
+            if not stamps:
+                return self.cm.error(f'no backup of {h["alias"]} under {r["root"]} - cx host backup {h["alias"]} first, or --source=<folder>')
+            src = os.path.join(r['root'], stamps[-1])
+        manifest_path = os.path.join(src, 'backup.yaml')
+        if not os.path.isfile(manifest_path):
+            return self.cm.error(f'{src} holds no backup.yaml (not a folder "cx host backup" made)')
+        manifest = self._read_yaml(manifest_path)
+        entries = manifest.get('entries') or []
+        only = self._csv(paths)
+        if only:
+            unknown = [p for p in only if p not in [e['path'] for e in entries]]
+            if unknown:
+                return self.cm.error(f'not in this backup: {", ".join(unknown)} (it holds: {", ".join(e["path"] for e in entries)})')
+            entries = [e for e in entries if e['path'] in only]
+
+        production = bool((h['desc'].get('ai') or {}).get('production'))
+        if production and not yes and not dry_run and not into:
+            return self.cm.error(f'{h["alias"]} is a production host: cx host restore {h["alias"]} ... --yes (or --dry_run, or --into=<folder>)')
+
+        into = str(into or '').replace('\\', '/').strip().rstrip('/')
+        if con:
+            print(f'=== {src} -> {h["alias"]} ({self._address_text(h)})' + (f' under {into}/' if into else '') + (' - DRY RUN' if dry_run else ''))
+            for e in entries:
+                target = (into + '/' + e['path'].strip('/')) if into else e['path']
+                print(f'    {e.get("kind", "?"):>7}  {str(e.get("size") or ""):>9}  {e["local"]}  ->  {target}' + ('  [sudo]' if e.get('sudo') and not into else ''))
+        if dry_run:
+            return {'return': 0, 'host': h['alias'], 'source': src, 'entries': entries, 'dry_run': True}
+
+        stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M')
+        staging = f'.cmeta-restore-{stamp}'
+        for e in entries:
+            local = os.path.join(src, *e['local'].split('/'))
+            if not os.path.exists(local):
+                return self.cm.error(f'{local} is not in the backup')
+            if e.get('kind') == 'files':
+                # the folder's matched files, one by one, each at its own place
+                for item in e.get('items') or []:
+                    f_local = os.path.join(src, 'home', *item.split('/'))
+                    f_remote = (into + '/' + item) if into else item
+                    r = self._rclone(ctx, h, 'copyto', f_local, f_remote, extra=[], con=con, verbose=verbose)
+                    if self.cm.catch_error(r): return r
+                continue
+            if e.get('sudo') and not into:
+                remote = staging + '/' + e['path'].strip('/')
+            else:
+                remote = (into + '/' + e['path'].strip('/')) if into else e['path']
+            command = 'copyto' if e.get('kind') == 'file' else 'copy'
+            r = self._rclone(ctx, h, command, local, remote, extra=[], con=con, verbose=verbose)
+            if self.cm.catch_error(r): return r
+
+        sudo_entries = [e for e in entries if e.get('sudo')] if not into else []
+        if sudo_entries:
+            lines = ['set -e']
+            for e in sudo_entries:
+                q = shlex.quote(e['path'])
+                lines.append(f'sudo mkdir -p $(dirname {q}) && sudo cp -a "$HOME"/{staging}/{shlex.quote(e["path"].strip("/"))} {q}')
+                if e.get('mode'):
+                    lines.append(f'sudo chmod {shlex.quote(str(e["mode"]))} {q}')
+            lines.append(f'rm -rf "$HOME"/{staging}')
+            r = self._backup_script(ctx, h, '\n'.join(lines) + '\n', verbose)
+            if self.cm.catch_error(r): return r
+
+        after = (manifest.get('commands') or {}).get('after_restore') or ((h['desc'].get('backup') or {}).get('commands') or {}).get('after_restore') or []
+        if isinstance(after, str): after = [after]
+        if after and not skip_commands and not into:
+            for cmd in after:
+                r = self._cmd_run(ctx, h, cmd)
+                if self.cm.catch_error(r): return r
+                if con: print(f'AFTER ({h["alias"]}): {cmd}')
+                rr = self._run_local(r['cmd'], capture=not verbose, con=con, verbose=verbose, timeout=600)
+                if rr.get('returncode', 0) != 0 and con:
+                    print(f'WARNING: "{cmd}" on {h["alias"]} returned {rr.get("returncode")}')
+
+        if con:
+            print('')
+            print(f'restored {len(entries)} path(s) of {src} on {h["alias"]}' + (f' under {into}/' if into else ''))
+        return {'return': 0, 'host': h['alias'], 'source': src, 'entries': entries, 'into': into}
+
+    def _backup_entries(self, h):
+        """The host's "backup:" block as a list of {path, files, sudo}: paths relative to the login home or absolute;
+        an item is a path, or {path: ..., files: [patterns]} for a few files of a folder; sudo_paths are root-only."""
+        block = h['desc'].get('backup') or {}
+        if not block or not (block.get('paths') or block.get('sudo_paths')):
+            return self.cm.error(f'host "{h["alias"]}" declares no backup (no "backup: paths" in its _desc.yaml)')
+        entries = []
+        for sudo, key in ((False, 'paths'), (True, 'sudo_paths')):
+            for item in block.get(key) or []:
+                if isinstance(item, dict):
+                    path, files = str(item.get('path') or ''), self._csv(item.get('files'))
+                else:
+                    path, files = str(item), []
+                path = path.replace('\\', '/').strip()
+                if path.startswith('~/'):
+                    path = path[2:]
+                path = path.rstrip('/') if path != '/' else path
+                if not path:
+                    continue
+                entries.append({'path': path, 'files': files, 'sudo': sudo})
+        return {'return': 0, 'entries': entries, 'block': block}
+
+    def _backup_root(self, ctx, h, to):
+        """Where the host's backups go: --to, else <the machine artifact's folder>/backup/<host alias>/."""
+        if to:
+            return {'return': 0, 'root': os.path.abspath(to)}
+        ref = str(h['desc'].get('machine') or '')
+        if not ref:
+            return self.cm.error(f'host "{h["alias"]}" names no machine - say where with --to=<folder>')
+        r = self.cm.access({'category': self.cmeta['uses_categories']['machine'], 'command': 'find',
+                            'arg1': ref.split('::')[-1], 'con': False})
+        arts = (r.get('artifacts') or []) if r.get('return', 1) == 0 else []
+        if len(arts) != 1 or not os.path.isdir(arts[0]['path']):
+            return self.cm.error(f'the machine {ref} of {h["alias"]} is not here ({len(arts)} found) - say where with --to=<folder>')
+        return {'return': 0, 'root': os.path.join(arts[0]['path'], 'backup', h['alias'])}
+
+    def _backup_script(self, ctx, h, script, verbose):
+        """Run a few shell lines on the host (its login shell on stdin) and return their output."""
+        r = self._temp_script(script)
+        if r['return'] > 0: return r
+        r = self._cmd_stdin(ctx, h, r['path'])
+        if r['return'] > 0: return r
+        rr = self._run_local(r['cmd'], capture=True, con=False, verbose=verbose, timeout=600)
+        if rr.get('returncode', 1) != 0:
+            return self.cm.error(f'on {h["alias"]}: {(rr.get("stderr") or rr.get("stdout") or "").strip()[-400:] or "exit " + str(rr.get("returncode"))}')
+        return {'return': 0, 'stdout': rr.get('stdout', '') or ''}
+
+    def _backup_stat(self, ctx, h, entries, verbose):
+        """What each path is on the host - file | folder | files (a folder's matched files, listed) | missing - with its
+        size in KB and its mode (one round trip; root-only paths are looked at through sudo)."""
+        lines = ['echo "_home|$HOME"']
+        for e in entries:
+            q = shlex.quote(e['path'])
+            s = 'sudo ' if e['sudo'] else ''
+            if e['files']:
+                # the matched files of the folder, each on its own line: copied one by one, never the whole folder
+                globs = ' '.join(shlex.quote(e['path'] + '/' + p) for p in e['files'])
+                lines.append(f'if [ -d {q} ]; then echo "{e["path"]}|files|$(du -ck $(ls -d {globs} 2>/dev/null) 2>/dev/null | tail -1 | cut -f1)|$(stat -c %a {q} 2>/dev/null)"; '
+                             f'for f in $(ls -d {globs} 2>/dev/null); do echo "{e["path"]}|item|$f"; done; '
+                             f'else echo "{e["path"]}|missing||"; fi')
+            else:
+                lines.append(f'if {s}test -d {q}; then echo "{e["path"]}|folder|$({s}du -sk {q} 2>/dev/null | cut -f1)|$({s}stat -c %a {q} 2>/dev/null)"; '
+                             f'elif {s}test -e {q}; then echo "{e["path"]}|file|$({s}du -k {q} 2>/dev/null | cut -f1)|$({s}stat -c %a {q} 2>/dev/null)"; '
+                             f'else echo "{e["path"]}|missing||"; fi')
+        r = self._backup_script(ctx, h, '\n'.join(lines) + '\n', verbose)
+        if self.cm.catch_error(r): return r
+        stat = {}
+        for line in r['stdout'].splitlines():
+            parts = line.rstrip().split('|')
+            if parts[0] == '_home' and len(parts) > 1:
+                stat['_home'] = parts[1]
+            elif len(parts) >= 3 and parts[1] == 'item':
+                stat.setdefault(parts[0], {}).setdefault('items', []).append(parts[2].strip())
+            elif len(parts) >= 4:
+                kb = parts[2].strip()
+                stat.setdefault(parts[0], {}).update({'kind': parts[1], 'size': f'{int(kb)} KB' if kb.isdigit() else '', 'mode': parts[3].strip()})
+        return {'return': 0, 'stat': stat}
+
+    @staticmethod
+    def _write_yaml(path, data):
+        import yaml
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write('# Written by "cx host backup": what was copied from the host and where it belongs; "cx host restore" reads it.\n\n')
+            f.write(yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=120))
+
+    ############################################################
     def upgrade_(
         self,
         ctx,
@@ -1439,8 +1804,7 @@ class Category(InitCategory):
             print (f'cMeta info: {h["alias"]}: snapshot {snap} kept as {record.get("image") or record.get("file")}; back to it with "cx host restore {h["alias"]} --name={snap}"')
         return {'return': 0, 'alias': h['alias'], 'snapshot': record}
 
-    ############################################################
-    def restore_(
+    def _restore_instance(
         self,
         ctx,
         arg1=None,          # the instance
@@ -1448,7 +1812,7 @@ class Category(InitCategory):
         force=False,        # a docker or wsl host declared by hand
     ):
         """
-        Bring an instance back to a snapshot (the last one by default): a docker or podman container is removed
+        "cx host restore <instance>": bring an instance back to a snapshot (the last one by default): a docker or podman container is removed
         and made again from the snapshot's image with the instance's run arguments (its entrypoint plugs the
         repositories and indexes again; what was set up inside after the snapshot is gone), a WSL distribution
         unregistered and imported again from the snapshot's tar.

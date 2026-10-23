@@ -70,6 +70,10 @@ cx host push <host> <repo> --dirs=task/x/,tool/y/ [--dry_run] [--delete] [--inde
 cx host push <host> <local path> --to=<remote path>      a folder goes under --to, a single file lands AT --to (rclone copyto)
 cx host pull <host> <remote file or folder> [--to=<local folder>] [--files=*.jsonl,steps.txt] [--dry_run]   the other way: host -> here (rclone copy --from_remote of rclone-to-ssh); nothing here is deleted
                                       (push and pull with -q set rclone up again when the cMeta cache was cleaned)
+cx host backup <host> [--to=<folder>] [--dry_run] [--skip_commands]   what only the host has (its "backup:" block: config, state, secrets, scripts; root-only files through sudo)
+                                      into <its machine artifact>/backup/<host>/<YYYYMMDD-HHMM>/ with backup.yaml
+cx host restore <host> [--source=<backup folder>] [--into=<folder>] [--paths=a,b] [--dry_run] [--yes]   a backup back onto the host (the newest of its own by default,
+                                      --source: another host's - a rebuilt VM), then "backup: commands: after_restore"; a production host needs --yes; --into: under a folder (a test)
 cx host upgrade [host|selection] [--version=0.33.0] [--sync] [--restart [--yes] [--timeout=600]] [--dry_run]
                                       (sync, upgrade and restart probe the host again afterwards: "cx host ls" shows what is there now)
 cx host upgrade <host> [--engine-] --system [--firmware] [--check]   the OS packages (and firmware) too: "cx task run upgrade-os" on the host
@@ -180,6 +184,20 @@ commands:                      # optional
   restart: ...                 # run locally, instead of the default reboot command
   after_restart:               # run ON THE HOST once it answers again (servers); let ssh return:
     - setsid nohup ~/work/start-server.sh > ~/cmeta-tests/server.log 2>&1 < /dev/null &
+
+backup:                        # optional: what only this host has ("cx host backup", see below)
+  paths:                       # on the host, relative to the login home (or absolute): a folder, a file, or a few files of a folder
+    - CMETA/repos/local/config
+    - CMETA/repos/local/state
+    - {path: CMETA, files: ["__run_*.sh"]}
+    - _start.sh
+  sudo_paths:                  # root-only files and folders, read through sudo (passwordless) into a staging folder first
+    - /etc/cloudflared/token
+  exclude: ["**/__pycache__/**", "**/*.tmp"]   # rclone filter patterns left out of every folder
+  keep: 10                     # dated backups kept per host (older ones removed after a successful one; default: all)
+  commands:
+    before: []                 # on the host before the copy (a dump, a stop)
+    after_restore: [cx --reindex]   # on the host after "cx host restore" put the files back
 
 requires: the USB drive        # free text, shown to agents
 ai:                            # what an agent may do there (declared; the probe writes the observed "sudo" to state.yaml)
@@ -316,6 +334,34 @@ The folder there is made readable by the host's user alone first (`chmod 700`), 
 the repository is plugged, and `cx secret check --fix` there makes every private key owner-only (rclone's sftp
 does not keep a file's mode: the keys arrive as 664). The repository is not a registered repository of the host's
 sync list: `push` finds it by its alias here and sends it to `<repos path>/<folder>` there.
+
+## Backup and restore: what only the host has
+
+A host's repositories come back from their sources (git, a bisync pair); what does not is what the host alone holds:
+cMeta's own configuration artifacts there (`<home>/repos/local/config`), the state of its sites (accounts, API
+keys, runtime data), the secrets its servers read, the scripts that start them, a tunnel token under `/etc`. The
+host's `backup:` block names those paths and `cx host backup <host>` copies them, one way, into a dated folder of
+the **machine artifact** the host belongs to - `<machine>/backup/<host alias>/<YYYYMMDD-HHMM>/` - with
+`backup.yaml` saying what came, from where (the login home), how big it was and which mode it had. The machine
+artifact is the asset's record and a private repository on the orchestrating machine, so the files of a rebuild
+sit next to it; a repository of secrets stays one (`secrets: true`: it is never synced, see above).
+
+- Relative paths are under the login home and land under `home/<path>` of the backup, absolute ones under
+  `root/<path>`; a few files of a folder: `{path: CMETA, files: ["__run_*.sh"]}` (rclone include patterns).
+- `sudo_paths` are copied by `sudo cp -a` into a staging folder the host's user owns, fetched, and the staging
+  folder is removed again - the host needs passwordless sudo (`ai: sudo: passwordless`).
+- `--dry_run` asks the host what each path is (a folder, a file, missing) and how big, copies nothing.
+- `keep: N` removes the oldest dated backups beyond N after a successful one; without it every backup stays.
+
+`cx host restore <host>` puts the newest backup of that host back where it came from - or `--source=<folder>`,
+any backup folder: the backup of the host this one replaces, on a freshly set-up VM, once cMeta is installed
+there and its repositories synced (the order of a rebuild: install cx, `cx host sync`, `cx host restore
+--source=...`, then the host's `commands: after_restart`). Root-only paths go back through sudo with their
+recorded mode; then the host's `backup: commands: after_restore` run (`cx --reindex` for the config artifacts).
+`--into=<folder>` lands everything under that folder on the host instead (a look at what a backup holds, or a
+test of the mechanics on a disposable host), with no sudo and no after commands; `--paths=a,b` restores a part. A
+production host (`ai: production: true`) restores only with `--yes`. Nothing on the host is deleted by a restore:
+what the backup does not hold stays as it is.
 
 ## Drivers
 
