@@ -1192,10 +1192,15 @@ class Category(InitCategory):
             'backed_up': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
             'home': stat.get('_home', ''),
             'state': {k: (h.get('state') or {}).get(k) for k in ('os', 'cmeta_version', 'cmeta_home', 'aops_version', 'probed') if (h.get('state') or {}).get(k)},
-            'entries': [{'path': e['path'], 'kind': stat[e['path']]['kind'], 'size': stat[e['path']].get('size'),
-                         'mode': stat[e['path']].get('mode'), 'sudo': e['sudo'], 'files': e['files'],
-                         'items': stat[e['path']].get('items') or [],
-                         'local': ('root/' if e['sudo'] else 'home/') + e['path'].strip('/')} for e in entries],
+            # per entry: what it is, its size and mode, the matched files of a "files" entry, and the modes of what a
+            # folder holds (the restore puts them back; the copy keeps none)
+            'entries': [{k: v for k, v in {'path': e['path'], 'kind': stat[e['path']]['kind'], 'size': stat[e['path']].get('size'),
+                                           'mode': stat[e['path']].get('mode'), 'sudo': e['sudo'], 'files': e['files'],
+                                           'items': stat[e['path']].get('items') or [],
+                                           'item_modes': stat[e['path']].get('item_modes') or {},
+                                           'modes': stat[e['path']].get('modes') or {},
+                                           'local': ('root/' if e['sudo'] else 'home/') + e['path'].strip('/')}.items()
+                         if k not in ('item_modes', 'modes') or v} for e in entries],
             'exclude': exclude,
             'commands': block.get('commands') or {},
             'made_by': 'cx host backup',
@@ -1297,9 +1302,17 @@ class Category(InitCategory):
 
         stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M')
         staging = f'.cmeta-restore-{stamp}'
+        made = []
         for e in entries:
             local = os.path.join(src, *e['local'].split('/'))
             if not os.path.exists(local):
+                if e.get('kind') in ('folder', 'files'):
+                    # a folder that was empty on the host (or whose files were all excluded) has no copy in the
+                    # backup: it is made again, empty, with its mode
+                    made.append(e)
+                    if con:
+                        print(f'    {e["path"]}: nothing in the backup (the folder was empty, or all of it excluded) - made again, empty')
+                    continue
                 return self.cm.error(f'{local} is not in the backup')
             if e.get('kind') == 'files':
                 # the folder's matched files, one by one, each at its own place
@@ -1317,15 +1330,36 @@ class Category(InitCategory):
             r = self._rclone(ctx, h, command, local, remote, extra=[], con=con, verbose=verbose)
             if self.cm.catch_error(r): return r
 
+        # one script on the host: the root-only entries from the staging folder into their place, the folders that
+        # were empty made again, then every recorded mode put back (the copy keeps none - a private key would land
+        # readable by all); an entry restored through sudo keeps its chmod through sudo too
         sudo_entries = [e for e in entries if e.get('sudo')] if not into else []
+        lines = ['set -e']
+        for e in sudo_entries:
+            q = shlex.quote(e['path'])
+            lines.append(f'sudo mkdir -p $(dirname {q}) && sudo cp -a "$HOME"/{staging}/{shlex.quote(e["path"].strip("/"))} {q}')
+        for e in made:
+            s = 'sudo ' if (e.get('sudo') and not into) else ''
+            lines.append(f'{s}mkdir -p {shlex.quote((into + "/" + e["path"].strip("/")) if into else e["path"])}')
+
+        def mode_of(value):
+            return str(value) if re.fullmatch(r'[0-7]{3,4}', str(value or '')) else ''
+        for e in entries:
+            s = 'sudo ' if (e.get('sudo') and not into) else ''
+            target = (into + '/' + e['path'].strip('/')) if into else e['path']
+            if e.get('kind') == 'files':
+                for item, mode in (e.get('item_modes') or {}).items():
+                    if mode_of(mode):
+                        lines.append(f'{s}chmod {mode_of(mode)} {shlex.quote((into + "/" + item) if into else item)}')
+                continue
+            if mode_of(e.get('mode')):
+                lines.append(f'{s}chmod {mode_of(e["mode"])} {shlex.quote(target)}')
+            for rel, mode in (e.get('modes') or {}).items():
+                if mode_of(mode) and rel:
+                    lines.append(f'{s}chmod {mode_of(mode)} {shlex.quote(target + "/" + rel)} 2>/dev/null || true')
         if sudo_entries:
-            lines = ['set -e']
-            for e in sudo_entries:
-                q = shlex.quote(e['path'])
-                lines.append(f'sudo mkdir -p $(dirname {q}) && sudo cp -a "$HOME"/{staging}/{shlex.quote(e["path"].strip("/"))} {q}')
-                if e.get('mode'):
-                    lines.append(f'sudo chmod {shlex.quote(str(e["mode"]))} {q}')
             lines.append(f'rm -rf "$HOME"/{staging}')
+        if len(lines) > 1:
             r = self._backup_script(ctx, h, '\n'.join(lines) + '\n', verbose)
             if self.cm.catch_error(r): return r
 
@@ -1400,13 +1434,16 @@ class Category(InitCategory):
             q = shlex.quote(e['path'])
             s = 'sudo ' if e['sudo'] else ''
             if e['files']:
-                # the matched files of the folder, each on its own line: copied one by one, never the whole folder
+                # the matched files of the folder, each on its own line with its mode: copied one by one, never the whole folder
                 globs = ' '.join(shlex.quote(e['path'] + '/' + p) for p in e['files'])
                 lines.append(f'if [ -d {q} ]; then echo "{e["path"]}|files|$(du -ck $(ls -d {globs} 2>/dev/null) 2>/dev/null | tail -1 | cut -f1)|$(stat -c %a {q} 2>/dev/null)"; '
-                             f'for f in $(ls -d {globs} 2>/dev/null); do echo "{e["path"]}|item|$f"; done; '
+                             f'for f in $(ls -d {globs} 2>/dev/null); do echo "{e["path"]}|item|$f|$(stat -c %a "$f" 2>/dev/null)"; done; '
                              f'else echo "{e["path"]}|missing||"; fi')
             else:
+                # a folder: its mode, then the mode of everything inside it (the copy keeps none of them; GNU find - a
+                # host without -printf gives no modes and the restore applies none)
                 lines.append(f'if {s}test -d {q}; then echo "{e["path"]}|folder|$({s}du -sk {q} 2>/dev/null | cut -f1)|$({s}stat -c %a {q} 2>/dev/null)"; '
+                             f'{s}find {q} -mindepth 1 -printf "{e["path"]}|mode|%m|%P\\n" 2>/dev/null | head -5000; '
                              f'elif {s}test -e {q}; then echo "{e["path"]}|file|$({s}du -k {q} 2>/dev/null | cut -f1)|$({s}stat -c %a {q} 2>/dev/null)"; '
                              f'else echo "{e["path"]}|missing||"; fi')
         r = self._backup_script(ctx, h, '\n'.join(lines) + '\n', verbose)
@@ -1418,6 +1455,10 @@ class Category(InitCategory):
                 stat['_home'] = parts[1]
             elif len(parts) >= 3 and parts[1] == 'item':
                 stat.setdefault(parts[0], {}).setdefault('items', []).append(parts[2].strip())
+                if len(parts) >= 4 and parts[3].strip():
+                    stat[parts[0]].setdefault('item_modes', {})[parts[2].strip()] = parts[3].strip()
+            elif len(parts) >= 4 and parts[1] == 'mode':
+                stat.setdefault(parts[0], {}).setdefault('modes', {})['|'.join(parts[3:]).strip()] = parts[2].strip()
             elif len(parts) >= 4:
                 kb = parts[2].strip()
                 stat.setdefault(parts[0], {}).update({'kind': parts[1], 'size': f'{int(kb)} KB' if kb.isdigit() else '', 'mode': parts[3].strip()})

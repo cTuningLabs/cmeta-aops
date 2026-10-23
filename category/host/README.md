@@ -342,9 +342,11 @@ cMeta's own configuration artifacts there (`<home>/repos/local/config`), the sta
 keys, runtime data), the secrets its servers read, the scripts that start them, a tunnel token under `/etc`. The
 host's `backup:` block names those paths and `cx host backup <host>` copies them, one way, into a dated folder of
 the **machine artifact** the host belongs to - `<machine>/backup/<host alias>/<YYYYMMDD-HHMM>/` - with
-`backup.yaml` saying what came, from where (the login home), how big it was and which mode it had. The machine
-artifact is the asset's record and a private repository on the orchestrating machine, so the files of a rebuild
-sit next to it; a repository of secrets stays one (`secrets: true`: it is never synced, see above).
+`backup.yaml` saying what came, from where (the login home), how big it was and which mode it had - and, for a
+folder, the mode of everything inside it (`modes`, up to 5,000 entries; GNU find's `-printf`), since the copy
+itself keeps no mode. The machine artifact is the asset's record and a private repository on the orchestrating
+machine, so the files of a rebuild sit next to it; a repository of secrets stays one (`secrets: true`: it is
+never synced, see above).
 
 - Relative paths are under the login home and land under `home/<path>` of the backup, absolute ones under
   `root/<path>`; a few files of a folder: `{path: CMETA, files: ["__run_*.sh"]}` (rclone include patterns).
@@ -356,8 +358,10 @@ sit next to it; a repository of secrets stays one (`secrets: true`: it is never 
 `cx host restore <host>` puts the newest backup of that host back where it came from - or `--source=<folder>`,
 any backup folder: the backup of the host this one replaces, on a freshly set-up VM, once cMeta is installed
 there and its repositories synced (the order of a rebuild: install cx, `cx host sync`, `cx host restore
---source=...`, then the host's `commands: after_restart`). Root-only paths go back through sudo with their
-recorded mode; then the host's `backup: commands: after_restore` run (`cx --reindex` for the config artifacts).
+--source=...`, then the host's `commands: after_restart`). Root-only paths go back through sudo; every recorded
+mode is put back (a private key lands owner-only again, as it was); a folder that was empty on the host has no
+copy in the backup and is made again, empty; then the host's `backup: commands: after_restore` run (`cx
+--reindex` for the config artifacts).
 `--into=<folder>` lands everything under that folder on the host instead (a look at what a backup holds, or a
 test of the mechanics on a disposable host), with no sudo and no after commands; `--paths=a,b` restores a part. A
 production host (`ai: production: true`) restores only with `--yes`. Nothing on the host is deleted by a restore:
