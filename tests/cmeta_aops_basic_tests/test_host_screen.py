@@ -89,6 +89,7 @@ def test_command_and_project_title_remain_single_arguments(host):
     launch = r['cmd'].split('; exec ', 1)[1]
     args = shlex.split(launch)
     assert args[-4:] == ['bash', '-l', '-c', command]
+    assert '--version=>=4.2' in args[:args.index('--')], 'the persistent terminals ask for a Screen with -Q'
     assert args[args.index('-t') + 1] == 'run-ai work::a b'
     assert '-R' in args and '-d' in args
 
@@ -139,7 +140,7 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
     import subprocess
     import time
 
-    _, c = host
+    module, c = host
     # Unix socket paths have a small OS limit; keep the socket folder at the sandbox root.
     sockets = tmp_path.parent / ('scr-' + str(os.getpid()))
     sockets.mkdir(mode=0o700)
@@ -166,7 +167,9 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
     def attach(command, title):
         line = c._screen_command(HOST, command, 'test-task', title)['cmd']
         # Exercise the real Screen program; tool setup is covered separately through cx on the fleet host.
-        line = line.replace('cx tool run screen,05d0264fd24b40f6 --con- -- ', shlex.quote(screen) + ' -c /dev/null ')
+        prefix = 'cx tool run screen,05d0264fd24b40f6 --con- ' + shlex.quote('--version=' + module.SCREEN_VERSION) + ' -- '
+        assert prefix in line
+        line = line.replace(prefix, shlex.quote(screen) + ' -c /dev/null ')
         pid, fd = pty.fork()
         if pid == 0:
             os.execve('/bin/sh', ['sh', '-c', line], env)

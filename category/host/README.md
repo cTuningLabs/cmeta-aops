@@ -104,7 +104,10 @@ harness normally lets run-ai save its records and finish. The screen ends with i
 invocation creates a new terminal; run-ai retains its normal conversation continuation rules.
 
 GNU Screen is detected or installed through `tool/screen` on the target POSIX host (Linux/macOS, WSL or a
-container). An interactive terminal is required on the client. A native Windows target and Android are refused.
+container), version 4.2 or later (`SCREEN_VERSION` in `api/v1.py`: the windows of a session are read with `-Q`):
+the launch asks `cx tool run screen --version=">=4.2"`. macOS ships Screen 4.00.03 in `/usr/bin`, so on a Mac the
+setup takes Homebrew's current Screen (it asks before `brew install screen`; `-q` installs). An interactive terminal
+is required on the client. A native Windows target and Android are refused.
 `--on_screen` cannot be combined with `--on_detach`, `--on_pull`, `--on_rm` or `--on_isolated`: disconnecting
 from a terminal must not clean up an environment whose task is still running. A target reboot ends its screens.
 Screen keeps terminal processes alive; concurrent sessions still share the host's files and repositories.
