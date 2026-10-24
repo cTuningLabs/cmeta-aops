@@ -22,6 +22,17 @@ All notable changes to cMeta AOps are documented here, newest first.
   POSIX target. The flags require an interactive terminal and refuse incompatible cleanup/detach options.
   Explicitly empty values (`--screen=` / `--on_screen=`) also choose the default name, for batch launchers
   with an optional argument; omitting the flag keeps the ordinary behavior.
+- **`cx host backup` and `cx host restore`: what only a host holds, kept in its machine artifact.** A host's
+  `backup:` block names its config artifacts, state, secrets, start scripts (`paths`, relative to the login home or
+  absolute; `{path, files: [globs]}` for a few files of a folder) and root-only files (`sudo_paths`, copied through a
+  staging folder with passwordless sudo); `cx host backup <host>` copies them into
+  `<machine>/backup/<host>/<YYYYMMDD-HHMM>/` with `backup.yaml` (where each entry came from, its size and the mode of
+  every file inside), `keep: N` dated backups. `cx host restore <host>` puts the newest one back - or `--source=<a
+  backup folder>`, the backup of the host a rebuilt one replaces - with the recorded modes (sudo for root-only entries),
+  makes a folder that was empty on the host again, then runs `backup: commands: after_restore`; `--into=<folder>` lands
+  everything under a folder instead (a look, or a test on a disposable host), `--paths=a,b` restores a part, a
+  production host needs `--yes`; nothing on the host is deleted by a restore. Tested by restoring a production VM's
+  backup into a folder of a test host.
 - **run-ai on several machines:** a project's `!AI` folder can be bisynced between machines and worked on from
   either. Every run record names its host (`--conversations` shows `on <host>`); `!AI/log/<stamp>.running` marks a
   live run (removed when it ends, also when the harness dies), and the next run reports one of another machine in
