@@ -42,3 +42,7 @@ install_uses:
     - task: setup,a2f9b61079ce4333
       name: curl,bfbb8526694d4f21
 
+# cxt run-ai --login: how this harness signs in on a machine (the words after the tool, in a terminal: a URL to open,
+# a code to paste back), and how it says whether it is signed in (cxt run-ai --login_status)
+login: [auth, login]
+login_status: [auth, status]

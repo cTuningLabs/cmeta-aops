@@ -14,8 +14,9 @@ that its memory, skills and conversations stay inside that artifact.
 | Artifact | What it does |
 |---|---|
 | [`task/run-ai`](../../task/run-ai/README.md), [`task/import-ai`](../../task/import-ai/_desc.yaml) | One front door to the agents below, on a cMeta artifact: the agent's memory, skills, logs and conversations are kept in the artifact's `!AI` folder, a run continues the last conversation with any agent and model, and other artifacts' memory is read-only context. `import-ai` brings existing memories and skills in. |
-| [`tool/claude`](../../tool/claude/_desc.yaml), [`tool/codex`](../../tool/codex/_desc.yaml), [`tool/opencode`](../../tool/opencode/_desc.yaml), [`tool/agy`](../../tool/agy/_desc.yaml), [`tool/gemini`](../../tool/gemini/_desc.yaml), [`tool/hermes`](../../tool/hermes/_desc.yaml) | Detect or install the agent CLIs, pin a release, list the published versions. |
-| [`task/run-claude`](../../task/run-claude/_desc.yaml), [`task/run-codex`](../../task/run-codex/_desc.yaml), [`task/run-opencode`](../../task/run-opencode/_desc.yaml), [`task/run-agy`](../../task/run-agy/_desc.yaml), [`task/run-gemini`](../../task/run-gemini/_desc.yaml), [`task/run-hermes`](../../task/run-hermes/_desc.yaml) | Run an agent on an assembled prompt — headless or interactive — and record the output and the token statistics. `run-claude` also adds cMeta repositories to the agent's context. |
+| [`tool/claude`](../../tool/claude/_desc.yaml), [`tool/codex`](../../tool/codex/_desc.yaml), [`tool/opencode`](../../tool/opencode/_desc.yaml), [`tool/openclaw`](../../tool/openclaw/_desc.yaml), [`tool/agy`](../../tool/agy/_desc.yaml), [`tool/gemini`](../../tool/gemini/_desc.yaml), [`tool/hermes`](../../tool/hermes/_desc.yaml) | Detect or install the agent CLIs, pin a release, list the published versions; each says how its agent signs in (`login:`, `login_status:` - `cxt run-ai --login`). |
+| [`task/run-claude`](../../task/run-claude/_desc.yaml), [`task/run-codex`](../../task/run-codex/_desc.yaml), [`task/run-opencode`](../../task/run-opencode/_desc.yaml), [`task/run-openclaw`](../../task/run-openclaw/_desc.yaml), [`task/run-agy`](../../task/run-agy/_desc.yaml), [`task/run-gemini`](../../task/run-gemini/_desc.yaml), [`task/run-hermes`](../../task/run-hermes/_desc.yaml) | Run an agent on an assembled prompt — headless or interactive — and record the output and the token statistics. `run-claude` also adds cMeta repositories to the agent's context. |
+| [`tool/paperclip`](../../tool/paperclip/README.md), [`task/run-paperclip`](../../task/run-paperclip/README.md) | Paperclip, an open-source control plane for teams of agents (issues, budgets, approvals, routines): its CLI with cMeta's Node.js, and a server of this user (start, status, stop; telemetry off, loopback by default). |
 | [`tool/az`](../../tool/az/_desc.yaml), [`task/run-az`](../../task/run-az/_desc.yaml) | Detect or install the Azure CLI and run it with the terminal attached (`az login` works). |
 
 The `run-<agent>` tasks share one design: the prompt is the text of
@@ -43,6 +44,11 @@ cxt run-ai --summarize                               # a summary of the latest c
 cxt run-ai -w "..."                                  # no questions, write anywhere (--write=all); --write=project|none; the config sets the default
 cxt run-ai --list_models                             # the models and efforts of every agent, ready to copy
 cxt run-ai --dry_run                                 # everything that would be given to the agent; nothing runs
+cxt run-ai --login [--harness=codex]                 # sign the agent in on this machine (its tool installed first when missing)
+cxt run-ai --project="work::x" --new -q "..." --on=<host> --on_detach   # a run on another machine that outlives this one
+cxt run-ai -l="quick question" --prompt="..."                         # a dated scratch workspace with its own !AI
+cxt run-ai --project="work::x" --on=<host> --on_screen               # an interactive terminal to reconnect later
+cxt run-ai --project="work::y" --on=<host> --on_screen=another-task  # a separate terminal; bare defaults to run-ai
 cxt import-ai --project="project::my-app" --skills="<repo>/.claude/skills"   # bring memories and skills into !AI
 ```
 
@@ -74,6 +80,15 @@ cxt import-ai --project="project::my-app" --skills="<repo>/.claude/skills"   # b
   and skills the sessions read; `--context=<cref>;<cref>` adds some for one run. Those
   stay read-only for a run: a session proposes a change under `!AI/pending`, and
   `cxt run-ai --apply_pending` shows each difference and applies it on your word.
+- **Signing in:** `cxt run-ai --login` goes through the agent's tool, so a machine without the agent gets it first;
+  the words are the tool's (`claude auth login`, `codex login --device-auth`, `opencode auth login`, ...), and
+  `--login_status` checks. With `--on=<host>` from a terminal, the agent of that machine is signed in.
+- **Several machines:** the `!AI` folder travels with the project (a bisync between machines), and a conversation
+  continues on any of them - natively where the agent's session is, by the transcript elsewhere. Every run says on
+  which host it was made, `!AI/log/<stamp>.running` marks a live run (one of another machine is reported, without a
+  question by default: `--other_runs`), and the two copies a bisync keeps of a file changed on both sides are
+  folded back for run-ai's own records and listed for the agent to merge for memories. A location inside an
+  artifact is written `{{{<category>::<alias>,<UID>}}}/<relative path>`, so it resolves on every machine.
 - **Git:** `run-ai` never runs git. This repository ignores `!AI` (the `.gitignore`
   line is `\!AI/`, since a leading `!` negates); in a repository of your own, commit
   it or ignore it.

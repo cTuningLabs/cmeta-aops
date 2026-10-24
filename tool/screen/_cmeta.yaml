@@ -1,0 +1,13 @@
+artifact: 05d0264fd24b40f6
+category: tool,c393ba5c6fa14f66
+tags:
+  - terminal
+  - multiplexer
+  - screen
+authors: Grigori Fursin
+creation_timestamp: '2026-10-23T15:10:53.697540+00:00'
+generator:
+  method: agent
+  agent: OpenAI Codex 0.162.1
+  via: cmeta 0.37.5
+  by: Grigori Fursin

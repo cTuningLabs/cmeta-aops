@@ -1,0 +1,17 @@
+artifact: c4e7414fda24440a
+category: task,c36be4b9314a45e0
+authors: Grigori Fursin
+creation_timestamp: '2026-10-22T13:10:00.729244+00:00'
+desc: 'A Paperclip server of this user (tool/paperclip): onboarded with quickstart defaults the first time, then run in
+  a session of its own (it outlives the shell and an ssh connection), its data in a folder of its own, loopback by
+  default, telemetry off; status (pid, port, /api/health) and stop. Linux and macOS; Windows through WSL2 or a host.'
+generator:
+  method: agent
+  agent: Claude Code 2.1.308
+  model: claude-opus-5-5
+  via: cmeta 0.37.5
+  by: Grigori Fursin
+tags:
+  - paperclip
+  - agents
+  - server

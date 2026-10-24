@@ -57,3 +57,8 @@ extra_paths:
     - "/opt/homebrew/bin"
   windows:
     - "{{global.host.os_env.APPDATA}}\\npm"
+
+# cxt run-ai --harness=openclaw --login: OpenClaw's guided setup, which signs its model provider in (or
+# --model=claude-cli/<model> later runs through the Claude Code login); --login_status: its models' auth status
+login: [onboard]
+login_status: [models, status]

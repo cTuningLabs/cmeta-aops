@@ -206,7 +206,25 @@ cx host run web "tail -n 50 ~/cmeta-detached/<run id>.log"            # what it 
 cx host run web "kill -- -$(cat ~/cmeta-detached/<run id>.pid)"      # stop it
 ```
 
-POSIX hosts and instances only for now (a Windows host refuses `--on_detach`).
+POSIX hosts and instances only for now (a Windows host refuses `--on_detach`). Started from a terminal on a
+Windows machine, a detached run asks for no terminal: its words reach the host on stdin, from a temporary script,
+where cmd.exe cannot strip their quotes (a run that keeps its terminal gets a quoted command base64-encoded). A coding
+agent on another machine is the same: `cxt run-ai --project=<cRef> --new -q "<request>" --on=<host> --on_detach` - the
+project named by its cRef resolves there, and its records come back with the project's sync.
+
+For an interactive terminal that can be reattached after a disconnect, use GNU Screen:
+
+```console
+cxt run-ai --project="work::my-project" --on=my-host --on_screen
+cxt run-ai --project="work::another-project" --on=my-host --on_screen=another-task
+```
+
+The bare flag uses the command's artifact alias as the screen name (`run-ai` here). Repeating the same name
+reattaches to the existing command without submitting its prompt again; its original window title shows the
+project. Use different names for independent tasks. Closing SSH leaves the remote task running; quitting the
+harness normally lets run-ai finish and closes the screen. A later launch follows run-ai's usual conversation
+rules. `--on_screen` requires a client terminal and a POSIX target with GNU Screen, detected or installed through
+the cMeta tool. It cannot be combined with `--on_detach`, `--on_pull`, `--on_rm` or `--on_isolated`.
 
 Docker templates can declare `instance_artifacts` to bind individual host cache/result roots, or a run
 can select them with `--on_artifacts.state=result::local:my-application-state`. A writable result is

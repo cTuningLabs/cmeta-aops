@@ -58,3 +58,8 @@ install_uses:
   all:
     - task: setup,a2f9b61079ce4333
       name: curl,bfbb8526694d4f21
+
+# cxt run-ai --harness=opencode --login: a provider's credentials (API keys of the providers of models.dev), stored
+# in ~/.local/share/opencode/auth.json; --login_status lists the providers signed in
+login: [auth, login]
+login_status: [auth, list]

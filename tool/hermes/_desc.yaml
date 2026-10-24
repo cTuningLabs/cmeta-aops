@@ -71,3 +71,7 @@ extra_paths:
   windows:
     - '{{global.host.os_env.HERMES_HOME|}}\bin'
     - '{{global.host.os_env.LOCALAPPDATA}}\hermes\bin'
+
+# cxt run-ai --harness=hermes --login: Hermes connects an inference provider (OAuth or a key) through "hermes model";
+# it has no status command
+login: [model]

@@ -80,3 +80,7 @@ extra_paths:
     - "/opt/local/bin"
   windows:
     - '{{global.host.os_env.APPDATA}}\npm'
+
+# cxt run-ai --harness=gemini --login: Gemini CLI asks for its authentication (a Code Assist licence, an API key,
+# Vertex AI) on its first interactive start: start it, choose, then quit; it has no status command
+login: []

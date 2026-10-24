@@ -9,6 +9,8 @@ where the last run stopped, with any harness and any model.
 
     cxt run-ai [--harness=claude|codex|opencode|openclaw|antigravity|gemini|hermes] [--project=<cref>] [-i] [prompt] [-- <harness flags>]
     cxt run-ai                                             # continue the latest conversation of the project, interactively
+    cxt run-ai -l                                          # a fresh dated scratch workspace in log::local:task-run-ai
+    cxt run-ai -l="quick question"                         # add this label to the workspace's directory name
     cxt run-ai "one prompt"                                # one more turn of that conversation, then exit
     cxt run-ai --new "..."                                 # start a new conversation (the memory and skills stay)
     cxt run-ai --conversation=20261004-18 "..."            # continue a given conversation (id or prefix)
@@ -36,6 +38,10 @@ The project, in this order:
                          "cx . <command>"); the agent then works in the artifact's root folder
     (none detected)      the current directory itself
     --project=.          the current directory itself, no detection
+    -l[=<label>]         a new log/task-run-ai/YYYYMMDD-HHMM[.<label>] workspace in the active home's local repo
+
+Without an explicit project, the nearest existing !AI directory identifies its workspace (within the detected
+cMeta artifact or up to a repository boundary). This also resumes dated scratch sessions without another flag.
 
 The !AI folder of the project (created on the first run):
     !AI/memory/                        the agent's persistent memory: MEMORY.md (the index) + one file per memory
@@ -117,6 +123,9 @@ from task_c36be4b9314a45e0.api.ctask import InitCTask
 
 TASK_CATEGORY = 'task,c36be4b9314a45e0'
 TOOL_CATEGORY = 'tool,c393ba5c6fa14f66'
+LOG_CATEGORY = 'log,487a7639093a4685'
+REPO_CATEGORY = 'repo,f4f792ab40c7498f'
+LOG_PROJECT = 'task-run-ai'
 MODELS_FILE = '_desc_models.yaml'
 
 # The harnesses, the tasks that run them and the tools that hold their model lists (alias,UID: rename-safe).
@@ -158,6 +167,8 @@ CONFIG_ARTIFACT = 'task-run-ai'
 LOCAL_AI_USES_KEY = 'local_ai_uses'
 CONFIG_TOKENS_KEY = 'max_context_tokens'
 CONFIG_TRIM_KEY = 'trim_context'        # true: --trim_context on every run of this machine
+CONFIG_OTHER_RUNS_KEY = 'other_runs'    # report (default) | ask | refuse: a run of this project recorded as running on another machine
+OTHER_RUNS_MODES = ('report', 'ask', 'refuse')
 SUMMARY_CLAUDE_MODEL = 'haiku'          # --summarize with claude and no --model: Claude Code's alias of its current Haiku
 SUMMARY_INLINE_CHARS = 120000           # a longer transcript is read by the agent from its file instead of in the prompt
 
@@ -241,7 +252,7 @@ class CTask(InitCTask):
         super().__init__(*args, module_file_path=__file__, **kwargs)
 
     # ------------------------------------------------------------------ the project
-    def _resolve_project(self, project, con, space):
+    def _resolve_project(self, project, con, space, ai_dir=AI_DIR):
         """-> (path, cref or '', how) or an error dict."""
         if project == '.':
             cwd = os.path.normpath(os.getcwd())
@@ -264,8 +275,9 @@ class CTask(InitCTask):
                                      p.get('artifact_alias', art), p.get('artifact_uid', ''))
             return os.path.normpath(a['path']), cref, '--project'
 
-        # no --project: the artifact around the current directory (the "cx . <command>" detection), else the cwd
+        # Find the cMeta artifact boundary first, then prefer the nearest established AI workspace inside it.
         cwd = os.path.normpath(os.getcwd())
+        detected = (cwd, '', 'the current directory (no cMeta artifact detected)')
         r = self.cm.utils.common.detect_cid_in_the_current_directory(self.cm)
         if r.get('return', 1) == 0 and (r.get('artifact_alias') or r.get('artifact_uid')):
             cat = r.get('category_obj') or r.get('category_alias')
@@ -277,8 +289,26 @@ class CTask(InitCTask):
                     p = a.get('cmeta_ref_parts') or {}
                     cref = '%s,%s::%s,%s' % (p.get('category_alias', ''), p.get('category_uid', ''),
                                              p.get('artifact_alias', ''), p.get('artifact_uid', ''))
-                    return ap, cref, 'detected from the current directory'
-        return cwd, '', 'the current directory (no cMeta artifact detected)'
+                    detected = (ap, cref, 'detected from the current directory')
+                    break
+
+        boundary = os.path.normcase(detected[0]) if detected[1] else ''
+        directory = cwd
+        while not os.path.isabs(ai_dir):
+            if os.path.isdir(os.path.join(directory, ai_dir)):
+                if os.path.normcase(directory) == boundary:
+                    return detected
+                return directory, '', 'existing %s detected from the current directory' % ai_dir
+            if os.path.normcase(directory) == boundary:
+                break
+            # Outside a known artifact, do not inherit a workspace from above a repository root.
+            if not boundary and any(os.path.isfile(os.path.join(directory, name)) for name in ('_cmr.yaml', '_cmr.json')):
+                break
+            parent = os.path.dirname(directory)
+            if parent == directory:
+                break
+            directory = parent
+        return detected
 
     @staticmethod
     def _alias_of(cref, project_path):
@@ -289,6 +319,81 @@ class CTask(InitCTask):
         else:
             alias = os.path.basename(os.path.normpath(project_path))
         return alias or 'project'
+
+    def _log_project(self, label, dry_run):
+        """One dated workspace below the local log artifact; mkdir reserves its name atomically."""
+        label = '' if label is True else str(label or '')
+        label = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', label).strip(' .')[:80].rstrip(' .')
+        ref = 'local:' + LOG_PROJECT
+        r = self.cm.access({'category': LOG_CATEGORY, 'command': 'find', 'arg1': ref, 'con': False})
+        if r.get('return', 1) not in (0, 16):
+            return r
+        artifacts = r.get('artifacts') or []
+        if not artifacts and not dry_run:
+            r = self.cm.access({'category': LOG_CATEGORY, 'command': 'create', 'arg1': ref, 'yaml': True,
+                                'tags': ['run-ai', 'scratch'], 'con': False, 'quiet': True,
+                                'meta': {'desc': 'Dated scratch projects of run-ai; each workspace keeps its own !AI.'}})
+            if r.get('return', 1) not in (0, 8):
+                return r
+            r = self.cm.access({'category': LOG_CATEGORY, 'command': 'find', 'arg1': ref, 'con': False})
+            if r.get('return', 1) > 0:
+                return r
+            artifacts = r.get('artifacts') or []
+        if artifacts:
+            base = artifacts[0]['path']
+        else:
+            # A dry run predicts the same path without making the artifact or its index entry.
+            repo = self.cm.access({'category': REPO_CATEGORY, 'command': 'find', 'arg1': 'local', 'con': False})
+            if repo.get('return', 1) > 0 or len(repo.get('artifacts') or []) != 1:
+                return self.cm.error('run-ai -l: cannot find the active home\'s local repository')
+            category = self.cm.access({'category': 'category,dd9ea50e7f76467f', 'command': 'find',
+                                       'arg1': LOG_CATEGORY, 'con': False})
+            if category.get('return', 1) > 0 or not category.get('artifacts'):
+                return self.cm.error('run-ai -l: cannot find the log category')
+            a, cat = repo['artifacts'][0], category['artifacts'][0]
+            cat_name = cat['cmeta_ref_parts']['artifact_alias']
+            slices = (a.get('cmeta') or {}).get('sharding_slices', {}).get(LOG_CATEGORY.split(',')[1],
+                                                                                     (cat.get('cmeta') or {}).get('sharding_slices'))
+            r = self.cm.utils.files.apply_sharding_to_path(os.path.join(a['path'], cat_name), LOG_PROJECT, slices)
+            if r['return'] > 0:
+                return r
+            base = r['sharded_path']
+
+        name = datetime.datetime.now().strftime('%Y%m%d-%H%M') + ('.' + label if label else '')
+        number = 1
+        while True:
+            path = os.path.join(base, name + ('-%d' % number if number > 1 else ''))
+            if dry_run:
+                if not os.path.lexists(path):
+                    break
+            else:
+                try:
+                    os.mkdir(path)
+                    break
+                except FileExistsError:
+                    pass
+            number += 1
+        return {'return': 0, 'path': os.path.abspath(path)}
+
+    def _confirm_new_ai(self, ctx, project_path, ai_root):
+        """A first run outside cMeta needs consent before it creates its memory and records."""
+        if os.path.exists(ai_root) or self._repo_meta(project_path):
+            return {'return': 0}
+        con = ctx['control'].get('con', False)
+        if con:
+            print('cMeta warning: this directory is outside a cMeta repository: %s' % project_path)
+            print('cMeta info: run-ai will create: %s' % ai_root)
+        if ctx['control'].get('quiet', False):
+            return {'return': 0}
+        if not con:
+            return self.cm.error('run-ai would create "%s" outside cMeta; use -q to continue here, or -l for a scratch project' % ai_root)
+        r = self.cm.utils.common.ask('Create "%s" and continue? [Y/n] ' % ai_root,
+                                     how='-q to create it here, or -l for a scratch project')
+        if r['return'] > 0:
+            return r
+        if r['answer'].strip().lower() not in ('', 'y', 'yes'):
+            return self.cm.error('stopped: no !AI was created in "%s"' % project_path)
+        return {'return': 0}
 
     @staticmethod
     def _new_stamp(log_dir, reserve):
@@ -899,12 +1004,15 @@ class CTask(InitCTask):
         return '\n'.join(lines) + '\n'
 
     @staticmethod
-    def _orientation(ai_root, conv, conv_how, log_dir, own_skills, sources=(), guard='ask', own_workspace='', write='ask'):
+    def _orientation(ai_root, conv, conv_how, log_dir, own_skills, sources=(), guard='ask', own_workspace='', write='ask',
+                     conflicts=(), elsewhere=()):
         """What every harness is told first: where this project keeps its memory, skills and conversations, and which
         conversation this run is - so that "what was our last conversation?" is answered from !AI/log and not from the
         harness's own history (~/.claude/projects, CODEX_HOME, ...) - and how a change to a used artifact is proposed
         (guard "keep": that it may be made directly). own_workspace: the harness works in a folder of its own, not in
-        the project (OpenClaw), and is told where the project is. write "none": the run is read-only."""
+        the project (OpenClaw), and is told where the project is. write "none": the run is read-only. conflicts: the
+        files of !AI the sync kept two versions of [(path under !AI, [copies])]; elsewhere: the runs of this project
+        recorded as running on other machines."""
         posix = ai_root.replace('\\', '/')
         lines = ['# This project is run through cMeta run-ai']
         if write == 'none':
@@ -969,6 +1077,18 @@ class CTask(InitCTask):
                      'Markdown file in %s/%s/ with a line added to MEMORY.md (Claude Code does this by itself there); a new skill is '
                      '%s/%s/<name>/SKILL.md (loaded on the next run), not ~/.claude/skills or .claude/skills.' % (
                          AI_DIR, posix, MEMORY_DIR, posix, SKILLS_DIR))
+        lines.append('- The %s folder travels between machines. A location inside a cMeta artifact - in a memory, a skill, a record or '
+                     'a reply - is written as {{{<category>::<artifact alias>,<artifact UID>}}}/<relative path, forward slashes>: the '
+                     'braces stand for that artifact\'s folder on whichever machine reads it ("cx utils find_by_cid" resolves them; a '
+                     'repository root is {{{repo::<alias>,<UID>}}}). A path outside cMeta stays a full path and names its machine.' % AI_DIR)
+        if elsewhere:
+            lines.append('- A run of this project is recorded as running on another machine (%s): until the next sync its memory files '
+                         'may change under this run. Add to the memories rather than rewrite them.' % ', '.join(
+                             '%s since %s' % (d.get('host') or '?', str(d.get('started') or '?')[:16]) for d in elsewhere))
+        if conflicts:
+            lines.append('- The sync kept two versions of these files of %s (changed on two machines): %s. Before anything else, merge '
+                         'each pair into the file\'s own name and delete the copies; for %s, rebuild the index from the memory files.' % (
+                             AI_DIR, '; '.join('%s (%s)' % (o, ', '.join(cs)) for o, cs in conflicts), INDEX_FILE))
         return '\n'.join(lines) + '\n\n'
 
     @staticmethod
@@ -1168,9 +1288,10 @@ class CTask(InitCTask):
         return {'return': 0, 'list_models': True, 'harness': harness, 'text': text}
 
     # ------------------------------------------------------------------ conversations
-    def _list_conversations(self, log_dir, project_path, con):
+    def _list_conversations(self, log_dir, project_path, con, notes=()):
         convs = CONV.list_conversations(log_dir)
         lines = ['RUN-AI: conversations of %s (%s)' % (project_path, log_dir)]
+        lines += ['  NOTE: ' + n for n in notes]
         if not convs:
             lines.append('  none yet - the next run starts the first one')
         for c in convs:
@@ -1191,6 +1312,61 @@ class CTask(InitCTask):
             print('')
             print(text)
         return {'return': 0, 'conversations': [{k: v for k, v in c.items() if not k.startswith('_')} for c in convs], 'text': text}
+
+    def _login(self, ctx, harness, tool_ref, sign_in, con):
+        """
+        --login: the harness signed in on this machine, in this terminal - its tool set up first when missing ("cx tool
+        run", -q installs without asking), then the words of "login:" in the tool's _desc.yaml (claude: auth login,
+        codex: login --device-auth, ...); then, and with --login_status alone, the words of "login_status:" when the tool
+        has them. From another machine in a terminal: add --on=<host>, the login then runs there with this terminal.
+        """
+        path = self._artifact_path(TOOL_CATEGORY, tool_ref)
+        desc = self._read_desc(path) if path else {}
+        if 'login' not in desc:
+            return self.cm.error('the tool of the harness "%s" (%s) says nothing about its login ("login:" in its _desc.yaml)' % (harness, tool_ref))
+
+        def words(key):
+            value = desc.get(key)
+            if value is None:
+                return None
+            return [str(w) for w in value] if isinstance(value, (list, tuple)) else str(value).split()
+
+        tool = tool_ref.split(',')[0]
+        quiet = bool(ctx['control'].get('quiet', False))
+        out = {'return': 0, 'harness': harness, 'tool': tool_ref}
+
+        if sign_in:
+            # a login asks something or shows a code to enter: a terminal, never a background run
+            try:
+                terminal = sys.stdin.isatty() and sys.stdout.isatty()
+            except (AttributeError, ValueError):
+                terminal = False
+            if not terminal:
+                return self.cm.error('a login needs a terminal (it asks, or shows a URL and a code): run "cxt run-ai --login%s" in one; '
+                                     'for another machine add --on=<host> there' % ('' if harness == 'claude' else ' --harness=' + harness))
+            w = words('login')
+            if con:
+                print('')
+                print('RUN-AI: signing %s in on this machine: cx tool run %s -- %s' % (harness, tool, ' '.join(w)) +
+                      (' (an interactive start: sign in, then quit)' if not w else ''))
+            r = self.cm.access({'category': TOOL_CATEGORY, 'command': 'run', 'arg1': tool_ref, 'unparsed': w, 'ctx': ctx,
+                                'con': True, 'quiet': quiet})
+            if r.get('return', 1) > 0:
+                return r
+            out['login'] = w
+
+        s = words('login_status')
+        if s:
+            if con:
+                print('')
+                print('RUN-AI: is %s signed in here? cx tool run %s -- %s' % (harness, tool, ' '.join(s)))
+            r = self.cm.access({'category': TOOL_CATEGORY, 'command': 'run', 'arg1': tool_ref, 'unparsed': s, 'ctx': ctx,
+                                'con': True, 'quiet': quiet})
+            out['status'] = s
+            out['status_return'] = r.get('return', 1)
+        elif con and not sign_in:
+            print('RUN-AI: %s has no status command: start it (cx tool run %s) to see whether it is signed in' % (harness, tool))
+        return out
 
     @staticmethod
     def _recover_sessions(conv, project_path):
@@ -1305,7 +1481,9 @@ class CTask(InitCTask):
             ctx: dict,                      # cMeta context
             harness: str = '',              # claude (default) | codex | opencode | openclaw | antigravity (agy) | gemini | hermes | <x> (then the task run-<x>)
             agent: str = '',                # the old name of --harness (still accepted)
-            project: str = '',              # cRef "category::artifact" of the artifact to work on (default: detect, else cwd)
+            project: str = '',              # explicit cRef; default: nearest existing !AI, then the cMeta artifact, else cwd
+            log_project = None,             # a dated scratch project under log::local:task-run-ai; optional label after =
+            l = None,                       # short form: -l or -l="quick question" (the label names the workspace)
             ai_dir: str = AI_DIR,           # the folder inside the project that holds the agent's memory and records
             model: str = '',                # the model in the harness's own names, or "<model>,<effort>" (--list_models shows them)
             effort: str = '',               # the reasoning effort, in the harness's vocabulary (--list_models shows it)
@@ -1340,6 +1518,9 @@ class CTask(InitCTask):
             write: str = '',                # what the run may write: ask (the harness asks; the default) | project (no questions) | all (also the used artifacts' memory, directly) | none (read-only); the config key "write" is the default
             w: bool = False,                # short alias of "write=all" (-w)
             context_guard: str = '',        # a direct change in a used artifact's memory or skills, after the run: ask (keep it? else, and with nobody to ask, as restore) | restore (kept as a proposal, the file put back) | report | keep (kept and recorded) | off; the default follows --write (ask, restore, keep, restore)
+            other_runs: str = '',           # a run of this project recorded as running on another machine (the sync brought its marker): report (the default: one line, no question) | ask | refuse; the config key "other_runs" is this machine's default
+            login: bool = False,            # sign the harness in on this machine, in this terminal (its tool set up first when missing; the words of "login:" in the tool's _desc.yaml), then its status; --on=<host> does it there
+            login_status: bool = False,     # say whether the harness is signed in on this machine (the words of "login_status:" in its tool's _desc.yaml), then stop
             unparsed: list = None,          # extra flags for the harness (everything after "--")
     ):
         """Run a coding agent on a cMeta artifact; its memory, skills, logs and conversations live in the artifact's !AI folder."""
@@ -1358,6 +1539,9 @@ class CTask(InitCTask):
 
         if list_models or models:
             return self._list_models(given, con)
+
+        if login or login_status:
+            return self._login(ctx, harness, tool_ref, bool(login), con)
 
         # the harness must have its task before anything is written
         if not self._artifact_path(TASK_CATEGORY, task_ref):
@@ -1404,23 +1588,91 @@ class CTask(InitCTask):
                 notes.append('model flags: %s' % ' '.join(model_flags))
 
         # 1. the project and its !AI folder
-        r = self._resolve_project(project, con, space)
-        if isinstance(r, dict):
-            return r
-        project_path, cref, how = r
+        scratch_label = log_project if log_project is not None else l
+        scratch = scratch_label is not None and scratch_label is not False
+        read_only = dry_run or _truthy(conversations) or _truthy(cs) or _truthy(pending) or _truthy(summarize) or _truthy(apply_pending)
+        if scratch:
+            if project or conversation:
+                return self.cm.error('-l / --log_project creates a new workspace: do not combine it with --project or --conversation')
+            if not isinstance(scratch_label, (str, bool)):
+                return self.cm.error('-l / --log_project takes a label after =, or a bare flag')
+            r = self._log_project(scratch_label, read_only)
+            if r['return'] > 0:
+                return r
+            project_path, cref, how = r['path'], '', 'a temporary log project (-l / --log_project)'
+            if prompt_file:
+                prompt_file = os.path.abspath(prompt_file)
+        else:
+            r = self._resolve_project(project, con, space, ai_dir)
+            if isinstance(r, dict):
+                return r
+            project_path, cref, how = r
         alias = self._alias_of(cref, project_path)
         ai_root = os.path.join(project_path, ai_dir)
         mem_dir = os.path.join(ai_root, MEMORY_DIR)
         skills_dir = os.path.join(ai_root, SKILLS_DIR)
         log_dir = os.path.join(ai_root, LOG_DIR)
 
+        if scratch and con:
+            print('cMeta info: scratch workspace%s: %s' % (' (preview)' if read_only else '', project_path))
+            print('cMeta info: memory and records: %s' % ai_root)
+        if not scratch and not cref and not read_only:
+            r = self._confirm_new_ai(ctx, project_path, ai_root)
+            if r['return'] > 0:
+                return r
+
         # the stamp names the records of this run and, for a new conversation, the conversation (reserved below for a
         # run that writes records)
         stamp, stamp_lock = self._new_stamp(log_dir, False)
         stamp_made = []
 
+        # 1b. the !AI folder as the sync left it: the two copies it keeps of a file changed on two machines are merged
+        #     back when the file is a record of run-ai's own, and listed for the agent when it is a memory or a skill;
+        #     a run of this project recorded as running elsewhere is reported (--other_runs: report | ask | refuse - a
+        #     line and no question by default); a marker left on this machine by a run that is gone is removed
+        sync_notes = CONV.consolidate_log(log_dir)
+        conflicts = [(os.path.relpath(o, ai_root).replace('\\', '/'), [os.path.basename(c) for c in cs])
+                     for o, cs in CONV.conflict_copies(ai_root)] if os.path.isdir(ai_root) else []
+        elsewhere, here, cleared = CONV.other_runs(log_dir) if os.path.isdir(log_dir) else ([], [], [])
+        for d in cleared:
+            sync_notes.append('the marker of run %s (%s) was left by a run of this machine that is gone - removed' % (d.get('stamp'), d.get('harness') or '?'))
+        for d in here:
+            sync_notes.append('another run of this project is running on this machine: %s (%s, conversation %s, since %s)' % (
+                d.get('stamp'), d.get('harness') or '?', d.get('conversation') or '?', str(d.get('started') or '?')[11:16]))
+        for d in elsewhere:
+            age = d.get('hours')
+            stale = age is not None and age >= CONV.STALE_HOURS
+            sync_notes.append('a run of this project is recorded as running on %s: %s (%s, conversation %s, started %s%s) - %s' % (
+                d.get('host') or 'another machine', d.get('stamp'), d.get('harness') or '?', d.get('conversation') or '?',
+                str(d.get('started') or '?')[:16], (', %.0f h ago' % age) if age is not None else '',
+                ('probably over and its end not synced yet: delete %s if so' % os.path.basename(d['_path'])) if stale else
+                'if it still runs, the memory files of this project may change under this one - work in another project, or go on with care'))
+        if conflicts:
+            sync_notes.append('the sync kept two versions of %d file(s) of %s (changed on two machines) - to consolidate: %s' % (
+                len(conflicts), AI_DIR, '; '.join('%s (%s)' % (o, ', '.join(cs)) for o, cs in conflicts[:8]) + (' ...' if len(conflicts) > 8 else '')))
+        live = [d for d in elsewhere if d.get('hours') is None or d['hours'] < CONV.STALE_HOURS]
+        other_mode = str(other_runs or self._run_ai_config().get(CONFIG_OTHER_RUNS_KEY) or 'report').strip().lower()
+        if other_mode not in OTHER_RUNS_MODES:
+            return self.cm.error('--other_runs must be one of %s (got "%s")' % (', '.join(OTHER_RUNS_MODES), other_mode))
+        if live and other_mode != 'report' and not (_truthy(conversations) or _truthy(cs) or _truthy(summarize) or dry_run):
+            what = 'a run of this project is recorded as running on %s (%s)' % (
+                ', '.join(sorted({str(d.get('host') or '?') for d in live})), ', '.join(os.path.basename(d['_path']) for d in live))
+            if other_mode == 'ask' and yes:
+                sync_notes.append('%s; continued (--yes)' % what)
+            elif other_mode == 'refuse' or ctx['control'].get('quiet', False) or not con or not bool(getattr(sys.stdin, 'isatty', lambda: False)()):
+                return self.cm.error('%s - delete its marker if that run is over; --other_runs=report goes on regardless' % what)
+            else:
+                try:
+                    answer = input('RUN-AI: %s. Continue anyway? [y/N] ' % what).strip().lower()
+                except Exception:
+                    answer = ''
+                if answer not in ('y', 'yes'):
+                    return self.cm.error('stopped: %s' % what)
+                sync_notes.append('%s; continued on the user\'s word' % what)
+        notes += sync_notes
+
         if _truthy(conversations) or _truthy(cs):
-            return self._list_conversations(log_dir, project_path, con)
+            return self._list_conversations(log_dir, project_path, con, sync_notes)
         if _truthy(summarize):
             return self._summarize(ctx, log_dir, conversation, harness, task_ref, extra, model_name, project_path, con, verbose, space)
 
@@ -1557,7 +1809,8 @@ class CTask(InitCTask):
             def estimate(kept):
                 return self._estimate([
                     ('orientation', self._orientation(ai_root, conv, conv_how, log_dir, own_skills, kept, guard_mode,
-                                                      own_workspace='~/.openclaw/workspace' if hk == 'openclaw' else '', write=write_mode), ''),
+                                                      own_workspace='~/.openclaw/workspace' if hk == 'openclaw' else '', write=write_mode,
+                                                      conflicts=conflicts, elsewhere=elsewhere), ''),
                     ('memory index', index_now, ''), ('skills', ' '.join('%s %s' % (n, d) for n, d, fp in own_skills), ''),
                     ('context sources', self._render_context(kept, True, guard_mode == 'keep') if kept else '', ''),
                     ('hand-over', handover, ''), ('prompt', prompt or '', '')])[1]
@@ -1575,7 +1828,8 @@ class CTask(InitCTask):
         # directory: it is told where the project is. Its workspace is not moved to the project, since OpenClaw keeps
         # its persona files there (AGENTS.md, SOUL.md, ...)
         orientation = self._orientation(ai_root, conv, conv_how, log_dir, own_skills, sources, guard_mode,
-                                        own_workspace='~/.openclaw/workspace' if hk == 'openclaw' else '', write=write_mode)
+                                        own_workspace='~/.openclaw/workspace' if hk == 'openclaw' else '', write=write_mode,
+                                        conflicts=conflicts, elsewhere=elsewhere)
         context_text = ''
 
         # with --no_log the files of the run go to the temp directory under names nobody can guess, and are removed after it
@@ -1806,7 +2060,9 @@ class CTask(InitCTask):
                     'new_session': new_sid, 'handover': handover, 'skills': [s[0] for s in own_skills], 'plugin_dirs': plugin_dirs,
                     'tokens_estimated': est_total, 'token_limit': limit, 'token_limit_from': limit_from, 'context_depth': context_depth,
                     'params': params, 'flags': extra, 'env': env, 'settings': settings, 'context': sources, 'context_skipped': skipped,
-                    'write': write_mode, 'write_from': write_from, 'context_guard': guard_mode, 'notes': notes}
+                    'write': write_mode, 'write_from': write_from, 'context_guard': guard_mode, 'notes': notes,
+                    'other_runs': other_mode, 'running_elsewhere': [{k: v for k, v in d.items() if not k.startswith('_')} for d in elsewhere],
+                    'conflicts': conflicts, 'log_project': project_path if scratch else ''}
 
         if over:
             quiet = bool(ctx['control'].get('quiet', False))
@@ -1856,7 +2112,7 @@ class CTask(InitCTask):
             s['last'] = CONV.now_iso()
             run_entry = {'stamp': stamp, 'harness': harness, 'mode': 'interactive' if interactive else 'prompt', 'model': model_name,
                          'effort': effort_name, 'prompt': CONV.title_from_prompt(prompt or (('file ' + os.path.basename(prompt_file)) if prompt_file else ''), interactive, stamp),
-                         'started': CONV.now_iso(), 'session': sid_now, 'resumed': bool(native_sid), 'handover': bool(handover),
+                         'started': CONV.now_iso(), 'host': CONV.host_name(), 'session': sid_now, 'resumed': bool(native_sid), 'handover': bool(handover),
                          'tokens_estimated': est_total, 'token_limit': limit}
             conv.setdefault('runs', []).append(run_entry)
             CONV.save_conversation(conv)
@@ -1868,6 +2124,7 @@ class CTask(InitCTask):
                      '| project | `%s` |' % project_path,
                      '| resolved | %s%s |' % (how, (' - `%s`' % cref) if cref else ''),
                      '| started | %s |' % datetime.datetime.now().isoformat(timespec='seconds'),
+                     '| host | %s |' % CONV.host_name(),
                      '| mode | %s |' % ('interactive' if interactive else 'one prompt (-p)'),
                      '| model | %s |' % (('`%s`' % model_name) if model_name else 'the harness default'),
                      '| effort | %s |' % (('`%s`' % effort_name) if effort_name else 'the harness default'),
@@ -1890,6 +2147,10 @@ class CTask(InitCTask):
                 f.write('\n'.join(lines) + '\n')
         self._release_stamp(stamp_lock)     # the stamp is taken by the records now
 
+        # the marker of this run while it lives (<stamp>.running: the conversation, the harness, this host, the pid): a
+        # run of the same project on this machine sees it, a run on another machine sees it once the sync carried it
+        running = CONV.write_running(log_dir, stamp, conv['id'], harness) if (conv is not None and record) else ''
+
         # 5. run the harness's task inside the project folder (the engine's "path" control: cd there, back afterwards)
         before = CONV.capture_before(harness, project_path)
 
@@ -1905,6 +2166,7 @@ class CTask(InitCTask):
             rr = self.cm.access(dict(params, category=TASK_CATEGORY, command='run', arg1=task_ref, ctx=ctx,
                                      path=project_path, unparsed=extra, con=con, verbose=verbose))
         finally:
+            CONV.remove_running(running)
             for k, v in saved.items():
                 if v is None:
                     os.environ.pop(k, None)
@@ -2045,6 +2307,9 @@ class CTask(InitCTask):
                 print('%s        "cxt run-ai" continues it (any harness, any model); "cxt run-ai --new" starts another' % space)
             for n in guard_notes:
                 print('%s        %s' % (space, n))
+            if scratch:
+                print('cMeta info: scratch workspace: %s' % project_path)
+                print('cMeta info: to continue, enter that directory and run cxt run-ai')
 
         CONV.set_codex_sqlite_home('')
         for fp in temp_files:
@@ -2058,6 +2323,8 @@ class CTask(InitCTask):
                'codex_state': codex_dir or ('home' if hk == 'codex' else ''),
                'write': write_mode, 'write_from': write_from,
                'context_guard': guard_mode, 'context_changes': guard_records, 'pending': staged_now}
+        if scratch:
+            out['log_project'] = project_path
         if rr.get('return', 0) > 0:
             out['error'] = rr.get('error', 'the harness task failed')
         for k in ('output_file', 'stats_file', 'stats', 'returncode', 'tokens'):

@@ -84,9 +84,13 @@ stopped, with any agent and any model, and the knowledge travels with the projec
 cxt run-ai                                      # continue the latest conversation of this artifact (cxt = cx task run)
 cxt run-ai --harness=codex "one prompt"         # one more turn of it, with another agent
 cxt run-ai --dry_run                            # what the agent would be given; nothing runs
+cxt run-ai --login --harness=codex              # sign the agent in (its tool installed first when missing)
+cxt run-ai --project="work::x" -q "..." --on=<host> --on_detach   # on another machine, outliving this one
 ```
 
-The reference is [`task/run-ai/README.md`](task/run-ai/README.md).
+The `!AI` folder travels with the project between machines (a bisync, also of a partial repository: `cx host sync`
+with `artifacts:`), and every run records the host it ran on. The reference is
+[`task/run-ai/README.md`](task/run-ai/README.md).
 
 ## Project status
 

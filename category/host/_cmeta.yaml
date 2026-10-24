@@ -24,6 +24,8 @@ uses_categories:
   task: task,c36be4b9314a45e0
   utils: utils,234ce5e3262e4d52
   machine: machine,fc0812696c6a4145
+  secret: secret,9d63451ea1f14010
+  category: category,dd9ea50e7f76467f
 uses_artifacts:
   task::rclone-to-ssh: rclone-to-ssh
   task::keep-adb-connection-alive: keep-adb-connection-alive,58392c394a8f4ae3

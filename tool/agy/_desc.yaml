@@ -65,3 +65,7 @@ extra_paths:
     - '{{global.host.os_env.LOCALAPPDATA}}\agy\bin'
     - '{{global.host.os_env.LOCALAPPDATA}}\Microsoft\WinGet\Packages\**'
     - 'C:\Program Files\Google\antigravity-cli'
+
+# cxt run-ai --harness=antigravity --login: agy signs in with a Google account on its first interactive start (it
+# prints the login URL and waits): start it, sign in, then quit; it has no status command
+login: []

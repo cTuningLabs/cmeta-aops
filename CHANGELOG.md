@@ -2,6 +2,84 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.54.0
+- **run-ai resumes an existing workspace automatically:** plain `cxt run-ai` finds the nearest `!AI` in the
+  current directory or its parents and continues that workspace's latest conversation without asking. This
+  works inside dated scratch workspaces and their subdirectories, as well as ordinary folders. Detection
+  stops at a known cMeta artifact or repository boundary; an explicit `--project` still wins, and `-l` starts
+  a fresh workspace.
+- **run-ai scratch projects and first-run confirmation:** `-l` / `--log_project` creates a new dated workspace
+  under the active home's local `log::task-run-ai` artifact, with its own `!AI`. Its directory is named
+  `YYYYMMDD-HHMM`; `-l="quick question"` adds `.quick question`. A prompt uses `--prompt="..."` separately.
+  Names are portable and collisions get a numeric suffix. The agent works there, and the directory is printed
+  before and after it runs. A first real run outside cMeta asks before creating a new `!AI` (Enter continues);
+  `-q` keeps unattended behavior, existing `!AI` folders do not ask again, and dry runs create nothing.
+- **Persistent interactive terminals:** `cx host ssh <host> --screen[=<name>]` creates or reconnects a GNU Screen
+  shell (`cx-host` by default). `cxt run-ai --project=<cRef> --on=<host> --on_screen[=<name>]` does the same for
+  run-ai (default `run-ai`; other task commands use their artifact alias). SSH disconnections leave the command
+  running; repeating the name attaches without starting it again or resubmitting the prompt. Existing window
+  titles identify the project; normal shell/task exit closes its last window. GNU Screen is a cMeta tool on the
+  POSIX target. The flags require an interactive terminal and refuse incompatible cleanup/detach options.
+  Explicitly empty values (`--screen=` / `--on_screen=`) also choose the default name, for batch launchers
+  with an optional argument; omitting the flag keeps the ordinary behavior.
+- **`cx host backup` and `cx host restore`: what only a host holds, kept in its machine artifact.** A host's
+  `backup:` block names its config artifacts, state, secrets, start scripts (`paths`, relative to the login home or
+  absolute; `{path, files: [globs]}` for a few files of a folder) and root-only files (`sudo_paths`, copied through a
+  staging folder with passwordless sudo); `cx host backup <host>` copies them into
+  `<machine>/backup/<host>/<YYYYMMDD-HHMM>/` with `backup.yaml` (where each entry came from, its size and the mode of
+  every file inside), `keep: N` dated backups. `cx host restore <host>` puts the newest one back - or `--source=<a
+  backup folder>`, the backup of the host a rebuilt one replaces - with the recorded modes (sudo for root-only entries),
+  makes a folder that was empty on the host again, then runs `backup: commands: after_restore`; `--into=<folder>` lands
+  everything under a folder instead (a look, or a test on a disposable host), `--paths=a,b` restores a part, a
+  production host needs `--yes`; nothing on the host is deleted by a restore. Tested by restoring a production VM's
+  backup into a folder of a test host.
+- **run-ai on several machines:** a project's `!AI` folder can be bisynced between machines and worked on from
+  either. Every run record names its host (`--conversations` shows `on <host>`); `!AI/log/<stamp>.running` marks a
+  live run (removed when it ends, also when the harness dies), and the next run reports one of another machine in
+  one line - `--other_runs=ask|refuse` (config key `other_runs`) asks or refuses instead, a marker of this machine
+  whose process is gone is removed. The two copies rclone bisync keeps of a file changed on both sides
+  (`<name>.conflict1`, `.conflict2`) are folded back at the start of every run and of `--conversations` for run-ai's
+  own records (the conversation's runs and sessions merged, the transcript's segments kept) and listed for the agent
+  to merge for memories and skills. The orientation tells every harness to write a location inside an artifact as
+  `{{{<category>::<alias>,<UID>}}}/<relative path>`, which resolves on any machine; `--project=<cRef>` with the task
+  engine's `--on=<host> --on_detach` starts a run on another machine that outlives this one.
+- **host: a partial repository (`artifacts:`):** a repository too big to copy travels as a selection of its
+  artifacts, two-way like any other: `artifacts:` in its sync entry (or `--artifacts="a;b"` on a push) takes cRef
+  patterns - `fgg.project::cMeta/!AI` (a path inside an artifact, with its `_cmeta` and `_desc`), `work::2026*` (a
+  folder glob through the category's shard folders, so an artifact made later on either side is in it). The
+  repository's `_cmr.yaml` and the definitions of the categories it holds itself come along (not those of a
+  repository nested in its folder), and the first sync or push plugs it on the host. A filtered bisync is kept safe:
+  the rules of the last run are recorded beside rclone's listings and a run whose rules changed stops and asks for
+  `--resync`. `PARTIAL.md` at the root of the host's copy says what it holds, from where and since when. A partial
+  repository is never pushed whole.
+- **host: the keys of another orchestrator, and a repository of secrets:** a host key named by a reference whose
+  artifact is not on this machine (`key: fgg.crypt::ssh-x/2026/id_ed25519` on a second orchestrator) is the copy a
+  `secret` artifact holds (its `files.from` and `files.names`), before the old fallback to `~/.ssh/<name>`, which now
+  warns. A repository with `secrets: true` is never synced; `cx host push <host> <repo> --artifacts="secret::a;..."
+  --secrets` sends the secrets a host needs, by name, into a folder only its user can read, plugs it and runs
+  `cx secret check --fix` there. `cx host push` also takes a repository registered here by its alias.
+- **secret: `cx secret which` and `cx secret check --fix`:** `which <category>::<artifact>/<file>` names the secret
+  holding a copy of that file and its path; `check --fix` makes a key of the artifact that others can read
+  owner-only (a copy over sftp arrives as 664). `cx secret ls` shows the repository of each secret again.
+- **tool/paperclip and task/run-paperclip:** [Paperclip](https://github.com/paperclipai/paperclip) (MIT), a
+  control plane for teams of AI agents. The tool installs its npm CLI `paperclipai` (2026.1012.0) into the cache
+  entry with cMeta's Node.js 24.11+ (an older Node found is replaced by the node-js tool's LTS), with a launcher that
+  turns its telemetry off. The task runs a server of this user: onboarded with the quickstart defaults the first time
+  (an embedded PostgreSQL), then `paperclipai run`, in a session of its own, its data in `~/.local/state/paperclip`
+  (`--data_dir`), loopback by default (`--bind=lan|tailnet` with a login), until `/api/health` answers; `status` and
+  `stop`. Linux and macOS (Windows: `--on=wsl` or a host).
+- **`--on_detach` and `cx host run` from a Windows terminal keep quoted words intact:** a detached run asks for no
+  terminal, so its words reach the host on stdin from a temporary script; a command run WITH a terminal that holds a
+  double quote, `^`, `%` or a line break travels base64-encoded to a POSIX host and runs there from a temporary
+  script. Before, cmd.exe stripped the double quotes on the way to ssh.exe and bash saw `'''...'''` ("syntax error
+  near unexpected token `('").
+- **run-ai: `--login` and `--login_status`:** a harness signed in on this machine, in this terminal, through its tool
+  (`cx tool run <tool> -- <words>`: the tool set up first when missing) - the words are facts of each tool's
+  `_desc.yaml` (`login:`, `login_status:`): claude `auth login` / `auth status`, codex `login --device-auth` (a URL
+  and a code, no callback port: works over ssh) / `login status`, opencode `auth login` / `auth list`, openclaw
+  `onboard` / `models status`, hermes `model`, antigravity and gemini an interactive start. With `--on=<host>` from a
+  terminal it signs the harness in there. `--login_status` needs no terminal.
+
 ## 0.53.0
 - **Retired hosts and machines:** `retired: true` in a host's or a machine's `_desc.yaml` keeps its record
   without contacting its old endpoint. `cx host ls` and `cx host status` show `retired` (status skips the

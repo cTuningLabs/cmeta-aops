@@ -52,6 +52,13 @@ DEFAULT_RCLONE_FLAGS = ['--transfers=4', '--checkers=4']
 
 SYNC_METHODS = ('bisync', 'copy', 'git', 'none')
 
+# A partial repository (a sync entry with "artifacts:"): only the artifacts its cRef patterns select travel. The
+# rclone rules they give are kept beside the bisync listings (a bisync whose rules changed needs --resync), and
+# PARTIAL.md in the host's copy says what it holds.
+PARTIAL_NOTE = 'PARTIAL.md'
+GLOB_CHARS = re.compile(r'([\[\]{}\\])')        # escaped in a rule; * and ? are escaped too where a part is literal
+UID_SUFFIX = re.compile(r',[0-9a-f]{16}$')
+
 # Columns of the fleet table (list); DOCKER and PODMAN = the client versions the probe saw ("-" = not
 # installed, "(daemon down)" when the Docker client is there but no daemon answers)
 LIST_COLUMNS = ['HOST', 'TYPE', 'MACHINE', 'STATUS', 'OS', 'SUDO', 'DOCKER', 'PODMAN', 'CMETA', 'AOPS', 'PROBED']
@@ -61,6 +68,21 @@ LIST_COLUMNS = ['HOST', 'TYPE', 'MACHINE', 'STATUS', 'OS', 'SUDO', 'DOCKER', 'PO
 # for a state.yaml probed before the artifact id was recorded.
 AOPS_REPO_UID = '3cb4ee4f444048f6'
 AOPS_REPO_NAME = 'cmeta-aops'
+
+
+def windows_here():
+    """Whether this machine runs Windows: a command line then goes through cmd.exe to ssh.exe (its own quoting rules)."""
+    return os.name == 'nt'
+
+
+def screen_name(value, default='cx-host'):
+    """Bare and explicitly empty flags select the default; omission leaves the ordinary shell."""
+    if value is None or value is False or str(value).strip().lower() in ('false', 'no', 'off', '0'):
+        return ''
+    name = default if value is True or str(value).strip().lower() in ('', 'true', 'yes', 'on', '1') else str(value).strip()
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', name):
+        raise ValueError('screen name must be 1-64 letters, digits, underscores or hyphens, starting with a letter or digit')
+    return name
 
 
 def declared_project_states(saved, desc):
@@ -376,6 +398,8 @@ class Category(InitCategory):
         interactive=False,  # a terminal for the command (ssh -t / docker exec -it): it can ask questions; needs a terminal here
         project=None,      # named environment; omitted: the host's global environment
         unparsed=None,      # the command as the words after "--" (cx host run <host> -- <command>)
+        screen=None,        # keep the command in GNU Screen; bare: cx-host, or --screen=<name>
+        screen_title=None,  # title of a new screen window (task delegation supplies its project)
     ):
         """
         Run a command on a host (or on a selection of hosts), through its driver: locally when the host
@@ -394,6 +418,17 @@ class Category(InitCategory):
 
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
+
+        try:
+            screen = screen_name(screen)
+        except ValueError as e:
+            return self.cm.error(str(e))
+        if screen:
+            if capture or script or timeout or raw or bool(tags or machine or type or all):
+                return self.cm.error('--screen needs one interactive host, without --capture, --script, --timeout or --raw')
+            if not self._screen_terminal():
+                return self.cm.error('--screen needs a terminal here; use --on_detach for an unattended task')
+            interactive = True
 
         # The words after "--" are the command (not with a command given as an argument too)
         if unparsed:
@@ -434,10 +469,15 @@ class Category(InitCategory):
         outputs = {}
         failed = 0
         for h in hosts:
+            host_cmd = cmd
+            if screen:
+                r = self._screen_command(h, host_cmd, screen, screen_title, ctx['control'].get('quiet', False))
+                if self.cm.catch_error(r): return r
+                host_cmd = r['cmd']
             if stdin_file:
                 r = self._cmd_stdin(ctx, h, stdin_file)
             else:
-                r = self._cmd_run(ctx, h, cmd, raw=raw, interactive=bool(interactive))
+                r = self._cmd_run(ctx, h, host_cmd, raw=raw, interactive=bool(interactive))
             if self.cm.catch_error(r): return r
 
             if con and (len(hosts) > 1 or verbose):
@@ -474,6 +514,7 @@ class Category(InitCategory):
         x11=False,          # ssh -X: X11 forwarding (or "access: x11: true" in the host's _desc.yaml)
         forward=None,       # ssh -L: local ports to forward to the host, e.g. --forward=1455 or --forward=8080:80,5000
         dry_run=False,      # print the command instead of opening the shell
+        screen=None,        # persistent GNU Screen shell: bare = cx-host, or --screen=<name>
     ):
         """
         Open an interactive shell on a host: ssh, wsl.exe -d, docker exec -it, adb shell.
@@ -481,6 +522,8 @@ class Category(InitCategory):
             cx host ssh lab-mac-mini-macos               (also: cx host shell / login)
             cx host ssh lab-thinkpad-ubuntu --x11       # a remote GUI program shows up here
             cx host ssh lab-thinkpad-ubuntu --forward=1455   # a login page the host serves on localhost:1455 opens in this browser
+            cx host ssh lab-thinkpad-ubuntu --screen         # create/reconnect cx-host; SSH may disconnect
+            cx host ssh lab-thinkpad-ubuntu --screen=work    # a separate shell; exit ends its last window
         """
 
         con = ctx['control'].get('con', False)
@@ -492,10 +535,22 @@ class Category(InitCategory):
         if self.cm.catch_error(r): return r
         h = r['host']
 
-        r = self._cmd_run(ctx, h, None, interactive=True, x11=bool(x11), forwards=self._csv(forward))
+        try:
+            screen = screen_name(screen)
+        except ValueError as e:
+            return self.cm.error(str(e))
+        cmd = None
+        if screen:
+            if not dry_run and not self._screen_terminal():
+                return self.cm.error('--screen needs a terminal here')
+            r = self._screen_command(h, None, screen, quiet=ctx['control'].get('quiet', False))
+            if self.cm.catch_error(r): return r
+            cmd = r['cmd']
+
+        r = self._cmd_run(ctx, h, cmd, interactive=True, x11=bool(x11), forwards=self._csv(forward))
         if self.cm.catch_error(r): return r
 
-        if r.get('here'):
+        if r.get('here') and not screen:
             if con: print(f'{h["alias"]} is this machine - opening a local shell')
             cmd = 'cmd.exe' if os.name == 'nt' else os.environ.get('SHELL', '/bin/sh')
         else:
@@ -509,7 +564,33 @@ class Category(InitCategory):
             print(f'RUN: {cmd}')
 
         rc = subprocess.call(cmd, shell=True)
-        return {'return': 0, 'returncode': rc}
+        return {'return': 1 if screen and rc != 0 else 0, 'returncode': rc}
+
+    @staticmethod
+    def _screen_terminal():
+        try:
+            return sys.stdin.isatty() and sys.stdout.isatty()
+        except (AttributeError, ValueError):
+            return False
+
+    def _screen_command(self, h, cmd, name, title=None, quiet=False):
+        """Screen owns the shell/command; reconnecting resumes it without sending another command."""
+        shell = self._shell(h).strip()
+        if h['type'] == 'adb' or shell in ('powershell', 'pwsh', 'cmd', 'none', 'raw') or (self._here(h) and os.name == 'nt'):
+            return self.cm.error('--screen needs a POSIX host with GNU Screen (Linux/macOS, WSL or a container)')
+
+        shell_words = shlex.split(shell)
+        if cmd is not None:
+            shell_words += ['-c', cmd]
+        title = title or ('shell' if cmd is None else cmd)
+        args = ['-S', name, '-d', '-R', '-t', title] + shell_words
+        # Show the actual existing title (including a run-ai project), then let Screen attach or create.
+        # The new title/command are ignored by Screen when a session already exists.
+        query = (f'if cmeta_screen_windows=$(screen -S {shlex.quote(name)} -Q windows 2>/dev/null); '
+                 'then printf \'%s\\n\' "$cmeta_screen_windows"; fi')
+        launch = 'cx tool run screen,05d0264fd24b40f6 --con-' + (' -q' if quiet else '') + ' -- ' + ' '.join(shlex.quote(w) for w in args)
+        message = f'cMeta info: screen "{name}" on {h["alias"]}; existing windows (if any):'
+        return {'return': 0, 'cmd': f'printf \'%s\\n\' {shlex.quote(message)}; {query}; exec {launch}'}
 
     ############################################################
     def restart_(
@@ -848,12 +929,14 @@ class Category(InitCategory):
         self,
         ctx,
         arg1=None,          # host alias
-        arg2=None,          # a repository name from the host's sync list, or a local path (then --to)
+        arg2=None,          # a repository name from the host's sync list, a repository registered here (its alias), or a local path (then --to)
         dirs=None,          # only these directories/files of it (comma-separated, relative, "task/run-ai/")
+        artifacts=None,     # only these artifacts: cRef patterns separated by ";" ("work::2026*;fgg.project::cMeta/!AI"); a partial repository's own by default
         to=None,            # remote path (required for a local path; default for a repository: its remote)
         dry_run=False,      # show what would be copied, copy nothing
         delete=False,       # rclone sync instead of copy: also delete remote files missing locally (within --dirs)
-        index=True,         # after a repository push: "cx repo reindex <repository>" on the host, so a new artifact is found there (--index- skips it)
+        index=True,         # after a repository push: "cx repo reindex <repository>" on the host (plugged there the first time), so a new artifact is found there (--index- skips it)
+        secrets=False,      # a repository of secrets (secrets: true in its _cmr.yaml) goes only with this flag and --artifacts naming the secrets
         unparsed=None,      # everything after "--" goes to rclone
         project=None,      # named environment; omitted: the host's global environment
     ):
@@ -861,14 +944,20 @@ class Category(InitCategory):
         Copy a few directories of a repository (or any local path) to a host, one way, local -> host,
         without touching the bisync baseline - for a quick fix when a sync glitched, or when only one task
         changed. Never deletes unless --delete. After a repository push that repository is rescanned on the host
-        ("cx repo reindex <repository>"; the whole index with a cMeta older than 0.34.0), so an artifact new to the
-        host is found by "cx <cat> find" at once; --index- skips that (a push of category code or files only).
+        ("cx repo reindex <repository>", plugged there when the host does not know it yet; the whole index with a
+        cMeta older than 0.34.0), so an artifact new to the host is found by "cx <cat> find" at once; --index- skips
+        that (a push of category code or files only).
 
             cx host push lab-thinkpad-ubuntu ctuninglabs@cmeta-aops --dirs=task/run-ai/,tool/agy/
             cx host push lab-laptop-ubuntu ctuninglabs@cmeta-aops --dirs=task/run-ai/ --dry_run
             cx host push lab-mac-mini-macos D:\\tmp\\check.sh --to=/Users/user/cmeta-tests/check.sh
+            cx host push lab-laptop-ubuntu my-repo --artifacts="work::2026*;my.project::x/!AI"
+            cx host push lab-laptop-ubuntu my-secrets --artifacts="secret::git-work-without-pass" --secrets
 
-        The repository's blacklist (tmp*/, __pycache__/, .venv/, .git/ ...) still applies.
+        The repository's blacklist (tmp*/, __pycache__/, .venv/, .git/ ...) still applies. A partial repository
+        (artifacts: in the host's sync entry) goes as its selection, never whole; --artifacts writes PARTIAL.md there.
+        A repository of secrets goes only by name, with --secrets: into a folder only the host's user can read, then
+        "cx secret check --fix" there makes every private key owner-only (the transfer does not keep the mode).
         """
 
         con = ctx['control'].get('con', False)
@@ -896,19 +985,41 @@ class Category(InitCategory):
 
         entries = self._sync_entries(h)
         blacklist = list(DEFAULT_BLACKLIST)
+        patterns = self._patterns(artifacts)
+        repository = ''
         if arg2 in entries:
             entry = entries[arg2]
             local = entry['local']
             remote_path = to or entry['remote']
             blacklist = entry['blacklist']
-        else:
+            repository = arg2
+            if not patterns and not dirs:
+                patterns = entry.get('artifacts') or []         # a partial repository goes as declared, never whole
+        elif os.path.exists(arg2):
             local = os.path.abspath(arg2)
-            if not os.path.exists(local):
-                return self.cm.error(f'"{arg2}" is neither a repository of {h["alias"]} '
-                                     f'({", ".join(entries) or "none declared"}) nor a local path')
             if not to:
                 return self.cm.error('--to=<remote path> is required for a local path')
             remote_path = to
+        else:
+            # a repository registered here that the host does not sync (a repository of secrets): by its alias
+            r = self.cm.access({'category': 'repo,f4f792ab40c7498f', 'command': 'find', 'arg1': arg2, 'con': False})
+            arts = (r.get('artifacts') or []) if r.get('return', 1) == 0 else []
+            if len(arts) != 1 or not os.path.isdir(arts[0]['path']):
+                return self.cm.error(f'"{arg2}" is neither a repository of {h["alias"]} '
+                                     f'({", ".join(entries) or "none declared"}), nor a repository registered here, nor a local path')
+            local = arts[0]['path']
+            repository = arg2
+            remote_path = to or (self._sync_repos_path(h, h['desc'].get('sync') or {})[0].rstrip('/') + '/' + os.path.basename(local))
+
+        # a repository of secrets: only by name, only on purpose
+        holds_secrets = bool(repository) and bool(self._repo_desc(local).get('secrets'))
+        if holds_secrets and not (secrets and patterns):
+            return self.cm.error(f'{arg2} holds secrets (secrets: true in its _cmr.yaml): name the secrets {h["alias"]} needs and say so - '
+                                 f'cx host push {h["alias"]} {arg2} --artifacts="secret::<alias>;..." --secrets')
+
+        extra = list(self._csv(unparsed)) if isinstance(unparsed, str) else list(unparsed or [])
+        if dry_run:
+            extra.append('--dry-run')
 
         whitelist = []
         for d in self._csv(dirs):
@@ -916,10 +1027,23 @@ class Category(InitCategory):
             if not d.startswith('/'):
                 d = '/' + d          # anchored: "task/run-ai/" means the top-level one, not every match
             whitelist.append(d)
+        if patterns and not whitelist:
+            r = self._selection_rules(local, patterns)
+            if self.cm.catch_error(r): return r
+            whitelist = r['rules']
+            extra.append('--ignore-case')
+            if con:
+                print(f'PUSH ({h["alias"]}): {len(patterns)} artifact pattern(s) of {arg2} -> {len(whitelist)} rule(s)')
 
-        extra = list(self._csv(unparsed)) if isinstance(unparsed, str) else list(unparsed or [])
-        if dry_run:
-            extra.append('--dry-run')
+        if holds_secrets and not dry_run and self._shell(h).strip() not in ('powershell', 'pwsh', 'cmd'):
+            # the folder first, readable by the host's user alone: the keys are never readable by others there, not even
+            # for the moment between the copy (rclone's sftp does not keep a file's mode) and "cx secret check --fix"
+            q = self._sh_path(remote_path)
+            r = self._cmd_run(ctx, h, f'mkdir -p {q} && chmod 700 {q}')
+            if self.cm.catch_error(r): return r
+            rr = self._run_local(r['cmd'], capture=True, con=con, verbose=verbose, timeout=120)
+            if rr.get('returncode', 1) != 0:
+                return self.cm.error(f'the folder {remote_path} could not be made owner-only on {h["alias"]}: {rr.get("stderr", "")}'.strip())
 
         # a single file lands AT --to (rclone copyto); "copy" would make a folder of that name with the file
         # inside (seen 2026-10-07: --to=.../decode_test.py gave decode_test.py/decode_test.py)
@@ -932,25 +1056,28 @@ class Category(InitCategory):
 
         result = {'return': 0, 'host': h['alias'], 'local': local, 'remote': remote_path, 'dirs': whitelist}
 
+        if patterns and not dry_run:
+            r = self._write_partial_note(ctx, h, arg2, remote_path, patterns, whitelist, 'push', verbose)
+            if r['return'] > 0 and con:
+                print(f'WARNING: {PARTIAL_NOTE} was not written on {h["alias"]}: {r.get("error")}')
+
         # A pushed folder is on the host's disk but not in its index until the index is rebuilt (seen 2026-10-06
         # with new tools: invisible to "cx tool find" there): only the pushed repository is rescanned ("cx repo
-        # reindex", cMeta 0.34.0+); a cMeta too old for it, or a repository it does not know by that alias, gets
-        # the whole index rebuilt as before
-        if index and arg2 in entries and not dry_run:
-            if self._shell(h).strip() in ('powershell', 'pwsh'):
-                cmd = f"cx repo reindex {arg2} -q; if ($LASTEXITCODE -ne 0) {{ cx --reindex }}"
-            else:
-                cmd = f'cx repo reindex {shlex.quote(arg2)} -q || cx --reindex'
-            r = self._cmd_run(ctx, h, cmd)
+        # reindex", cMeta 0.34.0+), plugged when the host does not know it yet; a cMeta too old for it gets the
+        # whole index rebuilt as before
+        if index and repository and not dry_run:
+            r = self._index_on_host(ctx, h, arg2, remote_path, con, verbose)
             if self.cm.catch_error(r): return r
-            t0 = time.monotonic()
-            rr = self._run_local(r['cmd'], capture=not verbose, con=con, verbose=verbose, timeout=300)
-            result['index'] = {'cmd': cmd, 'returncode': rr.get('returncode'), 'seconds': round(time.monotonic() - t0, 1)}
-            if con:
-                if rr.get('returncode', 0) == 0:
-                    print(f'INDEX ({h["alias"]}): {cmd} - ok ({time.monotonic() - t0:.1f}s)')
-                else:
-                    print(f'WARNING: "{cmd}" on {h["alias"]} returned {rr.get("returncode")} - run it there by hand')
+            result['index'] = {k: r[k] for k in ('cmd', 'returncode', 'seconds')}
+
+        # the private keys made owner-only there, and what is there checked (the table shows the references, never a value)
+        if holds_secrets and not dry_run:
+            r = self._cmd_run(ctx, h, 'cx secret check --fix')
+            if self.cm.catch_error(r): return r
+            rr = self._run_local(r['cmd'], capture=False, con=con, verbose=verbose, timeout=300)
+            result['secret_check'] = rr.get('returncode')
+            if rr.get('returncode', 0) != 0 and con:
+                print(f'WARNING: "cx secret check --fix" on {h["alias"]} returned {rr.get("returncode")}')
 
         return result
 
@@ -1006,6 +1133,412 @@ class Category(InitCategory):
         if self.cm.catch_error(r): return r
 
         return {'return': 0, 'host': h['alias'], 'remote': arg2, 'local': local}
+
+    ############################################################
+    def backup_(
+        self,
+        ctx,
+        arg1=None,          # host alias
+        to=None,            # the folder the dated backup goes into (default: the machine artifact's backup/<host>/)
+        dry_run=False,      # list what would be copied, with sizes; copy nothing
+        skip_commands=False,  # do not run the host's "backup: commands: before"
+        unparsed=None,      # everything after "--" goes to rclone
+        project=None,       # named environment; omitted: the host's global environment
+    ):
+        """
+        Copy what only this host has - its configuration, state, secrets and scripts, as the "backup:" block of its
+        _desc.yaml declares - into a dated folder of the machine artifact it belongs to:
+        <machine>/backup/<host>/<YYYYMMDD-HHMM>/, with backup.yaml saying what came and from where. The machine
+        artifact is the asset's record, so the files a rebuild needs sit next to it; "cx host restore" puts them
+        back on this host or on its replacement. Root-only files ("sudo_paths") are read through sudo into a
+        staging folder on the host first (passwordless sudo), then fetched and removed there.
+
+            cx host backup dapple-labs-azure-vm-ubuntu --dry_run      # the paths, their kind and size; nothing copied
+            cx host backup dapple-labs-azure-vm-ubuntu
+            cx host backup dapple-labs-azure-vm-ubuntu --to=D:\\backups\\vm
+        """
+
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        if not arg1:
+            return self.cm.error('which host? cx host backup <host> [--to=<folder>] [--dry_run]')
+
+        r = self._get_host(ctx, arg1, project=project)
+        if self.cm.catch_error(r): return r
+        h = r['host']
+        if h['type'] != 'ssh':
+            return self.cm.error(f'backup works on ssh hosts ({h["alias"]} is {h["type"]})')
+        if self._here(h):
+            return self.cm.error(f'{h["alias"]} is this machine - nothing to back up from')
+
+        r = self._backup_entries(h)
+        if self.cm.catch_error(r): return r
+        entries, block = r['entries'], r['block']
+
+        r = self._backup_root(ctx, h, to)
+        if self.cm.catch_error(r): return r
+        stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M')
+        dest = os.path.join(r['root'], stamp)
+
+        # the host says what each path is (a folder, a file, missing) and how big it is: one round trip
+        r = self._backup_stat(ctx, h, entries, verbose)
+        if self.cm.catch_error(r): return r
+        stat = r['stat']
+
+        if con:
+            print(f'=== {h["alias"]} ({self._address_text(h)}) -> {dest}' + (' - DRY RUN' if dry_run else ''))
+            for e in entries:
+                st = stat.get(e['path']) or {}
+                print(f'    {st.get("kind", "?"):>7}  {st.get("size", "?"):>9}  {e["path"]}' + (f'  (files: {", ".join(e["files"])})' if e['files'] else '')
+                      + ('  [sudo]' if e['sudo'] else ''))
+        missing = [e['path'] for e in entries if (stat.get(e['path']) or {}).get('kind') == 'missing'
+                   or ((stat.get(e['path']) or {}).get('kind') == 'files' and not (stat.get(e['path']) or {}).get('items'))]
+        if missing and con:
+            print(f'    not on the host, skipped: {", ".join(missing)}')
+        entries = [e for e in entries if e['path'] not in missing and (stat.get(e['path']) or {}).get('kind') in ('file', 'folder', 'files')]
+
+        if dry_run:
+            return {'return': 0, 'host': h['alias'], 'dest': dest, 'entries': entries, 'stat': stat, 'dry_run': True}
+
+        before = (block.get('commands') or {}).get('before') or []
+        if isinstance(before, str): before = [before]
+        if before and not skip_commands:
+            for cmd in before:
+                r = self._cmd_run(ctx, h, cmd)
+                if self.cm.catch_error(r): return r
+                if con: print(f'BEFORE ({h["alias"]}): {cmd}')
+                rr = self._run_local(r['cmd'], capture=not verbose, con=con, verbose=verbose, timeout=600)
+                if rr.get('returncode', 0) != 0:
+                    return self.cm.error(f'"{cmd}" on {h["alias"]} returned {rr.get("returncode")} - nothing backed up')
+
+        extra = list(self._csv(unparsed)) if isinstance(unparsed, str) else list(unparsed or [])
+        exclude = [str(x) for x in (block.get('exclude') or [])]
+        os.makedirs(dest, exist_ok=True)
+
+        # root-only files first: copied by sudo into a staging folder the host's user owns, fetched, removed there
+        sudo_entries = [e for e in entries if e['sudo']]
+        staging = f'.cmeta-backup-{stamp}'
+        if sudo_entries:
+            lines = ['set -e', f'rm -rf "$HOME"/{staging}', f'mkdir -p "$HOME"/{staging}']
+            for e in sudo_entries:
+                q = shlex.quote(e['path'].lstrip('/'))
+                lines.append(f'sudo mkdir -p "$HOME"/{staging}/$(dirname {q}) && sudo cp -a {shlex.quote(e["path"])} "$HOME"/{staging}/{q}')
+            lines.append(f'sudo chown -R "$(id -u):$(id -g)" "$HOME"/{staging} && chmod -R u+rX "$HOME"/{staging}')
+            r = self._backup_script(ctx, h, '\n'.join(lines) + '\n', verbose)
+            if self.cm.catch_error(r): return r
+            r = self._rclone(ctx, h, 'copy', os.path.join(dest, 'root'), staging, blacklist=exclude, extra=extra,
+                             con=con, verbose=verbose, from_remote=True)
+            self._backup_script(ctx, h, f'rm -rf "$HOME"/{staging}\n', verbose)       # whatever happened, nothing stays
+            if self.cm.catch_error(r): return r
+
+        # then the host user's own paths, each into its place under <dest>/home/
+        for e in entries:
+            if e['sudo']:
+                continue
+            kind = stat[e['path']]['kind']
+            if kind == 'files':
+                # the matched files of the folder, one by one (rclone would walk the whole folder for an include rule)
+                for item in stat[e['path']].get('items') or []:
+                    local = os.path.join(dest, 'home', *item.split('/'))
+                    os.makedirs(os.path.dirname(local), exist_ok=True)
+                    r = self._rclone(ctx, h, 'copyto', local, item, extra=extra, con=con, verbose=verbose, from_remote=True)
+                    if self.cm.catch_error(r): return r
+                continue
+            if kind == 'file':
+                # rclone copy of a remote file puts it into the local folder: the file's own folder here
+                local = os.path.join(dest, 'home', *e['path'].split('/')[:-1])
+            else:
+                local = os.path.join(dest, 'home', *e['path'].split('/'))
+            r = self._rclone(ctx, h, 'copy', local, e['path'], blacklist=exclude if kind == 'folder' else [],
+                             extra=extra, con=con, verbose=verbose, from_remote=True)
+            if self.cm.catch_error(r): return r
+
+        manifest = {
+            'host': f'{h["alias"]},{h["uid"]}',
+            'machine': h['desc'].get('machine'),
+            'address': self._address_text(h),
+            'backed_up': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
+            'home': stat.get('_home', ''),
+            'state': {k: (h.get('state') or {}).get(k) for k in ('os', 'cmeta_version', 'cmeta_home', 'aops_version', 'probed') if (h.get('state') or {}).get(k)},
+            # per entry: what it is, its size and mode, the matched files of a "files" entry, and the modes of what a
+            # folder holds (the restore puts them back; the copy keeps none)
+            'entries': [{k: v for k, v in {'path': e['path'], 'kind': stat[e['path']]['kind'], 'size': stat[e['path']].get('size'),
+                                           'mode': stat[e['path']].get('mode'), 'sudo': e['sudo'], 'files': e['files'],
+                                           'items': stat[e['path']].get('items') or [],
+                                           'item_modes': stat[e['path']].get('item_modes') or {},
+                                           'modes': stat[e['path']].get('modes') or {},
+                                           'local': ('root/' if e['sudo'] else 'home/') + e['path'].strip('/')}.items()
+                         if k not in ('item_modes', 'modes') or v} for e in entries],
+            'exclude': exclude,
+            'commands': block.get('commands') or {},
+            'made_by': 'cx host backup',
+        }
+        self._write_yaml(os.path.join(dest, 'backup.yaml'), manifest)
+
+        keep = block.get('keep')
+        removed = []
+        if isinstance(keep, int) and keep > 0:
+            root = os.path.dirname(dest)
+            older = sorted(d for d in os.listdir(root) if re.match(r'^\d{8}-\d{4}$', d) and os.path.isfile(os.path.join(root, d, 'backup.yaml')))
+            for d in older[:-keep]:
+                shutil.rmtree(os.path.join(root, d), ignore_errors=True)
+                removed.append(d)
+
+        if con:
+            print('')
+            print(f'backed up: {dest}' + (f'  (older backups removed: {", ".join(removed)})' if removed else ''))
+        return {'return': 0, 'host': h['alias'], 'dest': dest, 'entries': manifest['entries'], 'removed': removed}
+
+    ############################################################
+    def restore_(
+        self,
+        ctx,
+        arg1=None,          # host alias (or an instance cMeta made: back to a snapshot, see below)
+        source=None,        # the backup folder (default: the newest backup of this host in its machine artifact)
+        into=None,          # put everything under this folder on the host instead of its real place (a test, a look)
+        paths=None,         # only these paths of the backup (comma-separated, as backup.yaml names them)
+        dry_run=False,      # list what would go where; copy nothing
+        yes=False,          # a production host (ai: production: true) restores only with --yes
+        skip_commands=False,  # do not run the host's "backup: commands: after_restore"
+        name=None,          # an instance's snapshot name (cx host restore <instance> --name=<snapshot>)
+        force=False,        # an instance declared by hand (docker, wsl)
+        project=None,       # named environment; omitted: the host's global environment
+    ):
+        """
+        Put a backup back on a host: every path of "cx host backup" to where it came from, root-only ones through
+        sudo, then the host's "backup: commands: after_restore" (e.g. cx --reindex). The newest backup of the host
+        is taken from its machine artifact, --source names another (the backup of the host this one replaces). With
+        --into=<folder> everything lands under that folder on the host - a look, or a test on a disposable host.
+
+            cx host restore dapple-labs-azure-vm-ubuntu --dry_run
+            cx host restore new-vm-ubuntu --source=<machine>/backup/dapple-labs-azure-vm-ubuntu/20261023-1130 --yes
+            cx host restore lab-laptop-ubuntu --source=<that folder> --into=cmeta-tests/restore-test
+
+        An instance cMeta made (docker, wsl) goes back to a snapshot instead: cx host restore <instance> [--name=<snapshot>].
+        """
+
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        if not arg1:
+            return self.cm.error('which host? cx host restore <host> [--source=<backup folder>] [--into=<folder>] [--dry_run]')
+
+        r = self._get_host(ctx, arg1, project=project)
+        if self.cm.catch_error(r): return r
+        h = r['host']
+        if h['type'] in ('docker', 'wsl'):
+            return self._restore_instance(ctx, arg1, name, force)
+        if h['type'] != 'ssh':
+            return self.cm.error(f'restore works on ssh hosts and on instances cMeta made ({h["alias"]} is {h["type"]})')
+        if self._here(h):
+            return self.cm.error(f'{h["alias"]} is this machine - restore by hand here')
+
+        if source:
+            src = os.path.abspath(source)
+        else:
+            r = self._backup_root(ctx, h, None)
+            if self.cm.catch_error(r): return r
+            stamps = sorted(d for d in (os.listdir(r['root']) if os.path.isdir(r['root']) else [])
+                            if re.match(r'^\d{8}-\d{4}$', d) and os.path.isfile(os.path.join(r['root'], d, 'backup.yaml')))
+            if not stamps:
+                return self.cm.error(f'no backup of {h["alias"]} under {r["root"]} - cx host backup {h["alias"]} first, or --source=<folder>')
+            src = os.path.join(r['root'], stamps[-1])
+        manifest_path = os.path.join(src, 'backup.yaml')
+        if not os.path.isfile(manifest_path):
+            return self.cm.error(f'{src} holds no backup.yaml (not a folder "cx host backup" made)')
+        manifest = self._read_yaml(manifest_path)
+        entries = manifest.get('entries') or []
+        only = self._csv(paths)
+        if only:
+            unknown = [p for p in only if p not in [e['path'] for e in entries]]
+            if unknown:
+                return self.cm.error(f'not in this backup: {", ".join(unknown)} (it holds: {", ".join(e["path"] for e in entries)})')
+            entries = [e for e in entries if e['path'] in only]
+
+        production = bool((h['desc'].get('ai') or {}).get('production'))
+        if production and not yes and not dry_run and not into:
+            return self.cm.error(f'{h["alias"]} is a production host: cx host restore {h["alias"]} ... --yes (or --dry_run, or --into=<folder>)')
+
+        into = str(into or '').replace('\\', '/').strip().rstrip('/')
+        if con:
+            print(f'=== {src} -> {h["alias"]} ({self._address_text(h)})' + (f' under {into}/' if into else '') + (' - DRY RUN' if dry_run else ''))
+            for e in entries:
+                target = (into + '/' + e['path'].strip('/')) if into else e['path']
+                print(f'    {e.get("kind", "?"):>7}  {str(e.get("size") or ""):>9}  {e["local"]}  ->  {target}' + ('  [sudo]' if e.get('sudo') and not into else ''))
+        if dry_run:
+            return {'return': 0, 'host': h['alias'], 'source': src, 'entries': entries, 'dry_run': True}
+
+        stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M')
+        staging = f'.cmeta-restore-{stamp}'
+        made = []
+        for e in entries:
+            local = os.path.join(src, *e['local'].split('/'))
+            if not os.path.exists(local):
+                if e.get('kind') in ('folder', 'files'):
+                    # a folder that was empty on the host (or whose files were all excluded) has no copy in the
+                    # backup: it is made again, empty, with its mode
+                    made.append(e)
+                    if con:
+                        print(f'    {e["path"]}: nothing in the backup (the folder was empty, or all of it excluded) - made again, empty')
+                    continue
+                return self.cm.error(f'{local} is not in the backup')
+            if e.get('kind') == 'files':
+                # the folder's matched files, one by one, each at its own place
+                for item in e.get('items') or []:
+                    f_local = os.path.join(src, 'home', *item.split('/'))
+                    f_remote = (into + '/' + item) if into else item
+                    r = self._rclone(ctx, h, 'copyto', f_local, f_remote, extra=[], con=con, verbose=verbose)
+                    if self.cm.catch_error(r): return r
+                continue
+            if e.get('sudo') and not into:
+                remote = staging + '/' + e['path'].strip('/')
+            else:
+                remote = (into + '/' + e['path'].strip('/')) if into else e['path']
+            command = 'copyto' if e.get('kind') == 'file' else 'copy'
+            r = self._rclone(ctx, h, command, local, remote, extra=[], con=con, verbose=verbose)
+            if self.cm.catch_error(r): return r
+
+        # one script on the host: the root-only entries from the staging folder into their place, the folders that
+        # were empty made again, then every recorded mode put back (the copy keeps none - a private key would land
+        # readable by all); an entry restored through sudo keeps its chmod through sudo too
+        sudo_entries = [e for e in entries if e.get('sudo')] if not into else []
+        lines = ['set -e']
+        for e in sudo_entries:
+            q = shlex.quote(e['path'])
+            lines.append(f'sudo mkdir -p $(dirname {q}) && sudo cp -a "$HOME"/{staging}/{shlex.quote(e["path"].strip("/"))} {q}')
+        for e in made:
+            s = 'sudo ' if (e.get('sudo') and not into) else ''
+            lines.append(f'{s}mkdir -p {shlex.quote((into + "/" + e["path"].strip("/")) if into else e["path"])}')
+
+        def mode_of(value):
+            return str(value) if re.fullmatch(r'[0-7]{3,4}', str(value or '')) else ''
+        for e in entries:
+            s = 'sudo ' if (e.get('sudo') and not into) else ''
+            target = (into + '/' + e['path'].strip('/')) if into else e['path']
+            if e.get('kind') == 'files':
+                for item, mode in (e.get('item_modes') or {}).items():
+                    if mode_of(mode):
+                        lines.append(f'{s}chmod {mode_of(mode)} {shlex.quote((into + "/" + item) if into else item)}')
+                continue
+            if mode_of(e.get('mode')):
+                lines.append(f'{s}chmod {mode_of(e["mode"])} {shlex.quote(target)}')
+            for rel, mode in (e.get('modes') or {}).items():
+                if mode_of(mode) and rel:
+                    lines.append(f'{s}chmod {mode_of(mode)} {shlex.quote(target + "/" + rel)} 2>/dev/null || true')
+        if sudo_entries:
+            lines.append(f'rm -rf "$HOME"/{staging}')
+        if len(lines) > 1:
+            r = self._backup_script(ctx, h, '\n'.join(lines) + '\n', verbose)
+            if self.cm.catch_error(r): return r
+
+        after = (manifest.get('commands') or {}).get('after_restore') or ((h['desc'].get('backup') or {}).get('commands') or {}).get('after_restore') or []
+        if isinstance(after, str): after = [after]
+        if after and not skip_commands and not into:
+            for cmd in after:
+                r = self._cmd_run(ctx, h, cmd)
+                if self.cm.catch_error(r): return r
+                if con: print(f'AFTER ({h["alias"]}): {cmd}')
+                rr = self._run_local(r['cmd'], capture=not verbose, con=con, verbose=verbose, timeout=600)
+                if rr.get('returncode', 0) != 0 and con:
+                    print(f'WARNING: "{cmd}" on {h["alias"]} returned {rr.get("returncode")}')
+
+        if con:
+            print('')
+            print(f'restored {len(entries)} path(s) of {src} on {h["alias"]}' + (f' under {into}/' if into else ''))
+        return {'return': 0, 'host': h['alias'], 'source': src, 'entries': entries, 'into': into}
+
+    def _backup_entries(self, h):
+        """The host's "backup:" block as a list of {path, files, sudo}: paths relative to the login home or absolute;
+        an item is a path, or {path: ..., files: [patterns]} for a few files of a folder; sudo_paths are root-only."""
+        block = h['desc'].get('backup') or {}
+        if not block or not (block.get('paths') or block.get('sudo_paths')):
+            return self.cm.error(f'host "{h["alias"]}" declares no backup (no "backup: paths" in its _desc.yaml)')
+        entries = []
+        for sudo, key in ((False, 'paths'), (True, 'sudo_paths')):
+            for item in block.get(key) or []:
+                if isinstance(item, dict):
+                    path, files = str(item.get('path') or ''), self._csv(item.get('files'))
+                else:
+                    path, files = str(item), []
+                path = path.replace('\\', '/').strip()
+                if path.startswith('~/'):
+                    path = path[2:]
+                path = path.rstrip('/') if path != '/' else path
+                if not path:
+                    continue
+                entries.append({'path': path, 'files': files, 'sudo': sudo})
+        return {'return': 0, 'entries': entries, 'block': block}
+
+    def _backup_root(self, ctx, h, to):
+        """Where the host's backups go: --to, else <the machine artifact's folder>/backup/<host alias>/."""
+        if to:
+            return {'return': 0, 'root': os.path.abspath(to)}
+        ref = str(h['desc'].get('machine') or '')
+        if not ref:
+            return self.cm.error(f'host "{h["alias"]}" names no machine - say where with --to=<folder>')
+        r = self.cm.access({'category': self.cmeta['uses_categories']['machine'], 'command': 'find',
+                            'arg1': ref.split('::')[-1], 'con': False})
+        arts = (r.get('artifacts') or []) if r.get('return', 1) == 0 else []
+        if len(arts) != 1 or not os.path.isdir(arts[0]['path']):
+            return self.cm.error(f'the machine {ref} of {h["alias"]} is not here ({len(arts)} found) - say where with --to=<folder>')
+        return {'return': 0, 'root': os.path.join(arts[0]['path'], 'backup', h['alias'])}
+
+    def _backup_script(self, ctx, h, script, verbose):
+        """Run a few shell lines on the host (its login shell on stdin) and return their output."""
+        r = self._temp_script(script)
+        if r['return'] > 0: return r
+        r = self._cmd_stdin(ctx, h, r['path'])
+        if r['return'] > 0: return r
+        rr = self._run_local(r['cmd'], capture=True, con=False, verbose=verbose, timeout=600)
+        if rr.get('returncode', 1) != 0:
+            return self.cm.error(f'on {h["alias"]}: {(rr.get("stderr") or rr.get("stdout") or "").strip()[-400:] or "exit " + str(rr.get("returncode"))}')
+        return {'return': 0, 'stdout': rr.get('stdout', '') or ''}
+
+    def _backup_stat(self, ctx, h, entries, verbose):
+        """What each path is on the host - file | folder | files (a folder's matched files, listed) | missing - with its
+        size in KB and its mode (one round trip; root-only paths are looked at through sudo)."""
+        lines = ['echo "_home|$HOME"']
+        for e in entries:
+            q = shlex.quote(e['path'])
+            s = 'sudo ' if e['sudo'] else ''
+            if e['files']:
+                # the matched files of the folder, each on its own line with its mode: copied one by one, never the whole folder
+                globs = ' '.join(shlex.quote(e['path'] + '/' + p) for p in e['files'])
+                lines.append(f'if [ -d {q} ]; then echo "{e["path"]}|files|$(du -ck $(ls -d {globs} 2>/dev/null) 2>/dev/null | tail -1 | cut -f1)|$(stat -c %a {q} 2>/dev/null)"; '
+                             f'for f in $(ls -d {globs} 2>/dev/null); do echo "{e["path"]}|item|$f|$(stat -c %a "$f" 2>/dev/null)"; done; '
+                             f'else echo "{e["path"]}|missing||"; fi')
+            else:
+                # a folder: its mode, then the mode of everything inside it (the copy keeps none of them; GNU find - a
+                # host without -printf gives no modes and the restore applies none)
+                lines.append(f'if {s}test -d {q}; then echo "{e["path"]}|folder|$({s}du -sk {q} 2>/dev/null | cut -f1)|$({s}stat -c %a {q} 2>/dev/null)"; '
+                             f'{s}find {q} -mindepth 1 -printf "{e["path"]}|mode|%m|%P\\n" 2>/dev/null | head -5000; '
+                             f'elif {s}test -e {q}; then echo "{e["path"]}|file|$({s}du -k {q} 2>/dev/null | cut -f1)|$({s}stat -c %a {q} 2>/dev/null)"; '
+                             f'else echo "{e["path"]}|missing||"; fi')
+        r = self._backup_script(ctx, h, '\n'.join(lines) + '\n', verbose)
+        if self.cm.catch_error(r): return r
+        stat = {}
+        for line in r['stdout'].splitlines():
+            parts = line.rstrip().split('|')
+            if parts[0] == '_home' and len(parts) > 1:
+                stat['_home'] = parts[1]
+            elif len(parts) >= 3 and parts[1] == 'item':
+                stat.setdefault(parts[0], {}).setdefault('items', []).append(parts[2].strip())
+                if len(parts) >= 4 and parts[3].strip():
+                    stat[parts[0]].setdefault('item_modes', {})[parts[2].strip()] = parts[3].strip()
+            elif len(parts) >= 4 and parts[1] == 'mode':
+                stat.setdefault(parts[0], {}).setdefault('modes', {})['|'.join(parts[3:]).strip()] = parts[2].strip()
+            elif len(parts) >= 4:
+                kb = parts[2].strip()
+                stat.setdefault(parts[0], {}).update({'kind': parts[1], 'size': f'{int(kb)} KB' if kb.isdigit() else '', 'mode': parts[3].strip()})
+        return {'return': 0, 'stat': stat}
+
+    @staticmethod
+    def _write_yaml(path, data):
+        import yaml
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write('# Written by "cx host backup": what was copied from the host and where it belongs; "cx host restore" reads it.\n\n')
+            f.write(yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=120))
 
     ############################################################
     def upgrade_(
@@ -1381,8 +1914,7 @@ class Category(InitCategory):
             print (f'cMeta info: {h["alias"]}: snapshot {snap} kept as {record.get("image") or record.get("file")}; back to it with "cx host restore {h["alias"]} --name={snap}"')
         return {'return': 0, 'alias': h['alias'], 'snapshot': record}
 
-    ############################################################
-    def restore_(
+    def _restore_instance(
         self,
         ctx,
         arg1=None,          # the instance
@@ -1390,7 +1922,7 @@ class Category(InitCategory):
         force=False,        # a docker or wsl host declared by hand
     ):
         """
-        Bring an instance back to a snapshot (the last one by default): a docker or podman container is removed
+        "cx host restore <instance>": bring an instance back to a snapshot (the last one by default): a docker or podman container is removed
         and made again from the snapshot's image with the instance's run arguments (its entrypoint plugs the
         repositories and indexes again; what was set up inside after the snapshot is gone), a WSL distribution
         unregistered and imported again from the snapshot's tar.
@@ -2379,8 +2911,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         """
         The ssh key file: given as <category>::<artifact>/<file> (a cMeta reference, resolved on this
         machine) or as a path (absolute, ~ and environment variables expanded). A reference whose artifact
-        is not on this machine - another orchestrator without that private repository - falls back to a
-        file of the same name in ~/.ssh.
+        is not on this machine - another orchestrator without that private repository - is the copy a secret
+        artifact holds of that file ("cx secret which": its files.from and files.names name it); without one,
+        as before 2026-10-22, a file of the same name in ~/.ssh, with a warning (names in ~/.ssh can collide).
         """
         if not key:
             return {'return': 0, 'path': None}
@@ -2401,10 +2934,17 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             if len(arts) == 1:
                 path = os.path.join(arts[0]['path'], *rel.split('/'))
             else:
-                path = os.path.join(os.path.expanduser('~'), '.ssh', os.path.basename(rel))
-                if not os.path.isfile(path):
-                    return self.cm.error(f'key artifact "{cref}" is not on this machine and ~/.ssh/{os.path.basename(rel)} '
-                                         f'does not exist either (from "{key}")')
+                rs = self.cm.access({'category': self.cmeta['uses_categories'].get('secret', 'secret,9d63451ea1f14010'), 'command': 'which',
+                                     'arg1': key, 'con': False})
+                if rs.get('return', 1) == 0 and rs.get('path'):
+                    path = rs['path']
+                else:
+                    path = os.path.join(os.path.expanduser('~'), '.ssh', os.path.basename(rel))
+                    if not os.path.isfile(path):
+                        return self.cm.error(f'key artifact "{cref}" is not on this machine, no secret holds a copy of the key '
+                                             f'("cx secret which {key}") and ~/.ssh/{os.path.basename(rel)} does not exist either')
+                    print(f'cMeta warning: the key "{key}" is taken from {path} (its artifact is not on this machine and no '
+                          f'secret holds a copy: "cx secret which")')
         else:
             path = os.path.expanduser(os.path.expandvars(key))
         if not os.path.isfile(path):
@@ -2573,10 +3113,16 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             # quote is run by cmd.exe itself (seen 2026-10-06: "'head' is not recognized"). Such a command
             # goes to the host's shell on stdin instead, from a temporary script.
             # (not when the caller feeds the host's stdin itself: the script route needs stdin too)
-            if cmd is not None and not interactive and not stdin and os.name == 'nt' and any(c in cmd for c in '"^%\n\r'):
+            if cmd is not None and not interactive and not stdin and windows_here() and any(c in cmd for c in '"^%\n\r'):
                 r = self._temp_script(cmd)
                 if r['return'] > 0: return r
                 return self._cmd_stdin(ctx, h, r['path'])
+
+            # The same command WITH a terminal: stdin is the user's keyboard, so it travels base64-encoded instead and
+            # runs there from a temporary script (a POSIX host; seen 2026-10-22 with a quoted word of --on)
+            if (cmd is not None and interactive and not stdin and not raw and windows_here() and any(c in cmd for c in '"^%\n\r')
+                    and shell.strip() not in ('powershell', 'pwsh', 'cmd', 'none', 'raw')):
+                wrapped = self._encoded_posix_command(shell, cmd)
             r = self._ssh_parts(h, batch=not interactive, tty=interactive and cmd is not None,
                                 x11=x11 and interactive, forwards=forwards if interactive else None)
             if r['return'] > 0: return r
@@ -2618,6 +3164,17 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             local = r['cmd']
 
         return {'return': 0, 'cmd': local, 'here': False}
+
+    @staticmethod
+    def _encoded_posix_command(shell, cmd):
+        """
+        A command for a POSIX host that keeps the terminal (ssh -t) yet holds no character cmd.exe could misread on
+        its way to ssh.exe: the command base64-encoded, decoded there into a temporary script that the host's shell
+        runs, then removed (base64 -d: GNU coreutils, macOS 13+).
+        """
+        import base64
+        b64 = base64.b64encode(cmd.encode('utf-8')).decode('ascii')
+        return f'f=$(mktemp) && echo {b64} | base64 -d > $f && {shell.strip()} $f; rc=$?; rm -f $f; exit $rc'
 
     def _temp_script(self, cmd, suffix='.sh'):
         """A command as a one-off script file (LF endings) in the temp dir, removed when the process exits."""
@@ -2990,9 +3547,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
     def _sync_entries(self, h):
         """
-        {name: {'method', 'local', 'remote', 'blacklist', 'workdir'}} from the host's "sync:" block.
-        An entry is a name, or {name: {method, remote, blacklist, workdir}}. The remote folder of a
-        repository is its own `remote`, else `<repos path>/<name>` (see _sync_repos_path).
+        {name: {'method', 'local', 'remote', 'blacklist', 'workdir', 'artifacts'}} from the host's "sync:" block.
+        An entry is a name, or {name: {method, remote, blacklist, workdir, artifacts}}. The remote folder of a
+        repository is its own `remote`, else `<repos path>/<name>` (see _sync_repos_path). With `artifacts` (cRef
+        patterns) only those artifacts travel: a partial repository (see _selection_rules).
         """
         sync = h['desc'].get('sync') or {}
         repos_path, source = self._sync_repos_path(h, sync)
@@ -3019,8 +3577,189 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 'workdir': opts.get('workdir', workdir),
                 'repos_path': repos_path,           # where the repositories of the host are, and why
                 'repos_path_from': source,
+                'artifacts': self._patterns(opts.get('artifacts')),
             }
         return entries
+
+    @staticmethod
+    def _patterns(value):
+        """The artifacts of a partial repository: a list, or one string with ";" between the patterns (a cRef holds commas)."""
+        if not value:
+            return []
+        items = value if isinstance(value, (list, tuple)) else str(value).split(';')
+        return [str(x).strip().replace('\\', '/') for x in items if str(x).strip()]
+
+    @staticmethod
+    def _glob(text, wildcards=False):
+        """A path part as part of an rclone rule: its glob characters escaped (with wildcards, * and ? stay wildcards)
+        and a comma as "?" (rclone-to-ssh splits its whitelist at commas)."""
+        out = GLOB_CHARS.sub(r'\\\1', str(text))
+        out = re.sub(r'\*+', '*', out) if wildcards else out.replace('*', '\\*').replace('?', '\\?')
+        return out.replace(',', '?')
+
+    def _shard_globs(self, alias, slices):
+        """The shard folders above an artifact pattern, as the engine names them (shard_name: the alias's first
+        characters in lower case): literal where the pattern's literal start covers the slice, else that start and "*"."""
+        if not slices:
+            return []
+        literal = re.match(r'[^*?]*', alias).group(0)
+        r = self.cm.utils.files.shard_name(literal, slices)
+        full = r.get('parts', [])[:-1] if r.get('return', 1) == 0 else []
+        out, start = [], 0
+        for i, length in enumerate(slices):
+            end = start + int(length)
+            if end <= len(literal) and i < len(full):
+                out.append(self._glob(full[i]))
+            else:
+                part = literal[start:end].lower().replace(' ', '_') if start < len(literal) else ''
+                out.append(self._glob(part) + '*')
+            start = end
+        return out
+
+    def _repo_desc(self, local):
+        """The _cmr.yaml of a local repository (an empty dict when unreadable)."""
+        rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(local, '_cmr'))
+        data = rd.get('data') if rd.get('return', 1) == 0 else None
+        return data if isinstance(data, dict) else {}
+
+    def _selection_rules(self, local, patterns):
+        """
+        The anchored rclone whitelist of a partial repository from its artifact patterns,
+        "<category>::<artifact>[/<path inside>]" - cRefs whose aliases compare without case, with * and ? as wildcards:
+
+            fgg.project::cMeta/!AI      that artifact's !AI folder, and its _cmeta and _desc
+            fgg.project::cmeta-aops     the whole artifact (it must exist here)
+            work::2026*                 every artifact of the category whose alias starts with 2026 - a folder glob
+                                        through the category's shard folders, so an artifact made later on either
+                                        side is in it and the rules do not change between runs
+
+        The repository's _cmr.yaml and the definitions of the categories it holds itself come along (the copy is a
+        repository the host's cMeta can index). -> {'rules': [...]}
+        """
+        rules = ['/_cmr.yaml']
+        desc = self._repo_desc(local)
+        repo_slices = {str(k): v for k, v in (desc.get('sharding_slices') or {}).items()}
+        repo_uid = str(desc.get('artifact') or '').split(',')[-1].strip()
+
+        def ours(a):
+            """An artifact of this repository, by its repository's UID: a repository nested in this folder (the engine's
+            internal repository inside a source tree) is another repository."""
+            uid = str((a.get('cmeta_ref_parts') or {}).get('repo_uid') or '')
+            return uid == repo_uid if (uid and repo_uid) else self.cm.utils.files.is_path_within(local, a['path'])
+
+        def add(rule):
+            if rule not in rules:
+                rules.append(rule)
+
+        def found(category, name):
+            r = self.cm.access({'category': category, 'command': 'find', 'arg1': name, 'con': False})
+            return (r.get('artifacts') or []) if r.get('return', 1) == 0 else []
+
+        for pattern in patterns:
+            if '::' not in pattern:
+                return self.cm.error(f'"{pattern}": an artifact pattern is <category>::<artifact>[/<path inside>]')
+            cat_part, rest = pattern.split('::', 1)
+            art_part, _, inside = rest.partition('/')
+            cat_part, art_part, inside = UID_SUFFIX.sub('', cat_part.strip()), art_part.strip(), inside.strip('/')
+            wild = any(c in art_part for c in '*?')
+
+            # the category, or every category folder of the repository a wildcard matches
+            if any(c in cat_part for c in '*?'):
+                names = sorted(d for d in os.listdir(local) if os.path.isdir(os.path.join(local, d)) and d != 'category'
+                               and not d.startswith(('.', '_')) and fnmatch.fnmatch(d.lower(), cat_part.lower()))
+            else:
+                names = [cat_part]
+            cats = [a[0] for a in (found(self.cmeta['uses_categories'].get('category', 'category,dd9ea50e7f76467f'), n) for n in names) if len(a) == 1]
+            if not cats:
+                return self.cm.error(f'"{pattern}": no category "{cat_part}" (in {local})')
+
+            for cat in cats:
+                parts = cat['cmeta_ref_parts']
+                cat_alias, cat_uid = parts['artifact_alias'], parts['artifact_uid']
+                if ours(cat):
+                    add('/' + os.path.relpath(cat['path'], local).replace(os.sep, '/') + '/')
+
+                if wild:
+                    slices = repo_slices.get(cat_uid) or (cat.get('cmeta') or {}).get('sharding_slices')
+                    base = '/' + '/'.join([self._glob(cat_alias)] + self._shard_globs(UID_SUFFIX.sub('', art_part), slices) +
+                                          [self._glob(UID_SUFFIX.sub('', art_part), wildcards=True)])
+                else:
+                    arts = [a for a in found(f'{cat_alias},{cat_uid}', art_part) if ours(a)]
+                    if not arts:
+                        if len(cats) == 1:
+                            return self.cm.error(f'"{pattern}": no artifact "{art_part}" of {cat_alias} in {local}')
+                        continue
+                    base = '/' + '/'.join(self._glob(p) for p in os.path.relpath(arts[0]['path'], local).split(os.sep))
+
+                if not inside:
+                    add(base + '/')
+                    continue
+                add(base + '/_cmeta.*')
+                add(base + '/_desc.*')
+                inner = '/'.join(self._glob(p) for p in inside.split('/'))
+                is_file = not wild and os.path.isfile(os.path.join(local, *base.strip('/').split('/'), *inside.split('/')))
+                add(base + '/' + inner + ('' if is_file else '/'))
+
+        return {'return': 0, 'rules': rules}
+
+    def _selection_file(self, h, name, entry):
+        """The rules of the last bisync of a partial repository, beside rclone's listings of that host."""
+        return os.path.join(self._bisync_workdir(h, entry), f'cmeta-selection-{name}.txt')
+
+    @staticmethod
+    def _sh_path(path):
+        """A remote path for a POSIX shell: quoted, a leading ~/ kept as the home."""
+        path = str(path)
+        return '"$HOME"/' + shlex.quote(path[2:]) if path.startswith('~/') else shlex.quote(path)
+
+    def _index_on_host(self, ctx, h, name, remote, con, verbose):
+        """
+        After files of a repository arrived on a host: that repository rescanned there ("cx repo reindex"), plugged
+        when the host does not know it yet (a first push or sync), else the whole index rebuilt (a cMeta older than
+        0.34.0). -> {'cmd', 'returncode', 'seconds'}
+        """
+        if self._shell(h).strip() in ('powershell', 'pwsh'):
+            path = str(remote).replace("'", "''")
+            cmd = (f"cx repo reindex {name} -q; if ($LASTEXITCODE -ne 0) {{ cx repo plug '{path}' -q }}; "
+                   f"if ($LASTEXITCODE -ne 0) {{ cx --reindex }}")
+        else:
+            cmd = f'cx repo reindex {shlex.quote(name)} -q || cx repo plug {self._sh_path(remote)} -q || cx --reindex'
+        r = self._cmd_run(ctx, h, cmd)
+        if self.cm.catch_error(r): return r
+        t0 = time.monotonic()
+        rr = self._run_local(r['cmd'], capture=not verbose, con=con, verbose=verbose, timeout=300)
+        out = {'return': 0, 'cmd': cmd, 'returncode': rr.get('returncode'), 'seconds': round(time.monotonic() - t0, 1)}
+        if con:
+            if rr.get('returncode', 0) == 0:
+                print(f'INDEX ({h["alias"]}): {cmd} - ok ({out["seconds"]:.1f}s)')
+            else:
+                print(f'WARNING: "{cmd}" on {h["alias"]} returned {rr.get("returncode")} - run it there by hand')
+        return out
+
+    def _write_partial_note(self, ctx, h, name, remote, patterns, rules, how, verbose):
+        """PARTIAL.md at the root of the host's copy of a partial repository: what it holds, from where, since when.
+        Outside the rules, so a bisync never brings it back."""
+        now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+        lines = [f'# A partial copy of the repository {name}', '',
+                 'This folder holds only the artifacts selected below. The rest of the repository stays on the machine it',
+                 f'comes from, which writes this file at every "cx host {how}".', '',
+                 '| | |', '|---|---|',
+                 f'| from | {socket.gethostname()} (`cx host {how}`) |',
+                 f'| written | {now} |', '',
+                 '## The selection', '', '`artifacts:` of the sync entry of this host, or `--artifacts` of a push:', '']
+        lines += [f'- `{p}`' for p in patterns]
+        lines += ['', '## The rclone rules it gives', '', '```'] + rules + ['```', '',
+                  'An artifact made here outside these rules does not travel back. A file of the selection changed on both',
+                  'machines between two runs of a bisync comes back as two copies, `<name>.conflict1` and `<name>.conflict2`',
+                  '(run-ai merges its own records and lists the others for the agent). This file is not synced.', '']
+        folder = tempfile.mkdtemp(prefix='cmeta-partial-')
+        try:
+            path = os.path.join(folder, PARTIAL_NOTE)
+            with open(path, 'w', encoding='utf-8', newline='\n') as f:
+                f.write('\n'.join(lines))
+            return self._rclone(ctx, h, 'copyto', path, str(remote).rstrip('/') + '/' + PARTIAL_NOTE, con=False, verbose=verbose)
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
 
     def _bisync_workdir(self, h, entry):
         """Where rclone keeps the bisync listings and lock of this host: declared, or bisync-<alias>."""
@@ -3061,22 +3800,66 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if not os.path.isdir(local):
             return self.cm.error(f'local repository not found: {local}')
 
+        # a repository of secrets never travels with a sync: the secrets a host needs go there once, by name
+        if self._repo_desc(local).get('secrets'):
+            return self.cm.error(f'{name} holds secrets (secrets: true in its _cmr.yaml) and is never synced - push the ones '
+                                 f'{h["alias"]} needs: cx host push {h["alias"]} {name} --artifacts="secret::<alias>;..." --secrets')
+
         extra = list(DEFAULT_RCLONE_FLAGS)
         if dry_run: extra.append('--dry-run')
 
-        if method == 'copy':
-            return self._rclone(ctx, h, 'copy', local, entry['remote'], blacklist=entry['blacklist'],
-                                extra=extra, con=con, verbose=verbose)
+        # a partial repository: only the artifacts its patterns select, the aliases compared without case as cMeta does
+        rules = []
+        if entry.get('artifacts'):
+            r = self._selection_rules(local, entry['artifacts'])
+            if r['return'] > 0: return r
+            rules = r['rules']
+            extra.append('--ignore-case')
+            if con:
+                print(f'    a partial repository: {len(entry["artifacts"])} artifact pattern(s) -> {len(rules)} rule(s); '
+                      f'{PARTIAL_NOTE} there says which')
 
-        # bisync
+        if method == 'copy':
+            r = self._rclone(ctx, h, 'copy', local, entry['remote'], whitelist=rules, blacklist=entry['blacklist'],
+                             extra=extra, con=con, verbose=verbose)
+            if r['return'] > 0 or not rules or dry_run: return r
+            return self._after_partial(ctx, h, name, entry, rules, 'sync', con, verbose)
+
+        # bisync: rclone's listings hold only what the rules let through, so a run with other rules than the last one
+        # would read the difference as deletions - it needs --resync
+        selection = self._selection_file(h, name, entry) if rules else ''
+        if rules and not resync:
+            try:
+                with open(selection, encoding='utf-8') as f:
+                    last = f.read()
+            except OSError:
+                last = None
+            if last != '\n'.join(rules) + '\n':
+                return self.cm.error(f'{name}: the selection of artifacts ' + ('changed since the last sync' if last is not None else
+                                     'has not been synced with these rules yet') + ' - run once with --resync (--resync_mode=path1: '
+                                     'this machine wins where both sides have a file)')
         if resync:
             mode = str(resync_mode or 'newer')
             if mode not in ('newer', 'older', 'path1', 'path2', 'larger', 'smaller'):
                 return self.cm.error(f'unknown --resync_mode "{mode}" (newer | older | path1 | path2 | larger | smaller)')
             extra += ['--resync-mode', mode]
-        return self._rclone(ctx, h, 'resync' if resync else 'bisync', local, entry['remote'],
-                            blacklist=entry['blacklist'], extra=extra, con=con, verbose=verbose,
-                            workdir=self._bisync_workdir(h, entry), unlock=unlock)
+        r = self._rclone(ctx, h, 'resync' if resync else 'bisync', local, entry['remote'], whitelist=rules,
+                         blacklist=entry['blacklist'], extra=extra, con=con, verbose=verbose,
+                         workdir=self._bisync_workdir(h, entry), unlock=unlock)
+        if r['return'] > 0 or not rules or dry_run: return r
+        os.makedirs(os.path.dirname(selection), exist_ok=True)
+        with open(selection, 'w', encoding='utf-8', newline='\n') as f:
+            f.write('\n'.join(rules) + '\n')
+        return self._after_partial(ctx, h, name, entry, rules, 'sync', con, verbose)
+
+    def _after_partial(self, ctx, h, name, entry, rules, how, con, verbose):
+        """After a partial repository reached a host: PARTIAL.md there, and the repository indexed (plugged the first time)."""
+        r = self._write_partial_note(ctx, h, name, entry['remote'], entry['artifacts'], rules, how, verbose)
+        if r['return'] > 0 and con:
+            print(f'WARNING: {PARTIAL_NOTE} was not written on {h["alias"]}: {r.get("error")}')
+        r = self._index_on_host(ctx, h, name, entry['remote'], con, verbose)
+        if self.cm.catch_error(r): return r
+        return {'return': 0}
 
     def _rclone(self, ctx, h, command, local, remote_path, whitelist=None, blacklist=None, extra=None,
                 con=True, verbose=False, workdir=None, unlock=False, from_remote=False):

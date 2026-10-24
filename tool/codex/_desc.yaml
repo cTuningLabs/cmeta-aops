@@ -42,3 +42,10 @@ install_uses:
     - task: setup,a2f9b61079ce4333
       name: curl,bfbb8526694d4f21
 
+# cxt run-ai --harness=codex --login: the device-code sign-in (a URL and a one-time code, entered in any browser,
+# also a phone's) - no local callback port, so it works on another machine over ssh too; --login_status checks it.
+# ChatGPT refuses it until "device code sign-in" is on in its Settings > Security (a workspace: its admin allows it).
+# Without that: the browser login through a forwarded port - cx host ssh <host> --forward=1455, then there
+# cx tool run codex -- login, and the printed URL opened in this machine's browser.
+login: [login, --device-auth]
+login_status: [login, status]

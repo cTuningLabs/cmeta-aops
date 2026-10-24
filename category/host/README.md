@@ -59,7 +59,7 @@ cx host run <host> -- <command words> the same, the words after "--" joined (cMe
 cx host run --tags=ubuntu "<command>" the same on a selection (--machine, --type, --all)
 cx host run <host> --script=<file>    a local script on the host's shell stdin ("bash -l -s < file"; PowerShell: base64 lines on stdin, decoded as UTF-8 and run by an -EncodedCommand reader - never "-Command -")
 cx host run <host> "<command>" --interactive   a terminal for the command (ssh -t / docker exec -it): it can ask its questions; needs a terminal here (not with --capture or --script)
-cx host ssh <host> [--x11] [--forward=1455,8080:80] [--dry_run]   interactive shell (also: shell, login)
+cx host ssh <host> [--screen[=<name>]] [--x11] [--forward=1455,8080:80] [--dry_run]   interactive shell (also: shell, login)
 cx host up|down <host>                WSL distro, container (created from its image on the first up), or "commands: up/down"
 cx host destroy <instance> [--image] [--keep_artifact] [--force]   an instance cMeta made (get-host--docker / get-host--wsl): the container (or the WSL distribution and its disk), the artifact, with --image its image
 cx host snapshot <instance> [--name=<name>] [--note=<text>]       the instance's state kept: docker/podman commit to cmeta/snapshot:<instance>-<name>, a WSL export next to its disk; recorded under "snapshots" in its _desc
@@ -70,10 +70,51 @@ cx host push <host> <repo> --dirs=task/x/,tool/y/ [--dry_run] [--delete] [--inde
 cx host push <host> <local path> --to=<remote path>      a folder goes under --to, a single file lands AT --to (rclone copyto)
 cx host pull <host> <remote file or folder> [--to=<local folder>] [--files=*.jsonl,steps.txt] [--dry_run]   the other way: host -> here (rclone copy --from_remote of rclone-to-ssh); nothing here is deleted
                                       (push and pull with -q set rclone up again when the cMeta cache was cleaned)
+cx host backup <host> [--to=<folder>] [--dry_run] [--skip_commands]   what only the host has (its "backup:" block: config, state, secrets, scripts; root-only files through sudo)
+                                      into <its machine artifact>/backup/<host>/<YYYYMMDD-HHMM>/ with backup.yaml
+cx host restore <host> [--source=<backup folder>] [--into=<folder>] [--paths=a,b] [--dry_run] [--yes]   a backup back onto the host (the newest of its own by default,
+                                      --source: another host's - a rebuilt VM), then "backup: commands: after_restore"; a production host needs --yes; --into: under a folder (a test)
 cx host upgrade [host|selection] [--version=0.33.0] [--sync] [--restart [--yes] [--timeout=600]] [--dry_run]
                                       (sync, upgrade and restart probe the host again afterwards: "cx host ls" shows what is there now)
 cx host upgrade <host> [--engine-] --system [--firmware] [--check]   the OS packages (and firmware) too: "cx task run upgrade-os" on the host
 ```
+
+## Persistent terminals with GNU Screen
+
+```console
+cx host ssh my-host --screen
+cx host ssh my-host --screen=work
+cxt run-ai --project="work::my-project" --on=my-host --on_screen
+cxt run-ai --project="work::another-project" --on=my-host --on_screen=another-task
+```
+
+A bare or explicitly empty `--screen` / `--screen=` uses `cx-host`. A bare or explicitly empty
+`--on_screen` / `--on_screen=` uses the command's artifact alias (`run-ai` for
+`cxt run-ai`). A name selects a screen belonging to the remote user on that host. Names contain 1-64 letters,
+digits, underscores or hyphens and start with a letter or digit. Omit the flag to keep the usual shell/task behavior.
+
+The first invocation creates the screen and starts its shell or task. Repeating it reconnects to that screen;
+the new command, prompt and project are ignored while the existing session lives. The existing window titles
+are printed before attaching, including a run-ai project's reference. Use distinct names for independent tasks.
+Reattaching transfers the screen's display from its previous connection.
+
+Closing SSH or hibernating the client leaves the remote programs running. Repeat the same command after
+reconnecting. `Ctrl-a d` detaches deliberately. `exit` at the shell prompt closes its window; quitting an AI
+harness normally lets run-ai save its records and finish. The screen ends with its last window. A later
+invocation creates a new terminal; run-ai retains its normal conversation continuation rules.
+
+GNU Screen is detected or installed through `tool/screen` on the target POSIX host (Linux/macOS, WSL or a
+container). An interactive terminal is required on the client. A native Windows target and Android are refused.
+`--on_screen` cannot be combined with `--on_detach`, `--on_pull`, `--on_rm` or `--on_isolated`: disconnecting
+from a terminal must not clean up an environment whose task is still running. A target reboot ends its screens.
+Screen keeps terminal processes alive; concurrent sessions still share the host's files and repositories.
+
+`cx host run my-host "my-command" --screen=my-task` uses the same behavior. A screen run does not support
+capture, scripts on stdin, raw commands, timeouts or a host selection. Its return code describes the terminal
+attachment; the task's own records describe its outcome.
+
+A Windows batch launcher can pass an optional first argument as `--screen="%~1"`. With no argument the empty
+value selects `cx-host`; an argument selects that name. Omit the flag entirely for an ordinary SSH shell.
 
 ## Status: what is checked, and how long it takes
 
@@ -143,7 +184,8 @@ access:
   user: user
   key: fgg.crypt::ssh-universal4-without-pass/20250130-without-pass/id_ed25519_fgg_universal4
                                # <category>::<artifact>/<file>, or a path: C:\keys\id_ed25519, ~/.ssh/id_ed25519, %USERPROFILE%\...
-                               # a reference whose artifact is not on this machine falls back to ~/.ssh/<file name>
+                               # a reference whose artifact is not on this machine: the copy a secret holds ("cx secret
+                               # which"), else ~/.ssh/<file name> with a warning (see "Another orchestrator")
   port: 22                     # optional
   options: "-o ..."            # extra ssh flags, optional
   x11: true                    # ssh -X for "cx host ssh", optional
@@ -169,6 +211,8 @@ sync:
     - myorg@my-private-repo: {method: copy}
     - dappledev@dapple-lab-emulation: {blacklist: [runs/, dle.egg-info/]}
     - some-repo: {remote: /other/path, workdir: ...}
+    - my-big-repo:             # a PARTIAL repository: only these artifacts travel (cRef patterns, see below)
+        artifacts: [my.project::x/!AI, work::2026*, machine::*]
   after: [cx --reindex]        # run on the host after a sync that did something
 
 commands:                      # optional
@@ -177,6 +221,20 @@ commands:                      # optional
   restart: ...                 # run locally, instead of the default reboot command
   after_restart:               # run ON THE HOST once it answers again (servers); let ssh return:
     - setsid nohup ~/work/start-server.sh > ~/cmeta-tests/server.log 2>&1 < /dev/null &
+
+backup:                        # optional: what only this host has ("cx host backup", see below)
+  paths:                       # on the host, relative to the login home (or absolute): a folder, a file, or a few files of a folder
+    - CMETA/repos/local/config
+    - CMETA/repos/local/state
+    - {path: CMETA, files: ["__run_*.sh"]}
+    - _start.sh
+  sudo_paths:                  # root-only files and folders, read through sudo (passwordless) into a staging folder first
+    - /etc/cloudflared/token
+  exclude: ["**/__pycache__/**", "**/*.tmp"]   # rclone filter patterns left out of every folder
+  keep: 10                     # dated backups kept per host (older ones removed after a successful one; default: all)
+  commands:
+    before: []                 # on the host before the copy (a dump, a stop)
+    after_restore: [cx --reindex]   # on the host after "cx host restore" put the files back
 
 requires: the USB drive        # free text, shown to agents
 ai:                            # what an agent may do there (declared; the probe writes the observed "sudo" to state.yaml)
@@ -265,10 +323,86 @@ token: true for an OpenSSH login of a member of Administrators, false for a UAC-
 `workdir`); when one side was replaced behind rclone's back (a `git archive | tar`, a fresh clone), the
 next run stops with "Safety abort: all files were changed" - run it once with `--resync` (`--resync_mode`:
 `newer` = the newer file wins on each side, `path1` = this machine wins, `path2` = the host wins), as the
-old `_7-resync-*.bat` did. A partial sync is always a one-way **push** (`rclone copy` with an anchored
-whitelist), never a filtered bisync: rclone's listings go stale when the filter changes between runs.
+old `_7-resync-*.bat` did. A few directories once are a one-way **push** (`rclone copy` with an anchored
+whitelist, `--dirs`).
 
 `--dry_run` shows what would move and changes nothing (rclone `--dry-run`, `git fetch --dry-run`).
+
+### A partial repository: `artifacts:`
+
+A repository too big to copy (a personal one of hundreds of GB) can travel as a selection of its artifacts, two-way
+like any other, with `artifacts:` in its sync entry (or `--artifacts="a;b"` on a push) - cRef patterns whose
+aliases compare without case, `*` and `?` as wildcards:
+
+```
+fgg.project::cMeta/!AI     the !AI folder of that artifact, with its _cmeta and _desc (not the rest of it)
+fgg.project::cmeta-aops    the whole artifact (it must exist on this machine)
+work::2026*                every artifact of the category whose alias starts with 2026 - a folder glob through
+                           the category's shard folders (work/2026/2026*), so an artifact made later on EITHER
+                           side is in it
+machine::*                 every artifact of that category
+```
+
+The repository's `_cmr.yaml` and the definitions of the categories it holds itself come along (an artifact found
+in the folder of a nested repository - the engine's internal repository inside a source tree - is not one of
+it), so the copy is a repository the host's cMeta indexes: the first sync or push plugs it there, later ones
+reindex it. rclone filters by the anchored rules the patterns give (`--ignore-case`, as cMeta's aliases).
+
+A **filtered bisync** is safe only while the filter stays the same - rclone's listings hold what it let through,
+and other rules would read the difference as deletions. The rules depend on the patterns, not on which artifacts
+exist, and `cx host sync` keeps the rules of the last run next to the listings (`cmeta-selection-<repo>.txt` in
+the bisync workdir): a run whose rules changed - or the first one - stops and asks for one
+`--resync --resync_mode=path1`. After every sync or push the host's copy gets `PARTIAL.md` at its root: what it
+holds, from which machine, since when (outside the rules, so it never comes back). An artifact made on the host
+outside the patterns stays there.
+
+A partial repository is never pushed whole: `cx host push <host> <repo>` without `--dirs` takes its patterns.
+
+### A repository of secrets
+
+A repository whose `_cmr.yaml` says `secrets: true` (the `secret` category's identities and keys) is never synced -
+`cx host sync` refuses it - and goes to a host only by name, on purpose:
+
+```
+cx host push <host> my-secrets --artifacts="secret::git-work-without-pass;secret::ssh-azure-x" --secrets
+```
+
+The folder there is made readable by the host's user alone first (`chmod 700`), then the secrets are copied,
+the repository is plugged, and `cx secret check --fix` there makes every private key owner-only (rclone's sftp
+does not keep a file's mode: the keys arrive as 664). The repository is not a registered repository of the host's
+sync list: `push` finds it by its alias here and sends it to `<repos path>/<folder>` there.
+
+## Backup and restore: what only the host has
+
+A host's repositories come back from their sources (git, a bisync pair); what does not is what the host alone holds:
+cMeta's own configuration artifacts there (`<home>/repos/local/config`), the state of its sites (accounts, API
+keys, runtime data), the secrets its servers read, the scripts that start them, a tunnel token under `/etc`. The
+host's `backup:` block names those paths and `cx host backup <host>` copies them, one way, into a dated folder of
+the **machine artifact** the host belongs to - `<machine>/backup/<host alias>/<YYYYMMDD-HHMM>/` - with
+`backup.yaml` saying what came, from where (the login home), how big it was and which mode it had - and, for a
+folder, the mode of everything inside it (`modes`, up to 5,000 entries; GNU find's `-printf`), since the copy
+itself keeps no mode. The machine artifact is the asset's record and a private repository on the orchestrating
+machine, so the files of a rebuild sit next to it; a repository of secrets stays one (`secrets: true`: it is
+never synced, see above).
+
+- Relative paths are under the login home and land under `home/<path>` of the backup, absolute ones under
+  `root/<path>`; a few files of a folder: `{path: CMETA, files: ["__run_*.sh"]}` (rclone include patterns).
+- `sudo_paths` are copied by `sudo cp -a` into a staging folder the host's user owns, fetched, and the staging
+  folder is removed again - the host needs passwordless sudo (`ai: sudo: passwordless`).
+- `--dry_run` asks the host what each path is (a folder, a file, missing) and how big, copies nothing.
+- `keep: N` removes the oldest dated backups beyond N after a successful one; without it every backup stays.
+
+`cx host restore <host>` puts the newest backup of that host back where it came from - or `--source=<folder>`,
+any backup folder: the backup of the host this one replaces, on a freshly set-up VM, once cMeta is installed
+there and its repositories synced (the order of a rebuild: install cx, `cx host sync`, `cx host restore
+--source=...`, then the host's `commands: after_restart`). Root-only paths go back through sudo; every recorded
+mode is put back (a private key lands owner-only again, as it was); a folder that was empty on the host has no
+copy in the backup and is made again, empty; then the host's `backup: commands: after_restore` run (`cx
+--reindex` for the config artifacts).
+`--into=<folder>` lands everything under that folder on the host instead (a look at what a backup holds, or a
+test of the mechanics on a disposable host), with no sudo and no after commands; `--paths=a,b` restores a part. A
+production host (`ai: production: true`) restores only with `--yes`. Nothing on the host is deleted by a restore:
+what the backup does not hold stays as it is.
 
 ## Drivers
 
@@ -320,5 +454,21 @@ quoting (seen on a server: every line "not found", no servers after the reboot).
 
 The artifacts are not tied to one machine: whichever machine runs `cx host` sees the host whose
 `access.hostname` is its own as "here" and reaches the others over ssh. For that it needs the repository
-with the host artifacts, `cx`, `rclone` (set up by the first sync) and the keys - as the `fgg.crypt`
-artifacts, or copied into `~/.ssh` under the same file names (the fallback).
+with the host artifacts, `cx`, `rclone` (set up by the first sync) and the keys.
+
+**The keys of another orchestrator** (since 2026-10-22). A host names its key by a reference into a private
+repository (`key: fgg.crypt::ssh-x/2026/id_ed25519`) that stays on the first machine. The second one gets the
+`secret` artifacts that hold copies of those keys - their `files.from` names the referenced folder and
+`files.names` the file - pushed once with `--secrets` (above). `cx host` then finds a key whose artifact is not
+there through `cx secret which <the reference>`; a key without such a secret falls back, as before, to
+`~/.ssh/<file name>`, with a warning (names in `~/.ssh` can collide).
+
+**Its known hosts.** The new machine has never seen the servers' host keys, and a batch ssh refuses an unknown
+host ("Host key verification failed") - before any key is tried. Compare what it sees
+(`ssh-keyscan -t ed25519 <address> | ssh-keygen -lf -`) with the fingerprint the first machine trusts
+(`ssh-keygen -lF <address>`) and add only a key that matches; never `StrictHostKeyChecking=no`.
+
+**The orchestrator's own repositories.** The second machine works on a partial copy of the first one's private
+repository (`artifacts:`, above) and keeps its own `local` repository (its cache, its test sessions). The first
+machine stays the hub that runs the syncs and holds the git clones: what the second one changes comes back by
+bisync.

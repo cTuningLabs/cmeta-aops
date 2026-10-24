@@ -47,11 +47,14 @@ def test_a_new_artifact_marks_its_repository(ctask, tmp_path):
 
     assert [x['repo'] for x in m['changed_mounts'](str(instance), mounts)] == ['repo', 'other']   # never indexed
 
-    # The folder's time as if it was made a while ago: a file system updates it only in a later tick of its clock
-    # (NTFS kept the same value for a folder made within the same few milliseconds), as an edit here always is
+    # Every folder of the signature (the repository and its first-level folders) as if it was made a while ago: a file
+    # system updates a time only in a later tick of its clock (NTFS kept the same value for folders made within the
+    # same few milliseconds; a CI runner made the repository, its folders and the new tool below within one tick, so
+    # the newest time did not move when only tool/ was set back), as an edit here always comes later
     import os
-    old = os.stat(repo / 'tool').st_mtime_ns - 5 * 10**9
-    os.utime(repo / 'tool', ns=(old, old))
+    for folder in (repo, repo / 'tool', repo / 'task'):
+        old = os.stat(folder).st_mtime_ns - 5 * 10**9
+        os.utime(folder, ns=(old, old))
     m['write_signatures'](str(instance), mounts)
     assert m['changed_mounts'](str(instance), mounts) == []
 

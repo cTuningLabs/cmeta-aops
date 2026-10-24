@@ -10,6 +10,9 @@ with no path in the way and nothing to install in the user's home.
 
 ```bash
 cxt run-ai                                           # continue the latest conversation of the project around the cwd, interactively
+cxt run-ai -l                                        # a fresh dated scratch workspace in the local log artifact
+cxt run-ai -l="quick question"                       # label its directory YYYYMMDD-HHMM.quick question
+cxt run-ai -l="quick question" --prompt="Explain this idea"    # optional label and prompt are separate
 cxt run-ai "one prompt"                              # one more turn of that conversation, then exit
 cxt run-ai --new "a fresh start"                     # a new conversation (the memory and the skills stay)
 cxt run-ai --conversations                           # the conversations of the project: id, title, and each run with its
@@ -56,14 +59,44 @@ of cmeta-aops. The read-only views of this task: `--dry_run`, `--conversations`,
 | Given | The project is |
 |---|---|
 | `--project=<cref>` | that artifact: `category::artifact`, alias or `alias,UID` on either side; it must resolve to exactly one |
-| nothing | the cMeta artifact the current directory is in - any folder inside it; the detection behind `cx . <command>`, which knows the plugged repositories (a nested artifact wins: the innermost folder with a `_cmeta.*`) |
+| nothing, and an existing `!AI` nearby | the nearest directory containing `!AI`, searching from the current directory upwards within the detected cMeta artifact (or up to a repository boundary) |
+| nothing, and no existing workspace | the cMeta artifact the current directory is in - any folder inside it; the detection behind `cx . <command>`, which knows the plugged repositories (a nested artifact wins: the innermost folder with a `_cmeta.*`) |
 | nothing, and no artifact | the current directory itself |
 | `--project=.` | the current directory itself, no detection |
+| `-l` / `--log_project` | a new dated scratch workspace under `log::local:task-run-ai` in the active cMeta home |
+| `-l="quick question"` | the same, with the directory suffix `.quick question` |
 
 The task engine changes into the project folder for the agent's task (its `path` control parameter) and comes back
 afterwards, so the agent works in the artifact's root and finds the project's own `CLAUDE.md` or `AGENTS.md`, exactly
 as if it had been started there. A plain `claude` or `codex` started in a folder never detects artifacts: only
 `run-ai` does.
+
+### Scratch sessions and new folders outside cMeta
+
+Use `cxt run-ai -l` for a quick session that keeps its files away from the launch directory. The first use
+creates a `task-run-ai` artifact in the active home's local `log` category. Each invocation makes a workspace
+`YYYYMMDD-HHMM`, or `YYYYMMDD-HHMM.quick question` with `-l="quick question"`. The value after `=` is the
+directory label; use `--prompt="..."` separately for a one-prompt run. `--log_project` is the long form.
+
+Spaces in labels are retained. Characters invalid in portable filenames are replaced with underscores;
+leading/trailing spaces and periods are trimmed and labels are limited to 80 characters. If a name already
+exists, `-2`, `-3`, etc. are appended. The agent works in that workspace and keeps its memory, skills, logs
+and conversations in its `!AI`. The resolved workspace and `!AI` paths are printed at startup, and the workspace
+path is printed again after the agent finishes. Records remain until explicitly cleaned.
+
+To continue a scratch session, enter its printed directory (or a subdirectory) and run `cxt run-ai`.
+Its existing `!AI` identifies the workspace automatically, so it resumes that workspace's latest conversation
+without a question or another flag. Ordinary folders with an existing `!AI` work the same way. Detection does
+not cross a known cMeta artifact boundary or climb above a repository root; an explicit `--project` still wins.
+If `--ai_dir` names a different relative state folder, that name is used for workspace detection.
+A fresh `-l` invocation always creates another workspace;
+do not combine it with `--project` or `--conversation` / `--resume`. `--dry_run` prints a proposed workspace
+without creating it or the log artifact. With `--on=<host>`, it is made in that host's active cMeta home.
+
+Without `-l`, a first real run in a directory outside any cMeta repository prints the directory and the new
+`!AI` path and asks `Continue? [Y/n]`. Enter or `y` proceeds; declining creates no `!AI`. `-q` proceeds without
+asking, preserving unattended usage. A closed input without `-q` gives an error naming `-q` and `-l`. Existing
+`!AI` folders, cMeta projects, login/model-list commands and read-only views do not get this new question.
 
 ## `!AI/` - what the project keeps
 
@@ -84,6 +117,8 @@ as if it had been started there. A plain `claude` or `codex` started in a folder
     log/<id>.conversation.json         a conversation: its runs and, per harness, the native session it continues
     log/<id>.transcript.md             the whole conversation, re-exported from the harnesses' own stores after every run
     log/<id>.summary.md                its summary, written on request (--summarize) and read first at a hand-over
+    log/<stamp>.running                while a run lives: its conversation, harness, host and pid - a run of the project on another
+                                       machine sees it once the sync carried it (the section "Several machines")
     log/<stamp>.import.md              what import-ai brought in, from where
     log/<stamp>.apply_pending.md       what --apply_pending applied to the artifacts this project uses
     log/<stamp>.applied.json           what was applied to THIS artifact from a project that uses it (or kept by the guard)
@@ -443,11 +478,13 @@ cxt run-ai --project=<an artifact of that repository> --dry_run   # the source s
 | `max_context_tokens` | the limit of the context estimate when `--max_context_tokens` is not given (default 30,000); the older key `run_ai_max_context_tokens` of the config `default` is still read |
 | `trim_context` | `true`: every run leaves context sources out to fit the limit, as `--trim_context` does |
 | `write` | what a run may write when no flag says so: `ask` (the default), `project`, `all` or `none` (the next section) |
+| `other_runs` | a run of this project recorded as running on another machine: `report` (the default: one line, no question), `ask` or `refuse` (the section "Several machines") |
 
 ```bash
 cx config set task-run-ai --meta.max_context_tokens=40000
 cx config set task-run-ai --meta.trim_context=true
 cx config set task-run-ai --meta.write=all
+cx config set task-run-ai --meta.other_runs=ask
 cx config show task-run-ai
 ```
 
@@ -648,6 +685,98 @@ when applying); `REFUSED` a path outside `memory/` and `skills/`.
   stages them again - nothing is lost).
 - `--add-dir` still gives Claude write access to the used artifacts; the guard is what undoes a write, not what
   prevents it.
+
+## Signing a harness in: `--login`, `--login_status`
+
+```
+cxt run-ai --login                                  # claude: its tool set up when missing, then "claude auth login"
+cxt run-ai --login --harness=codex                  # codex login --device-auth: a URL and a code, any browser
+cxt run-ai --login --on=<host>                      # on another machine, from a terminal here
+cxt run-ai --login_status [--harness=...] [--on=<host>]    # is it signed in there?
+```
+
+A login goes through the harness's tool (`cx tool run <tool> -- <words>`), so a machine without the tool gets it
+first (`-q`: without asking). The words are facts of each tool's `_desc.yaml`: `login:` and `login_status:`.
+
+| Harness | `login:` | `login_status:` |
+|---|---|---|
+| claude | `auth login` (a URL to open, a code to paste back) | `auth status` |
+| codex | `login --device-auth` (a URL and a one-time code: no local callback port, so it works over ssh, the code can be entered on a phone) | `login status` |
+| opencode | `auth login` (a provider's key) | `auth list` |
+| openclaw | `onboard` (its guided setup) | `models status` |
+| hermes | `model` (an inference provider) | - |
+| antigravity, gemini | an interactive start: sign in, then quit | - |
+
+A login needs a terminal (it asks, or shows a code): run in a background or without one, `--login` refuses with
+the way to do it. Through `--on=<host>` from a terminal, the terminal goes along (ssh -t).
+
+Codex's device code needs "device code sign-in" turned on in ChatGPT's Settings > Security (a workspace: by its
+admin); until then ChatGPT answers "Enable device code sign-in for Codex ... in ChatGPT Security Settings". Without
+that setting, sign in with Codex's browser login through a forwarded port: `cx host ssh <host> --forward=1455`, then
+there `cx tool run codex -- login`, and open the URL it prints in this machine's browser.
+
+## Several machines: the `!AI` folder in a sync
+
+`!AI` travels with the project (a bisync between two machines, a copy to another): run-ai resolves the project and
+its `ai_uses` by cRef on every run, the per-run files that name paths are rewritten by every run, and a
+conversation continues on any machine (the native session of a harness exists on the machine that made it;
+elsewhere the transcript is handed over). What run-ai does about two machines on one project:
+
+- **The host in every record.** Each run of a conversation says on which machine it was made (`runs[].host`, the
+  hostname; `--conversations` shows `on <host>`); the run record has a `host` row.
+- **A marker while a run lives.** `log/<stamp>.running` (the conversation, the harness, the host, the pid) exists
+  from the moment the records are written to the end of the run, also when the harness dies. The next run of the
+  project looks at the markers: one of this machine whose process is gone is removed; one of another machine is
+  reported - "a run of this project is recorded as running on <host> since ..." - in the console, the run record and
+  the orientation (the agent is told to add to the memories rather than rewrite them). No question by default:
+  `--other_runs=ask` asks (`-q` or no terminal: refuses; `--yes` goes on), `--other_runs=refuse` refuses; the config
+  key `other_runs` is this machine's default. A marker older than two days is reported as probably over (delete it
+  if so) and never refuses.
+- **The two copies the sync keeps.** rclone bisync keeps a file changed on both sides as `<name>.conflict1` and
+  `<name>.conflict2` and takes the name itself away. For run-ai's own records this is folded back at the start of
+  every run and of `--conversations`: the copies of `<id>.conversation.json` are merged into one (the runs by stamp -
+  a run with an end wins - every session of every harness, the one started last current) and removed; the copies of
+  `<id>.transcript.md` are read for the segments this machine cannot export (the longest copy of each) when the
+  transcript is written again, then removed. For memories and skills the copies are listed - in the console, the
+  run record and the orientation - and the agent is asked to merge each pair into the file's own name and delete
+  the copies (`MEMORY.md`: rebuilt from the memory files).
+- **A run on another machine, from here.** `--project=<cRef>` resolves the project on whichever machine runs it, so
+  the task engine's delegation starts a run-ai there and, with `--on_detach`, leaves it running after this
+  machine sleeps or goes away (a session of its own, its output in `~/cmeta-detached/<run id>.log` there):
+
+  ```
+  cxt run-ai --project="work::<item>" --new --write=project -q "<the request>" --on=<host> --on_detach
+  cx host run <host> "tail -n 30 ~/cmeta-detached/<run id>.log"      # how it goes
+  cx host sync <host> --repos=<repository> -q                          # its records, transcript and files back here
+  ```
+
+  The project's repository travels by a bisync (a partial one: `artifacts:` in the host's sync entry); the harness
+  is signed in on that machine once.
+- **Locations are written as references.** The orientation tells every harness to write a location inside a cMeta
+  artifact as `{{{<category>::<artifact alias>,<artifact UID>}}}/<relative path, forward slashes>` - the braces
+  stand for that artifact's folder on whichever machine reads the text (`cx utils find_by_cid` resolves them; a
+  repository root is `{{{repo::<alias>,<UID>}}}`) - and a path outside cMeta as a full path that names its machine.
+
+### Interactive sessions that survive an SSH disconnect
+
+```console
+cxt run-ai --project="work::my-project" --on=my-host --on_screen
+cxt run-ai --project="work::another-project" --on=my-host --on_screen=another-task
+```
+
+The bare flag or `--on_screen=` names the screen `run-ai`. An explicit name selects another session. Repeat the same command
+to reconnect after closing SSH or hibernating the client. An existing screen keeps its original run-ai,
+project and prompt; reconnecting does not start another process or submit the prompt again. Existing window
+titles show the project before attaching. Use separate names for independent projects.
+
+`Ctrl-a d` detaches; the harness's normal quit command lets run-ai save its records and finish, ending the
+screen when its last window closes. A later invocation starts run-ai again with its usual conversation rules.
+Screen names identify live terminals, not conversation IDs. For a persistent shell instead, use
+`cx host ssh my-host --screen` (default name `cx-host`) or `--screen=my-shell`.
+
+GNU Screen runs on the target POSIX host and is detected or installed through cMeta. A client terminal is
+required; native Windows targets are refused. Do not combine `--on_screen` with `--on_detach`, `--on_pull`,
+`--on_rm` or `--on_isolated`. The project's normal sync brings its files and records back afterward.
 
 ## What stays as it is
 

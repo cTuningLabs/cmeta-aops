@@ -42,6 +42,9 @@ import uuid
 CONVERSATION_SUFFIX = '.conversation.json'
 TRANSCRIPT_SUFFIX = '.transcript.md'
 SUMMARY_SUFFIX = '.summary.md'
+RUNNING_SUFFIX = '.running'     # !AI/log/<stamp>.running while a run lives: its conversation, harness, host, pid (see other_runs)
+CONFLICT_RE = re.compile(r'^(?P<name>.+)\.conflict\d+$')    # rclone bisync's two copies of a file changed on both sides
+STALE_HOURS = 48                # a marker of another machine older than this is probably a run that is over
 MAX_TEXT = 40000          # longest single message kept in a transcript
 MAX_TRANSCRIPT = 6000000  # bytes; beyond it the oldest segments are summarised to their headers
 
@@ -204,7 +207,209 @@ def describe_run(run):
         run.get('mode') or '?', str(run.get('started') or '?')[:16], str(run.get('finished') or '')[:16] or '(no end yet)')
     if run.get('return'):
         s += '  (return %s)' % run['return']
+    if run.get('host'):
+        s += '  on %s' % run['host']
     return s
+
+
+# ====================================================================== the machines and the sync
+# A project's !AI folder travels between machines (a bisync): every run says on which machine it was made, a run
+# leaves a marker while it lives, and the two copies the sync keeps of a file changed on both sides are merged
+# (run-ai's own records) or reported (memories, skills) - without a question, unless asked for.
+def host_name():
+    """This machine's name for the records: its hostname without the domain, in lower case."""
+    import socket
+    try:
+        return socket.gethostname().split('.')[0].lower()
+    except Exception:
+        return ''
+
+
+def pid_alive(pid):
+    """Whether a process of THIS machine is alive: True, False, or None when it cannot be told."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+    if os.name == 'nt':
+        import ctypes
+        k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        handle = k32.OpenProcess(0x1000, 0, pid)         # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ctypes.get_last_error() == 5           # access denied: there is such a process
+        try:
+            code = ctypes.c_ulong()
+            ok = k32.GetExitCodeProcess(handle, ctypes.byref(code))
+            return bool(ok) and code.value == 259         # STILL_ACTIVE: an exited process can still be opened
+        finally:
+            k32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return None
+    return True
+
+
+def running_path(log_dir, stamp):
+    return os.path.join(log_dir, stamp + RUNNING_SUFFIX)
+
+
+def write_running(log_dir, stamp, conv_id, harness):
+    """The marker of a run that is starting -> its path."""
+    path = running_path(log_dir, stamp)
+    _write_json(path, {'stamp': stamp, 'conversation': conv_id, 'harness': harness, 'host': host_name(), 'pid': os.getpid(),
+                       'started': now_iso()})
+    return path
+
+
+def remove_running(path):
+    try:
+        if path:
+            os.remove(path)
+    except OSError:
+        pass
+
+
+def _hours_since(iso):
+    try:
+        return max(0.0, (datetime.datetime.now() - datetime.datetime.fromisoformat(str(iso))).total_seconds() / 3600.0)
+    except Exception:
+        return None
+
+
+def other_runs(log_dir, mine=''):
+    """The runs of the project recorded as running, this process's own left out -> (elsewhere, here, cleared).
+    A marker of this machine whose process is gone is removed (cleared); a marker of another machine cannot be
+    checked and is returned with its age in hours (None when its time cannot be read). mine: this run's marker."""
+    elsewhere, here, cleared = [], [], []
+    me = host_name()
+    for fp in sorted(_glob(log_dir, '*' + RUNNING_SUFFIX)):
+        if mine and _same_path(fp, mine):
+            continue
+        d = _read_json(fp)
+        if not isinstance(d, dict):
+            d = {}
+        d['_path'] = fp
+        d.setdefault('stamp', os.path.basename(fp)[:-len(RUNNING_SUFFIX)])
+        if d.get('host') and d['host'] == me:
+            alive = pid_alive(d.get('pid'))
+            if alive is False:
+                remove_running(fp)
+                cleared.append(d)
+            else:
+                here.append(d)
+        else:
+            d['hours'] = _hours_since(d.get('started'))
+            elsewhere.append(d)
+    return elsewhere, here, cleared
+
+
+def conflict_copies(root):
+    """The two copies rclone bisync keeps of a file changed on both sides (<name>.conflict1, <name>.conflict2),
+    under root -> [(the file's own path, [its copies])], sorted."""
+    found = {}
+    for dp, dn, fn in os.walk(root):
+        for f in fn:
+            m = CONFLICT_RE.match(f)
+            if m:
+                found.setdefault(os.path.join(dp, m.group('name')), []).append(os.path.join(dp, f))
+    return sorted((k, sorted(v)) for k, v in found.items())
+
+
+def merge_conversations(versions):
+    """Several versions of one conversation record (the file and the copies the sync kept) -> one: the runs by
+    stamp (a run with an end wins over the same run without one), per harness every session that any version
+    knows (the one started last is current, the others under "previous"), the earliest start, the latest update,
+    the title and summary of the version updated last."""
+    versions = [v for v in versions if isinstance(v, dict) and v.get('id')]
+    if not versions:
+        return None
+    versions.sort(key=lambda v: str(v.get('updated') or v.get('started') or ''))
+    latest = versions[-1]
+    out = {k: v for k, v in latest.items() if not k.startswith('_')}
+    out['started'] = min(str(v.get('started') or '') for v in versions if v.get('started')) or latest.get('started', '')
+    out['updated'] = max(str(v.get('updated') or '') for v in versions)
+    runs = {}
+    for v in versions:
+        for r in v.get('runs') or []:
+            if not isinstance(r, dict) or not r.get('stamp'):
+                continue
+            old = runs.get(r['stamp'])
+            if old is None or (not old.get('finished') and r.get('finished')) or (bool(old.get('finished')) == bool(r.get('finished')) and len(r) > len(old)):
+                runs[r['stamp']] = dict(r)
+    out['runs'] = sorted(runs.values(), key=lambda r: (str(r.get('started') or ''), _id_order(r['stamp'])))
+    sessions = {}
+    for v in versions:
+        for h, s in (v.get('sessions') or {}).items():
+            if not isinstance(s, dict):
+                continue
+            known = sessions.setdefault(h, {})
+            entries = [p if isinstance(p, dict) else {'id': p} for p in (s.get('previous') or [])]
+            entries.append({k: x for k, x in s.items() if k != 'previous'})
+            for e in entries:
+                if not e.get('id'):
+                    continue
+                old = known.get(e['id'])
+                if old is None or int(e.get('runs') or 0) > int(old.get('runs') or 0) or int(e.get('exported') or 0) > int(old.get('exported') or 0):
+                    known[e['id']] = dict(e)
+    out['sessions'] = {}
+    for h, known in sessions.items():
+        ordered = sorted(known.values(), key=lambda e: str(e.get('started') or ''))
+        current = dict(ordered[-1])
+        if len(ordered) > 1:
+            current['previous'] = [dict(e) for e in ordered[:-1]]
+        out['sessions'][h] = current
+    summaries = [v['summary'] for v in versions if isinstance(v.get('summary'), dict) and v['summary'].get('runs')]
+    if summaries:
+        out['summary'] = max(summaries, key=lambda s: int(s.get('runs') or 0))
+    return out
+
+
+def consolidate_log(log_dir):
+    """The copies the sync kept of run-ai's own files in !AI/log, folded back: a conversation record's copies are
+    merged into <id>.conversation.json (made anew when the sync renamed both sides away) and removed; a transcript's
+    copies are read by the next write_transcript for the segments it cannot export (then removed). -> [notes]."""
+    notes = []
+    if not os.path.isdir(log_dir):
+        return notes
+    for original, copies in conflict_copies(log_dir):
+        if not original.endswith(CONVERSATION_SUFFIX):
+            continue
+        versions = [_read_json(original)] + [_read_json(c) for c in copies]
+        merged = merge_conversations([v for v in versions if v])
+        if merged is None:
+            continue
+        merged['_path'] = original
+        save_conversation(merged, touch=False)
+        for c in copies:
+            try:
+                os.remove(c)
+            except OSError:
+                pass
+        notes.append('conversation %s: %d copies the sync kept of its record were merged (%d run(s), %s) and removed' % (
+            merged['id'], len(copies), len(merged.get('runs') or []),
+            ', '.join('%s %d session(s)' % (h, 1 + len(s.get('previous') or [])) for h, s in merged['sessions'].items()) or 'no session'))
+
+    # the copies of a transcript: folded into it now (what this machine can export, the longest copy of the rest)
+    for original, copies in conflict_copies(log_dir):
+        if not original.endswith(TRANSCRIPT_SUFFIX):
+            continue
+        conv = _read_json(os.path.join(log_dir, os.path.basename(original)[:-len(TRANSCRIPT_SUFFIX)] + CONVERSATION_SUFFIX))
+        if not isinstance(conv, dict) or not conv.get('id'):
+            continue
+        conv['_path'] = os.path.join(log_dir, conv['id'] + CONVERSATION_SUFFIX)
+        try:
+            path, t_notes = write_transcript(conv, log_dir)
+            notes += ['conversation %s: %s' % (conv['id'], n) for n in t_notes if 'copies' in n]
+        except Exception as e:
+            notes.append('conversation %s: the copies of its transcript could not be folded (%s)' % (conv['id'], e))
+    return notes
 
 
 # ====================================================================== the adapters
@@ -1066,25 +1271,35 @@ def _old_segment(old_text, harness, sid):
     header, not at a "## " heading inside a message."""
     if not old_text:
         return []
-    m = re.search(r'(?m)^## %s - session `%s` \(started [^\n]*\n' % (re.escape(harness), re.escape(str(sid))), old_text)
-    if not m:
-        return []
-    rest = old_text[m.end():]
-    end = SEGMENT_HEADER.search(rest)
-    body = rest[:end.start()] if end else rest
-    return body.strip('\n').splitlines()
+    best = []
+    for m in re.finditer(r'(?m)^## %s - session `%s` \(started [^\n]*\n' % (re.escape(harness), re.escape(str(sid))), old_text):
+        # the longest of the copies of the segment (a transcript and the copies the sync kept of it, concatenated)
+        rest = old_text[m.end():]
+        end = SEGMENT_HEADER.search(rest)
+        body = rest[:end.start()] if end else rest
+        lines = body.strip('\n').splitlines()
+        if len('\n'.join(lines)) > len('\n'.join(best)):
+            best = lines
+    return best
+
+
+def _read_text(path):
+    try:
+        with io.open(path, encoding='utf-8', errors='replace') as f:
+            return f.read()
+    except Exception:
+        return ''
 
 
 def write_transcript(conv, log_dir):
-    """Re-export every session of the conversation into <id>.transcript.md -> (path, [notes])."""
+    """Re-export every session of the conversation into <id>.transcript.md -> (path, [notes]). The segments that
+    cannot be exported here are kept from the previous transcript - and from the copies of it the sync kept
+    (<name>.conflict1, ...), which are removed once the transcript is written."""
     path = transcript_path(conv)
-    old = ''
-    if os.path.isfile(path):
-        try:
-            with io.open(path, encoding='utf-8', errors='replace') as f:
-                old = f.read()
-        except Exception:
-            old = ''
+    copies = [c for o, cs in conflict_copies(log_dir) if _same_path(o, path) for c in cs] if os.path.isdir(log_dir) else []
+
+    # the texts joined by a line shaped like a segment header, so that a segment of one copy ends where the next copy begins
+    old = '\n## - - session `-` (started -)\n'.join(t for t in [_read_text(path) if os.path.isfile(path) else ''] + [_read_text(c) for c in copies] if t)
     runs = conv.get('runs') or []
     harnesses = []
     for r in runs:
@@ -1144,6 +1359,13 @@ def write_transcript(conv, log_dir):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with io.open(path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(text)
+    for c in copies:
+        try:
+            os.remove(c)
+        except OSError:
+            pass
+    if copies:
+        notes.append('%d copies the sync kept of the transcript were folded into it and removed' % len(copies))
     return path, notes
 
 

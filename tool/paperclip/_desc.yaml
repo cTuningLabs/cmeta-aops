@@ -1,0 +1,46 @@
+authors: Grigori Fursin
+
+# Paperclip - https://github.com/paperclipai/paperclip (MIT): a control plane for teams of AI agents - issues, goals,
+# budgets, approvals, routines, an org chart of agents reached through adapters (Claude Code, Codex, OpenCode,
+# OpenClaw, Hermes, Gemini CLI, HTTP). Its CLI "paperclipai" is an npm package (Node.js 24.11 or newer) that sets up
+# an instance, runs its server (one Node.js process with an embedded PostgreSQL, the UI and API on port 3100) and
+# talks to it.
+#
+# Installed (api_v1.py) into the cache entry with cMeta's Node.js (tool/node-js), never into a global npm prefix and
+# never through npx: the pinned version of the package in content/, npm's cache in the entry, then a launcher
+# content/bin/paperclipai (paperclipai.cmd on Windows) that runs it with that Node and turns Paperclip's telemetry off
+# unless the caller set PAPERCLIP_TELEMETRY_DISABLED itself.
+#
+#   cx tool setup paperclip                      # detect, else install the pinned version
+#   cx tool run paperclip -- --version
+#   cx tool run paperclip -- --help
+#   cx task run run-paperclip                    # its server, in a session of its own (start, status, stop)
+
+names:
+  - paperclipai
+  - paperclipai.cmd
+
+# CalVer of upstream: <year>.<month><day>.<n>
+default_version: '2026.1012.0'
+
+match_version:
+  - regex: '(\d{4}\.\d{3,4}\.\d+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+# The versions npm publishes (npm view prints one quoted version per line); node and npm on the PATH for it
+cmd_get_versions: 'npm view paperclipai versions --json'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: node-js,238f15e1d6184359
+    add_tool_path_to_env: True
+cmd_get_versions_regex: '"(\d{4}\.\d{3,4}\.\d+)"'
+cmd_get_versions_regex_group: 1
+
+# The installation needs Node.js, set up by api_v1.py itself (24.11 or newer)
+skip_common_install_uses: True
+
+install_help_text: |
+  Could not set up Paperclip here. It needs Node.js 24.11 or newer (cx tool setup node-js) and the npm registry.
+  Upstream's own way: npx paperclipai@latest onboard --yes

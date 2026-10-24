@@ -62,6 +62,12 @@ def read(path):
     return pathlib.Path(path).read_text(encoding = "utf-8")
 
 
+def same(a, b):
+    """One folder under two spellings: macOS gives a temporary folder as /var/... and the working directory of a
+    process in it as /private/var/... (/var is a link)."""
+    return os.path.realpath(str(a)) == os.path.realpath(str(b))
+
+
 class Lab:
     """The artifacts of one test module: a project, three artifacts with memory, and the stand-in harness."""
 
@@ -153,6 +159,140 @@ def test_dry_run_shows_everything_and_creates_nothing(fresh):
     assert r["conversation_how"] == "new" and r["tokens_estimated"] > 0 and r["token_limit"] == 30000
     assert "what is in this folder?" in r["params"]["prompt"] and "run through cMeta run-ai" in r["params"]["prompt"]
     assert not (fresh.project / "!AI").exists(), "a dry run creates nothing"
+
+
+def test_log_project_preview_and_labeled_workspace_do_not_touch_the_launch_folder(fresh, monkeypatch):
+    lab = fresh
+    launch = lab.scratch / 'scratch-launch'
+    launch.mkdir(exist_ok=True)
+    monkeypatch.chdir(launch)
+    root = lab.local / 'log' / 'task-run-ai'
+    before = sorted(root.iterdir()) if root.exists() else []
+    preview = lab.run(project='', l='quick question', dry_run=True, prompt='')
+    assert preview['return'] == 0, preview.get('error')
+    path = pathlib.Path(preview['log_project'])
+    assert path.parent == root and re.fullmatch(r'\d{8}-\d{4}\.quick question(-\d+)?', path.name)
+    assert preview['params']['interactive'] is True, 'the label names the workspace, not the prompt'
+    assert not path.exists() and (sorted(root.iterdir()) if root.exists() else []) == before
+    assert not (launch / '!AI').exists()
+
+    session(lab, monkeypatch, '''
+        with open('generated.txt', 'w') as out:
+            out.write(os.getcwd())
+    ''')
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        first = lab.run(project='', l='quick question', prompt='answer in one line', con=True, quiet=True)
+    assert first['return'] == 0, first.get('error')
+    path = pathlib.Path(first['log_project'])
+    assert (path / '!AI/memory').is_dir() and same(read(path / 'generated.txt'), path)
+    assert output.getvalue().count('cMeta info: scratch workspace: ' + str(path)) == 2
+    assert 'to continue, enter that directory and run cxt run-ai' in output.getvalue()
+    assert list(launch.iterdir()) == []
+
+    second = lab.run(project='', log_project='quick question')
+    assert second['return'] == 0 and second['log_project'] != first['log_project']
+    assert pathlib.Path(second['log_project']).parent == root
+
+    monkeypatch.chdir(path)
+    resumed = lab.run(project='')
+    assert resumed['return'] == 0 and resumed['conversation'] == first['conversation']
+    assert same(resumed['project'], path)
+
+    nested = path / 'generated/subdirectory'
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(nested)
+    resumed = lab.run(project='')
+    assert resumed['return'] == 0 and resumed['conversation'] == first['conversation']
+    assert same(resumed['project'], path) and not (nested / '!AI').exists()
+
+    separate = lab.run(project='', l=True)
+    assert separate['return'] == 0 and not same(separate['project'], path)
+    assert same(pathlib.Path(separate['project']).parent, root), '-l explicitly starts a fresh sibling workspace'
+
+
+def test_log_project_bare_flag_portable_labels_and_same_minute_collisions(fresh, task_namespace, monkeypatch):
+    import datetime
+    from types import SimpleNamespace
+
+    namespace = task_namespace('run-ai')
+    task = namespace['CTask'].__new__(namespace['CTask'])
+    task.cm = fresh.cm
+
+    class Clock:
+        @staticmethod
+        def now():
+            return datetime.datetime(2026, 10, 24, 12, 34)
+
+    monkeypatch.setitem(namespace, 'datetime', SimpleNamespace(datetime=Clock))
+    paths = [pathlib.Path(task._log_project(True, False)['path']) for _ in range(3)]
+    assert [p.name for p in paths] == ['20261024-1234', '20261024-1234-2', '20261024-1234-3']
+    labeled = pathlib.Path(task._log_project('quick question', False)['path'])
+    assert labeled.name == '20261024-1234.quick question'
+    portable = pathlib.Path(task._log_project('bad/name: why? ', False)['path'])
+    assert portable.name == '20261024-1234.bad_name_ why_'
+
+    result = fresh.run(project='', l=True, dry_run=True)
+    assert result['return'] == 0 and '.True' not in pathlib.Path(result['log_project']).name
+    for flags in ({'project': fresh.cref(fresh.project)}, {'project': '', 'conversation': 'previous'}):
+        r = fresh.run(l=True, **flags)
+        assert r['return'] > 0 and 'do not combine' in r['error']
+
+
+def test_outside_cmeta_requires_consent_only_before_the_first_real_creation(fresh, monkeypatch):
+    lab = fresh
+    launch = lab.scratch / 'ordinary-directory'
+    launch.mkdir(exist_ok=True)
+    monkeypatch.chdir(launch)
+    loaded = lab.cm.access({'category': 'utils', 'command': 'select_artifact', 'select_category': 'task', 'select_artifact': 'run-ai',
+                            'load_api': True, 'load_api_ver': 1, 'load_api_class': 'CTask', 'con': False})
+    assert loaded['return'] == 0, loaded.get('error')
+    # The suite's sandbox is itself under a repository; model a folder with no repository ancestors.
+    monkeypatch.setattr(type(loaded['api_code']), '_repo_meta', staticmethod(lambda p: {}))
+
+    def no_answer(prompt=''):
+        raise AssertionError('this operation must not ask')
+
+    monkeypatch.setattr('builtins.input', no_answer)
+    assert lab.run(project='', dry_run=True)['return'] == 0
+    assert lab.run(project='', conversations=True)['return'] == 0
+    assert not (launch / '!AI').exists()
+
+    questions = []
+    monkeypatch.setattr('builtins.input', lambda prompt='': questions.append(prompt) or 'n')
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        refused = lab.run(project='', con=True)
+    assert refused['return'] > 0 and not (launch / '!AI').exists()
+    assert str(launch) in output.getvalue() and str(launch / '!AI') in output.getvalue()
+    assert '[Y/n]' in questions[0]
+
+    monkeypatch.setattr('builtins.input', lambda prompt='': '')
+    allowed = lab.run(project='', con=True)
+    assert allowed['return'] == 0 and (launch / '!AI/memory').is_dir()
+    monkeypatch.setattr('builtins.input', no_answer)
+    assert lab.run(project='', con=True)['return'] == 0, 'an existing !AI should not ask again'
+
+
+def test_outside_cmeta_quiet_and_noninteractive_behavior(fresh, monkeypatch):
+    lab = fresh
+    launch = lab.scratch / 'unattended-directory'
+    launch.mkdir(exist_ok=True)
+    monkeypatch.chdir(launch)
+    loaded = lab.cm.access({'category': 'utils', 'command': 'select_artifact', 'select_category': 'task', 'select_artifact': 'run-ai',
+                            'load_api': True, 'load_api_ver': 1, 'load_api_class': 'CTask', 'con': False})
+    monkeypatch.setattr(type(loaded['api_code']), '_repo_meta', staticmethod(lambda p: {}))
+    refused = lab.run(project='')
+    assert refused['return'] > 0 and '-q' in refused['error'] and not (launch / '!AI').exists()
+
+    def closed_stdin(prompt=''):
+        raise EOFError
+
+    monkeypatch.setattr('builtins.input', closed_stdin)
+    refused = lab.run(project='', con=True)
+    assert refused['return'] > 0 and not (launch / '!AI').exists()
+    assert lab.run(project='', quiet=True)['return'] == 0
+    assert (launch / '!AI/memory').is_dir()
 
 
 def test_a_run_keeps_its_records_in_the_project_and_the_next_one_continues(fresh):
@@ -468,7 +608,8 @@ def test_this_machines_mapping_in_the_config_artifact(fresh, task_namespace):
     # reading the mapping never creates the config artifact ("config get" would)
     assert fresh.run(dry_run = True)["context"] == []
     if not fresh.config_dir.is_dir():
-        assert not list(fresh.local.rglob("task-run-ai"))
+        found = fresh.cm.access({'category': 'config', 'command': 'find', 'arg1': 'local:task-run-ai', 'con': False})
+        assert not found.get('artifacts'), 'reading config must not create a config artifact (the scratch log may exist)'
 
     repository = str(task_namespace("run-ai")["CTask"]._repo_meta(str(fresh.project))["artifact"])
     r = fresh.cm.access({"category": "config", "command": "set", "arg1": "task-run-ai", "con": False,
@@ -788,3 +929,172 @@ def test_apply_pending_asks_for_all_changes_or_one_by_one(fresh, monkeypatch):
         shutil.rmtree(used_ai)
         for path, text in original.items():
             put(path, text)
+
+
+# ---------------------------------------------------------------------------------------------- signing a harness in
+def test_every_harness_says_how_it_signs_in(task_namespace):
+    import yaml
+    harnesses = task_namespace("run-ai")["HARNESSES"]
+    for name, refs in harnesses.items():
+        desc = yaml.safe_load(read(pathlib.Path(__file__).resolve().parents[2] / "tool" / refs["tool"].split(",")[0] / "_desc.yaml"))
+        assert isinstance(desc.get("login"), list), name
+        assert desc.get("login_status") is None or isinstance(desc["login_status"], list), name
+    assert yaml.safe_load(read(pathlib.Path(__file__).resolve().parents[2] / "tool" / "codex" / "_desc.yaml"))["login"] == ["login", "--device-auth"]
+
+
+def test_login_runs_the_tools_words_in_a_terminal_and_then_its_status(task_namespace, tmp_path, monkeypatch):
+    import sys
+    CTask = task_namespace("run-ai")["CTask"]
+    task = CTask.__new__(CTask)
+    calls = []
+    task.cm = type("CM", (), {"access": lambda self, i: calls.append(i) or {"return": 0},
+                              "error": lambda self, text: {"return": 1, "error": text}})()
+    tool = put(tmp_path / "tool" / "_desc.yaml", "login: [auth, login]\nlogin_status: [auth, status]\n").parent
+    task._artifact_path = lambda category, ref: str(tool)
+    ctx = {"control": {"quiet": True}}
+
+    # no terminal: refused with the way to do it, nothing run
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising = False)
+    r = task._login(ctx, "codex", "codex,cdbf5f6e6882460f", True, False)
+    assert r["return"] > 0 and "needs a terminal" in r["error"] and "--harness=codex" in r["error"] and calls == []
+
+    # --login_status needs none: the status words through the tool
+    r = task._login(ctx, "claude", "claude,383841b240c74e88", False, False)
+    assert r["return"] == 0 and [c["unparsed"] for c in calls] == [["auth", "status"]] and calls[0]["arg1"] == "claude,383841b240c74e88"
+    assert calls[0]["category"].startswith("tool,") and calls[0]["command"] == "run" and calls[0]["quiet"] is True
+
+    # in a terminal: the login words, then the status words
+    calls.clear()
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True, raising = False)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True, raising = False)
+    r = task._login(ctx, "claude", "claude,383841b240c74e88", True, False)
+    assert r["return"] == 0 and [c["unparsed"] for c in calls] == [["auth", "login"], ["auth", "status"]]
+
+    # a tool that says nothing about its login
+    put(tool / "_desc.yaml", "names: [x]\n")
+    r = task._login(ctx, "x", "x,0123456789abcdef", True, False)
+    assert r["return"] > 0 and "says nothing about its login" in r["error"]
+
+
+# ---------------------------------------------------------------------------------------------- the machines and the sync
+def host():
+    import socket
+    return socket.gethostname().split(".")[0].lower()
+
+
+def marker(log, stamp, **fields):
+    data = {"stamp": stamp, "conversation": "x", "harness": "claude", "host": "p14s-gen4", "pid": 4242,
+            "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    data.update(fields)
+    return put(log / (stamp + ".running"), json.dumps(data))
+
+
+def test_a_run_names_its_host_and_leaves_a_marker_only_while_it_lives(fresh, monkeypatch):
+    lab = fresh
+    session(lab, monkeypatch, """
+        import glob
+        names = sorted(os.path.basename(p) for p in glob.glob(os.path.join(os.environ["RUN_FAKE_LOG"], "*.running")))
+        with open(os.environ["RUN_FAKE_SEEN"], "w") as f:
+            f.write("\\n".join(names))
+        """)
+    monkeypatch.setenv("RUN_FAKE_LOG", str(lab.project / "!AI" / "log"))
+    monkeypatch.setenv("RUN_FAKE_SEEN", str(lab.scratch / "seen.txt"))
+    r = lab.run(prompt = "hello")
+    assert r["return"] == 0, r.get("error")
+    log = lab.project / "!AI" / "log"
+    assert read(lab.scratch / "seen.txt").split() == [r["conversation"] + ".running"], "the marker is there while the harness runs"
+    assert not list(log.glob("*.running")), "and gone with the run"
+    data = json.loads(read(log / (r["conversation"] + ".conversation.json")))
+    assert data["runs"][0]["host"] == host() and "| host | %s |" % host() in read(r["record"])
+    assert "  on %s" % host() in lab.run(conversations = True)["text"]
+
+    # the orientation tells every harness how a location inside an artifact is written
+    prompt = read(lab.scratch / "prompt.txt")
+    assert "{{{<category>::<artifact alias>,<artifact UID>}}}/<relative path" in prompt and "names its machine" in prompt
+
+    # a marker is also gone when the harness dies (its exception goes through run-ai)
+    session(lab, monkeypatch, "raise RuntimeError('the harness died')")
+    with pytest.raises(RuntimeError):
+        lab.run(prompt = "crash")
+    assert not list(log.glob("*.running"))
+
+
+def test_a_marker_of_another_machine_is_reported_and_only_on_request_refused(fresh):
+    lab = fresh
+    first = lab.run(prompt = "start")
+    log = lab.project / "!AI" / "log"
+    marker(log, "20261022-080000", conversation = first["conversation"])
+    now16 = time.strftime("%Y-%m-%dT%H:%M")
+
+    # report (the default): a line in the record, the listing and the prompt - no question, the run goes on
+    r = lab.run(prompt = "go on")
+    assert r["return"] == 0, r.get("error")
+    rec = read(r["record"])
+    assert "recorded as running on p14s-gen4: 20261022-080000 (claude, conversation %s" % first["conversation"] in rec and "go on with care" in rec
+    assert "running on another machine (p14s-gen4 since %s" % now16 in read(lab.scratch / "prompt.txt")
+    assert (log / "20261022-080000.running").exists(), "a marker of another machine is never removed here"
+    assert "NOTE: a run of this project is recorded as running on p14s-gen4" in lab.run(conversations = True)["text"]
+
+    # refuse; ask without a terminal (the suite has none) refuses too, --yes goes on; the config key is the default
+    r = lab.run(prompt = "again", other_runs = "refuse")
+    assert r["return"] > 0 and "recorded as running on p14s-gen4" in r["error"] and "--other_runs=report" in r["error"]
+    assert lab.run(prompt = "again", other_runs = "ask")["return"] > 0
+    r = lab.run(prompt = "again", other_runs = "ask", yes = True)
+    assert r["return"] == 0 and "continued (--yes)" in read(r["record"])
+    r = lab.cm.access({"category": "config", "command": "set", "arg1": "task-run-ai", "con": False, "meta": {"other_runs": "refuse"}})
+    assert r["return"] == 0, r.get("error")
+    assert lab.run(prompt = "again")["return"] > 0
+    lab.config({})
+    assert lab.run(prompt = "again")["return"] == 0
+    r = lab.run(prompt = "wrong", other_runs = "maybe")
+    assert r["return"] > 0 and "--other_runs must be one of" in r["error"]
+    assert lab.run(dry_run = True, other_runs = "refuse")["running_elsewhere"][0]["stamp"] == "20261022-080000", "a dry run reports, never refuses"
+
+    # a marker of another machine that is days old is probably a run that is over: reported, never refused
+    marker(log, "20261022-080000", started = "2026-01-01T08:00:00")
+    r = lab.run(prompt = "later", other_runs = "refuse")
+    assert r["return"] == 0 and "probably over" in read(r["record"])
+
+    # a marker of this machine whose process is gone is removed
+    marker(log, "20261022-090000", host = host(), pid = 999999999, harness = "codex")
+    r = lab.run(prompt = "cleared")
+    assert r["return"] == 0 and not (log / "20261022-090000.running").exists() and "is gone - removed" in read(r["record"])
+
+
+def test_the_copies_the_sync_kept_are_merged_for_records_and_listed_for_memories(fresh):
+    lab = fresh
+    first = lab.run(prompt = "one")
+    lab.run(prompt = "two")
+    log = lab.project / "!AI" / "log"
+    cid = first["conversation"]
+    data = json.loads(read(log / (cid + ".conversation.json")))
+
+    # the sync renamed both sides of the record and of the transcript away (the other side has a run of its own),
+    # and kept two versions of a memory and of the index
+    other = json.loads(json.dumps(data))
+    other["runs"] = other["runs"][:1] + [{"stamp": "20261022-120000", "harness": "codex", "started": other["runs"][0]["started"],
+                                          "finished": other["runs"][0]["started"], "host": "p14s-gen4", "prompt": "three"}]
+    (log / (cid + ".conversation.json")).rename(log / (cid + ".conversation.json.conflict1"))
+    put(log / (cid + ".conversation.json.conflict2"), json.dumps(other))
+    (log / (cid + ".transcript.md")).rename(log / (cid + ".transcript.md.conflict1"))
+    put(log / (cid + ".transcript.md.conflict2"), "# Conversation\n")
+    put(lab.project / "!AI" / "memory" / "fact.md.conflict1", "a\n")
+    put(lab.project / "!AI" / "memory" / "fact.md.conflict2", "b\n")
+    put(lab.project / "!AI" / "memory" / "MEMORY.md.conflict1", "- a\n")
+    listing = lab.run(conversations = True)
+    assert listing["conversations"][0]["id"] == cid, "the listing folds the record back first"
+    assert "NOTE: conversation %s: 2 copies the sync kept of its record were merged (3 run(s)" % cid in listing["text"]
+    assert "NOTE: conversation %s: 2 copies the sync kept of the transcript were folded into it and removed" % cid in listing["text"]
+    assert "NOTE: the sync kept two versions of 2 file(s)" in listing["text"]
+    assert not list(log.glob("*.conflict*")), "the copies of run-ai's own records are folded back at once"
+
+    r = lab.run(prompt = "four")
+    assert r["return"] == 0 and r["conversation"] == cid, r.get("error")
+    merged = json.loads(read(log / (cid + ".conversation.json")))
+    assert sorted(x["prompt"] for x in merged["runs"]) == ["four", "one", "three", "two"] and merged["runs"][-1]["prompt"] == "four"
+    prompt = read(lab.scratch / "prompt.txt")
+    assert "memory/MEMORY.md (MEMORY.md.conflict1); memory/fact.md (fact.md.conflict1, fact.md.conflict2)" in prompt
+    assert "merge each pair into the file's own name and delete the copies" in prompt
+    assert "the sync kept two versions of 2 file(s)" in read(r["record"])
+    assert (lab.project / "!AI" / "memory" / "fact.md.conflict2").exists(), "a memory's copies are the agent's to merge"
+    assert [c[0] for c in lab.run(dry_run = True)["conflicts"]] == ["memory/MEMORY.md", "memory/fact.md"]
