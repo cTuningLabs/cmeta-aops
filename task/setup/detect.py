@@ -252,6 +252,10 @@ def detect_existing_tool(self,
 
             cmd_version = desc.get('cmd_get_version', None)
 
+            # The exit codes of cmd_get_version that still carry the version (a fact of the tool: Apple's GNU Screen
+            # 4.00.03 prints its version for -v and exits 1); 0 alone by default
+            version_exit_codes = desc.get('cmd_get_version_exit_codes') or [0]
+
             if cmd_version and match_version:
                 for xpath in found_paths:
 
@@ -342,7 +346,7 @@ def detect_existing_tool(self,
                         output += stderr
                     output = output.replace('\r','\n').strip()
 
-                    if returncode == 0:
+                    if returncode in version_exit_codes:
                         found_paths_with_versions[xpath] = {'output': output, 'cmd_call': cmd_call, 'cmd': cmd}
                         if xpath in found_paths_info:
                             found_paths_with_versions[xpath].update(found_paths_info[xpath])

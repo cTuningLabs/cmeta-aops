@@ -18,22 +18,21 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 HOST = {'alias': 'remote', 'type': 'ssh', 'desc': {'access': {'shell': 'bash -l'}}, 'state': {}}
 
 
-def screen_with_query():
-    """GNU Screen 4.2 or later: the lifecycle test reads a session's windows with -Q, which older versions lack -
-    macOS ships Screen 4.00.03 (2006) in /usr/bin."""
+def screen_version(screen):
+    """(major, minor) of a GNU Screen, or None: any version is tested - Apple's 4.00.03 (macOS's /usr/bin/screen)
+    answers -v with exit 1, 4.09 and 5.0 with 0."""
     import re
     import subprocess
 
-    screen = shutil.which('screen')
     if sys.platform == 'win32' or not screen:
-        return False
+        return None
     try:
         out = subprocess.run([screen, '-v'], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              timeout=10).stdout.decode(errors='replace')
     except (OSError, subprocess.SubprocessError):
-        return False
+        return None
     m = re.search(r'Screen version\s+(\d+)\.(\d+)', out)
-    return bool(m) and (int(m.group(1)), int(m.group(2))) >= (4, 2)
+    return (int(m.group(1)), int(m.group(2))) if m else None
 
 
 @pytest.fixture
@@ -89,7 +88,7 @@ def test_command_and_project_title_remain_single_arguments(host):
     launch = r['cmd'].split('; exec ', 1)[1]
     args = shlex.split(launch)
     assert args[-4:] == ['bash', '-l', '-c', command]
-    assert '--version=>=4.2' in args[:args.index('--')], 'the persistent terminals ask for a Screen with -Q'
+    assert not any(a.startswith('--version') for a in args[:args.index('--')]), 'any Screen: no version is asked for'
     assert args[args.index('-t') + 1] == 'run-ai work::a b'
     assert '-R' in args and '-d' in args
 
@@ -130,9 +129,10 @@ def test_a_screen_needs_a_terminal_and_cannot_capture_or_timeout(host):
     assert c.run_({'control': {}}, 'remote', 'echo x', screen=True)['return'] == 1
 
 
-@pytest.mark.skipif(not screen_with_query(), reason='needs POSIX and GNU Screen 4.2+ (-Q; macOS ships 4.00.03)')
+@pytest.mark.skipif(screen_version(shutil.which('screen')) is None, reason='needs POSIX and GNU Screen')
 def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, tmp_path):
-    """Own socket directory and PTYs: a lost terminal, reattach, then the task's normal exit."""
+    """Own socket directory and PTYs: a lost terminal, reattach, then the task's normal exit - with whatever Screen is
+    installed (the window titles are read with -Q where it exists: Screen 4.2+)."""
     import os
     import pty
     import select
@@ -140,7 +140,7 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
     import subprocess
     import time
 
-    module, c = host
+    _, c = host
     # Unix socket paths have a small OS limit; keep the socket folder at the sandbox root.
     sockets = tmp_path.parent / ('scr-' + str(os.getpid()))
     sockets.mkdir(mode=0o700)
@@ -167,7 +167,7 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
     def attach(command, title):
         line = c._screen_command(HOST, command, 'test-task', title)['cmd']
         # Exercise the real Screen program; tool setup is covered separately through cx on the fleet host.
-        prefix = 'cx tool run screen,05d0264fd24b40f6 --con- ' + shlex.quote('--version=' + module.SCREEN_VERSION) + ' -- '
+        prefix = 'cx tool run screen,05d0264fd24b40f6 --con- -- '
         assert prefix in line
         line = line.replace(prefix, shlex.quote(screen) + ' -c /dev/null ')
         pid, fd = pty.fork()
@@ -186,12 +186,18 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
 
         second = attach('touch ' + shlex.quote(str(duplicate)), 'different-project')
 
+        # The window's title is read with -Q (Screen 4.2+); an older Screen has none, and the files below say the rest
+        has_query = screen_version(screen) >= (4, 2)
+
         def attached_to_original():
-            result = subprocess.run([screen, '-S', 'test-task', '-Q', 'windows'], env=env,
-                                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            return b'original-project' in result.stdout and any('(Attached)' in p for p in
-                subprocess.run([screen, '-ls'], env=env, stdin=subprocess.DEVNULL,
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.decode().splitlines())
+            if has_query:
+                result = subprocess.run([screen, '-S', 'test-task', '-Q', 'windows'], env=env,
+                                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if b'original-project' not in result.stdout:
+                    return False
+            return any('(Attached)' in p for p in
+                       subprocess.run([screen, '-ls'], env=env, stdin=subprocess.DEVNULL,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.decode(errors='replace').splitlines())
 
         wait_for(attached_to_original, second)
         assert started.read_text().splitlines() == ['started']

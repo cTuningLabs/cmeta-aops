@@ -2,6 +2,17 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.54.2
+- **The persistent terminals work with any GNU Screen** (the user's rule: tools adapt to every version): the launch
+  asks for no version any more (0.54.1 asked for 4.2 or later). A Screen with `-Q` (4.2+) lists the windows of an
+  existing session before attaching; an older one answers `-Q` with its usage and exit 1, so nothing is listed, and
+  creating, detaching and reattaching work the same - checked for real with Screen 4.00.03 (macOS), 4.08, 4.09 and
+  5.0. The lifecycle test runs with whatever Screen is installed and reads the window title only where `-Q` exists.
+- **`cmd_get_version_exit_codes` in a tool's `_desc.yaml`:** the exit codes of `cmd_get_version` that still carry the
+  version (default `[0]`). `tool/screen` declares `[0, 1]`: macOS's own `/usr/bin/screen` (4.00.03) prints its version
+  for `-v` and exits 1, so the detection never took it before; of several copies the newest is used (Homebrew's next
+  to Apple's).
+
 ## 0.54.1
 - **The persistent terminals ask for GNU Screen 4.2 or later:** `cx host ssh --screen` and `--on_screen` read a
   session's windows with `-Q` (Screen 4.2), so their launch asks `cx tool run screen --version=">=4.2"`

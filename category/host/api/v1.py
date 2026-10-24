@@ -75,12 +75,6 @@ def windows_here():
     return os.name == 'nt'
 
 
-# The GNU Screen the persistent terminals ask for: they list a session's windows with -Q (Screen 4.2). macOS ships
-# 4.00.03 in /usr/bin, so on a Mac the setup takes Homebrew's (it asks before installing; -q installs). The tool itself
-# takes any version: the requirement is this code's, not Screen's.
-SCREEN_VERSION = '>=4.2'
-
-
 def screen_name(value, default='cx-host'):
     """Bare and explicitly empty flags select the default; omission leaves the ordinary shell."""
     if value is None or value is False or str(value).strip().lower() in ('false', 'no', 'off', '0'):
@@ -592,10 +586,11 @@ class Category(InitCategory):
         args = ['-S', name, '-d', '-R', '-t', title] + shell_words
         # Show the actual existing title (including a run-ai project), then let Screen attach or create.
         # The new title/command are ignored by Screen when a session already exists.
+        # Any Screen works: -Q (Screen 4.2+) only lists the windows first - an older Screen answers it with its usage
+        # and exit 1, so nothing is listed, and -S/-d/-R/-t work the same (checked with 4.00.03, 4.08, 4.09, 5.0)
         query = (f'if cmeta_screen_windows=$(screen -S {shlex.quote(name)} -Q windows 2>/dev/null); '
                  'then printf \'%s\\n\' "$cmeta_screen_windows"; fi')
-        launch = ('cx tool run screen,05d0264fd24b40f6 --con- ' + shlex.quote('--version=' + SCREEN_VERSION) + (' -q' if quiet else '')
-                  + ' -- ' + ' '.join(shlex.quote(w) for w in args))
+        launch = 'cx tool run screen,05d0264fd24b40f6 --con-' + (' -q' if quiet else '') + ' -- ' + ' '.join(shlex.quote(w) for w in args)
         message = f'cMeta info: screen "{name}" on {h["alias"]}; existing windows (if any):'
         return {'return': 0, 'cmd': f'printf \'%s\\n\' {shlex.quote(message)}; {query}; exec {launch}'}
 
