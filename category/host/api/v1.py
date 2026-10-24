@@ -75,6 +75,59 @@ def windows_here():
     return os.name == 'nt'
 
 
+# GNU Screen as cMeta sets it up on a host (the newest copy found there; any version)
+SCREEN_TOOL = 'cx tool run screen,05d0264fd24b40f6'
+
+# One session of "screen -ls" (any version): "<pid>.<name>" then parenthesised fields - a start time (Screen 4.x of
+# the distributions), the state (Attached, Detached, Multi, attached, Dead ???)
+SCREEN_SESSION = re.compile(r'^\s*(\d+)\.(\S+)\s+(\(.*)$')
+
+
+def parse_screens(text):
+    """
+    The sessions in the output of the screens script of "cx host screens": "@@ls" and Screen's own listing, then for
+    each session "@@windows <pid>.<name>" and its window list (empty where -Q is missing: Screen before 4.2). No
+    Screen on the host, no session, a login message: [].
+
+    Returns:
+        list: [{'id', 'name', 'pid', 'state', 'started', 'windows'}] in the listing's order.
+    """
+    sessions, current, section = [], None, None
+    for line in text.splitlines():
+        if line.startswith('@@ls'):
+            section = 'ls'
+            continue
+        if line.startswith('@@windows '):
+            key = line[len('@@windows '):].strip()
+            current = next((s for s in sessions if s['id'] == key), None)
+            section = 'windows'
+            continue
+        if section == 'ls':
+            m = SCREEN_SESSION.match(line)
+            if not m:
+                continue
+            fields = re.findall(r'\(([^()]*)\)', m.group(3))
+            state = next((f for f in reversed(fields) if re.search(r'attached|detached|dead', f, re.I)), '')
+            started = next((f for f in fields if f != state), '')
+            sessions.append({'id': f'{m.group(1)}.{m.group(2)}', 'name': m.group(2), 'pid': int(m.group(1)),
+                             'state': state.lower(), 'started': started, 'windows': ''})
+        elif section == 'windows' and current is not None and line.strip():
+            current['windows'] = (current['windows'] + '  ' + line.strip()).strip()
+    return sessions
+
+
+# The script "cx host screens" runs on a POSIX host: Screen's listing, then the windows of each session (-Q, where the
+# Screen has it - an older one answers with its usage and exit 1, so nothing is kept); nothing is installed
+SCREENS_SCRIPT = f'''scr() {{ {SCREEN_TOOL} --con- --skip_install -q -- "$@"; }}
+out=$(scr -ls 2>&1)
+printf '%s\\n' '@@ls' "$out"
+for s in $(printf '%s\\n' "$out" | sed -n 's/^[[:space:]]*\\([0-9][0-9]*\\.[^[:space:]]*\\)[[:space:]].*/\\1/p'); do
+    printf '@@windows %s\\n' "$s"
+    if w=$(scr -S "$s" -Q windows 2>/dev/null); then printf '%s\\n' "$w"; fi
+done
+'''
+
+
 def screen_name(value, default='cx-host'):
     """Bare and explicitly empty flags select the default; omission leaves the ordinary shell."""
     if value is None or value is False or str(value).strip().lower() in ('false', 'no', 'off', '0'):
@@ -573,6 +626,86 @@ class Category(InitCategory):
         except (AttributeError, ValueError):
             return False
 
+    ############################################################
+    def screens_(
+        self,
+        ctx,
+        arg1=None,          # host alias (or a selection: --tags / --machine / --type)
+        tags=None,          # a selection by tags
+        machine=None,       # the hosts of a machine
+        type=None,          # ssh | wsl | docker
+        project=None,       # a named environment of the host (its cx)
+    ):
+        """
+        The GNU Screen sessions on a host - the persistent terminals of "cx host ssh --screen" and "--on_screen", and
+        any other screen of the host's user: name, state, start time where Screen gives it, the titles of the windows
+        (a run-ai terminal shows its project; Screen 4.2+ answers -Q, an older one lists none). Read only: nothing is
+        changed or installed on the host - no Screen there means no sessions.
+
+            cx host screens lab-thinkpad-ubuntu
+            cx host screens --tags=ubuntu
+        """
+
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        if not (arg1 or tags or machine or type):
+            return self.cm.error('which host? cx host screens <host> (or --tags/--machine/--type)')
+
+        r = self._select(ctx, arg1, tags, machine, type, project)
+        if self.cm.catch_error(r): return r
+        hosts = r['hosts']
+        if not hosts:
+            return self.cm.error(f'no host matches "{arg1}"' if arg1 else 'no hosts match')
+
+        import tempfile
+        script = os.path.join(tempfile.gettempdir(), f'cmeta-host-screens-{os.getpid()}.sh')
+        with open(script, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(SCREENS_SCRIPT)
+
+        screens, errors = {}, {}
+        try:
+            for h in hosts:
+                shell = self._shell(h).strip()
+                if h['type'] == 'adb' or shell in ('powershell', 'pwsh', 'cmd', 'none', 'raw') or (self._here(h) and os.name == 'nt'):
+                    errors[h['alias']] = 'not a POSIX host: no GNU Screen there'
+                    continue
+                r = self._cmd_stdin(ctx, h, script)
+                if r['return'] > 0:
+                    errors[h['alias']] = r['error']
+                    continue
+                rr = self._run_local(r['cmd'], capture=True, timeout=180, con=False, verbose=verbose)
+                if rr.get('returncode') not in (0, None) and '@@ls' not in (rr.get('stdout') or ''):
+                    errors[h['alias']] = (rr.get('stderr') or rr.get('stdout') or '').strip()[-300:] or f'exit code {rr.get("returncode")}'
+                    continue
+                screens[h['alias']] = parse_screens(rr.get('stdout') or '')
+        finally:
+            try:
+                os.remove(script)
+            except OSError:
+                pass
+
+        if con:
+            many = len(hosts) > 1
+            for h in hosts:
+                alias = h['alias']
+                if alias in errors:
+                    print(f'{alias}: {errors[alias]}')
+                elif not screens.get(alias):
+                    print(f'{alias}: no screens')
+                else:
+                    if many:
+                        print(f'=== {alias}')
+                    rows = [('SCREEN', 'PID', 'STATE', 'STARTED', 'WINDOWS')] + \
+                           [(s['name'], str(s['pid']), s['state'] or '-', s['started'] or '-', s['windows'] or '-') for s in screens[alias]]
+                    widths = [max(len(row[i]) for row in rows) for i in range(4)]
+                    for row in rows:
+                        print('  '.join(row[i].ljust(widths[i]) for i in range(4)) + '  ' + row[4])
+
+        if errors and len(hosts) == 1:
+            return self.cm.error(f'{hosts[0]["alias"]}: {errors[hosts[0]["alias"]]}')
+        return {'return': 0, 'screens': screens, 'errors': errors}
+
     def _screen_command(self, h, cmd, name, title=None, quiet=False):
         """Screen owns the shell/command; reconnecting resumes it without sending another command."""
         shell = self._shell(h).strip()
@@ -587,10 +720,12 @@ class Category(InitCategory):
         # Show the actual existing title (including a run-ai project), then let Screen attach or create.
         # The new title/command are ignored by Screen when a session already exists.
         # Any Screen works: -Q (Screen 4.2+) only lists the windows first - an older Screen answers it with its usage
-        # and exit 1, so nothing is listed, and -S/-d/-R/-t work the same (checked with 4.00.03, 4.08, 4.09, 5.0)
-        query = (f'if cmeta_screen_windows=$(screen -S {shlex.quote(name)} -Q windows 2>/dev/null); '
+        # and exit 1, so nothing is listed, and -S/-d/-R/-t work the same (checked with 4.00.03, 4.08, 4.09, 5.0).
+        # The query asks the Screen the session runs with (cMeta's choice, never installed for it): the first one on
+        # the PATH can be another (a Mac: Apple's 4.00.03 in /usr/bin before Homebrew's)
+        query = (f'if cmeta_screen_windows=$({SCREEN_TOOL} --con- --skip_install -q -- -S {shlex.quote(name)} -Q windows 2>/dev/null); '
                  'then printf \'%s\\n\' "$cmeta_screen_windows"; fi')
-        launch = 'cx tool run screen,05d0264fd24b40f6 --con-' + (' -q' if quiet else '') + ' -- ' + ' '.join(shlex.quote(w) for w in args)
+        launch = f'{SCREEN_TOOL} --con-' + (' -q' if quiet else '') + ' -- ' + ' '.join(shlex.quote(w) for w in args)
         message = f'cMeta info: screen "{name}" on {h["alias"]}; existing windows (if any):'
         return {'return': 0, 'cmd': f'printf \'%s\\n\' {shlex.quote(message)}; {query}; exec {launch}'}
 

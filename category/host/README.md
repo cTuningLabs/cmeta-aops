@@ -60,6 +60,7 @@ cx host run --tags=ubuntu "<command>" the same on a selection (--machine, --type
 cx host run <host> --script=<file>    a local script on the host's shell stdin ("bash -l -s < file"; PowerShell: base64 lines on stdin, decoded as UTF-8 and run by an -EncodedCommand reader - never "-Command -")
 cx host run <host> "<command>" --interactive   a terminal for the command (ssh -t / docker exec -it): it can ask its questions; needs a terminal here (not with --capture or --script)
 cx host ssh <host> [--screen[=<name>]] [--x11] [--forward=1455,8080:80] [--dry_run]   interactive shell (also: shell, login)
+cx host screens <host|selection>      the GNU Screen sessions there: name, pid, state, start time, window titles (read only)
 cx host up|down <host>                WSL distro, container (created from its image on the first up), or "commands: up/down"
 cx host destroy <instance> [--image] [--keep_artifact] [--force]   an instance cMeta made (get-host--docker / get-host--wsl): the container (or the WSL distribution and its disk), the artifact, with --image its image
 cx host snapshot <instance> [--name=<name>] [--note=<text>]       the instance's state kept: docker/podman commit to cmeta/snapshot:<instance>-<name>, a WSL export next to its disk; recorded under "snapshots" in its _desc
@@ -86,7 +87,13 @@ cx host ssh my-host --screen
 cx host ssh my-host --screen=work
 cxt run-ai --project="work::my-project" --on=my-host --on_screen
 cxt run-ai --project="work::another-project" --on=my-host --on_screen=another-task
+cx host screens my-host
 ```
+
+`cx host screens <host>` lists the screens of the host's user from here: name, pid, state (attached, detached), the
+start time where Screen prints one, and the titles of the windows (a run-ai terminal shows its project) where Screen
+answers `-Q` (4.2+). It asks the same Screen the terminals run with, installs nothing, and exits 0 also when there is
+no session or no Screen ("no screens"); `--tags` / `--machine` / `--type` list several hosts, `-j` gives the rows.
 
 A bare or explicitly empty `--screen` / `--screen=` uses `cx-host`. A bare or explicitly empty
 `--on_screen` / `--on_screen=` uses the command's artifact alias (`run-ai` for
@@ -106,8 +113,9 @@ invocation creates a new terminal; run-ai retains its normal conversation contin
 GNU Screen is detected or installed through `tool/screen` on the target POSIX host (Linux/macOS, WSL or a
 container); any version works. A Screen with `-Q` (4.2 or later) also lists the windows of an existing session before
 attaching; an older one (macOS's own `/usr/bin/screen` is 4.00.03) answers `-Q` with its usage, so nothing is listed,
-and creating, detaching and reattaching work the same. Of several copies the newest is used (Homebrew's next to
-Apple's on a Mac). An interactive terminal is required on the client. A native Windows target and Android are refused.
+and creating, detaching and reattaching work the same (Apple's 4.00.03 accepts a reattach about a second after a
+drop, no earlier - a real reconnect takes longer). Of several copies the newest is used (Homebrew's next to Apple's
+on a Mac), for the session and for the list of its windows alike. An interactive terminal is required on the client. A native Windows target and Android are refused.
 `--on_screen` cannot be combined with `--on_detach`, `--on_pull`, `--on_rm` or `--on_isolated`: disconnecting
 from a terminal must not clean up an environment whose task is still running. A target reboot ends its screens.
 Screen keeps terminal processes alive; concurrent sessions still share the host's files and repositories.

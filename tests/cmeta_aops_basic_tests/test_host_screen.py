@@ -72,7 +72,8 @@ def test_shell_defaults_and_forwarding_use_the_existing_transport(host):
     r = c.ssh_({'control': {}}, 'remote', screen=True, forward='1455', x11=True, dry_run=True)
     assert r['return'] == 0 and '-S cx-host -d -R -t shell bash -l' in r['cmd']
     assert calls[0][1] == {'interactive': True, 'x11': True, 'forwards': ['1455']}
-    assert 'screen -S cx-host -Q windows' in r['cmd']
+    # the existing windows are asked from the Screen the session runs with, never installed for it
+    assert 'cx tool run screen,05d0264fd24b40f6 --con- --skip_install -q -- -S cx-host -Q windows' in r['cmd']
 
     r = c.ssh_({'control': {}}, 'remote', dry_run=True)
     assert r['cmd'] == 'ssh remote' and calls[-1][0] is None
@@ -140,7 +141,7 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
     import subprocess
     import time
 
-    _, c = host
+    module, c = host
     # Unix socket paths have a small OS limit; keep the socket folder at the sandbox root.
     sockets = tmp_path.parent / ('scr-' + str(os.getpid()))
     sockets.mkdir(mode=0o700)
@@ -167,9 +168,10 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
     def attach(command, title):
         line = c._screen_command(HOST, command, 'test-task', title)['cmd']
         # Exercise the real Screen program; tool setup is covered separately through cx on the fleet host.
-        prefix = 'cx tool run screen,05d0264fd24b40f6 --con- -- '
-        assert prefix in line
-        line = line.replace(prefix, shlex.quote(screen) + ' -c /dev/null ')
+        query = module.SCREEN_TOOL + ' --con- --skip_install -q -- '
+        prefix = module.SCREEN_TOOL + ' --con- -- '
+        assert query in line and prefix in line
+        line = line.replace(query, shlex.quote(screen) + ' ').replace(prefix, shlex.quote(screen) + ' -c /dev/null ')
         pid, fd = pty.fork()
         if pid == 0:
             os.execve('/bin/sh', ['sh', '-c', line], env)
@@ -183,6 +185,18 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
         wait_for(started.exists, first)
         os.close(first)                         # terminal disappears; Screen must keep the task
         children[-1] = (children[-1][0], None)
+
+        # A reconnect comes after the drop, not in the same instant: Apple's Screen 4.00.03 (before 4.2) hangs a
+        # reattach made within about a second of the drop, though it already lists the session as Detached
+        # (measured 2026-10-24: 0 and 0.3 s hang, 1 s attaches; Screen 4.09 and 5.0 attach at once)
+        def detached():
+            return any('(Detached)' in p for p in
+                       subprocess.run([screen, '-ls'], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE).stdout.decode(errors='replace').splitlines())
+
+        wait_for(detached)
+        if screen_version(screen) < (4, 2):
+            time.sleep(1.5)
 
         second = attach('touch ' + shlex.quote(str(duplicate)), 'different-project')
 
@@ -219,3 +233,65 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
             else:
                 os.kill(pid, signal.SIGTERM)
                 os.waitpid(pid, 0)
+
+
+# cx host screens: the listing of any Screen version, and the command around it
+
+LS_4_00 = '''There is a screen on:
+\t20370.steps\t(Attached)
+1 Socket in /Users/u/screens.
+'''
+LS_4_09 = '''There are screens on:
+\t4242.ai2\t(10/24/26 15:01:02)\t(Attached)
+\t4100.ai1\t(10/24/26 14:58:40)\t(Detached)
+2 Sockets in /run/screen/S-u.
+'''
+LS_5_0 = '''There is a screen on:
+\t21737.run-ai\t(Multi, attached)
+1 Socket in /tmp/uscreens/S-u.
+'''
+
+
+def test_parse_screens_of_every_version(host):
+    module, _ = host
+    one = module.parse_screens('@@ls\n' + LS_4_00 + '@@windows 20370.steps\n')
+    assert one == [{'id': '20370.steps', 'name': 'steps', 'pid': 20370, 'state': 'attached', 'started': '', 'windows': ''}]
+
+    two = module.parse_screens('Welcome to Ubuntu\n@@ls\n' + LS_4_09 + '@@windows 4242.ai2\n0$ run-ai work::a b\n@@windows 4100.ai1\n0* shell\n')
+    assert [(s['name'], s['pid'], s['state'], s['started'], s['windows']) for s in two] == [
+        ('ai2', 4242, 'attached', '10/24/26 15:01:02', '0$ run-ai work::a b'),
+        ('ai1', 4100, 'detached', '10/24/26 14:58:40', '0* shell')]
+
+    assert module.parse_screens('@@ls\n' + LS_5_0)[0]['state'] == 'multi, attached'
+
+
+@pytest.mark.parametrize('listing', ['No Sockets found in /run/screen/S-u.\n',
+                                     'cMeta notice: failed to setup tool "screen"!\n', ''])
+def test_no_screen_or_no_session_is_an_empty_list(host, listing):
+    module, _ = host
+    assert module.parse_screens('@@ls\n' + listing) == []
+
+
+def test_the_screens_script_installs_nothing_and_reads_windows_only_on_success(host):
+    module, _ = host
+    script = module.SCREENS_SCRIPT
+    assert '--skip_install' in script and 'install' not in script.replace('--skip_install', '')
+    assert 'if w=$(scr -S "$s" -Q windows 2>/dev/null); then' in script
+
+
+def test_screens_command_lists_and_refuses_non_posix_hosts(host, capsys):
+    module, c = host
+    seen = []
+    c._cmd_stdin = lambda ctx, h, script: seen.append(open(script, encoding='utf-8').read()) or {'return': 0, 'cmd': 'ssh remote bash -l -s < x'}
+    c._run_local = lambda cmd, **kw: {'returncode': 1, 'stdout': '@@ls\n' + LS_4_09 + '@@windows 4242.ai2\n0$ run-ai work::a b\n'}
+    r = c.screens_({'control': {'con': True}}, 'remote')
+    assert r['return'] == 0 and [s['name'] for s in r['screens']['remote']] == ['ai2', 'ai1']
+    assert seen and seen[0] == module.SCREENS_SCRIPT
+    out = capsys.readouterr().out
+    assert 'SCREEN' in out and 'ai2' in out and 'run-ai work::a b' in out
+
+    windows_host = {'alias': 'win', 'type': 'ssh', 'desc': {'access': {'shell': 'powershell'}}, 'state': {}}
+    c._select = lambda *a, **kw: {'return': 0, 'hosts': [windows_host]}
+    r = c.screens_({'control': {}}, 'win')
+    assert r['return'] == 1 and 'not a POSIX host' in r['error']
+    assert c.screens_({'control': {}})['return'] == 1
