@@ -139,6 +139,7 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
     import select
     import signal
     import subprocess
+    import threading
     import time
 
     module, c = host
@@ -150,20 +151,53 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
     screen = shutil.which('screen')
     children = []
     transcript = bytearray()
+    lock = threading.Lock()
+    readers = {}
 
-    def wait_for(condition, fd=None):
+    # Each client's terminal is read all the time, as a real terminal is: Screen writes the whole screen to a client
+    # that (re)attaches, and with that terminal unread it blocks - and so does every -Q query (Screen 4.09 and 5.0)
+    def read_terminal(fd, done):
+        while not done.is_set():
+            try:
+                if select.select([fd], [], [], 0.1)[0]:
+                    data = os.read(fd, 65536)
+                    if not data:
+                        return
+                    with lock:
+                        transcript.extend(data)
+            except (OSError, ValueError):
+                return
+
+    def drop_terminal(fd):
+        """The client's terminal disappears: its reader stops first, so that closing it really hangs the client up."""
+        done, thread = readers.pop(fd)
+        done.set()
+        thread.join(3)
+        os.close(fd)
+
+    def wait_for(condition):
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
             if condition():
                 return
-            if fd is not None and select.select([fd], [], [], 0.05)[0]:
-                try:
-                    transcript.extend(os.read(fd, 65536))
-                except OSError:
-                    pass
-            else:
-                time.sleep(0.05)
-        raise AssertionError('screen lifecycle did not reach the expected state: ' + transcript.decode(errors='replace'))
+            time.sleep(0.05)
+        with lock:
+            text = transcript.decode(errors='replace')
+        raise AssertionError('screen lifecycle did not reach the expected state; Screen last said: %r; the terminals: %s'
+                             % (answers, text))
+
+    answers = {}
+
+    def ask(*args):
+        """Screen's answer, or '' when it takes longer than 3 s (the last one of each question kept for a failure)."""
+        try:
+            r = subprocess.run([screen] + list(args), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, timeout=3)
+            answers[' '.join(args)] = 'exit %d: %s %s' % (r.returncode, r.stdout.decode(errors='replace'), r.stderr.decode(errors='replace'))
+            return r.stdout.decode(errors='replace')
+        except subprocess.TimeoutExpired:
+            answers[' '.join(args)] = 'no answer in 3 s'
+            return ''
 
     def attach(command, title):
         line = c._screen_command(HOST, command, 'test-task', title)['cmd']
@@ -176,24 +210,18 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
         if pid == 0:
             os.execve('/bin/sh', ['sh', '-c', line], env)
         children.append((pid, fd))
+        done = threading.Event()
+        readers[fd] = (done, threading.Thread(target=read_terminal, args=(fd, done), daemon=True))
+        readers[fd][1].start()
         return fd
 
     try:
         command = (f'echo started >> {shlex.quote(str(started))}; '
                    f'while [ ! -f {shlex.quote(str(stop))} ]; do sleep 0.1; done')
         first = attach(command, 'original-project')
-        wait_for(started.exists, first)
-        os.close(first)                         # terminal disappears; Screen must keep the task
+        wait_for(started.exists)
+        drop_terminal(first)                    # terminal disappears; Screen must keep the task
         children[-1] = (children[-1][0], None)
-
-        def ask(*args):
-            """Screen's answer, or '' when it takes longer than 3 s: Screen 5.0 answers -Q through the attached
-            display, which this test reads only between two checks (wait_for drains it), so a query may wait for that"""
-            try:
-                return subprocess.run([screen] + list(args), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                      stderr=subprocess.PIPE, timeout=3).stdout.decode(errors='replace')
-            except subprocess.TimeoutExpired:
-                return ''
 
         # A reconnect comes after the drop, not in the same instant: Apple's Screen 4.00.03 (before 4.2) hangs a
         # reattach made within about a second of the drop, though it already lists the session as Detached
@@ -204,25 +232,31 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
 
         second = attach('touch ' + shlex.quote(str(duplicate)), 'different-project')
 
-        # The window's title is read with -Q (Screen 4.2+); an older Screen has none, and the files below say the rest
-        has_query = screen_version(screen) >= (4, 2)
-
-        def attached_to_original():
-            if has_query and 'original-project' not in ask('-S', 'test-task', '-Q', 'windows'):
-                return False
-            return '(Attached)' in ask('-ls')
-
-        wait_for(attached_to_original, second)
+        # The reattach is seen through -ls alone: a -Q query sent WHILE a client attaches is answered late (Screen
+        # 4.09) or never (5.0), and a query killed at its limit left the attach stuck. The real launch asks -Q only
+        # before its own attach, when the session is detached - answered at once by every version (4.09 with the
+        # list; 5.0 with nothing: it lists the windows of an attached session only)
+        wait_for(lambda: '(Attached)' in ask('-ls'))
         assert started.read_text().splitlines() == ['started']
         assert not duplicate.exists()
 
+        # The window keeps its first title (a reattach ignores the new -t): what the "existing windows" line shows
+        if screen_version(screen) >= (4, 2):
+            time.sleep(0.5)
+            titles = ask('-S', 'test-task', '-Q', 'windows')
+            if screen_version(screen) < (5, 0) or titles.strip():
+                assert 'original-project' in titles and 'different-project' not in titles, answers
+
         stop.touch()                           # task finishes normally; its last screen window closes
-        wait_for(lambda: not list(sockets.iterdir()), second)
+        wait_for(lambda: not list(sockets.iterdir()))
     finally:
         stop.touch()
         for pid, fd in children:
             if fd is not None:
-                os.close(fd)
+                if fd in readers:
+                    drop_terminal(fd)
+                else:
+                    os.close(fd)
             # Reap only the PTY clients made by this test; the private Screen ends through its stop file.
             deadline = time.monotonic() + 3
             while time.monotonic() < deadline:
