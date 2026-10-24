@@ -18,6 +18,24 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 HOST = {'alias': 'remote', 'type': 'ssh', 'desc': {'access': {'shell': 'bash -l'}}, 'state': {}}
 
 
+def screen_with_query():
+    """GNU Screen 4.2 or later: the lifecycle test reads a session's windows with -Q, which older versions lack -
+    macOS ships Screen 4.00.03 (2006) in /usr/bin."""
+    import re
+    import subprocess
+
+    screen = shutil.which('screen')
+    if sys.platform == 'win32' or not screen:
+        return False
+    try:
+        out = subprocess.run([screen, '-v'], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             timeout=10).stdout.decode(errors='replace')
+    except (OSError, subprocess.SubprocessError):
+        return False
+    m = re.search(r'Screen version\s+(\d+)\.(\d+)', out)
+    return bool(m) and (int(m.group(1)), int(m.group(2))) >= (4, 2)
+
+
 @pytest.fixture
 def host(monkeypatch):
     spec = importlib.util.spec_from_file_location('host_screen_under_test', REPO_ROOT / 'category/host/api/v1.py')
@@ -111,7 +129,7 @@ def test_a_screen_needs_a_terminal_and_cannot_capture_or_timeout(host):
     assert c.run_({'control': {}}, 'remote', 'echo x', screen=True)['return'] == 1
 
 
-@pytest.mark.skipif(sys.platform == 'win32' or not shutil.which('screen'), reason='needs POSIX and GNU Screen')
+@pytest.mark.skipif(not screen_with_query(), reason='needs POSIX and GNU Screen 4.2+ (-Q; macOS ships 4.00.03)')
 def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, tmp_path):
     """Own socket directory and PTYs: a lost terminal, reattach, then the task's normal exit."""
     import os

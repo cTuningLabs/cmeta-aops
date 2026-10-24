@@ -62,6 +62,12 @@ def read(path):
     return pathlib.Path(path).read_text(encoding = "utf-8")
 
 
+def same(a, b):
+    """One folder under two spellings: macOS gives a temporary folder as /var/... and the working directory of a
+    process in it as /private/var/... (/var is a link)."""
+    return os.path.realpath(str(a)) == os.path.realpath(str(b))
+
+
 class Lab:
     """The artifacts of one test module: a project, three artifacts with memory, and the stand-in harness."""
 
@@ -179,7 +185,7 @@ def test_log_project_preview_and_labeled_workspace_do_not_touch_the_launch_folde
         first = lab.run(project='', l='quick question', prompt='answer in one line', con=True, quiet=True)
     assert first['return'] == 0, first.get('error')
     path = pathlib.Path(first['log_project'])
-    assert (path / '!AI/memory').is_dir() and read(path / 'generated.txt') == str(path)
+    assert (path / '!AI/memory').is_dir() and same(read(path / 'generated.txt'), path)
     assert output.getvalue().count('cMeta info: scratch workspace: ' + str(path)) == 2
     assert 'to continue, enter that directory and run cxt run-ai' in output.getvalue()
     assert list(launch.iterdir()) == []
@@ -191,18 +197,18 @@ def test_log_project_preview_and_labeled_workspace_do_not_touch_the_launch_folde
     monkeypatch.chdir(path)
     resumed = lab.run(project='')
     assert resumed['return'] == 0 and resumed['conversation'] == first['conversation']
-    assert pathlib.Path(resumed['project']) == path
+    assert same(resumed['project'], path)
 
     nested = path / 'generated/subdirectory'
     nested.mkdir(parents=True)
     monkeypatch.chdir(nested)
     resumed = lab.run(project='')
     assert resumed['return'] == 0 and resumed['conversation'] == first['conversation']
-    assert pathlib.Path(resumed['project']) == path and not (nested / '!AI').exists()
+    assert same(resumed['project'], path) and not (nested / '!AI').exists()
 
     separate = lab.run(project='', l=True)
-    assert separate['return'] == 0 and separate['project'] != str(path)
-    assert pathlib.Path(separate['project']).parent == root, '-l explicitly starts a fresh sibling workspace'
+    assert separate['return'] == 0 and not same(separate['project'], path)
+    assert same(pathlib.Path(separate['project']).parent, root), '-l explicitly starts a fresh sibling workspace'
 
 
 def test_log_project_bare_flag_portable_labels_and_same_minute_collisions(fresh, task_namespace, monkeypatch):
