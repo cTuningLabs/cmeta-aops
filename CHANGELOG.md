@@ -2,6 +2,24 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.54.2
+- **`cx host screens <host>`:** the GNU Screen sessions of a host's user from here - name, pid, state (attached,
+  detached), the start time where Screen prints one and the titles of the windows (a run-ai terminal shows its
+  project) where Screen answers `-Q`; read only (nothing installed: no Screen means no screens), exit 0 also when there
+  is none, `--tags` / `--machine` / `--type` for several hosts.
+- **The persistent terminals work with any GNU Screen** (the user's rule: tools adapt to every version): the launch
+  asks for no version any more (0.54.1 asked for 4.2 or later). A Screen with `-Q` (4.2+) lists the windows of an
+  existing session before attaching; an older one answers `-Q` with its usage and exit 1, so nothing is listed, and
+  creating, detaching and reattaching work the same - checked for real with Screen 4.00.03 (macOS), 4.08, 4.09 and
+  5.0. The list of windows now asks the Screen the session runs with (before: the first `screen` on the PATH, Apple's
+  4.00.03 on a Mac whose sessions run with Homebrew's). The lifecycle test runs with whatever Screen is installed,
+  reads the window title only where `-Q` exists and reconnects as a real client does (Apple's 4.00.03 accepts a
+  reattach about a second after a drop, no earlier).
+- **`cmd_get_version_exit_codes` in a tool's `_desc.yaml`:** the exit codes of `cmd_get_version` that still carry the
+  version (default `[0]`). `tool/screen` declares `[0, 1]`: macOS's own `/usr/bin/screen` (4.00.03) prints its version
+  for `-v` and exits 1, so the detection never took it before; of several copies the newest is used (Homebrew's next
+  to Apple's).
+
 ## 0.54.1
 - **The persistent terminals ask for GNU Screen 4.2 or later:** `cx host ssh --screen` and `--on_screen` read a
   session's windows with `-Q` (Screen 4.2), so their launch asks `cx tool run screen --version=">=4.2"`

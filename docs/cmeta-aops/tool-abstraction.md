@@ -39,6 +39,7 @@ match_version:
   - regex: '...'                            # applied to cmd_get_version output; `group` picks the capture
     group: 1
 cmd_get_version: '{{tool_path}} --version'  # {{tool_path}} = the found binary
+cmd_get_version_exit_codes: [0, 1]          # optional: exit codes that still carry the version (default [0])
 extra_paths:                                # extra dirs to search beyond PATH (per OS, glob ** allowed)
   windows: [ "{{global.host.os_env.APPDATA}}\\npm" ]
 default_version: '4.3.0'                    # the version installed when none is asked for (a quoted string)
@@ -48,6 +49,11 @@ default_version: '4.3.0'                    # the version installed when none is
 (`common_release.py`, `common_pyvenv.py`, `common_static_lib.py`) and a custom `install()` hook
 (`self.cdesc['default_version']`) read it from the description, never from a copy in the code, so that
 `cx tool show <tool>` answers the question and a bump is one edit.
+
+A tool is version-agnostic: it takes whatever version a system has, and the code that needs a feature asks for a
+version (`--version=">=X"`) or adapts. A program whose version command exits non-zero although it printed its version
+declares the codes in `cmd_get_version_exit_codes` (Apple's GNU Screen 4.00.03 answers `-v` with 1); otherwise a
+non-zero exit drops that copy.
 
 `setup/detect.py` searches each `names` filename on `aggregated.env.PATH` + `os_env.PATH`
 + `extra_paths`, runs `cmd_get_version` on each hit, and regex-matches the version
