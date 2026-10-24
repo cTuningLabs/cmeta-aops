@@ -31,10 +31,8 @@ KEY = b'-----BEGIN OPENSSH PRIVATE KEY-----\nnot a real key\n-----END OPENSSH PR
 def put(path, text):
     path = pathlib.Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    if isinstance(text, bytes):
-        path.write_bytes(text)
-    else:
-        path.write_text(text, encoding='utf-8', newline='\n')
+    # bytes on every Python: write_text(newline=) exists only since 3.10, and LF must stay LF on Windows
+    path.write_bytes(text if isinstance(text, bytes) else text.encode('utf-8'))
     return path
 
 
