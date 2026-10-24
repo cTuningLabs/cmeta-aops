@@ -78,6 +78,10 @@ def windows_here():
 # GNU Screen as cMeta sets it up on a host (the newest copy found there; any version)
 SCREEN_TOOL = 'cx tool run screen,05d0264fd24b40f6'
 
+# The limit of a query to a session (-Q, -ls): Screen 5.0 answers -Q through the attached display and waits while that
+# terminal is not read (a connection that died silently) - the query is stopped and nothing is listed
+SCREEN_QUERY_TIMEOUT = '--timeout=10'
+
 # One session of "screen -ls" (any version): "<pid>.<name>" then parenthesised fields - a start time (Screen 4.x of
 # the distributions), the state (Attached, Detached, Multi, attached, Dead ???)
 SCREEN_SESSION = re.compile(r'^\s*(\d+)\.(\S+)\s+(\(.*)$')
@@ -118,7 +122,7 @@ def parse_screens(text):
 
 # The script "cx host screens" runs on a POSIX host: Screen's listing, then the windows of each session (-Q, where the
 # Screen has it - an older one answers with its usage and exit 1, so nothing is kept); nothing is installed
-SCREENS_SCRIPT = f'''scr() {{ {SCREEN_TOOL} --con- --skip_install -q -- "$@"; }}
+SCREENS_SCRIPT = f'''scr() {{ {SCREEN_TOOL} --con- --skip_install -q {SCREEN_QUERY_TIMEOUT} -- "$@"; }}
 out=$(scr -ls 2>&1)
 printf '%s\\n' '@@ls' "$out"
 for s in $(printf '%s\\n' "$out" | sed -n 's/^[[:space:]]*\\([0-9][0-9]*\\.[^[:space:]]*\\)[[:space:]].*/\\1/p'); do
@@ -722,8 +726,10 @@ class Category(InitCategory):
         # Any Screen works: -Q (Screen 4.2+) only lists the windows first - an older Screen answers it with its usage
         # and exit 1, so nothing is listed, and -S/-d/-R/-t work the same (checked with 4.00.03, 4.08, 4.09, 5.0).
         # The query asks the Screen the session runs with (cMeta's choice, never installed for it): the first one on
-        # the PATH can be another (a Mac: Apple's 4.00.03 in /usr/bin before Homebrew's)
-        query = (f'if cmeta_screen_windows=$({SCREEN_TOOL} --con- --skip_install -q -- -S {shlex.quote(name)} -Q windows 2>/dev/null); '
+        # the PATH can be another (a Mac: Apple's 4.00.03 in /usr/bin before Homebrew's). It has a time limit: Screen
+        # 5.0 answers -Q through the attached display, so a session still attached to a terminal nobody reads (a
+        # connection that died silently, a closed laptop) would keep it waiting - then nothing is listed
+        query = (f'if cmeta_screen_windows=$({SCREEN_TOOL} --con- --skip_install -q {SCREEN_QUERY_TIMEOUT} -- -S {shlex.quote(name)} -Q windows 2>/dev/null); '
                  'then printf \'%s\\n\' "$cmeta_screen_windows"; fi')
         launch = f'{SCREEN_TOOL} --con-' + (' -q' if quiet else '') + ' -- ' + ' '.join(shlex.quote(w) for w in args)
         message = f'cMeta info: screen "{name}" on {h["alias"]}; existing windows (if any):'

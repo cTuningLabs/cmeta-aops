@@ -73,7 +73,7 @@ def test_shell_defaults_and_forwarding_use_the_existing_transport(host):
     assert r['return'] == 0 and '-S cx-host -d -R -t shell bash -l' in r['cmd']
     assert calls[0][1] == {'interactive': True, 'x11': True, 'forwards': ['1455']}
     # the existing windows are asked from the Screen the session runs with, never installed for it
-    assert 'cx tool run screen,05d0264fd24b40f6 --con- --skip_install -q -- -S cx-host -Q windows' in r['cmd']
+    assert 'cx tool run screen,05d0264fd24b40f6 --con- --skip_install -q --timeout=10 -- -S cx-host -Q windows' in r['cmd']
 
     r = c.ssh_({'control': {}}, 'remote', dry_run=True)
     assert r['cmd'] == 'ssh remote' and calls[-1][0] is None
@@ -168,7 +168,7 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
     def attach(command, title):
         line = c._screen_command(HOST, command, 'test-task', title)['cmd']
         # Exercise the real Screen program; tool setup is covered separately through cx on the fleet host.
-        query = module.SCREEN_TOOL + ' --con- --skip_install -q -- '
+        query = module.SCREEN_TOOL + ' --con- --skip_install -q ' + module.SCREEN_QUERY_TIMEOUT + ' -- '
         prefix = module.SCREEN_TOOL + ' --con- -- '
         assert query in line and prefix in line
         line = line.replace(query, shlex.quote(screen) + ' ').replace(prefix, shlex.quote(screen) + ' -c /dev/null ')
@@ -186,15 +186,19 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
         os.close(first)                         # terminal disappears; Screen must keep the task
         children[-1] = (children[-1][0], None)
 
+        def ask(*args):
+            """Screen's answer, or '' when it takes longer than 3 s: Screen 5.0 answers -Q through the attached
+            display, which this test reads only between two checks (wait_for drains it), so a query may wait for that"""
+            try:
+                return subprocess.run([screen] + list(args), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE, timeout=3).stdout.decode(errors='replace')
+            except subprocess.TimeoutExpired:
+                return ''
+
         # A reconnect comes after the drop, not in the same instant: Apple's Screen 4.00.03 (before 4.2) hangs a
         # reattach made within about a second of the drop, though it already lists the session as Detached
         # (measured 2026-10-24: 0 and 0.3 s hang, 1 s attaches; Screen 4.09 and 5.0 attach at once)
-        def detached():
-            return any('(Detached)' in p for p in
-                       subprocess.run([screen, '-ls'], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                      stderr=subprocess.PIPE).stdout.decode(errors='replace').splitlines())
-
-        wait_for(detached)
+        wait_for(lambda: '(Detached)' in ask('-ls'))
         if screen_version(screen) < (4, 2):
             time.sleep(1.5)
 
@@ -204,14 +208,9 @@ def test_real_screen_survives_disconnect_and_does_not_replay_the_command(host, t
         has_query = screen_version(screen) >= (4, 2)
 
         def attached_to_original():
-            if has_query:
-                result = subprocess.run([screen, '-S', 'test-task', '-Q', 'windows'], env=env,
-                                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                if b'original-project' not in result.stdout:
-                    return False
-            return any('(Attached)' in p for p in
-                       subprocess.run([screen, '-ls'], env=env, stdin=subprocess.DEVNULL,
-                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.decode(errors='replace').splitlines())
+            if has_query and 'original-project' not in ask('-S', 'test-task', '-Q', 'windows'):
+                return False
+            return '(Attached)' in ask('-ls')
 
         wait_for(attached_to_original, second)
         assert started.read_text().splitlines() == ['started']
@@ -277,6 +276,7 @@ def test_the_screens_script_installs_nothing_and_reads_windows_only_on_success(h
     script = module.SCREENS_SCRIPT
     assert '--skip_install' in script and 'install' not in script.replace('--skip_install', '')
     assert 'if w=$(scr -S "$s" -Q windows 2>/dev/null); then' in script
+    assert module.SCREEN_QUERY_TIMEOUT in script, 'a query to a session stuck on a dead terminal is stopped'
 
 
 def test_screens_command_lists_and_refuses_non_posix_hosts(host, capsys):
