@@ -5,6 +5,10 @@ authors: Grigori Fursin
 # on, in a folder named !AI (README.md has the whole story):
 #
 #   cxt run-ai                                      # continue the latest conversation of the project around the cwd
+#                                                   # an existing !AI marks the nearest workspace, including scratch sessions
+#   cxt run-ai -l                                   # a fresh dated scratch workspace, with its own !AI
+#   cxt run-ai -l="quick question"                   # YYYYMMDD-HHMM.quick question (the value is a label)
+#   cxt run-ai --log_project="quick question" --prompt="..."    # long form; the prompt is separate
 #   cxt run-ai "one prompt"                         # one more turn of it, then exit
 #   cxt run-ai --harness=codex --model=<m>,<e>      # the same conversation with another harness and model
 #   cxt run-ai --new / --conversation=<id> / --conversations
@@ -12,6 +16,8 @@ authors: Grigori Fursin
 #   cxt run-ai --dry_run                            # everything that would be given to the harness; nothing runs
 #   cxt run-ai --login [--harness=codex]            # sign the harness in on this machine (its tool set up first)
 #   cxt run-ai --login --on=<host>                  # ... on another machine, from a terminal here; --login_status checks
+#   cxt run-ai --project=<cRef> --on=<host> --on_screen          # create/reconnect the persistent run-ai terminal
+#   cxt run-ai --project=<cRef> --on=<host> --on_screen=<name>   # another independent terminal
 #
 # The sub-task is chosen at run time from --harness (the old --agent still works), so it is called from api_v1.py,
 # not listed here. --model=<model>[,<effort>] and --effort are turned into the harness flags from the tool's

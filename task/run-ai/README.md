@@ -10,6 +10,9 @@ with no path in the way and nothing to install in the user's home.
 
 ```bash
 cxt run-ai                                           # continue the latest conversation of the project around the cwd, interactively
+cxt run-ai -l                                        # a fresh dated scratch workspace in the local log artifact
+cxt run-ai -l="quick question"                       # label its directory YYYYMMDD-HHMM.quick question
+cxt run-ai -l="quick question" --prompt="Explain this idea"    # optional label and prompt are separate
 cxt run-ai "one prompt"                              # one more turn of that conversation, then exit
 cxt run-ai --new "a fresh start"                     # a new conversation (the memory and the skills stay)
 cxt run-ai --conversations                           # the conversations of the project: id, title, and each run with its
@@ -56,14 +59,44 @@ of cmeta-aops. The read-only views of this task: `--dry_run`, `--conversations`,
 | Given | The project is |
 |---|---|
 | `--project=<cref>` | that artifact: `category::artifact`, alias or `alias,UID` on either side; it must resolve to exactly one |
-| nothing | the cMeta artifact the current directory is in - any folder inside it; the detection behind `cx . <command>`, which knows the plugged repositories (a nested artifact wins: the innermost folder with a `_cmeta.*`) |
+| nothing, and an existing `!AI` nearby | the nearest directory containing `!AI`, searching from the current directory upwards within the detected cMeta artifact (or up to a repository boundary) |
+| nothing, and no existing workspace | the cMeta artifact the current directory is in - any folder inside it; the detection behind `cx . <command>`, which knows the plugged repositories (a nested artifact wins: the innermost folder with a `_cmeta.*`) |
 | nothing, and no artifact | the current directory itself |
 | `--project=.` | the current directory itself, no detection |
+| `-l` / `--log_project` | a new dated scratch workspace under `log::local:task-run-ai` in the active cMeta home |
+| `-l="quick question"` | the same, with the directory suffix `.quick question` |
 
 The task engine changes into the project folder for the agent's task (its `path` control parameter) and comes back
 afterwards, so the agent works in the artifact's root and finds the project's own `CLAUDE.md` or `AGENTS.md`, exactly
 as if it had been started there. A plain `claude` or `codex` started in a folder never detects artifacts: only
 `run-ai` does.
+
+### Scratch sessions and new folders outside cMeta
+
+Use `cxt run-ai -l` for a quick session that keeps its files away from the launch directory. The first use
+creates a `task-run-ai` artifact in the active home's local `log` category. Each invocation makes a workspace
+`YYYYMMDD-HHMM`, or `YYYYMMDD-HHMM.quick question` with `-l="quick question"`. The value after `=` is the
+directory label; use `--prompt="..."` separately for a one-prompt run. `--log_project` is the long form.
+
+Spaces in labels are retained. Characters invalid in portable filenames are replaced with underscores;
+leading/trailing spaces and periods are trimmed and labels are limited to 80 characters. If a name already
+exists, `-2`, `-3`, etc. are appended. The agent works in that workspace and keeps its memory, skills, logs
+and conversations in its `!AI`. The resolved workspace and `!AI` paths are printed at startup, and the workspace
+path is printed again after the agent finishes. Records remain until explicitly cleaned.
+
+To continue a scratch session, enter its printed directory (or a subdirectory) and run `cxt run-ai`.
+Its existing `!AI` identifies the workspace automatically, so it resumes that workspace's latest conversation
+without a question or another flag. Ordinary folders with an existing `!AI` work the same way. Detection does
+not cross a known cMeta artifact boundary or climb above a repository root; an explicit `--project` still wins.
+If `--ai_dir` names a different relative state folder, that name is used for workspace detection.
+A fresh `-l` invocation always creates another workspace;
+do not combine it with `--project` or `--conversation` / `--resume`. `--dry_run` prints a proposed workspace
+without creating it or the log artifact. With `--on=<host>`, it is made in that host's active cMeta home.
+
+Without `-l`, a first real run in a directory outside any cMeta repository prints the directory and the new
+`!AI` path and asks `Continue? [Y/n]`. Enter or `y` proceeds; declining creates no `!AI`. `-q` proceeds without
+asking, preserving unattended usage. A closed input without `-q` gives an error naming `-q` and `-l`. Existing
+`!AI` folders, cMeta projects, login/model-list commands and read-only views do not get this new question.
 
 ## `!AI/` - what the project keeps
 
@@ -723,6 +756,27 @@ elsewhere the transcript is handed over). What run-ai does about two machines on
   artifact as `{{{<category>::<artifact alias>,<artifact UID>}}}/<relative path, forward slashes>` - the braces
   stand for that artifact's folder on whichever machine reads the text (`cx utils find_by_cid` resolves them; a
   repository root is `{{{repo::<alias>,<UID>}}}`) - and a path outside cMeta as a full path that names its machine.
+
+### Interactive sessions that survive an SSH disconnect
+
+```console
+cxt run-ai --project="work::my-project" --on=my-host --on_screen
+cxt run-ai --project="work::another-project" --on=my-host --on_screen=another-task
+```
+
+The bare flag or `--on_screen=` names the screen `run-ai`. An explicit name selects another session. Repeat the same command
+to reconnect after closing SSH or hibernating the client. An existing screen keeps its original run-ai,
+project and prompt; reconnecting does not start another process or submit the prompt again. Existing window
+titles show the project before attaching. Use separate names for independent projects.
+
+`Ctrl-a d` detaches; the harness's normal quit command lets run-ai save its records and finish, ending the
+screen when its last window closes. A later invocation starts run-ai again with its usual conversation rules.
+Screen names identify live terminals, not conversation IDs. For a persistent shell instead, use
+`cx host ssh my-host --screen` (default name `cx-host`) or `--screen=my-shell`.
+
+GNU Screen runs on the target POSIX host and is detected or installed through cMeta. A client terminal is
+required; native Windows targets are refused. Do not combine `--on_screen` with `--on_detach`, `--on_pull`,
+`--on_rm` or `--on_isolated`. The project's normal sync brings its files and records back afterward.
 
 ## What stays as it is
 

@@ -8,6 +8,7 @@ called on the task's class loaded without the engine (the `task_namespace` fixtu
 """
 
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 
@@ -36,6 +37,88 @@ def task_with(CTask, config):
     t = CTask.__new__(CTask)
     t._run_ai_config = lambda: config
     return t
+
+
+def resolving_task(CTask, root=None):
+    from cmeta.utils.files import is_path_within
+
+    task = CTask.__new__(CTask)
+    parts = {'category_alias': 'tmp', 'category_uid': '0123456789abcdef',
+             'artifact_alias': root.name if root else '', 'artifact_uid': 'fedcba9876543210'}
+    detected = {'return': 0, 'category_obj': 'tmp', 'artifact_alias': root.name} if root else {'return': 1}
+    task.cm = SimpleNamespace(
+        utils=SimpleNamespace(common=SimpleNamespace(detect_cid_in_the_current_directory=lambda cm: detected),
+                              files=SimpleNamespace(is_path_within=is_path_within)),
+        access=lambda request: {'return': 0, 'artifacts': [{'path': str(root), 'cmeta_ref_parts': parts}]})
+    return task
+
+
+def test_existing_workspace_wins_inside_a_cmeta_artifact(CTask, tmp_path, monkeypatch):
+    root = tmp_path / 'log-artifact'
+    workspace = root / '20261024-1234.quick question'
+    leaf = workspace / 'outputs/deeper'
+    leaf.mkdir(parents=True)
+    (root / '!AI').mkdir()
+    (workspace / '!AI').mkdir()
+    monkeypatch.chdir(leaf)
+    task = resolving_task(CTask, root)
+    path, cref, how = task._resolve_project('', False, '')
+    assert pathlib.Path(path) == workspace and cref == '' and 'existing !AI' in how
+
+    # Explicit selection still wins, even with a nearer workspace.
+    assert pathlib.Path(task._resolve_project('.', False, '')[0]) == leaf
+    assert pathlib.Path(task._resolve_project('tmp::log-artifact', False, '')[0]) == root
+
+
+def test_detection_keeps_the_artifact_identity_at_its_own_ai_folder(CTask, tmp_path, monkeypatch):
+    root = tmp_path / 'artifact'
+    leaf = root / 'src/deeper'
+    leaf.mkdir(parents=True)
+    (root / '!AI').mkdir()
+    monkeypatch.chdir(leaf)
+    path, cref, _ = resolving_task(CTask, root)._resolve_project('', False, '')
+    assert pathlib.Path(path) == root and cref.endswith('::artifact,fedcba9876543210')
+
+
+def test_an_artifact_without_ai_does_not_inherit_its_parents_workspace(CTask, tmp_path, monkeypatch):
+    (tmp_path / '!AI').mkdir()
+    root = tmp_path / 'new-artifact'
+    leaf = root / 'src'
+    leaf.mkdir(parents=True)
+    monkeypatch.chdir(leaf)
+    path, cref, _ = resolving_task(CTask, root)._resolve_project('', False, '')
+    assert pathlib.Path(path) == root and cref.endswith('::new-artifact,fedcba9876543210')
+
+
+def test_plain_folders_reuse_the_nearest_ai_and_stop_at_repository_roots(CTask, tmp_path, monkeypatch):
+    workspace = tmp_path / 'ordinary-project'
+    leaf = workspace / 'src'
+    leaf.mkdir(parents=True)
+    (workspace / '!AI').mkdir()
+    monkeypatch.chdir(leaf)
+    task = resolving_task(CTask)
+    assert pathlib.Path(task._resolve_project('', False, '')[0]) == workspace
+    (leaf / '!AI').mkdir()
+    assert pathlib.Path(task._resolve_project('', False, '')[0]) == leaf
+
+    repo = workspace / 'separate-repo'
+    child = repo / 'src'
+    child.mkdir(parents=True)
+    put(repo / '_cmr.yaml', 'artifact: 0123456789abcdef\n')
+    monkeypatch.chdir(child)
+    assert pathlib.Path(task._resolve_project('', False, '')[0]) == child
+
+
+def test_custom_ai_directory_is_used_for_automatic_workspace_detection(CTask, tmp_path, monkeypatch):
+    root = tmp_path / 'artifact'
+    workspace = root / 'workspace'
+    leaf = workspace / 'src'
+    leaf.mkdir(parents=True)
+    (workspace / 'my-ai').mkdir()
+    monkeypatch.chdir(leaf)
+    task = resolving_task(CTask, root)
+    assert pathlib.Path(task._resolve_project('', False, '', 'my-ai')[0]) == workspace
+    assert pathlib.Path(task._resolve_project('', False, '')[0]) == root
 
 
 # ---------------------------------------------------------------------------------------------- --context

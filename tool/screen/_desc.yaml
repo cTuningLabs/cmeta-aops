@@ -1,0 +1,22 @@
+authors: Grigori Fursin
+
+names:
+  - screen{{global.host.vars.file_ext_exe}}
+
+match_version:
+  - regex: 'Screen version\s+([0-9]+\.[0-9]+\.[0-9]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} -v'
+
+# GNU Screen publishes source; use the host's package manager when it is missing.
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+  darwin: '{{global.brew.qpath}} install screen'
+  windows: ''
+
+requires_sudo:
+  linux: True
+
+install_help_text: |
+  GNU Screen runs on POSIX hosts. From Windows, select a Linux/macOS host, WSL or a container.

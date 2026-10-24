@@ -155,6 +155,140 @@ def test_dry_run_shows_everything_and_creates_nothing(fresh):
     assert not (fresh.project / "!AI").exists(), "a dry run creates nothing"
 
 
+def test_log_project_preview_and_labeled_workspace_do_not_touch_the_launch_folder(fresh, monkeypatch):
+    lab = fresh
+    launch = lab.scratch / 'scratch-launch'
+    launch.mkdir(exist_ok=True)
+    monkeypatch.chdir(launch)
+    root = lab.local / 'log' / 'task-run-ai'
+    before = sorted(root.iterdir()) if root.exists() else []
+    preview = lab.run(project='', l='quick question', dry_run=True, prompt='')
+    assert preview['return'] == 0, preview.get('error')
+    path = pathlib.Path(preview['log_project'])
+    assert path.parent == root and re.fullmatch(r'\d{8}-\d{4}\.quick question(-\d+)?', path.name)
+    assert preview['params']['interactive'] is True, 'the label names the workspace, not the prompt'
+    assert not path.exists() and (sorted(root.iterdir()) if root.exists() else []) == before
+    assert not (launch / '!AI').exists()
+
+    session(lab, monkeypatch, '''
+        with open('generated.txt', 'w') as out:
+            out.write(os.getcwd())
+    ''')
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        first = lab.run(project='', l='quick question', prompt='answer in one line', con=True, quiet=True)
+    assert first['return'] == 0, first.get('error')
+    path = pathlib.Path(first['log_project'])
+    assert (path / '!AI/memory').is_dir() and read(path / 'generated.txt') == str(path)
+    assert output.getvalue().count('cMeta info: scratch workspace: ' + str(path)) == 2
+    assert 'to continue, enter that directory and run cxt run-ai' in output.getvalue()
+    assert list(launch.iterdir()) == []
+
+    second = lab.run(project='', log_project='quick question')
+    assert second['return'] == 0 and second['log_project'] != first['log_project']
+    assert pathlib.Path(second['log_project']).parent == root
+
+    monkeypatch.chdir(path)
+    resumed = lab.run(project='')
+    assert resumed['return'] == 0 and resumed['conversation'] == first['conversation']
+    assert pathlib.Path(resumed['project']) == path
+
+    nested = path / 'generated/subdirectory'
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(nested)
+    resumed = lab.run(project='')
+    assert resumed['return'] == 0 and resumed['conversation'] == first['conversation']
+    assert pathlib.Path(resumed['project']) == path and not (nested / '!AI').exists()
+
+    separate = lab.run(project='', l=True)
+    assert separate['return'] == 0 and separate['project'] != str(path)
+    assert pathlib.Path(separate['project']).parent == root, '-l explicitly starts a fresh sibling workspace'
+
+
+def test_log_project_bare_flag_portable_labels_and_same_minute_collisions(fresh, task_namespace, monkeypatch):
+    import datetime
+    from types import SimpleNamespace
+
+    namespace = task_namespace('run-ai')
+    task = namespace['CTask'].__new__(namespace['CTask'])
+    task.cm = fresh.cm
+
+    class Clock:
+        @staticmethod
+        def now():
+            return datetime.datetime(2026, 10, 24, 12, 34)
+
+    monkeypatch.setitem(namespace, 'datetime', SimpleNamespace(datetime=Clock))
+    paths = [pathlib.Path(task._log_project(True, False)['path']) for _ in range(3)]
+    assert [p.name for p in paths] == ['20261024-1234', '20261024-1234-2', '20261024-1234-3']
+    labeled = pathlib.Path(task._log_project('quick question', False)['path'])
+    assert labeled.name == '20261024-1234.quick question'
+    portable = pathlib.Path(task._log_project('bad/name: why? ', False)['path'])
+    assert portable.name == '20261024-1234.bad_name_ why_'
+
+    result = fresh.run(project='', l=True, dry_run=True)
+    assert result['return'] == 0 and '.True' not in pathlib.Path(result['log_project']).name
+    for flags in ({'project': fresh.cref(fresh.project)}, {'project': '', 'conversation': 'previous'}):
+        r = fresh.run(l=True, **flags)
+        assert r['return'] > 0 and 'do not combine' in r['error']
+
+
+def test_outside_cmeta_requires_consent_only_before_the_first_real_creation(fresh, monkeypatch):
+    lab = fresh
+    launch = lab.scratch / 'ordinary-directory'
+    launch.mkdir(exist_ok=True)
+    monkeypatch.chdir(launch)
+    loaded = lab.cm.access({'category': 'utils', 'command': 'select_artifact', 'select_category': 'task', 'select_artifact': 'run-ai',
+                            'load_api': True, 'load_api_ver': 1, 'load_api_class': 'CTask', 'con': False})
+    assert loaded['return'] == 0, loaded.get('error')
+    # The suite's sandbox is itself under a repository; model a folder with no repository ancestors.
+    monkeypatch.setattr(type(loaded['api_code']), '_repo_meta', staticmethod(lambda p: {}))
+
+    def no_answer(prompt=''):
+        raise AssertionError('this operation must not ask')
+
+    monkeypatch.setattr('builtins.input', no_answer)
+    assert lab.run(project='', dry_run=True)['return'] == 0
+    assert lab.run(project='', conversations=True)['return'] == 0
+    assert not (launch / '!AI').exists()
+
+    questions = []
+    monkeypatch.setattr('builtins.input', lambda prompt='': questions.append(prompt) or 'n')
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        refused = lab.run(project='', con=True)
+    assert refused['return'] > 0 and not (launch / '!AI').exists()
+    assert str(launch) in output.getvalue() and str(launch / '!AI') in output.getvalue()
+    assert '[Y/n]' in questions[0]
+
+    monkeypatch.setattr('builtins.input', lambda prompt='': '')
+    allowed = lab.run(project='', con=True)
+    assert allowed['return'] == 0 and (launch / '!AI/memory').is_dir()
+    monkeypatch.setattr('builtins.input', no_answer)
+    assert lab.run(project='', con=True)['return'] == 0, 'an existing !AI should not ask again'
+
+
+def test_outside_cmeta_quiet_and_noninteractive_behavior(fresh, monkeypatch):
+    lab = fresh
+    launch = lab.scratch / 'unattended-directory'
+    launch.mkdir(exist_ok=True)
+    monkeypatch.chdir(launch)
+    loaded = lab.cm.access({'category': 'utils', 'command': 'select_artifact', 'select_category': 'task', 'select_artifact': 'run-ai',
+                            'load_api': True, 'load_api_ver': 1, 'load_api_class': 'CTask', 'con': False})
+    monkeypatch.setattr(type(loaded['api_code']), '_repo_meta', staticmethod(lambda p: {}))
+    refused = lab.run(project='')
+    assert refused['return'] > 0 and '-q' in refused['error'] and not (launch / '!AI').exists()
+
+    def closed_stdin(prompt=''):
+        raise EOFError
+
+    monkeypatch.setattr('builtins.input', closed_stdin)
+    refused = lab.run(project='', con=True)
+    assert refused['return'] > 0 and not (launch / '!AI').exists()
+    assert lab.run(project='', quiet=True)['return'] == 0
+    assert (launch / '!AI/memory').is_dir()
+
+
 def test_a_run_keeps_its_records_in_the_project_and_the_next_one_continues(fresh):
     r1 = fresh.run(prompt = "remember the word heron. Reply with one line only")
     assert r1["return"] == 0, r1.get("error")
@@ -468,7 +602,8 @@ def test_this_machines_mapping_in_the_config_artifact(fresh, task_namespace):
     # reading the mapping never creates the config artifact ("config get" would)
     assert fresh.run(dry_run = True)["context"] == []
     if not fresh.config_dir.is_dir():
-        assert not list(fresh.local.rglob("task-run-ai"))
+        found = fresh.cm.access({'category': 'config', 'command': 'find', 'arg1': 'local:task-run-ai', 'con': False})
+        assert not found.get('artifacts'), 'reading config must not create a config artifact (the scratch log may exist)'
 
     repository = str(task_namespace("run-ai")["CTask"]._repo_meta(str(fresh.project))["artifact"])
     r = fresh.cm.access({"category": "config", "command": "set", "arg1": "task-run-ai", "con": False,

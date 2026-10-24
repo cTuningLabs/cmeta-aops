@@ -9,6 +9,8 @@ where the last run stopped, with any harness and any model.
 
     cxt run-ai [--harness=claude|codex|opencode|openclaw|antigravity|gemini|hermes] [--project=<cref>] [-i] [prompt] [-- <harness flags>]
     cxt run-ai                                             # continue the latest conversation of the project, interactively
+    cxt run-ai -l                                          # a fresh dated scratch workspace in log::local:task-run-ai
+    cxt run-ai -l="quick question"                         # add this label to the workspace's directory name
     cxt run-ai "one prompt"                                # one more turn of that conversation, then exit
     cxt run-ai --new "..."                                 # start a new conversation (the memory and skills stay)
     cxt run-ai --conversation=20261004-18 "..."            # continue a given conversation (id or prefix)
@@ -36,6 +38,10 @@ The project, in this order:
                          "cx . <command>"); the agent then works in the artifact's root folder
     (none detected)      the current directory itself
     --project=.          the current directory itself, no detection
+    -l[=<label>]         a new log/task-run-ai/YYYYMMDD-HHMM[.<label>] workspace in the active home's local repo
+
+Without an explicit project, the nearest existing !AI directory identifies its workspace (within the detected
+cMeta artifact or up to a repository boundary). This also resumes dated scratch sessions without another flag.
 
 The !AI folder of the project (created on the first run):
     !AI/memory/                        the agent's persistent memory: MEMORY.md (the index) + one file per memory
@@ -117,6 +123,9 @@ from task_c36be4b9314a45e0.api.ctask import InitCTask
 
 TASK_CATEGORY = 'task,c36be4b9314a45e0'
 TOOL_CATEGORY = 'tool,c393ba5c6fa14f66'
+LOG_CATEGORY = 'log,487a7639093a4685'
+REPO_CATEGORY = 'repo,f4f792ab40c7498f'
+LOG_PROJECT = 'task-run-ai'
 MODELS_FILE = '_desc_models.yaml'
 
 # The harnesses, the tasks that run them and the tools that hold their model lists (alias,UID: rename-safe).
@@ -243,7 +252,7 @@ class CTask(InitCTask):
         super().__init__(*args, module_file_path=__file__, **kwargs)
 
     # ------------------------------------------------------------------ the project
-    def _resolve_project(self, project, con, space):
+    def _resolve_project(self, project, con, space, ai_dir=AI_DIR):
         """-> (path, cref or '', how) or an error dict."""
         if project == '.':
             cwd = os.path.normpath(os.getcwd())
@@ -266,8 +275,9 @@ class CTask(InitCTask):
                                      p.get('artifact_alias', art), p.get('artifact_uid', ''))
             return os.path.normpath(a['path']), cref, '--project'
 
-        # no --project: the artifact around the current directory (the "cx . <command>" detection), else the cwd
+        # Find the cMeta artifact boundary first, then prefer the nearest established AI workspace inside it.
         cwd = os.path.normpath(os.getcwd())
+        detected = (cwd, '', 'the current directory (no cMeta artifact detected)')
         r = self.cm.utils.common.detect_cid_in_the_current_directory(self.cm)
         if r.get('return', 1) == 0 and (r.get('artifact_alias') or r.get('artifact_uid')):
             cat = r.get('category_obj') or r.get('category_alias')
@@ -279,8 +289,26 @@ class CTask(InitCTask):
                     p = a.get('cmeta_ref_parts') or {}
                     cref = '%s,%s::%s,%s' % (p.get('category_alias', ''), p.get('category_uid', ''),
                                              p.get('artifact_alias', ''), p.get('artifact_uid', ''))
-                    return ap, cref, 'detected from the current directory'
-        return cwd, '', 'the current directory (no cMeta artifact detected)'
+                    detected = (ap, cref, 'detected from the current directory')
+                    break
+
+        boundary = os.path.normcase(detected[0]) if detected[1] else ''
+        directory = cwd
+        while not os.path.isabs(ai_dir):
+            if os.path.isdir(os.path.join(directory, ai_dir)):
+                if os.path.normcase(directory) == boundary:
+                    return detected
+                return directory, '', 'existing %s detected from the current directory' % ai_dir
+            if os.path.normcase(directory) == boundary:
+                break
+            # Outside a known artifact, do not inherit a workspace from above a repository root.
+            if not boundary and any(os.path.isfile(os.path.join(directory, name)) for name in ('_cmr.yaml', '_cmr.json')):
+                break
+            parent = os.path.dirname(directory)
+            if parent == directory:
+                break
+            directory = parent
+        return detected
 
     @staticmethod
     def _alias_of(cref, project_path):
@@ -291,6 +319,81 @@ class CTask(InitCTask):
         else:
             alias = os.path.basename(os.path.normpath(project_path))
         return alias or 'project'
+
+    def _log_project(self, label, dry_run):
+        """One dated workspace below the local log artifact; mkdir reserves its name atomically."""
+        label = '' if label is True else str(label or '')
+        label = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', label).strip(' .')[:80].rstrip(' .')
+        ref = 'local:' + LOG_PROJECT
+        r = self.cm.access({'category': LOG_CATEGORY, 'command': 'find', 'arg1': ref, 'con': False})
+        if r.get('return', 1) not in (0, 16):
+            return r
+        artifacts = r.get('artifacts') or []
+        if not artifacts and not dry_run:
+            r = self.cm.access({'category': LOG_CATEGORY, 'command': 'create', 'arg1': ref, 'yaml': True,
+                                'tags': ['run-ai', 'scratch'], 'con': False, 'quiet': True,
+                                'meta': {'desc': 'Dated scratch projects of run-ai; each workspace keeps its own !AI.'}})
+            if r.get('return', 1) not in (0, 8):
+                return r
+            r = self.cm.access({'category': LOG_CATEGORY, 'command': 'find', 'arg1': ref, 'con': False})
+            if r.get('return', 1) > 0:
+                return r
+            artifacts = r.get('artifacts') or []
+        if artifacts:
+            base = artifacts[0]['path']
+        else:
+            # A dry run predicts the same path without making the artifact or its index entry.
+            repo = self.cm.access({'category': REPO_CATEGORY, 'command': 'find', 'arg1': 'local', 'con': False})
+            if repo.get('return', 1) > 0 or len(repo.get('artifacts') or []) != 1:
+                return self.cm.error('run-ai -l: cannot find the active home\'s local repository')
+            category = self.cm.access({'category': 'category,dd9ea50e7f76467f', 'command': 'find',
+                                       'arg1': LOG_CATEGORY, 'con': False})
+            if category.get('return', 1) > 0 or not category.get('artifacts'):
+                return self.cm.error('run-ai -l: cannot find the log category')
+            a, cat = repo['artifacts'][0], category['artifacts'][0]
+            cat_name = cat['cmeta_ref_parts']['artifact_alias']
+            slices = (a.get('cmeta') or {}).get('sharding_slices', {}).get(LOG_CATEGORY.split(',')[1],
+                                                                                     (cat.get('cmeta') or {}).get('sharding_slices'))
+            r = self.cm.utils.files.apply_sharding_to_path(os.path.join(a['path'], cat_name), LOG_PROJECT, slices)
+            if r['return'] > 0:
+                return r
+            base = r['sharded_path']
+
+        name = datetime.datetime.now().strftime('%Y%m%d-%H%M') + ('.' + label if label else '')
+        number = 1
+        while True:
+            path = os.path.join(base, name + ('-%d' % number if number > 1 else ''))
+            if dry_run:
+                if not os.path.lexists(path):
+                    break
+            else:
+                try:
+                    os.mkdir(path)
+                    break
+                except FileExistsError:
+                    pass
+            number += 1
+        return {'return': 0, 'path': os.path.abspath(path)}
+
+    def _confirm_new_ai(self, ctx, project_path, ai_root):
+        """A first run outside cMeta needs consent before it creates its memory and records."""
+        if os.path.exists(ai_root) or self._repo_meta(project_path):
+            return {'return': 0}
+        con = ctx['control'].get('con', False)
+        if con:
+            print('cMeta warning: this directory is outside a cMeta repository: %s' % project_path)
+            print('cMeta info: run-ai will create: %s' % ai_root)
+        if ctx['control'].get('quiet', False):
+            return {'return': 0}
+        if not con:
+            return self.cm.error('run-ai would create "%s" outside cMeta; use -q to continue here, or -l for a scratch project' % ai_root)
+        r = self.cm.utils.common.ask('Create "%s" and continue? [Y/n] ' % ai_root,
+                                     how='-q to create it here, or -l for a scratch project')
+        if r['return'] > 0:
+            return r
+        if r['answer'].strip().lower() not in ('', 'y', 'yes'):
+            return self.cm.error('stopped: no !AI was created in "%s"' % project_path)
+        return {'return': 0}
 
     @staticmethod
     def _new_stamp(log_dir, reserve):
@@ -1378,7 +1481,9 @@ class CTask(InitCTask):
             ctx: dict,                      # cMeta context
             harness: str = '',              # claude (default) | codex | opencode | openclaw | antigravity (agy) | gemini | hermes | <x> (then the task run-<x>)
             agent: str = '',                # the old name of --harness (still accepted)
-            project: str = '',              # cRef "category::artifact" of the artifact to work on (default: detect, else cwd)
+            project: str = '',              # explicit cRef; default: nearest existing !AI, then the cMeta artifact, else cwd
+            log_project = None,             # a dated scratch project under log::local:task-run-ai; optional label after =
+            l = None,                       # short form: -l or -l="quick question" (the label names the workspace)
             ai_dir: str = AI_DIR,           # the folder inside the project that holds the agent's memory and records
             model: str = '',                # the model in the harness's own names, or "<model>,<effort>" (--list_models shows them)
             effort: str = '',               # the reasoning effort, in the harness's vocabulary (--list_models shows it)
@@ -1483,15 +1588,38 @@ class CTask(InitCTask):
                 notes.append('model flags: %s' % ' '.join(model_flags))
 
         # 1. the project and its !AI folder
-        r = self._resolve_project(project, con, space)
-        if isinstance(r, dict):
-            return r
-        project_path, cref, how = r
+        scratch_label = log_project if log_project is not None else l
+        scratch = scratch_label is not None and scratch_label is not False
+        read_only = dry_run or _truthy(conversations) or _truthy(cs) or _truthy(pending) or _truthy(summarize) or _truthy(apply_pending)
+        if scratch:
+            if project or conversation:
+                return self.cm.error('-l / --log_project creates a new workspace: do not combine it with --project or --conversation')
+            if not isinstance(scratch_label, (str, bool)):
+                return self.cm.error('-l / --log_project takes a label after =, or a bare flag')
+            r = self._log_project(scratch_label, read_only)
+            if r['return'] > 0:
+                return r
+            project_path, cref, how = r['path'], '', 'a temporary log project (-l / --log_project)'
+            if prompt_file:
+                prompt_file = os.path.abspath(prompt_file)
+        else:
+            r = self._resolve_project(project, con, space, ai_dir)
+            if isinstance(r, dict):
+                return r
+            project_path, cref, how = r
         alias = self._alias_of(cref, project_path)
         ai_root = os.path.join(project_path, ai_dir)
         mem_dir = os.path.join(ai_root, MEMORY_DIR)
         skills_dir = os.path.join(ai_root, SKILLS_DIR)
         log_dir = os.path.join(ai_root, LOG_DIR)
+
+        if scratch and con:
+            print('cMeta info: scratch workspace%s: %s' % (' (preview)' if read_only else '', project_path))
+            print('cMeta info: memory and records: %s' % ai_root)
+        if not scratch and not cref and not read_only:
+            r = self._confirm_new_ai(ctx, project_path, ai_root)
+            if r['return'] > 0:
+                return r
 
         # the stamp names the records of this run and, for a new conversation, the conversation (reserved below for a
         # run that writes records)
@@ -1934,7 +2062,7 @@ class CTask(InitCTask):
                     'params': params, 'flags': extra, 'env': env, 'settings': settings, 'context': sources, 'context_skipped': skipped,
                     'write': write_mode, 'write_from': write_from, 'context_guard': guard_mode, 'notes': notes,
                     'other_runs': other_mode, 'running_elsewhere': [{k: v for k, v in d.items() if not k.startswith('_')} for d in elsewhere],
-                    'conflicts': conflicts}
+                    'conflicts': conflicts, 'log_project': project_path if scratch else ''}
 
         if over:
             quiet = bool(ctx['control'].get('quiet', False))
@@ -2179,6 +2307,9 @@ class CTask(InitCTask):
                 print('%s        "cxt run-ai" continues it (any harness, any model); "cxt run-ai --new" starts another' % space)
             for n in guard_notes:
                 print('%s        %s' % (space, n))
+            if scratch:
+                print('cMeta info: scratch workspace: %s' % project_path)
+                print('cMeta info: to continue, enter that directory and run cxt run-ai')
 
         CONV.set_codex_sqlite_home('')
         for fp in temp_files:
@@ -2192,6 +2323,8 @@ class CTask(InitCTask):
                'codex_state': codex_dir or ('home' if hk == 'codex' else ''),
                'write': write_mode, 'write_from': write_from,
                'context_guard': guard_mode, 'context_changes': guard_records, 'pending': staged_now}
+        if scratch:
+            out['log_project'] = project_path
         if rr.get('return', 0) > 0:
             out['error'] = rr.get('error', 'the harness task failed')
         for k in ('output_file', 'stats_file', 'stats', 'returncode', 'tokens'):

@@ -315,6 +315,9 @@ class Category(InitCategory):
                 on = r_route['route']
             if on and on != 'here':
                 return self._run_on(ctx, params, on, con, quiet, verbose)
+            screen_option = params.get('on_screen')
+            if screen_option is not None and screen_option is not False and str(screen_option).strip().lower() not in ('false', 'no', 'off', '0'):
+                return self.cm.error('--on_screen needs --on=<host> (or an artifact route to another host)')
         cmeta = artifact['cmeta']
         cmeta_ref_parts = artifact['cmeta_ref_parts']
 
@@ -1986,8 +1989,24 @@ class Category(InitCategory):
         words = list(((ctx.get('origin') or {}).get('cli') or {}).get('cmd') or [])
         if not words:
             return self.cm.error('--on delegates a command line: it needs one (cx task run / program run / tool setup ... --on=<host>)')
-        inner_words = [w for w in words if not (isinstance(w, str) and (w == '--on' or w.startswith('--on=') or w.startswith('--on_') or w.startswith('-on=')))]
+        inner_words = [w for w in words if not (isinstance(w, str) and (w == '--on' or w.startswith('--on=') or w.startswith('--on_') or w.startswith('--on-') or w.startswith('-on=')))]
         options = {k[3:]: v for k, v in params.items() if isinstance(k, str) and k.startswith('on_')}
+
+        screen = options.get('screen')
+        screen = False if screen is None or screen is False or str(screen).strip().lower() in ('false', 'no', 'off', '0') else screen
+        if screen == '':
+            screen = True
+        if screen:
+            if screen is True or str(screen).strip().lower() in ('', 'true', 'yes', 'on', '1'):
+                screen = str(inner_words[2]).split(',')[0].split(':')[-1] if len(inner_words) > 2 else 'cx-task'
+            if any(options.get(k) for k in ('detach', 'pull', 'rm', 'isolated')):
+                return self.cm.error('--on_screen cannot be combined with --on_detach, --on_pull, --on_rm or --on_isolated')
+            try:
+                has_terminal = bool(con) and sys.stdin.isatty() and sys.stdout.isatty()
+            except (AttributeError, ValueError):
+                has_terminal = False
+            if not has_terminal:
+                return self.cm.error('--on_screen needs a terminal here; use --on_detach for an unattended task')
 
         host_category = 'host,e4e49c251c814f6d'
         engine, host, made = '', None, None
@@ -2072,6 +2091,8 @@ class Category(InitCategory):
         # app) - in a session of its own, its output in ~/cmeta-detached/<run id>.log and its process group in a .pid
         # file next to it; POSIX hosts and instances (a Windows host: not yet)
         detach = bool(options.get('detach', False))
+        if screen and shell == 'powershell':
+            return self.cm.error('--on_screen needs a POSIX host with GNU Screen (Linux/macOS, WSL or a container)')
 
         # A detached run returns at once and writes to its log: no terminal for it. From a Windows machine the words
         # then reach the host on stdin, from a temporary script (cx host run), where cmd.exe cannot strip the double
@@ -2151,6 +2172,8 @@ class Category(InitCategory):
                                   'stop': f'cx host run {host} "kill -- -$(cat {base}.pid)"'}
             if made and made.get('ports'):
                 run_on['ports'] = made['ports']
+        if screen:
+            run_on['screen'] = str(screen)
         ctx['on'] = run_on
 
         if con:
@@ -2158,8 +2181,12 @@ class Category(InitCategory):
             print (f'cMeta info: running on {host}: {inner}')
             print ('')
 
-        rr = self.cm.access({'category': host_category, 'command': 'run', 'arg1': host, 'arg2': inner, 'interactive': terminal,
-                             'con': con, 'quiet': quiet, 'verbose': verbose})
+        request = {'category': host_category, 'command': 'run', 'arg1': host, 'arg2': inner, 'interactive': terminal,
+                   'con': con, 'quiet': quiet, 'verbose': verbose}
+        if screen:
+            project_words = [str(w) for w in inner_words if str(w).startswith('--project=')]
+            request.update(screen=screen, screen_title=' '.join(inner_words[:3] + project_words))
+        rr = self.cm.access(request)
 
         # The data repositories the instance shares with this machine (models, datasets): what the run inside added
         # to them is indexed here now (the index lives in each home, the folder is the same)
@@ -2204,7 +2231,9 @@ class Category(InitCategory):
 
         if con:
             print ('')
-            if detach:
+            if screen:
+                print (f'cMeta info: screen "{screen}" on {host} disconnected or finished; repeat this command to reconnect or start again')
+            elif detach:
                 d = run_on['detached']
                 print (f'cMeta info: running on {host}, detached' + (f' (ports {", ".join(run_on["ports"])} on 127.0.0.1)' if run_on.get('ports') else '')
                        + f'; its output: {d["tail"]}; stop it: {d["stop"]}')

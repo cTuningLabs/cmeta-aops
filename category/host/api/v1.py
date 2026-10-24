@@ -75,6 +75,16 @@ def windows_here():
     return os.name == 'nt'
 
 
+def screen_name(value, default='cx-host'):
+    """Bare and explicitly empty flags select the default; omission leaves the ordinary shell."""
+    if value is None or value is False or str(value).strip().lower() in ('false', 'no', 'off', '0'):
+        return ''
+    name = default if value is True or str(value).strip().lower() in ('', 'true', 'yes', 'on', '1') else str(value).strip()
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', name):
+        raise ValueError('screen name must be 1-64 letters, digits, underscores or hyphens, starting with a letter or digit')
+    return name
+
+
 def declared_project_states(saved, desc):
     """The saved states of the projects the host still declares: a project taken out of _desc.yaml leaves
     state.yaml at the next probe of the host (before 2026-10-16 its last state stayed there for ever)."""
@@ -388,6 +398,8 @@ class Category(InitCategory):
         interactive=False,  # a terminal for the command (ssh -t / docker exec -it): it can ask questions; needs a terminal here
         project=None,      # named environment; omitted: the host's global environment
         unparsed=None,      # the command as the words after "--" (cx host run <host> -- <command>)
+        screen=None,        # keep the command in GNU Screen; bare: cx-host, or --screen=<name>
+        screen_title=None,  # title of a new screen window (task delegation supplies its project)
     ):
         """
         Run a command on a host (or on a selection of hosts), through its driver: locally when the host
@@ -406,6 +418,17 @@ class Category(InitCategory):
 
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
+
+        try:
+            screen = screen_name(screen)
+        except ValueError as e:
+            return self.cm.error(str(e))
+        if screen:
+            if capture or script or timeout or raw or bool(tags or machine or type or all):
+                return self.cm.error('--screen needs one interactive host, without --capture, --script, --timeout or --raw')
+            if not self._screen_terminal():
+                return self.cm.error('--screen needs a terminal here; use --on_detach for an unattended task')
+            interactive = True
 
         # The words after "--" are the command (not with a command given as an argument too)
         if unparsed:
@@ -446,10 +469,15 @@ class Category(InitCategory):
         outputs = {}
         failed = 0
         for h in hosts:
+            host_cmd = cmd
+            if screen:
+                r = self._screen_command(h, host_cmd, screen, screen_title, ctx['control'].get('quiet', False))
+                if self.cm.catch_error(r): return r
+                host_cmd = r['cmd']
             if stdin_file:
                 r = self._cmd_stdin(ctx, h, stdin_file)
             else:
-                r = self._cmd_run(ctx, h, cmd, raw=raw, interactive=bool(interactive))
+                r = self._cmd_run(ctx, h, host_cmd, raw=raw, interactive=bool(interactive))
             if self.cm.catch_error(r): return r
 
             if con and (len(hosts) > 1 or verbose):
@@ -486,6 +514,7 @@ class Category(InitCategory):
         x11=False,          # ssh -X: X11 forwarding (or "access: x11: true" in the host's _desc.yaml)
         forward=None,       # ssh -L: local ports to forward to the host, e.g. --forward=1455 or --forward=8080:80,5000
         dry_run=False,      # print the command instead of opening the shell
+        screen=None,        # persistent GNU Screen shell: bare = cx-host, or --screen=<name>
     ):
         """
         Open an interactive shell on a host: ssh, wsl.exe -d, docker exec -it, adb shell.
@@ -493,6 +522,8 @@ class Category(InitCategory):
             cx host ssh lab-mac-mini-macos               (also: cx host shell / login)
             cx host ssh lab-thinkpad-ubuntu --x11       # a remote GUI program shows up here
             cx host ssh lab-thinkpad-ubuntu --forward=1455   # a login page the host serves on localhost:1455 opens in this browser
+            cx host ssh lab-thinkpad-ubuntu --screen         # create/reconnect cx-host; SSH may disconnect
+            cx host ssh lab-thinkpad-ubuntu --screen=work    # a separate shell; exit ends its last window
         """
 
         con = ctx['control'].get('con', False)
@@ -504,10 +535,22 @@ class Category(InitCategory):
         if self.cm.catch_error(r): return r
         h = r['host']
 
-        r = self._cmd_run(ctx, h, None, interactive=True, x11=bool(x11), forwards=self._csv(forward))
+        try:
+            screen = screen_name(screen)
+        except ValueError as e:
+            return self.cm.error(str(e))
+        cmd = None
+        if screen:
+            if not dry_run and not self._screen_terminal():
+                return self.cm.error('--screen needs a terminal here')
+            r = self._screen_command(h, None, screen, quiet=ctx['control'].get('quiet', False))
+            if self.cm.catch_error(r): return r
+            cmd = r['cmd']
+
+        r = self._cmd_run(ctx, h, cmd, interactive=True, x11=bool(x11), forwards=self._csv(forward))
         if self.cm.catch_error(r): return r
 
-        if r.get('here'):
+        if r.get('here') and not screen:
             if con: print(f'{h["alias"]} is this machine - opening a local shell')
             cmd = 'cmd.exe' if os.name == 'nt' else os.environ.get('SHELL', '/bin/sh')
         else:
@@ -521,7 +564,33 @@ class Category(InitCategory):
             print(f'RUN: {cmd}')
 
         rc = subprocess.call(cmd, shell=True)
-        return {'return': 0, 'returncode': rc}
+        return {'return': 1 if screen and rc != 0 else 0, 'returncode': rc}
+
+    @staticmethod
+    def _screen_terminal():
+        try:
+            return sys.stdin.isatty() and sys.stdout.isatty()
+        except (AttributeError, ValueError):
+            return False
+
+    def _screen_command(self, h, cmd, name, title=None, quiet=False):
+        """Screen owns the shell/command; reconnecting resumes it without sending another command."""
+        shell = self._shell(h).strip()
+        if h['type'] == 'adb' or shell in ('powershell', 'pwsh', 'cmd', 'none', 'raw') or (self._here(h) and os.name == 'nt'):
+            return self.cm.error('--screen needs a POSIX host with GNU Screen (Linux/macOS, WSL or a container)')
+
+        shell_words = shlex.split(shell)
+        if cmd is not None:
+            shell_words += ['-c', cmd]
+        title = title or ('shell' if cmd is None else cmd)
+        args = ['-S', name, '-d', '-R', '-t', title] + shell_words
+        # Show the actual existing title (including a run-ai project), then let Screen attach or create.
+        # The new title/command are ignored by Screen when a session already exists.
+        query = (f'if cmeta_screen_windows=$(screen -S {shlex.quote(name)} -Q windows 2>/dev/null); '
+                 'then printf \'%s\\n\' "$cmeta_screen_windows"; fi')
+        launch = 'cx tool run screen,05d0264fd24b40f6 --con-' + (' -q' if quiet else '') + ' -- ' + ' '.join(shlex.quote(w) for w in args)
+        message = f'cMeta info: screen "{name}" on {h["alias"]}; existing windows (if any):'
+        return {'return': 0, 'cmd': f'printf \'%s\\n\' {shlex.quote(message)}; {query}; exec {launch}'}
 
     ############################################################
     def restart_(

@@ -59,7 +59,7 @@ cx host run <host> -- <command words> the same, the words after "--" joined (cMe
 cx host run --tags=ubuntu "<command>" the same on a selection (--machine, --type, --all)
 cx host run <host> --script=<file>    a local script on the host's shell stdin ("bash -l -s < file"; PowerShell: base64 lines on stdin, decoded as UTF-8 and run by an -EncodedCommand reader - never "-Command -")
 cx host run <host> "<command>" --interactive   a terminal for the command (ssh -t / docker exec -it): it can ask its questions; needs a terminal here (not with --capture or --script)
-cx host ssh <host> [--x11] [--forward=1455,8080:80] [--dry_run]   interactive shell (also: shell, login)
+cx host ssh <host> [--screen[=<name>]] [--x11] [--forward=1455,8080:80] [--dry_run]   interactive shell (also: shell, login)
 cx host up|down <host>                WSL distro, container (created from its image on the first up), or "commands: up/down"
 cx host destroy <instance> [--image] [--keep_artifact] [--force]   an instance cMeta made (get-host--docker / get-host--wsl): the container (or the WSL distribution and its disk), the artifact, with --image its image
 cx host snapshot <instance> [--name=<name>] [--note=<text>]       the instance's state kept: docker/podman commit to cmeta/snapshot:<instance>-<name>, a WSL export next to its disk; recorded under "snapshots" in its _desc
@@ -78,6 +78,43 @@ cx host upgrade [host|selection] [--version=0.33.0] [--sync] [--restart [--yes] 
                                       (sync, upgrade and restart probe the host again afterwards: "cx host ls" shows what is there now)
 cx host upgrade <host> [--engine-] --system [--firmware] [--check]   the OS packages (and firmware) too: "cx task run upgrade-os" on the host
 ```
+
+## Persistent terminals with GNU Screen
+
+```console
+cx host ssh my-host --screen
+cx host ssh my-host --screen=work
+cxt run-ai --project="work::my-project" --on=my-host --on_screen
+cxt run-ai --project="work::another-project" --on=my-host --on_screen=another-task
+```
+
+A bare or explicitly empty `--screen` / `--screen=` uses `cx-host`. A bare or explicitly empty
+`--on_screen` / `--on_screen=` uses the command's artifact alias (`run-ai` for
+`cxt run-ai`). A name selects a screen belonging to the remote user on that host. Names contain 1-64 letters,
+digits, underscores or hyphens and start with a letter or digit. Omit the flag to keep the usual shell/task behavior.
+
+The first invocation creates the screen and starts its shell or task. Repeating it reconnects to that screen;
+the new command, prompt and project are ignored while the existing session lives. The existing window titles
+are printed before attaching, including a run-ai project's reference. Use distinct names for independent tasks.
+Reattaching transfers the screen's display from its previous connection.
+
+Closing SSH or hibernating the client leaves the remote programs running. Repeat the same command after
+reconnecting. `Ctrl-a d` detaches deliberately. `exit` at the shell prompt closes its window; quitting an AI
+harness normally lets run-ai save its records and finish. The screen ends with its last window. A later
+invocation creates a new terminal; run-ai retains its normal conversation continuation rules.
+
+GNU Screen is detected or installed through `tool/screen` on the target POSIX host (Linux/macOS, WSL or a
+container). An interactive terminal is required on the client. A native Windows target and Android are refused.
+`--on_screen` cannot be combined with `--on_detach`, `--on_pull`, `--on_rm` or `--on_isolated`: disconnecting
+from a terminal must not clean up an environment whose task is still running. A target reboot ends its screens.
+Screen keeps terminal processes alive; concurrent sessions still share the host's files and repositories.
+
+`cx host run my-host "my-command" --screen=my-task` uses the same behavior. A screen run does not support
+capture, scripts on stdin, raw commands, timeouts or a host selection. Its return code describes the terminal
+attachment; the task's own records describe its outcome.
+
+A Windows batch launcher can pass an optional first argument as `--screen="%~1"`. With no argument the empty
+value selects `cx-host`; an argument selects that name. Omit the flag entirely for an ordinary SSH shell.
 
 ## Status: what is checked, and how long it takes
 

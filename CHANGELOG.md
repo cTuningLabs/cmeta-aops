@@ -3,6 +3,25 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.54.0
+- **run-ai resumes an existing workspace automatically:** plain `cxt run-ai` finds the nearest `!AI` in the
+  current directory or its parents and continues that workspace's latest conversation without asking. This
+  works inside dated scratch workspaces and their subdirectories, as well as ordinary folders. Detection
+  stops at a known cMeta artifact or repository boundary; an explicit `--project` still wins, and `-l` starts
+  a fresh workspace.
+- **run-ai scratch projects and first-run confirmation:** `-l` / `--log_project` creates a new dated workspace
+  under the active home's local `log::task-run-ai` artifact, with its own `!AI`. Its directory is named
+  `YYYYMMDD-HHMM`; `-l="quick question"` adds `.quick question`. A prompt uses `--prompt="..."` separately.
+  Names are portable and collisions get a numeric suffix. The agent works there, and the directory is printed
+  before and after it runs. A first real run outside cMeta asks before creating a new `!AI` (Enter continues);
+  `-q` keeps unattended behavior, existing `!AI` folders do not ask again, and dry runs create nothing.
+- **Persistent interactive terminals:** `cx host ssh <host> --screen[=<name>]` creates or reconnects a GNU Screen
+  shell (`cx-host` by default). `cxt run-ai --project=<cRef> --on=<host> --on_screen[=<name>]` does the same for
+  run-ai (default `run-ai`; other task commands use their artifact alias). SSH disconnections leave the command
+  running; repeating the name attaches without starting it again or resubmitting the prompt. Existing window
+  titles identify the project; normal shell/task exit closes its last window. GNU Screen is a cMeta tool on the
+  POSIX target. The flags require an interactive terminal and refuse incompatible cleanup/detach options.
+  Explicitly empty values (`--screen=` / `--on_screen=`) also choose the default name, for batch launchers
+  with an optional argument; omitting the flag keeps the ordinary behavior.
 - **run-ai on several machines:** a project's `!AI` folder can be bisynced between machines and worked on from
   either. Every run record names its host (`--conversations` shows `on <host>`); `!AI/log/<stamp>.running` marks a
   live run (removed when it ends, also when the harness dies), and the next run reports one of another machine in

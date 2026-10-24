@@ -46,6 +46,9 @@ cxt run-ai --list_models                             # the models and efforts of
 cxt run-ai --dry_run                                 # everything that would be given to the agent; nothing runs
 cxt run-ai --login [--harness=codex]                 # sign the agent in on this machine (its tool installed first when missing)
 cxt run-ai --project="work::x" --new -q "..." --on=<host> --on_detach   # a run on another machine that outlives this one
+cxt run-ai -l="quick question" --prompt="..."                         # a dated scratch workspace with its own !AI
+cxt run-ai --project="work::x" --on=<host> --on_screen               # an interactive terminal to reconnect later
+cxt run-ai --project="work::y" --on=<host> --on_screen=another-task  # a separate terminal; bare defaults to run-ai
 cxt import-ai --project="project::my-app" --skills="<repo>/.claude/skills"   # bring memories and skills into !AI
 ```
 

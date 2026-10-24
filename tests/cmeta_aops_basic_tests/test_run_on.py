@@ -347,3 +347,55 @@ def test_without_a_command_line_nothing_is_delegated(module):
 
     assert r['return'] == 1 and 'command line' in r['error']
     assert c.cm.calls == []
+
+
+@pytest.fixture
+def tty(monkeypatch):
+    import sys
+
+    monkeypatch.setattr(sys.stdin, 'isatty', lambda: True)
+    monkeypatch.setattr(sys.stdout, 'isatty', lambda: True)
+
+
+@pytest.mark.parametrize('option, value, expected', [('--on_screen', True, 'run-ai'),
+                                                   ('--on_screen=', '', 'run-ai'),
+                                                   ('--on_screen=work', 'work', 'work'),
+                                                   ('--on-screen=work', 'work', 'work')])
+def test_screen_delegates_the_name_and_project_without_replaying_the_flag(module, tty, option, value, expected):
+    c = category(module)
+    words = ['task', 'run', 'run-ai', '--project=work::a b', '--on=lab-thinkpad-ubuntu', option]
+    ctx = {'origin': {'cli': {'cmd': words}}}
+    r = c._run_on(ctx, {'on_screen': value}, 'lab-thinkpad-ubuntu', True, False, False)
+    assert r['return'] == 0 and r['run_on']['screen'] == expected
+    run = host_run(c)
+    assert run['screen'] == expected and run['interactive'] is True
+    assert run['screen_title'] == 'task run run-ai --project=work::a b'
+    assert '--on_screen' not in run['arg2'] and '--on-screen' not in run['arg2']
+    assert "'--project=work::a b'" in run['arg2']
+
+
+@pytest.mark.parametrize('other', ['detach', 'pull', 'rm', 'isolated'])
+def test_screen_cannot_leave_its_environment_cleaned_up_on_disconnect(module, tty, other):
+    c = category(module)
+    _, r = run_on(c, ['task', 'run', 'run-ai', '--on=docker', '--on_screen'], 'docker',
+                  {'on_screen': True, 'on_' + other: True})
+    assert r['return'] == 1 and '--on_screen' in r['error'] and c.cm.calls == []
+
+
+def test_screen_requires_a_terminal_and_a_posix_host(module, tty):
+    c = category(module)
+    _, r = run_on(c, ['task', 'run', 'run-ai', '--on=lab-thinkpad-ubuntu'], 'lab-thinkpad-ubuntu', {'on_screen': True})
+    assert r['return'] == 1 and 'terminal' in r['error']
+
+    c = category(module, hosts=('windows',), host_os='windows', shell='powershell')
+    ctx = {'origin': {'cli': {'cmd': ['task', 'run', 'run-ai', '--on=windows', '--on_screen']}}}
+    r = c._run_on(ctx, {'on_screen': True}, 'windows', True, False, False)
+    assert r['return'] == 1 and 'POSIX' in r['error']
+    assert not any(i['command'] == 'run' for i in c.cm.calls)
+
+
+def test_screen_false_preserves_ordinary_delegation(module):
+    c = category(module)
+    _, r = run_on(c, ['task', 'run', 'run-ai', '--on=lab-thinkpad-ubuntu', '--on_screen=no'],
+                  'lab-thinkpad-ubuntu', {'on_screen': 'no'})
+    assert r['return'] == 0 and 'screen' not in host_run(c)
