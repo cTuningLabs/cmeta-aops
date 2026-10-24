@@ -3,11 +3,21 @@ authors: Grigori Fursin
 names:
   - screen{{global.host.vars.file_ext_exe}}
 
+# Homebrew's copy on macOS even when its bin folder is not on the PATH of a non-login shell
+extra_paths:
+  darwin:
+    - /opt/homebrew/bin
+    - /usr/local/bin
+
 match_version:
   - regex: 'Screen version\s+([0-9]+\.[0-9]+\.[0-9]+)'
     group: 1
 
 cmd_get_version: '{{tool_path}} -v'
+
+# The oldest Screen that cx host ssh --screen / run-ai --on_screen work with: -Q (a session's windows) came in 4.2.
+# An older copy is skipped as if absent - macOS ships 4.00.03 in /usr/bin, so Homebrew's current one is installed.
+min_version: '4.2'
 
 # GNU Screen publishes source; use the host's package manager when it is missing.
 install_cmd:

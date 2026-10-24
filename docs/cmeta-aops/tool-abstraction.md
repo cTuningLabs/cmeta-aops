@@ -42,7 +42,13 @@ cmd_get_version: '{{tool_path}} --version'  # {{tool_path}} = the found binary
 extra_paths:                                # extra dirs to search beyond PATH (per OS, glob ** allowed)
   windows: [ "{{global.host.os_env.APPDATA}}\\npm" ]
 default_version: '4.3.0'                    # the version installed when none is asked for (a quoted string)
+min_version: '4.2'                          # optional: a copy older than this is skipped as if absent
 ```
+
+`min_version` is the oldest version the tool works with at all, whatever is asked for: the detection drops an older
+copy found on the machine (with a line in the warning saying so) before it sorts, so that a setup without a match
+installs a current one. `tool/screen` declares `'4.2'` (the `-Q` its persistent terminals use): macOS ships GNU Screen
+4.00.03 in `/usr/bin`, and the setup takes Homebrew's instead.
 
 `default_version` is the one place that says which version cMeta installs by default: the shared installers
 (`common_release.py`, `common_pyvenv.py`, `common_static_lib.py`) and a custom `install()` hook
@@ -52,7 +58,7 @@ default_version: '4.3.0'                    # the version installed when none is
 `setup/detect.py` searches each `names` filename on `aggregated.env.PATH` + `os_env.PATH`
 + `extra_paths`, runs `cmd_get_version` on each hit, and regex-matches the version
 (`re.IGNORECASE | re.MULTILINE`, first `match_version` entry that matches wins). It filters
-by requested `--version`, sorts (`@detected_version-`), and returns `path`/`version`/
+by requested `--version` and by `min_version`, sorts (`@detected_version-`), and returns `path`/`version`/
 `path_bin`/`features`. **npm-shim tools** need every candidate name (e.g.
 `[openclaw{{file_ext_exe}}, openclaw.cmd]`) because on Windows the binary is `X.cmd`, not
 `X.exe`.

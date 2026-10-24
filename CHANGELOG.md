@@ -2,6 +2,13 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.54.1
+- **`min_version` in a tool's `_desc.yaml`:** the detection skips a copy older than it as if it was absent (a line
+  of the warning says so), so that a setup without a current copy installs one; a version asked for still applies.
+  `tool/screen` declares `'4.2'` - the persistent terminals list a session's windows with `-Q`, and macOS ships GNU
+  Screen 4.00.03 in `/usr/bin`, so a Mac host now gets Homebrew's current Screen (the setup asks before installing;
+  `-q` installs). Homebrew's folders are searched on macOS even when a non-login shell lacks them on its PATH.
+
 ## 0.54.0
 - **run-ai resumes an existing workspace automatically:** plain `cxt run-ai` finds the nearest `!AI` in the
   current directory or its parents and continues that workspace's latest conversation without asking. This
