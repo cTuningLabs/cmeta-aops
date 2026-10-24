@@ -167,25 +167,6 @@ def read_tool(self,
     }
 
 ###################################################################################################
-def at_min_version(packages, min_version, items):
-    """
-    The detected copies of a tool that are not older than its min_version (_desc.yaml): an older copy is skipped as if
-    it was absent, so that a setup installs a current one - macOS ships GNU Screen 4.00.03, and -Q needs 4.2.
-    packages is the engine's (cm.packages, for match_version); items are dicts with 'path' and 'detected_version'.
-
-    Returns:
-        (kept, notes): the items kept, and one line of warning per item skipped.
-    """
-    kept, notes = [], []
-    for x in items:
-        r = packages.match_version('>=' + min_version, x['detected_version'])
-        if r.get('return', 1) == 0 and r.get('matched'):
-            kept.append(x)
-        else:
-            notes.append(f'\n  * "{x["path"]}" is version {x["detected_version"]}, older than the tool\'s min_version {min_version}: skipped')
-    return kept, notes
-
-
 def desc_features_block(desc, uname):
     """
     The declarative features of a tool's _desc.yaml for this OS: the "all" block, else the host's

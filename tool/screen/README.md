@@ -16,9 +16,10 @@ session. Repeating a command reconnects to an existing screen without starting i
 detaches; exiting the shell or finishing the task closes its last window and ends the screen. Sessions survive
 client disconnections, including laptop hibernation; they do not survive a reboot of the target host.
 
-The persistent terminals need Screen 4.2 or later (`min_version` in `_desc.yaml`: they list a session's windows
-with `-Q`). macOS ships Screen 4.00.03 in `/usr/bin`: it is skipped, and the setup installs Homebrew's current Screen
-(`brew install screen`; it asks first, `-q` installs without asking).
+The tool takes whatever Screen is installed; a user that needs more asks for it. The persistent terminals
+(`cx host ssh --screen`, `--on_screen`) ask for Screen 4.2 or later (`cx tool run screen --version=">=4.2"`): they
+list a session's windows with `-Q`. macOS ships Screen 4.00.03 in `/usr/bin`, so on a Mac they set up Homebrew's
+current Screen (`brew install screen`; the setup asks first, `-q` installs without asking).
 
 Screen installed through a package manager is removed with that package manager. Removing a cMeta setup cache
 entry only removes its detection record.

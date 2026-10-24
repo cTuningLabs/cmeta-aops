@@ -3,11 +3,11 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## 0.54.1
-- **`min_version` in a tool's `_desc.yaml`:** the detection skips a copy older than it as if it was absent (a line
-  of the warning says so), so that a setup without a current copy installs one; a version asked for still applies.
-  `tool/screen` declares `'4.2'` - the persistent terminals list a session's windows with `-Q`, and macOS ships GNU
-  Screen 4.00.03 in `/usr/bin`, so a Mac host now gets Homebrew's current Screen (the setup asks before installing;
-  `-q` installs). Homebrew's folders are searched on macOS even when a non-login shell lacks them on its PATH.
+- **The persistent terminals ask for GNU Screen 4.2 or later:** `cx host ssh --screen` and `--on_screen` read a
+  session's windows with `-Q` (Screen 4.2), so their launch asks `cx tool run screen --version=">=4.2"`
+  (`SCREEN_VERSION` of the host category); `tool/screen` itself still takes any version. macOS ships Screen 4.00.03
+  in `/usr/bin`, so on a Mac the setup takes Homebrew's current Screen (it asks before installing; `-q` installs);
+  `tool/screen` searches Homebrew's folders on macOS even when a non-login shell lacks them on its PATH.
 
 ## 0.54.0
 - **run-ai resumes an existing workspace automatically:** plain `cxt run-ai` finds the nearest `!AI` in the

@@ -443,16 +443,8 @@ def detect_existing_tool(self,
             if r['return']==0 and r['matched']:
                 matched_paths_with_versions.append(x)
 
-    # The oldest version the tool works with at all (min_version in its _desc.yaml): an older copy found here is
-    # skipped as if it was absent, so that the setup installs a current one (a version asked for still applies)
-    min_version = str(desc.get('min_version') or '').strip()
-    if min_version:
-        matched_paths_with_versions, notes = common.at_min_version(self.cm.packages, min_version, matched_paths_with_versions)
-        warning += ''.join(notes)
-
     if not matched_paths_with_versions:
-        wanted = ', '.join([x for x in (version, ('>=' + min_version) if min_version else '') if x]) or None
-        return self.cm.error(f'failed to find tool "{artifact_print_name}" with matched version ({wanted}):{warning}', 16)
+        return self.cm.error(f'failed to find tool "{artifact_print_name}" with matched version ({version}):{warning}', 16)
 
     if hasattr(tool_api_code, 'check_features') and callable(getattr(tool_api_code, 'check_features')):
         r = tool_api_code.check_features(ctx, matched_paths_with_versions, params)

@@ -15,10 +15,6 @@ match_version:
 
 cmd_get_version: '{{tool_path}} -v'
 
-# The oldest Screen that cx host ssh --screen / run-ai --on_screen work with: -Q (a session's windows) came in 4.2.
-# An older copy is skipped as if absent - macOS ships 4.00.03 in /usr/bin, so Homebrew's current one is installed.
-min_version: '4.2'
-
 # GNU Screen publishes source; use the host's package manager when it is missing.
 install_cmd:
   linux: '{{global.host.os_extra.install_cmd_sudo}}'
@@ -29,6 +25,5 @@ requires_sudo:
   linux: True
 
 install_help_text: |
-  GNU Screen 4.2 or later runs on POSIX hosts: the Linux distribution's package, or Homebrew's on macOS
-  ("brew install screen" - the /usr/bin/screen of macOS is 4.00.03, too old for -Q). From Windows, select a
-  Linux/macOS host, WSL or a container.
+  GNU Screen runs on POSIX hosts: the Linux distribution's package, or Homebrew's on macOS ("brew install screen";
+  the /usr/bin/screen of macOS is 4.00.03). From Windows, select a Linux/macOS host, WSL or a container.
