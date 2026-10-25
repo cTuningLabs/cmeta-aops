@@ -241,7 +241,8 @@ class FakeSubprocessAll(FakeSubprocess):
 
     def run(self, command, **kwargs):
         # "ssh-keygen ... -f <path>" makes the host key: the start chmods it on Linux and macOS and reads its .pub
-        if "-f" in command:
+        # ("sshd -t -f <config>" carries -f too: the config stays as written)
+        if "-f" in command and "keygen" in os.path.basename(str(command[0])):
             path = command[command.index("-f") + 1]
             pathlib.Path(path).write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nx\n-----END OPENSSH PRIVATE KEY-----\n")
             pathlib.Path(path + ".pub").write_text("ssh-ed25519 AAAA host\n")
