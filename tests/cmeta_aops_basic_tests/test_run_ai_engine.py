@@ -1098,3 +1098,15 @@ def test_the_copies_the_sync_kept_are_merged_for_records_and_listed_for_memories
     assert "the sync kept two versions of 2 file(s)" in read(r["record"])
     assert (lab.project / "!AI" / "memory" / "fact.md.conflict2").exists(), "a memory's copies are the agent's to merge"
     assert [c[0] for c in lab.run(dry_run = True)["conflicts"]] == ["memory/MEMORY.md", "memory/fact.md"]
+
+
+def test_cx_is_codex_in_short(task_namespace):
+    """--cx is --harness=codex in short; together with another --harness it is an error; alone, claude stays the default."""
+    choice = task_namespace("run-ai")["harness_choice"]
+    assert choice('', '', False) == ('', 'claude', None)
+    assert choice('', '', True) == ('codex', 'codex', None)
+    assert choice('codex', '', True) == ('codex', 'codex', None)
+    assert choice('Claude', '', False) == ('claude', 'claude', None)
+    assert choice('', 'codex', False) == ('codex', 'codex', None)            # the old name --agent
+    given, harness, err = choice('claude', '', True)
+    assert (given, harness) == ('claude', 'claude') and '--cx is --harness=codex' in err

@@ -171,12 +171,14 @@ def test_local_address_and_listening(task):
     assert task["local_address"]("127.0.0.1")
     assert not task["local_address"]("192.0.2.1")          # TEST-NET-1, on no machine
     with socket.socket() as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)    # as sshd sets it on its listening socket
         s.bind(("127.0.0.1", 0))
-        s.listen(8)                                     # two connections, none accepted
+        s.listen(8)                                     # no connection is made to it: the probe binds the port
         port = s.getsockname()[1]
         assert task["listening"]("127.0.0.1", port)
         assert task["listening"]("0.0.0.0", port)          # asked on 127.0.0.1
     assert not task["listening"]("127.0.0.1", port, timeout = 0.5)
+    assert not task["listening"]("192.0.2.1", port)        # an address that is not this machine's: not "in use"
 
 
 def test_sshd_config(task):
@@ -187,11 +189,13 @@ def test_sshd_config(task):
     assert "AuthorizedKeysFile C:/cache/50%%/authorized_keys" in lines
     assert "Subsystem sftp C:/o/sftp-server.exe" in lines
     assert {"PasswordAuthentication no", "KbdInteractiveAuthentication no", "PubkeyAuthentication yes"} <= set(lines)
-    assert not [line for line in lines if line.startswith(("PidFile", "UsePAM"))]
+    assert "PidFile C:/cache/sshd.pid" in lines                 # else sshd tries __PROGRAMDATA__\ssh and complains
+    assert not [line for line in lines if line.startswith("UsePAM")]
 
     lines = task["sshd_config"](2222, "127.0.0.1", "/s/host_key", "/s/authorized_keys", pidfile = "/s/sshd.pid")
     assert "PidFile /s/sshd.pid" in lines and "UsePAM no" in lines and "HostKey /s/host_key" in lines
     assert not [line for line in lines if line.startswith("Subsystem")]
+    assert not [line for line in task["sshd_config"](2222, "127.0.0.1", "/s/k", "/s/a") if line.startswith("PidFile")]
 
 
 # task/run-openssh: run() without starting a server
@@ -230,11 +234,13 @@ class Stop(Exception):
 
 
 class FakeSubprocessAll(FakeSubprocess):
-    """subprocess for a start that never launches sshd: ssh-keygen, icacls and "sshd -t" succeed, Popen stops."""
+    """subprocess for a start that never launches sshd: ssh-keygen, icacls and "sshd -t" succeed, Popen records its
+    call and stops."""
     STDOUT = subprocess.STDOUT
     DEVNULL = subprocess.DEVNULL
 
     def Popen(self, *args, **kwargs):
+        self.popen = (args, kwargs)
         raise Stop()
 
 
@@ -298,8 +304,29 @@ def test_run_host_and_references(run, task, tmp_path, monkeypatch):
         run(port = 2299, host = "me", keys = "secret::me")
     state = tmp_path / "default-2299"
     assert (state / "authorized_keys").read_text(encoding = "utf-8") == f"{OTHER}\n{KEY}\n"
-    assert "AuthorizedKeysFile" in (state / "sshd_config").read_text(encoding = "utf-8")
+    config = (state / "sshd_config").read_text(encoding = "utf-8")
+    assert "AuthorizedKeysFile" in config and "LogLevel INFO" in config
     assert not (state / "sshd.pid").exists()
+    # the background start: the log file, detached (a new session, or Windows' detached flags)
+    args, kwargs = task["subprocess"].popen
+    assert kwargs["stdin"] == subprocess.DEVNULL and "stdout" in kwargs
+    assert kwargs.get("start_new_session") or kwargs.get("creationflags")
+
+
+def test_run_foreground_and_log_level(run, task, tmp_path, monkeypatch):
+    """--foreground starts sshd attached to this console (no log file, no detaching) and --sshd_log_level is checked
+    (its name avoids cMeta's own --log_level flag, which swallows a task parameter of that name)."""
+    pub = tmp_path / "k.pub"
+    pub.write_text(KEY + "\n", encoding = "utf-8")
+    for bad in ["chatty", "debug4", "info verbose"]:
+        assert "--sshd_log_level" in run(port = 2299, keys = str(pub), sshd_log_level = bad)["error"]
+    monkeypatch.setitem(task, "subprocess", FakeSubprocessAll())
+    with pytest.raises(Stop):
+        run(port = 2299, keys = str(pub), foreground = True, sshd_log_level = "verbose")
+    args, kwargs = task["subprocess"].popen
+    assert args[0][:3] == ["sshd", "-D", "-e"]
+    assert kwargs == {"stdin": subprocess.DEVNULL}
+    assert "LogLevel VERBOSE" in (tmp_path / "default-2299" / "sshd_config").read_text(encoding = "utf-8")
 
 
 def test_status_and_stop_without_a_server(run, tmp_path):

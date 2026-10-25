@@ -12,6 +12,15 @@ All notable changes to cMeta AOps are documented here, newest first.
   refused. Without `--host` or `--keys` the user's `~/.ssh/authorized_keys` is allowed, as before.
 - **`cxai`** (cMeta 0.37.6) is named beside `cxt run-ai` in the documents of run-ai: `cxai ...` = `cx task run run-ai ...`,
   `ucxai` with a bare `--home` first.
+- **run-openssh in the foreground, to watch it:** `--foreground` keeps the server attached to the console that started it
+  (its log on the screen instead of the log file; Ctrl-C, the window closed or `stop` from another window ends it);
+  `--sshd_log_level=INFO|VERBOSE|DEBUG..DEBUG3` is sshd's LogLevel (VERBOSE: every session started - shell, command or
+  subsystem - with the client's address; sshd never prints a command's text). The name avoids `--log_level`, cMeta's own
+  flag, which swallows a task parameter of that name. Two lines of noise gone from the log: sshd writes its pid file
+  into the server's folder on Windows too (no "Couldn't create pid file __PROGRAMDATA__\ssh" - a user cannot write
+  there), and the readiness and status probes bind the port instead of connecting to it (OpenSSH 9.8+ wrote a
+  "penalty ... connections without attempting authentication" line for each probe).
+- **`cxt run-ai --cx`** is `--harness=codex` in short (an error together with another `--harness`).
 
 ## 0.54.2
 - **`cx host screens <host>`:** the GNU Screen sessions of a host's user from here - name, pid, state (attached,

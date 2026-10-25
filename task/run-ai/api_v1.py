@@ -245,6 +245,19 @@ YES_HARNESSES = ('claude', 'codex', 'opencode', 'agy', 'gemini', 'hermes')
 LONG_PROMPT_HARNESSES = ('claude', 'codex', 'opencode', 'openclaw', 'agy', 'gemini', 'hermes')
 
 
+def harness_choice(harness, agent, cx = False):
+    """
+    The harness of a run from --harness (or its old name, --agent) and the short --cx (= --harness=codex):
+    (the name as given or '', the harness to run, an error or None).
+    """
+    given = str(harness or agent or '').strip().lower()
+    if cx:
+        if given and given != 'codex':
+            return given, given, '--cx is --harness=codex in short: not together with --harness=%s' % given
+        given = 'codex'
+    return given, given or 'claude', None
+
+
 class CTask(InitCTask):
     """run-ai: run a coding agent on a cMeta artifact, with its memory, skills and conversations in the artifact's !AI folder."""
 
@@ -1481,6 +1494,7 @@ class CTask(InitCTask):
             ctx: dict,                      # cMeta context
             harness: str = '',              # claude (default) | codex | opencode | openclaw | antigravity (agy) | gemini | hermes | <x> (then the task run-<x>)
             agent: str = '',                # the old name of --harness (still accepted)
+            cx: bool = False,               # --harness=codex in short
             project: str = '',              # explicit cRef; default: nearest existing !AI, then the cMeta artifact, else cwd
             log_project = None,             # a dated scratch project under log::local:task-run-ai; optional label after =
             l = None,                       # short form: -l or -l="quick question" (the label names the workspace)
@@ -1529,8 +1543,9 @@ class CTask(InitCTask):
         space = '  ' * (ctx['tasks']['nested_call'] + 1) if verbose else ''
         today = datetime.date.today().isoformat()
 
-        given = str(harness or agent or '').strip().lower()
-        harness = given or 'claude'
+        given, harness, err = harness_choice(harness, agent, cx)
+        if err:
+            return self.cm.error(err)
         task_ref, tool_ref = self._harness_refs(harness)
         hk = CONV.harness_key(harness)
         notes = []

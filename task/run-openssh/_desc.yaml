@@ -6,6 +6,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #
 #   cx task run run-openssh --host=<the host artifact this machine is>     the key the fleet reaches it with
 #   cx task run run-openssh --keys=<public key file>[,<file, key, secret::<alias> or <cat>::<artifact>/<file>>...]
+#   cx task run run-openssh --host=<host> --foreground --sshd_log_level=VERBOSE    attached to this console, to watch it
 #   cx task run run-openssh status
 #   cx task run run-openssh stop
 

@@ -12,6 +12,7 @@ authors: Grigori Fursin
 #   cxt run-ai --log_project="quick question" --prompt="..."    # long form; the prompt is separate
 #   cxt run-ai "one prompt"                         # one more turn of it, then exit
 #   cxt run-ai --harness=codex --model=<m>,<e>      # the same conversation with another harness and model
+#   cxt run-ai --cx "..."                           # --harness=codex in short
 #   cxt run-ai --new / --conversation=<id> / --conversations
 #   cxt run-ai --summarize                          # !AI/log/<id>.summary.md, read first at the next hand-over
 #   cxt run-ai --dry_run                            # everything that would be given to the harness; nothing runs
