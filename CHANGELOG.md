@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## 0.55.0.1
+## 0.55.1
 - **A server as the world sees it:** `projects: <name>: server: public: [<url>, ...]` names the public URLs of a
   project's server (a site behind a tunnel or a proxy); `cx host status` checks them from this machine, one line
   each under the project - `works` (HTTP 2xx or 3xx, a redirect not followed), `http <code>`, `timeout`,
@@ -22,6 +22,9 @@ All notable changes to cMeta AOps are documented here, newest first.
   review --plan, then explicitly use --resync". The identity now digests the definition's own filters, the mode and the
   endpoints; a state digested the old way (0.55.0 and before) is accepted and rewritten at the next success. The backup
   artifact of a pair carries `backup_of`, not `sync_uid` (which is how the pair's state is found).
+- **The step that marks a sync's backup artifact on the host cannot hang:** its rclone calls run with the sftp
+  hash check off (an `lsf` through the external ssh never returned without it, and a finished sync hung for ever)
+  and a time limit; a failure of that step is a warning on stdout, never an error of the sync that succeeded.
 
 ## 0.55.0
 - **A machine serves the fleet with the key the fleet reaches it with:** `cx task run run-openssh --host=<the host
