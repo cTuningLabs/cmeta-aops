@@ -26,7 +26,7 @@ def gateway(cm, tmp_path, name, **extra):
     r = cm.access({'category': 'ai.gateway', 'command': 'get', 'arg1': 'local:' + name})
     assert r['return'] == 0, r
     desc = {'description': 'a test gateway', 'base_url': 'http://127.0.0.1:9', 'wires': {'anthropic': '/anthropic', 'openai': '/openai/v1'},
-            'catalog': '/v1/models', 'auth': {'header': 'x-api-key', 'secret': name + '-key'},
+            'auth': {'header': 'x-api-key', 'secret': name + '-key'},
             'models': {'claude': {'opus': 'claude-opus-x', 'haiku': 'claude-haiku-x', 'default': 'claude-opus-x'},
                        'codex': {'default': 'gpt-x'}, 'opencode': {'default': 'claude-haiku-x'}}}
     desc.update(extra)
@@ -65,6 +65,18 @@ def test_connect_gives_each_harness_what_it_needs(cm, tmp_path):
     r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name2, 'harness': 'opencode', 'con': False})
     assert r['return'] == 0 and list(r['opencode_config']['provider']) == [name2]
     assert r['opencode_config']['provider'][name2]['options']['apiKey'] == 'sk-test-' + name2
+
+
+def test_a_gateway_that_does_not_answer_is_an_error_with_its_start_command(cm, tmp_path):
+    """A declared catalog is probed: nothing listens on port 9, so connect fails naming the URL and provided_by."""
+    name = gateway(cm, tmp_path, 'gw-' + uuid.uuid4().hex[:8], catalog='/v1/models',
+                   provided_by={'task': 'run-llama-cpp-server', 'params': {'port': 9}})
+    for harness in ('claude', 'codex', 'opencode'):
+        r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': harness, 'con': False})
+        assert r['return'] > 0 and 'does not answer' in r['error'] and '127.0.0.1:9' in r['error'], r
+        assert 'start it: cx task run run-llama-cpp-server --port=9' in r['error']
+    r = cm.access({'category': 'task', 'command': 'run', 'arg1': 'set-ai-gateway', 'harness': 'claude', 'gateway': name, 'con': False, 'quiet': True})
+    assert r['return'] > 0 and 'does not answer' in r['error']
 
 
 def test_connect_without_a_key_and_without_the_secret(cm, tmp_path):

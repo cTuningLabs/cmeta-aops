@@ -40,6 +40,10 @@ packages. A gateway that translates (Dapple's Responses route takes Claude model
 catalog, and Codex can use them - with prompts tuned for GPT. A llama.cpp server (the builds since 2026-10-16) speaks
 all three wires, so every harness can use it; vLLM speaks chat and Responses.
 
+`connect` (and so `set-ai-gateway` and every harness run) fails with the URL and the start command when the gateway's
+catalog does not answer - a harness is never started towards a dead gateway, where OpenCode could fall back to a
+provider it is logged into. A gateway without a `catalog` is not probed.
+
 The key: `auth.secret` names a `secret` artifact of kind `token` (`files/token`, or `env: NAME`); it lives in a
 repository of secrets (never synced) and reaches another machine by name only: `cx host push <host> <secrets
 repository> --artifacts="secret::<alias>" --secrets`. `connect` returns the value inside `env` for the harness task

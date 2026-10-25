@@ -148,6 +148,29 @@ class Category(InitCategory):
         return sorted(names, key = str.lower), url, ''
 
     @staticmethod
+    def _start_hint(desc):
+        """The command that starts a local gateway (provided_by: {task, params}), or ''."""
+        pb = desc.get('provided_by') if isinstance(desc.get('provided_by'), dict) else {}
+        if not pb.get('task'):
+            return ''
+        words = ['cx', 'task', 'run', str(pb['task'])]
+        for k, v in (pb.get('params') or {}).items():
+            words.append('--%s=%s' % (k, v))
+        return ' '.join(words)
+
+    def _reachable(self, desc, wire, header, key):
+        """The catalog of the wire answers -> ''; else what went wrong, with the start command of a local gateway.
+        A gateway without a catalog is not probed."""
+        cats = desc.get('catalogs') if isinstance(desc.get('catalogs'), dict) else {}
+        if not (cats.get(wire) or desc.get('catalog')):
+            return ''
+        names, url, e = self._catalog(desc, wire, header, key)
+        if not e:
+            return ''
+        hint = self._start_hint(desc)
+        return 'the gateway does not answer (%s)%s' % (e, ('; start it: ' + hint) if hint else '')
+
+    @staticmethod
     def _defaults(desc, harness):
         """The models block of a harness ({default, opus, sonnet, haiku, ...}) and the top-level default."""
         models = desc.get('models') if isinstance(desc.get('models'), dict) else {}
@@ -256,6 +279,11 @@ class Category(InitCategory):
         key, header, err = self._key(ctx, desc)
         if err:
             return self.cm.error(err)
+        # a gateway that does not answer is an error here, with the command that starts a local one - never a harness
+        # started without a model, which could fall back to a provider it is logged into
+        err = self._reachable(desc, avail[0], header, key)
+        if err:
+            return self.cm.error('%s for %s: %s' % (alias, harness, err))
         mine, top = self._defaults(desc, harness)
         chosen = str(model or mine.get('default') or top or '')
         env, args, notes, occ = {}, [], [], None

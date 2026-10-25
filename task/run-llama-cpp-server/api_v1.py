@@ -120,7 +120,7 @@ class CTask(InitCTask):
             host: str = '127.0.0.1',        # the address to listen on (0.0.0.0 for other machines - then the key is their only protection: none)
             compute: str = 'cuda',          # the llama.cpp build: cuda | cpu | metal (the tool is built or installed for it)
             ctx_size: int = 32768,          # the context window in tokens (Claude Code's first request alone is about 17k: below 24k it fails)
-            gpu_layers: int = 99,           # layers on the GPU (99 = all that fit; smaller for a model larger than the GPU's memory)
+            gpu_layers: str = 'auto',       # layers on the GPU: auto = llama.cpp fits them to the device memory (its --fit), else a number (-ngl)
             alias: str = '',                # the model's name in /v1/models and in the harnesses (the file's name by default)
             parallel: int = 1,              # concurrent requests the server takes
             timeout: int = 300,             # seconds to wait for the model to load before "start" gives up
@@ -131,7 +131,7 @@ class CTask(InitCTask):
         A llama.cpp server on this machine, detached, with the Anthropic, chat and Responses wires on one port.
 
             cx task run run-llama-cpp-server                                   # Qwen3-8B (Q4_K_M) on CUDA, port 8686
-            cx task run run-llama-cpp-server --model=hf-ggml-org@gpt-oss-20b-GGUF --gpu_layers=16
+            cx task run run-llama-cpp-server --model=hf-ggml-org@gpt-oss-20b-GGUF      # the larger model: the layers that fit on the GPU
             cx task run run-llama-cpp-server --action=status
             cx task run run-llama-cpp-server --action=stop
         """
@@ -217,8 +217,13 @@ class CTask(InitCTask):
             return self.cm.error('the model file is missing: %s' % model_path)
         name = alias or os.path.splitext(os.path.basename(model_path))[0]
 
+        # the context is set, so llama.cpp's --fit (on by default in the builds since 2026) never shrinks it; the GPU
+        # layers are left to --fit unless a number is given (-ngl): a model larger than the GPU's memory then loads
+        # as many layers as fit and keeps the rest on the CPU
         command = [server, '-m', model_path, '--host', host, '--port', str(port), '-c', str(int(ctx_size)),
-                   '-ngl', str(int(gpu_layers)), '--jinja', '--alias', name, '-np', str(int(parallel))]
+                   '--jinja', '--alias', name, '-np', str(int(parallel))]
+        if str(gpu_layers).strip().lower() not in ('', 'auto'):
+            command += ['-ngl', str(int(gpu_layers))]
         command += [str(u) for u in unparsed] if unparsed else []
         log = os.path.join(folder, 'server.log')
         if con:

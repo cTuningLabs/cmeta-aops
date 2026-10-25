@@ -9,7 +9,7 @@ http://127.0.0.1:8686`, both wires, no key, `provided_by: this task`).
 
 ```
 cx task run run-llama-cpp-server                                      # Qwen3-8B Q4_K_M (about 5 GB) on CUDA, port 8686
-cx task run run-llama-cpp-server --model=hf-ggml-org@gpt-oss-20b-GGUF --gpu_layers=16   # a larger model, part of it on the CPU
+cx task run run-llama-cpp-server --model=hf-ggml-org@gpt-oss-20b-GGUF                   # a larger model: the layers that fit on the GPU, the rest on the CPU
 cx task run run-llama-cpp-server --action=status
 cx task run run-llama-cpp-server --action=stop
 cxai --gateway=llama-cpp-local "..."                                  # Claude Code on the local model
@@ -21,8 +21,11 @@ cxai --gateway=llama-cpp-local "..."                                  # Claude C
   by the setup task on first use; `--jinja` is on, so the model's chat template and its tool calling are used.
 - **The model** is a model artifact with a GGUF file (`cx model ls`): `hf-Qwen@Qwen3-8B-GGUF` (the default: a small
   tool-calling model that fits an 8 GB GPU) and `hf-ggml-org@gpt-oss-20b-GGUF` (OpenAI's open model, made for the
-  Responses format; the file gpt-oss-20b-MXFP4.gguf, about 13 GB, so `--gpu_layers` below the whole on an 8 GB GPU). The file is downloaded once into
-  cMeta's cache by the model task.
+  Responses format; the file gpt-oss-20b-MXFP4.gguf, about 12 GB: on an 8 GB GPU `--fit` keeps part of it on the CPU).
+  The file is downloaded once into cMeta's file cache by the model task (`get-hf-model`).
+- **The GPU layers** are left to llama.cpp's `--fit` by default (`--gpu_layers=auto`): the builds since 2026 load as many
+  layers as the device memory takes, with the context below, and keep the rest on the CPU - gpt-oss-20b on an 8 GB
+  GPU loads without a number; `--gpu_layers=<n>` pins it (`-ngl`).
 - **The context** is 32k tokens by default (`--ctx_size`): Claude Code's first request alone carries about 17k tokens
   of system prompt and tools (the T470p round of 2026-10-25: "request (17382 tokens) exceeds the available context size
   (16384)"), so a smaller window stops it before the first answer; the KV cache grows with it (a few GB at 32k).
