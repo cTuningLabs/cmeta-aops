@@ -249,3 +249,99 @@ def test_live_log_arrives_before_command_finishes_and_drains_on_exit(task_namesp
     with log.open('ab') as writer:
         writer.write(b'\nafter command')
     assert output.getvalue() == expected
+
+
+def test_identity_ignores_the_built_in_filters(cm, tmp_path, task_namespace):
+    """A pair's identity is its mode, endpoints and the definition's own filters; a built-in state filter added by a
+    release changes neither the identity nor the acceptance of a state digested before (0.55.0.1 broke every pair)."""
+    name = definition(cm, tmp_path, repos=['local'])
+    plan = run(cm, name)['plans'][0]
+    ns = task_namespace('sync')
+    built_in = len(plan['filters']) - len(plan['own_filters'])
+    assert built_in >= 4 and plan['own_filters'] == plan['filters'][built_in:]
+    assert '- **/result/sync-backup--*/**' in plan['filters'] and '- **/result/sync-backup--*/**' not in plan['own_filters']
+    identity, digest, legacy = ns['identity_digests'](plan)
+    assert identity['filters'] == plan['own_filters'] and digest != legacy
+    # the digest a state of 0.55.0 carried: the three built-ins of that time in front of the definition's own filters
+    old = dict(identity, filters=ns['LEGACY_STATE_FILTERS'] + plan['own_filters'])
+    import hashlib, json
+    assert legacy == hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()
+    # a plan without own_filters (an older caller) digests its whole list
+    _, whole, _ = ns['identity_digests'](dict(plan, own_filters=None) if False else {k: v for k, v in plan.items() if k != 'own_filters'})
+    assert whole != digest
+
+
+def test_a_backup_artifact_never_claims_the_pair(cm, tmp_path, task_namespace):
+    """The backup result artifact of a pair carries backup_of, not sync_uid: find_state must see one state only."""
+    name = definition(cm, tmp_path, repos=['local'])
+    plan = run(cm, name)['plans'][0]
+    uid = plan['uid']
+    for alias, meta in (('sync--' + name + '--' + uid, {'permanent': True, 'tags': ['sync-state'], 'sync_uid': uid}),
+                        ('sync-backup--' + name + '--' + uid, {'permanent': True, 'tags': ['sync-backup'], 'backup_of': uid})):
+        r = cm.access({'category': 'result', 'command': 'get', 'arg1': 'local:' + alias, 'meta': meta, 'con': False})
+        assert r['return'] == 0, r
+    ns = task_namespace('sync')
+    task = ns['CTask'].__new__(ns['CTask'])
+    task.cm = cm
+    task.cmeta = {'uses_categories': {'result': 'result,6567e4df4d04488a', 'cache': 'cache,1ebdcc1cc30c4022'}}
+    found = task.find_state('result', uid)
+    assert found and found['cmeta_ref_parts']['artifact_alias'] == 'sync--' + name + '--' + uid
+
+
+def test_remote_backup_in_the_hosts_local_repository(cm, tmp_path, task_namespace):
+    """The remote side's backup goes to <the host's repositories folder>/local/result/sync-backup--<alias>--<uid>/<run>,
+    whatever folder is synced (2026-10-25: a web root's parent, owned by root, stopped the first run); a ~/ folder is
+    an sftp path relative to the login home; the local side's backup is the local result artifact."""
+    ns = task_namespace('sync')
+    task = ns['CTask'].__new__(ns['CTask'])
+    task.cm = cm
+    art = tmp_path / 'art'
+    task.access = lambda category, command, **p: {'artifact': {'path': str(art)}}
+    task.task = lambda ctx, ref, **p: {'path': 'rclone'}
+    argvs = []
+    task.command = lambda ctx, argv, env: argvs.append(argv) or {'returncode': 0}
+
+    def plan(host_repos):
+        return dict(alias='site', uid='0123456789abcdef', state_ref='local:sync--site--0123456789abcdef', mode='bisync',
+                    source=dict(path=str(tmp_path / 'SYNC'), remote=False, host='local'),
+                    destination=dict(path=':sftp:/var/www/html', remote=True, host='h', ssh='ssh u@h', host_repos=host_repos),
+                    filters=[], transfers=1, bwlimit='', max_delete=50, resync_mode='path1', remove_empty_dirs=False)
+
+    for repos, expected in (('/home/u/CMETA/repos', '/home/u/CMETA/repos'), ('~/CMETA/repos', 'CMETA/repos'),
+                            ('', 'CMETA/repos')):
+        task.transfer({'control': {}}, plan(repos), tmp_path / 'wd', tmp_path / 'run.log', False, True, 'run1')
+        argv = argvs[-1]
+        assert argv[argv.index('--backup-dir2') + 1] == ':sftp:' + expected + '/local/result/sync-backup--site--0123456789abcdef/run1'
+        assert argv[argv.index('--backup-dir1') + 1] == str(art / 'run1')
+        assert '/var/www/local' not in ' '.join(argv)
+
+
+def test_mark_backup_never_hangs_or_fails_the_sync(cm, tmp_path, task_namespace, capsys):
+    """The courtesy step after a successful transfer: every rclone call has the sftp hash check off (with it on,
+    an lsf through the external ssh never returned, 2026-10-25) and a time limit; a failure is a warning only."""
+    ns = task_namespace('sync')
+    task = ns['CTask'].__new__(ns['CTask'])
+    task.cm = cm
+    art = tmp_path / 'art'
+    art.mkdir()
+    (art / '_cmeta.json').write_text('{}')
+    calls = []
+
+    def run(ctx, ref, **p):
+        calls.append(p)
+        word = p['cmd'].split()[1].strip('"')
+        return {'returncode': {'lsd': 0, 'lsf': 3, 'copyto': 0}[word]}
+
+    task.task = run
+    task.mark_backup({'control': {}}, 'rclone', {}, {'path': str(art)}, '/home/u/CMETA/repos/local/result/b', 'run1')
+    assert [p['cmd'].split()[1].strip('"') for p in calls] == ['lsd', 'lsf', 'copyto']
+    assert all('--sftp-disable-hashcheck' in p['cmd'] and p['timeout'] == 120 and p['capture_output'] for p in calls)
+    assert ':sftp:/home/u/CMETA/repos/local/result/b/_cmeta.json' in calls[2]['cmd']
+    assert calls[0]['cmd'].split()[2].strip('"') == ':sftp:/home/u/CMETA/repos/local/result/b'   # the artifact, not this run's folder
+    # a timed-out call, or one the cmd task refuses, is a warning: the sync has succeeded already
+    task.task = lambda ctx, ref, **p: {'returncode': 0, 'timed_out': True}
+    task.mark_backup({'control': {}}, 'rclone', {}, {'path': str(art)}, '/x', 'run1')
+    task.task = lambda ctx, ref, **p: (_ for _ in ()).throw(ValueError('no rclone'))
+    task.mark_backup({'control': {}}, 'rclone', {}, {'path': str(art)}, '/x', 'run1')
+    out = capsys.readouterr().out
+    assert out.count('cMeta warning: the backup artifact on the host is not marked') == 1 and 'no rclone' in out

@@ -76,6 +76,26 @@ def follow_log(path):
                 print('Live display stopped: ' + errors[0] + '; full log: ' + str(path))
 
 
+# The task's built-in state filters as they were up to 0.55.0: a pair's state made then carries a digest of them with
+# the definition's own filters. Such a digest is still accepted (and rewritten at the next success), so that a built-in
+# filter added by a release never demands a --resync of every pair (0.55.0.1 added one and every named sync stopped).
+LEGACY_STATE_FILTERS = ['- **/sync--*/**', '- **/.cmeta-sync*', '- **/.cmeta-sync-backups/**']
+
+
+def identity_digests(plan):
+    """
+    What a pair is: its mode, the definition's own filters (not the task's built-in ones) and both endpoints.
+    Returns (identity, its digest, the digest a state of 0.55.0 or before carries for the same pair).
+    """
+    identity = {'mode': plan['mode'], 'filters': list(plan.get('own_filters', plan['filters'])), 'format': 2}
+    for key in ('source', 'destination'):
+        identity[key] = {k: plan[key][k] for k in ('path', 'identity', 'target')}
+    digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    legacy = dict(identity, filters=LEGACY_STATE_FILTERS + identity['filters'])
+    legacy_digest = hashlib.sha256(json.dumps(legacy, sort_keys=True).encode()).hexdigest()
+    return identity, digest, legacy_digest
+
+
 class CTask(InitCTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path=__file__, **kwargs)
@@ -148,7 +168,8 @@ class CTask(InitCTask):
             resolved = str(path)
         return dict(path=resolved, remote=remote, host=host,
                     identity=transport.get('host_uid', 'local'),
-                    target=transport.get('target', ''), ssh=transport.get('cmd', ''))
+                    target=transport.get('target', ''), ssh=transport.get('cmd', ''),
+                    host_repos=transport.get('repos', ''))
 
     def definition(self, ctx, ref):
         ref = str(ref).split('::')[-1]
@@ -244,6 +265,9 @@ class CTask(InitCTask):
         return dict(alias=alias, uid=uid, cache='local:sync--' + alias + '--' + uid,
                     state_ref='local:sync--' + alias + '--' + uid,
                     source=sides[0], destination=sides[1], mode=mode, filters=filters,
+                    # the definition's own filters, after the task's built-in state_filters: what the identity of a
+                    # pair is made of (a built-in filter added by a release is not a change of the definition)
+                    own_filters=filters[len(defaults['state_filters']):],
                     resync_mode=initial, max_delete=max_delete,
                     initial_mode=initial_mode, initial_max_delete=initial_max_delete,
                     transfers=transfers, bwlimit=str(d.get('bwlimit', '')), also=also,
@@ -295,15 +319,30 @@ class CTask(InitCTask):
                 argv += ['--resync', '--resync-mode', plan['resync_mode']]
         elif plan['mode'] == 'mirror':
             argv += ['--max-delete', str(plan['max_delete'])]
+        # What a run overwrites or deletes: the result artifact sync-backup--<alias>--<uid> of each side's local
+        # repository, under <run id>/ - an artifact the index knows (before 2026-10-25: .cmeta-sync-backups beside the
+        # synced folder). The local artifact is made now; the remote one gets its _cmeta after the run (mark_backup).
+        backup_alias = 'sync-backup--' + plan['state_ref'].split(':', 1)[1].split('--', 1)[1]
+        # not "sync_uid": that key is how find_state finds the pair's state artifact, and a second entry with it stops
+        # every run ("multiple result entries claim this sync UID")
+        local_art = self.access('result', 'get', arg1='local:' + backup_alias,
+                                meta={'permanent': True, 'tags': ['sync-backup'], 'backup_of': plan['uid']})['artifact']
+        remote_art = None
         for num, side in enumerate((source, dest), 1):
             if plan['mode'] != 'bisync' and num == 1:
                 continue
             path = side['path']
             if side['remote']:
-                backup = ':sftp:' + posixpath.join(posixpath.dirname(path[6:]),
-                           '.cmeta-sync-backups', plan['uid'], run_id)
+                # the local repository of the host's cMeta home (its repositories folder, as the host category
+                # knows it: the declared sync.repos_path, else the probed home), whatever folder is synced - the
+                # parent of a web root belongs to root (2026-10-25). rclone MOVES the replaced files there, so the
+                # synced folder and the host's cMeta home must be on one filesystem.
+                base = side.get('host_repos') or '~/CMETA/repos'
+                # SFTP interprets a relative path against the SSH login home
+                remote_art = posixpath.join(base[2:] if base.startswith('~/') else base, 'local', 'result', backup_alias)
+                backup = ':sftp:' + posixpath.join(remote_art, run_id)
             else:
-                backup = str(Path(path).parent / '.cmeta-sync-backups' / plan['uid'] / run_id)
+                backup = str(Path(local_art['path']) / run_id)
             argv += ['--backup-dir' + (str(num) if plan['mode'] == 'bisync' else ''), backup]
         show_live = live and ctx['control'].get('con')
         if show_live:
@@ -322,6 +361,31 @@ class CTask(InitCTask):
             print('Full transfer log: ' + str(log))
         if r.get('returncode', 0):
             raise ValueError('rclone failed (exit ' + str(r['returncode']) + '). See ' + str(log))
+        if remote_art and not dry:
+            self.mark_backup(ctx, setup['path'], env, local_art, remote_art, run_id)
+
+    def mark_backup(self, ctx, rclone, env, local_art, remote_art, run_id):
+        """The remote copy of the backup artifact gets the local one's _cmeta once its folder exists there (a run
+        put files in it) and has none, so the host's index can know it after its next reindex; nothing otherwise. A
+        courtesy after a transfer that succeeded: a failure is a warning, never an error of the sync."""
+        def rc(argv):
+            # the hash check of rclone's sftp backend runs a command through the external ssh and never returns (an
+            # lsf hung a finished sync for ever, 2026-10-25): off, as in the transfer; and a limit, whatever happens
+            r = self.task(ctx, 'cmd,c9ba0a88df394d7f', cmd=' '.join(quote(x) for x in argv + ['--sftp-disable-hashcheck']),
+                          env=env, capture_output=True, fail_if_nonzero_return_code=False, print_extra_line=False,
+                          timeout=120)
+            return r.get('returncode', 1) or (1 if r.get('timed_out') else 0)
+        try:
+            if rc([rclone, 'lsd', ':sftp:' + remote_art]):
+                return
+            name = next((n for n in ('_cmeta.yaml', '_cmeta.json') if (Path(local_art['path']) / n).exists()), None)
+            if not name or not rc([rclone, 'lsf', ':sftp:' + posixpath.join(remote_art, name)]):
+                return
+            if rc([rclone, 'copyto', str(Path(local_art['path']) / name), ':sftp:' + posixpath.join(remote_art, name)]):
+                raise ValueError('rclone copyto failed')
+        except Exception as exc:
+            print('cMeta warning: the backup artifact on the host is not marked (' + str(exc) +
+                  '); its files are there, the next run that adds to it marks it', flush=True)
 
     def find_state(self, category, uid):
         found = self.cm.access(dict(category=self.cmeta['uses_categories'][category],
@@ -387,11 +451,7 @@ class CTask(InitCTask):
             raise ValueError('another sync is running in this cMeta home')
         try:
             statefile = root / 'state.json'
-            identity = {k: plan[k] for k in ('mode', 'filters')}
-            identity['format'] = 2
-            for key in ('source', 'destination'):
-                identity[key] = {k: plan[key][k] for k in ('path', 'identity', 'target')}
-            digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+            identity, digest, legacy_digest = identity_digests(plan)
             state = self.read(statefile) if statefile.exists() else {}
             if initialize and state.get('last_success'):
                 raise ValueError('already initialized; use the regular bisync command instead of --initialize')
@@ -400,7 +460,7 @@ class CTask(InitCTask):
             if plan['mode'] == 'bisync' and plan['initial_mode'] == 'mirror' and not state.get('last_success'):
                 if not initialize and (state or not resync):
                     raise ValueError('first source mirror requires --initialize; after lost state use reviewed merge recovery')
-            if state and state.get('identity') != digest and not resync:
+            if state and state.get('identity') not in (digest, legacy_digest) and not resync:
                 raise ValueError('endpoints/filters changed; review --plan, then explicitly use --resync')
             if plan['mode'] == 'bisync' and state and state.get('status') == 'initializing' and not resync:
                 raise ValueError('initialization was interrupted; inspect logs, then use --resync explicitly')

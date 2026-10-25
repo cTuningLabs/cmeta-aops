@@ -84,7 +84,7 @@ state = Path(r['results'][0]['state'])
 assert (a / 'from-b').read_text() == 'remote file'
 assert (b / 'file0').read_text() == 'initial-0'
 assert any(p.read_text() == 'initial loser must be backed up'
-           for p in (root / '.cmeta-sync-backups').rglob('file0'))
+           for p in root.rglob('file0') if 'sync-backup--' in str(p))      # the result artifact of the local repository
 assert r['results'][0]['initial'] is True
 
 # UID-qualified references reuse the baseline.
@@ -207,7 +207,7 @@ assert (dst / 'newer-at-destination').read_text() == 'source wins'
 assert not (dst / 'destination-only').exists()
 assert not (src / 'destination-only').exists()
 assert any(p.read_text() == 'preserve in backup'
-           for p in (seed2 / '.cmeta-sync-backups').rglob('destination-only'))
+           for p in seed2.rglob('destination-only') if 'sync-backup--' in str(p))
 for home in (seed1, seed2):
     for category_name in ('config', 'log'):
         assert (home / 'repos/local' / category_name / 'private').read_text() == home.name

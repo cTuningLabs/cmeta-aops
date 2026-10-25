@@ -2,6 +2,30 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.55.1
+- **A server as the world sees it:** `projects: <name>: server: public: [<url>, ...]` names the public URLs of a
+  project's server (a site behind a tunnel or a proxy); `cx host status` checks them from this machine, one line
+  each under the project - `works` (HTTP 2xx or 3xx, a redirect not followed), `http <code>`, `timeout`,
+  `unreachable` - so a site that serves while its host's ssh is down shows as such; a `server.url` that is not a
+  local address is checked from here the same way. The rows carry them (`projects[].public`); the host page of the
+  cserver shows them as links.
+- **The sync backups are result artifacts:** what `cx host sync --backup` and `cxt sync` keep goes to the result
+  artifact `sync-backup--<repository>` (`sync-backup--<alias>--<uid>` for a named sync) of each side's `local`
+  repository, under `<the other side>/<run id>/` (`<run id>/` for a named sync) - listed by `cx result ls`; the host's
+  copy gets its `_cmeta` after a run that put files there (and a reindex of its `local` for `cx host sync`). The
+  remote side of a named sync uses the `local` repository of the host's cMeta home (its declared `sync: repos_path`,
+  else the probed home; `cx host sync_endpoint` carries it), whatever folder is synced: a web root's parent belongs
+  to root, and rclone moves the replaced files, so the synced folder and the home must share a filesystem. Before:
+  `.cmeta-sync-backups/` beside the synced folder, which no index knew.
+- **A pair's identity is its own definition, not the task's built-in filters:** a built-in state filter added by a
+  release (this one added `- **/result/sync-backup--*/**`) made every named sync stop with "endpoints/filters changed;
+  review --plan, then explicitly use --resync". The identity now digests the definition's own filters, the mode and the
+  endpoints; a state digested the old way (0.55.0 and before) is accepted and rewritten at the next success. The backup
+  artifact of a pair carries `backup_of`, not `sync_uid` (which is how the pair's state is found).
+- **The step that marks a sync's backup artifact on the host cannot hang:** its rclone calls run with the sftp
+  hash check off (an `lsf` through the external ssh never returned without it, and a finished sync hung for ever)
+  and a time limit; a failure of that step is a warning on stdout, never an error of the sync that succeeded.
+
 ## 0.55.0
 - **A machine serves the fleet with the key the fleet reaches it with:** `cx task run run-openssh --host=<the host
   artifact this machine is>` allows the public key of that host's `access: key`, as this machine finds it. New:
