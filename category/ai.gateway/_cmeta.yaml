@@ -1,0 +1,20 @@
+artifact: ae1ae632e0ec4f75
+category: category,dd9ea50e7f76467f
+authors: Grigori Fursin
+creation_timestamp: '2026-10-25T19:44:08.574459+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.310
+  via: cmeta 0.37.6
+  by: Grigori Fursin
+last_api_version: 1
+base_category_default_api_versions:
+  '1': 1
+desc: 'A place that serves models to the AI harnesses - a gateway, a vendor API, a llama.cpp or vLLM server: the base URL,
+  the wires it speaks, its catalog, how the key travels and which secret holds it (never a value); what a harness needs to
+  use it'
+tags:
+- ai
+- gateway
+- llm
+- api

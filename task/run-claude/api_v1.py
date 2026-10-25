@@ -110,6 +110,24 @@ class CTask(InitCTask):
 
 
     ############################################################
+    def _gateway(self, ctx, harness, gateway, gw, ln):
+        """Login or a gateway for this run (the task set-ai-gateway: the flag, this machine's config): with a gateway,
+        its environment goes into this process - the tool inherits it - and its command-line words are returned."""
+        r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'set-ai-gateway,e10aa0a00edd4a2c',
+                            'ctx': ctx, 'harness': harness, 'gateway': gateway, 'gw': gw, 'ln': ln, 'con': False,
+                            'quiet': ctx['control'].get('quiet', False)})
+        if r.get('return', 1) > 0:
+            return r
+        if r['gateway'] != 'login':
+            os.environ.update({k: str(v) for k, v in (r.get('env') or {}).items()})
+            if ctx['control'].get('con', False):
+                print('')
+                print('AI gateway: %s (%s) - the %s wire of %s; model %s' % (r['gateway'], r['how'], r.get('wire', ''),
+                                                                           r.get('base_url', ''), r.get('model') or 'the harness decides'))
+                for n in r.get('notes') or []:
+                    print('  note: ' + n)
+        return r
+
     def run(self,
             ctx: dict,                      # cMeta context
             prompt: str = '',               # prompt text
@@ -126,6 +144,9 @@ class CTask(InitCTask):
             append_output_file: bool = False, # append to the output file instead of overwriting it
             skip_output_header: bool = False, # do not add the summary header to the output file
             add_repos: str = '',            # cMeta repos to add to the claude context ("alias,alias"; "none" = not even the defaults)
+            gateway: str = '',              # an ai.gateway alias (a company's gateway, a llama.cpp server, ...) or "login"; empty: this machine's config, else login
+            gw: str = '',                   # the short form of --gateway: bare = the configured gateway, -gw=<alias>
+            ln: bool = False,               # the tool's own login, whatever the config says
             unparsed: list = None,          # extra flags for claude (everything after "--")
     ):
 
@@ -319,6 +340,16 @@ class CTask(InitCTask):
 
         extra_flags = [str(u) for u in unparsed] if unparsed else []
 
+        # login or a gateway (set-ai-gateway: the flag, this machine's config): the session's environment, and the
+        # gateway's default model when the user named none
+        gwc = self._gateway(ctx, 'claude', gateway, gw, ln)
+        if gwc.get('return', 0) > 0:
+            return gwc
+        if gwc['gateway'] != 'login':
+            flags += gwc.get('args') or []
+            if gwc.get('model') and not [x for x in [x.split('=')[0] for x in extra_flags] if x in MODEL_FLAGS]:
+                flags += ['--model', gwc['model']]
+
         # cMeta repositories -> "--add-dir <path>": Claude Code reads their CLAUDE.md, AGENTS.md and skills.
         # Portable: the alias is resolved here, on this machine, through cMeta's own registry.
         wanted = [x.strip() for x in str(add_repos or '').split(',') if x.strip()]
@@ -426,7 +457,8 @@ class CTask(InitCTask):
         # "generator"), and one it updates records it as "last_generator". A task that runs claude may
         # have set CMETA_GENERATOR already (method "task", its log, ...) - it is kept then.
         if not os.environ.get('CMETA_GENERATOR'):
-            os.environ['CMETA_GENERATOR'] = json.dumps(_agent_generator(claude_path, extra_flags))
+            os.environ['CMETA_GENERATOR'] = json.dumps(dict(_agent_generator(claude_path, extra_flags),
+                                                           **({'gateway': gwc['gateway']} if gwc['gateway'] != 'login' else {})))
 
         # The run's duration, on the monotonic clock: the wall clock can be set while it runs
         start_time = time.monotonic()
@@ -532,6 +564,7 @@ class CTask(InitCTask):
             'prompt_file': prompt_file,
             'prompt_size': len(full_prompt),
             'extra_flags': flags,
+            'gateway': gwc['gateway'],
             'duration': round(duration, 1),
             'return_code': returncode,
             'output_file': output_file,

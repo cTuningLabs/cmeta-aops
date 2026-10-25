@@ -1,0 +1,15 @@
+artifact: 4187a33ffa924088
+authors: Grigori Fursin
+category: model,f8ef4c0af87a4a9e
+creation_timestamp: '2026-10-25T19:47:57.559709+00:00'
+generator:
+  agent: Claude Code 2.1.310
+  by: Grigori Fursin
+  method: agent
+  via: cmeta 0.37.6
+desc: 'gpt-oss-20b in GGUF (ggml-org/gpt-oss-20b-GGUF, mxfp4): OpenAI open model for a llama.cpp server, the Responses format'
+tags:
+- model
+- gguf
+- llm
+- gpt-oss

@@ -1,0 +1,15 @@
+artifact: dce9dd64e9fc4310
+authors: Grigori Fursin
+category: model,f8ef4c0af87a4a9e
+creation_timestamp: '2026-10-25T19:47:57.278745+00:00'
+generator:
+  agent: Claude Code 2.1.310
+  by: Grigori Fursin
+  method: agent
+  via: cmeta 0.37.6
+desc: 'Qwen3-8B in GGUF (Qwen/Qwen3-8B-GGUF): the small tool-calling model for a llama.cpp server on an 8 GB GPU'
+tags:
+- model
+- gguf
+- llm
+- qwen

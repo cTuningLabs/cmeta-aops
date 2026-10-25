@@ -1,0 +1,14 @@
+artifact: e10aa0a00edd4a2c
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-10-25T19:44:08.865500+00:00'
+generator:
+  agent: Claude Code 2.1.310
+  by: Grigori Fursin
+  method: agent
+  via: cmeta 0.37.6
+desc: 'login or a gateway for an AI harness: the choice (flag, project, config) and what the harness needs'
+tags:
+- task
+- ai
+- gateway

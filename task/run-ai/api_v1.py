@@ -158,6 +158,10 @@ PLUGIN_FILE = 'plugin.json'
 # a dict with "cref" (and an optional "note"). The same list in a repository's _cmr.yaml is the default of all its
 # artifacts; the machine-local mapping (below) adds entries on one machine only.
 AI_USES_KEY = 'ai_uses'
+AI_GATEWAY_KEY = 'ai_gateway'           # the project's _desc.yaml: an ai.gateway alias, or "login", for its runs
+SET_AI_GATEWAY = 'set-ai-gateway,e10aa0a00edd4a2c'
+GATEWAY_HARNESSES = ('claude', 'codex', 'opencode')   # the run-<harness> tasks that take --gateway
+GATEWAY_CATEGORY = 'ai.gateway,ae1ae632e0ec4f75'
 
 # The config artifact of this task (cx config ...: in the local repository, so on this machine only; named after the
 # task because config artifacts are global): "local_ai_uses" maps a repository or an artifact to the cRefs its sessions
@@ -1230,7 +1234,20 @@ class CTask(InitCTask):
             out += [t.replace('{{effort}}', effort) for t in effort_t]
         return out, model_t, effort_t
 
-    def _list_models(self, harness, con):
+    def _gateway_choice(self, ctx, harness, gateway, gw, ln, project_path = ''):
+        """Login or a gateway for a run (set-ai-gateway: the flag, the project's _desc.yaml, this machine's config)
+        -> (the alias or 'login', how, an error dict or None)."""
+        project = ''
+        if project_path:
+            v = self._read_desc(project_path).get(AI_GATEWAY_KEY)
+            project = str(v).strip() if isinstance(v, str) else ''
+        r = self.cm.access({'category': TASK_CATEGORY, 'command': 'run', 'arg1': SET_AI_GATEWAY, 'ctx': ctx, 'harness': harness,
+                            'gateway': gateway, 'gw': gw, 'ln': ln, 'project': project, 'connect': False, 'con': False, 'quiet': True})
+        if r.get('return', 1) > 0:
+            return '', '', r
+        return r['gateway'], r['how'], None
+
+    def _list_models(self, harness, con, gateway = ''):
         """--list_models: the models and efforts of one harness, with every --model=<model>,<effort> ready to copy;
         without a harness, a compact list for every known one."""
         names = [harness] if harness else [h for h in HARNESSES if h != 'agy']
@@ -1242,6 +1259,24 @@ class CTask(InitCTask):
             if models is None:
                 lines += ['RUN-AI: harness "%s" (task %s): %s' % (h, task_ref, why), '']
                 continue
+            if gateway and gateway != 'login':
+                # the gateway's catalog instead of the tool's list: what this harness can use there, now
+                g = self.cm.access({'category': GATEWAY_CATEGORY, 'command': 'models', 'arg1': gateway, 'harness': h, 'con': False})
+                if g.get('return', 1) > 0:
+                    lines += ['RUN-AI: gateway "%s" for %s: %s' % (gateway, h, g.get('error', 'no models')), '']
+                    continue
+                found = g.get('models') or {}
+                names = []
+                for wire in sorted(found):
+                    prefix = ''
+                    if h == 'opencode':
+                        prefix = (gateway if wire == 'anthropic' else (gateway + '-openai' if 'anthropic' in found else gateway)) + '/'
+                    names += [prefix + n for n in found[wire]]
+                default = str((g.get('defaults') or {}).get('default') or '')
+                models = dict(models, models=[{'name': n, 'default': bool(default) and n.split('/')[-1] == default} for n in names],
+                              updated=time.strftime('%Y-%m-%d'), checked_with='the catalog of the gateway "%s"' % gateway,
+                              list_cmd='cx ai.gateway models %s --harness=%s' % (gateway, h))
+                fp = 'the gateway %s (%s)' % (gateway, ', '.join(str(u) for u in (g.get('catalogs') or {}).values()))
             flags = models.get('flags') or {}
             model_t = ' '.join(self._template(flags.get('model'), ['--model', '{{model}}']))
             effort_t = ' '.join(self._template(flags.get('effort'), None) or [])
@@ -1495,6 +1530,9 @@ class CTask(InitCTask):
             harness: str = '',              # claude (default) | codex | opencode | openclaw | antigravity (agy) | gemini | hermes | <x> (then the task run-<x>)
             agent: str = '',                # the old name of --harness (still accepted)
             cx: bool = False,               # --harness=codex in short
+            gateway: str = '',              # an ai.gateway alias (a company's gateway, a llama.cpp server, ...) or "login"; empty: the project's _desc.yaml (ai_gateway), this machine's config, else login
+            gw: str = '',                   # the short form of --gateway: bare = the configured gateway, -gw=<alias>
+            ln: bool = False,               # the tool's own login, whatever the project or the config says
             project: str = '',              # explicit cRef; default: nearest existing !AI, then the cMeta artifact, else cwd
             log_project = None,             # a dated scratch project under log::local:task-run-ai; optional label after =
             l = None,                       # short form: -l or -l="quick question" (the label names the workspace)
@@ -1553,7 +1591,10 @@ class CTask(InitCTask):
             notes.append('--agent is now called --harness (both work)')
 
         if list_models or models:
-            return self._list_models(given, con)
+            g_name, _, g_err = self._gateway_choice(ctx, given, gateway, gw, ln)
+            if g_err:
+                return g_err
+            return self._list_models(given, con, g_name)
 
         if login or login_status:
             return self._login(ctx, harness, tool_ref, bool(login), con)
@@ -1856,7 +1897,20 @@ class CTask(InitCTask):
             temp_files.append(context_file)
 
         # 2. the sub-task's parameters: everything the user gave, plus the records in !AI/log
+        # login or a gateway for this run: the flag, the project's _desc.yaml (ai_gateway), this machine's config; the
+        # harness task connects (or runs as before with login)
+        gateway_name, gateway_how, g_err = self._gateway_choice(ctx, hk, gateway, gw, ln, project_path)
+        if g_err:
+            return g_err
+        if gateway_name != 'login':
+            notes.append('AI gateway: %s (%s)%s' % (gateway_name, gateway_how,
+                         '; the claude.ai connectors (HubSpot, Microsoft 365, ...) are unavailable in a gateway session - -ln for a login session' if hk == 'claude' else ''))
+
         params = {'prompt': prompt, 'prompt_file': prompt_file, 'interactive': interactive, 'stats': stats}
+        if hk in GATEWAY_HARNESSES:
+            params['gateway'] = gateway_name        # the harness task connects, or runs as before with login
+        elif gateway_name != 'login':
+            return self.cm.error('the harness "%s" has no gateway support (claude, codex, opencode have): -ln for its own login' % harness)
 
         # only when asked for: not every run-<harness> task has them (run-openclaw has neither)
         if forward_yes:
@@ -2069,7 +2123,7 @@ class CTask(InitCTask):
         if dry_run:
             if con:
                 print('%sDRY RUN - nothing was run or created.' % space)
-            return {'return': 0, 'dry_run': True, 'harness': harness, 'task': task_ref, 'model': model_name, 'effort': effort_name,
+            return {'return': 0, 'dry_run': True, 'harness': harness, 'task': task_ref, 'model': model_name, 'effort': effort_name, 'gateway': gateway_name,
                     'model_flags': model_flags, 'project': project_path, 'cref': cref, 'how': how, 'ai_root': ai_root,
                     'conversation': conv['id'] if conv else '', 'conversation_how': conv_how, 'native_session': native_sid,
                     'new_session': new_sid, 'handover': handover, 'skills': [s[0] for s in own_skills], 'plugin_dirs': plugin_dirs,
@@ -2125,7 +2179,7 @@ class CTask(InitCTask):
                 s = sessions[hk] = {'id': sid_now, 'started': CONV.now_iso(), 'runs': 0}
             s['runs'] = int(s.get('runs') or 0) + 1
             s['last'] = CONV.now_iso()
-            run_entry = {'stamp': stamp, 'harness': harness, 'mode': 'interactive' if interactive else 'prompt', 'model': model_name,
+            run_entry = {'stamp': stamp, 'harness': harness, 'mode': 'interactive' if interactive else 'prompt', 'model': model_name, 'gateway': gateway_name,
                          'effort': effort_name, 'prompt': CONV.title_from_prompt(prompt or (('file ' + os.path.basename(prompt_file)) if prompt_file else ''), interactive, stamp),
                          'started': CONV.now_iso(), 'host': CONV.host_name(), 'session': sid_now, 'resumed': bool(native_sid), 'handover': bool(handover),
                          'tokens_estimated': est_total, 'token_limit': limit}
@@ -2136,6 +2190,7 @@ class CTask(InitCTask):
             lines = ['# run-ai %s - %s' % (stamp, harness), '',
                      '| | |', '|---|---|',
                      '| harness | `%s` (task `%s`) |' % (harness, task_ref),
+                     '| gateway | `%s` (%s) |' % (gateway_name, gateway_how),
                      '| project | `%s` |' % project_path,
                      '| resolved | %s%s |' % (how, (' - `%s`' % cref) if cref else ''),
                      '| started | %s |' % datetime.datetime.now().isoformat(timespec='seconds'),
@@ -2332,7 +2387,7 @@ class CTask(InitCTask):
                 os.remove(fp)
             except OSError:
                 pass
-        out = {'return': rr.get('return', 1), 'harness': harness, 'task': task_ref, 'model': model_name, 'effort': effort_name,
+        out = {'return': rr.get('return', 1), 'harness': harness, 'task': task_ref, 'model': model_name, 'effort': effort_name, 'gateway': gateway_name,
                'project': project_path, 'cref': cref, 'ai_root': ai_root, 'record': record, 'seconds': round(seconds, 1),
                'conversation': conv['id'] if conv else '', 'session': (run_entry or {}).get('session', ''), 'transcript': transcript,
                'codex_state': codex_dir or ('home' if hk == 'codex' else ''),

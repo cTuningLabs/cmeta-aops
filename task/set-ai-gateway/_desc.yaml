@@ -1,0 +1,17 @@
+authors: Grigori Fursin
+
+# Never cached and never stored: the result carries a key for the harness's environment, and the choice depends on
+# the config of the moment.
+cache: false
+store_global: false
+
+usage: |
+  cx task run set-ai-gateway --harness=claude                        the choice this machine makes (flag > project > config > login)
+  cx task run set-ai-gateway --harness=codex -gw                     the configured gateway (config::default run_ai_gateway_name)
+  cx task run set-ai-gateway --harness=claude --gateway=llama-cpp-local
+  cx task run set-ai-gateway --harness=opencode -ln                  the tool's own login, whatever the config says
+
+  config::default (cx config set default --meta.<key>=<value>):
+    run_ai_gateway: true            every run goes through the gateway named below unless a flag or a project says otherwise
+    run_ai_gateway_name: dapple     the gateway -gw and run_ai_gateway mean
+    run_ai_gateway_codex: login     per harness: login or an alias (wins over the two keys above)

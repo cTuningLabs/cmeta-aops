@@ -2,6 +2,27 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.55.1.1
+- **Login or a gateway for every AI run:** the new category `ai.gateway` - an artifact per place that serves models
+  (a company's gateway such as Azure API Management in front of OpenAI and Anthropic, a vendor's own API, a llama.cpp
+  or vLLM server here or on a host): the base URL, the wires it speaks (`anthropic`: the Messages API; `openai`: chat
+  completions and the Responses API), its catalog, how the key travels and which `secret` artifact holds it, never a
+  value (`cx ai.gateway ls | models | test | connect`). The new task `set-ai-gateway` makes the choice for a run - the
+  flag, the project's `_desc.yaml` (`ai_gateway: <alias> | login`), this machine's `config::default`
+  (`run_ai_gateway_<harness>`, else `run_ai_gateway` with `run_ai_gateway_name`), else the tool's own login - and gives
+  the harness what it needs. `--gateway=<alias | login>`, `-gw` (the configured gateway) and `-ln` (login) on
+  run-claude, run-codex, run-opencode and run-ai; the same tools, the bill moved to the gateway's credits or a local
+  model; run-ai records the gateway of every run and `--list_models --gateway=<alias>` lists the gateway's catalog for
+  the harness. Claude Code speaks the Anthropic wire only; Codex the Responses wire (`codex_wire: chat` for a chat-only
+  server); OpenCode both. On an API key Claude Code has no claude.ai connectors: run-ai says so at the start of a
+  gateway session.
+- **`run-llama-cpp-server`:** a llama.cpp server on this machine, detached, with the Anthropic, chat and Responses wires
+  on one port (8686 by default, not llama.cpp's crowded 8080), its record and log in the state artifact
+  `local:llama-cpp-server-<port>`; `--action=status|stop`; the model from a model artifact (`hf-Qwen@Qwen3-8B-GGUF`
+  by default, `hf-ggml-org@gpt-oss-20b-GGUF` the larger one), the tool for `--compute=cuda|cpu|metal`. The artifacts
+  `ai.gateway::anthropic` and `openai` (key-less examples) are in this repository; a fleet's own gateways and its local
+  servers (`llama-cpp-local` on 8686, `vllm-local` on 8868) live in its private repository.
+
 ## 0.55.1
 - **A server as the world sees it:** `projects: <name>: server: public: [<url>, ...]` names the public URLs of a
   project's server (a site behind a tunnel or a proxy); `cx host status` checks them from this machine, one line

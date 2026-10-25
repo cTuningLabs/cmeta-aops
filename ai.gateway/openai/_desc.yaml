@@ -1,0 +1,18 @@
+# OpenAI's own API, for a Codex or OpenCode run billed to an API key instead of a ChatGPT account. The key is a secret
+# artifact of kind token (cx secret add <your secrets repository>:openai-api-key, the value in files/token), never a
+# value here; it travels as a bearer token.
+description: OpenAI's API (api.openai.com)
+base_url: https://api.openai.com
+
+wires:
+  openai: /v1                            # /v1/chat/completions, /v1/responses
+
+catalog: /v1/models
+
+auth:
+  header: bearer
+  secret: openai-api-key
+
+models:
+  codex:
+    default: gpt-5.4-mini
