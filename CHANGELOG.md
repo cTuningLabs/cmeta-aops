@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## 0.54.2.1
+## 0.55.0
 - **A machine serves the fleet with the key the fleet reaches it with:** `cx task run run-openssh --host=<the host
   artifact this machine is>` allows the public key of that host's `access: key`, as this machine finds it. New:
   `cx host key <host | <category>::<artifact>/<file>>` - the key file cx uses for a host (the artifact the reference
@@ -21,6 +21,19 @@ All notable changes to cMeta AOps are documented here, newest first.
   there), and the readiness and status probes bind the port instead of connecting to it (OpenSSH 9.8+ wrote a
   "penalty ... connections without attempting authentication" line for each probe).
 - **`cxt run-ai --cx`** is `--harness=codex` in short (an error together with another `--harness`).
+- **`cx host sync --backup`:** what a run overwrites or deletes is kept in `.cmeta-sync-backups/<repository>/<run id>/`
+  beside the `repos` folder of each side (rclone's `--backup-dir1` / `--backup-dir2` for a bisync, `--backup-dir` on the
+  host for a copy; nothing for git) - the convention of the named syncs of `cxt sync`, which keep such a backup on every
+  run; outside every repository, so never indexed; nothing prunes it.
+- **`cx host screens <host> --quit=<name>`** ends that Screen session there (its shell and what ran in it - a cancel for
+  a run-ai session started on another machine), then lists what is left; the answer says whether Screen found it.
+- **`cx host status` asks sshd for its identification line,** not only for an open port: a host whose port accepts and
+  closes at once is `refused`, one that stays silent is `no banner` - neither can run a command, and the table said `up`
+  for both (the Dapple VM of 2026-10-25: up in the table, every ssh reset). The projects of such a host say `host
+  refused` / `host no banner`.
+- **A tool without compiler flags is refused as a compiler** by setup-compile (before: `--use.compiler-c.name=llvm` on
+  Windows ran `clang program.c` with no flags, built `a.exe` and stopped at "Target file hello was not created"); the
+  message names the mistake: the toolchain is `llvm`, the compiler `clang`.
 
 ## 0.54.2
 - **`cx host screens <host>`:** the GNU Screen sessions of a host's user from here - name, pid, state (attached,

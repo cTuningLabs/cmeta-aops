@@ -230,6 +230,23 @@ class CTask(InitCTask):
         compiler_features = _global[global_compiler_key].get('features', {})
         flags = compiler_features.get('flags',{})
 
+        # A tool without compiler flags in its features is not a compiler (tool/llvm holds the toolchain, tool/clang
+        # is the compiler): refused here, before a command without -o builds "a.exe" and the run stops at a missing
+        # target (the NucBox, 2026-10-25, --use.compiler-c.name=llvm)
+        if not flags:
+            chosen = _global[global_compiler_key]
+            tool_name = ''
+            for key in ('name', 'tool', 'tool_name'):    # the setup result keeps the request as a dict: {'name': 'llvm', 'tags': ...}
+                v = chosen.get(key)
+                v = v.get('name') if isinstance(v, dict) else v
+                if v:
+                    tool_name = str(v)
+                    break
+            tool_name = tool_name or str(global_compiler_key)
+            return self.cm.error(f'the tool "{tool_name}" chosen as the compiler has no compiler flags in its features: it is '
+                                 f'not a compiler tool (an LLVM toolchain is "llvm", its compiler "clang") - name a compiler '
+                                 f'tool with --use.compiler-c.name=<tool> (or -cpp)')
+
         # The environment of a cross-compiling tool (GOOS, GOARCH of tool/go-android) for the
         # compile command; the program's own compile env wins
         if compiler_features.get('env'):

@@ -60,14 +60,14 @@ cx host run --tags=ubuntu "<command>" the same on a selection (--machine, --type
 cx host run <host> --script=<file>    a local script on the host's shell stdin ("bash -l -s < file"; PowerShell: base64 lines on stdin, decoded as UTF-8 and run by an -EncodedCommand reader - never "-Command -")
 cx host run <host> "<command>" --interactive   a terminal for the command (ssh -t / docker exec -it): it can ask its questions; needs a terminal here (not with --capture or --script)
 cx host ssh <host> [--screen[=<name>]] [--x11] [--forward=1455,8080:80] [--dry_run]   interactive shell (also: shell, login)
-cx host screens <host|selection>      the GNU Screen sessions there: name, pid, state, start time, window titles (read only)
+cx host screens <host|selection> [--quit=<name>]   the GNU Screen sessions there: name, pid, state, start time, window titles (read only; --quit ends one first)
 cx host key <host | <category>::<artifact>/<file>>   the key cx uses to reach the host, as this machine finds it, and the public key beside it (paths only)
 cx host up|down <host>                WSL distro, container (created from its image on the first up), or "commands: up/down"
 cx host destroy <instance> [--image] [--keep_artifact] [--force]   an instance cMeta made (get-host--docker / get-host--wsl): the container (or the WSL distribution and its disk), the artifact, with --image its image
 cx host snapshot <instance> [--name=<name>] [--note=<text>]       the instance's state kept: docker/podman commit to cmeta/snapshot:<instance>-<name>, a WSL export next to its disk; recorded under "snapshots" in its _desc
 cx host restore <instance> [--name=<snapshot>]                    the instance back to a snapshot (the last one by default): the container made again from the image, the distribution imported again
 cx host restart <host> [--yes] [--no-wait] [--timeout=600] [--skip_after] [--dry_run]   (also: reboot)
-cx host sync [host|selection] [--repos=a,b] [--resync [--resync_mode=newer|path1|path2]] [--unlock] [--dry_run] [--skip_after]
+cx host sync [host|selection] [--repos=a,b] [--resync [--resync_mode=newer|path1|path2]] [--unlock] [--dry_run] [--skip_after] [--backup]
 cx host push <host> <repo> --dirs=task/x/,tool/y/ [--dry_run] [--delete] [--index-]   then "cx repo reindex <repo>" on the host, so a new artifact is found there
 cx host push <host> <local path> --to=<remote path>      a folder goes under --to, a single file lands AT --to (rclone copyto)
 cx host pull <host> <remote file or folder> [--to=<local folder>] [--files=*.jsonl,steps.txt] [--dry_run]   the other way: host -> here (rclone copy --from_remote of rclone-to-ssh); nothing here is deleted
@@ -91,7 +91,9 @@ cxt run-ai --project="work::another-project" --on=my-host --on_screen=another-ta
 cx host screens my-host
 ```
 
-`cx host screens <host>` lists the screens of the host's user from here: name, pid, state (attached, detached), the
+`cx host screens <host> --quit=<name>` ends the session of that name there before listing what is left (Screen's `-X
+quit`: its shell ends, and with it whatever ran inside - a run-ai session included; the records the run had written
+stay). `cx host screens <host>` lists the screens of the host's user from here: name, pid, state (attached, detached), the
 start time where Screen prints one, and the titles of the windows (a run-ai terminal shows its project) where Screen
 answers `-Q` (4.2+). It asks the same Screen the terminals run with, installs nothing, and exits 0 also when there is
 no session or no Screen ("no screens"); `--tags` / `--machine` / `--type` list several hosts, `-j` gives the rows.
@@ -139,8 +141,10 @@ or set it to `false` when reusing a host with its new connection details.
 The linked machine has its own `retired: true` declaration: retiring an OS host
 does not automatically retire a machine that may still have other active hosts.
 
-`status` (and `ls --status`) checks every host at once: an ssh host is a TCP connect to its port
-(`--timeout`, 3 s); a WSL distro `wsl -l -v`; a container `docker inspect`; an adb device `adb devices` on
+`status` (and `ls --status`) checks every host at once: an ssh host is a TCP connect to its port and sshd's
+identification line (`--timeout`, 3 s): `up` when the line comes, `refused` when the port accepts and closes
+without it (a wedged sshd, a source penalised by OpenSSH 9.8+), `no banner` when it stays silent - the last two
+cannot run a command, whatever the port says; a WSL distro `wsl -l -v`; a container `docker inspect`; an adb device `adb devices` on
 its parent, through the parent's ssh when the parent is another machine - and a device that moves asks all
 its candidate parents at once. Every check that runs a command is killed at `--cmd_timeout` (20 s) and
 reported as `timeout (...)`: a hung adb server or ssh never holds the table. The table appears when the
@@ -339,6 +343,12 @@ old `_7-resync-*.bat` did. A few directories once are a one-way **push** (`rclon
 whitelist, `--dirs`).
 
 `--dry_run` shows what would move and changes nothing (rclone `--dry-run`, `git fetch --dry-run`).
+
+`--backup` keeps what a run overwrites or deletes: on each side of a bisync (on the host for a copy) the old file
+goes to `.cmeta-sync-backups/<repository>/<run id>/` beside the `repos` folder, with its path inside the repository
+(rclone's `--backup-dir1` / `--backup-dir2`), as the named syncs of `cxt sync` do on every run. The folder sits
+outside every repository, so nothing there is indexed; rclone makes it only when a file goes there; nothing prunes
+it. It is the undo of a repository that is not git: a sync that took a wrong file leaves its previous version there.
 
 ### A partial repository: `artifacts:`
 
