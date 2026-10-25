@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## 0.55.1.1
+## 0.55.2
 - **Login or a gateway for every AI run:** the new category `ai.gateway` - an artifact per place that serves models
   (a company's gateway such as Azure API Management in front of OpenAI and Anthropic, a vendor's own API, a llama.cpp
   or vLLM server here or on a host): the base URL, the wires it speaks (`anthropic`: the Messages API; `openai`: chat
@@ -19,9 +19,16 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **An interactive OpenCode session takes its prompt through `--prompt`:** the positional argument of `opencode
   [project]` is the folder to open, so the hand-over prompt run-opencode appended as a positional ended with "Failed
   to change directory to <cwd>/<the prompt>"; `opencode run [message..]` keeps the positional.
+- **A gateway that does not answer is an error with its start command:** `cx ai.gateway connect` (and so
+  `set-ai-gateway` and every harness run) probes the catalog of the wire the harness speaks and fails naming the URL
+  and the `provided_by` command of a local server - a harness is never started without a model towards a dead
+  gateway, where OpenCode could fall back to a provider it is logged into.
 - **`run-llama-cpp-server`:** a llama.cpp server on this machine, detached, with the Anthropic, chat and Responses wires
   on one port (8686 by default, not llama.cpp's crowded 8080), its record and log in the state artifact
-  `local:llama-cpp-server-<port>`; `--action=status|stop`; the model from a model artifact (`hf-Qwen@Qwen3-8B-GGUF`
+  `local:llama-cpp-server-<port>`; `--action=status|stop`; a 32k context by default (Claude Code's first request alone
+  is about 17k tokens) and the GPU layers left to llama.cpp's `--fit` (`--gpu_layers=auto`: a model larger than the
+  GPU's memory keeps part of itself on the CPU; a number pins `-ngl`); it runs inside an instance of the run-on-any-host
+  design too (`--on=<instance> --host=0.0.0.0`, the port published when the instance is made); the model from a model artifact (`hf-Qwen@Qwen3-8B-GGUF`
   by default, `hf-ggml-org@gpt-oss-20b-GGUF` the larger one), the tool for `--compute=cuda|cpu|metal`. The artifacts
   `ai.gateway::anthropic` and `openai` (key-less examples) are in this repository; a fleet's own gateways and its local
   servers (`llama-cpp-local` on 8686, `vllm-local` on 8868) live in its private repository.
