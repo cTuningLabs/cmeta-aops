@@ -21,7 +21,7 @@ cxai --gateway=llama-cpp-local "..."                                  # Claude C
   by the setup task on first use; `--jinja` is on, so the model's chat template and its tool calling are used.
 - **The model** is a model artifact with a GGUF file (`cx model ls`): `hf-Qwen@Qwen3-8B-GGUF` (the default: a small
   tool-calling model that fits an 8 GB GPU) and `hf-ggml-org@gpt-oss-20b-GGUF` (OpenAI's open model, made for the
-  Responses format; about 13 GB, so `--gpu_layers` below the whole on an 8 GB GPU). The file is downloaded once into
+  Responses format; the file gpt-oss-20b-MXFP4.gguf, about 13 GB, so `--gpu_layers` below the whole on an 8 GB GPU). The file is downloaded once into
   cMeta's cache by the model task.
 - **The context** is 32k tokens by default (`--ctx_size`): Claude Code's first request alone carries about 17k tokens
   of system prompt and tools (the T470p round of 2026-10-25: "request (17382 tokens) exceeds the available context size
