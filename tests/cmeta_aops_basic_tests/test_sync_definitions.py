@@ -249,3 +249,40 @@ def test_live_log_arrives_before_command_finishes_and_drains_on_exit(task_namesp
     with log.open('ab') as writer:
         writer.write(b'\nafter command')
     assert output.getvalue() == expected
+
+
+def test_identity_ignores_the_built_in_filters(cm, tmp_path, task_namespace):
+    """A pair's identity is its mode, endpoints and the definition's own filters; a built-in state filter added by a
+    release changes neither the identity nor the acceptance of a state digested before (0.55.0.1 broke every pair)."""
+    name = definition(cm, tmp_path, repos=['local'])
+    plan = run(cm, name)['plans'][0]
+    ns = task_namespace('sync')
+    built_in = len(plan['filters']) - len(plan['own_filters'])
+    assert built_in >= 4 and plan['own_filters'] == plan['filters'][built_in:]
+    assert '- **/result/sync-backup--*/**' in plan['filters'] and '- **/result/sync-backup--*/**' not in plan['own_filters']
+    identity, digest, legacy = ns['identity_digests'](plan)
+    assert identity['filters'] == plan['own_filters'] and digest != legacy
+    # the digest a state of 0.55.0 carried: the three built-ins of that time in front of the definition's own filters
+    old = dict(identity, filters=ns['LEGACY_STATE_FILTERS'] + plan['own_filters'])
+    import hashlib, json
+    assert legacy == hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()
+    # a plan without own_filters (an older caller) digests its whole list
+    _, whole, _ = ns['identity_digests'](dict(plan, own_filters=None) if False else {k: v for k, v in plan.items() if k != 'own_filters'})
+    assert whole != digest
+
+
+def test_a_backup_artifact_never_claims_the_pair(cm, tmp_path, task_namespace):
+    """The backup result artifact of a pair carries backup_of, not sync_uid: find_state must see one state only."""
+    name = definition(cm, tmp_path, repos=['local'])
+    plan = run(cm, name)['plans'][0]
+    uid = plan['uid']
+    for alias, meta in (('sync--' + name + '--' + uid, {'permanent': True, 'tags': ['sync-state'], 'sync_uid': uid}),
+                        ('sync-backup--' + name + '--' + uid, {'permanent': True, 'tags': ['sync-backup'], 'backup_of': uid})):
+        r = cm.access({'category': 'result', 'command': 'get', 'arg1': 'local:' + alias, 'meta': meta, 'con': False})
+        assert r['return'] == 0, r
+    ns = task_namespace('sync')
+    task = ns['CTask'].__new__(ns['CTask'])
+    task.cm = cm
+    task.cmeta = {'uses_categories': {'result': 'result,6567e4df4d04488a', 'cache': 'cache,1ebdcc1cc30c4022'}}
+    found = task.find_state('result', uid)
+    assert found and found['cmeta_ref_parts']['artifact_alias'] == 'sync--' + name + '--' + uid

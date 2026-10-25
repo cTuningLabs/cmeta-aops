@@ -14,6 +14,11 @@ All notable changes to cMeta AOps are documented here, newest first.
   repository, under `<the other side>/<run id>/` (`<run id>/` for a named sync) - listed by `cx result ls`; the host's
   copy gets its `_cmeta` after a run that put files there (and a reindex of its `local` for `cx host sync`). Before:
   `.cmeta-sync-backups/` beside the repos folder, which no index knew.
+- **A pair's identity is its own definition, not the task's built-in filters:** a built-in state filter added by a
+  release (this one added `- **/result/sync-backup--*/**`) made every named sync stop with "endpoints/filters changed;
+  review --plan, then explicitly use --resync". The identity now digests the definition's own filters, the mode and the
+  endpoints; a state digested the old way (0.55.0 and before) is accepted and rewritten at the next success. The backup
+  artifact of a pair carries `backup_of`, not `sync_uid` (which is how the pair's state is found).
 
 ## 0.55.0
 - **A machine serves the fleet with the key the fleet reaches it with:** `cx task run run-openssh --host=<the host
