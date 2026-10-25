@@ -2,6 +2,19 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.55.0.1
+- **A server as the world sees it:** `projects: <name>: server: public: [<url>, ...]` names the public URLs of a
+  project's server (a site behind a tunnel or a proxy); `cx host status` checks them from this machine, one line
+  each under the project - `works` (HTTP 2xx or 3xx, a redirect not followed), `http <code>`, `timeout`,
+  `unreachable` - so a site that serves while its host's ssh is down shows as such; a `server.url` that is not a
+  local address is checked from here the same way. The rows carry them (`projects[].public`); the host page of the
+  cserver shows them as links.
+- **The sync backups are result artifacts:** what `cx host sync --backup` and `cxt sync` keep goes to the result
+  artifact `sync-backup--<repository>` (`sync-backup--<alias>--<uid>` for a named sync) of each side's `local`
+  repository, under `<the other side>/<run id>/` (`<run id>/` for a named sync) - listed by `cx result ls`; the host's
+  copy gets its `_cmeta` after a run that put files there (and a reindex of its `local` for `cx host sync`). Before:
+  `.cmeta-sync-backups/` beside the repos folder, which no index knew.
+
 ## 0.55.0
 - **A machine serves the fleet with the key the fleet reaches it with:** `cx task run run-openssh --host=<the host
   artifact this machine is>` allows the public key of that host's `access: key`, as this machine finds it. New:

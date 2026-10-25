@@ -26,3 +26,4 @@ defaults:
     - '- **/sync--*/**'
     - '- **/.cmeta-sync*'
     - '- **/.cmeta-sync-backups/**'
+    - '- **/result/sync-backup--*/**'

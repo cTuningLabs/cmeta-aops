@@ -295,15 +295,22 @@ class CTask(InitCTask):
                 argv += ['--resync', '--resync-mode', plan['resync_mode']]
         elif plan['mode'] == 'mirror':
             argv += ['--max-delete', str(plan['max_delete'])]
+        # What a run overwrites or deletes: the result artifact sync-backup--<alias>--<uid> of each side's local
+        # repository, under <run id>/ - an artifact the index knows (before 2026-10-25: .cmeta-sync-backups beside the
+        # synced folder). The local artifact is made now; the remote one gets its _cmeta after the run (mark_backup).
+        backup_alias = 'sync-backup--' + plan['state_ref'].split(':', 1)[1].split('--', 1)[1]
+        local_art = self.access('result', 'get', arg1='local:' + backup_alias,
+                                meta={'permanent': True, 'tags': ['sync-backup'], 'sync_uid': plan['uid']})['artifact']
+        remote_art = None
         for num, side in enumerate((source, dest), 1):
             if plan['mode'] != 'bisync' and num == 1:
                 continue
             path = side['path']
             if side['remote']:
-                backup = ':sftp:' + posixpath.join(posixpath.dirname(path[6:]),
-                           '.cmeta-sync-backups', plan['uid'], run_id)
+                remote_art = posixpath.join(posixpath.dirname(path[6:]), 'local', 'result', backup_alias)
+                backup = ':sftp:' + posixpath.join(remote_art, run_id)
             else:
-                backup = str(Path(path).parent / '.cmeta-sync-backups' / plan['uid'] / run_id)
+                backup = str(Path(local_art['path']) / run_id)
             argv += ['--backup-dir' + (str(num) if plan['mode'] == 'bisync' else ''), backup]
         show_live = live and ctx['control'].get('con')
         if show_live:
@@ -322,6 +329,21 @@ class CTask(InitCTask):
             print('Full transfer log: ' + str(log))
         if r.get('returncode', 0):
             raise ValueError('rclone failed (exit ' + str(r['returncode']) + '). See ' + str(log))
+        if remote_art and not dry:
+            self.mark_backup(ctx, setup['path'], env, local_art, remote_art, run_id)
+
+    def mark_backup(self, ctx, rclone, env, local_art, remote_art, run_id):
+        """The remote copy of the backup artifact gets the local one's _cmeta when this run put files there (rclone
+        made the run folder), so the host's index can know it after its next reindex; nothing otherwise."""
+        def rc(argv):
+            return self.task(ctx, 'cmd,c9ba0a88df394d7f', cmd=' '.join(quote(x) for x in argv), env=env,
+                             capture_output=True, fail_if_nonzero_return_code=False, print_extra_line=False)
+        if rc([rclone, 'lsd', ':sftp:' + posixpath.join(remote_art, run_id)]).get('returncode', 1):
+            return
+        name = next((n for n in ('_cmeta.yaml', '_cmeta.json') if (Path(local_art['path']) / n).exists()), None)
+        if not name or not rc([rclone, 'lsf', ':sftp:' + posixpath.join(remote_art, name)]).get('returncode', 1):
+            return
+        rc([rclone, 'copyto', str(Path(local_art['path']) / name), ':sftp:' + posixpath.join(remote_art, name)])
 
     def find_state(self, category, uid):
         found = self.cm.access(dict(category=self.cmeta['uses_categories'][category],

@@ -16,7 +16,11 @@ is one more branch in _cmd_run/_status/_up/_down and all the verbs work on it at
 
 import fnmatch
 import hashlib
+import ipaddress
 import os
+import urllib.error
+import urllib.parse
+import urllib.request
 import re
 import sys
 import shutil
@@ -286,6 +290,7 @@ class Category(InitCategory):
         if want_status:
             self._status_all(ctx, hosts)
             self._project_status_all(ctx, hosts)
+            self._public_status_all(hosts)
             if active:
                 hosts = [h for h in hosts if h['status'] in ('up', 'here')]
 
@@ -347,6 +352,7 @@ class Category(InitCategory):
 
         self._status_all(ctx, hosts, timeout=int(timeout), cmd_timeout=int(cmd_timeout))
         self._project_status_all(ctx, hosts, timeout=int(timeout), cmd_timeout=int(cmd_timeout))
+        self._public_status_all(hosts, timeout=int(timeout))
 
         rows = [self._row(h, True) for h in hosts]
         if con:
@@ -2534,8 +2540,76 @@ class Category(InitCategory):
                 server = {'status': 'retired', 'url': (p.get('server') or {}).get('url')}
             rows.append({'alias': name, 'path': p.get('path'), 'cmeta': st.get('cmeta_version', '-'),
                          'aops': st.get('aops_version', '-'), 'server': server,
-                         'status': server.get('status', 'not checked'), 'probed': st.get('probed_at')})
+                         'status': server.get('status', 'not checked'), 'probed': st.get('probed_at'),
+                         # the public URLs of the server checked from this machine (status: _public_status_all)
+                         'public': list((h.get('public_status') or {}).get(name) or [])})
         return rows
+
+    @staticmethod
+    def _public_urls(server):
+        """The URLs of a project's server checked FROM HERE, not through the host: its "public" list (a string or a
+        list), else its "url" when that is not a loopback, private or link-local address - a site behind a tunnel or
+        a proxy is reachable from anywhere, and a host whose ssh is down can still serve it."""
+        urls = server.get('public')
+        if isinstance(urls, str):
+            urls = [urls]
+        if urls:
+            return [str(u) for u in urls if u]
+        url = str(server.get('url') or '')
+        host = urllib.parse.urlsplit(url).hostname or ''
+        if not url or not host:
+            return []
+        try:
+            ip = ipaddress.ip_address(host)
+            # 100.64.0.0/10 is the shared address space Tailscale uses: ipaddress does not call it private
+            private = ip.is_loopback or ip.is_private or ip.is_link_local or ip in ipaddress.ip_network('100.64.0.0/10')
+        except ValueError:
+            private = host == 'localhost' or host.endswith(('.local', '.localhost', '.internal'))
+        return [] if private else [url]
+
+    def _public_status_all(self, hosts, timeout=DEFAULT_STATUS_TIMEOUT):
+        """The public URLs of every project's server checked from this machine, all at once: "works" (HTTP 2xx or
+        3xx, a redirect not followed - a sign-in page answers 303), "http <code>", "timeout", "unreachable". Kept in
+        h['public_status'] = {project: [{'url', 'status', 'http_status', 'checked_at'}]}."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *args, **kwargs):
+                return None
+
+        opener = urllib.request.build_opener(NoRedirect())
+        jobs = []
+        for h in hosts:
+            h['public_status'] = {}
+            if self._retired(h):
+                continue
+            desc = h.get('host_desc') or h['desc']
+            names = [h['project']] if h.get('project') else list(desc.get('projects') or {})
+            for name in names:
+                for url in self._public_urls(((desc.get('projects') or {}).get(name) or {}).get('server') or {}):
+                    jobs.append((h, name, url))
+
+        def check(job):
+            h, name, url = job
+            result = {'url': url, 'checked_at': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}
+            try:
+                request = urllib.request.Request(url, headers={'User-Agent': 'cmeta-host-status'})
+                try:
+                    with opener.open(request, timeout=float(timeout)) as response:
+                        status = response.status
+                except urllib.error.HTTPError as error:
+                    status = error.code
+                result.update(http_status=status, status='works' if 200 <= status < 400 else f'http {status}')
+            except Exception as error:
+                reason = getattr(error, 'reason', error)
+                timed_out = isinstance(reason, (TimeoutError, socket.timeout)) or 'timed out' in str(error).lower()
+                result['status'] = 'timeout' if timed_out else 'unreachable'
+            return job, result
+
+        if jobs:
+            with ThreadPoolExecutor(max_workers=min(16, len(jobs))) as pool:
+                for (h, name, url), result in pool.map(check, jobs):
+                    h['public_status'].setdefault(name, []).append(result)
 
     def _project_details(self, hosts, columns):
         """{host alias: [project row]}: the cells of each project by table column, printed aligned under its
@@ -2557,6 +2631,16 @@ class Category(InitCategory):
                     # cx host ls: the versions have their own columns; without STATUS, the status saved by the last check
                     row['extra'] = url + ('' if 'STATUS' in columns or not p['server'] else f'  ({p["status"]} at the last check)')
                 rows.append(row)
+                # the public URLs of the server, checked from here: one line each under the project
+                for pub in p.get('public') or []:
+                    site = urllib.parse.urlsplit(pub['url']).netloc or pub['url']
+                    prow = {'alias': '      ' + site, 'type': 'web', 'status': pub.get('status', ''), 'cmeta': '', 'aops': '', 'probed': ''}
+                    if 'ADDRESS' in columns:
+                        prow['address'] = pub['url']
+                        prow['extra'] = f'(HTTP {pub["http_status"]})' if pub.get('http_status') else ''
+                    else:
+                        prow['extra'] = pub['url']
+                    rows.append(prow)
             out[h['alias']] = rows
         return out
 
@@ -4042,20 +4126,24 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         extra = list(DEFAULT_RCLONE_FLAGS)
         if dry_run: extra.append('--dry-run')
 
-        # --backup: what this run overwrites or deletes is kept, dated, in .cmeta-sync-backups/<repository>/<run id>/
-        # beside the repos folder of each side - the convention of the named syncs (task/sync); never inside a
-        # repository, so never indexed. rclone makes the folder only when a file goes there.
+        # --backup: what this run overwrites or deletes is kept in the result artifact sync-backup--<repository> of each
+        # side's local repository - an artifact the index knows ("cx result ls") - under <the other side>/<run id>/;
+        # rclone makes the run folder only when a file goes there, and the host's copy of the artifact gets its
+        # _cmeta after the run (_backup_mark_remote), so the host's index can know it too
+        dirs = None
         if backup:
-            run_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-            local_backup = os.path.join(os.path.dirname(os.path.abspath(local)), '.cmeta-sync-backups', name, run_id)
-            remote_backup = '/'.join([entry['remote'].rstrip('/').rsplit('/', 1)[0], '.cmeta-sync-backups', name, run_id])
+            r = self._backup_dirs(h, name, entry)
+            if r['return'] > 0: return r
+            dirs = r
             if method == 'copy':
-                extra += ['--backup-dir', ':sftp:' + remote_backup]
+                extra += ['--backup-dir', ':sftp:' + dirs['remote']]
             else:
-                extra += ['--backup-dir1', local_backup, '--backup-dir2', ':sftp:' + remote_backup]
+                extra += ['--backup-dir1', dirs['local'], '--backup-dir2', ':sftp:' + dirs['remote']]
             if con:
-                print(f'    --backup: what this run overwrites or deletes goes to .cmeta-sync-backups/{name}/{run_id}/ '
-                      f'beside the repos folder' + (' of each side' if method != 'copy' else f' on {h["alias"]}'))
+                where = f'{dirs["here"]}/{dirs["run_id"]}/ of result::local:{dirs["artifact"]} on {h["alias"]}'
+                if method != 'copy':
+                    where = f'{h["alias"]}/{dirs["run_id"]}/ of result::local:{dirs["artifact"]} here, and ' + where
+                print(f'    --backup: what this run overwrites or deletes goes to {where}')
 
         # a partial repository: only the artifacts its patterns select, the aliases compared without case as cMeta does
         rules = []
@@ -4071,7 +4159,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if method == 'copy':
             r = self._rclone(ctx, h, 'copy', local, entry['remote'], whitelist=rules, blacklist=entry['blacklist'],
                              extra=extra, con=con, verbose=verbose)
-            if r['return'] > 0 or not rules or dry_run: return r
+            if r['return'] > 0: return r
+            if dirs and not dry_run:
+                self._backup_mark_remote(ctx, h, dirs, con, verbose)
+            if not rules or dry_run: return r
             return self._after_partial(ctx, h, name, entry, rules, 'sync', con, verbose)
 
         # bisync: rclone's listings hold only what the rules let through, so a run with other rules than the last one
@@ -4095,11 +4186,56 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         r = self._rclone(ctx, h, 'resync' if resync else 'bisync', local, entry['remote'], whitelist=rules,
                          blacklist=entry['blacklist'], extra=extra, con=con, verbose=verbose,
                          workdir=self._bisync_workdir(h, entry), unlock=unlock)
-        if r['return'] > 0 or not rules or dry_run: return r
+        if r['return'] > 0: return r
+        if dirs and not dry_run:
+            self._backup_mark_remote(ctx, h, dirs, con, verbose)
+        if not rules or dry_run: return r
         os.makedirs(os.path.dirname(selection), exist_ok=True)
         with open(selection, 'w', encoding='utf-8', newline='\n') as f:
             f.write('\n'.join(rules) + '\n')
         return self._after_partial(ctx, h, name, entry, rules, 'sync', con, verbose)
+
+    def _backup_dirs(self, h, name, entry):
+        """
+        Where a --backup run keeps what it overwrites or deletes: the result artifact sync-backup--<repository> of
+        this machine's local repository (made now, under <host alias>/<run id>/) and the same artifact of the host's
+        local repository (under <this machine>/<run id>/): {'artifact', 'run_id', 'here', 'local', 'remote',
+        'remote_artifact', 'cmeta_file'}.
+        """
+        alias = f'sync-backup--{name}'
+        r = self.cm.access({'category': self.cmeta['uses_categories'].get('result', 'result,6567e4df4d04488a'), 'command': 'get',
+                            'arg1': f'local:{alias}', 'meta': {'permanent': True, 'tags': ['sync-backup'], 'repository': name},
+                            'con': False})
+        if r['return'] > 0: return r
+        path = r['artifact']['path']
+        run_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+        here = re.sub(r'[^A-Za-z0-9_.-]', '-', socket.gethostname()).strip('-.') or 'orchestrator'
+        remote_artifact = '/'.join([entry['remote'].rstrip('/').rsplit('/', 1)[0], 'local', 'result', alias])
+        cmeta_file = next((os.path.join(path, n) for n in ('_cmeta.yaml', '_cmeta.json') if os.path.isfile(os.path.join(path, n))), '')
+        return {'return': 0, 'artifact': alias, 'run_id': run_id, 'here': here, 'local': os.path.join(path, h['alias'], run_id),
+                'remote': '/'.join([remote_artifact, here, run_id]), 'remote_artifact': remote_artifact, 'cmeta_file': cmeta_file}
+
+    def _backup_mark_remote(self, ctx, h, dirs, con, verbose):
+        """
+        After a --backup run: when files went to the host's backup folder and the artifact there has no _cmeta yet,
+        it gets the local one's copy and the host's local repository is reindexed, so "cx result ls" shows it there.
+        Nothing to do when nothing was backed up. A host without a POSIX shell is left as it is.
+        """
+        if not dirs.get('cmeta_file'):
+            return {'return': 0}
+        mark = dirs['remote_artifact'] + '/' + os.path.basename(dirs['cmeta_file'])
+        r = self._cmd_run(ctx, h, f'test -d {shlex.quote(dirs["remote"])} && test ! -e {shlex.quote(mark)}')
+        if r['return'] > 0:
+            return {'return': 0}
+        rr = self._run_local(r['cmd'], capture=True, con=False, verbose=verbose)
+        if rr.get('returncode') != 0:
+            return {'return': 0}
+        r = self._rclone(ctx, h, 'copyto', dirs['cmeta_file'], mark, con=con, verbose=verbose)
+        if r['return'] > 0:
+            if con:
+                print(f'WARNING: the backup artifact of {h["alias"]} got no _cmeta: {r.get("error")}')
+            return {'return': 0}
+        return self._index_on_host(ctx, h, 'local', dirs['remote_artifact'].rsplit('/result/', 1)[0], con, verbose)
 
     def _after_partial(self, ctx, h, name, entry, rules, how, con, verbose):
         """After a partial repository reached a host: PARTIAL.md there, and the repository indexed (plugged the first time)."""

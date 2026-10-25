@@ -184,11 +184,18 @@ names. This is a file sync, not a merge of JSON records or Git branches. Inspect
 conflict files before using them as application data. Quiet mode skips questions,
 but retains conflicts, backups and rclone's deletion/error checks.
 
-Overwritten/deleted data is retained on the **same endpoint filesystem** in:
+Overwritten/deleted data is retained on the **same endpoint filesystem**, in the result artifact
+`sync-backup--<alias>--<sync-UID>` of that side's `local` repository (an artifact the index knows: `cx result ls`),
+one folder per run:
 
 ```text
-<parent-of-transfer-root>/.cmeta-sync-backups/<sync-UID>/<run-id>/
+<repos>/local/result/sync-backup--<alias>--<sync-UID>/<run-id>/
 ```
+
+The local artifact is made at the first run; the remote one gets its `_cmeta` after a run that put files there, and
+the remote index knows it after its next reindex (`cx host sync`'s after step, or `cx repo reindex local` there).
+Before 2026-10-25 the folder was `.cmeta-sync-backups/<sync-UID>/<run-id>/` beside the transfer root; such folders
+stay where they are.
 
 Backups have no automatic expiry in this prototype. Monitor their space usage.
 `max_delete` is a percentage for bisync (default 50) and a file count for mirror

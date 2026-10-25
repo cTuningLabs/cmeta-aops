@@ -277,8 +277,17 @@ projects:
     server:
       url: http://127.0.0.1:8118/
       # expected_status: [200, 302]  # optional; default: any HTTP 200-399
+      # public:                       # the same server as the world sees it, checked FROM the orchestrator
+      #   - https://my-site.example/healthz
     # sync: {repos_path: ..., default: copy, repos: [...], after: [...]}
 ```
+
+`server.url` is checked on the host (through its ssh: a local address stays local); `server.public` lists the
+URLs of the same server as the world sees them - a site behind a tunnel or a proxy - checked from this machine
+by `status`, one line each under the project: `works` (HTTP 2xx or 3xx; a redirect is not followed, so a sign-in
+page answers 303), `http <code>`, `timeout`, `unreachable`. A `server.url` that is not a loopback, private or
+link-local address is checked from here the same way (the static sites). The host page of the cserver shows them
+as links.
 
 `path`, `venv`, and `cmeta.home` are required. Use absolute paths. A named project does
 not inherit the global cMeta upgrade command, sync repositories or restart commands.
@@ -345,10 +354,12 @@ whitelist, `--dirs`).
 `--dry_run` shows what would move and changes nothing (rclone `--dry-run`, `git fetch --dry-run`).
 
 `--backup` keeps what a run overwrites or deletes: on each side of a bisync (on the host for a copy) the old file
-goes to `.cmeta-sync-backups/<repository>/<run id>/` beside the `repos` folder, with its path inside the repository
-(rclone's `--backup-dir1` / `--backup-dir2`), as the named syncs of `cxt sync` do on every run. The folder sits
-outside every repository, so nothing there is indexed; rclone makes it only when a file goes there; nothing prunes
-it. It is the undo of a repository that is not git: a sync that took a wrong file leaves its previous version there.
+goes, with its path inside the repository, to the result artifact `sync-backup--<repository>` of that side's `local`
+repository, under `<the other side>/<run id>/` (rclone's `--backup-dir1` / `--backup-dir2`), as the named syncs of
+`cxt sync` do on every run. The artifact is made here at the first run and listed by `cx result ls`; the host's copy
+gets its `_cmeta` after a run that put files there, and the host's `local` repository is reindexed so that `cx result
+ls` shows it there too. rclone makes a run folder only when a file goes there; nothing prunes them. It is the undo
+of a repository that is not git: a sync that took a wrong file leaves its previous version there.
 
 ### A partial repository: `artifacts:`
 
