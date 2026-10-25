@@ -105,6 +105,24 @@ class CTask(InitCTask):
 
 
     ############################################################
+    def _gateway(self, ctx, harness, gateway, gw, ln):
+        """Login or a gateway for this run (the task set-ai-gateway: the flag, this machine's config): with a gateway,
+        its environment goes into this process - the tool inherits it - and its command-line words are returned."""
+        r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'set-ai-gateway,e10aa0a00edd4a2c',
+                            'ctx': ctx, 'harness': harness, 'gateway': gateway, 'gw': gw, 'ln': ln, 'con': False,
+                            'quiet': ctx['control'].get('quiet', False)})
+        if r.get('return', 1) > 0:
+            return r
+        if r['gateway'] != 'login':
+            os.environ.update({k: str(v) for k, v in (r.get('env') or {}).items()})
+            if ctx['control'].get('con', False):
+                print('')
+                print('AI gateway: %s (%s) - the %s wire of %s; model %s' % (r['gateway'], r['how'], r.get('wire', ''),
+                                                                           r.get('base_url', ''), r.get('model') or 'the harness decides'))
+                for n in r.get('notes') or []:
+                    print('  note: ' + n)
+        return r
+
     def run(self,
             ctx: dict,                      # cMeta context
             prompt: str = '',               # prompt text
@@ -120,6 +138,9 @@ class CTask(InitCTask):
             skip_output_file: bool = False, # do not record the output at all
             append_output_file: bool = False, # append to the output file instead of overwriting it
             skip_output_header: bool = False, # do not add the summary header to the output file
+            gateway: str = '',              # an ai.gateway alias (a company's gateway, a llama.cpp server, ...) or "login"; empty: this machine's config, else login
+            gw: str = '',                   # the short form of --gateway: bare = the configured gateway, -gw=<alias>
+            ln: bool = False,               # the tool's own login, whatever the config says
             unparsed: list = None,          # extra flags for opencode (everything after "--")
     ):
 
@@ -314,6 +335,26 @@ class CTask(InitCTask):
 
         extra_keys = [x.split('=')[0] for x in extra_flags]
 
+        # login or a gateway (set-ai-gateway: the flag, this machine's config): the session's environment, and the
+        # gateway's default model when the user named none
+        gwc = self._gateway(ctx, 'opencode', gateway, gw, ln)
+        if gwc.get('return', 0) > 0:
+            return gwc
+        if gwc['gateway'] != 'login':
+            flags += gwc.get('args') or []
+            if gwc.get('model') and not [x for x in extra_keys if x in MODEL_FLAGS]:
+                flags += ['--model', gwc['model']]
+            if gwc.get('opencode_config'):
+                # the gateway's providers beside what run-ai put into OPENCODE_CONFIG_CONTENT (the instructions)
+                try:
+                    current = json.loads(os.environ.get('OPENCODE_CONFIG_CONTENT') or '{}')
+                except ValueError:
+                    current = {}
+                if not isinstance(current, dict):
+                    current = {}
+                current.setdefault('provider', {}).update(gwc['opencode_config'].get('provider') or {})
+                os.environ['OPENCODE_CONFIG_CONTENT'] = json.dumps(current)
+
         if yes:
             # Do not fight with a permission flag that the user passed after "--"
             user_permission_flags = [x for x in extra_flags if x.split('=')[0] in PERMISSION_FLAGS]
@@ -374,9 +415,12 @@ class CTask(InitCTask):
 
         cmd = base_cmd + flags
 
-        # The prompt (or the request to read its file) is the trailing positional argument in both modes
+        # The prompt (or the request to read its file): the trailing positional of "opencode run [message..]"; in an
+        # interactive session the positional is the PROJECT FOLDER to open ("opencode [project]"), so the prompt goes
+        # through --prompt there (a hand-over prompt as a positional ended with "Failed to change directory to
+        # <cwd>/<the prompt>", 2026-10-25)
         if full_prompt:
-            cmd.append(pr['text'])
+            cmd += ['--prompt', pr['text']] if interactive else [pr['text']]
 
         if con:
             print ('')
@@ -394,7 +438,8 @@ class CTask(InitCTask):
         # "generator"), and one it updates records it as "last_generator". A task that runs opencode may
         # have set CMETA_GENERATOR already (method "task", its log, ...) - it is kept then.
         if not os.environ.get('CMETA_GENERATOR'):
-            os.environ['CMETA_GENERATOR'] = json.dumps(_agent_generator(opencode_path, extra_flags))
+            os.environ['CMETA_GENERATOR'] = json.dumps(dict(_agent_generator(opencode_path, extra_flags),
+                                                           **({'gateway': gwc['gateway']} if gwc['gateway'] != 'login' else {})))
 
         # The run's duration, on the monotonic clock: the wall clock can be set while it runs
         start_time = time.monotonic()
@@ -495,6 +540,7 @@ class CTask(InitCTask):
             'prompt_file': prompt_file,
             'prompt_size': len(full_prompt),
             'extra_flags': flags,
+            'gateway': gwc['gateway'],
             'duration': round(duration, 1),
             'return_code': returncode,
             'output_file': output_file,

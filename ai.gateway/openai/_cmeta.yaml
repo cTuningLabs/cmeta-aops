@@ -1,0 +1,9 @@
+artifact: 41ba5429d34a48ea
+authors: Grigori Fursin
+category: ai.gateway,ae1ae632e0ec4f75
+creation_timestamp: '2026-10-25T19:46:22.990608+00:00'
+generator:
+  agent: Claude Code 2.1.310
+  by: Grigori Fursin
+  method: agent
+  via: cmeta 0.37.6

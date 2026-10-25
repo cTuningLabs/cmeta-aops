@@ -1,0 +1,15 @@
+artifact: 203448fdf9ab4bae
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-10-25T19:47:57.020532+00:00'
+generator:
+  agent: Claude Code 2.1.310
+  by: Grigori Fursin
+  method: agent
+  via: cmeta 0.37.6
+desc: 'a llama.cpp server on this machine: start (detached), stop, status; the Anthropic, chat and Responses wires'
+tags:
+- task
+- ai
+- llama-cpp
+- server

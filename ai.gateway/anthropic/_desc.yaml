@@ -1,0 +1,18 @@
+# Anthropic's own API, for a Claude Code or OpenCode run billed to an API key instead of a subscription. The key is a
+# secret artifact of kind token (cx secret add <your secrets repository>:anthropic-api-key, the value in files/token),
+# never a value here.
+description: Anthropic's API (api.anthropic.com)
+base_url: https://api.anthropic.com
+
+wires:
+  anthropic: ''                          # /v1/messages right under the base
+
+catalog: /v1/models
+
+auth:
+  header: x-api-key
+  secret: anthropic-api-key
+
+models:
+  claude:
+    default: claude-sonnet-4-5

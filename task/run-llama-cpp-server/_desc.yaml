@@ -1,0 +1,15 @@
+authors: Grigori Fursin
+
+# A server is a live thing: never cached, nothing stored.
+cache: false
+store_global: false
+
+usage: |
+  cx task run run-llama-cpp-server                                        Qwen3-8B (Q4_K_M) on CUDA, port 8686, detached
+  cx task run run-llama-cpp-server --model=hf-ggml-org@gpt-oss-20b-GGUF     the larger model: the layers that fit on the GPU
+  cx task run run-llama-cpp-server --compute=cpu --port=8687
+  cx task run run-llama-cpp-server --action=status
+  cx task run run-llama-cpp-server --action=stop
+
+  The server's record and log: the state artifact local:llama-cpp-server-<port> (cx state ls).
+  The gateway artifact that points harnesses at it: ai.gateway::llama-cpp-local (fgg-hosts) - cxai --gateway=llama-cpp-local

@@ -688,6 +688,35 @@ when applying); `REFUSED` a path outside `memory/` and `skills/`.
 - `--add-dir` still gives Claude write access to the used artifacts; the guard is what undoes a write, not what
   prevents it.
 
+## Login or a gateway: `--gateway`, `-gw`, `-ln`, the project, the config
+
+A harness reaches its models through the tool's own account (a Claude subscription, a ChatGPT login: `login`) or
+through an `ai.gateway` artifact - a company's gateway (Azure API Management in front of OpenAI and Anthropic), a
+vendor's API key, a llama.cpp or vLLM server here or on a host (`cx ai.gateway ls`). The same Claude Code, Codex or
+OpenCode; the bill moves, or the model is local. The choice for a run, in order:
+
+1. the flag: `--gateway=<alias>` (`-gw=<alias>`), a bare `-gw` = the configured gateway, `-ln` = login;
+2. the project's `_desc.yaml`: `ai_gateway: <alias> | login` - a company's work item says its gateway, a task that
+   needs the claude.ai connectors (HubSpot, Microsoft 365) says `login`;
+3. this machine's `config::default`: `run_ai_gateway_<harness>: login | <alias>` per harness, else `run_ai_gateway:
+   true` with `run_ai_gateway_name: <alias>` (`cx config set default --meta.run_ai_gateway=true
+   --meta.run_ai_gateway_name=dapple --meta.run_ai_gateway_codex=login`);
+4. `login`.
+
+```
+cxai -gw "..."                                   # the configured gateway, whatever the project says
+cxai -ln "..."                                   # the tool's own account, whatever the config says
+cxai --gateway=llama-cpp-local "..."             # a local model (cx task run run-llama-cpp-server starts the server)
+cxai --harness=codex --gateway=dapple --list_models   # what Codex can use through that gateway, every model of its catalog
+```
+
+The task `set-ai-gateway` makes the choice and gives the harness task what it needs (the environment, Codex's
+provider words, OpenCode's providers, the default model); the key comes from the `secret` artifact the gateway names
+and goes into the tool's environment only. Every run record carries the gateway beside the harness, the model and the
+effort. Claude Code on an API key has no claude.ai connectors: a gateway session says so in its notes - `-ln` for a
+session that needs them. Claude Code speaks the Anthropic wire only, Codex the Responses wire, OpenCode both; a
+gateway's catalog is filtered by the wire the harness speaks.
+
 ## Signing a harness in: `--login`, `--login_status`
 
 ```
