@@ -82,6 +82,7 @@ stopped, with any agent and any model, and the knowledge travels with the projec
 
 ```bash
 cxt run-ai                                      # continue the latest conversation of this artifact (cxt = cx task run)
+cxai                                            # the same, shorter (cMeta 0.37.6+): cxai = cx task run run-ai
 cxt run-ai --harness=codex "one prompt"         # one more turn of it, with another agent
 cxt run-ai --dry_run                            # what the agent would be given; nothing runs
 cxt run-ai --login --harness=codex              # sign the agent in (its tool installed first when missing)

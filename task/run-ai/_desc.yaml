@@ -6,6 +6,7 @@ authors: Grigori Fursin
 #
 #   cxt run-ai                                      # continue the latest conversation of the project around the cwd
 #                                                   # an existing !AI marks the nearest workspace, including scratch sessions
+#   cxai                                            # the same, shorter (cMeta 0.37.6+): cxai = cx task run run-ai
 #   cxt run-ai -l                                   # a fresh dated scratch workspace, with its own !AI
 #   cxt run-ai -l="quick question"                   # YYYYMMDD-HHMM.quick question (the value is a label)
 #   cxt run-ai --log_project="quick question" --prompt="..."    # long form; the prompt is separate

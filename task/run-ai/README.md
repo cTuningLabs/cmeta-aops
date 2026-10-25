@@ -10,6 +10,7 @@ with no path in the way and nothing to install in the user's home.
 
 ```bash
 cxt run-ai                                           # continue the latest conversation of the project around the cwd, interactively
+cxai                                                 # the same, shorter (cMeta 0.37.6+): cxai = cx task run run-ai; ucxai puts a bare --home first
 cxt run-ai -l                                        # a fresh dated scratch workspace in the local log artifact
 cxt run-ai -l="quick question"                       # label its directory YYYYMMDD-HHMM.quick question
 cxt run-ai -l="quick question" --prompt="Explain this idea"    # optional label and prompt are separate

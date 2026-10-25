@@ -10,6 +10,8 @@ All notable changes to cMeta AOps are documented here, newest first.
   never a key. `--keys` of run-openssh takes references too: `secret::<alias>` (the secret's `ssh.public_key`) and
   `<category>::<artifact>/<file>` (a private key named there stands for the `.pub` beside it); a private key file is
   refused. Without `--host` or `--keys` the user's `~/.ssh/authorized_keys` is allowed, as before.
+- **`cxai`** (cMeta 0.37.6) is named beside `cxt run-ai` in the documents of run-ai: `cxai ...` = `cx task run run-ai ...`,
+  `ucxai` with a bare `--home` first.
 
 ## 0.54.2
 - **`cx host screens <host>`:** the GNU Screen sessions of a host's user from here - name, pid, state (attached,
