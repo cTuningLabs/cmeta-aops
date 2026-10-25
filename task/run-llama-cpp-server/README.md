@@ -23,6 +23,9 @@ cxai --gateway=llama-cpp-local "..."                                  # Claude C
   tool-calling model that fits an 8 GB GPU) and `hf-ggml-org@gpt-oss-20b-GGUF` (OpenAI's open model, made for the
   Responses format; about 13 GB, so `--gpu_layers` below the whole on an 8 GB GPU). The file is downloaded once into
   cMeta's cache by the model task.
+- **The context** is 32k tokens by default (`--ctx_size`): Claude Code's first request alone carries about 17k tokens
+  of system prompt and tools (the T470p round of 2026-10-25: "request (17382 tokens) exceeds the available context size
+  (16384)"), so a smaller window stops it before the first answer; the KV cache grows with it (a few GB at 32k).
 - **Which harness works with which model** depends on the model's tool calling: Claude Code and Codex send large
   tool sets; a model of eight billion parameters follows them slowly and sometimes badly, OpenCode is the forgiving
   one. The matrix of 2026-10-25 is in the fgg work item of the AI gateway.

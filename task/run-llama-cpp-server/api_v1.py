@@ -119,7 +119,7 @@ class CTask(InitCTask):
             port: int = DEFAULT_PORT,       # 8686 by default (not llama.cpp's 8080: the busiest port of a developer's machine)
             host: str = '127.0.0.1',        # the address to listen on (0.0.0.0 for other machines - then the key is their only protection: none)
             compute: str = 'cuda',          # the llama.cpp build: cuda | cpu | metal (the tool is built or installed for it)
-            ctx_size: int = 16384,          # the context window in tokens
+            ctx_size: int = 32768,          # the context window in tokens (Claude Code's first request alone is about 17k: below 24k it fails)
             gpu_layers: int = 99,           # layers on the GPU (99 = all that fit; smaller for a model larger than the GPU's memory)
             alias: str = '',                # the model's name in /v1/models and in the harnesses (the file's name by default)
             parallel: int = 1,              # concurrent requests the server takes
