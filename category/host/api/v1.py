@@ -2429,7 +2429,10 @@ class Category(InitCategory):
             return self.cm.error('sync endpoints currently require a direct SSH host')
         r = self._ssh_parts(h)
         if self.cm.catch_error(r, fail16=True): return r
-        return dict(r, host_uid=h['uid'], host_alias=h['alias'])
+        # the host's repositories folder (declared sync.repos_path, else the probed home, else ~/CMETA/repos):
+        # where a sync task keeps the host's side of its backups (<repos>/local/result/sync-backup--...)
+        return dict(r, host_uid=h['uid'], host_alias=h['alias'],
+                    repos=self._sync_repos_path(h, h['desc'].get('sync') or {})[0])
 
     def show_(
         self,

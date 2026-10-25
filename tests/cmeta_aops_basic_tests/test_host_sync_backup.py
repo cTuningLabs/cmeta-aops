@@ -131,3 +131,18 @@ def test_sync_documents_the_flag():
     assert 'backup=False,' in text and 'sync-backup--' in text
     readme = (REPO_ROOT / 'category/host/README.md').read_text(encoding='utf-8')
     assert '--backup' in readme and 'sync-backup--<repository>' in readme
+
+
+def test_sync_endpoint_carries_the_hosts_repositories_folder(host):
+    """cx host sync_endpoint: the transport of a remote endpoint names the host's repositories folder (the declared
+    sync.repos_path, else the probed home, else ~/CMETA/repos) - where a sync task keeps that side's backups."""
+    c, local, art = host
+    c.cm.catch_error = lambda r, fail16=False: r['return'] > 0
+    c._ssh_parts = lambda h: {'return': 0, 'cmd': 'ssh u@lab', 'target': 'u@lab', 'options': ''}
+    for desc, state, expected in (({'sync': {'repos_path': '/srv/CMETA/repos'}}, {}, '/srv/CMETA/repos'),
+                                  ({}, {'cmeta_home': '/home/u/CMETA'}, '/home/u/CMETA/repos'),
+                                  ({}, {}, '~/CMETA/repos')):
+        h = dict(HOST, uid='0123456789abcdef', desc=desc, state=state)
+        c._get_host = lambda ctx, a, h=h: {'return': 0, 'host': h}
+        r = c.sync_endpoint_(CTX, 'lab')
+        assert r['repos'] == expected and r['host_uid'] == '0123456789abcdef' and r['cmd'] == 'ssh u@lab'

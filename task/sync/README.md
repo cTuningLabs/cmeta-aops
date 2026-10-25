@@ -192,7 +192,12 @@ one folder per run:
 <repos>/local/result/sync-backup--<alias>--<sync-UID>/<run-id>/
 ```
 
-The local artifact is made at the first run; the remote one gets its `_cmeta` after a run that put files there, and
+On the remote side `<repos>` is the repositories folder of the host's cMeta home as the host category knows it (the
+host's declared `sync: repos_path`, else the home its last probe reported, else `~/CMETA/repos`), whatever folder the
+definition syncs - a web root included. rclone moves the replaced files there, so the synced folder and the host's
+cMeta home must be on one filesystem.
+
+The local artifact is made at the first run; the remote one gets its `_cmeta` once a run has put files there, and
 the remote index knows it after its next reindex (`cx host sync`'s after step, or `cx repo reindex local` there).
 Before 2026-10-25 the folder was `.cmeta-sync-backups/<sync-UID>/<run-id>/` beside the transfer root; such folders
 stay where they are.

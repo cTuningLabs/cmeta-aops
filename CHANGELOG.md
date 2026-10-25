@@ -12,8 +12,11 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **The sync backups are result artifacts:** what `cx host sync --backup` and `cxt sync` keep goes to the result
   artifact `sync-backup--<repository>` (`sync-backup--<alias>--<uid>` for a named sync) of each side's `local`
   repository, under `<the other side>/<run id>/` (`<run id>/` for a named sync) - listed by `cx result ls`; the host's
-  copy gets its `_cmeta` after a run that put files there (and a reindex of its `local` for `cx host sync`). Before:
-  `.cmeta-sync-backups/` beside the repos folder, which no index knew.
+  copy gets its `_cmeta` after a run that put files there (and a reindex of its `local` for `cx host sync`). The
+  remote side of a named sync uses the `local` repository of the host's cMeta home (its declared `sync: repos_path`,
+  else the probed home; `cx host sync_endpoint` carries it), whatever folder is synced: a web root's parent belongs
+  to root, and rclone moves the replaced files, so the synced folder and the home must share a filesystem. Before:
+  `.cmeta-sync-backups/` beside the synced folder, which no index knew.
 - **A pair's identity is its own definition, not the task's built-in filters:** a built-in state filter added by a
   release (this one added `- **/result/sync-backup--*/**`) made every named sync stop with "endpoints/filters changed;
   review --plan, then explicitly use --resync". The identity now digests the definition's own filters, the mode and the

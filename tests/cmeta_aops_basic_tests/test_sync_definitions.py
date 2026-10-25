@@ -286,3 +286,62 @@ def test_a_backup_artifact_never_claims_the_pair(cm, tmp_path, task_namespace):
     task.cmeta = {'uses_categories': {'result': 'result,6567e4df4d04488a', 'cache': 'cache,1ebdcc1cc30c4022'}}
     found = task.find_state('result', uid)
     assert found and found['cmeta_ref_parts']['artifact_alias'] == 'sync--' + name + '--' + uid
+
+
+def test_remote_backup_in_the_hosts_local_repository(cm, tmp_path, task_namespace):
+    """The remote side's backup goes to <the host's repositories folder>/local/result/sync-backup--<alias>--<uid>/<run>,
+    whatever folder is synced (2026-10-25: a web root's parent, owned by root, stopped the first run); a ~/ folder is
+    an sftp path relative to the login home; the local side's backup is the local result artifact."""
+    ns = task_namespace('sync')
+    task = ns['CTask'].__new__(ns['CTask'])
+    task.cm = cm
+    art = tmp_path / 'art'
+    task.access = lambda category, command, **p: {'artifact': {'path': str(art)}}
+    task.task = lambda ctx, ref, **p: {'path': 'rclone'}
+    argvs = []
+    task.command = lambda ctx, argv, env: argvs.append(argv) or {'returncode': 0}
+
+    def plan(host_repos):
+        return dict(alias='site', uid='0123456789abcdef', state_ref='local:sync--site--0123456789abcdef', mode='bisync',
+                    source=dict(path=str(tmp_path / 'SYNC'), remote=False, host='local'),
+                    destination=dict(path=':sftp:/var/www/html', remote=True, host='h', ssh='ssh u@h', host_repos=host_repos),
+                    filters=[], transfers=1, bwlimit='', max_delete=50, resync_mode='path1', remove_empty_dirs=False)
+
+    for repos, expected in (('/home/u/CMETA/repos', '/home/u/CMETA/repos'), ('~/CMETA/repos', 'CMETA/repos'),
+                            ('', 'CMETA/repos')):
+        task.transfer({'control': {}}, plan(repos), tmp_path / 'wd', tmp_path / 'run.log', False, True, 'run1')
+        argv = argvs[-1]
+        assert argv[argv.index('--backup-dir2') + 1] == ':sftp:' + expected + '/local/result/sync-backup--site--0123456789abcdef/run1'
+        assert argv[argv.index('--backup-dir1') + 1] == str(art / 'run1')
+        assert '/var/www/local' not in ' '.join(argv)
+
+
+def test_mark_backup_never_hangs_or_fails_the_sync(cm, tmp_path, task_namespace, capsys):
+    """The courtesy step after a successful transfer: every rclone call has the sftp hash check off (with it on,
+    an lsf through the external ssh never returned, 2026-10-25) and a time limit; a failure is a warning only."""
+    ns = task_namespace('sync')
+    task = ns['CTask'].__new__(ns['CTask'])
+    task.cm = cm
+    art = tmp_path / 'art'
+    art.mkdir()
+    (art / '_cmeta.json').write_text('{}')
+    calls = []
+
+    def run(ctx, ref, **p):
+        calls.append(p)
+        word = p['cmd'].split()[1].strip('"')
+        return {'returncode': {'lsd': 0, 'lsf': 3, 'copyto': 0}[word]}
+
+    task.task = run
+    task.mark_backup({'control': {}}, 'rclone', {}, {'path': str(art)}, '/home/u/CMETA/repos/local/result/b', 'run1')
+    assert [p['cmd'].split()[1].strip('"') for p in calls] == ['lsd', 'lsf', 'copyto']
+    assert all('--sftp-disable-hashcheck' in p['cmd'] and p['timeout'] == 120 and p['capture_output'] for p in calls)
+    assert ':sftp:/home/u/CMETA/repos/local/result/b/_cmeta.json' in calls[2]['cmd']
+    assert calls[0]['cmd'].split()[2].strip('"') == ':sftp:/home/u/CMETA/repos/local/result/b'   # the artifact, not this run's folder
+    # a timed-out call, or one the cmd task refuses, is a warning: the sync has succeeded already
+    task.task = lambda ctx, ref, **p: {'returncode': 0, 'timed_out': True}
+    task.mark_backup({'control': {}}, 'rclone', {}, {'path': str(art)}, '/x', 'run1')
+    task.task = lambda ctx, ref, **p: (_ for _ in ()).throw(ValueError('no rclone'))
+    task.mark_backup({'control': {}}, 'rclone', {}, {'path': str(art)}, '/x', 'run1')
+    out = capsys.readouterr().out
+    assert out.count('cMeta warning: the backup artifact on the host is not marked') == 1 and 'no rclone' in out

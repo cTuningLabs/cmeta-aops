@@ -168,7 +168,8 @@ class CTask(InitCTask):
             resolved = str(path)
         return dict(path=resolved, remote=remote, host=host,
                     identity=transport.get('host_uid', 'local'),
-                    target=transport.get('target', ''), ssh=transport.get('cmd', ''))
+                    target=transport.get('target', ''), ssh=transport.get('cmd', ''),
+                    host_repos=transport.get('repos', ''))
 
     def definition(self, ctx, ref):
         ref = str(ref).split('::')[-1]
@@ -332,7 +333,13 @@ class CTask(InitCTask):
                 continue
             path = side['path']
             if side['remote']:
-                remote_art = posixpath.join(posixpath.dirname(path[6:]), 'local', 'result', backup_alias)
+                # the local repository of the host's cMeta home (its repositories folder, as the host category
+                # knows it: the declared sync.repos_path, else the probed home), whatever folder is synced - the
+                # parent of a web root belongs to root (2026-10-25). rclone MOVES the replaced files there, so the
+                # synced folder and the host's cMeta home must be on one filesystem.
+                base = side.get('host_repos') or '~/CMETA/repos'
+                # SFTP interprets a relative path against the SSH login home
+                remote_art = posixpath.join(base[2:] if base.startswith('~/') else base, 'local', 'result', backup_alias)
                 backup = ':sftp:' + posixpath.join(remote_art, run_id)
             else:
                 backup = str(Path(local_art['path']) / run_id)
@@ -358,17 +365,27 @@ class CTask(InitCTask):
             self.mark_backup(ctx, setup['path'], env, local_art, remote_art, run_id)
 
     def mark_backup(self, ctx, rclone, env, local_art, remote_art, run_id):
-        """The remote copy of the backup artifact gets the local one's _cmeta when this run put files there (rclone
-        made the run folder), so the host's index can know it after its next reindex; nothing otherwise."""
+        """The remote copy of the backup artifact gets the local one's _cmeta once its folder exists there (a run
+        put files in it) and has none, so the host's index can know it after its next reindex; nothing otherwise. A
+        courtesy after a transfer that succeeded: a failure is a warning, never an error of the sync."""
         def rc(argv):
-            return self.task(ctx, 'cmd,c9ba0a88df394d7f', cmd=' '.join(quote(x) for x in argv), env=env,
-                             capture_output=True, fail_if_nonzero_return_code=False, print_extra_line=False)
-        if rc([rclone, 'lsd', ':sftp:' + posixpath.join(remote_art, run_id)]).get('returncode', 1):
-            return
-        name = next((n for n in ('_cmeta.yaml', '_cmeta.json') if (Path(local_art['path']) / n).exists()), None)
-        if not name or not rc([rclone, 'lsf', ':sftp:' + posixpath.join(remote_art, name)]).get('returncode', 1):
-            return
-        rc([rclone, 'copyto', str(Path(local_art['path']) / name), ':sftp:' + posixpath.join(remote_art, name)])
+            # the hash check of rclone's sftp backend runs a command through the external ssh and never returns (an
+            # lsf hung a finished sync for ever, 2026-10-25): off, as in the transfer; and a limit, whatever happens
+            r = self.task(ctx, 'cmd,c9ba0a88df394d7f', cmd=' '.join(quote(x) for x in argv + ['--sftp-disable-hashcheck']),
+                          env=env, capture_output=True, fail_if_nonzero_return_code=False, print_extra_line=False,
+                          timeout=120)
+            return r.get('returncode', 1) or (1 if r.get('timed_out') else 0)
+        try:
+            if rc([rclone, 'lsd', ':sftp:' + remote_art]):
+                return
+            name = next((n for n in ('_cmeta.yaml', '_cmeta.json') if (Path(local_art['path']) / n).exists()), None)
+            if not name or not rc([rclone, 'lsf', ':sftp:' + posixpath.join(remote_art, name)]):
+                return
+            if rc([rclone, 'copyto', str(Path(local_art['path']) / name), ':sftp:' + posixpath.join(remote_art, name)]):
+                raise ValueError('rclone copyto failed')
+        except Exception as exc:
+            print('cMeta warning: the backup artifact on the host is not marked (' + str(exc) +
+                  '); its files are there, the next run that adds to it marks it', flush=True)
 
     def find_state(self, category, uid):
         found = self.cm.access(dict(category=self.cmeta['uses_categories'][category],
