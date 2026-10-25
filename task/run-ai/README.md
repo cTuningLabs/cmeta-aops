@@ -10,6 +10,7 @@ with no path in the way and nothing to install in the user's home.
 
 ```bash
 cxt run-ai                                           # continue the latest conversation of the project around the cwd, interactively
+cxai                                                 # the same, shorter (cMeta 0.37.6+): cxai = cx task run run-ai; ucxai puts a bare --home first
 cxt run-ai -l                                        # a fresh dated scratch workspace in the local log artifact
 cxt run-ai -l="quick question"                       # label its directory YYYYMMDD-HHMM.quick question
 cxt run-ai -l="quick question" --prompt="Explain this idea"    # optional label and prompt are separate
@@ -19,6 +20,7 @@ cxt run-ai --conversations                           # the conversations of the 
                                                      # harness, model and effort (short: --cs)
 cxt run-ai --conversation=20261004-18 -i             # continue a given one (id or prefix)
 cxt run-ai --harness=codex --model=gpt-6.1-sol,high  # the same conversation with codex: the transcript is handed over
+cxt run-ai --cx "..."                                # --harness=codex in short
 cxt run-ai --project="project::my-app" -i            # the project named explicitly (category::artifact)
 cxt run-ai --project=. "..."                         # the current directory itself, no artifact detection
 cxt run-ai --harness=claude --model=claude-opus-5-5,high "..."     # or --model=claude-opus-5-5 --effort=high

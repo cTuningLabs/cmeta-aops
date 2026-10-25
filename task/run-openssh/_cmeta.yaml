@@ -28,3 +28,5 @@ tags:
 - server
 uses_categories:
   cache: cache,1ebdcc1cc30c4022
+  host: host,e4e49c251c814f6d
+  secret: secret,9d63451ea1f14010

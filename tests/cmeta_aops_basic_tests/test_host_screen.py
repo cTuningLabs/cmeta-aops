@@ -329,3 +329,22 @@ def test_screens_command_lists_and_refuses_non_posix_hosts(host, capsys):
     r = c.screens_({'control': {}}, 'win')
     assert r['return'] == 1 and 'not a POSIX host' in r['error']
     assert c.screens_({'control': {}})['return'] == 1
+
+
+def test_screens_quit_ends_a_named_session_first(host, capsys):
+    """--quit=<name> puts "screen -S <name> -X quit" before the listing, reports whether Screen found it, and refuses a
+    bad name before anything runs."""
+    module, c = host
+    seen = []
+    c._cmd_stdin = lambda ctx, h, script: seen.append(open(script, encoding='utf-8').read()) or {'return': 0, 'cmd': 'ssh remote bash -l -s < x'}
+    c._run_local = lambda cmd, **kw: {'returncode': 0, 'stdout': '@@quit 0\n@@ls\n' + LS_4_09 + '@@windows 4100.ai1\n0* shell\n'}
+    r = c.screens_({'control': {'con': True}}, 'remote', quit='ai2')
+    assert r['return'] == 0 and r['ended'] == {'remote': True}
+    assert '-S ai2 -X quit' in seen[0] and seen[0].index('-X quit') < seen[0].index('@@ls')
+    assert "screen \"ai2\" ended" in capsys.readouterr().out
+    c._run_local = lambda cmd, **kw: {'returncode': 0, 'stdout': '@@quit 1\n@@ls\nNo Sockets found in /run/screen/S-u.\n'}
+    r = c.screens_({'control': {'con': True}}, 'remote', quit='gone')
+    assert r['ended'] == {'remote': False} and 'not found' in capsys.readouterr().out
+    assert c.screens_({'control': {}}, 'remote', quit='two words')['return'] == 1
+    assert c.screens_({'control': {}}, 'remote', quit='')['return'] == 1
+    assert module.screens_script(None) == module.SCREENS_SCRIPT

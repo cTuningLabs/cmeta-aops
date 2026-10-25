@@ -132,6 +132,36 @@ done
 '''
 
 
+def ssh_banner_status(addr, port, timeout):
+    """
+    up | down | refused | no banner: the port accepts a connection AND the server sends its identification line
+    ("SSH-2.0-..."), which an sshd sends first, at once. A port that accepts and then closes without it (a wedged sshd,
+    OpenSSH 9.8+ refusing a penalised source) is "refused"; silence within the timeout is "no banner": neither can run
+    a command, and "up" from the TCP accept alone misled (the Dapple VM, 2026-10-25: up in the table, every ssh reset).
+    """
+    try:
+        with socket.create_connection((addr, port), timeout=timeout) as s:
+            s.settimeout(timeout)
+            try:
+                data = s.recv(256)
+            except socket.timeout:
+                return 'no banner'
+            except OSError:
+                return 'refused'
+            return 'up' if data.startswith(b'SSH-') else ('refused' if not data else 'no banner')
+    except OSError:
+        return 'down'
+
+
+def screens_script(quit=None):
+    """The screens script, with the session `quit` (a validated screen name) ended before the listing: "@@quit <rc>"
+    says whether Screen found it (0) - its shell and whatever ran in it end with it."""
+    if not quit:
+        return SCREENS_SCRIPT
+    head, body = SCREENS_SCRIPT.split('\n', 1)
+    return head + f'\nscr -S {shlex.quote(quit)} -X quit >/dev/null 2>&1; printf \'@@quit %s\\n\' "$?"\n' + body
+
+
 def screen_name(value, default='cx-host'):
     """Bare and explicitly empty flags select the default; omission leaves the ordinary shell."""
     if value is None or value is False or str(value).strip().lower() in ('false', 'no', 'off', '0'):
@@ -631,6 +661,52 @@ class Category(InitCategory):
             return False
 
     ############################################################
+    def key_(
+        self,
+        ctx,
+        arg1=None,          # host alias, or a reference <category>::<artifact>/<file>
+    ):
+        """
+        The ssh key cx uses to reach a host, as THIS machine finds it, and the public key beside it: the host's
+        "access: key" - a reference <category>::<artifact>/<file> into a private repository, found through the
+        artifact when it is here, else through the copy a secret holds (cx secret which), else ~/.ssh - or a path.
+        A reference in place of the host is resolved the same way. Prints paths, never a key. It is what
+        "cx task run run-openssh --host=<host>" allows: a machine serves the fleet with the key the fleet reaches it with.
+
+            cx host key lab-laptop-ubuntu
+            cx host key fgg.crypt::ssh-x/2026/id_ed25519
+        """
+
+        con = ctx['control'].get('con', False)
+
+        ref = str(arg1 or '').strip()
+        if not ref:
+            return self.cm.error('cx host key <host> | <category>::<artifact>/<file>')
+
+        # The declared key of the host, or the reference as given
+        if '::' in ref:
+            key = ref
+        else:
+            r = self._select(ctx, ref)
+            if self.cm.catch_error(r): return r
+            hosts = r['hosts']
+            if len(hosts) != 1:
+                return self.cm.error(f'no host matches "{ref}"' if not hosts else f'"{ref}" matches {len(hosts)} hosts')
+            key = (hosts[0]['desc'].get('access') or {}).get('key')
+            if not key:
+                return self.cm.error(f'host {hosts[0]["alias"]} declares no access.key (ssh uses its default keys for it)')
+
+        r = self._key_path(key)
+        if self.cm.catch_error(r): return r
+        path = r['path']
+        public = path if path.endswith('.pub') else (path + '.pub' if os.path.isfile(path + '.pub') else None)
+
+        if con:
+            print(f'key: {path}')
+            print(f'public key: {public or "none beside it"}')
+        return {'return': 0, 'ref': str(key), 'path': path, 'public': public}
+
+    ############################################################
     def screens_(
         self,
         ctx,
@@ -639,15 +715,18 @@ class Category(InitCategory):
         machine=None,       # the hosts of a machine
         type=None,          # ssh | wsl | docker
         project=None,       # a named environment of the host (its cx)
+        quit=None,          # end the session of this name there first (screen -S <name> -X quit: its shell and the run in it), then list
     ):
         """
         The GNU Screen sessions on a host - the persistent terminals of "cx host ssh --screen" and "--on_screen", and
         any other screen of the host's user: name, state, start time where Screen gives it, the titles of the windows
         (a run-ai terminal shows its project; Screen 4.2+ answers -Q, an older one lists none). Read only: nothing is
-        changed or installed on the host - no Screen there means no sessions.
+        changed or installed on the host - no Screen there means no sessions. With --quit=<name> the session of that
+        name is ended first (what runs in it dies with its shell), then what is left is listed.
 
             cx host screens lab-thinkpad-ubuntu
             cx host screens --tags=ubuntu
+            cx host screens lab-thinkpad-ubuntu --quit=ai1
         """
 
         con = ctx['control'].get('con', False)
@@ -655,6 +734,13 @@ class Category(InitCategory):
 
         if not (arg1 or tags or machine or type):
             return self.cm.error('which host? cx host screens <host> (or --tags/--machine/--type)')
+        if quit is not None:
+            try:
+                quit = screen_name(quit, default='')
+            except ValueError as e:
+                return self.cm.error(str(e))
+            if not quit:
+                return self.cm.error('--quit=<name>: which screen session?')
 
         r = self._select(ctx, arg1, tags, machine, type, project)
         if self.cm.catch_error(r): return r
@@ -665,9 +751,9 @@ class Category(InitCategory):
         import tempfile
         script = os.path.join(tempfile.gettempdir(), f'cmeta-host-screens-{os.getpid()}.sh')
         with open(script, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(SCREENS_SCRIPT)
+            f.write(screens_script(quit))
 
-        screens, errors = {}, {}
+        screens, errors, ended = {}, {}, {}
         try:
             for h in hosts:
                 shell = self._shell(h).strip()
@@ -683,6 +769,9 @@ class Category(InitCategory):
                     errors[h['alias']] = (rr.get('stderr') or rr.get('stdout') or '').strip()[-300:] or f'exit code {rr.get("returncode")}'
                     continue
                 screens[h['alias']] = parse_screens(rr.get('stdout') or '')
+                if quit:
+                    m = re.search(r'^@@quit (\d+)', rr.get('stdout') or '', re.M)
+                    ended[h['alias']] = bool(m) and m.group(1) == '0'
         finally:
             try:
                 os.remove(script)
@@ -693,6 +782,8 @@ class Category(InitCategory):
             many = len(hosts) > 1
             for h in hosts:
                 alias = h['alias']
+                if quit and alias in ended:
+                    print(f'{alias}: screen "{quit}" ' + ('ended' if ended[alias] else 'not found (nothing ended)'))
                 if alias in errors:
                     print(f'{alias}: {errors[alias]}')
                 elif not screens.get(alias):
@@ -708,7 +799,10 @@ class Category(InitCategory):
 
         if errors and len(hosts) == 1:
             return self.cm.error(f'{hosts[0]["alias"]}: {errors[hosts[0]["alias"]]}')
-        return {'return': 0, 'screens': screens, 'errors': errors}
+        result = {'return': 0, 'screens': screens, 'errors': errors}
+        if quit:
+            result['ended'] = ended
+        return result
 
     def _screen_command(self, h, cmd, name, title=None, quiet=False):
         """Screen owns the shell/command; reconnecting resumes it without sending another command."""
@@ -957,6 +1051,7 @@ class Category(InitCategory):
         unlock=False,       # bisync: drop a stale lock left by a cancelled run
         dry_run=False,      # show what would change, change nothing (rclone --dry-run; git fetch only)
         skip_after=False,   # do not run the host's "sync: after" commands (e.g. cx --reindex)
+        backup=False,       # keep what this run overwrites or deletes: .cmeta-sync-backups/<repository>/<run id>/ beside the repos folder of each side
         project=None,      # named environment; omitted: the host's global environment
     ):
         """
@@ -1035,7 +1130,7 @@ class Category(InitCategory):
             for name, entry in selected:
                 t0 = time.monotonic()
                 r = self._sync_repo(ctx, h, name, entry, resync=resync, resync_mode=resync_mode, unlock=unlock,
-                                    dry_run=dry_run, con=con, verbose=verbose)
+                                    dry_run=dry_run, con=con, verbose=verbose, backup=backup)
                 elapsed = f'{time.monotonic() - t0:.0f}s'
                 if r['return'] > 0:
                     report.append([alias, name, entry['method'], 'FAILED: ' + r['error'], elapsed])
@@ -2880,11 +2975,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 return 'here'
             addr = acc.get('address') or h['alias']
             port = int(acc.get('port') or DEFAULT_SSH_PORT)
-            try:
-                with socket.create_connection((addr, port), timeout=timeout):
-                    return 'up'
-            except OSError:
-                return 'down'
+            return ssh_banner_status(addr, port, timeout)
 
         parent = None
         if len(h.get('via_list') or []) > 1 and t == 'adb':
@@ -3915,7 +4006,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             base = os.path.join(os.environ.get('XDG_CACHE_HOME') or os.path.join(os.path.expanduser('~'), '.cache'), 'rclone')
         return os.path.join(base, 'bisync-' + h['alias'])
 
-    def _sync_repo(self, ctx, h, name, entry, resync, resync_mode, unlock, dry_run, con, verbose):
+    def _sync_repo(self, ctx, h, name, entry, resync, resync_mode, unlock, dry_run, con, verbose, backup=False):
         method = entry['method']
         if method not in SYNC_METHODS:
             return self.cm.error(f'{name}: unknown sync method "{method}" (one of {", ".join(SYNC_METHODS)})')
@@ -3950,6 +4041,21 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
         extra = list(DEFAULT_RCLONE_FLAGS)
         if dry_run: extra.append('--dry-run')
+
+        # --backup: what this run overwrites or deletes is kept, dated, in .cmeta-sync-backups/<repository>/<run id>/
+        # beside the repos folder of each side - the convention of the named syncs (task/sync); never inside a
+        # repository, so never indexed. rclone makes the folder only when a file goes there.
+        if backup:
+            run_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+            local_backup = os.path.join(os.path.dirname(os.path.abspath(local)), '.cmeta-sync-backups', name, run_id)
+            remote_backup = '/'.join([entry['remote'].rstrip('/').rsplit('/', 1)[0], '.cmeta-sync-backups', name, run_id])
+            if method == 'copy':
+                extra += ['--backup-dir', ':sftp:' + remote_backup]
+            else:
+                extra += ['--backup-dir1', local_backup, '--backup-dir2', ':sftp:' + remote_backup]
+            if con:
+                print(f'    --backup: what this run overwrites or deletes goes to .cmeta-sync-backups/{name}/{run_id}/ '
+                      f'beside the repos folder' + (' of each side' if method != 'copy' else f' on {h["alias"]}'))
 
         # a partial repository: only the artifacts its patterns select, the aliases compared without case as cMeta does
         rules = []

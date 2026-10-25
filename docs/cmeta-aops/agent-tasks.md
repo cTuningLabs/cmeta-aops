@@ -36,6 +36,7 @@ machine, an archive - and nothing has to be installed in the user's home.
 
 ```bash
 cxt run-ai                                           # continue the latest conversation of the artifact around the current directory
+cxai                                                 # the same, shorter (cMeta 0.37.6+): cxai = cx task run run-ai
 cxt run-ai "one prompt"                              # one more turn of it, then exit
 cxt run-ai --project="project::my-app" -i            # the artifact named explicitly (category::artifact)
 cxt run-ai --harness=codex --model=gpt-6.1-sol,high  # the same conversation with another agent: the transcript is handed over
