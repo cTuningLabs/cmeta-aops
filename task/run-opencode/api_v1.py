@@ -415,9 +415,12 @@ class CTask(InitCTask):
 
         cmd = base_cmd + flags
 
-        # The prompt (or the request to read its file) is the trailing positional argument in both modes
+        # The prompt (or the request to read its file): the trailing positional of "opencode run [message..]"; in an
+        # interactive session the positional is the PROJECT FOLDER to open ("opencode [project]"), so the prompt goes
+        # through --prompt there (a hand-over prompt as a positional ended with "Failed to change directory to
+        # <cwd>/<the prompt>", 2026-10-25)
         if full_prompt:
-            cmd.append(pr['text'])
+            cmd += ['--prompt', pr['text']] if interactive else [pr['text']]
 
         if con:
             print ('')

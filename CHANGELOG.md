@@ -16,6 +16,9 @@ All notable changes to cMeta AOps are documented here, newest first.
   the harness. Claude Code speaks the Anthropic wire only; Codex the Responses wire (`codex_wire: chat` for a chat-only
   server); OpenCode both. On an API key Claude Code has no claude.ai connectors: run-ai says so at the start of a
   gateway session.
+- **An interactive OpenCode session takes its prompt through `--prompt`:** the positional argument of `opencode
+  [project]` is the folder to open, so the hand-over prompt run-opencode appended as a positional ended with "Failed
+  to change directory to <cwd>/<the prompt>"; `opencode run [message..]` keeps the positional.
 - **`run-llama-cpp-server`:** a llama.cpp server on this machine, detached, with the Anthropic, chat and Responses wires
   on one port (8686 by default, not llama.cpp's crowded 8080), its record and log in the state artifact
   `local:llama-cpp-server-<port>`; `--action=status|stop`; the model from a model artifact (`hf-Qwen@Qwen3-8B-GGUF`
