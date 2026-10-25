@@ -2,6 +2,15 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.54.2.1
+- **A machine serves the fleet with the key the fleet reaches it with:** `cx task run run-openssh --host=<the host
+  artifact this machine is>` allows the public key of that host's `access: key`, as this machine finds it. New:
+  `cx host key <host | <category>::<artifact>/<file>>` - the key file cx uses for a host (the artifact the reference
+  names when it is here, else the copy a secret holds, else `~/.ssh`) and the public key beside it; it prints paths,
+  never a key. `--keys` of run-openssh takes references too: `secret::<alias>` (the secret's `ssh.public_key`) and
+  `<category>::<artifact>/<file>` (a private key named there stands for the `.pub` beside it); a private key file is
+  refused. Without `--host` or `--keys` the user's `~/.ssh/authorized_keys` is allowed, as before.
+
 ## 0.54.2
 - **`cx host screens <host>`:** the GNU Screen sessions of a host's user from here - name, pid, state (attached,
   detached), the start time where Screen prints one and the titles of the windows (a run-ai terminal shows its

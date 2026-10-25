@@ -61,6 +61,7 @@ cx host run <host> --script=<file>    a local script on the host's shell stdin (
 cx host run <host> "<command>" --interactive   a terminal for the command (ssh -t / docker exec -it): it can ask its questions; needs a terminal here (not with --capture or --script)
 cx host ssh <host> [--screen[=<name>]] [--x11] [--forward=1455,8080:80] [--dry_run]   interactive shell (also: shell, login)
 cx host screens <host|selection>      the GNU Screen sessions there: name, pid, state, start time, window titles (read only)
+cx host key <host | <category>::<artifact>/<file>>   the key cx uses to reach the host, as this machine finds it, and the public key beside it (paths only)
 cx host up|down <host>                WSL distro, container (created from its image on the first up), or "commands: up/down"
 cx host destroy <instance> [--image] [--keep_artifact] [--force]   an instance cMeta made (get-host--docker / get-host--wsl): the container (or the WSL distribution and its disk), the artifact, with --image its image
 cx host snapshot <instance> [--name=<name>] [--note=<text>]       the instance's state kept: docker/podman commit to cmeta/snapshot:<instance>-<name>, a WSL export next to its disk; recorded under "snapshots" in its _desc
@@ -472,7 +473,10 @@ repository (`key: fgg.crypt::ssh-x/2026/id_ed25519`) that stays on the first mac
 `secret` artifacts that hold copies of those keys - their `files.from` names the referenced folder and
 `files.names` the file - pushed once with `--secrets` (above). `cx host` then finds a key whose artifact is not
 there through `cx secret which <the reference>`; a key without such a secret falls back, as before, to
-`~/.ssh/<file name>`, with a warning (names in `~/.ssh` can collide).
+`~/.ssh/<file name>`, with a warning (names in `~/.ssh` can collide). `cx host key <host>` shows which file this
+machine would use and the public key beside it, and `cx task run run-openssh --host=<host>` on the machine that host
+artifact describes allows exactly that public key: a worker serves the fleet with the key the fleet reaches it with,
+whichever orchestrator starts it.
 
 **Its known hosts.** The new machine has never seen the servers' host keys, and a batch ssh refuses an unknown
 host ("Host key verification failed") - before any key is tried. Compare what it sees

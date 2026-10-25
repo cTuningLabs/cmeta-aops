@@ -4,7 +4,8 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 # An OpenSSH server run as the user (api_v1.py): on Windows the portable Win32-OpenSSH, elsewhere the
 # system sshd (tool/openssh-server); its own port (2222), key-only logins, the Tailscale address.
 #
-#   cx task run run-openssh --keys=<public key file>[,<file or key>...]
+#   cx task run run-openssh --host=<the host artifact this machine is>     the key the fleet reaches it with
+#   cx task run run-openssh --keys=<public key file>[,<file, key, secret::<alias> or <cat>::<artifact>/<file>>...]
 #   cx task run run-openssh status
 #   cx task run run-openssh stop
 

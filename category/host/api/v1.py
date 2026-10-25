@@ -631,6 +631,52 @@ class Category(InitCategory):
             return False
 
     ############################################################
+    def key_(
+        self,
+        ctx,
+        arg1=None,          # host alias, or a reference <category>::<artifact>/<file>
+    ):
+        """
+        The ssh key cx uses to reach a host, as THIS machine finds it, and the public key beside it: the host's
+        "access: key" - a reference <category>::<artifact>/<file> into a private repository, found through the
+        artifact when it is here, else through the copy a secret holds (cx secret which), else ~/.ssh - or a path.
+        A reference in place of the host is resolved the same way. Prints paths, never a key. It is what
+        "cx task run run-openssh --host=<host>" allows: a machine serves the fleet with the key the fleet reaches it with.
+
+            cx host key lab-laptop-ubuntu
+            cx host key fgg.crypt::ssh-x/2026/id_ed25519
+        """
+
+        con = ctx['control'].get('con', False)
+
+        ref = str(arg1 or '').strip()
+        if not ref:
+            return self.cm.error('cx host key <host> | <category>::<artifact>/<file>')
+
+        # The declared key of the host, or the reference as given
+        if '::' in ref:
+            key = ref
+        else:
+            r = self._select(ctx, ref)
+            if self.cm.catch_error(r): return r
+            hosts = r['hosts']
+            if len(hosts) != 1:
+                return self.cm.error(f'no host matches "{ref}"' if not hosts else f'"{ref}" matches {len(hosts)} hosts')
+            key = (hosts[0]['desc'].get('access') or {}).get('key')
+            if not key:
+                return self.cm.error(f'host {hosts[0]["alias"]} declares no access.key (ssh uses its default keys for it)')
+
+        r = self._key_path(key)
+        if self.cm.catch_error(r): return r
+        path = r['path']
+        public = path if path.endswith('.pub') else (path + '.pub' if os.path.isfile(path + '.pub') else None)
+
+        if con:
+            print(f'key: {path}')
+            print(f'public key: {public or "none beside it"}')
+        return {'return': 0, 'ref': str(key), 'path': path, 'public': public}
+
+    ############################################################
     def screens_(
         self,
         ctx,
