@@ -229,7 +229,7 @@ sync:
     - some-repo: {remote: /other/path, workdir: ...}
     - my-big-repo:             # a PARTIAL repository: only these artifacts travel (cRef patterns, see below)
         artifacts: [my.project::x/!AI, work::2026*, machine::*]
-  after: [cx --reindex]        # run on the host after a sync that did something
+  after: [some command]        # run on the host after a sync that did something (a reindex is not needed: see below)
 
 commands:                      # optional
   up: az vm start ...          # run locally: a cloud VM, a service
@@ -352,6 +352,17 @@ old `_7-resync-*.bat` did. A few directories once are a one-way **push** (`rclon
 whitelist, `--dirs`).
 
 `--dry_run` shows what would move and changes nothing (rclone `--dry-run`, `git fetch --dry-run`).
+
+**The indexes follow the files** (since 2026-10-26). After a sync that moved files, the repository is reindexed
+where its files changed, so a new artifact is found at once on both sides: on the host, `cx repo reindex <repo>`
+(plugged there the first time, as a push does) after a `git` pull or a `copy`, and after a `bisync` when one of
+rclone's listings of that side (before and after the run, in `workdir`) shows a changed meta file (`_cmeta.*`,
+`_cmr.*`); on this machine, after a `bisync` whose listing of this side shows one: an artifact whose meta is new
+or changed by itself (`cx <category> reindex <repo>:<alias>`, a fraction of a second), the whole repository
+(`cx repo reindex`, seconds - 50 s for the largest on a Windows) when a meta is gone or `_cmr.*` changed. A sync
+that moved no meta file - records, notes, code - touches no index. Each step prints an `INDEX (...)` line; a
+reindex that fails is a warning (the files are there) with the command to run by hand. `sync: after:` is for
+other commands (an older `after: [cx --reindex]` still works, and now rebuilds an index that is already current).
 
 `--backup` keeps what a run overwrites or deletes: on each side of a bisync (on the host for a copy) the old file
 goes, with its path inside the repository, to the result artifact `sync-backup--<repository>` of that side's `local`

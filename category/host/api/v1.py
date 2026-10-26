@@ -4133,6 +4133,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             rr = self._run_local(r['cmd'], capture=False, con=con, verbose=verbose)
             if rr.get('returncode', 1) != 0:
                 return self.cm.error(f'git on {h["alias"]} returned {rr.get("returncode")}')
+            if not dry_run:
+                self._index_after_sync(ctx, h, name, entry, method, con, verbose)
             return {'return': 0}
 
         local = entry['local']
@@ -4183,7 +4185,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             if r['return'] > 0: return r
             if dirs and not dry_run:
                 self._backup_mark_remote(ctx, h, dirs, con, verbose)
-            if not rules or dry_run: return r
+            if dry_run: return r
+            if not rules:
+                self._index_after_sync(ctx, h, name, entry, method, con, verbose)
+                return r
             return self._after_partial(ctx, h, name, entry, rules, 'sync', con, verbose)
 
         # bisync: rclone's listings hold only what the rules let through, so a run with other rules than the last one
@@ -4210,11 +4215,16 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if r['return'] > 0: return r
         if dirs and not dry_run:
             self._backup_mark_remote(ctx, h, dirs, con, verbose)
-        if not rules or dry_run: return r
+        if dry_run: return r
+        if not rules:
+            self._index_after_sync(ctx, h, name, entry, method, con, verbose)
+            return r
         os.makedirs(os.path.dirname(selection), exist_ok=True)
         with open(selection, 'w', encoding='utf-8', newline='\n') as f:
             f.write('\n'.join(rules) + '\n')
-        return self._after_partial(ctx, h, name, entry, rules, 'sync', con, verbose)
+        rr = self._after_partial(ctx, h, name, entry, rules, 'sync', con, verbose)
+        self._index_after_sync(ctx, h, name, entry, method, con, verbose, on_host=False)
+        return rr
 
     def _backup_dirs(self, h, name, entry):
         """
@@ -4257,6 +4267,87 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 print(f'WARNING: the backup artifact of {h["alias"]} got no _cmeta: {r.get("error")}')
             return {'return': 0}
         return self._index_on_host(ctx, h, 'local', dirs['remote_artifact'].rsplit('/result/', 1)[0], con, verbose)
+
+    def _sync_changed_meta(self, h, entry, side):
+        """
+        The meta files (an artifact's _cmeta.*, the repository's _cmr.*) that the two-way sync just run changed on
+        one side (1 = this machine, 2 = the host), from rclone's listings of that side before and after the run
+        (<workdir>/<pair>.path<side>.lst-old and .lst): a sync that moved no meta file needs no reindex on that
+        side. -> a list of paths (relative to the repository, "/"), or None when the listings cannot be read (a
+        first sync, a resync).
+        """
+        workdir = self._bisync_workdir(h, entry)
+        prefix = re.sub(r'[\s\\/:?*]', '_', str(entry['local']).strip('\\/')) + '..'
+        suffix = f'.path{side}.lst'
+        files = [f for f in os.listdir(workdir) if f.startswith(prefix) and f.endswith(suffix)] if os.path.isdir(workdir) else []
+        if len(files) != 1 or not os.path.isfile(os.path.join(workdir, files[0] + '-old')):
+            return None
+        try:
+            with open(os.path.join(workdir, files[0]), encoding='utf-8', errors='replace') as f:
+                new = set(f.read().splitlines())
+            with open(os.path.join(workdir, files[0] + '-old'), encoding='utf-8', errors='replace') as f:
+                old = set(f.read().splitlines())
+        except OSError:
+            return None
+        changed = []
+        for line in sorted(new ^ old):
+            m = re.search(r'"(.*)"$', line)
+            if m and not line.startswith('#') and os.path.basename(m.group(1)).startswith(('_cmeta.', '_cmr.')):
+                if m.group(1) not in changed: changed.append(m.group(1))
+        return changed
+
+    def _index_here(self, h, name, entry, con):
+        """
+        After a two-way sync, the index of this machine brought up to date at the smallest cost: an artifact whose
+        _cmeta.* is new or changed is reindexed by itself (cx <category> reindex <repository>:<alias>); a meta that
+        is gone, a changed _cmr.*, an artifact the category does not resolve, or listings that cannot be read mean
+        the whole repository (cx repo reindex: seconds, 50 s on a Windows for the largest); a sync that changed no
+        meta file changes nothing. A failure is a warning: the files are there, the index is rebuilt by hand.
+        """
+        changed = self._sync_changed_meta(h, entry, 1)
+        if changed == []:
+            if con: print(f'INDEX (here): no meta file of {name} changed here - the index is current')
+            return
+        t0 = time.monotonic()
+        whole, done = changed is None, []
+        for path in (changed or []):
+            parts = path.replace('\\', '/').strip('/').split('/')
+            if len(parts) < 3 or parts[-1].startswith('_cmr.') or not os.path.isdir(os.path.join(entry['local'], *parts[:-1])):
+                whole = True
+                break
+            r = self.cm.access({'category': parts[0], 'command': 'reindex', 'arg1': f'{name}:{parts[-2]}', 'con': False})
+            if r.get('return', 0) > 0:
+                whole = True
+                break
+            done.append(parts[-2])
+        if whole:
+            r = self.cm.access({'category': 'repo', 'command': 'reindex', 'arg1': name, 'con': False})
+            what = f'cx repo reindex {name}'
+        else:
+            what = f'{len(done)} artifact(s) of {name} reindexed: ' + ', '.join(done[:5]) + (' ...' if len(done) > 5 else '')
+        if con:
+            if r.get('return', 0) == 0:
+                print(f'INDEX (here): {what} - ok ({time.monotonic() - t0:.1f}s)')
+            else:
+                print(f'WARNING: {name} was not reindexed here after the two-way sync: {r.get("error")} - run "cx repo reindex {name}"')
+
+    def _index_after_sync(self, ctx, h, name, entry, method, con, verbose, on_host=True):
+        """
+        After a sync that moved files: the repository rescanned on the host ("cx repo reindex" there, plugged the
+        first time - after a two-way sync only when a meta file changed on that side) and, after a two-way sync,
+        here too (what came back) - so a new artifact is found at once on both sides. Without it a synced work
+        item stayed invisible until a reindex by hand (the P14s, 2026-10-26).
+        """
+        if on_host:
+            changed = self._sync_changed_meta(h, entry, 2) if method == 'bisync' else None
+            if changed == []:
+                if con: print(f'INDEX ({h["alias"]}): no meta file of {name} changed there - the index is current')
+            else:
+                r = self._index_on_host(ctx, h, name, entry['remote'], con, verbose)
+                if r.get('return', 0) > 0 and con:
+                    print(f'WARNING: {name} was not reindexed on {h["alias"]}: {r.get("error")}')
+        if method == 'bisync':
+            self._index_here(h, name, entry, con)
 
     def _after_partial(self, ctx, h, name, entry, rules, how, con, verbose):
         """After a partial repository reached a host: PARTIAL.md there, and the repository indexed (plugged the first time)."""
