@@ -2,6 +2,34 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.56.0
+- **`cx host sync` finishes and proves it.** A failing repository no longer stops the run: every repository of every
+  selected host is synced, and a failing bisync is repaired where the cure is known and run again - a stale lock
+  dropped, rclone's delete guard ("too many deletes") passed with `--force` only when the side that lost the files
+  is still a repository (its `_cmr.*` there, not empty; the host keeps its copies in its sync-backup artifact), a
+  new pair seeded from this machine, a transient error tried again (`--retries`, 2). A pair that needs a new
+  baseline while both sides hold files is reported with the `--resync ... --dry_run` to read: which side wins is a
+  person's call. After every sync the two sides are compared name by name and size by size (`rclone check` with the
+  sync's filters, one way for a copy): a CHECK column (`identical (2384)` or the differences, the listing kept in the
+  bisync workdir), a difference right after a sync - a file changed during the run - synced once more. Conflict
+  copies rclone left (`<name>.conflict1/2`) are noted; the ones of a memory index (`MEMORY.md`, two sessions each
+  adding a line) are merged by line union and settled on both sides by the run; a conflict made by the run is named
+  as a problem. The run ends with `STATUS: SUCCESS` or `STATUS: FAILED` in large letters with the problems under it,
+  exits 1 when anything needs a person, and waits for Enter at a terminal on problems (never with `-q` or
+  `--pause-`). `--skip_check` turns the check off. A git repository says what its pull did. The task
+  `rclone-to-ssh` hands its output back on request (`capture`: no colour, the return code judged by the caller).
+- **The indexes follow the files:** after a sync that moved files the repository is reindexed where its files
+  changed - the host after a git pull or a copy, each side of a bisync whose rclone listings show a changed meta
+  file (`_cmeta.*`, `_cmr.*`): an artifact by itself here, the whole repository when a meta is gone. A sync of
+  records only touches no index; `sync: after: [cx --reindex]` is no longer needed.
+- **X11 from Windows:** `cx host ssh --x11` forwards with `-Y` and sets `DISPLAY=localhost:0.0` for the client when
+  it is unset; `cx host ssh --screen --x11` hands the display to the windows of the session (the attach writes
+  `~/.cmeta-screen-display`, the windows' prompt hook sources it), so a window made before the login opens X11
+  programs too. `cx host upgrade` of a uv-tool engine installs pip into the tool environment.
+- **run-openssh on Windows runs the server on a hidden desktop** (`--hidden_desktop`, on by default), so the console
+  window of every command a client runs stays off the screen; the server's output reaches the log through a pipe.
+- **Docs and examples** with neutral names for the hosts, the gateway and its secret.
+
 ## 0.55.2
 - **Login or a gateway for every AI run:** the new category `ai.gateway` - an artifact per place that serves models
   (a company's gateway such as Azure API Management in front of OpenAI and Anthropic, a vendor's own API, a llama.cpp
@@ -84,7 +112,7 @@ All notable changes to cMeta AOps are documented here, newest first.
   a run-ai session started on another machine), then lists what is left; the answer says whether Screen found it.
 - **`cx host status` asks sshd for its identification line,** not only for an open port: a host whose port accepts and
   closes at once is `refused`, one that stays silent is `no banner` - neither can run a command, and the table said `up`
-  for both (the Dapple VM of 2026-10-25: up in the table, every ssh reset). The projects of such a host say `host
+  for both (a VM of 2026-10-25: up in the table, every ssh reset). The projects of such a host say `host
   refused` / `host no banner`.
 - **A tool without compiler flags is refused as a compiler** by setup-compile (before: `--use.compiler-c.name=llvm` on
   Windows ran `clang program.c` with no flags, built `a.exe` and stopped at "Target file hello was not created"); the

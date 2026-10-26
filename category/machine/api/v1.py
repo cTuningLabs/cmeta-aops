@@ -31,7 +31,7 @@ class Category(InitCategory):
         ctx,
         arg1=None,          # machine alias, UID or wildcard (default: all)
         tags=None,          # only machines with these tags
-        owner=None,         # only this owner (fgg, dapple, ctuning ...)
+        owner=None,         # only this owner (fgg, acme, ctuning ...)
         kind=None,          # only this kind (laptop, desktop, vm, phone, tablet, cluster ...)
         sort=None,          # accepted for compatibility with the base command
         skip_uids=False,    # accepted for compatibility with the base command

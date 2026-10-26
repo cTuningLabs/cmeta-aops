@@ -8,15 +8,15 @@ same Claude Code, Codex or OpenCode, the bill moved to the gateway's credits, or
 
 ```yaml
 # ai.gateway/<alias>/_desc.yaml
-description: Dapple's AI gateway
-base_url: https://dapple-llm-gateway.azure-api.net
+description: the company gateway
+base_url: https://acme-llm-gateway.azure-api.net
 wires:                                  # what it speaks, each with its path under base_url
   anthropic: /anthropic                 #   the Messages API (/v1/messages under it) - Claude Code; '' = right under the base
   openai: /openai/v1                    #   chat completions and the Responses API - Codex, OpenCode
 catalog: /v1/models                     # the list of usable models; catalogs: {anthropic: /anthropic/v1/models} per wire
 auth:
   header: x-api-key                     # x-api-key | bearer | none
-  secret: dapple-ai-gateway             # the secret artifact (kind token) that holds the key - cx secret ls
+  secret: acme-ai-gateway              # the secret artifact (kind token) that holds the key - cx secret ls
 models:                                 # optional: the names behind the tools' aliases and a default per harness
   claude: {opus: claude-opus-5-5, sonnet: claude-sonnet-5-5, haiku: claude-haiku-5-5, default: claude-opus-5-5}
   codex: {default: gpt-5.5}
@@ -28,15 +28,15 @@ provided_by: {task: run-llama-cpp-server, params: {port: 8686}}   # optional: th
 
 ```
 cx ai.gateway ls                                      # alias, base URL, wires, auth, repository
-cx ai.gateway models dapple --harness=claude          # what Claude Code can use there (the anthropic wire's catalog)
-cx ai.gateway models dapple --harness=codex           # the openai wire: every model the gateway serves on it
-cx ai.gateway test dapple                             # hello on every wire, the usage reported, the catalog's size
-cx ai.gateway connect dapple --harness=codex          # the environment names and the words a harness needs (no value)
+cx ai.gateway models acme --harness=claude          # what Claude Code can use there (the anthropic wire's catalog)
+cx ai.gateway models acme --harness=codex            # the openai wire: every model the gateway serves on it
+cx ai.gateway test acme                               # hello on every wire, the usage reported, the catalog's size
+cx ai.gateway connect acme --harness=codex           # the environment names and the words a harness needs (no value)
 ```
 
 The wire each harness speaks: Claude Code the Anthropic Messages API only (a GPT name on that wire is "unknown
 model"); Codex the Responses API (`codex_wire: chat` for a chat-only server); OpenCode both, through its provider
-packages. A gateway that translates (Dapple's Responses route takes Claude models too) shows them in the openai wire's
+packages. A gateway that translates (a Responses route that takes Claude models too) shows them in the openai wire's
 catalog, and Codex can use them - with prompts tuned for GPT. A llama.cpp server (the builds since 2026-10-16) speaks
 all three wires, so every harness can use it; vLLM speaks chat and Responses.
 

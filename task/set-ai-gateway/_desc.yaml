@@ -13,5 +13,5 @@ usage: |
 
   config::default (cx config set default --meta.<key>=<value>):
     run_ai_gateway: true            every run goes through the gateway named below unless a flag or a project says otherwise
-    run_ai_gateway_name: dapple     the gateway -gw and run_ai_gateway mean
+    run_ai_gateway_name: acme       the gateway -gw and run_ai_gateway mean
     run_ai_gateway_codex: login     per harness: login or an alias (wins over the two keys above)

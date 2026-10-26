@@ -700,14 +700,14 @@ OpenCode; the bill moves, or the model is local. The choice for a run, in order:
    needs the claude.ai connectors (HubSpot, Microsoft 365) says `login`;
 3. this machine's `config::default`: `run_ai_gateway_<harness>: login | <alias>` per harness, else `run_ai_gateway:
    true` with `run_ai_gateway_name: <alias>` (`cx config set default --meta.run_ai_gateway=true
-   --meta.run_ai_gateway_name=dapple --meta.run_ai_gateway_codex=login`);
+   --meta.run_ai_gateway_name=acme --meta.run_ai_gateway_codex=login`);
 4. `login`.
 
 ```
 cxai -gw "..."                                   # the configured gateway, whatever the project says
 cxai -ln "..."                                   # the tool's own account, whatever the config says
 cxai --gateway=llama-cpp-local "..."             # a local model (cx task run run-llama-cpp-server starts the server)
-cxai --harness=codex --gateway=dapple --list_models   # what Codex can use through that gateway, every model of its catalog
+cxai --harness=codex --gateway=acme --list_models   # what Codex can use through that gateway, every model of its catalog
 ```
 
 The task `set-ai-gateway` makes the choice and gives the harness task what it needs (the environment, Codex's

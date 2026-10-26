@@ -238,6 +238,7 @@ class FakeSubprocessAll(FakeSubprocess):
     call and stops."""
     STDOUT = subprocess.STDOUT
     DEVNULL = subprocess.DEVNULL
+    list2cmdline = staticmethod(subprocess.list2cmdline)     # the hidden-desktop start renders the command line (2026-10-26)
 
     def run(self, command, **kwargs):
         # "ssh-keygen ... -f <path>" makes the host key: the start chmods it on Linux and macOS and reads its .pub
@@ -263,7 +264,7 @@ def run(task, tmp_path, monkeypatch):
     t.cm = FakeCM(tmp_path)
     t.cmeta = {"uses_categories": {"cache": "cache,1ebdcc1cc30c4022"}}
     ctx = {"control": {"con": False}, "tasks": {"global": {"openssh-server": {"path": "sshd"}}}}
-    f = lambda **params: t.run(ctx, **params)
+    f = lambda **params: t.run(ctx, **dict({'hidden_desktop': False}, **params))   # the fake Popen path; the hidden desktop is real-process Windows code
     f.cm = t.cm
     return f
 

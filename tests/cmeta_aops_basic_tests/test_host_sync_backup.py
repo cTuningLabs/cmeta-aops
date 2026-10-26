@@ -37,6 +37,8 @@ def host(tmp_path):
     (art / '_cmeta.yaml').write_text('artifact: 0123456789abcdef\n')
 
     def access(p):
+        if p.get('command') == 'reindex':                 # the sync reindexes the repository after the run (2026-10-26)
+            return {'return': 0}
         assert p['command'] == 'get' and p['arg1'] == 'local:sync-backup--my-repo' and p['meta']['tags'] == ['sync-backup']
         return {'return': 0, 'artifact': {'path': str(art)}}
 
@@ -87,8 +89,10 @@ def test_bisync_backs_up_both_sides_into_result_artifacts(host):
     assert pathlib.Path(d1) == art / 'lab' / stamp                                                   # here: under the host's name
     assert d2 == f':sftp:/home/u/CMETA/repos/local/result/sync-backup--my-repo/{here()}/{stamp}'  # there: under this machine's
     assert '--backup-dir' not in call['extra']
-    # nothing went to the host's folder: the probe said so, no _cmeta copied, no reindex
-    assert c.ssh and c.ssh[0].startswith('test -d ') and len(c.calls) == 1
+    # nothing went to the host's folder: the probe said so, no _cmeta copied, no reindex of the backup artifact -
+    # the repository itself is reindexed on the host after the sync (2026-10-26)
+    assert c.ssh and c.ssh[0].startswith('test -d ') and len(c.calls) == 2
+    assert c.calls[1] == {'command': 'reindex', 'name': 'my-repo', 'remote': '/home/u/CMETA/repos/my-repo'}
 
 
 def test_a_backup_on_the_host_marks_its_artifact(host):
@@ -97,10 +101,11 @@ def test_a_backup_on_the_host_marks_its_artifact(host):
     c._sync_repo(CTX, HOST, 'my-repo', entry('bisync', local), resync=False, resync_mode='newer', unlock=False,
                  dry_run=False, con=False, verbose=False, backup=True)
     commands = [x['command'] for x in c.calls]
-    assert commands == ['bisync', 'copyto', 'reindex']
+    assert commands == ['bisync', 'copyto', 'reindex', 'reindex']     # the backup artifact, then the repository (2026-10-26)
     assert c.calls[1]['local'] == str(art / '_cmeta.yaml')
     assert c.calls[1]['remote'] == '/home/u/CMETA/repos/local/result/sync-backup--my-repo/_cmeta.yaml'
     assert c.calls[2]['name'] == 'local' and c.calls[2]['remote'] == '/home/u/CMETA/repos/local'
+    assert c.calls[3]['name'] == 'my-repo'
 
 
 def test_copy_backs_up_the_host_side_only_and_a_dry_run_marks_nothing(host):

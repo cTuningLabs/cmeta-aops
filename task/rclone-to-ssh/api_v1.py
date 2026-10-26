@@ -71,6 +71,8 @@ class CTask(InitCTask):
             env: dict = {},               # extra environment variables for the rclone process
             timeout: int = None,          # kill rclone after N seconds (default: no limit)
             unparsed: list = None,        # everything after "--" is quoted and appended to the rclone command
+            capture: bool = False,        # keep rclone's output and hand it back (stdout, stderr) instead of showing it:
+                                          # a caller that reads verdicts from it (cx host sync)
             install: bool = None,         # consumed by _desc.yaml: answers task/setup's "install rclone?" up front
             rclone_version: str = None,   # consumed by _desc.yaml: pin the rclone version to set up
             from_remote: bool = False,    # the other way: from the host to local_dir (copy, copyto, sync; not bisync)
@@ -382,6 +384,9 @@ class CTask(InitCTask):
               'verbose': verbose,
               'text_cmd': 'RUN:',
               'print_extra_line': True,
+              'capture_output': self._flag_is_on(capture, False),
+              # a caller that reads the output judges the return code itself (rclone check answers 1 for differences)
+              'fail_if_nonzero_return_code': not self._flag_is_on(capture, False),
         }
 
         rx = self.cm.access(ii)
@@ -394,6 +399,8 @@ class CTask(InitCTask):
             'return': 0,
             'cmd': rx.get('cmd', cmd),
             'returncode': rx.get('returncode', 0),
+            'stdout': rx.get('stdout') or '',
+            'stderr': rx.get('stderr') or '',
             'ssh_target': ssh_target,
             'remote_path': remote_path,
             'elapsed': round(elapsed, 3),

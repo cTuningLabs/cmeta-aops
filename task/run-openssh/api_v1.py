@@ -35,6 +35,10 @@ port of its own (default 2222), with key-only logins:
 - Windows: the portable Win32-OpenSSH of tool/openssh-server; logins get cmd.exe. Tailscale's own
   firewall rule ("Tailscale-In") admits connections to its address. Linux, macOS: the system sshd,
   which run as a user logs in that user only.
+- Windows: the server runs on a hidden desktop of the session (--hidden_desktop, on by default), because
+  Win32-OpenSSH opens a console window for every non-interactive command it runs (the fleet's cx host run,
+  a listing of sessions): on the hidden desktop those windows never reach the screen. sshd then writes its
+  log itself (-E) and --foreground prints that file as it grows. --hidden_desktop- starts it the old way.
 """
 
 import errno
@@ -46,6 +50,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import time
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
@@ -189,6 +194,124 @@ def sshd_config(port, address, hostkey, authorized, pidfile = None, sftp = None,
     return config
 
 
+HIDDEN_DESKTOP = 'cmeta-run-openssh'
+
+
+def start_on_hidden_desktop(command, output):
+    """Windows: starts the command on a desktop of its own in this session (made on first use), so that the
+    console windows Windows OpenSSH opens for every non-interactive command appear there and never on the
+    screen (measured 2026-10-26: one cmd.exe window per command on the user's desktop otherwise, whatever
+    sshd's own window state). The child inherits exactly one handle - `output` (an open file, or the write end
+    of a pipe), its stdout and stderr - through a handle list, so no pipe of a caller travels along and stays
+    open; stdin is NUL. Returns (pid, process handle, desktop handle) - see HiddenProcess."""
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    GENERIC_ALL, HANDLE_FLAG_INHERIT, STARTF_USESTDHANDLES = 0x10000000, 0x00000001, 0x00000100
+    CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CREATE_BREAKAWAY_FROM_JOB = 0x00000200, 0x08000000, 0x01000000
+    EXTENDED_STARTUPINFO_PRESENT, PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00080000, 0x00020002
+    hdesk = user32.CreateDesktopW(HIDDEN_DESKTOP, None, None, 0, GENERIC_ALL, None)   # the existing one when it exists
+    if not hdesk:
+        raise OSError(f'CreateDesktop failed ({ctypes.get_last_error()})')
+
+    class STARTUPINFOW(ctypes.Structure):
+        _fields_ = [('cb', wintypes.DWORD), ('lpReserved', wintypes.LPWSTR), ('lpDesktop', wintypes.LPWSTR),
+                    ('lpTitle', wintypes.LPWSTR), ('dwX', wintypes.DWORD), ('dwY', wintypes.DWORD),
+                    ('dwXSize', wintypes.DWORD), ('dwYSize', wintypes.DWORD), ('dwXCountChars', wintypes.DWORD),
+                    ('dwYCountChars', wintypes.DWORD), ('dwFillAttribute', wintypes.DWORD), ('dwFlags', wintypes.DWORD),
+                    ('wShowWindow', wintypes.WORD), ('cbReserved2', wintypes.WORD), ('lpReserved2', ctypes.c_void_p),
+                    ('hStdInput', wintypes.HANDLE), ('hStdOutput', wintypes.HANDLE), ('hStdError', wintypes.HANDLE)]
+
+    class STARTUPINFOEXW(ctypes.Structure):
+        _fields_ = [('StartupInfo', STARTUPINFOW), ('lpAttributeList', ctypes.c_void_p)]
+
+    class PROCESS_INFORMATION(ctypes.Structure):
+        _fields_ = [('hProcess', wintypes.HANDLE), ('hThread', wintypes.HANDLE),
+                    ('dwProcessId', wintypes.DWORD), ('dwThreadId', wintypes.DWORD)]
+
+    kernel32.CreateProcessW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, ctypes.c_void_p, ctypes.c_void_p, wintypes.BOOL,
+                                        wintypes.DWORD, ctypes.c_void_p, wintypes.LPCWSTR, ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.InitializeProcThreadAttributeList.argtypes = [ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, ctypes.POINTER(ctypes.c_size_t)]
+    kernel32.UpdateProcThreadAttribute.argtypes = [ctypes.c_void_p, wintypes.DWORD, ctypes.c_size_t, ctypes.c_void_p,
+                                                   ctypes.c_size_t, ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.SetHandleInformation.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD]
+
+    null = os.open(os.devnull, os.O_RDWR)
+    h_null, h_out = msvcrt.get_osfhandle(null), msvcrt.get_osfhandle(output.fileno())
+    for h in (h_null, h_out):
+        kernel32.SetHandleInformation(h, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)
+    handles = (wintypes.HANDLE * 2)(h_null, h_out)
+
+    size = ctypes.c_size_t(0)
+    kernel32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
+    attributes = ctypes.create_string_buffer(size.value)
+    if not kernel32.InitializeProcThreadAttributeList(attributes, 1, 0, ctypes.byref(size)):
+        raise OSError(f'InitializeProcThreadAttributeList failed ({ctypes.get_last_error()})')
+    if not kernel32.UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handles, ctypes.sizeof(handles), None, None):
+        raise OSError(f'UpdateProcThreadAttribute failed ({ctypes.get_last_error()})')
+
+    si = STARTUPINFOEXW()
+    si.StartupInfo.cb = ctypes.sizeof(si)
+    si.StartupInfo.lpDesktop = 'WinSta0\\' + HIDDEN_DESKTOP
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES
+    si.StartupInfo.hStdInput, si.StartupInfo.hStdOutput, si.StartupInfo.hStdError = h_null, h_out, h_out
+    si.lpAttributeList = ctypes.cast(attributes, ctypes.c_void_p)
+    pi = PROCESS_INFORMATION()
+    flags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT
+    cmdline = subprocess.list2cmdline(command)
+    ok = kernel32.CreateProcessW(None, cmdline, None, None, True, flags | CREATE_BREAKAWAY_FROM_JOB, None, None, ctypes.byref(si), ctypes.byref(pi))
+    if not ok:
+        ok = kernel32.CreateProcessW(None, cmdline, None, None, True, flags, None, None, ctypes.byref(si), ctypes.byref(pi))
+    error = ctypes.get_last_error()
+    kernel32.DeleteProcThreadAttributeList(attributes)
+    os.close(null)
+    if not ok:
+        user32.CloseDesktop(hdesk)
+        raise OSError(f'CreateProcess on the hidden desktop failed ({error})')
+    kernel32.CloseHandle(pi.hThread)
+    # the desktop handle stays open until the server is up: closed before its first thread is on the desktop, the
+    # desktop vanishes under it and sshd dies at its DLL initialisation (0xC0000142, 2026-10-26); afterwards the
+    # server's own threads keep the desktop alive
+    return pi.dwProcessId, pi.hProcess, hdesk
+
+
+class HiddenProcess:
+    """What the start returns on Windows: the pid and a wait like Popen's (poll, wait, returncode); `pump` is
+    the read end of the pipe the foreground prints (None in the background, where the log file takes it)."""
+
+    def __init__(self, pid, handle, desktop = None, pump = None):
+        self.pid, self.handle, self.desktop, self.pump, self.returncode = pid, handle, desktop, pump, None
+
+    def settled(self):
+        """The server is up: this process's handle to the hidden desktop is not needed any more."""
+        if self.desktop:
+            import ctypes
+            ctypes.windll.user32.CloseDesktop(self.desktop)
+            self.desktop = None
+
+    def poll(self):
+        import ctypes
+        from ctypes import wintypes
+        code = wintypes.DWORD()
+        if ctypes.windll.kernel32.GetExitCodeProcess(wintypes.HANDLE(self.handle), ctypes.byref(code)) and code.value != 259:   # STILL_ACTIVE
+            self.returncode = int(code.value)
+        return self.returncode
+
+    def wait(self):
+        """Waits for the end; the foreground prints the server's log from its pipe meanwhile."""
+        if self.pump is not None:
+            with os.fdopen(self.pump, 'rb', buffering = 0) as f:          # EOF when the server closes its end
+                for chunk in iter(lambda: f.read(4096), b''):
+                    sys.stdout.write(chunk.decode('utf-8', 'replace'))
+                    sys.stdout.flush()
+            self.pump = None
+        while self.poll() is None:
+            time.sleep(0.25)
+        return self.returncode
+
+
 def stop_server(pid):
     """Ends the server and the logins it serves (on Linux and macOS each login is a child process of
     the server that would outlive it)."""
@@ -253,6 +376,7 @@ class CTask(InitCTask):
             name: str = 'default',    # several servers: one folder per name and port
             foreground: bool = False, # attached to this console: the log on the screen, Ctrl-C or the window closed ends it
             sshd_log_level: str = 'INFO',  # sshd's LogLevel: INFO, VERBOSE (each session: shell, command, subsystem), DEBUG..DEBUG3
+            hidden_desktop: bool = True,   # Windows: the server on a desktop of its own, so the console of every command stays off the screen
     ):                                     # (not --log_level, which is cMeta's own logging flag)
         """
         Start, stop or show an OpenSSH server run as the user (see the module docstring).
@@ -382,7 +506,18 @@ class CTask(InitCTask):
         # In the background, detached from this process (and from a Job Object on Windows) - or, with --foreground,
         # attached to this console: the log (-e: stderr) on the screen, the server ends with this command
         command = [sshd, '-D', '-e', '-f', cfg]
-        if foreground:
+        # On Windows the server runs on a hidden desktop of this session (see start_on_hidden_desktop): Windows
+        # OpenSSH opens a console window for every non-interactive command, and there they never reach the screen
+        if windows and hidden_desktop:
+            if foreground:
+                # the server's log (-e: stderr) through a pipe this command prints; nothing else of this process
+                read_end, write_end = os.pipe()
+                with os.fdopen(write_end, 'wb') as pipe_out:
+                    p = HiddenProcess(*start_on_hidden_desktop(command, pipe_out), pump = read_end)
+            else:
+                with open(log, 'ab') as out:
+                    p = HiddenProcess(*start_on_hidden_desktop(command, out))
+        elif foreground:
             p = subprocess.Popen(command, stdin = subprocess.DEVNULL)
         else:
             out = open(log, 'ab')
@@ -407,6 +542,8 @@ class CTask(InitCTask):
             if p.poll() is not None or listening(address, port):
                 break
             time.sleep(0.1)
+        if isinstance(p, HiddenProcess):
+            p.settled()
         if p.poll() is not None:
             tail = '' if foreground else open(log, encoding = 'utf-8', errors = 'replace').read()[-800:].strip()
             return self.cm.error(f'sshd exited with code {p.returncode}' + (f': {tail}' if tail else ''))
@@ -428,7 +565,7 @@ class CTask(InitCTask):
         if not foreground:
             return result
 
-        # The foreground: this command lives as long as the server
+        # The foreground: this command lives as long as the server (on the hidden desktop its log comes through a pipe)
         try:
             rc = p.wait()
         except KeyboardInterrupt:

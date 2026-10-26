@@ -28,7 +28,7 @@ my-pc            my-pc-win   my-pc-wsl2   my-pc-docker-ubuntu24-amd64
 lab-laptop                lab-laptop-ubuntu
 lab-mac-mini             lab-mac-mini-macos
 my-phone         my-phone-android
-dapple-labs-azure-vm     dapple-labs-azure-vm-ubuntu
+my-azure-vm              my-azure-vm-ubuntu         
 prod-azure-vm      prod-azure-vm-ubuntu
 prod-vm-2   prod-vm-2-ubuntu
 ```
@@ -167,7 +167,7 @@ fails when `uv tool install --force` has removed the old one). The start scripts
 `after_restart` do not kill a running server either, so the full update of a host that runs servers is
 **sync, then upgrade, then restart - in that order** (a reboot before the upgrade brings the servers up
 on the old engine, and they would need a second one). `--sync` and `--restart` do the three steps per
-host: `cx host upgrade dapple-labs-azure-vm-ubuntu --sync --restart --yes`. The restart asks y/N like
+host: `cx host upgrade my-azure-vm-ubuntu --sync --restart --yes`. The restart asks y/N like
 `cx host restart`, happens only after a successful upgrade (including "already <version>"), and this
 machine is never restarted when it is part of a selection. Services are not declared per host on purpose
 (the user's decision, 2026-10-06): the reboot is the restart.
@@ -225,11 +225,11 @@ sync:
   repos:
     - ctuninglabs@cmeta-aops
     - myorg@my-private-repo: {method: copy}
-    - dappledev@dapple-lab-emulation: {blacklist: [runs/, dle.egg-info/]}
+    - myorg@my-lab: {blacklist: [runs/, my-lab.egg-info/]}
     - some-repo: {remote: /other/path, workdir: ...}
     - my-big-repo:             # a PARTIAL repository: only these artifacts travel (cRef patterns, see below)
         artifacts: [my.project::x/!AI, work::2026*, machine::*]
-  after: [cx --reindex]        # run on the host after a sync that did something
+  after: [some command]        # run on the host after a sync that did something (a reindex is not needed: see below)
 
 commands:                      # optional
   up: az vm start ...          # run locally: a cloud VM, a service
@@ -352,6 +352,39 @@ old `_7-resync-*.bat` did. A few directories once are a one-way **push** (`rclon
 whitelist, `--dirs`).
 
 `--dry_run` shows what would move and changes nothing (rclone `--dry-run`, `git fetch --dry-run`).
+
+**The indexes follow the files** (since 2026-10-26). After a sync that moved files, the repository is reindexed
+where its files changed, so a new artifact is found at once on both sides: on the host, `cx repo reindex <repo>`
+(plugged there the first time, as a push does) after a `git` pull or a `copy`, and after a `bisync` when one of
+rclone's listings of that side (before and after the run, in `workdir`) shows a changed meta file (`_cmeta.*`,
+`_cmr.*`); on this machine, after a `bisync` whose listing of this side shows one: an artifact whose meta is new
+or changed by itself (`cx <category> reindex <repo>:<alias>`, a fraction of a second), the whole repository
+(`cx repo reindex`, seconds - 50 s for the largest on a Windows) when a meta is gone or `_cmr.*` changed. A sync
+that moved no meta file - records, notes, code - touches no index. Each step prints an `INDEX (...)` line; a
+reindex that fails is a warning (the files are there) with the command to run by hand. `sync: after:` is for
+other commands (an older `after: [cx --reindex]` still works, and now rebuilds an index that is already current).
+
+**The run finishes and proves it** (since 2026-10-26). A repository that fails does not stop the others: every
+repository of every selected host is synced, the table says per repository what moved (`ok: 1213 to host`, `ok:
+nothing to move`, `FAILED: ...`), the run ends with `STATUS: SUCCESS` or `STATUS: FAILED` in large letters with the
+problems under it, and its exit code is 1 when anything needs a person. A failing bisync is repaired where the cure
+is known and run again: a stale lock is dropped; rclone's delete guard ("too many deletes (>50%)") is passed with
+`--force` when the side that lost the files is still a repository (its `_cmr.*` there, not empty - the deleted
+files are kept in the host's sync-backup artifact), never for a wiped or detached side; a new pair (nothing on the
+host yet) is seeded from this machine; a transient error is tried again (`--retries`, 2). A pair whose baseline is
+gone while both sides hold files is reported with the `--resync --resync_mode=path1|path2 --dry_run` to read and
+run: which side wins is a person's call.
+
+**The check.** After every sync the two sides are compared name by name and size by size (`rclone check
+--size-only` with the sync's own filters, one way for a `copy`): `identical (2384)` in the CHECK column, or
+`DIFFERENCES: 3 missing there, 1 differ` with the listing kept in the bisync workdir (`check-<repository>.txt`).
+A difference right after a good sync is a file that changed during the run (the other side at work): the
+repository is synced once more and compared again. Conflict copies rclone left (`<name>.conflict1/2`, a file
+changed on both sides between two syncs) are reported; the ones of a memory index (`MEMORY.md`, two sessions each
+adding a line) are merged by line union and settled on both sides by the run itself. `--skip_check` turns the
+check off (a few seconds per repository: one listing of both sides); a dry run never checks; `git` has no check
+beyond its pull. On problems the run waits for Enter when a person is at the terminal, never with `-q` or
+`--pause-`.
 
 `--backup` keeps what a run overwrites or deletes: on each side of a bisync (on the host for a copy) the old file
 goes, with its path inside the repository, to the result artifact `sync-backup--<repository>` of that side's `local`
