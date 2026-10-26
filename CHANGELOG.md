@@ -84,7 +84,7 @@ All notable changes to cMeta AOps are documented here, newest first.
   a run-ai session started on another machine), then lists what is left; the answer says whether Screen found it.
 - **`cx host status` asks sshd for its identification line,** not only for an open port: a host whose port accepts and
   closes at once is `refused`, one that stays silent is `no banner` - neither can run a command, and the table said `up`
-  for both (the Dapple VM of 2026-10-25: up in the table, every ssh reset). The projects of such a host say `host
+  for both (a VM of 2026-10-25: up in the table, every ssh reset). The projects of such a host say `host
   refused` / `host no banner`.
 - **A tool without compiler flags is refused as a compiler** by setup-compile (before: `--use.compiler-c.name=llvm` on
   Windows ran `clang program.c` with no flags, built `a.exe` and stopped at "Target file hello was not created"); the

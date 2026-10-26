@@ -28,7 +28,7 @@ my-pc            my-pc-win   my-pc-wsl2   my-pc-docker-ubuntu24-amd64
 lab-laptop                lab-laptop-ubuntu
 lab-mac-mini             lab-mac-mini-macos
 my-phone         my-phone-android
-dapple-labs-azure-vm     dapple-labs-azure-vm-ubuntu
+my-azure-vm              my-azure-vm-ubuntu         
 prod-azure-vm      prod-azure-vm-ubuntu
 prod-vm-2   prod-vm-2-ubuntu
 ```
@@ -167,7 +167,7 @@ fails when `uv tool install --force` has removed the old one). The start scripts
 `after_restart` do not kill a running server either, so the full update of a host that runs servers is
 **sync, then upgrade, then restart - in that order** (a reboot before the upgrade brings the servers up
 on the old engine, and they would need a second one). `--sync` and `--restart` do the three steps per
-host: `cx host upgrade dapple-labs-azure-vm-ubuntu --sync --restart --yes`. The restart asks y/N like
+host: `cx host upgrade my-azure-vm-ubuntu --sync --restart --yes`. The restart asks y/N like
 `cx host restart`, happens only after a successful upgrade (including "already <version>"), and this
 machine is never restarted when it is part of a selection. Services are not declared per host on purpose
 (the user's decision, 2026-10-06): the reboot is the restart.
@@ -225,7 +225,7 @@ sync:
   repos:
     - ctuninglabs@cmeta-aops
     - myorg@my-private-repo: {method: copy}
-    - dappledev@dapple-lab-emulation: {blacklist: [runs/, dle.egg-info/]}
+    - myorg@my-lab: {blacklist: [runs/, my-lab.egg-info/]}
     - some-repo: {remote: /other/path, workdir: ...}
     - my-big-repo:             # a PARTIAL repository: only these artifacts travel (cRef patterns, see below)
         artifacts: [my.project::x/!AI, work::2026*, machine::*]

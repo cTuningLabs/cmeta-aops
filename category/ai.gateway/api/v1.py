@@ -216,7 +216,7 @@ class Category(InitCategory):
         anthropic wire; codex: the openai wire; opencode: both), as the gateway lists it now; the declared defaults
         beside. Prints the names; -j for the data.
 
-            cx ai.gateway models dapple --harness=claude
+            cx ai.gateway models acme --harness=claude
             cx ai.gateway models llama-cpp-local
         """
         g = self._one(ctx, arg1)
@@ -261,7 +261,7 @@ class Category(InitCategory):
         starts the harness, never for a record), the extra command-line words, the model to pass when the user named
         none, the wire. Prints the names of the variables and the words, never a value.
 
-            cx ai.gateway connect dapple --harness=claude
+            cx ai.gateway connect acme --harness=claude
             cx ai.gateway connect llama-cpp-local --harness=codex
         """
         g = self._one(ctx, arg1)
@@ -374,7 +374,7 @@ class Category(InitCategory):
         Hello on every wire a gateway offers, with the usage each answer reports, and the catalog's size: what works
         before a harness is pointed at it. One short answer per wire; the key is never printed.
 
-            cx ai.gateway test dapple
+            cx ai.gateway test acme
             cx ai.gateway test llama-cpp-local --model=<the loaded model>
         """
         g = self._one(ctx, arg1)

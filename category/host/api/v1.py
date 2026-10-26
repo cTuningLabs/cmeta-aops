@@ -144,7 +144,7 @@ def ssh_banner_status(addr, port, timeout):
     up | down | refused | no banner: the port accepts a connection AND the server sends its identification line
     ("SSH-2.0-..."), which an sshd sends first, at once. A port that accepts and then closes without it (a wedged sshd,
     OpenSSH 9.8+ refusing a penalised source) is "refused"; silence within the timeout is "no banner": neither can run
-    a command, and "up" from the TCP accept alone misled (the Dapple VM, 2026-10-25: up in the table, every ssh reset).
+    a command, and "up" from the TCP accept alone misled (a VM, 2026-10-25: up in the table, every ssh reset).
     """
     try:
         with socket.create_connection((addr, port), timeout=timeout) as s:
@@ -867,7 +867,7 @@ class Category(InitCategory):
         or the host's own "commands: restart".
 
             cx host restart lab-laptop-ubuntu
-            cx host restart dapple-labs-azure-vm-ubuntu --yes      # then its Labs server comes up again
+            cx host restart my-azure-vm-ubuntu --yes      # then its web server comes up again
             cx host restart my-pc-wsl2 --dry_run
         """
 
@@ -1080,7 +1080,7 @@ class Category(InitCategory):
         (git pull --ff-only on the host's own clone), per repository or by the host's default.
 
             cx host sync                                  # every reachable host that declares a sync
-            cx host sync dapple-labs-azure-vm-ubuntu      # one host (being down is an error)
+            cx host sync my-azure-vm-ubuntu      # one host (being down is an error)
             cx host sync --tags=ubuntu --dry_run
             cx host sync lab-thinkpad-ubuntu --repos=ctuninglabs@cmeta-aops --resync --resync_mode=path1
 
@@ -1411,9 +1411,9 @@ class Category(InitCategory):
         back on this host or on its replacement. Root-only files ("sudo_paths") are read through sudo into a
         staging folder on the host first (passwordless sudo), then fetched and removed there.
 
-            cx host backup dapple-labs-azure-vm-ubuntu --dry_run      # the paths, their kind and size; nothing copied
-            cx host backup dapple-labs-azure-vm-ubuntu
-            cx host backup dapple-labs-azure-vm-ubuntu --to=D:\\backups\\vm
+            cx host backup my-azure-vm-ubuntu --dry_run      # the paths, their kind and size; nothing copied
+            cx host backup my-azure-vm-ubuntu
+            cx host backup my-azure-vm-ubuntu --to=D:\\backups\\vm
         """
 
         con = ctx['control'].get('con', False)
@@ -1569,8 +1569,8 @@ class Category(InitCategory):
         is taken from its machine artifact, --source names another (the backup of the host this one replaces). With
         --into=<folder> everything lands under that folder on the host - a look, or a test on a disposable host.
 
-            cx host restore dapple-labs-azure-vm-ubuntu --dry_run
-            cx host restore new-vm-ubuntu --source=<machine>/backup/dapple-labs-azure-vm-ubuntu/20261023-1130 --yes
+            cx host restore my-azure-vm-ubuntu --dry_run
+            cx host restore new-vm-ubuntu --source=<machine>/backup/my-azure-vm-ubuntu/20261023-1130 --yes
             cx host restore lab-laptop-ubuntu --source=<that folder> --into=cmeta-tests/restore-test
 
         An instance cMeta made (docker, wsl) goes back to a snapshot instead: cx host restore <instance> [--name=<snapshot>].
@@ -1834,7 +1834,7 @@ class Category(InitCategory):
 
             cx host upgrade lab-laptop-ubuntu
             cx host upgrade --tags=ubuntu --version=0.33.0
-            cx host upgrade dapple-labs-azure-vm-ubuntu --sync --restart --yes
+            cx host upgrade my-azure-vm-ubuntu --sync --restart --yes
             cx host upgrade lab-laptop-ubuntu --system --firmware --check     # what the OS would upgrade
             cx host upgrade lab-laptop-ubuntu --engine- --system --restart --yes
         """

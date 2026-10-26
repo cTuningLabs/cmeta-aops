@@ -6,7 +6,7 @@ a vendor's API key, a llama.cpp or vLLM server) - and, for a gateway, what the h
 extra command-line words, the model to pass when the user named none. The choice, in order:
 
 1. the flag: `--gateway=<alias>` (`-gw=<alias>`), a bare `-gw` = the configured gateway, `-ln` = login;
-2. the project's `_desc.yaml`: `ai_gateway: <alias> | login` (run-ai reads it: a Dapple work item says `dapple`, a task
+2. the project's `_desc.yaml`: `ai_gateway: <alias> | login` (run-ai reads it: a work item of a company says its gateway, a task
    that needs the claude.ai connectors says `login`);
 3. this machine's `config::default`: `run_ai_gateway_<harness>: login | <alias>` (per harness), else `run_ai_gateway:
    true` with `run_ai_gateway_name: <alias>`;
@@ -17,7 +17,7 @@ cx task run set-ai-gateway --harness=claude                       # the choice, 
 cx task run set-ai-gateway --harness=codex -gw                    # the configured gateway
 cx task run set-ai-gateway --harness=opencode --gateway=llama-cpp-local --connect-   # the choice only
 
-cx config set default --meta.run_ai_gateway=true --meta.run_ai_gateway_name=dapple   # the gateway by default
+cx config set default --meta.run_ai_gateway=true --meta.run_ai_gateway_name=acme   # the gateway by default
 cx config set default --meta.run_ai_gateway_codex=login                              # except Codex
 ```
 
