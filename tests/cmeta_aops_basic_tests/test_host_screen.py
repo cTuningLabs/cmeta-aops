@@ -70,7 +70,9 @@ def test_shell_defaults_and_forwarding_use_the_existing_transport(host):
     calls = []
     c._cmd_run = lambda ctx, h, cmd, **kw: calls.append((cmd, kw)) or {'return': 0, 'cmd': cmd or 'ssh remote'}
     r = c.ssh_({'control': {}}, 'remote', screen=True, forward='1455', x11=True, dry_run=True)
-    assert r['return'] == 0 and '-S cx-host -d -R -t shell bash -l' in r['cmd']
+    # the window's shell runs under the prompt hook that takes the display of a later --x11 login (since 2026-10-26)
+    assert r['return'] == 0 and '-S cx-host -d -R -t shell env ' in r['cmd'] and r['cmd'].rstrip().endswith('bash -l')
+    assert 'PROMPT_COMMAND=[ -f ~/.cmeta-screen-display ] && . ~/.cmeta-screen-display' in r['cmd']
     assert calls[0][1] == {'interactive': True, 'x11': True, 'forwards': ['1455']}
     # the existing windows are asked from the Screen the session runs with, never installed for it
     assert 'cx tool run screen,05d0264fd24b40f6 --con- --skip_install -q --timeout=10 -- -S cx-host -Q windows' in r['cmd']
@@ -79,7 +81,7 @@ def test_shell_defaults_and_forwarding_use_the_existing_transport(host):
     assert r['cmd'] == 'ssh remote' and calls[-1][0] is None
 
     r = c.ssh_({'control': {}}, 'remote', screen='', dry_run=True)
-    assert '-S cx-host -d -R -t shell bash -l' in r['cmd']
+    assert '-S cx-host -d -R -t shell env ' in r['cmd'] and r['cmd'].rstrip().endswith('bash -l')   # the prompt hook, since 2026-10-26
 
 
 def test_command_and_project_title_remain_single_arguments(host):

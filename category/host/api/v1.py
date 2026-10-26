@@ -34,6 +34,7 @@ import copy
 import json
 import shlex
 import tempfile
+import textwrap
 
 from cmeta.category import InitCategory
 
@@ -1073,6 +1074,9 @@ class Category(InitCategory):
         skip_after=False,   # do not run the host's "sync: after" commands (e.g. cx --reindex)
         backup=False,       # keep what this run overwrites or deletes: .cmeta-sync-backups/<repository>/<run id>/ beside the repos folder of each side
         project=None,      # named environment; omitted: the host's global environment
+        skip_check=False,   # do not compare the two sides after the sync (the check is on by default: rclone check, name and size)
+        retries=2,          # how many times a transient failure of a repository is tried again
+        pause=True,         # on problems, wait for Enter at the end when a person is at the terminal (never with -q; --pause- turns it off)
     ):
         """
         Bring a host's repositories up to date, the way its _desc.yaml declares: "bisync" (two-way, rclone
@@ -1103,6 +1107,7 @@ class Category(InitCategory):
         self._status_all(ctx, hosts)
 
         report = []
+        problems = []            # what a person must look at: a failed repository, a check that found differences
         for h in hosts:
             alias = h['alias']
             sync = h['desc'].get('sync') or {}
@@ -1116,7 +1121,8 @@ class Category(InitCategory):
             if not self._usable(h):
                 if explicit:
                     return self.cm.error(f'host "{alias}" is {h["status"]} - cannot sync')
-                report.append([alias, '*', '-', f'skipped ({h["status"]})', ''])
+                report.append([alias, '*', '-', f'skipped ({h["status"]})', '-', ''])
+                problems.append(f'{alias}: skipped ({h["status"]})')
                 if con: print(f'{alias}: skipped ({h["status"]})')
                 continue
 
@@ -1149,15 +1155,63 @@ class Category(InitCategory):
             changed = False
             for name, entry in selected:
                 t0 = time.monotonic()
-                r = self._sync_repo(ctx, h, name, entry, resync=resync, resync_mode=resync_mode, unlock=unlock,
-                                    dry_run=dry_run, con=con, verbose=verbose, backup=backup)
-                elapsed = f'{time.monotonic() - t0:.0f}s'
+                try:
+                    retries_n = max(0, int(retries))
+                except (TypeError, ValueError):
+                    retries_n = 2
+                r = self._sync_repo_robust(ctx, h, name, entry, resync=resync, resync_mode=resync_mode, unlock=unlock,
+                                           dry_run=dry_run, con=con, verbose=verbose, backup=backup, retries=retries_n)
+                notes = r.get('notes') or []
                 if r['return'] > 0:
-                    report.append([alias, name, entry['method'], 'FAILED: ' + r['error'], elapsed])
-                    if con: print(f'*** STOPPED: {alias} / {name} failed - {r["error"]}')
-                    return {'return': 1, 'error': f'{alias}: sync of {name} failed - {r["error"]}', 'report': report}
-                report.append([alias, name, entry['method'], 'ok', elapsed])
+                    elapsed = f'{time.monotonic() - t0:.0f}s'
+                    report.append([alias, name, entry['method'], 'FAILED: ' + str(r['error'])[:300], '-', elapsed])
+                    problems.append(f'{alias} / {name}: {str(r["error"])[:300]}')
+                    if con: print(f'*** FAILED: {alias} / {name} - {r["error"]} (the other repositories go on)')
+                    continue
                 changed = True
+                result = 'ok' if dry_run else 'ok: ' + self._moved_text(r.get('moved') or {})
+                if notes: result += ' (' + '; '.join(notes) + ')'
+
+                # the check: both sides compared; a difference right after a good sync is a file that changed during
+                # the run (the other side at work) - synced once more and compared again
+                check = '-'
+                both_sides = list(r.get('both_sides') or [])
+                if not dry_run and not skip_check and entry['method'] != 'git':
+                    c = self._check_repo(ctx, h, name, entry, con, verbose)
+                    once_more = ''
+                    if c.get('conflicts'):
+                        merged = self._settle_index_conflicts(ctx, h, name, entry, c['conflicts'], con, verbose)
+                        if merged:
+                            notes.append(f'{len(merged)} memory index(es) merged from conflict copies')
+                            both_sides = [b for b in both_sides if b not in merged]
+                            once_more = 'the merged index taken into the baseline'
+                    if not c.get('ok') and c.get('errors', 0) >= 0:
+                        once_more = f'the check found {self._check_text(c)}'
+                    if once_more:
+                        if con: print(f'    {once_more}: synced once more')
+                        r2 = self._sync_repo_robust(ctx, h, name, entry, resync=False, resync_mode=resync_mode, unlock=unlock,
+                                                    dry_run=False, con=con, verbose=verbose, backup=backup, retries=retries_n)
+                        if r2.get('return', 0) == 0:
+                            again = self._moved_text(r2.get('moved') or {})
+                            if again != 'nothing to move': result += f' + {again}'
+                            both_sides += [b for b in (r2.get('both_sides') or []) if b not in both_sides]
+                        c = self._check_repo(ctx, h, name, entry, con, verbose)
+                    check = self._check_text(c) if c.get('errors', 0) >= 0 else 'not checked: ' + str(c.get('error', ''))[:120]
+                    if not c.get('ok'):
+                        problems.append(f'{alias} / {name}: the check: {check}' + (f' - the list: {c["file"]}' if c.get('file') else ''))
+                    if con: print(f'CHECK ({alias} / {name}): {check}')
+                if both_sides:
+                    # the run itself made conflict copies: a person merges them (an index was merged by the run)
+                    problems.append(f'{alias} / {name}: {len(both_sides)} file(s) changed on both sides since the last sync - kept as '
+                                    f'.conflict1/.conflict2 on both sides, the name itself gone: ' + ', '.join(both_sides[:3]))
+                    result += f' ({len(both_sides)} changed on both sides: conflict copies)'
+                elif entry['method'] == 'git':
+                    check = 'git: the pull is the check'
+                elif skip_check and not dry_run:
+                    check = 'skipped'
+                if notes and 'merged' in notes[-1]: result += ' (' + notes[-1] + ')'
+                elapsed = f'{time.monotonic() - t0:.0f}s'
+                report.append([alias, name, entry['method'], result, check, elapsed])
 
             after = sync.get('after') or []
             if isinstance(after, str): after = [after]
@@ -1170,17 +1224,38 @@ class Category(InitCategory):
                         print(f'AFTER ({alias}): {cmd}')
                     rr = self._run_local(r['cmd'], capture=not verbose, con=con, verbose=verbose)
                     if rr.get('returncode', 0) != 0:
-                        report.append([alias, '(after)', cmd, f'exit code {rr.get("returncode")}', ''])
+                        report.append([alias, '(after)', cmd, f'exit code {rr.get("returncode")}', '-', ''])
+                        problems.append(f'{alias}: "{cmd}" returned {rr.get("returncode")}')
                         if con: print(f'WARNING: "{cmd}" on {alias} returned {rr.get("returncode")}')
 
             if changed and not dry_run:
                 self._refresh_state(ctx, h, con)        # state.yaml says what is there now
 
+        synced = [row for row in report if str(row[3]).startswith('ok')]
+        ok = not problems
+        n_repos = f'{len(synced)} repositor' + ('y' if len(synced) == 1 else 'ies')
+        if dry_run:
+            summary = f'DRY RUN: {n_repos} looked at, nothing changed' + (f'; {len(problems)} problem(s)' if problems else '')
+        else:
+            summary = (f'{n_repos} synced' + ('' if skip_check else ' and checked') if ok
+                       else f'{len(problems)} problem(s) - {n_repos} ok: ' + ' | '.join(p[:300] for p in problems[:6]))
         if con:
             print('')
-            self._print_table(['HOST', 'REPOSITORY', 'METHOD', 'RESULT', 'TIME'], report)
+            self._print_table(['HOST', 'REPOSITORY', 'METHOD', 'RESULT', 'CHECK', 'TIME'], report)
+            print('')
+            print(self._banner(ok, 'STATUS: ' + ('SUCCESS - ' if ok else 'FAILED - ') + summary))
+            # a person at a terminal reads the problems before the window closes; never in a quiet run
+            if problems and pause and not ctx['control'].get('quiet', False) and not ctx['control'].get('pause_at_the_end', False):
+                try:
+                    if sys.stdin is not None and sys.stdin.isatty():
+                        input('Press Enter to continue (the problems are listed above) ...')
+                except (EOFError, OSError):
+                    pass
 
-        return {'return': 0, 'report': report}
+        out = {'return': 0 if ok else 1, 'report': report, 'problems': problems, 'summary': summary}
+        if not ok:
+            out['error'] = summary
+        return out
 
     ############################################################
     def push_(
@@ -4111,7 +4186,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             base = os.path.join(os.environ.get('XDG_CACHE_HOME') or os.path.join(os.path.expanduser('~'), '.cache'), 'rclone')
         return os.path.join(base, 'bisync-' + h['alias'])
 
-    def _sync_repo(self, ctx, h, name, entry, resync, resync_mode, unlock, dry_run, con, verbose, backup=False):
+    def _sync_repo(self, ctx, h, name, entry, resync, resync_mode, unlock, dry_run, con, verbose, backup=False,
+                   force=False, capture=False):
+        """One run of the declared method; force: rclone's --force past its delete guard (bisync); capture: rclone's
+        output kept in the result ('output') for the verdicts, with -v so that what moved can be counted."""
         method = entry['method']
         if method not in SYNC_METHODS:
             return self.cm.error(f'{name}: unknown sync method "{method}" (one of {", ".join(SYNC_METHODS)})')
@@ -4130,12 +4208,18 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                    else f'git -C "{remote}" pull --ff-only')
             r = self._cmd_run(ctx, h, cmd)
             if r['return'] > 0: return r
-            rr = self._run_local(r['cmd'], capture=False, con=con, verbose=verbose)
+            rr = self._run_local(r['cmd'], capture=capture, con=con, verbose=verbose)
+            text = (rr.get('stdout') or '') + (rr.get('stderr') or '') if capture else ''
             if rr.get('returncode', 1) != 0:
-                return self.cm.error(f'git on {h["alias"]} returned {rr.get("returncode")}')
+                tail = [l.strip() for l in text.splitlines() if l.strip()][-2:]
+                rx = self.cm.error(f'git on {h["alias"]} returned {rr.get("returncode")}' + (': ' + ' | '.join(tail) if tail else ''))
+                rx['output'] = text
+                return rx
             if not dry_run:
                 self._index_after_sync(ctx, h, name, entry, method, con, verbose)
-            return {'return': 0}
+            m = re.search(r'Updating ([0-9a-f]+)\.\.([0-9a-f]+)', text)
+            what = f'pulled {m.group(1)}..{m.group(2)}' if m else ('already up to date' if 'Already up to date' in text else ('pulled' if capture else ''))
+            return {'return': 0, 'output': text, 'git': what}
 
         local = entry['local']
         if not os.path.isdir(local):
@@ -4148,6 +4232,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
         extra = list(DEFAULT_RCLONE_FLAGS)
         if dry_run: extra.append('--dry-run')
+        if capture: extra.append('-v')                  # the per-file lines, counted after the run (never shown live)
+        if force and method == 'bisync': extra.append('--force')
 
         # --backup: what this run overwrites or deletes is kept in the result artifact sync-backup--<repository> of each
         # side's local repository - an artifact the index knows ("cx result ls") - under <the other side>/<run id>/;
@@ -4181,7 +4267,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
         if method == 'copy':
             r = self._rclone(ctx, h, 'copy', local, entry['remote'], whitelist=rules, blacklist=entry['blacklist'],
-                             extra=extra, con=con, verbose=verbose)
+                             extra=extra, con=con, verbose=verbose, capture=capture)
             if r['return'] > 0: return r
             if dirs and not dry_run:
                 self._backup_mark_remote(ctx, h, dirs, con, verbose)
@@ -4211,7 +4297,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             extra += ['--resync-mode', mode]
         r = self._rclone(ctx, h, 'resync' if resync else 'bisync', local, entry['remote'], whitelist=rules,
                          blacklist=entry['blacklist'], extra=extra, con=con, verbose=verbose,
-                         workdir=self._bisync_workdir(h, entry), unlock=unlock)
+                         workdir=self._bisync_workdir(h, entry), unlock=unlock, capture=capture)
         if r['return'] > 0: return r
         if dirs and not dry_run:
             self._backup_mark_remote(ctx, h, dirs, con, verbose)
@@ -4223,8 +4309,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         with open(selection, 'w', encoding='utf-8', newline='\n') as f:
             f.write('\n'.join(rules) + '\n')
         rr = self._after_partial(ctx, h, name, entry, rules, 'sync', con, verbose)
+        if rr.get('return', 0) > 0: return rr
         self._index_after_sync(ctx, h, name, entry, method, con, verbose, on_host=False)
-        return rr
+        return r
 
     def _backup_dirs(self, h, name, entry):
         """
@@ -4349,6 +4436,299 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if method == 'bisync':
             self._index_here(h, name, entry, con)
 
+
+    ############################################################
+    # The sync that finishes and proves it: repairs, retries, the check of both sides, the verdict
+    ############################################################
+
+    @staticmethod
+    def _bisync_failure(text):
+        """What rclone's bisync said when it failed -> (kind, detail): 'lock' (a stale lock file), 'too-many-deletes'
+        ((side, gone, total): its >50% delete guard), 'needs-resync' (no usable listings: a new pair, a side replaced),
+        'transient' (worth another try), 'other'."""
+        s = text or ''
+        if 'prior lock file found' in s:
+            return 'lock', None
+        m = re.search(r'too many deletes \(>\d+%, (\d+) of (\d+)\) on (Path[12])', s)
+        if m:
+            return 'too-many-deletes', (m.group(3), int(m.group(1)), int(m.group(2)))
+        if re.search(r'Must run --resync|all files were changed|cannot find prior Path1 or Path2 listings|listing.*not found', s):
+            return 'needs-resync', None
+        if re.search(r'retrying may help|Please try again|Error is retryable|connection reset|broken pipe|timed out|i/o timeout|EOF', s):
+            return 'transient', None
+        return 'other', None
+
+    @staticmethod
+    def _moved(text):
+        """What a captured run moved, from rclone's own lines (-v): copies to the host and here, deletes on each side.
+        A bisync queues each file with its direction; a resync copies in two phases, one per direction."""
+        n = {'to_host': 0, 'to_here': 0, 'deleted_host': 0, 'deleted_here': 0}
+        lines = (text or '').splitlines()
+        if 'Resync is copying files to' in (text or ''):
+            phase = None
+            for l in lines:
+                if 'Resync is copying files to' in l:
+                    phase = 'to_here' if l.rstrip().endswith('Path1') else 'to_host'
+                elif phase and re.search(r': Copied \((new|replaced existing)\)', l):
+                    n[phase] += 1
+            return n
+        for l in lines:
+            if 'Queue copy to' in l:
+                n['to_host' if 'Path2' in l.split('Queue copy to', 1)[1][:12] else 'to_here'] += 1
+            elif 'Queue delete' in l:
+                n['deleted_here' if '- Path1' in l else 'deleted_host'] += 1
+        if not any(n.values()):                       # a one-way copy: no queue lines, the per-file lines count
+            n['to_host'] = sum(1 for l in lines if re.search(r': Copied \((new|replaced existing)\)', l))
+            n['deleted_host'] = sum(1 for l in lines if re.search(r': Deleted$', l.rstrip()))
+        return n
+
+    @staticmethod
+    def _moved_text(n):
+        if n.get('git'):
+            return n['git']
+        parts = []
+        if n.get('to_host'): parts.append(f'{n["to_host"]} to host')
+        if n.get('to_here'): parts.append(f'{n["to_here"]} here')
+        if n.get('deleted_host'): parts.append(f'{n["deleted_host"]} deleted there')
+        if n.get('deleted_here'): parts.append(f'{n["deleted_here"]} deleted here')
+        return ', '.join(parts) if parts else 'nothing to move'
+
+    def _side_intact(self, ctx, h, entry, side):
+        """Whether the side that lost more than half of its files is still a repository (its _cmr.* there and not
+        empty): then the deletes are real and may be forced; a wiped or detached side is never followed."""
+        if side == 'Path1':
+            local = entry['local']
+            if not any(os.path.isfile(os.path.join(local, f)) for f in ('_cmr.yaml', '_cmr.json')):
+                return False
+            for root, dirs, files in os.walk(local):
+                if any(f not in ('_cmr.yaml', '_cmr.json') for f in files):
+                    return True
+            return False
+        remote = entry['remote']
+        if self._shell(h).strip() in ('powershell', 'pwsh'):
+            path = str(remote).replace("'", "''")
+            cmd = f"if ((Test-Path '{path}\\_cmr.yaml') -or (Test-Path '{path}\\_cmr.json')) {{ exit 0 }} else {{ exit 1 }}"
+        else:
+            q = self._sh_path(remote)
+            cmd = f'test -f {q}/_cmr.yaml || test -f {q}/_cmr.json'
+        r = self._cmd_run(ctx, h, cmd)
+        if r.get('return', 0) > 0: return False
+        rr = self._run_local(r['cmd'], capture=True, con=False, verbose=False, timeout=60)
+        return rr.get('returncode', 1) == 0
+
+    def _remote_empty(self, ctx, h, entry):
+        """Whether the host's folder of the repository is missing or empty: a new pair, safe to seed from here."""
+        remote = entry['remote']
+        if self._shell(h).strip() in ('powershell', 'pwsh'):
+            return False
+        q = self._sh_path(remote)
+        r = self._cmd_run(ctx, h, f'ls -A {q} 2>/dev/null | head -c 1')
+        if r.get('return', 0) > 0: return False
+        rr = self._run_local(r['cmd'], capture=True, con=False, verbose=False, timeout=60)
+        return rr.get('returncode', 1) == 0 and not (rr.get('stdout') or '').strip()
+
+    def _sync_repo_robust(self, ctx, h, name, entry, resync, resync_mode, unlock, dry_run, con, verbose, backup, retries):
+        """The declared sync of one repository, run until it finishes or until nothing known cures it: a stale lock is
+        dropped, rclone's delete guard is passed with --force when the side that lost the files is still a repository
+        (the deleted files kept in the host's sync-backup artifact), a new pair is seeded from this machine, a transient
+        error is tried again (retries). -> the result of the last run, with 'notes' (what was done) and 'moved'."""
+        notes, force, attempt = [], False, 0
+        while True:
+            attempt += 1
+            r = self._sync_repo(ctx, h, name, entry, resync=resync, resync_mode=resync_mode, unlock=unlock, dry_run=dry_run,
+                                con=con, verbose=verbose, backup=backup, force=force, capture=not dry_run)
+            r['notes'] = notes
+            if r.get('return', 0) == 0:
+                if not dry_run:
+                    r['moved'] = {'git': r['git']} if r.get('git') else self._moved(r.get('output', ''))
+                    # a file changed on both sides since the last run: rclone keeps both copies as .conflict1/2 and
+                    # the name itself is gone on both sides - the paths, for the verdict (from its renames: its warning
+                    # "New or changed in both paths" also names files that are new on both sides and equal)
+                    seen = []
+                    for l in (r.get('output') or '').splitlines():
+                        m = re.search(r': (.+?): Moved \(server-side\) to: (.+)\.conflict\d+$', l.rstrip())
+                        if m and m.group(1) == m.group(2) and m.group(1) not in seen:
+                            seen.append(m.group(1))
+                    r['both_sides'] = seen
+                    if verbose and r.get('output'):
+                        print(r['output'])
+                return r
+            if dry_run or entry['method'] != 'bisync' or attempt > retries + 3:
+                return r
+            kind, detail = self._bisync_failure((r.get('output') or '') + (r.get('error') or ''))
+            if con:
+                print(f'    attempt {attempt} failed ({kind}): {str(r.get("error", ""))[:200]}')
+            if kind == 'lock' and not unlock:
+                unlock = True
+                notes.append('a stale lock dropped')
+                continue
+            if kind == 'too-many-deletes' and not force:
+                side, gone, total = detail
+                where = 'this machine' if side == 'Path1' else h['alias']
+                if not self._side_intact(ctx, h, entry, side):
+                    r['error'] = (f'{gone} of {total} files are gone from {where} and its folder is not a repository any more '
+                                  f'(no _cmr.yaml, or empty): nothing forced - look at it before anything is deleted on the other side')
+                    return r
+                force, backup = True, True
+                notes.append(f'{gone} of {total} files gone from {where}: the deletes forced (the host keeps its copies in its sync-backup artifact)')
+                if con: print(f'    {notes[-1]}')
+                continue
+            if kind == 'needs-resync' and not resync:
+                if self._remote_empty(ctx, h, entry):
+                    resync, resync_mode = True, 'path1'
+                    notes.append('a new pair: seeded from this machine (--resync --resync_mode=path1)')
+                    if con: print(f'    {notes[-1]}')
+                    continue
+                r['error'] = (f'{r.get("error", "")} - the pair needs a new baseline: read "cx host sync {h["alias"]} --repos={name} '
+                              f'--resync --resync_mode=path1 --dry_run" (path1 = this machine wins, path2 = the host) and run it')
+                return r
+            if kind == 'transient' and attempt <= retries:
+                notes.append('tried again')
+                time.sleep(5)
+                continue
+            return r
+
+    @staticmethod
+    def _check_summary(path):
+        """rclone check --combined=<path> read: how many files are equal, missing on the host, missing here, different,
+        in error; the conflict copies rclone's bisync left (<name>.conflict<n>) on either side."""
+        n = {'equal': 0, 'missing_host': 0, 'missing_here': 0, 'differ': 0, 'errors': 0, 'conflicts': []}
+        keys = {'=': 'equal', '-': 'missing_host', '+': 'missing_here', '*': 'differ', '!': 'errors'}
+        try:
+            with open(path, encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    line = line.rstrip('\n')
+                    if len(line) < 3 or line[1] != ' ' or line[0] not in keys:
+                        continue
+                    n[keys[line[0]]] += 1
+                    if re.search(r'\.conflict\d+$', line[2:]):
+                        n['conflicts'].append(line[2:])
+        except OSError:
+            n['errors'] = -1
+        # conflict copies present on both sides are in step: noted, not a difference (a conflict made by this run is
+        # judged by the run's own words - "New or changed in both paths" - in sync_)
+        n['ok'] = n['errors'] == 0 and not (n['missing_host'] or n['missing_here'] or n['differ'])
+        return n
+
+    @staticmethod
+    def _check_text(n):
+        if n.get('errors', 0) < 0:
+            return 'not read'
+        note = f'; {len(n["conflicts"])} conflict copies to look at' if n.get('conflicts') else ''
+        if n.get('ok'):
+            return f'identical ({n["equal"]})' + note
+        parts = []
+        if n['missing_host']: parts.append(f'{n["missing_host"]} missing there')
+        if n['missing_here']: parts.append(f'{n["missing_here"]} missing here')
+        if n['differ']: parts.append(f'{n["differ"]} differ')
+        if n['errors']: parts.append(f'{n["errors"]} unreadable')
+        return 'DIFFERENCES: ' + ', '.join(parts) + note
+
+    def _check_repo(self, ctx, h, name, entry, con, verbose):
+        """The two sides compared name by name and size by size (rclone check --size-only, the sync's own filters;
+        one way for a copy): the proof that the repository is in step, independent of rclone's listings. -> the
+        summary of _check_summary plus 'file' (the combined listing kept in the bisync workdir)."""
+        method = entry['method']
+        local = entry['local']
+        rules = []
+        if entry.get('artifacts'):
+            r = self._selection_rules(local, entry['artifacts'])
+            if r['return'] > 0:
+                return {'ok': False, 'errors': -1, 'error': r['error']}
+            rules = r['rules']
+        workdir = self._bisync_workdir(h, entry)
+        os.makedirs(workdir, exist_ok=True)
+        combined = os.path.join(workdir, 'check-' + re.sub(r'[^A-Za-z0-9_.@-]', '_', name) + '.txt')
+        extra = ['--size-only', '--combined', combined]
+        if rules: extra.append('--ignore-case')
+        if method == 'copy': extra.append('--one-way')
+        for attempt in (1, 2):                      # a check that fails to run (a connection hiccup) is tried once more
+            r = self._rclone(ctx, h, 'check', local, entry['remote'], whitelist=rules or None, blacklist=entry['blacklist'],
+                             extra=extra, con=con, verbose=verbose, capture=True, accept=(0, 1))
+            if r.get('return', 0) == 0:
+                break
+            time.sleep(3)
+        if r.get('return', 0) > 0:
+            return {'ok': False, 'errors': -1, 'error': r.get('error', 'rclone check failed'), 'file': combined}
+        n = self._check_summary(combined)
+        n['file'] = combined
+        return n
+
+    @staticmethod
+    def _merge_index_lines(a, b):
+        """Two versions of a memory index (one line per memory): the lines of the first, then the lines of the second
+        it does not have, in their order - nothing of either side is lost."""
+        la = a.rstrip('\n').split('\n') if a.strip() else []
+        lb = b.rstrip('\n').split('\n') if b.strip() else []
+        seen = set(la)
+        merged = la + [l for l in lb if l not in seen and l.strip()]
+        return '\n'.join(merged).rstrip('\n') + '\n'
+
+    def _settle_index_conflicts(self, ctx, h, name, entry, conflicts, con, verbose):
+        """Conflict copies of a memory index (MEMORY.md.conflict1 / .conflict2: two sessions wrote one index between two
+        syncs) merged by line union into MEMORY.md, written here and put on the host with the same time (so the next
+        bisync sees one equal file), the copies removed on both sides. Other conflicts are left for a person.
+        -> the list of indexes merged."""
+        local, remote = entry['local'], entry['remote']
+        merged = []
+        by_base = {}
+        for path in conflicts:
+            m = re.match(r'^(.*?)\.conflict\d+$', path)
+            if m and os.path.basename(m.group(1)) == 'MEMORY.md':
+                by_base.setdefault(m.group(1), []).append(path)
+        for base, copies in sorted(by_base.items()):
+            texts = []
+            for c in sorted(copies):
+                lp = os.path.join(local, *c.split('/'))
+                if os.path.isfile(lp):
+                    with open(lp, encoding='utf-8', errors='replace') as f:
+                        texts.append(f.read())
+            lp = os.path.join(local, *base.split('/'))
+            if os.path.isfile(lp):
+                with open(lp, encoding='utf-8', errors='replace') as f:
+                    texts.insert(0, f.read())
+            if not texts:
+                continue
+            text = texts[0]
+            for other in texts[1:]:
+                text = self._merge_index_lines(text, other)
+            os.makedirs(os.path.dirname(lp), exist_ok=True)
+            with open(lp, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(text)
+            r = self._rclone(ctx, h, 'copyto', lp, remote + '/' + base, con=False, verbose=verbose, capture=True)
+            if r.get('return', 0) > 0:
+                if con: print(f'WARNING: {base} merged here, not put on {h["alias"]}: {r.get("error")}')
+                continue
+            for c in copies:
+                cp = os.path.join(local, *c.split('/'))
+                if os.path.isfile(cp):
+                    os.remove(cp)
+                q = self._sh_path(remote + '/' + c) if self._shell(h).strip() not in ('powershell', 'pwsh') else None
+                if q:
+                    rr = self._cmd_run(ctx, h, f'rm -f {q}')
+                    if rr.get('return', 0) == 0:
+                        self._run_local(rr['cmd'], capture=True, con=False, verbose=False, timeout=60)
+            merged.append(base)
+            if con: print(f'    {base}: {len(copies)} conflict copies merged by line union, the same file on both sides')
+        return merged
+
+    @staticmethod
+    def _banner(ok, summary):
+        """STATUS: SUCCESS or STATUS: FAILED in large letters, with the summary under it."""
+        font = {'S': (' ###', '#   ', ' ## ', '   #', '### '), 'U': ('#  #', '#  #', '#  #', '#  #', ' ## '),
+                'C': (' ###', '#   ', '#   ', '#   ', ' ###'), 'E': ('####', '#   ', '### ', '#   ', '####'),
+                'F': ('####', '#   ', '### ', '#   ', '#   '), 'A': (' ## ', '#  #', '####', '#  #', '#  #'),
+                'I': ('###', ' # ', ' # ', ' # ', '###'), 'L': ('#   ', '#   ', '#   ', '#   ', '####'),
+                'D': ('### ', '#  #', '#  #', '#  #', '### '), '!': ('#', '#', '#', ' ', '#')}
+        word = 'SUCCESS!' if ok else 'FAILED!'
+        rows = ['  '.join(font[c][i] for c in word) for i in range(5)]
+        line = '=' * 100
+        # the summary wrapped at the line's width, a problem per line
+        text = []
+        for part in summary.split(' | '):
+            text += textwrap.wrap(part, 100) or ['']
+        return '\n'.join([line, 'STATUS:'] + rows + text + [line])
+
     def _after_partial(self, ctx, h, name, entry, rules, how, con, verbose):
         """After a partial repository reached a host: PARTIAL.md there, and the repository indexed (plugged the first time)."""
         r = self._write_partial_note(ctx, h, name, entry['remote'], entry['artifacts'], rules, how, verbose)
@@ -4359,9 +4739,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         return {'return': 0}
 
     def _rclone(self, ctx, h, command, local, remote_path, whitelist=None, blacklist=None, extra=None,
-                con=True, verbose=False, workdir=None, unlock=False, from_remote=False):
+                con=True, verbose=False, workdir=None, unlock=False, from_remote=False, capture=False, accept=(0,)):
         """rclone <command> local -> host (host -> local with from_remote), through the task rclone-to-ssh (which
-        sets rclone up if needed)."""
+        sets rclone up if needed). capture: rclone's output comes back in 'output' instead of the console; accept:
+        the return codes that are not an error (rclone check answers 1 when the sides differ)."""
         r = self._ssh_parts(h)
         if r['return'] > 0: return r
 
@@ -4385,12 +4766,22 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if workdir: ii['workdir'] = workdir
         if unlock: ii['unlock'] = True
         if from_remote: ii['from_remote'] = True
+        if capture:
+            ii['capture'] = True
+            ii['unparsed'] = list(ii['unparsed']) + ['--color', 'never']      # the paths it names, read as they are
 
         rr = self.cm.access(ii)
         if self.cm.catch_error(rr): return rr
-        if rr.get('returncode', 0) != 0:
-            return self.cm.error(f'rclone {command} returned {rr.get("returncode")}')
-        return {'return': 0, 'cmd': rr.get('cmd')}
+        output = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', (rr.get('stdout') or '') + (rr.get('stderr') or ''))
+        if rr.get('returncode', 0) not in accept:
+            # the cause from rclone's own words, for the table and the verdict
+            tail = [l.split(' : ', 1)[-1].strip() for l in output.splitlines() if 'ERROR' in l or 'NOTICE' in l]
+            tail = [l for l in tail if l and 'Skipped' not in l][-2:]
+            r = self.cm.error(f'rclone {command} returned {rr.get("returncode")}' + (': ' + ' | '.join(tail) if tail else ''))
+            r['output'] = output
+            r['returncode'] = rr.get('returncode')
+            return r
+        return {'return': 0, 'cmd': rr.get('cmd'), 'returncode': rr.get('returncode', 0), 'output': output}
 
     ############################################################
     # Output

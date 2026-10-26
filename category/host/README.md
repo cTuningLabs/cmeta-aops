@@ -364,6 +364,28 @@ that moved no meta file - records, notes, code - touches no index. Each step pri
 reindex that fails is a warning (the files are there) with the command to run by hand. `sync: after:` is for
 other commands (an older `after: [cx --reindex]` still works, and now rebuilds an index that is already current).
 
+**The run finishes and proves it** (since 2026-10-26). A repository that fails does not stop the others: every
+repository of every selected host is synced, the table says per repository what moved (`ok: 1213 to host`, `ok:
+nothing to move`, `FAILED: ...`), the run ends with `STATUS: SUCCESS` or `STATUS: FAILED` in large letters with the
+problems under it, and its exit code is 1 when anything needs a person. A failing bisync is repaired where the cure
+is known and run again: a stale lock is dropped; rclone's delete guard ("too many deletes (>50%)") is passed with
+`--force` when the side that lost the files is still a repository (its `_cmr.*` there, not empty - the deleted
+files are kept in the host's sync-backup artifact), never for a wiped or detached side; a new pair (nothing on the
+host yet) is seeded from this machine; a transient error is tried again (`--retries`, 2). A pair whose baseline is
+gone while both sides hold files is reported with the `--resync --resync_mode=path1|path2 --dry_run` to read and
+run: which side wins is a person's call.
+
+**The check.** After every sync the two sides are compared name by name and size by size (`rclone check
+--size-only` with the sync's own filters, one way for a `copy`): `identical (2384)` in the CHECK column, or
+`DIFFERENCES: 3 missing there, 1 differ` with the listing kept in the bisync workdir (`check-<repository>.txt`).
+A difference right after a good sync is a file that changed during the run (the other side at work): the
+repository is synced once more and compared again. Conflict copies rclone left (`<name>.conflict1/2`, a file
+changed on both sides between two syncs) are reported; the ones of a memory index (`MEMORY.md`, two sessions each
+adding a line) are merged by line union and settled on both sides by the run itself. `--skip_check` turns the
+check off (a few seconds per repository: one listing of both sides); a dry run never checks; `git` has no check
+beyond its pull. On problems the run waits for Enter when a person is at the terminal, never with `-q` or
+`--pause-`.
+
 `--backup` keeps what a run overwrites or deletes: on each side of a bisync (on the host for a copy) the old file
 goes, with its path inside the repository, to the result artifact `sync-backup--<repository>` of that side's `local`
 repository, under `<the other side>/<run id>/` (rclone's `--backup-dir1` / `--backup-dir2`), as the named syncs of
