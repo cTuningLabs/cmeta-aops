@@ -140,3 +140,11 @@ Removing a server's folder removes its host key: clients then see a new host key
 - **`Permission denied (publickey)`:** the client's key is not among the allowed keys, or the
   client logs in as another user than the one who started the server.
 - **A port below 1024** needs root on Linux; use a higher one.
+
+## Windows: no console windows for the commands
+
+Win32-OpenSSH opens a console window for every non-interactive command a client runs (`cx host run`
+from another machine, a listing of Screen sessions) - a `cmd.exe` flashing on the desktop each time,
+whatever the server's own window state. Since 2026-10-26 the server runs on a hidden desktop of the
+session (`--hidden_desktop`, on by default): the windows appear there and never on the screen; `--foreground`
+prints the log through a pipe. `--hidden_desktop-` starts it the old way. Interactive sessions (a terminal, `ssh -t`) never opened a window either way.
