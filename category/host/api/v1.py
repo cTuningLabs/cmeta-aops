@@ -607,7 +607,7 @@ class Category(InitCategory):
         self,
         ctx,
         arg1=None,          # host alias
-        x11=False,          # ssh -X: X11 forwarding (or "access: x11: true" in the host's _desc.yaml)
+        x11=False,          # ssh -Y: X11 forwarding (or "access: x11: true" in the host's _desc.yaml); on Windows DISPLAY=localhost:0.0 unless set
         forward=None,       # ssh -L: local ports to forward to the host, e.g. --forward=1455 or --forward=8080:80,5000
         dry_run=False,      # print the command instead of opening the shell
         screen=None,        # persistent GNU Screen shell: bare = cx-host, or --screen=<name>
@@ -643,6 +643,11 @@ class Category(InitCategory):
             if self.cm.catch_error(r): return r
             cmd = r['cmd']
 
+        if x11 and os.name == 'nt' and not os.environ.get('DISPLAY'):
+            # the Windows OpenSSH client forwards X11 only with DISPLAY set: the X server of the laptop (VcXsrv, X410)
+            os.environ['DISPLAY'] = 'localhost:0.0'
+            if con:
+                print('cMeta info: DISPLAY=localhost:0.0 for the X11 forwarding (an X server must run here)')
         r = self._cmd_run(ctx, h, cmd, interactive=True, x11=bool(x11), forwards=self._csv(forward))
         if self.cm.catch_error(r): return r
 
@@ -1878,7 +1883,9 @@ class Category(InitCategory):
                     spec = f'cmeta{spec_extras}=={version}' if version else f'cmeta{spec_extras}@latest'
                     # --refresh: uv's cached view of PyPI lags a fresh release by minutes (2026-10-07: "already
                     # 0.33.0" and "no version of cmeta==0.33.1" on a VM right after the upload)
-                    cmd = f'{head}uv tool install --force --refresh "{spec}"'
+                    # --with pip: pip in the tool environment, as the installers do since cMeta 0.37.7 (a page's or a
+                    # task's packages install the usual way; a tool environment without it works through uv only)
+                    cmd = f'{head}uv tool install --force --refresh --with pip "{spec}"'
                 elif install == 'pip' and project:
                     venv = h['project_desc']['venv']
                     python = venv.rstrip('/\\') + ('/Scripts/python.exe' if self._shell(h).strip() in ('powershell', 'pwsh') else '/bin/python')
@@ -3302,7 +3309,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             # "Connection to <host> closed." would end every such run (errors and key warnings still show)
             opts += ['-t', '-o', 'LogLevel=ERROR']
         if x11:
-            opts.append('-X')
+            # trusted forwarding: untrusted (-X) needs xauth on the client, which Windows OpenSSH has not ("xauth key
+            # data not generated", the remote DISPLAY stays empty); -Y works with the X server on the laptop (2026-10-26)
+            opts.append('-Y')
         for fw in forwards or []:
             # "1455" forwards localhost:1455 here to localhost:1455 there; "8080:80" maps the two ports
             fw = str(fw).strip()
