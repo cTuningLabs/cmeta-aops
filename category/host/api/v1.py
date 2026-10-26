@@ -80,6 +80,9 @@ def windows_here():
 
 
 # GNU Screen as cMeta sets it up on a host (the newest copy found there; any version)
+# X11 inside Screen: the display of the login that attaches, written for the windows (see _screen_command)
+SCREEN_DISPLAY_HOOK = '[ -f ~/.cmeta-screen-display ] && . ~/.cmeta-screen-display'
+SCREEN_DISPLAY_SAVE = 'if [ -n "$DISPLAY" ]; then printf "export DISPLAY=%q\\n" "$DISPLAY" > ~/.cmeta-screen-display; if [ -n "$XAUTHORITY" ]; then printf "export XAUTHORITY=%q\\n" "$XAUTHORITY" >> ~/.cmeta-screen-display; fi; fi; '
 SCREEN_TOOL = 'cx tool run screen,05d0264fd24b40f6'
 
 # The limit of a query to a session (-Q, -ls): Screen 5.0 answers -Q through the attached display and waits while that
@@ -636,7 +639,7 @@ class Category(InitCategory):
         if screen:
             if not dry_run and not self._screen_terminal():
                 return self.cm.error('--screen needs a terminal here')
-            r = self._screen_command(h, None, screen, quiet=ctx['control'].get('quiet', False))
+            r = self._screen_command(h, None, screen, quiet=ctx['control'].get('quiet', False), x11=bool(x11))
             if self.cm.catch_error(r): return r
             cmd = r['cmd']
 
@@ -810,7 +813,7 @@ class Category(InitCategory):
             result['ended'] = ended
         return result
 
-    def _screen_command(self, h, cmd, name, title=None, quiet=False):
+    def _screen_command(self, h, cmd, name, title=None, quiet=False, x11=False):
         """Screen owns the shell/command; reconnecting resumes it without sending another command."""
         shell = self._shell(h).strip()
         if h['type'] == 'adb' or shell in ('powershell', 'pwsh', 'cmd', 'none', 'raw') or (self._here(h) and os.name == 'nt'):
@@ -820,6 +823,10 @@ class Category(InitCategory):
         if cmd is not None:
             shell_words += ['-c', cmd]
         title = title or ('shell' if cmd is None else cmd)
+        # X11: a window's shell keeps the DISPLAY of the login that made it, so a later login with --x11 could not
+        # open a window from inside (2026-10-26). The attach writes the login's DISPLAY to ~/.cmeta-screen-display and
+        # a window made by cMeta sources it at every prompt; an older window takes it with ". ~/.cmeta-screen-display".
+        shell_words = ['env', 'PROMPT_COMMAND=' + SCREEN_DISPLAY_HOOK] + shell_words
         args = ['-S', name, '-d', '-R', '-t', title] + shell_words
         # Show the actual existing title (including a run-ai project), then let Screen attach or create.
         # The new title/command are ignored by Screen when a session already exists.
@@ -833,7 +840,9 @@ class Category(InitCategory):
                  'then printf \'%s\\n\' "$cmeta_screen_windows"; fi')
         launch = f'{SCREEN_TOOL} --con-' + (' -q' if quiet else '') + ' -- ' + ' '.join(shlex.quote(w) for w in args)
         message = f'cMeta info: screen "{name}" on {h["alias"]}; existing windows (if any):'
-        return {'return': 0, 'cmd': f'printf \'%s\\n\' {shlex.quote(message)}; {query}; exec {launch}'}
+        if x11:
+            message += ' (X11: a window made before today takes this login\'s display with: . ~/.cmeta-screen-display)'
+        return {'return': 0, 'cmd': f'printf \'%s\\n\' {shlex.quote(message)}; {query}; {SCREEN_DISPLAY_SAVE}exec {launch}'}
 
     ############################################################
     def restart_(
