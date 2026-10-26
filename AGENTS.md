@@ -330,7 +330,7 @@ When you generate, modify or move code, metadata or scripts in this project:
   keep its `authors` / `copyright` fields intact.
 - **New source files** use the licence pointer only (user instruction reaffirmed
   2026-10-19). Do not add a per-file copyright line or "and cTuning Labs" to new
-  work. The user's Dapple-supported contributions are under Grigori Fursin's name.
+  work. The user's contributions made with an employer's support are under Grigori Fursin's name.
 
   ```python
   """
