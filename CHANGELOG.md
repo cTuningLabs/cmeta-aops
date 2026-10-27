@@ -2,6 +2,22 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.56.1
+- **A login run is a login run:** `run-claude` with the login (the flag, a project's `ai_gateway: login`, the config)
+  drops the gateway variables inherited from the parent process (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+  `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS`) before starting Claude Code: an import launched from a session that
+  runs through a company gateway (the HubSpot and Teams fetches, 2026-10-27) found the claude.ai connectors switched
+  off ("ANTHROPIC_API_KEY ... takes precedence over your claude.ai login"); it says which variables it dropped.
+- **A stopped website lets its port go:** `__run_server.sh --stop` (manage-cmeta-project `kill_tree`) ends with
+  SIGKILL any process of the server's tree that is still alive after the SIGTERM and the wait - the worker processes
+  of the site's process pool survived a stop and kept the port, so the next start failed with "address already in
+  use" (the Dapple Labs site, 2026-10-27).
+- **run-ai with OpenCode reads its context folders and finishes a one-prompt run:** the folders handed over with
+  `--add-dir` are outside the project, which OpenCode's permission `external_directory` asks about - and refuses in
+  `opencode run` - so `OPENCODE_CONFIG_CONTENT` now allows them (subfolders included); a refused tool call ended
+  OpenCode's loop with no answer at all (1.18), so a headless run sets `experimental.continue_loop_on_deny` and the
+  model is told about the refusal instead. A test covers the configuration.
+
 ## 0.56.0
 - **`cx host sync` finishes and proves it.** A failing repository no longer stops the run: every repository of every
   selected host is synced, and a failing bisync is repaired where the cure is known and run again - a stale lock

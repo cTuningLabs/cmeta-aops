@@ -148,6 +148,17 @@ def kill_tree(pid, wait=15):
     deadline = time.monotonic() + wait
     while pid_alive(pid) and time.monotonic() < deadline:
         time.sleep(0.5)
+    if os.name != 'nt':
+        # A process of the tree that did not end on SIGTERM is killed: the worker processes of a server's process
+        # pool (CMetaAsync) survived the stop of the Dapple Labs site and kept its port, so the next start failed with
+        # "address already in use" until they were killed by hand (2026-10-27)
+        time.sleep(1)
+        for target in tree:
+            if pid_alive(target):
+                try:
+                    os.kill(target, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
     return not pid_alive(pid)
 
 
