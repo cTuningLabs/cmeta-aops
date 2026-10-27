@@ -857,6 +857,25 @@ def test_the_write_mode_comes_from_the_flags_then_the_config_and_reaches_each_ha
         lab.config()
 
 
+def test_opencode_may_read_the_context_folders_and_a_refusal_does_not_end_a_one_prompt_run(fresh):
+    lab = fresh
+    lab.uses(lab.used)
+
+    # "opencode run" refuses a path outside the project (external_directory) and a refusal ended its loop with no text
+    r = lab.run(dry_run = True, harness = "opencode")
+    assert r["return"] == 0, r.get("error")
+    config = json.loads(r["env"]["OPENCODE_CONFIG_CONTENT"])
+    allowed = config["permission"]["external_directory"]
+    assert list(allowed.values()) == ["allow"] and same(list(allowed)[0][:-2], lab.used) and list(allowed)[0].endswith("/*")
+    assert config["experimental"] == {"continue_loop_on_deny": True} and len(config["instructions"]) == 3
+
+    # an interactive session keeps opencode's own behaviour (the user answers the refusal); no context, no permission
+    lab.uses()
+    r = lab.run(dry_run = True, harness = "opencode", interactive = True, prompt = "")
+    config = json.loads(r["env"]["OPENCODE_CONFIG_CONTENT"])
+    assert "experimental" not in config and "permission" not in config
+
+
 def test_write_all_keeps_a_direct_change_records_it_and_saves_the_version_before(fresh, monkeypatch):
     lab = fresh
     lab.uses(lab.used)

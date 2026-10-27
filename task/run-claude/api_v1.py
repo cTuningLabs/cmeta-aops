@@ -126,6 +126,16 @@ class CTask(InitCTask):
                                                                            r.get('base_url', ''), r.get('model') or 'the harness decides'))
                 for n in r.get('notes') or []:
                     print('  note: ' + n)
+        else:
+            # The login means the login: a gateway's variables inherited from the parent (a session that runs through
+            # a company gateway starts an import whose fetch needs the claude.ai connectors - 2026-10-27) would take
+            # precedence over the claude.ai login and switch the connectors off. They leave this process's
+            # environment, which the tool inherits.
+            dropped = [k for k in ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS')
+                       if os.environ.pop(k, None) is not None]
+            if dropped and ctx['control'].get('con', False):
+                print('')
+                print('AI gateway: login - %s inherited from the parent left the environment of this run' % ', '.join(dropped))
         return r
 
     def run(self,

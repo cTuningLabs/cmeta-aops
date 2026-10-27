@@ -63,7 +63,8 @@ resume scripts are needed: run-ai is the way back.
 How each harness is pointed at !AI - the tool's own settings, no API keys:
     claude     --settings {"autoMemoryDirectory": "<project>/!AI/memory"}  (read AND written);
                --plugin-dir <project>/!AI for the skills; --add-dir and --append-system-prompt-file for the context
-    opencode   OPENCODE_CONFIG_CONTENT = {"instructions": [!AI/MEMORY.md, !AI/memory/*.md, the context file]}  (read only)
+    opencode   OPENCODE_CONFIG_CONTENT = {"instructions": [!AI/MEMORY.md, !AI/memory/*.md, the context file]}  (read only);
+               context folders allowed by the permission external_directory; one-prompt runs continue after a refusal
     codex      the !AI index, the skills and the context are prepended to the prompt (read only); its SQLite state
                (threads, history, memories) lives in <project>/!AI/codex (CODEX_SQLITE_HOME; --codex_state=home: CODEX_HOME)
     antigravity (agy)  as codex; context folders are mounted with --add-dir  (read only; agy has conversations, no memory)
@@ -2023,9 +2024,23 @@ class CTask(InitCTask):
             if hk == 'opencode':
                 files = [(os.path.join(mem_dir, INDEX_FILE)).replace('\\', '/'), (os.path.join(mem_dir, '*.md')).replace('\\', '/'),
                          context_file.replace('\\', '/')]
-                env['OPENCODE_CONFIG_CONTENT'] = json.dumps({'instructions': files})
+                config = {'instructions': files}
+
+                # opencode's --add-dir: a path outside the project is the permission external_directory, "ask" by
+                # default and refused in "opencode run" - so the context folders are allowed (subfolders included)
+                if sources:
+                    config['permission'] = {'external_directory': {s['root'].replace('\\', '/').rstrip('/') + '/*': 'allow' for s in sources}}
+
+                # a refused tool call ends opencode's loop at once: a one-prompt run then returns no text at all
+                # (opencode 1.18); with this the model is told about the refusal and answers
+                if not interactive:
+                    config['experimental'] = {'continue_loop_on_deny': True}
+
+                env['OPENCODE_CONFIG_CONTENT'] = json.dumps(config)
                 notes.append('memory: read from %s as instructions (OPENCODE_CONFIG_CONTENT), with the orientation%s; opencode has no memory of its own' % (
                     mem_dir, ' and the context' if sources else ''))
+                if sources:
+                    notes.append('context folders: readable for opencode (permission external_directory in OPENCODE_CONFIG_CONTENT)')
                 text = own.replace(memory_text, '')     # the memory, the orientation and the context go through the instructions
             else:
                 text = context_text + own
