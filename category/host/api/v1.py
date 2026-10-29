@@ -891,9 +891,10 @@ class Category(InitCategory):
         Reboot a host - after a y/N question unless --yes or -q - then wait until it is back and run its
         "commands: after_restart" (servers to bring up). ssh hosts: "sudo -n shutdown -r now" (Windows:
         "shutdown /r /t 5"); a WSL distro: wsl -t + start; a container: docker restart; adb: adb reboot;
-        or the host's own "commands: restart". A host with "projects" is then checked like "cx host status"
-        does - each server on the host, its public URLs from here - until all answer or --check_timeout;
-        a project that does not answer makes the restart fail (--skip_check: no wait, no check).
+        or the host's own "commands: restart". A host with "projects" is checked like "cx host status" does - each
+        server on the host, its public URLs from here - just before the restart and after it, until everything
+        that answered before answers again or --check_timeout; one that does not makes the restart fail, a project
+        that did not answer before (a server started on demand only) is only reported (--skip_check: no check).
 
             cx host restart lab-laptop-ubuntu
             cx host restart my-azure-vm-ubuntu --yes      # then its web server comes up again
@@ -985,6 +986,16 @@ class Category(InitCategory):
                 if con: print('cancelled')
                 return {'return': 0, 'result': 'cancelled'}
 
+        # What answers NOW must answer after the restart: the projects' checks as "cx host status" makes them. A
+        # project that does not answer before (a server started on demand only, or one already broken) is reported
+        # afterwards, not required (2026-10-29: a host's on-demand cserver would have failed every restart)
+        required = None
+        if (h['desc'].get('projects') or {}) and not skip_check and not skip_after and not here:
+            self._project_status_all(ctx, [h])
+            self._public_status_all([h])
+            required = {k for k, s in self._project_checks(h).items()
+                        if self._check_answers(k, s) or s == 'check failed' or str(s).startswith('host ')}
+
         # The boot an ssh host runs NOW: "back" below means a new boot answers, not the old one still answering while
         # it shuts down (2026-10-13: a VM took more than 20 s to drop ssh, "back" came at the first poll, the
         # after_restart command started the servers on the old boot, and the reboot killed them seconds later)
@@ -1048,30 +1059,46 @@ class Category(InitCategory):
 
         # The servers: a launcher that detaches returns 0 at once, so its exit code says nothing about them
         # (2026-10-28: a VM came back, its start script returned 0, and a site's backend failed at every start -
-        # unseen for two days). Wait for every declared project, as "cx host status" checks it.
+        # unseen for two days). Wait for what answered before the restart, as "cx host status" checks it.
         failed = []
-        if (h['desc'].get('projects') or {}) and not skip_check and not skip_after:
+        if required is not None:
             h['status'] = 'up'
-            failed = self._wait_projects(ctx, h, con, int(check_timeout))
+            failed = self._wait_projects(ctx, h, con, int(check_timeout), required)
             result['projects'] = self._project_rows(h)
 
         self._refresh_state(ctx, h, con)            # the uptime, the versions: state.yaml says what is there now
         if failed:
-            result.update({'return': 1, 'error': f'{alias} is back, but not every project answers after '
-                                                 f'{int(check_timeout)}s: ' + ', '.join(failed)})
+            result.update({'return': 1, 'error': f'{alias} is back, but not every project that answered before the '
+                                                 f'restart answers after {int(check_timeout)}s: ' + ', '.join(failed)})
         return result
 
-    def _wait_projects(self, ctx, h, con, timeout):
+    def _project_checks(self, h):
+        """The checks of the host's declared projects as the last check left them: {('server', project): status,
+        ('url', project, url): status}."""
+        checks = {}
+        for p in self._project_rows(h):
+            checks[('server', p['alias'])] = p['status']
+            for x in p['public']:
+                checks[('url', p['alias'], x['url'])] = x.get('status', '')
+        return checks
+
+    @staticmethod
+    def _check_answers(key, status):
+        """A server answers when "up" (a project without a server URL, or a retired one, has nothing to answer);
+        a public URL when it "works"."""
+        return status in ('up', 'not configured', 'retired') if key[0] == 'server' else status == 'works'
+
+    def _wait_projects(self, ctx, h, con, timeout, required=None):
         """After a restart: check the host's declared projects - each server on the host, its public URLs from
-        here - until all of them answer or the time is up, then print them. Returns the projects that do not
-        answer: a server not "up", or a public URL that does not work (a project without a server URL counts as up)."""
+        here - until every check of `required` (all of them when None) answers or the time is up, then print them.
+        Returns the projects with a required check that does not answer; the others are printed, not counted."""
         t_end = time.monotonic() + timeout
         while True:
             self._project_status_all(ctx, [h])
             self._public_status_all([h])
-            failed = [p['alias'] for p in self._project_rows(h)
-                      if p['status'] not in ('up', 'not configured', 'retired')
-                      or any(x.get('status') != 'works' for x in p['public'])]
+            now = self._project_checks(h)
+            failing = [k for k, s in now.items() if not self._check_answers(k, s) and (required is None or k in required)]
+            failed = list(dict.fromkeys(k[1] for k in failing))
             if not failed or time.monotonic() >= t_end:
                 break
             if con:
@@ -1079,12 +1106,17 @@ class Category(InitCategory):
             time.sleep(15)
 
         if con:
+            def note(key, status):
+                return '' if self._check_answers(key, status) or required is None or key in required \
+                    else '  (did not answer before the restart either: not required)'
             print('')
             print(f'PROJECTS ({h["alias"]}):')
             for p in self._project_rows(h):
-                print(f'  {p["alias"]:36} {p["status"]:12} {(p["server"] or {}).get("url") or ""}')
+                print(f'  {p["alias"]:36} {p["status"]:12} {(p["server"] or {}).get("url") or ""}'
+                      + note(('server', p['alias']), p['status']))
                 for x in p['public']:
-                    print(f'      {x.get("status", ""):10} {x["url"]}' + (f'  (HTTP {x["http_status"]})' if x.get('http_status') else ''))
+                    print(f'      {x.get("status", ""):10} {x["url"]}' + (f'  (HTTP {x["http_status"]})' if x.get('http_status') else '')
+                          + note(('url', p['alias'], x['url']), x.get('status', '')))
         return failed
 
     ############################################################

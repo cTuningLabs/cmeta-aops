@@ -165,9 +165,11 @@ WSL `wsl -t` + start; `docker restart`; `adb reboot`; or the host's `commands: r
 host answers again, then runs its `commands: after_restart` on it (the servers to bring up).
 
 A host with `projects` is then waited for (since 2026-10-29): every project's server URL is checked on the host
-and its `public` URLs from here, as `cx host status` does, every 15 s until all of them answer or
-`--check_timeout` (300 s) runs out. The table of the last check is printed, and a project that still does not
-answer makes the restart fail (exit code 1, the projects named) - so does `cx host upgrade --restart`. A launcher
+and its `public` URLs from here, as `cx host status` does - once just before the restart, then every 15 s after
+it until everything that answered before answers again or `--check_timeout` (300 s) runs out. The table of the
+last check is printed, and a check that answered before and still does not makes the restart fail (exit code 1,
+the projects named) - so does `cx host upgrade --restart`. A project that did not answer before the restart (a
+server started on demand only, or one already broken) is printed with a note, not required. A launcher
 that detaches returns 0 at once, so the exit code of `after_restart` says nothing about the servers: on 2026-10-28
 a VM came back, its `_start.sh` returned 0, and one site's backend failed at every start, unseen for two days.
 `--skip_check` restarts without the wait; `--skip_after` skips it too (no server was started).

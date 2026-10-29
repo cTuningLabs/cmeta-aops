@@ -2,6 +2,12 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.57.1
+- **`cx host restart` requires what answered before it:** the projects of the host are checked once just before
+  the restart, and only the checks that answered then must answer again; a server started on demand only (down
+  before the restart, down after it) is reported with a note instead of failing every restart of its host, as it
+  did in 0.57.0. A check that cannot run before the restart counts as required.
+
 ## 0.57.0
 - **`cx host restart` waits for the servers it brought up.** A host with `projects` is checked after its
   `after_restart` commands as `cx host status` checks it - each server on the host, its public URLs from here -
