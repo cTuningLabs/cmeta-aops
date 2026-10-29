@@ -52,6 +52,9 @@ cx host status [host] [-d] [--timeout=3] [--cmd_timeout=20]
                                       one line per host: HOST TYPE OS STATUS ADDRESS; -d (--details) adds TIME and, under a
                                       moving device, what each parent answered and how long it took
                                       here | up | stopped (a WSL distro between uses: wsl.exe starts it for the next command, so probe, sync, upgrade and restart take it) | down | missing | via <parent> down | timeout (...)
+                                      an ssh host whose port THIS machine refuses to Python (WinError 10013: a local firewall, or a VPN
+                                      with per-program split tunnelling that lets ssh out and not Python) is asked through its own ssh
+                                      command ("exit" there, ~1 s): up | down (through ssh) | timeout (..., through ssh); never otherwise
 cx host probe [host|selection]        -> state.yaml: OS, kernel, GPU, sudo, python, uv, cx, cMeta version/home, AOPS version, disk, repos
 cx host show <host>                   _desc.yaml + state.yaml
 cx host run <host> "<command>"        locally when the host is this machine, else ssh / wsl.exe / docker exec / adb shell
@@ -66,7 +69,7 @@ cx host up|down <host>                WSL distro, container (created from its im
 cx host destroy <instance> [--image] [--keep_artifact] [--force]   an instance cMeta made (get-host--docker / get-host--wsl): the container (or the WSL distribution and its disk), the artifact, with --image its image
 cx host snapshot <instance> [--name=<name>] [--note=<text>]       the instance's state kept: docker/podman commit to cmeta/snapshot:<instance>-<name>, a WSL export next to its disk; recorded under "snapshots" in its _desc
 cx host restore <instance> [--name=<snapshot>]                    the instance back to a snapshot (the last one by default): the container made again from the image, the distribution imported again
-cx host restart <host> [--yes] [--no-wait] [--timeout=600] [--skip_after] [--dry_run]   (also: reboot)
+cx host restart <host> [--yes] [--no-wait] [--timeout=600] [--skip_after] [--skip_check] [--check_timeout=300] [--dry_run]   (also: reboot)
 cx host sync [host|selection] [--repos=a,b] [--resync [--resync_mode=newer|path1|path2]] [--unlock] [--dry_run] [--skip_after] [--backup]
 cx host push <host> <repo> --dirs=task/x/,tool/y/ [--dry_run] [--delete] [--index-]   then "cx repo reindex <repo>" on the host, so a new artifact is found there
 cx host push <host> <local path> --to=<remote path>      a folder goes under --to, a single file lands AT --to (rclone copyto)
@@ -160,6 +163,14 @@ A host named outright that is down is an error; in a selection it is skipped and
 `restart` asks y/N unless `--yes` or `-q`, reboots (`sudo -n shutdown -r now`; Windows `shutdown /r /t 5`;
 WSL `wsl -t` + start; `docker restart`; `adb reboot`; or the host's `commands: restart`), waits until the
 host answers again, then runs its `commands: after_restart` on it (the servers to bring up).
+
+A host with `projects` is then waited for (since 2026-10-29): every project's server URL is checked on the host
+and its `public` URLs from here, as `cx host status` does, every 15 s until all of them answer or
+`--check_timeout` (300 s) runs out. The table of the last check is printed, and a project that still does not
+answer makes the restart fail (exit code 1, the projects named) - so does `cx host upgrade --restart`. A launcher
+that detaches returns 0 at once, so the exit code of `after_restart` says nothing about the servers: on 2026-10-28
+a VM came back, its `_start.sh` returned 0, and one site's backend failed at every start, unseen for two days.
+`--skip_check` restarts without the wait; `--skip_after` skips it too (no server was started).
 
 `upgrade` replaces the engine under whatever runs on the host and never stops or restarts a server:
 a running cserver keeps the modules it has loaded and reads every later import from the new tree (or

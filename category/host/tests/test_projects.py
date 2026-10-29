@@ -216,6 +216,69 @@ class Projects(unittest.TestCase):
             self.assertIn("-c '", self.cat._cmd_run({}, hosts['docker'], quoted)['cmd'])
             self.assertEqual(scripts, [])
 
+    # After a restart: the declared projects are waited for (2026-10-29: a site's backend failed at every start
+    # after a reboot while the detached launcher returned 0)
+
+    def stub_checks(self, rounds):
+        """Each round of the wait sees the next (server status, public URL status) of rounds; the last one repeats."""
+        calls = []
+        self.host['desc']['projects']['web']['server']['public'] = ['https://example.org/repo/']
+        def now():
+            return rounds[min(len(calls), len(rounds)) - 1]
+        def project_status(ctx, hosts):
+            calls.append(1)
+            hosts[0]['project_status'] = {'web': {'status': now()[0], 'url': 'http://127.0.0.1:1/'}}
+        def public_status(hosts):
+            hosts[0]['public_status'] = {'web': [{'url': 'https://example.org/repo/', 'status': now()[1]}]}
+        self.cat._project_status_all = project_status
+        self.cat._public_status_all = public_status
+        return calls
+
+    def test_wait_projects_waits_until_server_and_public_urls_answer(self):
+        calls = self.stub_checks([('down', 'unreachable'), ('up', 'http 502'), ('up', 'works')])
+        with mock.patch.object(module.time, 'sleep') as sleep:
+            self.assertEqual(self.cat._wait_projects({}, self.host, False, 300), [])
+        self.assertEqual((len(calls), sleep.call_count), (3, 2))
+
+    def test_wait_projects_reports_what_still_fails_when_the_time_is_up(self):
+        calls = self.stub_checks([('up', 'http 502')])
+        clock = iter(range(0, 10000, 100))
+        with mock.patch.object(module.time, 'sleep'), mock.patch.object(module.time, 'monotonic', lambda: next(clock)):
+            self.assertEqual(self.cat._wait_projects({}, self.host, False, 300), ['web'])
+        self.assertEqual(len(calls), 3)
+        # a project without a server URL is not a failure; neither is a retired one
+        self.stub_checks([('not configured', 'works')])
+        self.assertEqual(self.cat._wait_projects({}, self.host, False, 0), [])
+
+    def restart(self, **kwargs):
+        self.host['desc']['commands'] = {'after_restart': ['sh ~/_start.sh &']}
+        stamps = iter(['boot-1', 'boot-2'])
+        self.cat.cm.catch_error = lambda r: r.get('return', 0) > 0
+        self.cat._get_host = lambda ctx, alias: {'return': 0, 'host': self.host}
+        self.cat._status = lambda ctx, h, *a, **k: 'up'
+        self.cat._shell = lambda h: 'bash -l'
+        self.cat._cmd_run = lambda ctx, h, cmd, **k: {'return': 0, 'cmd': 'ssh vm ' + cmd}
+        self.cat._run_local = lambda cmd, **k: {'returncode': 255 if 'shutdown' in cmd else 0}
+        self.cat._boot_stamp = lambda ctx, h: next(stamps)
+        self.cat._refresh_state = lambda ctx, h, con: None
+        waited = []
+        self.cat._wait_projects = lambda ctx, h, con, timeout: waited.append(timeout) or ['web']
+        with mock.patch.object(module.time, 'sleep'):
+            r = self.cat.restart_({'control': {'quiet': True}}, arg1='vm', **kwargs)
+        return r, waited
+
+    def test_restart_fails_when_a_project_does_not_answer(self):
+        r, waited = self.restart(check_timeout=120)
+        self.assertEqual((r['return'], waited), (1, [120]))
+        self.assertIn('not every project answers', r['error'])
+        self.assertIn('web', r['error'])
+        self.assertEqual(r['after_restart'], [{'cmd': 'sh ~/_start.sh &', 'returncode': 0}])
+
+    def test_restart_without_check_or_without_after_restart_does_not_wait(self):
+        for flags in ({'skip_check': True}, {'skip_after': True}):
+            r, waited = self.restart(**flags)
+            self.assertEqual((r['return'], waited), (0, []), flags)
+
 
 if __name__ == '__main__':
     unittest.main()
