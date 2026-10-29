@@ -250,8 +250,11 @@ class Projects(unittest.TestCase):
         self.stub_checks([('not configured', 'works')])
         self.assertEqual(self.cat._wait_projects({}, self.host, False, 0), [])
 
-    def restart(self, **kwargs):
+    def restart(self, before=('up', 'works'), stub_wait=True, **kwargs):
+        """A restart of the host whose project answers `before` (server, public URL) just before it; the wait after
+        it is stubbed (it fails 'web') unless stub_wait is False."""
         self.host['desc']['commands'] = {'after_restart': ['sh ~/_start.sh &']}
+        self.stub_checks([before])
         stamps = iter(['boot-1', 'boot-2'])
         self.cat.cm.catch_error = lambda r: r.get('return', 0) > 0
         self.cat._get_host = lambda ctx, alias: {'return': 0, 'host': self.host}
@@ -262,15 +265,17 @@ class Projects(unittest.TestCase):
         self.cat._boot_stamp = lambda ctx, h: next(stamps)
         self.cat._refresh_state = lambda ctx, h, con: None
         waited = []
-        self.cat._wait_projects = lambda ctx, h, con, timeout: waited.append(timeout) or ['web']
+        if stub_wait:
+            self.cat._wait_projects = lambda ctx, h, con, timeout, required=None: waited.append((timeout, required)) or ['web']
         with mock.patch.object(module.time, 'sleep'):
             r = self.cat.restart_({'control': {'quiet': True}}, arg1='vm', **kwargs)
         return r, waited
 
-    def test_restart_fails_when_a_project_does_not_answer(self):
+    def test_restart_fails_when_a_project_that_answered_before_does_not(self):
         r, waited = self.restart(check_timeout=120)
-        self.assertEqual((r['return'], waited), (1, [120]))
-        self.assertIn('not every project answers', r['error'])
+        self.assertEqual((r['return'], [w[0] for w in waited]), (1, [120]))
+        self.assertEqual(waited[0][1], {('server', 'web'), ('url', 'web', 'https://example.org/repo/')})
+        self.assertIn('not every project that answered before the restart answers', r['error'])
         self.assertIn('web', r['error'])
         self.assertEqual(r['after_restart'], [{'cmd': 'sh ~/_start.sh &', 'returncode': 0}])
 
@@ -278,6 +283,16 @@ class Projects(unittest.TestCase):
         for flags in ({'skip_check': True}, {'skip_after': True}):
             r, waited = self.restart(**flags)
             self.assertEqual((r['return'], waited), (0, []), flags)
+
+    def test_a_server_down_before_the_restart_is_reported_not_required(self):
+        """A server started on demand only (down before the restart, down after it) does not fail the restart; a
+        check that answered before does when it stays down."""
+        self.stub_checks([('down', 'unreachable')])
+        with mock.patch.object(module.time, 'sleep'):
+            self.assertEqual(self.cat._wait_projects({}, self.host, False, 0, required=set()), [])
+            self.assertEqual(self.cat._wait_projects({}, self.host, False, 0, required={('server', 'web')}), ['web'])
+        r, _ = self.restart(before=('down', 'unreachable'), stub_wait=False, check_timeout=0)
+        self.assertEqual(r['return'], 0, r.get('error'))
 
 
 if __name__ == '__main__':
