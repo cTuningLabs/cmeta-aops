@@ -185,6 +185,31 @@ def site_label(url):
     return '/'.join([u.netloc] + folders)
 
 
+def clixml_text(text):
+    """
+    PowerShell's "#< CLIXML" blocks as plain text: started with -EncodedCommand (every command and script cx sends to
+    a PowerShell host) and without a console, PowerShell writes its error, warning and progress records to stderr as
+    serialized XML, unreadable in an error line (seen 2026-10-29). The text of each record stays, progress goes, any
+    other text is kept as it is; no switch of powershell.exe turns this off.
+    """
+    if not text or '#< CLIXML' not in text:
+        return text
+    import html
+    out = []
+    for line in text.splitlines():
+        if line.strip() == '#< CLIXML':
+            continue
+        if not line.startswith('<Objs '):
+            out.append(line)
+            continue
+        records = ''
+        for kind, body in re.findall(r'<S S="(\w+)">(.*?)</S>', line):
+            body = re.sub(r'_x([0-9A-Fa-f]{4})_', lambda m: chr(int(m.group(1), 16)), html.unescape(body))
+            records += ('WARNING: ' if kind.lower() == 'warning' else '') + body
+        out += records.splitlines()
+    return '\n'.join(out) + ('\n' if out else '')
+
+
 def screens_script(quit=None):
     """The screens script, with the session `quit` (a validated screen name) ended before the listing: "@@quit <rc>"
     says whether Screen found it (0) - its shell and whatever ran in it end with it."""
@@ -3738,7 +3763,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             # script, with its output in UTF-8; the remote command line then holds no character cmd.exe
             # (sshd's default shell) could misread. $input is the one stdin reader that took a 34 KB
             # script: a StreamReader on OpenStandardInput() and [Console]::In.ReadToEnd() both stalled
-            # for ever beyond a few KB (the 4.9 KB probe hung until its timeout).
+            # for ever beyond a few KB (the 4.9 KB probe hung until its timeout). No progress records: without a
+            # console PowerShell sends them to stderr as a "#< CLIXML" blob ("Preparing modules for first use" of
+            # Get-Volume, seen 2026-10-29), as _powershell_command already says for a command.
             import base64, hashlib, tempfile
             with open(script, 'rb') as f:
                 b64 = base64.b64encode(f.read()).decode('ascii')
@@ -3746,11 +3773,13 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                                       'cmeta-host-script-' + hashlib.sha1(script.encode('utf-8')).hexdigest()[:12] + '.b64')
             with open(stdin_file, 'w') as f:
                 f.write('\n'.join(b64[i:i + 76] for i in range(0, len(b64), 76)) + '\n')
-            reader_ps = ('[Console]::OutputEncoding = [Text.Encoding]::UTF8; '
+            reader_ps = ("[Console]::OutputEncoding = [Text.Encoding]::UTF8; $ProgressPreference = 'SilentlyContinue'; "
                          "$s = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String((@($input) -join ''))); "
                          'Invoke-Expression $s')
             encoded = base64.b64encode(reader_ps.encode('utf-16-le')).decode('ascii')
-            reader = f'{shell.strip()} -NoProfile -EncodedCommand {encoded}'
+            # -ExecutionPolicy Bypass as for a command (_powershell_command): under Windows' default policy an
+            # Import-Module of a gallery module in a script waited without a word (2026-10-29)
+            reader = f'{shell.strip()} -NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded}'
             here_cmd = f'{shell.strip()} -NoProfile -ExecutionPolicy Bypass -File {self.cm.utils.files.quote_path(script)}'
         elif shell.strip() == 'cmd':
             return self.cm.error('a script on stdin needs a bash or powershell shell on the host')
@@ -3787,8 +3816,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         # The child writes straight to the terminal: push out what was printed before it, or the
         # host header lands after the command output when stdout is a pipe
         sys.stdout.flush()
-        return self.cm.utils.sys.run(cmd, capture_output=capture, timeout=timeout, con=con, verbose=verbose,
-                                     print_cmd=verbose, fail_on_error=False, logger=self.logger)
+        rr = self.cm.utils.sys.run(cmd, capture_output=capture, timeout=timeout, con=con, verbose=verbose,
+                                   print_cmd=verbose, fail_on_error=False, logger=self.logger)
+        if rr.get('stderr'):
+            rr['stderr'] = clixml_text(rr['stderr'])
+        return rr
 
     ############################################################
     # up / down

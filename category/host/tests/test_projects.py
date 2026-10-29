@@ -187,8 +187,10 @@ class Projects(unittest.TestCase):
         self.assertEqual(row['projects'][0]['status'], 'down')
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            self.cat._print_table(['HOST', 'STATUS'], [row], projects=self.cat._project_details([self.host]))
-        self.assertTrue(any(line.startswith('  * web  server: down') for line in output.getvalue().splitlines()))
+            self.cat._print_table(['HOST', 'STATUS'], [row], projects=self.cat._project_details([self.host], ['HOST', 'STATUS']))
+        # the project row under its host: indented, with its own status in the STATUS column
+        self.assertTrue(any(line.startswith('  * web') and 'down' in line for line in output.getvalue().splitlines()),
+                        output.getvalue())
 
     def test_a_quoted_command_for_a_local_wsl_or_docker_host_travels_as_a_script(self):
         """On Windows a command for wsl.exe / docker exec is one argument that cmd.exe parses: with a double
@@ -293,6 +295,24 @@ class Projects(unittest.TestCase):
             self.assertEqual(self.cat._wait_projects({}, self.host, False, 0, required={('server', 'web')}), ['web'])
         r, _ = self.restart(before=('down', 'unreachable'), stub_wait=False, check_timeout=0)
         self.assertEqual(r['return'], 0, r.get('error'))
+
+
+class PowerShellOutput(unittest.TestCase):
+    def test_clixml_on_stderr_becomes_the_text_of_its_records(self):
+        """What a Windows host's PowerShell wrote to stderr over ssh (2026-10-29): two errors and a progress record."""
+        stderr = ('#< CLIXML\r\n<Objs Version="1.1.0.1" xmlns="http://schemas.microsoft.com/powershell/2004/04">'
+                  '<Obj S="progress" RefId="0"><TN RefId="0"><T>System.Management.Automation.PSCustomObject</T></TN>'
+                  '<MS><PR N="Record"><AV>Preparing modules for first use.</AV></PR></MS></Obj>'
+                  '<S S="Error">New-Object : Creating an instance of the COM component failed: 80070005 Access is denied._x000D__x000A_</S>'
+                  '<S S="Error">At line:6 char:21_x000D__x000A_</S>'
+                  '<S S="warning">a &lt;warning&gt; with an _x005F_underscore_x000D__x000A_</S></Objs>\r\n')
+        self.assertEqual(module.clixml_text(stderr).splitlines(),
+                         ['New-Object : Creating an instance of the COM component failed: 80070005 Access is denied.',
+                          'At line:6 char:21', 'WARNING: a <warning> with an _underscore'])
+
+        # progress alone leaves nothing; text that is no CLIXML stays as it is
+        self.assertEqual(module.clixml_text('#< CLIXML\n<Objs Version="1.1.0.1"><Obj S="progress" RefId="0"></Obj></Objs>\n'), '')
+        self.assertEqual(module.clixml_text('ssh: connect to host x port 22: timed out\n'), 'ssh: connect to host x port 22: timed out\n')
 
 
 if __name__ == '__main__':
