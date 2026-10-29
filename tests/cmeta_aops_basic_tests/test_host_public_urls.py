@@ -94,6 +94,19 @@ def test_public_status_of_every_kind(host):
     assert lines[2]['status'] == 'http 503' and lines[2]['extra'] == '(HTTP 503)'
 
 
+def test_a_public_url_is_named_by_its_host_and_the_folders_before_its_file(module):
+    """Three URLs of one site are three names in the table, not three times the host."""
+    names = {'https://example.org/': 'example.org',
+             'https://example.org/wiki/index.php/Main_Page': 'example.org/wiki',
+             'https://example.org/cm/wiki/index.php?title=Main_Page': 'example.org/cm/wiki',
+             'https://example.org/repo/': 'example.org/repo',
+             'https://example.org/cm/repo/': 'example.org/cm/repo',
+             'https://example.org/healthz': 'example.org',
+             'http://127.0.0.1:8338/play/': '127.0.0.1:8338/play',
+             'not a url': 'not a url'}
+    assert {url: module.site_label(url) for url in names} == names
+
+
 def test_a_retired_host_is_not_checked(host):
     h = {'alias': 'old', 'type': 'ssh', 'desc': {'retired': True, 'projects': {'site': {'server': {'public': ['http://127.0.0.1:1/']}}}}, 'state': {}}
     host._public_status_all([h], timeout=1)

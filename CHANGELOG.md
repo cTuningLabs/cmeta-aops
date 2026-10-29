@@ -2,6 +2,24 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.57.0
+- **`cx host restart` waits for the servers it brought up.** A host with `projects` is checked after its
+  `after_restart` commands as `cx host status` checks it - each server on the host, its public URLs from here -
+  every 15 s until all of them answer or `--check_timeout` (300 s) runs out; one that still does not answer makes
+  the restart fail (exit code 1, the projects named), and `cx host upgrade --restart` with it. A launcher that
+  detaches returns 0 at once, so its exit code said nothing about the servers: a site's backend that failed at
+  every start after a reboot went unseen for two days. `--skip_check` restarts without the wait; `--skip_after`
+  skips it too.
+- **`cx host status` behind a VPN that splits per program:** when this machine refuses Python's own socket
+  (WinError 10013 - a local firewall, or a VPN with per-program split tunnelling that lets ssh out and not Python),
+  an ssh host is asked through its own ssh command (`exit` there, about a second, and only then): `up`,
+  `down (through ssh)` or `timeout (..., through ssh)` instead of every such host shown as down. The status checks
+  run with stdin closed: Windows' ssh.exe on a console stdin (a cserver or a `cx` started in cmd.exe) waits for a
+  key after the remote command ended.
+- **The public URLs of one site tell apart:** `cx host status` names a public URL by its host and the folders before
+  its file (`example.org/wiki`, `example.org/cm/repo`; `example.org/healthz` stays `example.org`) instead of the host
+  alone; the full URL stays in the ADDRESS column.
+
 ## 0.56.1
 - **A login run is a login run:** `run-claude` with the login (the flag, a project's `ai_gateway: login`, the config)
   drops the gateway variables inherited from the parent process (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,

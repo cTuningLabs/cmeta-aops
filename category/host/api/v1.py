@@ -142,10 +142,12 @@ done
 
 def ssh_banner_status(addr, port, timeout):
     """
-    up | down | refused | no banner: the port accepts a connection AND the server sends its identification line
-    ("SSH-2.0-..."), which an sshd sends first, at once. A port that accepts and then closes without it (a wedged sshd,
-    OpenSSH 9.8+ refusing a penalised source) is "refused"; silence within the timeout is "no banner": neither can run
-    a command, and "up" from the TCP accept alone misled (a VM, 2026-10-25: up in the table, every ssh reset).
+    up | down | refused | no banner | blocked here: the port accepts a connection AND the server sends its
+    identification line ("SSH-2.0-..."), which an sshd sends first, at once. A port that accepts and then closes without
+    it (a wedged sshd, OpenSSH 9.8+ refusing a penalised source) is "refused"; silence within the timeout is "no banner":
+    neither can run a command, and "up" from the TCP accept alone misled (a VM, 2026-10-25: up in the table, every ssh
+    reset). "blocked here": THIS machine refused the socket (WinError 10013 - a local firewall, or a VPN that lets only
+    chosen programs out): it says nothing about the host.
     """
     try:
         with socket.create_connection((addr, port), timeout=timeout) as s:
@@ -157,8 +159,30 @@ def ssh_banner_status(addr, port, timeout):
             except OSError:
                 return 'refused'
             return 'up' if data.startswith(b'SSH-') else ('refused' if not data else 'no banner')
+    except PermissionError:
+        return 'blocked here'
     except OSError:
         return 'down'
+
+
+def site_label(url):
+    """
+    The name of a public URL in the tables: its host and the folders before its file, so that the URLs of one site
+    tell apart (the user, 2026-10-29) - https://example.org/wiki/index.php/Main_Page is example.org/wiki,
+    https://example.org/cm/repo/ is example.org/cm/repo, https://example.org/healthz is example.org (a last part
+    without "/" after it is a file or an endpoint, and so is any part with a dot).
+    """
+    u = urllib.parse.urlsplit(str(url))
+    if not u.netloc:
+        return str(url)
+    folders = []
+    parts = u.path.split('/')[1:]
+    for i, part in enumerate(parts):
+        if '.' in part or i == len(parts) - 1:
+            break
+        if part:
+            folders.append(part)
+    return '/'.join([u.netloc] + folders)
 
 
 def screens_script(quit=None):
@@ -859,13 +883,17 @@ class Category(InitCategory):
         wait=True,          # wait until the host answers again (--no-wait: return at once)
         timeout=600,        # seconds to wait for it
         skip_after=False,   # do not run the host's "commands: after_restart"
+        skip_check=False,   # do not wait for the host's declared projects afterwards
+        check_timeout=300,  # seconds to wait for every project's server and public URLs to answer
         dry_run=False,      # print what would run, restart nothing
     ):
         """
         Reboot a host - after a y/N question unless --yes or -q - then wait until it is back and run its
         "commands: after_restart" (servers to bring up). ssh hosts: "sudo -n shutdown -r now" (Windows:
         "shutdown /r /t 5"); a WSL distro: wsl -t + start; a container: docker restart; adb: adb reboot;
-        or the host's own "commands: restart".
+        or the host's own "commands: restart". A host with "projects" is then checked like "cx host status"
+        does - each server on the host, its public URLs from here - until all answer or --check_timeout;
+        a project that does not answer makes the restart fail (--skip_check: no wait, no check).
 
             cx host restart lab-laptop-ubuntu
             cx host restart my-azure-vm-ubuntu --yes      # then its web server comes up again
@@ -1018,8 +1046,46 @@ class Category(InitCategory):
                 if con and rc != 0:
                     print(f'WARNING: "{c}" on {alias} returned {rc}: {(rr.get("stderr") or "").strip()[-300:]}')
 
+        # The servers: a launcher that detaches returns 0 at once, so its exit code says nothing about them
+        # (2026-10-28: a VM came back, its start script returned 0, and a site's backend failed at every start -
+        # unseen for two days). Wait for every declared project, as "cx host status" checks it.
+        failed = []
+        if (h['desc'].get('projects') or {}) and not skip_check and not skip_after:
+            h['status'] = 'up'
+            failed = self._wait_projects(ctx, h, con, int(check_timeout))
+            result['projects'] = self._project_rows(h)
+
         self._refresh_state(ctx, h, con)            # the uptime, the versions: state.yaml says what is there now
+        if failed:
+            result.update({'return': 1, 'error': f'{alias} is back, but not every project answers after '
+                                                 f'{int(check_timeout)}s: ' + ', '.join(failed)})
         return result
+
+    def _wait_projects(self, ctx, h, con, timeout):
+        """After a restart: check the host's declared projects - each server on the host, its public URLs from
+        here - until all of them answer or the time is up, then print them. Returns the projects that do not
+        answer: a server not "up", or a public URL that does not work (a project without a server URL counts as up)."""
+        t_end = time.monotonic() + timeout
+        while True:
+            self._project_status_all(ctx, [h])
+            self._public_status_all([h])
+            failed = [p['alias'] for p in self._project_rows(h)
+                      if p['status'] not in ('up', 'not configured', 'retired')
+                      or any(x.get('status') != 'works' for x in p['public'])]
+            if not failed or time.monotonic() >= t_end:
+                break
+            if con:
+                print(f'{h["alias"]}: waiting for {len(failed)} project(s): {", ".join(failed)}')
+            time.sleep(15)
+
+        if con:
+            print('')
+            print(f'PROJECTS ({h["alias"]}):')
+            for p in self._project_rows(h):
+                print(f'  {p["alias"]:36} {p["status"]:12} {(p["server"] or {}).get("url") or ""}')
+                for x in p['public']:
+                    print(f'      {x.get("status", ""):10} {x["url"]}' + (f'  (HTTP {x["http_status"]})' if x.get('http_status') else ''))
+        return failed
 
     ############################################################
     def up_(
@@ -2727,7 +2793,7 @@ class Category(InitCategory):
                 rows.append(row)
                 # the public URLs of the server, checked from here: one line each under the project
                 for pub in p.get('public') or []:
-                    site = urllib.parse.urlsplit(pub['url']).netloc or pub['url']
+                    site = site_label(pub['url'])
                     prow = {'alias': '      ' + site, 'type': 'web', 'status': pub.get('status', ''), 'cmeta': '', 'aops': '', 'probed': ''}
                     if 'ADDRESS' in columns:
                         prow['address'] = pub['url']
@@ -3065,10 +3131,12 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         A status check: `cmd` through the local shell, output captured, the whole process tree killed at
         the timeout (the engine's run helper waits for a hung child; a shell's child, ssh.exe, would keep
         the pipes open after the shell alone is killed). {'returncode', 'stdout', 'stderr', 'timeout'}.
+        No check reads stdin, so it is closed: Windows' ssh.exe on a console stdin (a cserver or a cx started in
+        cmd.exe) waits for a key after the remote command ended - every check through ssh timed out (2026-10-29).
         """
         posix = os.name != 'nt'
         try:
-            p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            p = subprocess.Popen(cmd, shell=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  start_new_session=posix)
         except OSError as e:
             return {'returncode': 127, 'stdout': '', 'stderr': str(e), 'timeout': False}
@@ -3153,7 +3221,13 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 return 'here'
             addr = acc.get('address') or h['alias']
             port = int(acc.get('port') or DEFAULT_SSH_PORT)
-            return ssh_banner_status(addr, port, timeout)
+            status = ssh_banner_status(addr, port, timeout)
+            if status == 'blocked here':
+                # This machine refused Python's own socket: a VPN with per-program split tunnelling may let ssh out
+                # and not Python, and every host behind it looked "down" (2026-10-29). The host's own ssh command
+                # answers instead.
+                status = self._status_through_ssh(ctx, h, cmd_timeout)
+            return status
 
         parent = None
         if len(h.get('via_list') or []) > 1 and t == 'adb':
@@ -3219,6 +3293,20 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             return 'down'
 
         return f'unknown type "{t}"'
+
+    def _status_through_ssh(self, ctx, h, cmd_timeout):
+        """
+        The status of an ssh host whose port this machine's Python may not open (ssh_banner_status said "blocked
+        here"): the host's own ssh command (its key, BatchMode) runs "exit" there. up | down (through ssh) |
+        timeout (...); "blocked here" when no ssh command can be built. Costs a login, so only after a refusal.
+        """
+        r = self._cmd_run(ctx, h, 'exit', raw=True)
+        if r.get('return', 1) > 0:
+            return 'blocked here'
+        rr = self._run_quick(r['cmd'], cmd_timeout)
+        if rr.get('timeout'):
+            return f'timeout ({int(cmd_timeout)}s, through ssh)'
+        return 'up' if rr.get('returncode') == 0 else 'down (through ssh)'
 
     def _usable(self, h):
         """
