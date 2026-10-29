@@ -12,6 +12,7 @@ decides the commands; run() executes them.
 """
 
 import os
+import shlex
 import sys
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
@@ -21,6 +22,9 @@ from task_c36be4b9314a45e0.api.ctask import InitCTask
 # such step. {kind} of apt is "upgrade" or "dist-upgrade" (--full); the Dpkg options keep a changed
 # configuration file instead of asking about it.
 APT = {'update': '{pm} update',
+       # a run cut short before (a failed unpack) left packages unconfigured, and apt refuses to go on until dpkg
+       # finished them: done first, a no-op otherwise
+       'configure': 'env DEBIAN_FRONTEND=noninteractive dpkg --configure -a --force-confdef --force-confold',
        'upgrade': 'env DEBIAN_FRONTEND=noninteractive {pm} -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold {kind}',
        'full': 'dist-upgrade', 'normal': 'upgrade',
        'autoremove': 'env DEBIAN_FRONTEND=noninteractive {pm} -y autoremove',
@@ -41,6 +45,11 @@ SYSTEM = {
     'apk': {'update': 'apk update', 'upgrade': 'apk upgrade', 'check': 'apk list --upgradable'},
     'xbps-install': {'upgrade': 'xbps-install -Syu -y', 'check': 'xbps-install -Sun'},
 }
+
+# The files of packages that something else mounts over (the perf of the WSL kernel over /usr/bin/perf), which no
+# package manager can replace: moved aside before the upgrade and back after it, also after a failed one - see
+# file-mounts.sh next to this file
+FILE_MOUNTS = 'sh ' + shlex.quote(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'file-mounts.sh'))
 
 # macOS: the system (softwareupdate, root) and the user's Homebrew; Windows: the user's apps (winget) and,
 # only when asked, Windows Update through the PSWindowsUpdate module (an elevated PowerShell)
@@ -73,8 +82,9 @@ def plan(uname, os_extra, system = True, apps = True, firmware = False, windows_
          full = False, autoremove = False, root = False, interactive = False):
     """
     The steps for this OS, in order: (name, command, needs_sudo, kind) - kind is "system", "apps",
-    "firmware" or "reboot?" (a probe whose exit code says a reboot is due; its reboot_codes come along
-    as the fifth element). Nothing runs here. --check lists what would be upgraded instead of upgrading.
+    "firmware", "restore" (runs also after a failed step: the file mounts put back) or "reboot?" (a probe
+    whose exit code says a reboot is due; its reboot_codes come along as the fifth element). Nothing runs
+    here. --check lists what would be upgraded instead of upgrading.
     """
     steps = []
     extra = os_extra or {}
@@ -95,9 +105,12 @@ def plan(uname, os_extra, system = True, apps = True, firmware = False, windows_
                 add('check', fmt(table['check']) if table.get('check') else None, False, 'system')
             else:
                 add('update', fmt(table['update']) if table.get('update') else None, True, 'system')
+                add('mounts aside', FILE_MOUNTS + ' aside', True, 'system')
+                add('configure', table.get('configure'), True, 'system')
                 add('upgrade', fmt(table['upgrade']), True, 'system')
                 if autoremove:
                     add('autoremove', fmt(table['autoremove']) if table.get('autoremove') else None, True, 'system')
+                add('mounts back', FILE_MOUNTS + ' back', True, 'restore')       # also after a failed upgrade
                 if table.get('reboot_file'):
                     add('reboot?', f'test -f {table["reboot_file"]}', False, 'reboot?', (0,))
                 elif table.get('reboot_cmd'):
@@ -238,7 +251,11 @@ class CTask(InitCTask):
                 return result
 
         failed = []
+        stopped = False
         for name, cmd, needs_sudo, kind, codes in steps:
+            # after a failed step only what puts things back runs
+            if stopped and kind != 'restore':
+                continue
             line = with_sudo(cmd, needs_sudo, interactive)
             if con:
                 print('')
@@ -284,10 +301,11 @@ class CTask(InitCTask):
                     print(f'upgrade-os: {name} failed (exit code {rc})' + (f': {err[-1]}' if err else '') +
                           (' - sudo needs a password here: run it in a terminal, or add a NOPASSWD rule' if needs_sudo and rc == 1 and not interactive else ''))
                 if not ignore_errors:
-                    break
+                    stopped = True
 
         if con:
-            done = [s['name'] for s in result['steps'] if s['name'] != 'reboot?' and (s['returncode'] == 0 or s.get('note'))]
+            done = [s['name'] for s in result['steps'] if s['name'] not in ('reboot?', 'mounts aside', 'mounts back')
+                    and (s['returncode'] == 0 or s.get('note'))]
             text = f'upgrade-os: {label}: ' + (', '.join(done) + ' ok' if done else 'nothing ran')
             if failed:
                 text += f'; FAILED: {", ".join(failed)}'

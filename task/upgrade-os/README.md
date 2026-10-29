@@ -26,6 +26,14 @@ cx task run upgrade-os --dry_run                 # print the commands, run nothi
 | macOS | `softwareupdate -ia` (root) | `brew update && brew upgrade` | in the system updates | an update still listed by `softwareupdate -l` with `Action: restart` |
 | Windows | Windows Update only with `--windows_update`: software updates, no drivers (`windows-update.ps1`, PSWindowsUpdate, elevated) | `winget upgrade --all` | through Windows Update | the `RebootRequired` registry key |
 
+On Linux the upgrade is wrapped by `file-mounts.sh` (root): a file of a package that something else
+mounts over cannot be replaced by any package manager - WSL mounts its kernel's `perf` read-only over
+the `/usr/bin/perf` of `linux-tools-common`, and dpkg stopped with "Invalid cross-device link" and
+dozens of packages left unconfigured. Such mounts (regular files under `/usr`, `/bin`, `/sbin`, `/lib*`,
+`/opt`, owned by a package; never `/etc`) are bound to a place under `/run/cmeta-upgrade-os` and
+unmounted before the upgrade, and mounted back after it - also after a failed one. With apt,
+`dpkg --configure -a` runs first, so that a run cut short before is finished instead of refused.
+
 `--check` runs the listing of each row instead (`apt list --upgradable`, `dnf check-update`,
 `softwareupdate -l`, `brew outdated`, `winget upgrade`, `fwupdmgr get-updates`), which needs no root
 except apt's index refresh. The verdict line carries what the listings found (`upgrade-os: ... pending:
