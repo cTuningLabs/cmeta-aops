@@ -1,0 +1,24 @@
+artifact: b83de5abf84c4455
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-10-30T14:55:40.249411+00:00'
+desc: Run Mistral Vibe (vibe) on a prompt from --prompt/--prompt_file, headless (vibe --prompt-file / -p) or
+  interactive; records the output, the session and the token and cost statistics of its export.
+generator:
+  agent: Claude Code 2.1.310
+  by: Grigori Fursin
+  gateway: dapple
+  method: agent
+  via: cmeta 0.37.11
+  model: claude-opus-5-5
+tags:
+- run
+- vibe
+- mistral-vibe
+- mistral
+- ai
+- cli
+- prompt
+- non-interactive
+- headless
+- interactive

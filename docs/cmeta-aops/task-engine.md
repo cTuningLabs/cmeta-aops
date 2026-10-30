@@ -296,8 +296,10 @@ current place at reuse). The tools of a run never go there: each environment kee
   - `cache_features:` — softer match to disambiguate multiple entries.
   - `cache_name:` — force an explicit entry name.
   - CLI: `--update` (rebuild), `--clean` (wipe), `--new` (fresh entry), `--path=<dir>`
-    (distinct path = distinct entry). Unfinished entries carry a `tmp` tag; the
-    `check_versions` config re-detects a cached tool's version and invalidates stale ones.
+    (distinct path = distinct entry). Unfinished entries carry a `tmp` tag;
+    `--check_versions` on the command line re-detects the cached version of THAT tool and
+    invalidates a stale entry (a driver replaced under the cache); nested tools and the
+    `check_versions` config are not checked (since 2026-10-30; before, nothing was).
     `--update` rebuilds an entry from what is installed; upgrading the *tool* itself is
     `cx tool setup <tool> --upgrade` (see [tool-abstraction.md](tool-abstraction.md)),
     which switches `update` on for its run so the entry records the new version.

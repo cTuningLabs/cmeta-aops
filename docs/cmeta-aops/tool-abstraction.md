@@ -114,6 +114,8 @@ Two flags of `setup` work for every tool, with no new keys in its `_desc.yaml`
 ```bash
 cx tool setup opencode --status              # installed vs newest; installs nothing, writes nothing
 cx tool setup opencode --upgrade             # upgrade through the tool's channel; install the newest if absent
+cx tool upgrade opencode                     # the same, in short (since 2026-10-30)
+cx tool install opencode                     # cx tool setup opencode --install: cMeta installs it, without looking for a copy first
 cx tool setup jq --upgrade --version=1.8.2   # to a specific version, where the channel allows it
 cx tool run opencode --upgrade -- --help     # upgrade, then run
 ```

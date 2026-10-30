@@ -42,6 +42,8 @@ cx tool setup git                               # detect or install a tool into 
 cx tool run git -- status                       # run it (arguments go after --)
 cx tool setup git --status                      # installed version vs the newest its install channel offers
 cx tool setup git --upgrade                     # upgrade it there (or install the newest if it is missing)
+cx tool upgrade git                             # the same, in short; cx tool install <tool> = setup --install
+cx tool setup cuda --check_versions             # re-detect a cached tool whose version changed under cMeta (a driver update)
 cx task list                                    # browse the reusable workflow steps
 cx program run test-nmm-c-cpu cpu               # compile and run a matmul benchmark on CPU
 cx program run test-nmm-nvcc-cuda cuda          # ... or on CUDA, if you have it
@@ -222,7 +224,6 @@ See also `AGENTS.md` (canonical brief for AI agents), `CLAUDE.md`, and the autho
 
 ```
 cx config set task --meta.file_cache=x:\cmeta-file-cache-windows
-cx config set task --meta.check_versions
 cx config set default --meta.default_git=git@github.com:
 ```
 

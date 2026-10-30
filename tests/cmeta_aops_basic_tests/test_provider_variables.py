@@ -67,7 +67,7 @@ def test_a_gateway_run_without_a_parent_gateway_keeps_the_users_keys(ctask):
     assert env['ANTHROPIC_API_KEY'] == 'user-anthropic'
 
 
-@pytest.mark.parametrize('task', ['run-claude', 'run-codex', 'run-opencode', 'run-openclaw', 'run-gemini', 'run-agy', 'run-hermes'])
+@pytest.mark.parametrize('task', ['run-claude', 'run-codex', 'run-opencode', 'run-openclaw', 'run-gemini', 'run-agy', 'run-hermes', 'run-vibe'])
 def test_every_harness_task_drops_a_parents_gateway(task):
     """Each harness that run-ai drives calls the drop; the three with a gateway put theirs in through the helper."""
     src = (REPO_ROOT / 'task' / task / 'api_v1.py').read_text(encoding='utf-8')

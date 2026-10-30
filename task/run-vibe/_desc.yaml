@@ -1,0 +1,37 @@
+authors: Grigori Fursin
+
+# Run Mistral Vibe ("vibe", https://github.com/mistralai/mistral-vibe) non-interactively on an assembled prompt and
+# exit, or open an interactive session. Same flags as the sister tasks "run-claude", "run-codex", "run-opencode",
+# "run-agy" and "run-hermes":
+#
+#   cx task run run-vibe --prompt="{prompt text}"
+#   cx task run run-vibe "{prompt text}"                     # the first positional is the prompt
+#   cx task run run-vibe --prompt_file={file} --output_file={file}
+#   cx task run run-vibe --prompt_file={file} --yes --stats
+#   cx task run run-vibe                                     # no prompt: an interactive vibe session
+#   cx task run run-vibe --prompt_file=review.txt --interactive   # the prompt preset in the session, then by hand
+#
+# Headless, the prompt is "-p <text>", or "--prompt-file <file>" when it is long (over 30000 characters: the OS caps a
+# command line) or comes from --prompt_file alone; vibe writes its export (token usage, cost, the stop reason, the
+# session) into an --output-dir of its own, read for --stats. --yes approves every tool call ("--auto-approve");
+# without it a headless vibe runs with its default agent's approvals. Anything after "--" goes to vibe, e.g.
+#
+#   cx task run run-vibe --prompt="..." -- --model devstral-2 --max-turns 20
+#
+# vibe signs in once with "vibe --setup" (cxt run-ai --harness=vibe --login): a Mistral account in the browser, or an
+# API key - MISTRAL_API_KEY in the environment works too.
+
+# This task launches vibe and changes files - never memoize it on disk
+cache: False
+
+# The first positional argument after the task name is the prompt
+params_map:
+  arg2: prompt
+
+uses:
+  # Bootstrap host (OS detection, env, vars) - normally already resolved from global
+  - task: runner,1e48cc0c5f6041a5
+
+  # Detect / install the "vibe" tool and expose {{global.vibe.path}}: uv installs the PyPI package into the cache entry
+  - task: setup,a2f9b61079ce4333
+    name: vibe,ba9c17947415491b
