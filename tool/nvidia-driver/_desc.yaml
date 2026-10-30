@@ -1,0 +1,62 @@
+authors: Grigori Fursin
+
+# The NVIDIA GPU driver (README.md):
+#
+#   cx tool setup nvidia-driver --status      the installed driver, the running one, the newest for this GPU
+#   cx tool upgrade nvidia-driver             the newest driver for this GPU (a reboot on Linux loads it)
+#   cx tool upgrade nvidia-driver --version=615     the newest of a branch (or 615.78.08, an exact release)
+#
+# Windows: the driver NVIDIA's download service lists for the GPU, both branches (production and new feature),
+# run silently with administrator rights (a UAC prompt, or an elevated terminal; a quiet run never asks).
+# Linux: NVIDIA's .run installer of the release, checked against its sha256, built by DKMS with the kernel module
+# type in use, next to the running driver (sudo). A driver that came from the distribution's packages is left to
+# them. tool/cuda reads the CUDA version of the driver: its cached record is dropped by an install.
+
+storage_key: nvidia_driver
+
+names:
+  - nvidia-smi{{global.host.vars.file_ext_exe}}
+
+# The installed driver: detect_versions (api_v1.py) answers "DRIVER version : <x>" - on Linux the version of the
+# module on disk (modinfo), which an install changes before the reboot that loads it
+match_version:
+  - regex: 'DRIVER version\s*:\s*([0-9.]+)'
+    group: 1
+  - regex: 'KMD version\s*:\s*([0-9.]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+requires_sudo:
+  windows: True
+  linux: True
+
+# The driver lives where the OS keeps it (/usr/bin/nvidia-smi, System32): --status guesses no other channel from that
+installs_into_system: True
+
+# Where NVIDIA lists its drivers
+download_service: https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php
+product_list: https://www.nvidia.com/Download/API/lookupValueSearch.aspx?TypeID=3
+windows_os_id: 57
+linux_archive: https://download.nvidia.com/XFree86/Linux-x86_64
+
+# The last driver branch of the older GPU generations (by compute capability x 10): Fermi 390, Kepler 470,
+# Maxwell / Pascal / Volta 580 (R590 dropped them)
+legacy_branches:
+  - below_arch: 30
+    last_branch: 390
+  - below_arch: 50
+    last_branch: 470
+  - below_arch: 75
+    last_branch: 580
+
+# NVIDIA's open kernel modules run on Turing (sm_75) and newer
+open_kernel_modules_min_arch: 75
+
+# The CUDA a driver branch runs (the CUDA Toolkit release notes, 2026-10-30): for the messages
+cuda_of_branch:
+  '615': '13.4'
+  '610': '13.3'
+  '595': '13.2'
+  '590': '13.1'
+  '580': '13.0'

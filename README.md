@@ -44,6 +44,8 @@ cx tool setup git --status                      # installed version vs the newes
 cx tool setup git --upgrade                     # upgrade it there (or install the newest if it is missing)
 cx tool upgrade git                             # the same, in short; cx tool install <tool> = setup --install
 cx tool setup cuda --check_versions             # re-detect a cached tool whose version changed under cMeta (a driver update)
+cx tool upgrade nvidia-driver                   # the newest NVIDIA driver for this GPU (Windows, Linux), then:
+cx tool upgrade nvcc                            # the newest CUDA toolkit that driver runs, into the cache
 cx task list                                    # browse the reusable workflow steps
 cx program run test-nmm-c-cpu cpu               # compile and run a matmul benchmark on CPU
 cx program run test-nmm-nvcc-cuda cuda          # ... or on CUDA, if you have it
