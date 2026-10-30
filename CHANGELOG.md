@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## 0.58.0.1
+## 0.59.0
 - **Mistral Vibe, the eighth harness of run-ai.** `tool/vibe` installs the PyPI package `mistral-vibe` with cMeta's uv
   into an environment of its own inside the cache entry (a CPython 3.12; nothing in the user's Python, no PATH change)
   and lists its releases from PyPI, so `cx tool upgrade vibe` works; `task/run-vibe` runs it headless (`-p`, or
