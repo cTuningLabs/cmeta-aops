@@ -36,6 +36,21 @@ cli_params:
   version_policy:
     values: [known, latest, ask]
 
+  # The options that take a value: given without one (--version), the run stops with this hint
+  version:
+    type: str
+    hint: 'a version (13.4.92), a prefix (13.4), a range (">=12.4,<13"), latest or known; "cx tool setup <tool> --status"
+      shows the installed and the newest versions, "cx tool run <tool> -- --version" asks the tool itself'
+  name:
+    type: str
+    hint: 'the tool (--name=nvcc)'
+  tool_path:
+    type: str
+    hint: 'the path of the tool''s program'
+  tool_tags:
+    type: str
+    hint: 'the tags of the tool, separated by commas'
+
 cache_params:
   - name
   - "@version" # Treat @keys as fuzzy versions or versions with conditions during cMeta search!

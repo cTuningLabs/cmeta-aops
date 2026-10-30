@@ -176,6 +176,15 @@ class CProgram(InitCProgram):
                 if 'CMAKE_CUDA_COMPILER' not in d:
                     d['CMAKE_CUDA_COMPILER'] = ctx['tasks']['global']['nvcc']['qpath']
 
+                # Linux: the CUDA runtime and cuBLAS of a toolkit in cMeta's cache are on no system path - neither
+                # the linker of the programs that link libggml-cuda nor the loader at run time finds them (a CUDA 12.9
+                # toolkit next to a system CUDA 13: "libcudart.so.12, needed by libggml-cuda.so, not found",
+                # 2026-10-30): their folder goes into the build's RPATH and the linker's search path
+                if uname == 'linux':
+                    cuda_libs = common_llama_cpp.cuda_lib_dirs(_global)
+                    for k, v in common_llama_cpp.cuda_link_vars(cuda_libs, d).items():
+                        d[k] = v
+
         # Android (--compute=android-cpu): the NDK's CMake toolchain file sets the compilers, the
         # sysroot, the ABI and the API level. The defaults are those of llama.cpp's own Android
         # release: shared libraries with every CPU variant, the best one picked on the device at

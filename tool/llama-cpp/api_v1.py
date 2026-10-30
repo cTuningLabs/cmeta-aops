@@ -25,6 +25,10 @@ RELEASES = 'https://github.com/ggml-org/llama.cpp/releases'
 # installer reads the release's real asset list and falls back to these rules only when offline.
 FALLBACK_CUDA = {'windows': ['13.4', '13.3', '12.4'], 'linux': ['13.4', '13.3', '12.8']}
 
+# The oldest GPU (compute capability x 10) a CUDA major version builds for: CUDA 13 dropped Maxwell, Pascal and
+# Volta (the same rule as tool/nvcc's redist.MIN_ARCH)
+CUDA_MIN_ARCH = {11: 35, 12: 50, 13: 75}
+
 # Binaries next to llama-cli that programs use (result keys <name>_path / <name>_qpath)
 SIBLINGS = {'completion': 'llama-completion', 'bench': 'llama-bench', 'server': 'llama-server', 'cli': 'llama-cli'}
 
@@ -67,14 +71,17 @@ def release_assets(build, timeout = 30):
     return names or None
 
 
-def select_asset(build, uname, uarch, backend, assets = None, cuda_driver = None, cuda_wanted = None, glibc = None):
+def select_asset(build, uname, uarch, backend, assets = None, cuda_driver = None, cuda_wanted = None, glibc = None,
+                 gpu_arch_min = None):
     """
     The release asset (and its cudart bundle) for this platform and backend.
 
     backend: cpu | cuda | vulkan | rocm | sycl | openvino | metal
     cuda_driver: the CUDA version the driver supports ("13.3"); cuda_wanted: a forced CUDA
     version (--with.ver). CUDA: the newest build not newer than the driver, else one of the
-    driver's major version (CUDA minor-version compatibility), else nothing.
+    driver's major version (CUDA minor-version compatibility), else nothing - and only a build
+    whose CUDA major still builds for the GPU (gpu_arch_min: its compute capability x 10; a
+    GeForce 940MX, sm_50, gets a CUDA 12 build, never a CUDA 13 one).
 
     Returns {'asset', 'cudart', 'cuda', 'note'} or {'error'}.
     """
@@ -151,6 +158,16 @@ def select_asset(build, uname, uarch, backend, assets = None, cuda_driver = None
             ver = cuda_wanted
         else:
             ver = None
+            # A CUDA major that dropped this GPU has no kernels for it: only the builds that run on it
+            fits = [v for v in versions if not gpu_arch_min or CUDA_MIN_ARCH.get(_version_tuple(v)[0], 0) <= int(gpu_arch_min)]
+            if not fits:
+                return {'error': f'release b{build} has no CUDA build for this GPU (sm_{gpu_arch_min}; the builds: '
+                                 f'{", ".join(versions)}): build from source with an older CUDA toolkit '
+                                 f'(cx program run build-llama-cpp --compute=cuda)'}
+            if len(fits) < len(versions):
+                note = (f'the GPU is sm_{gpu_arch_min}: the CUDA {", ".join(v for v in versions if v not in fits)} '
+                        f'build(s) have no kernels for it')
+            versions = fits
             if cuda_driver:
                 # A build runs on any driver of its CUDA major version (CUDA minor-version
                 # compatibility), and newer builds carry kernels for newer GPUs (the 12.4 build
@@ -160,11 +177,11 @@ def select_asset(build, uname, uarch, backend, assets = None, cuda_driver = None
                 if usable:
                     ver = usable[0]
                     if _version_tuple(ver) > drv:
-                        note = (f'the driver supports CUDA {cuda_driver}, the CUDA {ver} build runs on it '
-                                f'through CUDA minor-version compatibility')
+                        note = ((note + '; ') if note else '') + (f'the driver supports CUDA {cuda_driver}, the CUDA {ver} '
+                                                                 f'build runs on it through CUDA minor-version compatibility')
             else:
                 ver = versions[0]
-                note = 'the driver CUDA version is unknown, using the newest CUDA build'
+                note = ((note + '; ') if note else '') + 'the driver CUDA version is unknown, using the newest CUDA build'
             if not ver:
                 return {'error': f'the driver supports CUDA {cuda_driver}, older than every CUDA build of '
                                  f'release b{build} ({", ".join(versions)}): update the driver or build from source'}
@@ -524,8 +541,12 @@ class CTool(InitCTool):
             if lib == 'glibc':
                 glibc = glibc_version
 
+        # The oldest GPU's compute capability (tool/cuda): a CUDA build must still carry kernels for it
+        gpu_arch_min = (target.get('features', {}).get('cuda', {}).get('compute_cap_int_min')
+                        or _global.get('cuda', {}).get('features', {}).get('compute_cap_int_min'))
+
         sel = select_asset(version_simple, uname, uarch, backend, assets = assets,
-                           cuda_driver = cuda_driver, cuda_wanted = ver, glibc = glibc)
+                           cuda_driver = cuda_driver, cuda_wanted = ver, glibc = glibc, gpu_arch_min = gpu_arch_min)
         if 'error' in sel:
             return {
                 'return': 16,

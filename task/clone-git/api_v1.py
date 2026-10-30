@@ -170,11 +170,17 @@ class CTask(InitCTask):
         ########\###########################################################
         # Prepare CMDs
         xdepth = f' --depth {depth}' if depth != None and depth != '' else ''
+
+        # Windows: Git checks out no path over 260 characters without its own long paths, whatever Windows allows
+        # (a deep cache folder plus llama.cpp's swiftui example: "Filename too long", 2026-10-30) - set in the
+        # clone's config, and given to the commands on a clone made before
+        git = f'{path_to_git_bin} -c core.longpaths=true' if os.name == 'nt' else path_to_git_bin
+        clone_options = ' -c core.longpaths=true' if os.name == 'nt' else ''
         if filter != None and filter != '':
             xdepth += f' --filter={filter}'
 
         if not os.path.isdir(path_to_git_repo):
-            cmd = f'{path_to_git_bin} clone {url} {directory}{xdepth}'
+            cmd = f'{path_to_git_bin} clone{clone_options} {url} {directory}{xdepth}'
 
             r = self.cm.utils.sys.run(
                     cmd, 
@@ -203,16 +209,16 @@ class CTask(InitCTask):
                 cmd = f'cd {directory}'
 
                 if update:
-                    cmd += f' && {path_to_git_bin} fetch --all --tags --prune'
+                    cmd += f' && {git} fetch --all --tags --prune'
                     if fetch:
                         cmd += ' ' + fetch
                     if branch or checkout:
-                        cmd += f' && {path_to_git_bin} pull'
+                        cmd += f' && {git} pull'
                 elif fetch:
-                    cmd += f' && {path_to_git_bin} fetch ' + fetch
+                    cmd += f' && {git} fetch ' + fetch
 
                 if branch or checkout:
-                    cmd += f' && {path_to_git_bin} checkout'
+                    cmd += f' && {git} checkout'
 
                     if new:
                         cmd +=' -b'
@@ -229,8 +235,8 @@ class CTask(InitCTask):
             # Submodules update
 
             if update_submodules:
-                cmds.append(f'cd {directory} && {path_to_git_bin} submodule sync')
-                cmds.append(f'cd {directory} && {path_to_git_bin} submodule update --init --recursive')
+                cmds.append(f'cd {directory} && {git} submodule sync')
+                cmds.append(f'cd {directory} && {git} submodule update --init --recursive')
 
             ###################################################################
             # TBD: add detect current git checkout and branch

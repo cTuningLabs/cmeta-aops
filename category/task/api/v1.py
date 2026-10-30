@@ -39,8 +39,18 @@ def read_cli_words(cm, ctx, ctx_tasks, task_api_code, cdesc, artifact_alias):
     """
     The words of the command line among this task's parameters, read by what its run() expects (cMeta 0.37+);
     only the words the command line gave to THIS task (cli_words) - a value a parent's code passes to a
-    sub-task stays as it is. Called before the init hook and after the --use merge. (The same as in api/v2.py.)
+    sub-task stays as it is. Called before the init hook and after the --use merge. (The same as in api/v2.py,
+    whose check of a value option given without its value it uses.)
     """
+    try:
+        from task_c36be4b9314a45e0.api.v2 import bare_value_options
+    except ImportError:
+        bare_value_options = None
+    if bare_value_options is not None:
+        r = bare_value_options(ctx, ctx_tasks, task_api_code, cdesc, artifact_alias)
+        if r['return'] > 0:
+            return r
+
     typed_params_from_cli = getattr(cm.utils, 'typed_params_from_cli', None)
 
     if typed_params_from_cli is None or task_api_code is None or not hasattr(task_api_code, 'run') \

@@ -285,7 +285,10 @@ is an error naming the parameter) - no `truthy()` helper is needed for the comma
 line. A parameter without the annotation gets the text as typed. For a sensitive
 parameter, describe it in `_desc.yaml` and the task category converts and checks it:
 `cli_params: {jobs: {type: int, min: 1}, mode: {values: [fast, full]}}`. Describe
-what matters, when it matters - nothing else is checked. A `run()` that reads `**kwargs`
+what matters, when it matters - nothing else is checked. An option that takes a value
+(described `str`/`int`/`float` or with `values`, annotated so, or with a text or number
+default) given without one (`--version` instead of `--version=13.4`) stops the run with a
+message; a `hint: "..."` in its description says what it takes. A `run()` that reads `**kwargs`
 has no annotations to read against: name every switch a user may type as a word in
 `cli_params` (`task/setup` lists its 21: `skip_install: bool`, ...), or `--skip_install=no`
 stays the text "no", which is true. Only the words the command line holds for a task are

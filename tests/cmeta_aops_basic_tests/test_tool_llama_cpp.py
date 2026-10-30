@@ -156,3 +156,25 @@ def test_offline_naming_rules(ll):
 ])
 def test_backend_from_compute(ll, compute, uname, backend):
     assert ll.backend_from_compute(compute, uname) == backend
+
+
+def test_a_cuda_build_must_carry_kernels_for_the_gpu(ll):
+    """CUDA 13 dropped Maxwell, Pascal and Volta: a GeForce 940MX (sm_50) with a driver for CUDA 13.0 gets the CUDA 12
+    build, never the CUDA 13.4 one (its run ended with exit 99 on the T470p, 2026-10-30)."""
+    sel = ll.select_asset("11324", "linux", "amd64", "cuda", assets=B11324, cuda_driver="13.0", gpu_arch_min=50)
+    assert sel["asset"] == "llama-b11324-bin-ubuntu-cuda-12.8-x64.tar.gz", sel
+    assert sel["cudart"] == "cudart-llama-b11324-bin-ubuntu-cuda-12.8-x64.tar.gz" and "sm_50" in sel["note"]
+    sel = ll.select_asset("11324", "windows", "amd64", "cuda", assets=B11324, cuda_driver="13.0", gpu_arch_min=61)
+    assert sel["asset"] == "llama-b11324-bin-win-cuda-12.4-x64.zip", sel
+
+    # a newer GPU keeps the newest build; an unknown GPU too
+    for arch in (75, 86, 120, None):
+        sel = ll.select_asset("11324", "linux", "amd64", "cuda", assets=B11324, cuda_driver="13.4", gpu_arch_min=arch)
+        assert sel["asset"] == "llama-b11324-bin-ubuntu-cuda-13.4-x64.tar.gz" and "note" not in sel, (arch, sel)
+
+    # a forced build is taken as asked; a GPU no build carries kernels for is an error that names the way out
+    sel = ll.select_asset("11324", "linux", "amd64", "cuda", assets=B11324, cuda_driver="13.0", cuda_wanted="13.4",
+                          gpu_arch_min=50)
+    assert sel["asset"] == "llama-b11324-bin-ubuntu-cuda-13.4-x64.tar.gz"
+    sel = ll.select_asset("11324", "linux", "amd64", "cuda", assets=B11324, cuda_driver="13.0", gpu_arch_min=35)
+    assert "error" in sel and "build-llama-cpp" in sel["error"]

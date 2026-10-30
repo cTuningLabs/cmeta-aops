@@ -123,6 +123,10 @@ applied in "UPDATE PARAMS FROM USE BASED ON STORAGE KEY"):
   `run()` reads `**kwargs` has no annotations to read against: it names its switches in `cli_params`
   (`task/setup` does, for `detect`, `install`, `skip_install`, `versions`, ...). `cli_types: false` in a
   task's `_desc.yaml` and `CMETA_CLI_TYPES=off` keep the words text.
+- **An option that takes a value, given without one, stops the run with a message** (`--version` instead of
+  `--version=13.4`): an option described as `str`, `int` or `float` or with `values`, annotated so in `run()`,
+  or with a text or a number as its default. The message names the option and its values, and the `hint` of
+  its description (`version: {type: str, hint: "a version (13.4.92), a prefix (13.4) ..."}`).
 - **Control switches travel too.** `path`, `skip`, `cache`, `cache_repo`, `cache_name`,
   `cache_extra_alias`, `cache_extra_params`, `cache_extra_tags`, `update`, `clean`, `new` go to that
   task's control params: `--use.get-hf-model.update` redoes only that step.

@@ -186,14 +186,18 @@ def test_cli_params_are_readable(path):
     if described is None:
         return
 
-    assert isinstance(described, dict), 'cli_params is a dict: name -> type, or name -> {type, values, min, max}'
+    assert isinstance(described, dict), 'cli_params is a dict: name -> type, or name -> {type, values, min, max, hint}'
     for name, desc in described.items():
         if isinstance(desc, str):
             assert desc in CLI_TYPES, f'{name}: the type {desc!r} is not one of {CLI_TYPES}'
             continue
 
         assert isinstance(desc, dict) and desc, f'{name}: a type name or a dict'
-        assert set(desc) <= {'type', 'values', 'min', 'max'}, f'{name}: unknown keys {set(desc) - {"type", "values", "min", "max"}}'
+        # hint: what the message of a value option given without its value says it takes (category/task/api/v2.py)
+        keys = {'type', 'values', 'min', 'max', 'hint'}
+        assert set(desc) <= keys, f'{name}: unknown keys {set(desc) - keys}'
+        if 'hint' in desc:
+            assert isinstance(desc['hint'], str) and desc['hint'].strip(), f'{name}: hint is a text'
         if 'type' in desc:
             assert desc['type'] in CLI_TYPES, f'{name}: the type {desc["type"]!r} is not one of {CLI_TYPES}'
         if 'values' in desc:

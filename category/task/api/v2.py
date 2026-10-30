@@ -39,6 +39,87 @@ def cli_words(ctx):
     return words
 
 
+# The types of a parameter that takes a value (in cli_params or as an annotation of run()), not a flag
+VALUE_TYPES = ('str', 'int', 'float')
+
+
+def cli_flags(ctx):
+    """
+    The names the command line gave as bare flags (--key, -key, --key-; "-" read as "_"), the words after "--" not
+    read: a value option given so has no value, and the engine made it True or False.
+    """
+    cmd = ((ctx.get('origin') or {}).get('cli') or {}).get('cmd') or []
+    if isinstance(cmd, str):
+        import shlex
+        cmd = shlex.split(cmd)
+
+    names = set()
+    for word in cmd:
+        if word == '--':
+            break
+        if isinstance(word, str) and word.startswith('-') and '=' not in word and not word.endswith(','):
+            key = word.lstrip('-').rstrip('-')
+            if key and not key[0].isdigit():
+                names.add(key.rsplit('.', 1)[-1].replace('-', '_'))
+
+    return names
+
+
+def value_params_of(func, described):
+    """
+    The parameters that take a value: described in cli_params as str, int or float or with a list of values, or
+    annotated so by run(), or not annotated with a text or a number as the default; name -> its description (the
+    hint and the values it may have).
+    """
+    out = {}
+    try:
+        import inspect
+        for name, p in inspect.signature(func).parameters.items():
+            a = getattr(p.annotation, '__name__', p.annotation)
+            default = p.default
+            if a in VALUE_TYPES or (p.annotation is inspect.Parameter.empty and not isinstance(default, bool)
+                                    and isinstance(default, (str, int, float))):
+                out[name] = {}
+    except Exception:
+        pass
+
+    for name, desc in (described or {}).items():
+        d = {'type': desc} if isinstance(desc, str) else (desc if isinstance(desc, dict) else {})
+        if str(d.get('type', '')).strip().lower() in VALUE_TYPES or d.get('values') is not None:
+            out[name] = d
+
+    return out
+
+
+def bare_value_options(ctx, ctx_tasks, task_api_code, cdesc, artifact_alias):
+    """
+    A value option given as a bare flag ("--version", not "--version=13.4") arrives as True or False: stop with a
+    message that says what the option takes, before the task reads a boolean as a version, a path or a word (a
+    traceback, or a tool looked for at the path "True" - 2026-10-30).
+    """
+    if 'cli' not in ctx.get('origin', {}):
+        return {'return': 0}
+
+    params = ctx_tasks['params']
+    bare = [k for k in cli_flags(ctx) if isinstance(params.get(k), bool)]
+    if not bare:
+        return {'return': 0}
+
+    values = value_params_of(getattr(task_api_code, 'run', None), cdesc.get('cli_params'))
+    for name in sorted(bare):
+        if name in values:
+            d = values[name]
+            option = '--' + name
+            text = f'"{option}" of task "{artifact_alias}" needs a value: {option}=<value>'
+            if d.get('values') is not None:
+                text += ' (one of ' + ', '.join(map(str, d['values'])) + ')'
+            if d.get('hint'):
+                text += ' - ' + str(d['hint'])
+            return {'return': 1, 'error': text}
+
+    return {'return': 0}
+
+
 def read_cli_words(cm, ctx, ctx_tasks, task_api_code, cdesc, artifact_alias):
     """
     The words of the command line among this task's parameters, read by what its run() expects (cMeta 0.37+):
@@ -50,7 +131,12 @@ def read_cli_words(cm, ctx, ctx_tasks, task_api_code, cdesc, artifact_alias):
     every release download (2026-10-14). Called before the task's init hook (its own words) and again after
     the --use merge (the words for a sub-task); a converted value is no longer a string. An older engine has
     no helper and the words stay text; `cli_types: false` in the task's _desc keeps them text for this task.
+    A value option given without its value stops the run first (bare_value_options).
     """
+    r = bare_value_options(ctx, ctx_tasks, task_api_code, cdesc, artifact_alias)
+    if r['return'] > 0:
+        return r
+
     typed_params_from_cli = getattr(cm.utils, 'typed_params_from_cli', None)
 
     if typed_params_from_cli is None or task_api_code is None or not hasattr(task_api_code, 'run') \

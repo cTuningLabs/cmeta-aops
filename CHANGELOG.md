@@ -2,6 +2,27 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.60.0.1
+- **A value option given without its value says so.** `cx tool setup nvcc --version` (no `=13.4`) ended in a
+  traceback, `--tool_path` alone looked for a tool at the path "True", and `--version_policy` alone was accepted.
+  A task's option that takes a value stops the run with a message instead. That means an option described in
+  `cli_params` as `str`, `int` or `float` or with a list of values, annotated so in `run()`, or with a text or a
+  number as its default. The message names the option, the values it takes and the hint of its description:
+  `"--version" of task "setup" needs a value: --version=<value> - a version (13.4.92), a prefix (13.4), ...;
+  "cx tool setup <tool> --status" shows the installed and the newest versions`. The setup task describes its
+  `version`, `name`, `tool_path` and `tool_tags`; a word after `--` still belongs to the program.
+- **llama.cpp's CUDA release follows the GPU:** a GPU that a CUDA major version dropped gets a build that still
+  carries kernels for it (CUDA 13 dropped Maxwell, Pascal and Volta: a GeForce 940MX gets the CUDA 12.8 build, not
+  the 13.4 one, whose run failed). A forced `--with.ver` is taken as asked; a GPU no build supports is told to build
+  from source.
+- **A Linux CUDA source build of llama.cpp links with a toolkit from cMeta's cache:** the folder of its CUDA
+  runtime and cuBLAS goes into the build's RPATH and the linker's `-rpath-link`; before, the programs that link
+  libggml-cuda failed with "libcudart.so.12 ... not found" wherever the system had no CUDA of the same major.
+- **Git clones on Windows have long paths:** `clone-git` clones with `core.longpaths=true` (in the clone's own
+  config) and gives it to its fetch, checkout and submodule commands, so a deep cache folder no longer stops a
+  checkout with "Filename too long" (llama.cpp's source build on a Windows host). The user's Git configuration is
+  not changed.
+
 ## 0.60.0
 - **`tool/nvidia-driver`: the NVIDIA driver installed and upgraded by cx.** `cx tool setup nvidia-driver --status` shows
   the installed driver and the newest one for this GPU, and `cx tool upgrade nvidia-driver [--version=<branch or

@@ -289,3 +289,30 @@ def completion_binary(path_to_git_repo, target_path_bin, exe_ext):
     if path_to_git_repo and os.path.isdir(os.path.join(path_to_git_repo, 'tools', 'completion')):
         return 'llama-completion' + exe_ext
     return 'llama-cli' + exe_ext
+
+
+def cuda_lib_dirs(_global):
+    """
+    The folders of the CUDA runtime and cuBLAS a CUDA build links (tool/lib-cuda, set up from the toolkit nvcc
+    comes from), existing ones only.
+    """
+    paths = ((_global.get('lib-cuda') or {}).get('features') or {}).get('paths') or {}
+    dirs = list(paths.get('found_dynamic_lib_paths') or []) or [paths.get('dynamic_lib')]
+    return [d for d in dirs if d and os.path.isdir(d)]
+
+
+def cuda_link_vars(lib_dirs, d):
+    """
+    The CMake variables that let a Linux build find the CUDA libraries of lib_dirs when no system path has them:
+    the build tree's RPATH (the loader at run time, and the linker for the libraries libggml-cuda needs) and
+    -rpath-link for the linker - added to what d (the variables already set) holds.
+    """
+    if not lib_dirs:
+        return {}
+    out = {}
+    rpath = [x for x in str(d.get('CMAKE_BUILD_RPATH', '')).strip('"').split(';') if x]
+    out['CMAKE_BUILD_RPATH'] = ';'.join(rpath + [x for x in lib_dirs if x not in rpath])
+    link = ' '.join(f'-Wl,-rpath-link,{x}' for x in lib_dirs)
+    for k in ('CMAKE_EXE_LINKER_FLAGS', 'CMAKE_SHARED_LINKER_FLAGS'):
+        out[k] = (str(d.get(k, '')).strip('"') + ' ' + link).strip()
+    return out
