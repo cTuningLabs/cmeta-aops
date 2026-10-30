@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## 0.57.2.1
+## 0.58.0
 - **A project remembers its harness: `run_ai_config`.** A project that is a cMeta artifact keeps the harness, the model
   and the effort of its last run in its `_desc.yaml`, and `cxai` / run-ai without those flags takes them again; a flag
   changes them. The model and the effort travel together and only with their harness. Only that block is written (the
