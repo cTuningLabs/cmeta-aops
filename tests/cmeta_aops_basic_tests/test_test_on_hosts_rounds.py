@@ -9,6 +9,7 @@ ref is neither made again nor retried.
 """
 
 import json
+import os
 import pathlib
 import types
 
@@ -136,6 +137,95 @@ def test_the_remove_of_this_machines_part_takes_the_read_only_files_of_a_clone(m
     r = t.remove(False, 'm3', str(local), 'cmeta-tests/test-on-hosts-m3', ['here'])
     assert r['return'] == 0
     assert not (local / 'here').exists()
+
+
+def test_the_tarball_leaves_out_links_that_lead_out_of_the_tree(module, tmp_path):
+    """A developer's link to another clone (__symlinks/cmeta -> an absolute path) went into the tarball, and the
+    tarfile of Python 3.14 refused to unpack it: the round failed on the host (2026-10-29). A link inside the tree
+    stays."""
+    import tarfile
+
+    tree = tmp_path / 'tree'
+    (tree / 'task').mkdir(parents=True)
+    (tree / 'task' / 'a.txt').write_text('a')
+    (tree / '__symlinks').mkdir()
+    try:
+        os.symlink(str(tmp_path), tree / '__symlinks' / 'absolute', target_is_directory=True)
+        os.symlink('../task', tree / '__symlinks' / 'inside', target_is_directory=True)
+        os.symlink('../../elsewhere', tree / '__symlinks' / 'outside', target_is_directory=True)
+    except (OSError, NotImplementedError) as e:
+        pytest.skip(f'no symbolic links here: {e}')
+
+    out = tmp_path / 'tree.tar.gz'
+    module.tar_tree(str(tree), str(out))
+    with tarfile.open(out) as tar:
+        names = tar.getnames()
+        assert 'tree/task/a.txt' in names and 'tree/__symlinks/inside' in names
+        assert 'tree/__symlinks/absolute' not in names and 'tree/__symlinks/outside' not in names
+        # what the runner does, with the filter Python 3.14 applies by default where there is one
+        if hasattr(tarfile, 'data_filter'):
+            tar.extractall(tmp_path / 'unpacked', filter='data')
+
+
+DESCS = {'win-host': {'type': 'ssh', 'os': 'windows', 'access': {'shell': 'powershell'}},
+         'fgg-t470p-ubuntu': {'type': 'ssh', 'os': 'linux', 'access': {'shell': 'bash -l'}}}
+
+
+class FleetCM(FakeCM):
+    """A Windows host (ssh, PowerShell) next to a Linux one: the descs by host, the scripts each host ran (read when
+    they run - the task deletes its helper scripts) and the files pushed to each."""
+
+    def __init__(self):
+        super().__init__()
+        read = lambda _, path: {'return': 0, 'data': DESCS.get(os.path.basename(os.path.dirname(path)), {})}
+        self.utils = type('U', (), {'files': type('F', (), {'safe_read_yaml_or_json': read})()})()
+        self.ran = {}
+        self.pushed = {}
+
+    def access(self, p):
+        if p.get('category') == 'host' and p.get('command') == 'find':
+            return {'return': 0, 'artifacts': [{'path': f'/hosts/{p["arg1"]}'}]}
+        if p.get('category') == 'host' and p.get('command') == 'run':
+            self.ran.setdefault(p['arg1'], []).append(pathlib.Path(p['script']).read_text() if p.get('script') else p.get('arg2'))
+        if p.get('category') == 'host' and p.get('command') == 'push':
+            self.pushed.setdefault(p['arg1'], []).append(p['to'])
+        return super().access(p)
+
+
+def test_a_windows_host_gets_powershell_scripts_and_its_commands_in_a_file(module, tmp_path):
+    """The launcher, the peek and the removal were bash scripts for every remote host: a Windows host (its shell
+    PowerShell) failed to start a round (2026-10-29). It gets PowerShell scripts, and its commands in commands.json
+    next to the runner, so that no quoting of cmd.exe touches them."""
+    t = task(module)
+    t.cm = FleetCM()
+    tree = tmp_path / 'tree'
+    tree.mkdir()
+    (tree / '_cmr.yaml').write_text('alias: x\n')
+    local = tmp_path / 'test-on-hosts-w1'
+    remote = 'cmeta-tests/test-on-hosts-w1'
+    hosts = ['win-host', 'fgg-t470p-ubuntu']
+
+    r = t.launch(False, 'w1', str(local), remote, hosts, 'task run upgrade-os --check -q; !echo "a b"', str(tree))
+    assert r['return'] == 0
+    assert json.loads((local / 'commands.json').read_text()) == ['task run upgrade-os --check -q', '!echo "a b"']
+    assert f'{remote}/commands.json' in t.cm.pushed['win-host']
+    assert not [to for to in t.cm.pushed['fgg-t470p-ubuntu'] if to.endswith('commands.json')]
+    win, linux = t.cm.ran['win-host'][0], t.cm.ran['fgg-t470p-ubuntu'][0]
+    assert "Join-Path $HOME 'cmeta-tests\\test-on-hosts-w1'" in win and 'Win32_Process' in win and '@commands.json' in win
+    assert linux.startswith('#!/bin/bash') and 'nohup' in linux and '@commands.json' not in linux
+
+    p = t.peek(False, 'w1', str(local), remote, hosts)
+    assert p['return'] == 0 and p['done']
+    assert 'Test-Path "$ROOT\\DONE"' in t.cm.ran['win-host'][1] and t.cm.ran['fgg-t470p-ubuntu'][1].startswith('#!/bin/bash')
+
+    d = t.remove(False, 'w1', str(local), remote, hosts)
+    assert d['removed'] == {'win-host': True, 'fgg-t470p-ubuntu': True}
+    assert 'Remove-Item -LiteralPath $ROOT -Recurse -Force' in t.cm.ran['win-host'][2]
+    assert t.cm.ran['fgg-t470p-ubuntu'][2] == f'rm -rf ~/{remote}'
+
+    # an instance (a container or a WSL distribution of a Windows machine) is no Windows host
+    t.instances = {'win-host': {'engine': 'docker'}}
+    assert not t.is_windows('win-host')
 
 
 def test_this_machines_part_lives_in_here_dir_and_round_json_names_it(module, tmp_path):

@@ -4,12 +4,14 @@ The runner of test-on-hosts on one host (the standard library only, Python 3.6+)
 command in <root>/work, one after the other, then <root>/DONE.
 
     python3 runner.py <root> <tree.tar.gz | tree folder> "<command>" ["<command>" ...]
+    python3 runner.py <root> <tree.tar.gz | tree folder> @commands.json     # the commands as a JSON list in <root>
 
 A command is the words after "cx" ("task run explore-tool-versions yq"); one that starts with "!" is a shell
 command of the host (bash or cmd), with TREE, WORK and CMETA_HOME set. Each one writes <root>/work/step-<n>.log
 and a line of <root>/work/steps.txt ("<n>: exit <code> in <s> s: <command>").
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -22,6 +24,12 @@ def main():
     root = os.path.abspath(sys.argv[1])
     tree = sys.argv[2]
     commands = sys.argv[3:]
+
+    # A Windows host gets the commands in a file next to the runner: no quoting of cmd.exe or of the Python command
+    # line touches them
+    if len(commands) == 1 and commands[0].startswith('@'):
+        with open(os.path.join(root, commands[0][1:]), encoding = 'utf-8') as f:
+            commands = json.load(f)
 
     home = os.path.join(root, 'home')
     work = os.path.join(root, 'work')

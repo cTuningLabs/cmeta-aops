@@ -8,6 +8,7 @@ said "already registered": the runner now says so in steps.txt and does not plug
 engine without --print-home (older than 0.35.2) gives no folder, and the tree is plugged as before.
 """
 
+import json
 import os
 import pathlib
 import subprocess
@@ -36,7 +37,7 @@ def fake_cx(folder):
         path.chmod(0o755)
 
 
-def run_round(tmp_path, answer):
+def run_round(tmp_path, answer, commands = ('task run test-python -q',)):
     fake_cx(tmp_path / 'bin')
     tree = tmp_path / 'tree'
     tree.mkdir()
@@ -45,7 +46,7 @@ def run_round(tmp_path, answer):
 
     env = dict(os.environ, PATH = str(tmp_path / 'bin') + os.pathsep + os.environ.get('PATH', ''),
                FAKE_HOME = answer(root), FAKE_LOG = str(log))
-    subprocess.run([sys.executable, str(RUNNER), str(root), str(tree), 'task run test-python -q'], env = env,
+    subprocess.run([sys.executable, str(RUNNER), str(root), str(tree)] + list(commands), env = env,
                    stdin = subprocess.DEVNULL, check = True, timeout = 120)
 
     steps = (root / 'work' / 'steps.txt').read_text().splitlines()
@@ -73,3 +74,14 @@ def test_an_engine_without_print_home_gets_the_tree_plugged_as_before(tmp_path):
     steps, calls = run_round(tmp_path, lambda root: 'cMeta notice: unknown flag --print-home')
 
     assert steps[0].startswith('plug: exit 0 in ') and [c for c in calls if 'repo plug' in c]
+
+
+def test_the_commands_can_come_from_a_json_file_in_the_root(tmp_path):
+    # A Windows host gets them so (commands.json next to the runner), out of reach of cmd.exe's quoting
+    root = tmp_path / 'round'
+    root.mkdir()
+    (root / 'commands.json').write_text(json.dumps(['task run test-python -q', 'task run test-c -q']))
+    steps, calls = run_round(tmp_path, lambda root: str(root / 'home'), commands = ['@commands.json'])
+
+    assert [s.split(': ', 2)[2] for s in steps[1:]] == ['task run test-python -q', 'task run test-c -q']
+    assert any('test-python' in c for c in calls) and any('test-c ' in c for c in calls)

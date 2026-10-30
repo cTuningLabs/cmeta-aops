@@ -33,9 +33,25 @@ SESSION_ENV = 'CMETA_TEST_SESSION'
 
 
 def tar_tree(tree, out):
-    """The tree as a tarball, without .git and the caches of Python and pytest."""
+    """
+    The tree as a tarball, without .git, the caches of Python and pytest, and the symbolic links that lead out of the
+    tree: a developer's link to another clone (__symlinks/cmeta, git-ignored) means nothing on another machine, and
+    the tarfile of Python 3.14 refuses to unpack a link to an absolute path - the round failed on a Windows host
+    (2026-10-29).
+    """
+    import ntpath
+    import posixpath
+
     def keep(info):
-        return None if set(info.name.replace('\\', '/').split('/')) & SKIP else info
+        parts = info.name.replace('\\', '/').split('/')
+        if set(parts) & SKIP:
+            return None
+        if info.issym():
+            link = info.linkname.replace('\\', '/')
+            inside = posixpath.normpath(posixpath.join(posixpath.dirname('/'.join(parts)), link)).split('/')[0] == parts[0]
+            if link.startswith('/') or ntpath.splitdrive(link)[0] or not inside:
+                return None
+        return info
 
     with tarfile.open(out, 'w:gz') as tar:
         tar.add(tree, arcname = os.path.basename(os.path.normpath(tree)), filter = keep)
@@ -204,6 +220,27 @@ class CTask(InitCTask):
                             'echo "started on $(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null): pid $!"\n')
             return path
 
+        def windows_launcher():
+            """
+            launch-windows.ps1: the runner started through WMI - a process Win32_Process.Create starts is no part of
+            the ssh session, which takes its own children along when it ends. The commands come from commands.json,
+            so that no quoting of cmd.exe or of a Python command line touches them; the Python is the one the host's
+            cx runs on (cx --version), never a bare "python" (a Store stub on Windows), and cx's folder leads PATH.
+            """
+            path = os.path.join(local, 'launch-windows.ps1')
+            with open(path, 'w', encoding = 'utf-8', newline = '\n') as f:
+                f.write(f'# test-on-hosts round {rid}: the runner started detached from the launching session\n\n'
+                        f"$ROOT = Join-Path $HOME '{remote.replace('/', chr(92))}'\n"
+                        'Set-Location -LiteralPath $ROOT\n\n'
+                        "$py = ((cx --version 2>$null | Select-String 'cMeta python path:' | Select-Object -First 1).Line -replace '.*python path:\\s*', '').Trim()\n"
+                        "if (-not $py) { 'start failed: cx --version names no python'; exit 1 }\n"
+                        '$bin = Split-Path -Parent (Get-Command cx).Source\n\n'
+                        """$line = 'cmd.exe /c "set "PATH=' + $bin + ';%PATH%" && "' + $py + '" "' + $ROOT + '\\runner.py" "' + $ROOT + '" tree.tar.gz @commands.json > "' + $ROOT + '\\run.out" 2>&1"'\n"""
+                        '$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $line; CurrentDirectory = $ROOT }\n'
+                        'if ($r.ReturnValue -ne 0) { "start failed: Win32_Process.Create returned $($r.ReturnValue)"; exit 1 }\n'
+                        '"started on $($env:COMPUTERNAME): pid $($r.ProcessId)"\n')
+            return path
+
         # Where an instance mounts the tree already, nothing is pushed but the runner - the paths compared as they
         # really are (the Mac's ~/CMETA is a link onto its external drive, which the instance mounts by its real path)
         real = lambda p: os.path.normcase(os.path.realpath(p)) if p else ''
@@ -215,17 +252,26 @@ class CTask(InitCTask):
         if any(not inside_of[h] for h in remote_hosts):
             tar_tree(tree, tarball)
 
+        # A Windows host reads the commands from a file (see windows_launcher)
+        windows = {h: self.is_windows(h) for h in remote_hosts}
+        commands_json = os.path.join(local, 'commands.json')
+        if any(windows.values()):
+            with open(commands_json, 'w', encoding = 'utf-8') as f:
+                json.dump(commands, f)
+
         for h in remote_hosts:
             inside = inside_of[h]
             files = [runner] if inside else [tarball, runner]
+            if windows[h]:
+                files.append(commands_json)
             for path in files:
                 r = self.host('push', arg1 = h, arg2 = path, to = f'{remote}/{os.path.basename(path)}')
                 if r['return'] > 0:
                     started[h] = f'push failed: {r.get("error")}'
                     break
             else:
-                r = self.host('run', arg1 = h, script = launcher_for(inside or 'tree.tar.gz', wsl = self.is_wsl(h)),
-                              capture = True)
+                launcher = windows_launcher() if windows[h] else launcher_for(inside or 'tree.tar.gz', wsl = self.is_wsl(h))
+                r = self.host('run', arg1 = h, script = launcher, capture = True)
                 out = (r.get('outputs') or {}).get(h, {}).get('stdout', '')
                 started[h] = out.strip().splitlines()[-1] if r['return'] == 0 and out.strip() else f'start failed: {r.get("error")}'
                 if inside:
@@ -276,13 +322,19 @@ class CTask(InitCTask):
                     'cat "$ROOT/DONE" 2>/dev/null || echo running\n'
                     'cat "$ROOT/work/steps.txt" 2>/dev/null\n'
                     'true\n')
+        # the same for a Windows host, whose shell is PowerShell
+        windows_script = os.path.join(script_dir, 'peek.ps1')
+        with open(windows_script, 'w', encoding = 'utf-8', newline = '\n') as f:
+            f.write(f"$ROOT = Join-Path $HOME '{remote.replace('/', chr(92))}'\n"
+                    "if (Test-Path \"$ROOT\\DONE\") { Get-Content \"$ROOT\\DONE\" } else { 'running' }\n"
+                    "if (Test-Path \"$ROOT\\work\\steps.txt\") { Get-Content \"$ROOT\\work\\steps.txt\" }\n")
         try:
-            return self._peek(con, rid, local, remote, host_list, script)
+            return self._peek(con, rid, local, remote, host_list, script, windows_script)
         finally:
             import shutil
             shutil.rmtree(script_dir, ignore_errors = True)
 
-    def _peek(self, con, rid, local, remote, host_list, script):
+    def _peek(self, con, rid, local, remote, host_list, script, windows_script = None):
         states = {}
         for h in host_list:
             if h == HERE:
@@ -299,7 +351,8 @@ class CTask(InitCTask):
                     elif name == 'DONE':
                         text += 'running\n'
             else:
-                r = self.host('run', arg1 = h, script = script, capture = True)
+                use = windows_script if windows_script and self.is_windows(h) else script
+                r = self.host('run', arg1 = h, script = use, capture = True)
                 text = (r.get('outputs') or {}).get(h, {}).get('stdout', '') if r['return'] == 0 else f'unreachable: {r.get("error")}\n'
 
             lines = [l for l in text.splitlines() if l.strip()]
@@ -363,6 +416,18 @@ class CTask(InitCTask):
                 if os.path.isdir(root):
                     self.cm.utils.files.safe_delete_directory(root)
                 removed[h] = not os.path.exists(root)
+            elif self.is_windows(h):
+                # PowerShell knows no "rm -rf"; the folder is removed as a whole, its read-only files included
+                import tempfile
+                script_dir = tempfile.mkdtemp(prefix = f'cmeta-remove-{rid}-')
+                script = os.path.join(script_dir, 'remove.ps1')
+                with open(script, 'w', encoding = 'utf-8', newline = '\n') as f:
+                    f.write(f"$ROOT = Join-Path $HOME '{remote.replace('/', chr(92))}'\n"
+                            'if (Test-Path -LiteralPath $ROOT) { Remove-Item -LiteralPath $ROOT -Recurse -Force }\n'
+                            'if (Test-Path -LiteralPath $ROOT) { exit 1 }\n')
+                r = self.host('run', arg1 = h, script = script, capture = True)
+                shutil.rmtree(script_dir, ignore_errors = True)
+                removed[h] = r['return'] == 0
             else:
                 r = self.host('run', arg1 = h, arg2 = f'rm -rf ~/{remote}', capture = True)
                 removed[h] = r['return'] == 0
@@ -437,11 +502,24 @@ class CTask(InitCTask):
         user's): there only a new session (setsid) outlives the wsl.exe session that started the runner."""
         if self.instances.get(h, {}).get('engine') == 'wsl':
             return True
+        return str(self.host_desc(h).get('type') or '') == 'wsl'
+
+    def is_windows(self, h):
+        """A Windows host reached over ssh (its os, or the PowerShell / cmd shell of its access): its launcher, peek and
+        removal are PowerShell, not bash. A WSL distribution or a container of a Windows machine is not one."""
+        if h in self.instances:
+            return False
+        d = self.host_desc(h)
+        shell = str((d.get('access') or {}).get('shell') or '').strip().lower()
+        return d.get('type') == 'ssh' and (str(d.get('os') or '').lower() == 'windows' or shell in ('powershell', 'pwsh', 'cmd'))
+
+    def host_desc(self, h):
+        """The _desc of a host artifact ({} when there is none)."""
         r = self.cm.access({'category': 'host', 'command': 'find', 'arg1': h, 'con': False})
         if r.get('return', 1) > 0 or not r.get('artifacts'):
-            return False
+            return {}
         rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(r['artifacts'][0]['path'], '_desc'))
-        return rd.get('return', 1) == 0 and str((rd.get('data') or {}).get('type') or '') == 'wsl'
+        return (rd.get('data') or {}) if rd.get('return', 1) == 0 else {}
 
     ############################################################
     def host(self, command, **params):

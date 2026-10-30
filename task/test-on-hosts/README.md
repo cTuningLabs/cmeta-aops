@@ -39,6 +39,10 @@ How it runs:
 
 - The tree is packed once (without `.git` and caches). It is pushed with `runner.py` to `~/cmeta-tests/test-on-hosts-<id>/`
   of each host and started there with `nohup python3 runner.py`, so a dropped ssh connection does not stop it.
+- A Windows host (its access shell PowerShell or cmd, or `os: windows`) gets PowerShell instead of bash: the runner
+  is started through WMI (`Win32_Process.Create`, a process the ssh session does not take along when it ends) with
+  the Python its `cx` runs on, and its commands go in `commands.json` next to the runner, out of reach of cmd.exe's
+  quoting. Peek and remove are PowerShell there too.
 - `here` runs the same runner on this machine, detached, with the tree folder as it is, in
   `<here_dir>/test-on-hosts-<id>/`: the key `here_dir` of the config artifact `task-test-on-hosts`, else
   `~/cmeta-tests` as on a remote host (`cx config set task-test-on-hosts --meta.here_dir=D:\cmeta-tests`). Keep it

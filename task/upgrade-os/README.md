@@ -23,12 +23,22 @@ cx task run upgrade-os --dry_run                 # print the commands, run nothi
 | Fedora, RHEL (dnf / yum) | `dnf -y upgrade --refresh`, `--autoremove` | the same | the same | `needs-restarting -r` |
 | openSUSE (zypper) | `refresh`, `--non-interactive update` | the same | the same | `zypper needs-rebooting` |
 | Arch (pacman), Alpine (apk), Void (xbps) | `pacman -Syu --noconfirm`, `apk update` + `apk upgrade`, `xbps-install -Syu -y` | the same | the same | - |
-| macOS | `softwareupdate -ia` (root) | `brew update && brew upgrade` | in the system updates | the output of softwareupdate |
-| Windows | Windows Update only with `--windows_update` (PSWindowsUpdate, elevated) | `winget upgrade --all` | through Windows Update | the `RebootRequired` registry key |
+| macOS | `softwareupdate -ia` (root) | `brew update && brew upgrade` | in the system updates | an update still listed by `softwareupdate -l` with `Action: restart` |
+| Windows | Windows Update only with `--windows_update`: software updates, no drivers (`windows-update.ps1`, PSWindowsUpdate, elevated) | `winget upgrade --all` | through Windows Update | the `RebootRequired` registry key |
+
+On Linux the upgrade is wrapped by `file-mounts.sh` (root): a file of a package that something else
+mounts over cannot be replaced by any package manager - WSL mounts its kernel's `perf` read-only over
+the `/usr/bin/perf` of `linux-tools-common`, and dpkg stopped with "Invalid cross-device link" and
+dozens of packages left unconfigured. Such mounts (regular files under `/usr`, `/bin`, `/sbin`, `/lib*`,
+`/opt`, owned by a package; never `/etc`) are bound to a place under `/run/cmeta-upgrade-os` and
+unmounted before the upgrade, and mounted back after it - also after a failed one. With apt,
+`dpkg --configure -a` runs first, so that a run cut short before is finished instead of refused.
 
 `--check` runs the listing of each row instead (`apt list --upgradable`, `dnf check-update`,
 `softwareupdate -l`, `brew outdated`, `winget upgrade`, `fwupdmgr get-updates`), which needs no root
-except apt's index refresh.
+except apt's index refresh. The verdict line carries what the listings found (`upgrade-os: ... pending:
+12 packages`, or `pending: macOS 27.2-26B123, 3 brew packages` - the macOS updates by name), since
+`cx host upgrade --check` shows only the last lines of each host.
 
 ## Root and sudo
 
@@ -36,6 +46,11 @@ The system steps run with `sudo -n` (never a hidden prompt) unless the run is in
 and not `-q`), where `sudo` may ask once. Without passwordless sudo a non-interactive run says so and
 stops - over ssh, add a `NOPASSWD` rule for the user, or run it in a terminal on the machine. A root
 shell needs no sudo. Windows needs an elevated shell only for `--windows_update`.
+
+Windows Update installs nothing for a remote logon, and an ssh session is one ("Access is denied"; the
+search works): `windows-update.ps1` installs as SYSTEM in a scheduled task of its own, which it registers,
+starts, waits for, prints the log of and removes - the same from a local shell. It installs the
+PSWindowsUpdate module (and the NuGet provider) when missing, without a question.
 
 ## On a fleet
 

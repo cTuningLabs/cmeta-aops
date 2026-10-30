@@ -12,6 +12,7 @@ decides the commands; run() executes them.
 """
 
 import os
+import shlex
 import sys
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
@@ -21,6 +22,9 @@ from task_c36be4b9314a45e0.api.ctask import InitCTask
 # such step. {kind} of apt is "upgrade" or "dist-upgrade" (--full); the Dpkg options keep a changed
 # configuration file instead of asking about it.
 APT = {'update': '{pm} update',
+       # a run cut short before (a failed unpack) left packages unconfigured, and apt refuses to go on until dpkg
+       # finished them: done first, a no-op otherwise
+       'configure': 'env DEBIAN_FRONTEND=noninteractive dpkg --configure -a --force-confdef --force-confold',
        'upgrade': 'env DEBIAN_FRONTEND=noninteractive {pm} -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold {kind}',
        'full': 'dist-upgrade', 'normal': 'upgrade',
        'autoremove': 'env DEBIAN_FRONTEND=noninteractive {pm} -y autoremove',
@@ -42,14 +46,25 @@ SYSTEM = {
     'xbps-install': {'upgrade': 'xbps-install -Syu -y', 'check': 'xbps-install -Sun'},
 }
 
+# The files of packages that something else mounts over (the perf of the WSL kernel over /usr/bin/perf), which no
+# package manager can replace: moved aside before the upgrade and back after it, also after a failed one - see
+# file-mounts.sh next to this file
+FILE_MOUNTS = 'sh ' + shlex.quote(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'file-mounts.sh'))
+
 # macOS: the system (softwareupdate, root) and the user's Homebrew; Windows: the user's apps (winget) and,
 # only when asked, Windows Update through the PSWindowsUpdate module (an elevated PowerShell)
-MACOS_SYSTEM = {'upgrade': 'softwareupdate -ia', 'check': 'softwareupdate -l', 'sudo': True, 'reboot_text': 'restart'}
+MACOS_SYSTEM = {'upgrade': 'softwareupdate -ia', 'check': 'softwareupdate -l', 'sudo': True, 'reboot_text': 'Action: restart'}
 BREW = {'update': 'brew update', 'upgrade': 'brew upgrade', 'check': 'brew outdated', 'sudo': False}
 WINGET = {'upgrade': 'winget upgrade --all --source winget --accept-source-agreements --accept-package-agreements --disable-interactivity',
           'check': 'winget upgrade --source winget --accept-source-agreements', 'sudo': False}
-WINDOWS_UPDATE = {'upgrade': 'powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Get-Module -ListAvailable PSWindowsUpdate)) { Install-Module PSWindowsUpdate -Force -Scope CurrentUser }; Import-Module PSWindowsUpdate; Get-WindowsUpdate -AcceptAll -Install -IgnoreReboot"',
-                  'check': 'powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Get-Module -ListAvailable PSWindowsUpdate)) { Install-Module PSWindowsUpdate -Force -Scope CurrentUser }; Import-Module PSWindowsUpdate; Get-WindowsUpdate"',
+
+# Windows Update through PSWindowsUpdate, by windows-update.ps1 next to this file: software updates only, never a
+# question nobody can answer (-NonInteractive; TLS 1.2 and the NuGet provider before Install-Module - the stock
+# PowerShellGet 1.0.0.1 asked about NuGet and a run waited for good), and the install as SYSTEM in a scheduled task
+# of its own - Windows Update installs nothing for a remote session such as ssh (both seen 2026-10-29)
+WINDOWS_UPDATE_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'windows-update.ps1')
+PS_WINDOWS_UPDATE = f'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{WINDOWS_UPDATE_SCRIPT}"'
+WINDOWS_UPDATE = {'upgrade': PS_WINDOWS_UPDATE, 'check': PS_WINDOWS_UPDATE + ' -Check',
                   'sudo': False, 'reboot_cmd': 'powershell -NoProfile -Command "if (Test-Path \'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired\') { exit 1 } else { exit 0 }"', 'reboot_codes': (1,)}
 
 # Firmware: fwupd on Linux (the LVFS: laptops, docks, NVMe, ...); macOS firmware comes with softwareupdate;
@@ -67,8 +82,9 @@ def plan(uname, os_extra, system = True, apps = True, firmware = False, windows_
          full = False, autoremove = False, root = False, interactive = False):
     """
     The steps for this OS, in order: (name, command, needs_sudo, kind) - kind is "system", "apps",
-    "firmware" or "reboot?" (a probe whose exit code says a reboot is due; its reboot_codes come along
-    as the fifth element). Nothing runs here. --check lists what would be upgraded instead of upgrading.
+    "firmware", "restore" (runs also after a failed step: the file mounts put back) or "reboot?" (a probe
+    whose exit code says a reboot is due; its reboot_codes come along as the fifth element). Nothing runs
+    here. --check lists what would be upgraded instead of upgrading.
     """
     steps = []
     extra = os_extra or {}
@@ -89,9 +105,12 @@ def plan(uname, os_extra, system = True, apps = True, firmware = False, windows_
                 add('check', fmt(table['check']) if table.get('check') else None, False, 'system')
             else:
                 add('update', fmt(table['update']) if table.get('update') else None, True, 'system')
+                add('mounts aside', FILE_MOUNTS + ' aside', True, 'system')
+                add('configure', table.get('configure'), True, 'system')
                 add('upgrade', fmt(table['upgrade']), True, 'system')
                 if autoremove:
                     add('autoremove', fmt(table['autoremove']) if table.get('autoremove') else None, True, 'system')
+                add('mounts back', FILE_MOUNTS + ' back', True, 'restore')       # also after a failed upgrade
                 if table.get('reboot_file'):
                     add('reboot?', f'test -f {table["reboot_file"]}', False, 'reboot?', (0,))
                 elif table.get('reboot_cmd'):
@@ -107,6 +126,10 @@ def plan(uname, os_extra, system = True, apps = True, firmware = False, windows_
         if system:
             add('system check' if check else 'system upgrade', MACOS_SYSTEM['check'] if check else MACOS_SYSTEM['upgrade'],
                 not check, 'system')
+            if not check:
+                # a macOS update that softwareupdate -ia only prepared is still listed, with "Action: restart" (asked
+                # before brew: a failed brew upgrade stops the run)
+                add('reboot?', MACOS_SYSTEM['check'], False, 'reboot?', MACOS_SYSTEM['reboot_text'])
         if apps:
             add('brew check' if check else 'brew upgrade', BREW['check'] if check else BREW['update'] + ' && ' + BREW['upgrade'], False, 'apps')
         # firmware: part of softwareupdate on a Mac
@@ -127,6 +150,29 @@ def with_sudo(cmd, needs_sudo, interactive):
     if not needs_sudo:
         return cmd
     return ('sudo ' if interactive else 'sudo -n ') + cmd
+
+
+def pending(name, stdout, package_manager = None):
+    """
+    What a check step found, from its standard output: (count, items, what) - items are named only where they are
+    few and telling (the macOS updates); None for a check this task does not read. The final line of the run carries
+    it, so that "cx host upgrade --check" says how much is pending (it shows only the last lines of the output).
+    """
+    import re
+    lines = [x.strip() for x in (stdout or '').splitlines() if x.strip()]
+    if name == 'check' and package_manager in ('apt-get', 'apt'):
+        return len([x for x in lines if 'upgradable from' in x]), [], 'packages'
+    if name == 'system check':
+        labels = [x.split('Label:', 1)[1].strip() for x in lines if x.startswith('* Label:')]
+        return len(labels), labels, 'macOS updates'
+    if name == 'brew check':
+        return len([x for x in lines if not x.startswith(('==>', 'Warning', 'Error'))]), [], 'brew packages'
+    if name == 'apps check':
+        m = re.search(r'(\d+) upgrades? available', stdout or '')
+        return (int(m.group(1)) if m else 0), [], 'winget apps'
+    if name == 'windows update check':
+        return len([x for x in lines if re.search(r'\bKB\d{6,8}\b', x)]), [], 'Windows updates'
+    return None
 
 
 class CTask(InitCTask):
@@ -205,19 +251,38 @@ class CTask(InitCTask):
                 return result
 
         failed = []
+        stopped = False
         for name, cmd, needs_sudo, kind, codes in steps:
+            # after a failed step only what puts things back runs
+            if stopped and kind != 'restore':
+                continue
             line = with_sudo(cmd, needs_sudo, interactive)
             if con:
                 print('')
                 print(f'=== upgrade-os: {name}: {line}')
                 sys.stdout.flush()              # keep the header ahead of the command's own output in a pipe
-            rr = self.cm.utils.sys.run(line, capture_output = (kind == 'reboot?') or not con, con = con and kind != 'reboot?',
+            # a check is captured, then printed, so that what it found can be counted
+            counted = check and kind != 'reboot?'
+            rr = self.cm.utils.sys.run(line, capture_output = (kind == 'reboot?') or counted or not con,
+                                       con = con and kind != 'reboot?' and not counted,
                                        verbose = verbose, print_cmd = False, fail_on_error = False, timeout = timeout,
                                        env = env, logger = self.logger)
             rc = rr.get('returncode', 0)
             result['steps'].append({'name': name, 'cmd': line, 'returncode': rc})
+            if counted:
+                if con:
+                    for text in (rr.get('stdout'), rr.get('stderr')):
+                        if (text or '').strip():
+                            print(text.rstrip())
+                found = pending(name, rr.get('stdout'), extra.get('package_manager'))
+                if found is not None:
+                    result.setdefault('pending', {})[name] = {'count': found[0], 'items': found[1], 'what': found[2]}
             if kind == 'reboot?':
-                result['reboot_required'] = rc in (codes or (1,))
+                # an exit code that says so, or a text in the output (macOS: an update still waiting for its restart)
+                if isinstance(codes, str):
+                    result['reboot_required'] = codes in (rr.get('stdout') or '') + (rr.get('stderr') or '')
+                else:
+                    result['reboot_required'] = rc in (codes or (1,))
                 continue
             if rc != 0:
                 if name == 'check' and extra.get('package_manager') in ('dnf', 'yum', 'tdnf') and rc == 100:
@@ -236,17 +301,28 @@ class CTask(InitCTask):
                     print(f'upgrade-os: {name} failed (exit code {rc})' + (f': {err[-1]}' if err else '') +
                           (' - sudo needs a password here: run it in a terminal, or add a NOPASSWD rule' if needs_sudo and rc == 1 and not interactive else ''))
                 if not ignore_errors:
-                    break
+                    stopped = True
 
         if con:
-            done = [s['name'] for s in result['steps'] if s['name'] != 'reboot?' and (s['returncode'] == 0 or s.get('note'))]
+            done = [s['name'] for s in result['steps'] if s['name'] not in ('reboot?', 'mounts aside', 'mounts back')
+                    and (s['returncode'] == 0 or s.get('note'))]
             text = f'upgrade-os: {label}: ' + (', '.join(done) + ' ok' if done else 'nothing ran')
             if failed:
                 text += f'; FAILED: {", ".join(failed)}'
+            found = [', '.join(p['items']) if p['items'] else f"{p['count']} {p['what'][:-1] if p['count'] == 1 else p['what']}"
+                     for p in (result.get('pending') or {}).values()]
+            if found:
+                text += '; pending: ' + ', '.join(found)
             if result['reboot_required'] is True:
                 text += '; a reboot is required'
             elif result['reboot_required'] is False:
                 text += '; no reboot required'
+            if uname == 'darwin' and result['reboot_required'] and not check:
+                # a plain reboot can leave a prepared macOS update pending; softwareupdate installs it at a restart
+                # it starts itself, and on Apple silicon only with the volume owner's password
+                print('')
+                print('upgrade-os: a macOS update waits for its restart - run in a terminal on the Mac: '
+                      'sudo softwareupdate -i -a -R --user <owner> (Apple silicon asks the owner\'s password)')
             print('')
             print(text)
 

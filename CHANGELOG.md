@@ -2,6 +2,37 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.57.2
+- **`upgrade-os --windows_update` works over ssh and asks nothing:** Windows Update installs nothing for a remote
+  logon ("Access is denied"), so the install runs as SYSTEM in a scheduled task of its own, which the new
+  `windows-update.ps1` of the task registers, waits for, prints the log of and removes. The stock PowerShellGet of
+  Windows asked whether to install the NuGet provider before `Install-Module PSWindowsUpdate`, and a run over ssh
+  waited for an answer nobody could give: now `-NonInteractive`, TLS 1.2 and the NuGet provider first. Software
+  updates only (`-UpdateType Software`: no drivers).
+- **`upgrade-os` on WSL and any Linux with files mounted over those of packages:** WSL mounts its kernel's `perf`
+  read-only over the `/usr/bin/perf` of `linux-tools-common`, and dpkg could neither back it up ("Invalid
+  cross-device link") nor replace it - the upgrade stopped with dozens of packages unpacked and not configured. The
+  new `file-mounts.sh` of the task moves such mounts (regular files of packages under the system folders, never
+  `/etc`) aside before the upgrade and back after it, also after a failed one; with apt, `dpkg --configure -a`
+  first finishes what a run cut short left.
+- **Shell scripts are LF in every checkout** (`.gitattributes`: `*.sh text eol=lf`): a Windows clone with Git's
+  default `core.autocrlf=true` gave them CRLF, and they run on Linux and macOS - `file-mounts.sh` from the tree
+  (WSL reads a Windows clone), the container's `entrypoint.sh`, the host probes.
+- **`upgrade-os --check` says how much is pending** on its verdict line (`pending: 12 packages`, the macOS updates by
+  name, brew packages, winget apps, Windows updates), since `cx host upgrade --check` shows only the last lines of
+  each host (on a Mac the update's label and the `brew outdated` list were lost among brew's own news). After an
+  upgrade, a macOS update that is still listed with `Action: restart` means a reboot is due, with the command that
+  installs it at its restart.
+- **`test-on-hosts` on a Windows host:** the launcher, the peek and the removal were bash scripts for every remote
+  host, so a round could not start on a Windows host. A Windows host gets PowerShell: the runner started through
+  WMI with the Python of its `cx`, its commands in `commands.json` (`runner.py <root> <tree> @commands.json`).
+- **`test-on-hosts` leaves out links that lead out of the tree:** a git-ignored link to another clone went into the
+  tarball, and the tarfile of Python 3.14 refuses to unpack a link to an absolute path - the round failed at once.
+- **`cx host run --script` on a PowerShell host like a command:** the script runs with `-ExecutionPolicy Bypass`, as
+  a command already did (under Windows' default policy an `Import-Module` of a gallery module in a script waited
+  without a word), and without progress records. A PowerShell host writes its errors to stderr as a `#< CLIXML` blob
+  when it runs what cx sends with `-EncodedCommand`: captured output now shows their text.
+
 ## 0.57.1
 - **`cx host restart` requires what answered before it:** the projects of the host are checked once just before
   the restart, and only the checks that answered then must answer again; a server started on demand only (down
