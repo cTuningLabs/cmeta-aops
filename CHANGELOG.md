@@ -2,6 +2,26 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.60.0
+- **`tool/nvidia-driver`: the NVIDIA driver installed and upgraded by cx.** `cx tool setup nvidia-driver --status` shows
+  the installed driver and the newest one for this GPU, and `cx tool upgrade nvidia-driver [--version=<branch or
+  release>]` installs it with NVIDIA's own packages:
+  - **Windows:** the driver NVIDIA's download service lists for the GPU, on both branches (production and new
+    feature). Its NVIDIA signature is checked, and it runs silently with administrator rights (a UAC prompt; a quiet run
+    asks for nothing, so it refuses in a terminal that is not elevated).
+  - **Linux:** the `.run` installer of NVIDIA's archive, checked against its sha256 and built by DKMS with the kernel
+    module type in use. It is installed next to the running driver, and the next boot loads it. A driver from the
+    distribution's packages, or Secure Boot, is refused.
+  - **Older GPUs** stop at their last branch: Maxwell, Pascal and Volta at 580.
+  - After an install the cached record of `tool/cuda` is dropped, so `tool/nvcc` reads the new driver. Since CUDA 13.1
+    on Windows and 13.4 on Linux the toolkit installers carry no driver.
+- **`tool/nvcc` knows its newest version:** the nvcc of the newest CUDA release this driver and GPU run (NVIDIA's
+  list of releases), so `cx tool setup nvcc --status` says whether it is outdated and `cx tool upgrade nvcc` installs
+  that toolkit into the cache.
+- **task/setup asks a tool for its newest version:** a `latest_version()` in the tool's API answers when the newest
+  version depends on the machine (the driver of its GPU). A tool with `installs_into_system: true` is not said to
+  come from another channel because of where its files are.
+
 ## 0.59.0
 - **Mistral Vibe, the eighth harness of run-ai.** `tool/vibe` installs the PyPI package `mistral-vibe` with cMeta's uv
   into an environment of its own inside the cache entry (a CPython 3.12; nothing in the user's Python, no PATH change)

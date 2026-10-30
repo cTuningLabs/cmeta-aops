@@ -680,3 +680,14 @@ def test_the_build_tools_release_for_a_version(vs):
     assert year_for("19.29", matches) == "2019"
     assert year_for("17", matches) is None                    # not a cl.exe version
     assert year_for("<19.10", matches) is None
+
+
+def test_the_newest_version_for_status_and_upgrade(nvcc_api, server):
+    """task/setup asks the tool for its newest version (--status, --upgrade): the nvcc of the newest release this
+    driver and GPU run - what an install without --version takes."""
+    t = tool(nvcc_api, None)
+    r = t.latest_version(context(arch = 86, driver = "13.0"), {})
+    assert r["return"] == 0 and r["version"] == "13.0.88" and "CUDA 13.0.2" in r["source"]
+    assert t.latest_version(context(arch = 50, driver = "13.0"), {})["version"] == "12.9.86"     # CUDA 13 has no sm_50
+    assert t.latest_version(context(arch = 86, driver = "12.9"), {})["version"] == "12.9.86"     # the driver runs 12.x
+    assert t.latest_version(context(arch = 30, driver = "13.0"), {})["return"] > 0               # nothing for Kepler

@@ -16,7 +16,8 @@ match_version:
 cmd_get_version: '{{tool_path}} --version'
 
 install_help_text:
-  Please install CUDA from https://developer.nvidia.com/cuda/toolkit !
+  The CUDA version of the driver comes with the NVIDIA driver - "cx tool upgrade nvidia-driver" installs the newest
+  one for this GPU; the CUDA toolkit is "cx tool install nvcc".
 
 extra_paths:
   windows:

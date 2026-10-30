@@ -768,9 +768,22 @@ def find_latest(self, ctx, desc, tool_read, params, channels, query_channel = No
     if query_channel is None:
         query_channel = channels['declared']
 
-    # 1. The tool's own answer
+    # 1. The tool's own answer: its API's latest_version() when the newest version depends on this machine (the
+    #    driver of its GPU), else cmd_get_latest_version
+    code = (tool_read or {}).get('tool_api_code')
+    if code is not None and callable(getattr(code, 'latest_version', None)):
+        try:
+            r = code.latest_version(ctx, params)
+        except Exception as e:
+            r = {'return': 1, 'error': f'{type(e).__name__}: {e}'}
+        if r.get('return', 0) == 0 and r.get('version'):
+            result['upstream_version'] = r['version']
+            result['upstream_source'] = r.get('source') or 'the tool'
+        else:
+            notes.append(f'the tool could not tell its newest version ({r.get("error", "no answer")})')
+
     cmd_latest = desc.get('cmd_get_latest_version')
-    if cmd_latest:
+    if cmd_latest and result['upstream_version'] is None:
         r = self._use(ctx, desc.get('cmd_get_latest_version_uses'), never_install = never_install)
         if r['return'] > 0:
             notes.append(f'cmd_get_latest_version needs a tool that is not available ({r.get("error")})')
@@ -1375,7 +1388,8 @@ def status_tool(self, ctx, params, tool_read):
     path = detected[0]['path'] if installed else None
     version = detected[0]['version'] if installed else None
 
-    installed_channel = guess_channel_from_path(path, uname) if installed else None
+    # A tool whose own install writes into the system (a GPU driver) is where the OS keeps it: no other channel to guess
+    installed_channel = guess_channel_from_path(path, uname) if installed and not desc.get('installs_into_system') else None
 
     # Which channel's "latest" the verdict uses: the one the installed copy came from
     # when the tool is installed that way too (we know the package then), else the
@@ -1672,7 +1686,7 @@ def upgrade_tool(self, ctx, old, **kwargs):
             print (f'{space}UPGRADE: "{name}" {old_version} -> {new_version} ({new_path}), although the upgrade command returned an error')
         elif failed:
             print (f'{space}WARNING: the upgrade command failed and "{name}" is still {old_version} at {old_path}')
-            installed_channel = guess_channel_from_path(old_path)
+            installed_channel = None if desc.get('installs_into_system') else guess_channel_from_path(old_path)
             if installed_channel and installed_channel != channels['declared'] and channel not in (CHANNEL_RELEASE, CHANNEL_RERUN, CHANNEL_NONE):
                 print (f'{space}         this copy seems to come from {CHANNEL_TEXT.get(installed_channel, installed_channel)}, '
                        f'not from {CHANNEL_TEXT[channels["declared"]]} - upgrade it the way it was installed, or pass --version=<x.y.z>')

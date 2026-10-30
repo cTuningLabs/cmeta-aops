@@ -63,6 +63,26 @@ class CTool(InitCTool):
         return driver_cuda, gpu_arch_min
 
     ############################################################
+    def latest_version(self, ctx, params):
+        """
+        The nvcc of the newest CUDA release this driver and GPU run - the one an install without --version
+        takes - for --status and --upgrade (task/setup asks for it): NVIDIA's list of releases.
+        """
+
+        driver_cuda, gpu_arch_min = self._gpu(ctx, params.get('with') or {})
+        try:
+            release, message = redist.choose(redist.releases(), None, None, driver_cuda, gpu_arch_min, None)
+            if not release:
+                return {'return': 16, 'error': message}
+            nvcc = redist.nvcc_version(redist.manifest(release))
+        except (OSError, ValueError) as e:
+            return {'return': 16, 'error': f'cannot read the list of CUDA releases at {redist.BASE}: {e}'}
+        if not nvcc:
+            return {'return': 16, 'error': f'CUDA {release} lists no nvcc'}
+        runs = f', the newest the driver (CUDA {driver_cuda}) runs' if driver_cuda else ''
+        return {'return': 0, 'version': nvcc, 'source': f'CUDA {release}{runs} - {redist.BASE}'}
+
+    ############################################################
     def _libs(self, _with):
         """The libraries asked for: --with.cuda_libs=cublas,cufft (or a list)."""
 

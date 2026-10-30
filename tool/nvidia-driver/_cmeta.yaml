@@ -1,0 +1,20 @@
+artifact: 7295712accb546b1
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-10-30T15:56:29.033281+00:00'
+desc: "The NVIDIA GPU driver: detected by nvidia-smi (the installed version, the running one, the GPUs), installed and upgraded with NVIDIA's own packages - on Windows the driver NVIDIA's download service lists for the GPU, on Linux the .run installer of NVIDIA's archive (DKMS, the kernel module type in use)."
+generator:
+  agent: Claude Code 2.1.310
+  by: Grigori Fursin
+  gateway: dapple
+  method: agent
+  via: cmeta 0.37.11
+  model: claude-opus-5-5
+note: 'Added 2026-10-30 at the user''s request ("check cuda driver and nvcc upgrade on any machine including Windows
+  and Linux"). CUDA 13.4 needs the R615 driver branch; since CUDA 13.1 (Windows) and 13.4 (Linux) the toolkit
+  installers carry no driver.'
+tags:
+- nvidia
+- driver
+- gpu
+- cuda
