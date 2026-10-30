@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## 0.60.0.1
+## 0.60.1
 - **A value option given without its value says so.** `cx tool setup nvcc --version` (no `=13.4`) ended in a
   traceback, `--tool_path` alone looked for a tool at the path "True", and `--version_policy` alone was accepted.
   A task's option that takes a value stops the run with a message instead. That means an option described in
