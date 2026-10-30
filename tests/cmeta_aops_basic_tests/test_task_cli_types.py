@@ -197,6 +197,46 @@ def test_the_switches(cm, tasks, monkeypatch):
 # The same through the real command line: cx and cxt in a child process (the engine's own parsing of the
 # words, the argv it keeps in ctx['origin']['cli'], the exit code and the message), every form of a word
 
+def test_a_value_option_without_its_value_names_what_it_takes(cm, tasks):
+    """--count (not --count=7) arrives as True: the run stops with what the option takes, instead of a task reading
+    a boolean as a number, a path or a word (cx tool setup nvcc --version ended in a traceback, 2026-10-30)."""
+    for params, text in ((dict(count=True), '"--count" of task "c5-child" needs a value: --count=<value>'),
+                         (dict(mode=True), '"--mode" of task "c5-child" needs a value: --mode=<value> (one of fast, full)'),
+                         (dict(out=True), '"--out" of task "c5-child" needs a value: --out=<value>'),
+                         (dict(count=False), '"--count" of task "c5-child" needs a value: --count=<value>')):
+        r = run(cm, 'c5-child', **params)
+        assert r['return'] > 0 and r['error'] == text, r
+
+    # flags stay flags, a parameter without a type takes what it gets, and the Python API is not read
+    r = run(cm, 'c5-child', flag=True, free=True)
+    assert r['return'] == 0 and r['got']['flag'] is True and r['got']['free'] is True, r
+    r = run(cm, 'c5-child', from_cli=False, count=True)
+    assert r['return'] == 0 and r['got']['count'] is True, r
+
+
+def test_the_value_options_of_a_task(cm):
+    """What takes a value: cli_params of type str/int/float or with values, run() annotations str/int/float, and a
+    text or a number as an unannotated default; a bool, a bare None default or **kwargs do not."""
+    import importlib.util, pathlib
+    spec = importlib.util.spec_from_file_location('task_api_v2_values', pathlib.Path(__file__).resolve().parents[2] /
+                                                  'category' / 'task' / 'api' / 'v2.py')
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError:
+        pytest.skip('the task category API needs cMeta to load')
+
+    def run_(self, ctx, a: str = None, b: int = 0, c: bool = False, d = 'x', e = None, f = 3, g = True, **kw):
+        pass
+
+    values = module.value_params_of(run_, {'h': 'str', 'i': {'values': [1, 2]}, 'j': 'bool', 'k': {'type': 'float'}})
+    assert sorted(values) == ['a', 'b', 'd', 'f', 'h', 'i', 'k']
+    assert module.value_params_of(None, None) == {}
+
+    ctx = {'origin': {'cli': {'cmd': ['tool', 'setup', 'nvcc', '--version', '-q', '--a-b', '--x=1', '--l,', '--', '--z']}}}
+    assert module.cli_flags(ctx) == {'version', 'q', 'a_b'}
+
+
 ENTRY = 'import sys; from cmeta.cli import {0}; sys.exit({0}())'
 
 
@@ -312,3 +352,14 @@ def test_cx_with_the_reading_switched_off(cm, tasks, tmp_path):
     code, text, got = cli(['task', 'run', 'c5-off', '--out={out}', '-q', '--flag=no'], tmp_path)
     assert code == 0, text
     assert got['flag'] == 'no'
+
+
+def test_cx_stops_on_a_value_option_without_its_value(cm, tasks, tmp_path):
+    code, text, got = cli(['task', 'run', 'c5-child', '--out={out}', '-q', '--count'], tmp_path)
+    assert code != 0 and got is None
+    assert '"--count" of task "c5-child" needs a value: --count=<value>' in text and 'Traceback' not in text, text
+
+    # after "--" a word belongs to the program, not to the task
+    code, text, got = cli(['task', 'run', 'c5-child', '--out={out}', '-q', '--', '--count'], tmp_path)
+    assert code == 0, text
+    assert got['count'] == 0

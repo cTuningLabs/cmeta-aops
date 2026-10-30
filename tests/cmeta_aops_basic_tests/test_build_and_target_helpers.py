@@ -404,3 +404,23 @@ def test_build_llama_cpp_default_checkout_is_the_release_build():
     tool = yaml.safe_load((REPO_ROOT / "tool" / "llama-cpp" / "_desc.yaml").read_text(encoding = "utf-8"))
     desc = (REPO_ROOT / "program" / "build-llama-cpp" / "_desc.yaml").read_text(encoding = "utf-8")
     assert "checkout: '{{params.checkout|b%s}}'" % tool["default_version"] in desc
+
+
+# --------------------------------------------------------------------------------------------
+# build-llama-cpp: the CUDA libraries of a toolkit in cMeta's cache, found by the linker and the loader on Linux
+# (2026-10-30)
+
+def test_cuda_libraries_of_a_cached_toolkit(tmp_path):
+    common = load_module("category/program/api/common_llama_cpp.py", "common_llama_cpp_cuda")
+    lib = tmp_path / "content" / "12.9.2" / "lib"
+    lib.mkdir(parents = True)
+    _global = {"lib-cuda": {"features": {"paths": {"found_dynamic_lib_paths": [str(lib)], "dynamic_lib": str(lib)}}}}
+    assert common.cuda_lib_dirs(_global) == [str(lib)]
+    assert common.cuda_lib_dirs({"lib-cuda": {"features": {"paths": {"dynamic_lib": str(tmp_path / "gone")}}}}) == []
+    assert common.cuda_lib_dirs({}) == []
+
+    v = common.cuda_link_vars([str(lib)], {"CMAKE_EXE_LINKER_FLAGS": "-fuse-ld=gold", "CMAKE_BUILD_RPATH": "/opt/x"})
+    assert v["CMAKE_BUILD_RPATH"] == f"/opt/x;{lib}"
+    assert v["CMAKE_EXE_LINKER_FLAGS"] == f"-fuse-ld=gold -Wl,-rpath-link,{lib}"
+    assert v["CMAKE_SHARED_LINKER_FLAGS"] == f"-Wl,-rpath-link,{lib}"
+    assert common.cuda_link_vars([], {}) == {}
