@@ -140,6 +140,7 @@ HARNESSES = {
     'agy':         {'task': 'run-agy,fe910b4a9c88448f',      'tool': 'agy,433f36c666ce47f1'},       # the same, by the command name
     'gemini':      {'task': 'run-gemini,af663bab27bb4725',   'tool': 'gemini,40a20e8dca604ece'},    # Gemini CLI: Code Assist Standard/Enterprise licences and API keys
     'hermes':      {'task': 'run-hermes,324010c67e7a41c2',   'tool': 'hermes,94ea5f9134034cfd'},    # Hermes Agent (Nous Research): many providers, its own skills and memory
+    'vibe':        {'task': 'run-vibe,b83de5abf84c4455',     'tool': 'vibe,ba9c17947415491b'},      # Mistral Vibe: a Mistral account or a MISTRAL_API_KEY
 }
 
 AI_DIR = '!AI'
@@ -243,12 +244,12 @@ READ_ONLY_FLAGS = {
 
 # The harness tasks that take "yes" (their own flags that stop the questions and lift the sandbox); run-openclaw has
 # none - OpenClaw follows its own settings. A task run-<x> that is not listed gets it only from --yes itself.
-YES_HARNESSES = ('claude', 'codex', 'opencode', 'agy', 'gemini', 'hermes')
+YES_HARNESSES = ('claude', 'codex', 'opencode', 'agy', 'gemini', 'hermes', 'vibe')
 
 # The harness tasks that take "long_prompt_file": where they write a prompt too long for a command line argument (an
 # interactive session preloads its first prompt that way; opencode and openclaw have no stdin mode at all) and ask the
 # agent to read it first. run-ai names that file in !AI/log; a task run-<x> that is not listed is not given it.
-LONG_PROMPT_HARNESSES = ('claude', 'codex', 'opencode', 'openclaw', 'agy', 'gemini', 'hermes')
+LONG_PROMPT_HARNESSES = ('claude', 'codex', 'opencode', 'openclaw', 'agy', 'gemini', 'hermes', 'vibe')
 
 
 def harness_choice(harness, agent, cx = False):
@@ -1596,7 +1597,7 @@ class CTask(InitCTask):
     # ------------------------------------------------------------------ run
     def run(self,
             ctx: dict,                      # cMeta context
-            harness: str = '',              # claude (default) | codex | opencode | openclaw | antigravity (agy) | gemini | hermes | <x> (then the task run-<x>)
+            harness: str = '',              # claude (default) | codex | opencode | openclaw | antigravity (agy) | gemini | hermes | vibe | <x> (then the task run-<x>)
             agent: str = '',                # the old name of --harness (still accepted)
             cx: bool = False,               # --harness=codex in short
             gateway: str = '',              # an ai.gateway alias (a company's gateway, a llama.cpp server, ...) or "login"; empty: the project's _desc.yaml (ai_gateway), this machine's config, else login

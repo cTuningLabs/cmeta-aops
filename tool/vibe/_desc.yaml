@@ -1,0 +1,56 @@
+authors: Grigori Fursin
+
+# Mistral Vibe ("vibe": https://github.com/mistralai/mistral-vibe, https://docs.mistral.ai/vibe, Apache-2.0), Mistral
+# AI's open-source terminal coding agent: a Python CLI (the PyPI package "mistral-vibe", Python 3.12+ with the GIL),
+# headless with "vibe -p <prompt>" / "--prompt-file <file>", interactive with "vibe [<prompt>]". It signs in with
+# "vibe --setup": a Mistral account in the browser (usage follows the plan), or an API key (MISTRAL_API_KEY, kept in
+# the OS keyring or ~/.vibe/.env). VIBE_HOME (default ~/.vibe) holds its config, keys, agents and session logs, like
+# ~/.claude for Claude Code: cMeta never moves it.
+#
+# Install strategy: cMeta's uv installs the package into an environment of its own INSIDE the cache entry
+# (UV_TOOL_DIR and UV_TOOL_BIN_DIR there, a uv-managed CPython 3.12): nothing in the user's Python, no PATH change, no
+# administrator rights; a version is "mistral-vibe==<version>" (api_v1.py). A copy the user installed with
+# "uv tool install mistral-vibe" or the official script (~/.local/bin) is found first, as any tool is.
+# Checked 2026-10-30 on Windows 11 (vibe 3.0.4, the newest on PyPI).
+names:
+  - vibe{{global.host.vars.file_ext_exe}}
+
+# "vibe --version" prints "vibe 3.0.4"
+match_version:
+  - regex: 'vibe\s+v?([0-9]+\.[0-9]+\.[0-9]+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+# The releases of the PyPI package, as tool/cmeta reads its own
+cmd_get_versions: >-
+  {{global.python.qpath}} -c "import json, urllib.request; print('\n'.join(json.load(urllib.request.urlopen('https://pypi.org/pypi/mistral-vibe/json', timeout=30))['releases']))"
+cmd_get_versions_regex: '^(\d+\.\d+\.\d+)$'
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: python,c00fb574d8ca4463
+
+install_help_text: |
+  Could not install Mistral Vibe automatically.
+  Install it per https://docs.mistral.ai/vibe/code/cli/install-setup
+    any OS, with uv:     uv tool install --python 3.12 mistral-vibe
+    Linux, macOS:        curl -LsSf https://mistral.ai/vibe/install.sh | bash
+  then retry "cx tool setup vibe".
+
+# uv, set up first: api_v1.py installs with it into the cache entry
+install_uses:
+  all:
+    - task: setup,a2f9b61079ce4333
+      name: uv,92f171fc18714ebd
+
+# Where "uv tool install" and the official script put the command of a user's own install
+extra_paths:
+  linux:
+    - '{{user_home}}/.local/bin'
+  darwin:
+    - '{{user_home}}/.local/bin'
+  windows:
+    - '{{global.host.os_env.USERPROFILE}}\.local\bin'
+
+# cxt run-ai --harness=vibe --login: "vibe --setup" (the browser sign-in or an API key); it has no status command
+login: ['--setup']

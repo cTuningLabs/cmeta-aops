@@ -233,6 +233,13 @@ class Category(InitCategory):
         check_versions = params.get('check_versions')
         if check_versions is None:
             check_versions = params.get('check_versions')
+
+        # The version check of a cached tool (its entry's version against the tool's real one) runs for the tool asked
+        # on the command line of this call only (--check_versions): the global setting below never ran one (the
+        # entries' default skipped it), and switching it on for every nested tool cost seconds per reuse (a CUDA
+        # chain) and would throw away the entries of tools that update themselves (2026-10-30, the user)
+        explicit_check = check_versions is True or str(check_versions).strip().lower() in ('true', 'yes', 'on', '1')
+
         if check_versions is None:
             check_versions = ctx['tasks'].get('global', {}).get('init', {}).get('tool', {}).get('check_versions')
         if check_versions is None:
@@ -1196,7 +1203,7 @@ class Category(InitCategory):
                             if (os.path.isfile(ca_check_path) or os.path.isdir(ca_check_path)):
                                 x_version = cache_artifact['cmeta'].get('params', {}).get('version')
                                 x_name = cache_artifact['cmeta'].get('params', {}).get('name')
-                                skip_cache_version_check = cache_artifact['cmeta'].get('skip_cache_version_check', True)
+                                skip_cache_version_check = cache_artifact['cmeta'].get('skip_cache_version_check', not explicit_check)
                                 if not skip_cache_version_check and x_version and x_name:
                                     x_cref = cache_artifact['cmeta'].get('cref')
 

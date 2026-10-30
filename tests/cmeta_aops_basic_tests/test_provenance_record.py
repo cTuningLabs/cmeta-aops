@@ -107,7 +107,11 @@ def record(prov, inspector, uname = "linux", cuda = False, python = False, compi
 # ---------------------------------------------------------------------------------------------- modes
 
 def test_modes(prov):
-    assert prov.mode_of(None) == "on" and prov.mode_of(True) == "on" and prov.mode_of("ON") == "on" and prov.mode_of("yes") == "on"
+    # a run that names no mode takes the environment's: the suite itself runs inside a test session (CMETA_TEST_SESSION
+    # exported), where that is "strict" - an explicit environment keeps this test to the default (2026-10-30)
+    assert prov.mode_of(None, env = {}) == "on" and prov.mode_of(True) == "on" and prov.mode_of("ON") == "on" and prov.mode_of("yes") == "on"
+    assert prov.mode_of(None, env = {"CMETA_TEST_SESSION": "20261030/1542.x"}) == "strict"
+    assert prov.mode_of(None, env = {"CMETA_PROVENANCE": "loaded", "CMETA_TEST_SESSION": "x"}) == "loaded"
     assert prov.mode_of(False) == "off" and prov.mode_of("off") == "off" and prov.mode_of("no") == "off"
     assert prov.mode_of("loaded") == "loaded" and prov.mode_of(" Strict ") == "strict"
     with pytest.raises(ValueError) as e:

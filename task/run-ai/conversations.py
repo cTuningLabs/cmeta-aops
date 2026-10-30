@@ -1120,7 +1120,8 @@ def resume_flags(harness, sid, interactive=False):
     if h == 'openclaw' and interactive:
         return ['--session', openclaw_session_key(sid)]
     return {'claude': ['--resume', sid], 'agy': ['--conversation', sid], 'opencode': ['--session', sid],
-            'openclaw': ['--session-id', sid], 'gemini': ['--resume', sid], 'hermes': ['--resume', sid]}.get(h, [])
+            'openclaw': ['--session-id', sid], 'gemini': ['--resume', sid], 'hermes': ['--resume', sid],
+            'vibe': ['--resume', sid]}.get(h, [])
 
 
 def session_exists(harness, sid, project_path):
@@ -1206,7 +1207,8 @@ def native_store_hint(harness):
     return {'claude': '~/.claude/projects/<slug>/<id>.jsonl', 'codex': 'state_*.sqlite + thread_history_*.sqlite in CODEX_SQLITE_HOME (run-ai: <project>/!AI/codex) or CODEX_HOME; rollout-*.jsonl in CODEX_HOME',
             'agy': '~/.gemini/antigravity-cli/conversations/<id>.db (protobuf blobs; the readable runs are recovered)', 'opencode': '~/.local/share/opencode/opencode.db',
             'openclaw': '~/.openclaw/agents/<agent>/sessions/<id>.jsonl (OPENCLAW_STATE_DIR moves ~/.openclaw)', 'gemini': '~/.gemini/tmp/<project>/chats/session-*.jsonl',
-            'hermes': '<HERMES_HOME>/state.db (~/.hermes; SQLite, read through "hermes sessions list" and "hermes sessions export --format jsonl")'}.get(h, '')
+            'hermes': '<HERMES_HOME>/state.db (~/.hermes; SQLite, read through "hermes sessions list" and "hermes sessions export --format jsonl")',
+            'vibe': '<VIBE_HOME>/logs (~/.vibe; a folder per session: meta.json, messages.jsonl)'}.get(h, '')
 
 
 # ====================================================================== the transcript

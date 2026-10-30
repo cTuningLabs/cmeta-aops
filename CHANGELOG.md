@@ -2,6 +2,19 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.59.0
+- **Mistral Vibe, the eighth harness of run-ai.** `tool/vibe` installs the PyPI package `mistral-vibe` with cMeta's uv
+  into an environment of its own inside the cache entry (a CPython 3.12; nothing in the user's Python, no PATH change)
+  and lists its releases from PyPI, so `cx tool upgrade vibe` works; `task/run-vibe` runs it headless (`-p`, or
+  `--prompt-file` for a long prompt) or interactive, `--yes` is `--auto-approve`, and the export of an `--output-dir`
+  gives the tokens, the cost and the session; `cxai --harness=vibe` (`--login` = `vibe --setup`).
+- **`cx tool install <tool>` and `cx tool upgrade <tool>`:** `cx tool setup <tool> --install` and `--upgrade` in short.
+- **`--check_versions` works, for the tool named on the command line:** the cached version is re-detected and a
+  stale entry replaced (a driver updated under the cache: the laptop's record said CUDA 13.3 while the driver gave 13.2).
+  The reader took a missing `skip_cache_version_check` as true, so nothing was ever checked; the global
+  `check_versions` setting and the nested tools stay unchecked on purpose - a check of every reused tool costs seconds
+  per run (a CUDA chain) and would throw away the entries of tools that update themselves.
+
 ## 0.58.0
 - **A project remembers its harness: `run_ai_config`.** A project that is a cMeta artifact keeps the harness, the model
   and the effort of its last run in its `_desc.yaml`, and `cxai` / run-ai without those flags takes them again; a flag

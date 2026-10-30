@@ -151,6 +151,7 @@ Each harness keeps its own **native session** for a conversation, and `run-ai` r
 | `openclaw` | `--session-id <uuid>` (run-ai chooses it); the terminal UI: `--session agent:main:explicit:<uuid>` | `--session-id <uuid>`; the UI: `--session <key>` | run-ai; for a new session of the UI, OpenClaw's `sessions.json` (the id it filed the key under) |
 | `gemini` | `--session-id <uuid>` (run-ai chooses it) | `--resume <uuid>` (a session of the project folder) | run-ai |
 | `hermes` | - | `--resume <id>` | the `init` / `result` events of the stream (`session_id`), else the `session_id:` line a quiet run prints, else the newest entry of `hermes sessions list`; the transcript comes from `hermes sessions export --format jsonl` |
+| `vibe` | - | `--resume <id>` | the session of the export Vibe writes into its `--output-dir` (`export.json`); the transcript is the run's output (the session journal is in `<VIBE_HOME>/logs`, not read yet) |
 
 So `cxt run-ai` after `cxt run-ai` is `claude --resume` of the same session, with the memory folder and the records as
 before - and the model may change (`--model=claude-opus-5-5,high` on a conversation started with another model
@@ -283,6 +284,7 @@ renews the copy), the copy (a note: carry the change over to the source if it sh
 | `gemini` | `task/run-gemini` with `tool/gemini`: the index and the skills are prepended to the prompt; context folders join the workspace with `--include-directories`; headless runs get `--skip-trust` and never open a browser (`NO_BROWSER`). Gemini CLI serves Gemini Code Assist Standard/Enterprise licences, paid API keys (`GEMINI_API_KEY`) and Vertex AI; a personal Google account is refused, and the run then fails with a hint that says so - use `--harness=antigravity` for those | read only; Gemini's own memory is its global `GEMINI.md` |
 | `openclaw` | `task/run-openclaw` (`openclaw agent --local --json`): the index and the skills are prepended to the prompt; `--session-id` names the session and resumes it. OpenClaw works in its own workspace (`~/.openclaw/workspace`, from its config, with its persona files `AGENTS.md`, `SOUL.md`, ...) whatever the current directory is, so the orientation tells it the project folder and it uses absolute paths there. Its default model (`openai/gpt-5.5`) needs an OpenAI key; `--model=claude-cli/<model>` runs through the local Claude Code login, and the token counts of such a turn are read from Claude Code's own session (OpenClaw reports only the last model call). The terminal UI (`--interactive`) takes the session's key, `--session agent:main:explicit:<id>`, and no `--model`: run-ai leaves it out and says so - type `/model <provider/model>` in the UI, or set the default once with `cx tool run openclaw -- models set <provider/model>` (drive OpenClaw through the tool: cMeta installs it when missing, a bare `openclaw` may be another copy or none). The UI files a new session under an id of its own; run-ai reads it from OpenClaw's index afterwards, so that the next turn continues that session | read only; OpenClaw's own memory lives in its workspace |
 | `hermes` | `task/run-hermes` with `tool/hermes` (`hermes chat -Q -q`, one shot; the JSON event stream with `--stats`): the index and the skills are prepended to the prompt. Hermes reads `AGENTS.md` from the project folder by itself, and keeps its own memory (`memories/MEMORY.md`, `USER.md`) and skills under `HERMES_HOME` (`~/.hermes`); the session ids come back from its events and `--resume <id>` continues them. A provider is connected once by hand (`cx tool run hermes -- model`); without one a headless run fails with the ways to connect | read only through the prompt; Hermes's own memory lives in `HERMES_HOME` |
+| `vibe` | `task/run-vibe` with `tool/vibe` (`vibe -p` or `--prompt-file`, one shot; `export.json` of an `--output-dir` for the tokens, the cost and the session): the index and the skills are prepended to the prompt. Vibe reads `AGENTS.md` from the project folder, keeps its config, keys and session logs under `VIBE_HOME` (`~/.vibe`); cMeta installs it with uv into the cache entry (Python 3.12, nothing in the user's Python); `--login` runs `vibe --setup` (a Mistral account in the browser, or an API key) |
 | others | the task `run-<harness>` with the shared parameters (`--yes` and `--reproducible` are forwarded only when given); the index is prepended to the prompt | - |
 
 A prompt that tells the agent to *search* for something makes OpenCode and Codex reach for tools, and a tool that
@@ -339,6 +341,7 @@ cxt run-ai --list_models                                            # every harn
 | `antigravity` (`agy`) | `--model m` | `--effort e` (`low`, `medium`, `high`; `xhigh`, `max` accepted by the flag) |
 | `gemini` | `--model m` | none: Gemini CLI has no effort flag, so `--effort` is dropped with a note |
 | `hermes` | `--model provider/m` | `--reasoning e` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) |
+| `vibe` | `--model <alias>` (an alias of `~/.vibe/config.toml`; headless only) | none (Vibe has no effort setting) |
 
 Without `--model` the harness runs its default model, which run-ai cannot know in advance: the run's stats name the
 model afterwards, and a test session (`cx task run test-session`) takes it from the session's transcript.
@@ -544,6 +547,7 @@ starts from `ask`.
 | `antigravity` | `--dangerously-skip-permissions` | `--mode plan` |
 | `gemini` | `--yolo` | `--approval-mode plan` |
 | `hermes` | `--yolo` | none that run-ai knows (Hermes has approval modes, no read-only mode): told to change nothing |
+| `vibe` | `--auto-approve` | none that run-ai knows (Vibe's agents are approval modes): told to change nothing |
 | `openclaw`, others | none that run-ai knows: the harness follows its own settings (a task `run-<x>` gets `yes` from `--yes` itself) | told to change nothing; nothing enforces it |
 
 The same setting given after `--` (`-- --permission-mode acceptEdits`) is your own choice for that run and is left
@@ -580,6 +584,7 @@ session can decide to edit a file there, and what stands in its way depends on t
 | `opencode` | the context file among its `instructions` | nothing: no sandbox, and `--yes` (`--auto`) approves what is not denied |
 | `antigravity`, `gemini` | the context text in front of the prompt; the artifacts join the workspace (`--add-dir`, `--include-directories`) | their own approval modes |
 | `hermes` | the context text in front of the prompt; it opens the files itself | its approval modes (`smart` by default; `--yes` is `--yolo`) |
+| `vibe` | the context text in front of the prompt; it opens the files itself | its default agent's approvals (`--yes` is `--auto-approve`) |
 
 So the rule cannot rest on the harnesses. It rests on three steps that run-ai takes for all of them.
 

@@ -1,0 +1,31 @@
+authors: Grigori Fursin
+
+# The models of Mistral Vibe, for the run-ai task:
+#
+#   cxt run-ai --harness=vibe --list_models
+#   cxt run-ai --harness=vibe --model=mistral-medium-3.5 "..."
+#
+# Vibe names a model by the ALIAS of a [[models]] entry of its config.toml (~/.vibe/config.toml, VIBE_HOME moves it):
+# it ships with one built-in model, Mistral Medium 3.5 (alias mistral-medium-3.5), and more are [[models]] entries of
+# any [[providers]] entry (OpenRouter, a compatible endpoint). "--model <alias>" works in headless runs only, for new
+# sessions (run-vibe drops it from an interactive one: active_model or /model decides there). The reasoning level is
+# the "thinking" setting of a model entry in config.toml (default "off"), not a flag: --effort has no flag here.
+# Same file conventions as tool/claude/_desc_models.yaml (updated, disabled, legacy, unverified, until).
+
+updated: '2026-10-30'
+checked_with: 'vibe 3.0.4 --help and "vibe config schema" on 2026-10-30; no Mistral sign-in, so no alias was verified against the service'
+list_cmd: '/model inside an interactive vibe session'
+sources:
+  - 'vibe --help (3.0.4, 2026-10-30)'
+  - 'vibe config schema (3.0.4): ModelConfig {alias, name, provider, thinking, thinking_levels, ...}, active_model'
+  - https://docs.mistral.ai/vibe/code/cli/configuration
+
+flags:
+  model: ['--model', '{{model}}']
+
+models:
+  - name: mistral-medium-3.5
+    default: true
+    unverified: true
+    desc: 'Mistral Medium 3.5 - the built-in model of Vibe (its documentation, 2026-10-30)'
+    auth: 'a Mistral account (vibe --setup) or MISTRAL_API_KEY'

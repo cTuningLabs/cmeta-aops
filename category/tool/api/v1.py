@@ -299,6 +299,27 @@ class Category(InitCategory):
         return self.cm.access(p)
 
     ############################################################
+    def install(self, params):
+        """
+        The tool installed by cMeta, without looking for a copy first and without a question:
+        "cx tool setup <tool> --install" in short (the user's wish, 2026-10-30).
+
+            cx tool install nvcc --version=13.2
+        """
+        return self.setup(dict(params, install=True))
+
+    ############################################################
+    def upgrade(self, params):
+        """
+        The tool upgraded through its channel - its package manager, or the newest release cMeta installs - then
+        detected again; installed (the newest) when there is none: "cx tool setup <tool> --upgrade" in short.
+        "cx tool setup <tool> --status" says first what it would run.
+
+            cx tool upgrade git
+        """
+        return self.setup(dict(params, upgrade=True))
+
+    ############################################################
     def check_updates_(self,
                        ctx: dict,
                        arg1: str = None,                 # the tools to check, comma-separated (else every tool with a default_version)

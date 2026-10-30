@@ -1,0 +1,22 @@
+artifact: ba9c17947415491b
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-10-30T14:55:40.045943+00:00'
+desc: "Mistral Vibe (vibe), Mistral AI's open-source terminal coding agent: installed from PyPI (mistral-vibe) by cMeta's uv into its own environment in the cache entry, on Linux, macOS and Windows; run-vibe launches it."
+generator:
+  agent: Claude Code 2.1.310
+  by: Grigori Fursin
+  gateway: dapple
+  method: agent
+  via: cmeta 0.37.11
+  model: claude-opus-5-5
+note: 'Mistral Vibe (https://github.com/mistralai/mistral-vibe, Apache-2.0): a Python CLI agent (Python 3.12+, GIL
+  build), headless with "vibe -p", signed in with "vibe --setup" (a Mistral account in the browser, or an API key:
+  MISTRAL_API_KEY); added 2026-10-30 at the user''s request.'
+tags:
+- vibe
+- mistral-vibe
+- mistral
+- ai
+- agent
+- cli
