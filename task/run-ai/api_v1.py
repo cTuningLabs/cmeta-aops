@@ -160,6 +160,7 @@ PLUGIN_FILE = 'plugin.json'
 # artifacts; the machine-local mapping (below) adds entries on one machine only.
 AI_USES_KEY = 'ai_uses'
 AI_GATEWAY_KEY = 'ai_gateway'           # the project's _desc.yaml: an ai.gateway alias, or "login", for its runs
+RUN_AI_CONFIG_KEY = 'run_ai_config'     # the project's _desc.yaml: the harness, model and effort its runs take without flags (its last run's)
 SET_AI_GATEWAY = 'set-ai-gateway,e10aa0a00edd4a2c'
 GATEWAY_HARNESSES = ('claude', 'codex', 'opencode')   # the run-<harness> tasks that take --gateway
 GATEWAY_CATEGORY = 'ai.gateway,ae1ae632e0ec4f75'
@@ -261,6 +262,40 @@ def harness_choice(harness, agent, cx = False):
             return given, given, '--cx is --harness=codex in short: not together with --harness=%s' % given
         given = 'codex'
     return given, given or 'claude', None
+
+
+def run_ai_config_text(text, values):
+    """
+    The text of a _desc.yaml with its run_ai_config block set to `values` (harness, model, effort; the empty ones left
+    out): the block replaced where it is (its indented lines, or a one-line value), else appended after an empty line.
+    Every other line of the file - its comments too - stays as it was, and so do its line endings.
+    """
+    def word(v):
+        # bare only when YAML reads it back as the same text: "on", "no", "3.5" or "null" would come back as
+        # something else
+        v = str(v)
+        try:
+            same = re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/@+-]*', v) and yaml.safe_load(v) == v
+        except yaml.YAMLError:
+            same = False
+        return v if same else "'" + v.replace("'", "''") + "'"
+
+    nl = '\r\n' if '\r\n' in text else '\n'
+    block = ['%s:                     # what cxai / run-ai takes without flags: its last run\'s (a flag changes it)' % RUN_AI_CONFIG_KEY]
+    block += ['  %s: %s' % (k, word(values[k])) for k in ('harness', 'model', 'effort') if values.get(k)]
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if re.match(r'%s\s*:' % RUN_AI_CONFIG_KEY, line)), None)
+    if start is None:
+        while lines and not lines[-1].strip():
+            lines.pop()
+        lines += ([''] if lines else []) + block
+    else:
+        end = start + 1
+        while end < len(lines) and (lines[end].startswith((' ', '\t')) or
+                                    (not lines[end].strip() and end + 1 < len(lines) and lines[end + 1].startswith((' ', '\t')))):
+            end += 1
+        lines[start:end] = block
+    return nl.join(lines) + nl
 
 
 class CTask(InitCTask):
@@ -704,6 +739,39 @@ class CTask(InitCTask):
         lives in -> [(cref, note)]. Every artifact of that repository then reads those artifacts' memory and skills
         without a list of its own (all the work folders of a private repository read their organisation, say)."""
         return self._uses_entries(self._repo_meta(project_path).get(AI_USES_KEY))
+
+    def _saved_run_config(self, project, log_project, l, space, ai_dir):
+        """The run_ai_config of the project a run will take, its values as words: {} for a scratch workspace (-l), a
+        folder that is no cMeta artifact, or a project without one."""
+        if (log_project is not None and log_project is not False) or (l is not None and l is not False):
+            return {}
+        r = self._resolve_project(project, False, '', ai_dir)
+        if isinstance(r, dict) or not r[1]:
+            return {}
+        cfg = self._read_desc(r[0]).get(RUN_AI_CONFIG_KEY)
+        return {k: str(v).strip() for k, v in cfg.items() if v is not None and str(v).strip()} if isinstance(cfg, dict) else {}
+
+    def _record_run_config(self, project_path, values):
+        """run_ai_config of the project's _desc.yaml set to what this run is made with, when it differs (only that block
+        changes: run_ai_config_text). -> a note for the run, or '' when nothing changed."""
+        values = {k: str(v) for k, v in values.items() if v}
+        yaml_path = os.path.join(project_path, '_desc.yaml')
+        if not os.path.isfile(yaml_path) and os.path.isfile(os.path.join(project_path, '_desc.json')):
+            return "%s not recorded: the project's _desc is JSON (YAML is the rule: a _desc.yaml in its place keeps it)" % RUN_AI_CONFIG_KEY
+        old = self._read_desc(project_path).get(RUN_AI_CONFIG_KEY)
+        old = {k: str(v) for k, v in old.items() if v} if isinstance(old, dict) else {}
+        if old == values:
+            return ''
+        try:
+            with open(yaml_path, encoding='utf-8', newline='') as f:
+                text = f.read()
+        except OSError:
+            text = ''
+        tmp = yaml_path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8', newline='') as f:
+            f.write(run_ai_config_text(text, values))
+        os.replace(tmp, yaml_path)
+        return "%s of the project's _desc.yaml: %s" % (RUN_AI_CONFIG_KEY, ', '.join('%s %s' % (k, v) for k, v in values.items()))
 
     def _run_ai_config(self):
         """The data of the config artifact task-run-ai, read without creating it ("config get" would) -> dict."""
@@ -1585,9 +1653,23 @@ class CTask(InitCTask):
         given, harness, err = harness_choice(harness, agent, cx)
         if err:
             return self.cm.error(err)
+
+        # the project's run_ai_config (its _desc.yaml): the harness, the model and the effort of its last run, which a
+        # run without those flags takes again (recorded below); the model and the effort go together, and only with
+        # their harness - a Claude model never reaches Codex
+        saved = self._saved_run_config(project, log_project, l, space, ai_dir)
+        saved_notes = []
+        if not given and saved.get('harness'):
+            harness = saved['harness'].lower()
+            saved_notes.append("the harness %s: the project's %s (its last run; --harness changes it)" % (harness, RUN_AI_CONFIG_KEY))
+        if not str(model or '').strip() and not str(effort or '').strip() and saved.get('harness', '').lower() == harness \
+                and (saved.get('model') or saved.get('effort')):
+            model, effort = saved.get('model', ''), saved.get('effort', '')
+            saved_notes.append("the model %s, effort %s: the project's %s" % (model or 'default', effort or 'default', RUN_AI_CONFIG_KEY))
+
         task_ref, tool_ref = self._harness_refs(harness)
         hk = CONV.harness_key(harness)
-        notes = []
+        notes = list(saved_notes)
         if agent:
             notes.append('--agent is now called --harness (both work)')
 
@@ -2164,6 +2246,15 @@ class CTask(InitCTask):
                 self._release_stamp(stamp_lock, stamp_made)
                 return self.cm.error('stopped: %s' % what)
             notes.append('the context estimate (%s tokens) is over the limit (%s); continued on the user\'s word' % ('{:,}'.format(est_total), '{:,}'.format(limit)))
+
+        # 3c. the project remembers what this run is made with (run_ai_config of its _desc.yaml) for the next run
+        #     without flags - a cMeta artifact only: a plain folder or a scratch workspace has no _desc.yaml to keep it
+        if cref and not scratch and not no_log:
+            saved_note = self._record_run_config(project_path, {'harness': harness, 'model': model_name, 'effort': effort_name})
+            if saved_note:
+                notes.append(saved_note)
+                if con:
+                    print('%sRUN-AI: %s' % (space, saved_note))
 
         # 4. the folders, the settings and context files, the conversation and the run record (written before the run,
         #    so a crash still leaves a trace)

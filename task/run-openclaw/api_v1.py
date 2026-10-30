@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done
+from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done, drop_provider_variables
 
 # Suffix appended to the prompt file name (without extension) when --output_file is not given
 OUTPUT_FILE_SUFFIX = '-output.txt'
@@ -297,6 +297,13 @@ class CTask(InitCTask):
         """
 
         con = ctx['control'].get('con', False)
+
+        # What a parent's gateway put into the environment never reaches this run (its key, its URL, its model
+        # names: a session through a company gateway that starts another agent); the user's own keys stay - they
+        # are one of OpenClaw's ways in (ctask.drop_provider_variables)
+        dropped = drop_provider_variables('openclaw')
+        if dropped and con:
+            print('AI gateway: none for OpenClaw - %s of a parent\'s gateway left the environment of this run' % ', '.join(dropped))
         verbose = ctx['control'].get('verbose', False)
         space = '  ' * (ctx['tasks']['nested_call'] + 1) if verbose else ''
 

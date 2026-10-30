@@ -11,7 +11,7 @@ import os
 import subprocess
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done
+from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done, drop_provider_variables, gateway_into_environment
 
 # Suffix appended to the prompt file name (without extension) when
 # --output_file is not given
@@ -113,8 +113,15 @@ class CTask(InitCTask):
                             'quiet': ctx['control'].get('quiet', False)})
         if r.get('return', 1) > 0:
             return r
+        # what a parent's gateway put into the environment never reaches this run; a login run (OpenCode's own
+        # accounts) also starts without the variables of every provider OpenCode reads - Anthropic, OpenAI, Azure,
+        # Mistral, Google, OpenRouter, ... - wherever they came from (ctask.drop_provider_variables)
+        dropped = drop_provider_variables('opencode', login=r['gateway'] == 'login')
+        if dropped and ctx['control'].get('con', False):
+            print('')
+            print('AI gateway: %s - %s inherited from the parent left the environment of this run' % (r['gateway'], ', '.join(dropped)))
         if r['gateway'] != 'login':
-            os.environ.update({k: str(v) for k, v in (r.get('env') or {}).items()})
+            gateway_into_environment(r.get('env'))
             if ctx['control'].get('con', False):
                 print('')
                 print('AI gateway: %s (%s) - the %s wire of %s; model %s' % (r['gateway'], r['how'], r.get('wire', ''),

@@ -9,7 +9,7 @@ import re
 import subprocess
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done
+from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done, drop_provider_variables, gateway_into_environment
 
 # Suffix appended to the prompt file name (without extension) when
 # --output_file is not given
@@ -118,24 +118,23 @@ class CTask(InitCTask):
                             'quiet': ctx['control'].get('quiet', False)})
         if r.get('return', 1) > 0:
             return r
+        # What a parent's gateway put into the environment never reaches this run; a login run also starts without
+        # the Anthropic variables (keys, URL, the model names of DEFAULT_*_MODEL) wherever they came from - a session
+        # that runs through a company gateway starts an import whose fetch needs the claude.ai connectors (2026-10-27),
+        # and its variables took precedence over the claude.ai login. They leave this process's environment, which the
+        # tool inherits (ctask.drop_provider_variables).
+        dropped = drop_provider_variables('claude', login=r['gateway'] == 'login')
+        if dropped and ctx['control'].get('con', False):
+            print('')
+            print('AI gateway: %s - %s inherited from the parent left the environment of this run' % (r['gateway'], ', '.join(dropped)))
         if r['gateway'] != 'login':
-            os.environ.update({k: str(v) for k, v in (r.get('env') or {}).items()})
+            gateway_into_environment(r.get('env'))
             if ctx['control'].get('con', False):
                 print('')
                 print('AI gateway: %s (%s) - the %s wire of %s; model %s' % (r['gateway'], r['how'], r.get('wire', ''),
                                                                            r.get('base_url', ''), r.get('model') or 'the harness decides'))
                 for n in r.get('notes') or []:
                     print('  note: ' + n)
-        else:
-            # The login means the login: a gateway's variables inherited from the parent (a session that runs through
-            # a company gateway starts an import whose fetch needs the claude.ai connectors - 2026-10-27) would take
-            # precedence over the claude.ai login and switch the connectors off. They leave this process's
-            # environment, which the tool inherits.
-            dropped = [k for k in ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS')
-                       if os.environ.pop(k, None) is not None]
-            if dropped and ctx['control'].get('con', False):
-                print('')
-                print('AI gateway: login - %s inherited from the parent left the environment of this run' % ', '.join(dropped))
         return r
 
     def run(self,

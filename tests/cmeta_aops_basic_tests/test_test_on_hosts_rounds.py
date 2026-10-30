@@ -228,6 +228,82 @@ def test_a_windows_host_gets_powershell_scripts_and_its_commands_in_a_file(modul
     assert not t.is_windows('win-host')
 
 
+def test_the_posix_launcher_takes_the_python_of_cx_without_a_system_python3(module, tmp_path):
+    """A bare container has no system Python (cx runs on uv's): "nohup python3 runner.py" started nothing there
+    (2026-10-30). The launcher takes python3, else the Python cx --version names, and says so when there is none."""
+    t = task(module)
+    t.cm = FleetCM()
+    tree = tmp_path / 'tree'
+    tree.mkdir()
+    (tree / '_cmr.yaml').write_text('alias: x\n')
+    r = t.launch(False, 'py1', str(tmp_path / 'test-on-hosts-py1'), 'cmeta-tests/test-on-hosts-py1', ['fgg-t470p-ubuntu'],
+                 'task run test-python -q', str(tree))
+    assert r['return'] == 0
+    linux = t.cm.ran['fgg-t470p-ubuntu'][0]
+    assert 'PY=$(command -v python3)' in linux and 'python path:' in linux and 'start failed: no python3' in linux
+    assert '"$PY" "$ROOT/runner.py"' in linux and 'nohup python3' not in linux
+
+
+class PeekCM(FleetCM):
+    """Each host answers the peek script with its own state."""
+
+    def __init__(self, answers):
+        super().__init__()
+        self.answers = answers
+
+    def access(self, p):
+        if p.get('category') == 'host' and p.get('command') == 'run':
+            self.ran.setdefault(p['arg1'], []).append(pathlib.Path(p['script']).read_text() if p.get('script') else p.get('arg2'))
+            return {'return': 0, 'outputs': {p['arg1']: {'stdout': self.answers[p['arg1']]}}}
+        return super().access(p)
+
+
+def test_peek_says_a_runner_that_never_started_or_died_and_the_round_finishes(module, tmp_path):
+    """A round without DONE was "running" for ever, also where its runner had never started (a container without
+    python3, its files elsewhere) - a wait for the round never ended (2026-10-30). The peek script looks for the runner's
+    process; the launch's own failure is said; a round where nothing runs any more is finished."""
+    answers = {'bare': 'not started\nrun.out: nohup: failed to run command python3\n',
+               'dead': 'stopped: the runner ended before its last command\n1: exit 0 in 1 s: task run test-python -q\n',
+               'fgg-t470p-ubuntu': 'done 2026-10-30T11:00:00Z\n1: exit 0 in 1 s: task run test-python -q\n'}
+    t = task(module)
+    t.cm = PeekCM(answers)
+    t.launch_started = {'bare': 'start failed: command failed on bare (exit code 1)', 'dead': 'started on x: pid 5',
+                        'fgg-t470p-ubuntu': 'started on t: pid 7'}
+    local, remote = str(tmp_path / 'test-on-hosts-p1'), 'cmeta-tests/test-on-hosts-p1'
+    hosts = ['bare', 'dead', 'fgg-t470p-ubuntu']
+
+    r = t.peek(False, 'p1', local, remote, hosts)
+    assert r['return'] == 0 and not r['done'] and r['finished']
+    assert r['hosts']['bare']['state'] == 'not started'
+    assert r['hosts']['bare']['lines'][0] == 'not started: start failed: command failed on bare (exit code 1)'
+    assert r['hosts']['dead']['state'] == 'stopped' and r['hosts']['fgg-t470p-ubuntu']['done']
+    script = t.cm.ran['bare'][0]
+    assert 'pgrep -f -- "$ROOT/runner.py"' in script and '/proc/[0-9]*/cmdline' in script
+
+    # a runner still at work keeps the round open
+    answers['dead'] = 'running\n'
+    assert not t.peek(False, 'p1', local, remote, hosts)['finished']
+
+    # collect copies nothing from a host where the round never started, and says so
+    c = t.collect(False, 'p1', local, remote, ['bare'], '', str(tmp_path / 'collected'))
+    assert c['hosts']['bare'].startswith('nothing to collect: the round did not start there')
+    assert not [p for p in t.cm.calls if p.get('command') == 'pull']
+
+
+def test_this_machines_runner_that_died_is_not_running(module, tmp_path):
+    """Here the runner is found by the pid the launch recorded; a round launched before that record keeps "running"."""
+    part = tmp_path / 'here-root'
+    (part / 'work').mkdir(parents=True)
+    t = task(module)
+    t.here_root = str(part)
+    t.launch_started = {'here': 'started here: pid 999999'}               # no such process
+    assert t.peek(False, 'h1', str(tmp_path / 'l'), 'cmeta-tests/test-on-hosts-h1', ['here'])['hosts']['here']['state'] == 'not started'
+    (part / 'work' / 'steps.txt').write_text('plug: exit 0 in 1 s: repo plug\n')
+    assert t.peek(False, 'h1', str(tmp_path / 'l'), 'cmeta-tests/test-on-hosts-h1', ['here'])['hosts']['here']['state'] == 'stopped'
+    t.launch_started = {}
+    assert t.peek(False, 'h1', str(tmp_path / 'l'), 'cmeta-tests/test-on-hosts-h1', ['here'])['hosts']['here']['state'] == 'running'
+
+
 def test_this_machines_part_lives_in_here_dir_and_round_json_names_it(module, tmp_path):
     """This machine's part of a round runs in <here_dir>/test-on-hosts-<id> (the key here_dir of task-test-on-hosts, else
     ~/cmeta-tests, like a remote host): inside a test session's sandbox it was too deep for MSVC (2026-10-17). The

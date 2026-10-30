@@ -2,6 +2,29 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.57.2.1
+- **A project remembers its harness: `run_ai_config`.** A project that is a cMeta artifact keeps the harness, the model
+  and the effort of its last run in its `_desc.yaml`, and `cxai` / run-ai without those flags takes them again; a flag
+  changes them. The model and the effort travel together and only with their harness. Only that block is written (the
+  rest of the file, comments included, stays); nothing is recorded by a dry run, the listing views, `--no_log`, a
+  scratch workspace or a plain folder.
+- **A run no longer inherits a parent's gateway, for every harness.** A gateway run names the variables it puts into its
+  process (`CMETA_AI_GATEWAY_VARS`); every harness task run-ai drives (Claude Code, Codex, OpenCode, OpenClaw, Gemini
+  CLI, agy, Hermes) drops those of a parent's gateway first - OpenClaw's claude-cli backend went through the parent's
+  gateway, OpenCode and Hermes saw its key. A login run of Claude Code, Codex or OpenCode also drops the variables that
+  harness reaches its models with, wherever they came from: `ANTHROPIC_*` (also the `DEFAULT_*_MODEL` names a login
+  kept until now), `OPENAI_*` / `AZURE_OPENAI_*`, and for OpenCode every provider it reads (OpenAI, Mistral, Google,
+  OpenRouter, ...). The user's own keys stay for the harnesses whose keys are one of their ways in. One list:
+  `drop_provider_variables` in the task category's `ctask.py`.
+- **`test-on-hosts` starts where there is no system Python, and says when a runner never started.** The POSIX launcher
+  takes `python3`, else the Python of the host's `cx` (a bare container has none: its round never started); peek finds
+  the runner's process and says `running`, `stopped` (it ended before its last command) or `not started` (with the
+  launch's own reason) - such a host was `running` for ever - and a round where nothing runs any more is `finished`;
+  collect skips a host where the round did not start.
+- **`cx host push` / `pull` into a container or WSL distribution without a declared user** put a relative path under
+  the instance's own home (`printenv HOME`), as an ssh host does - a bare ubuntu image runs as root, and the files
+  landed under `/` instead of `/root`.
+
 ## 0.57.2
 - **`upgrade-os --windows_update` works over ssh and asks nothing:** Windows Update installs nothing for a remote
   logon ("Access is denied"), so the install runs as SYSTEM in a scheduled task of its own, which the new
