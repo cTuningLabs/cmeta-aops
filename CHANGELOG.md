@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## 0.59.0.1
+## 0.60.0
 - **`tool/nvidia-driver`: the NVIDIA driver installed and upgraded by cx.** `cx tool setup nvidia-driver --status` shows
   the installed driver and the newest one for this GPU, and `cx tool upgrade nvidia-driver [--version=<branch or
   release>]` installs it with NVIDIA's own packages:
