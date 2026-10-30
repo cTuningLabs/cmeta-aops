@@ -1,0 +1,4 @@
+# Shell scripts run on Linux and macOS - run from the tree (upgrade-os's file-mounts.sh, also by WSL from a Windows
+# clone), copied into containers (entrypoint.sh), sent to hosts (the probes) - so they are LF in every checkout,
+# whatever core.autocrlf says (Git for Windows defaults to true, which gave them CRLF)
+*.sh text eol=lf

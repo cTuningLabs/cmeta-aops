@@ -15,6 +15,9 @@ All notable changes to cMeta AOps are documented here, newest first.
   new `file-mounts.sh` of the task moves such mounts (regular files of packages under the system folders, never
   `/etc`) aside before the upgrade and back after it, also after a failed one; with apt, `dpkg --configure -a`
   first finishes what a run cut short left.
+- **Shell scripts are LF in every checkout** (`.gitattributes`: `*.sh text eol=lf`): a Windows clone with Git's
+  default `core.autocrlf=true` gave them CRLF, and they run on Linux and macOS - `file-mounts.sh` from the tree
+  (WSL reads a Windows clone), the container's `entrypoint.sh`, the host probes.
 - **`upgrade-os --check` says how much is pending** on its verdict line (`pending: 12 packages`, the macOS updates by
   name, brew packages, winget apps, Windows updates), since `cx host upgrade --check` shows only the last lines of
   each host (on a Mac the update's label and the `brew outdated` list were lost among brew's own news). After an
