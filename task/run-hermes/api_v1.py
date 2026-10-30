@@ -42,7 +42,7 @@ import re
 import subprocess
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, MAX_PROMPT_ARG_CHARS, prompt_via_file, prompt_via_file_done
+from task_c36be4b9314a45e0.api.ctask import InitCTask, MAX_PROMPT_ARG_CHARS, prompt_via_file, prompt_via_file_done, drop_provider_variables
 
 OUTPUT_FILE_SUFFIX = '-output.txt'
 DEFAULT_OUTPUT_FILE = 'run-hermes-output.txt'
@@ -153,6 +153,13 @@ class CTask(InitCTask):
     ):
         """Assemble a prompt and run Hermes Agent on it (hermes chat -q, one shot), or open an interactive session."""
         con = ctx['control'].get('con', False)
+
+        # What a parent's gateway put into the environment never reaches this run (its key, its URL, its model
+        # names: a session through a company gateway that starts another agent); the user's own keys stay - they
+        # are one of Hermes's ways in (ctask.drop_provider_variables)
+        dropped = drop_provider_variables('hermes')
+        if dropped and con:
+            print('AI gateway: none for Hermes - %s of a parent\'s gateway left the environment of this run' % ', '.join(dropped))
         verbose = ctx['control'].get('verbose', False)
         space = '  ' * (ctx['tasks']['nested_call'] + 1) if verbose else ''
         _global = ctx['tasks']['global']

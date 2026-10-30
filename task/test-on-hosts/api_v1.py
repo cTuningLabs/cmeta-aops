@@ -57,6 +57,30 @@ def tar_tree(tree, out):
         tar.add(tree, arcname = os.path.basename(os.path.normpath(tree)), filter = keep)
 
 
+def pid_alive(pid):
+    """Whether a process of this machine runs (a kernel call on Windows, signal 0 elsewhere)."""
+    if pid <= 0:
+        return False
+    if os.name == 'nt':
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.OpenProcess(0x1000, False, int(pid))                  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            return bool(k32.GetExitCodeProcess(h, ctypes.byref(code))) and code.value == 259    # STILL_ACTIVE
+        finally:
+            k32.CloseHandle(h)
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
 def sh_quote(text):
     """A word for bash, in single quotes."""
     return "'" + str(text).replace("'", "'\"'\"'") + "'"
@@ -144,6 +168,9 @@ class CTask(InitCTask):
         self.here_root = os.path.join(here_dir(self.cm), f'test-on-hosts-{rid}') if action == 'launch' else \
             (saved.get('here_root') or os.path.join(local, HERE))
 
+        # what the launch said per host ("started on ...: pid N", "start failed: ..."): peek and collect read it
+        self.launch_started = saved.get('started') or {}
+
         if saved.get('hosts') and not hosts:
             host_list = list(saved['hosts'])
             self.instances = saved.get('instances') or {}
@@ -206,12 +233,17 @@ class CTask(InitCTask):
             """
             path = os.path.join(local, ('launch-wsl.sh' if wsl else 'launch.sh') if tree_arg == 'tree.tar.gz' else
                                 ('launch-wsl-mounted.sh' if wsl else 'launch-mounted.sh'))
-            words = f'python3 "$ROOT/runner.py" "$ROOT" {sh_quote(tree_arg)} ' + ' '.join(sh_quote(c) for c in commands)
+            words = f'"$PY" "$ROOT/runner.py" "$ROOT" {sh_quote(tree_arg)} ' + ' '.join(sh_quote(c) for c in commands)
             with open(path, 'w', encoding = 'utf-8', newline = '\n') as f:
                 f.write('#!/bin/bash\n'
                         f'# test-on-hosts round {rid}: the runner started detached from the launching session\n\n'
                         f'ROOT="$HOME/{remote}"\n'
-                        'cd "$ROOT" || exit 1\n')
+                        'cd "$ROOT" || { echo "start failed: no $ROOT on this host"; exit 1; }\n\n'
+                        '# the Python: the system python3, else the one the host\'s cx runs on - a bare container has no\n'
+                        '# system Python and cx runs on uv\'s (2026-10-30)\n'
+                        'PY=$(command -v python3)\n'
+                        '[ -n "$PY" ] || PY=$(cx --version 2>/dev/null | sed -n "s/.*python path: *//p" | head -1)\n'
+                        '[ -n "$PY" ] || { echo "start failed: no python3, and cx --version names no python"; exit 1; }\n\n')
                 if wsl:
                     f.write(f'setsid -f {words} > "$ROOT/run.out" 2>&1 < /dev/null\n'
                             'echo "started on $(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null) (a new session)"\n')
@@ -316,18 +348,35 @@ class CTask(InitCTask):
         import tempfile
         script_dir = tempfile.mkdtemp(prefix = f'cmeta-peek-{rid}-')
         script = os.path.join(script_dir, 'peek.sh')
+        # A round without DONE is running only while its runner is: a runner that never started (no python3 in a
+        # bare container, its files elsewhere) was "running" for ever (2026-10-30). The runner is found by its command
+        # line, which holds $ROOT/runner.py - pgrep, else /proc (a bare image has no procps)
         with open(script, 'w', encoding = 'utf-8', newline = '\n') as f:
             f.write('#!/bin/bash\n'
                     f'ROOT="$HOME/{remote}"\n'
-                    'cat "$ROOT/DONE" 2>/dev/null || echo running\n'
+                    'alive() {\n'
+                    '    if command -v pgrep >/dev/null 2>&1; then pgrep -f -- "$ROOT/runner.py" >/dev/null; return; fi\n'
+                    '    for p in /proc/[0-9]*/cmdline; do tr "\\000" " " < "$p" 2>/dev/null | grep -qF -- "$ROOT/runner.py" && return 0; done\n'
+                    '    return 1\n'
+                    '}\n'
+                    'if [ -f "$ROOT/DONE" ]; then cat "$ROOT/DONE"\n'
+                    'elif alive; then echo running\n'
+                    'elif [ -f "$ROOT/work/steps.txt" ]; then echo "stopped: the runner ended before its last command"\n'
+                    'else echo "not started"; fi\n'
                     'cat "$ROOT/work/steps.txt" 2>/dev/null\n'
+                    '[ -f "$ROOT/DONE" ] || [ ! -s "$ROOT/run.out" ] || tail -n 3 "$ROOT/run.out" | sed "s/^/run.out: /"\n'
                     'true\n')
         # the same for a Windows host, whose shell is PowerShell
         windows_script = os.path.join(script_dir, 'peek.ps1')
         with open(windows_script, 'w', encoding = 'utf-8', newline = '\n') as f:
             f.write(f"$ROOT = Join-Path $HOME '{remote.replace('/', chr(92))}'\n"
-                    "if (Test-Path \"$ROOT\\DONE\") { Get-Content \"$ROOT\\DONE\" } else { 'running' }\n"
-                    "if (Test-Path \"$ROOT\\work\\steps.txt\") { Get-Content \"$ROOT\\work\\steps.txt\" }\n")
+                    "$runner = Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains(\"$ROOT\\runner.py\") }\n"
+                    "if (Test-Path \"$ROOT\\DONE\") { Get-Content \"$ROOT\\DONE\" }\n"
+                    "elseif ($runner) { 'running' }\n"
+                    "elseif (Test-Path \"$ROOT\\work\\steps.txt\") { 'stopped: the runner ended before its last command' }\n"
+                    "else { 'not started' }\n"
+                    "if (Test-Path \"$ROOT\\work\\steps.txt\") { Get-Content \"$ROOT\\work\\steps.txt\" }\n"
+                    "if (-not (Test-Path \"$ROOT\\DONE\") -and (Test-Path \"$ROOT\\run.out\")) { Get-Content \"$ROOT\\run.out\" -Tail 3 | ForEach-Object { \"run.out: $_\" } }\n")
         try:
             return self._peek(con, rid, local, remote, host_list, script, windows_script)
         finally:
@@ -336,6 +385,7 @@ class CTask(InitCTask):
 
     def _peek(self, con, rid, local, remote, host_list, script, windows_script = None):
         states = {}
+        started = getattr(self, 'launch_started', None) or {}
         for h in host_list:
             if h == HERE:
                 root = self.here_root_of(local)
@@ -349,14 +399,29 @@ class CTask(InitCTask):
                         with open(path, encoding = 'utf-8', errors = 'replace') as f:
                             text += f.read()
                     elif name == 'DONE':
-                        text += 'running\n'
+                        # the runner here, by the pid the launch recorded ("started here: pid N"); a round without one
+                        # (launched before 2026-10-30) is running, as it was always said
+                        pid = str(started.get(HERE) or '').rpartition('pid ')[2].strip()
+                        if not pid.isdigit() or pid_alive(int(pid)):
+                            text += 'running\n'
+                        elif os.path.isfile(os.path.join(root, 'work', 'steps.txt')):
+                            text += 'stopped: the runner ended before its last command\n'
+                        else:
+                            text += 'not started\n'
             else:
                 use = windows_script if windows_script and self.is_windows(h) else script
                 r = self.host('run', arg1 = h, script = use, capture = True)
                 text = (r.get('outputs') or {}).get(h, {}).get('stdout', '') if r['return'] == 0 else f'unreachable: {r.get("error")}\n'
 
             lines = [l for l in text.splitlines() if l.strip()]
-            states[h] = {'done': bool(lines) and lines[0].startswith('done'), 'lines': lines}
+            # a host where the launch itself failed says why (the push, the launcher's own words)
+            launch = str(started.get(h) or '')
+            if lines and lines[0] == 'not started' and launch.startswith(('start failed', 'push failed')):
+                lines[0] = f'not started: {launch}'
+            state = lines[0].split(':')[0].split()[0] if lines else 'unknown'
+            if lines and lines[0].startswith('not started'):
+                state = 'not started'
+            states[h] = {'done': state == 'done', 'state': state, 'lines': lines}
             if con:
                 print ('')
                 print (f'=== {h}')
@@ -364,11 +429,19 @@ class CTask(InitCTask):
                     print (f'  {line}')
 
         done = all(s['done'] for s in states.values())
+        # nothing runs any more: a host that did not start or whose runner died will not finish either
+        finished = all(s['state'] in ('done', 'not started', 'stopped') for s in states.values())
         if con:
             print ('')
-            print (f'cMeta info: round {rid}: ' + ('done everywhere' if done else 'still running somewhere'))
+            if done:
+                print (f'cMeta info: round {rid}: done everywhere')
+            elif finished:
+                left = ', '.join(f'{h} ({s["state"]})' for h, s in states.items() if not s['done'])
+                print (f'cMeta info: round {rid}: finished - not done on {left}')
+            else:
+                print (f'cMeta info: round {rid}: still running somewhere')
 
-        return {'return': 0, 'id': rid, 'done': done, 'hosts': states}
+        return {'return': 0, 'id': rid, 'done': done, 'finished': finished, 'hosts': states}
 
     ############################################################
     def collect(self, con, rid, local, remote, host_list, files, to):
@@ -397,6 +470,13 @@ class CTask(InitCTask):
                         count += 1
                 collected[h] = f'{count} files'
             else:
+                launch = str((getattr(self, 'launch_started', None) or {}).get(h) or '')
+                if launch.startswith(('start failed', 'push failed')):
+                    # the round never ran there: nothing to copy (the pull's own error said less)
+                    collected[h] = f'nothing to collect: the round did not start there ({launch})'
+                    if con:
+                        print (f'  {h}: {collected[h]}')
+                    continue
                 r = self.host('pull', arg1 = h, arg2 = f'{remote}/work', to = dest, files = ','.join(patterns) or None)
                 collected[h] = 'ok' if r['return'] == 0 else f'failed: {r.get("error")}'
 

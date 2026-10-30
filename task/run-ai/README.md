@@ -294,6 +294,28 @@ Everything else goes to `run-<harness>` unchanged: the prompt (positional or `--
 `--`. A `--settings` of your own after `--` is read and merged: your keys and hooks stay, the memory folder is added.
 Without a prompt the run is interactive; with one it is a single turn unless `-i` says otherwise.
 
+## The project remembers its harness: `run_ai_config`
+
+A project that is a cMeta artifact keeps the harness, the model and the effort of its last run in its `_desc.yaml`, and
+a run without those flags takes them again - a plain `cxai` goes on with Codex in a project that works with Codex:
+
+```yaml
+run_ai_config:                     # what cxai / run-ai takes without flags: its last run's (a flag changes it)
+  harness: codex
+  model: gpt-6.1-sol
+  effort: high
+```
+
+- A flag wins, and the run records what it was made with: `cxai --harness=claude` once, and the project is a Claude
+  project from then on. The model and the effort travel together and only with their harness - a recorded Codex model
+  is never handed to Claude; `--harness=claude` alone records `harness: claude` without a model.
+- A model or an effort nobody gave is not recorded: the harness picks its default itself, and run-ai cannot know it
+  before the run (`--conversations` shows what each run used).
+- Only the `run_ai_config` block is written (replaced where it is, else appended): the rest of the `_desc.yaml`,
+  comments included, stays as it was. A project whose description is a `_desc.json` is not converted - the run says so.
+- Nothing is recorded by `--dry_run`, the listing views, `--no_log`, a scratch workspace (`-l`) or a plain folder (no
+  `_desc.yaml` to keep it). The gateway keeps its own key, `ai_gateway` (below).
+
 ## The model and the effort: `--model`, `--effort`, `--list_models`
 
 The model and the reasoning effort are given **in the harness's own names**, either together or apart:
@@ -716,6 +738,17 @@ and goes into the tool's environment only. Every run record carries the gateway 
 effort. Claude Code on an API key has no claude.ai connectors: a gateway session says so in its notes - `-ln` for a
 session that needs them. Claude Code speaks the Anthropic wire only, Codex the Responses wire, OpenCode both; a
 gateway's catalog is filtered by the wire the harness speaks.
+
+**What a run inherits (since 2026-10-30).** A session that runs through a gateway and starts another agent no longer
+hands it the gateway. A gateway run names the variables it puts into its process (`CMETA_AI_GATEWAY_VARS`), and every
+harness task - Claude Code, Codex, OpenCode, OpenClaw, Gemini CLI, agy, Hermes - drops those of a parent's gateway
+first. A login run of Claude Code, Codex or OpenCode also drops what that harness reaches its models with, wherever it
+came from: Claude Code the `ANTHROPIC_*` variables (keys, URL, the `DEFAULT_*_MODEL` names), Codex `OPENAI_*` and
+`AZURE_OPENAI_*`, OpenCode those of every provider it reads (Anthropic, OpenAI, Azure, Mistral, Gemini and Google API
+keys, OpenRouter, Groq, DeepSeek, xAI, Together, Fireworks, Cerebras). The run says which names left (names only). The
+user's own keys stay for the other harnesses, whose keys are one of their ways in (`GEMINI_API_KEY` for Gemini CLI,
+Hermes' providers); `GOOGLE_CLOUD_PROJECT` stays everywhere (Gemini's Code Assist login needs it). The list lives in
+one place: `category/task/api/ctask.py` (`drop_provider_variables`).
 
 ## Signing a harness in: `--login`, `--login_status`
 

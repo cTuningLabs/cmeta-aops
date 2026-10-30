@@ -17,6 +17,45 @@ import tempfile
 # (prompt_via_file below); the session reads it, follows it and stays interactive as before.
 MAX_PROMPT_ARG_CHARS = 30000
 
+# Model providers in the environment of an AI harness (2026-10-30). A run of a cMeta gateway (set-ai-gateway) names the
+# variables it puts into its process in GATEWAY_VARS, and every run of a harness - Claude Code, Codex, OpenCode,
+# OpenClaw, Gemini CLI, agy, Hermes - drops those of a parent's gateway first: a session that runs through a company
+# gateway and starts another agent no longer hands it the gateway (its key, its URL, its model names). A login run of
+# a harness that can take a gateway also drops what that harness itself would reach its models with, wherever it came
+# from - the login means the tool's own account; a key is a gateway (an ai.gateway artifact). The user's own keys stay
+# for the other harnesses, whose keys are one of their ways in (GEMINI_API_KEY for Gemini CLI, Hermes' providers).
+GATEWAY_VARS = 'CMETA_AI_GATEWAY_VARS'
+PROVIDERS = ('ANTHROPIC_', 'OPENAI_', 'AZURE_OPENAI_', 'MISTRAL_', 'GEMINI_', 'GOOGLE_API_KEY', 'GOOGLE_GENAI_',
+             'GOOGLE_GENERATIVE_AI_API_KEY', 'OPENROUTER_', 'GROQ_', 'DEEPSEEK_', 'XAI_', 'TOGETHER_', 'FIREWORKS_',
+             'CEREBRAS_', 'CMETA_AI_GATEWAY_KEY')
+LOGIN_DROPS = {'claude': ('ANTHROPIC_',),
+               'codex': ('OPENAI_', 'AZURE_OPENAI_', 'CODEX_API_KEY', 'CMETA_AI_GATEWAY_KEY'),
+               'opencode': PROVIDERS}                                    # OpenCode takes every provider it finds
+
+
+def drop_provider_variables(harness='', login=False, env=None):
+    """
+    Removes from "env" (this process's environment by default, which the harness inherits) the variables a parent's
+    gateway put there and, for a login run of claude / codex / opencode, the ones that harness takes its models from.
+    Returns the names removed (sorted), so that the caller can say it.
+    """
+    env = os.environ if env is None else env
+    names = {n for n in str(env.get(GATEWAY_VARS) or '').split(',') if n.strip()}
+    starts = LOGIN_DROPS.get(str(harness or '').lower(), ()) if login else ()
+    if starts:
+        names |= {n for n in env if n.startswith(starts)}
+    dropped = sorted(n for n in names if env.pop(n, None) is not None)
+    env.pop(GATEWAY_VARS, None)
+    return dropped
+
+
+def gateway_into_environment(variables, env=None):
+    """A gateway's variables into "env" (this process's by default), with their names in GATEWAY_VARS for the runs below."""
+    env = os.environ if env is None else env
+    env.update({k: str(v) for k, v in (variables or {}).items()})
+    if variables:
+        env[GATEWAY_VARS] = ','.join(sorted(variables))
+
 
 def prompt_via_file(prompt, tool, when=True, path='', prompt_file='', force=False, why='',
                     limit=MAX_PROMPT_ARG_CHARS, con=False, space=''):

@@ -144,6 +144,33 @@ def test_wsl_copies_only_the_matching_files(tmp_path):
     assert 'cp -r /home/u/work/. ' in r['cmds'][0] and 'find' not in r['cmds'][0]
 
 
+def test_without_a_declared_user_a_relative_path_is_under_the_instances_home(tmp_path):
+    """A container that declares no user (a bare ubuntu image runs as root) took a relative --to under "/": a
+    test-on-hosts round pushed its runner to /cmeta-tests while its launcher looked in $HOME/cmeta-tests and never
+    started (2026-10-30). The home is the instance's own ($HOME of its default user), as an ssh login's is."""
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd.endswith('printenv HOME'):
+            return {'returncode': 0, 'stdout': '/root\n'}
+        return {'returncode': 0}
+
+    bare = {'alias': 'bare', 'type': 'docker', 'desc': {'access': {'container': 'cmeta-bare'}}}
+    (tmp_path / 'runner.py').write_text('x')
+    r = host_category(run)._copy_instance(CTX, bare, str(tmp_path / 'runner.py'), 'cmeta-tests/r1/runner.py', into=True, dry_run=True)
+    assert calls == ['docker exec cmeta-bare printenv HOME']
+    assert r['remote'] == '/root/cmeta-tests/r1/runner.py'
+    assert r['cmds'][0] == 'docker exec cmeta-bare mkdir -p /root/cmeta-tests/r1'
+
+    # a declared user decides as before, without asking the container; an instance that does not answer keeps "/"
+    calls.clear()
+    assert host_category(run)._copy_instance(CTX, DOCKER, 'work', str(tmp_path), into=False, dry_run=True)['remote'] == '/home/u/work'
+    assert calls == []
+    quiet = host_category(lambda cmd, **kw: {'returncode': 1, 'stderr': 'no such container'})
+    assert quiet._copy_instance(CTX, bare, 'work', str(tmp_path), into=False, dry_run=True)['remote'] == '/work'
+
+
 def test_a_dry_run_makes_no_landing_folder(tmp_path):
     r = host_category()._copy_instance(CTX, DOCKER, 'work', str(tmp_path), into=False, files=['*.log'], dry_run=True)
     assert r['return'] == 0 and r['dry_run']

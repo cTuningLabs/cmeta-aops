@@ -2437,6 +2437,18 @@ class Category(InitCategory):
             print (f'cMeta info: {h["alias"]}: back to the snapshot {record.get("name")} of {record.get("time")}')
         return {'return': 0, 'alias': h['alias'], 'snapshot': record}
 
+    def _instance_home(self, h, acc):
+        """The home of the default user of a docker / podman container or a WSL distribution of this machine ('' when it
+        does not answer): printenv needs no quoting, the same from cmd.exe and from a POSIX shell."""
+        if h['type'] == 'docker':
+            cmd = f'{self._engine(h)} exec {acc.get("container") or h["alias"]} printenv HOME'
+        else:
+            cmd = f'wsl.exe -d {acc.get("distro") or h["alias"]} -- printenv HOME'
+        rr = self._run_local(cmd, capture=True, con=False, timeout=60)
+        lines = str(rr.get('stdout') or '').strip().splitlines()
+        home = lines[-1].strip() if lines and rr.get('returncode') == 0 else ''
+        return home.rstrip('/') if home.startswith('/') else ''
+
     def _copy_instance(self, ctx, h, src, dst, into, files=None, dry_run=False, con=False):
         """
         A file or folder between this machine and an instance on it: into the instance (push: a folder's contents
@@ -2453,6 +2465,11 @@ class Category(InitCategory):
         acc = h['desc'].get('access') or {}
         user = str(acc.get('user') or '')
         home = '/root' if user == 'root' else (f'/home/{user}' if user else '')
+        if not home:
+            # no user declared: the home of the instance's own user, as a relative path of an ssh host is under its
+            # login's - a bare ubuntu image runs as root, and its files landed under / instead of /root, where a
+            # test-on-hosts launcher did not find them (2026-10-30)
+            home = self._instance_home(h, acc)
 
         def inside(path):
             path = str(path).replace('\\', '/')

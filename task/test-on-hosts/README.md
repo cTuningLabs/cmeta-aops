@@ -38,7 +38,10 @@ The parameters:
 How it runs:
 
 - The tree is packed once (without `.git` and caches). It is pushed with `runner.py` to `~/cmeta-tests/test-on-hosts-<id>/`
-  of each host and started there with `nohup python3 runner.py`, so a dropped ssh connection does not stop it.
+  of each host and started there with `nohup <python> runner.py`, so a dropped ssh connection does not stop it. The
+  Python is the host's `python3`, else the one its `cx` runs on (`cx --version`): a bare container has no system
+  Python. A container or WSL distribution that declares no `access.user` takes the files under its own user's home
+  (`cx host push` asks it for `$HOME`; before 2026-10-30 they landed under `/` and the round never started).
 - A Windows host (its access shell PowerShell or cmd, or `os: windows`) gets PowerShell instead of bash: the runner
   is started through WMI (`Win32_Process.Create`, a process the ssh session does not take along when it ends) with
   the Python its `cx` runs on, and its commands go in `commands.json` next to the runner, out of reach of cmd.exe's
@@ -54,7 +57,11 @@ How it runs:
 
 ## Peek, collect, remove
 
-- **peek:** for each host, `done <time>` or `running`, then the steps with their exit codes and seconds.
+- **peek:** for each host, `done <time>`, `running` (its runner's process is there), `stopped` (the runner ended
+  before its last command) or `not started` (with the launch's own reason, and the end of `run.out`), then the steps
+  with their exit codes and seconds. The round is `done everywhere`, `still running somewhere`, or `finished - not
+  done on <hosts>` when nothing runs any more (before 2026-10-30 a runner that never started was `running` for ever).
+  The result carries `done`, `finished` and each host's `state`.
 - **collect:** the work folder of each host goes into `<to>/<host>`; `--files` keeps only some files. The default
   `<to>` is the round's local folder plus `collected`. For the verdicts of explorations, promote them with
   `cx task run explore-tool-versions --promote --verdicts=<to>`.
