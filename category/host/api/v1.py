@@ -1599,6 +1599,17 @@ class Category(InitCategory):
 
         result = {'return': 0, 'host': h['alias'], 'local': local, 'remote': remote_path, 'dirs': whitelist}
 
+        # A repository pushed in part (--dirs, --artifacts) carries its identity: its _cmr.yaml goes too when the host
+        # has none (--ignore-existing: a host's own is never replaced). Without it the host took the folder for a new
+        # repository with a UID of its own (2026-10-31: a repository pushed with --dirs to a Windows host)
+        if repository and whitelist and command != 'copyto':
+            cmr = next((os.path.join(local, n) for n in ('_cmr.yaml', '_cmr.json') if os.path.isfile(os.path.join(local, n))), '')
+            if cmr:
+                r = self._rclone(ctx, h, 'copyto', cmr, remote_path.rstrip('/') + '/' + os.path.basename(cmr),
+                                 extra=['--ignore-existing'] + (['--dry-run'] if dry_run else []), con=con, verbose=verbose)
+                if self.cm.catch_error(r): return r
+                result['identity'] = os.path.basename(cmr)
+
         if patterns and not dry_run:
             r = self._write_partial_note(ctx, h, arg2, remote_path, patterns, whitelist, 'push', verbose)
             if r['return'] > 0 and con:
@@ -3696,7 +3707,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         """Carry local PowerShell syntax through cmd.exe without exposing quotes or operators."""
         import base64
 
-        payload = "$ProgressPreference='SilentlyContinue'; " + cmd + '\nif ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }'
+        # the exit code: the last program's, else 1 when the last command failed (as -Command "..." answered)
+        payload = ("$ProgressPreference='SilentlyContinue'; " + cmd + '\n$cmetaOk = $?' +
+                   '\nif ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }\nif (-not $cmetaOk) { exit 1 }')
         encoded = base64.b64encode(payload.encode('utf-16-le')).decode('ascii')
         return f'{shell.strip()} -NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded}'
 
@@ -3773,12 +3786,26 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 if cmd is not None and not raw and not stdin and shell.strip() in ('powershell', 'pwsh'):
                     cmd = self._powershell_command(shell, cmd)
                 return {'return': 0, 'cmd': cmd, 'here': True}
+            # A PowerShell host: the command travels -EncodedCommand (base64 of its UTF-16 text), so no quote, |, &
+            # or ; is left in the line for this machine's shell (cmd.exe toggles its quoting at every " - the quotes
+            # of "powershell -Command \"...\"" inside the ssh argument's own let a | loose: 2026-10-31,
+            # "Get-ChildItem ... | ForEach-Object ..." ran ForEach-Object in this machine's cmd.exe; a POSIX shell split
+            # the same line at ; and ran the rest HERE, 2026-10-24) nor for the host's default shell. A command too
+            # long for a command line once encoded goes the script way below.
+            powershell_host = shell.strip() in ('powershell', 'pwsh')
+            encoded = False
+            if cmd is not None and not raw and not stdin and powershell_host:
+                line = self._powershell_command(shell, cmd)
+                if len(line) < 6000:
+                    wrapped, encoded = line, True
             # A command with a double quote cannot ride inside the one argument cmd.exe hands to ssh.exe:
             # cmd.exe toggles its quoting on EVERY ", backslash or not, so a | or & behind the first inner
             # quote is run by cmd.exe itself (seen 2026-10-06: "'head' is not recognized"). Such a command
-            # goes to the host's shell on stdin instead, from a temporary script.
+            # goes to the host's shell on stdin instead, from a temporary script - and so does a PowerShell
+            # command too long to go encoded.
             # (not when the caller feeds the host's stdin itself: the script route needs stdin too)
-            if cmd is not None and not interactive and not stdin and windows_here() and any(c in cmd for c in '"^%\n\r'):
+            if cmd is not None and not interactive and not stdin and not encoded and (
+                    (powershell_host and not raw) or (windows_here() and any(c in cmd for c in '"^%\n\r'))):
                 r = self._temp_script(cmd)
                 if r['return'] > 0: return r
                 return self._cmd_stdin(ctx, h, r['path'])

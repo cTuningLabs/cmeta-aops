@@ -70,7 +70,11 @@ def test_on_linux_and_macos_nothing_changes(host, monkeypatch):
 
 
 def test_a_powershell_host_is_left_to_its_own_route(host):
+    # PowerShell's own encoding (-EncodedCommand, UTF-16), never the POSIX base64 -d script (since 2026-10-31)
     module, c = host
     h = {'alias': 'win', 'type': 'ssh', 'desc': {'access': {'shell': 'powershell'}}, 'state': {}}
     line = c._cmd_run({}, h, 'Write-Output "x"', interactive=True)['cmd']
-    assert 'base64 -d' not in line and line.startswith('ssh -t u@far "powershell -NoProfile -Command')
+    assert 'base64 -d' not in line
+    prefix = 'ssh -t u@far "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand '
+    assert line.startswith(prefix) and line.endswith('"')
+    assert 'Write-Output "x"' in base64.b64decode(line[len(prefix):-1]).decode('utf-16-le')

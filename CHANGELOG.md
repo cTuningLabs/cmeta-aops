@@ -19,6 +19,16 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **`cx host probe` no longer stops on a server of the host's global environment**: a project declared without a
   `venv` of its own (a cserver of the host's global cMeta: `path` and `cmeta: home` = the host's) stopped the probe
   with "project ... needs venv"; it is probed with the host now, and a project with a venv as before.
+- **`cx host push` of a part of a repository (`--dirs`, `--artifacts`) keeps the repository's identity**: its
+  `_cmr.yaml` goes too when the host has none (a host's own is never replaced). Without it the host took the folder
+  for a new repository and gave it a UID of its own, so its artifacts were not found by the repository's UID there.
+- **`cx host run <host> "<command>"` on a PowerShell host takes PowerShell's syntax**: a `|`, `;`, `&` or quotes in
+  the command reach PowerShell as written. The command now travels `-EncodedCommand`, so no shell on the way (cmd.exe
+  here, a POSIX shell on a Linux or macOS controller, the host's login shell) can split it - before, the `|` of
+  `Get-ChildItem ... | ForEach-Object ...` was cmd.exe's here ("'ForEach-Object' is not recognized") and a POSIX shell
+  ran what followed a `;` on the controller. A command too long to go encoded goes as a script on the host's stdin.
+  The exit code is the last program's, else 1 when the last command failed (a cmdlet's error exited 0). Tests:
+  `PowerShellTransport` and `Push` in the host category's tests (fail on the old code).
 
 ## 0.60.1
 - **A value option given without its value says so.** `cx tool setup nvcc --version` (no `=13.4`) ended in a

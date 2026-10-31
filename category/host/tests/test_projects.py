@@ -379,6 +379,98 @@ class Projects(unittest.TestCase):
         self.assertEqual(probed, [None, 'web'])
 
 
+class Push(unittest.TestCase):
+    """cx host push of a repository in part (2026-10-31: a repository pushed with --dirs to a Windows host that had no
+    copy of it became a repository with a UID of its own there): its _cmr.yaml goes too, never over one the host
+    has."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.repo = Path(self.temp.name) / 'my-repo'
+        (self.repo / 'category' / 'page').mkdir(parents=True)
+        (self.repo / '_cmr.yaml').write_text('artifact: my-repo,1111222233334444\n')
+        self.calls = []
+        host = {'alias': 'win', 'type': 'ssh', 'state': {},
+                'desc': {'access': {'shell': 'powershell'}, 'cmeta': {'home': 'D:\\CMETA'}}}
+        self.cat = module.Category.__new__(module.Category)
+        self.cat._host_cache = {}
+        self.cat.cm = types.SimpleNamespace(error=lambda e: {'return': 1, 'error': e},
+                                            catch_error=lambda r: r.get('return', 0) > 0,
+                                            access=lambda p: {'return': 0, 'artifacts': [{'path': str(self.repo)}]})
+        self.cat._get_host = lambda ctx, alias, project=None: {'return': 0, 'host': host}
+        self.cat._here = lambda h: False
+        self.cat._sync_entries = lambda h: {}
+        self.cat._repo_desc = lambda path: {}
+        self.cat._rclone = lambda ctx, h, command, local, remote, **k: \
+            self.calls.append((command, local, remote, k.get('extra'))) or {'return': 0}
+        self.cat._index_on_host = lambda *a, **k: {'return': 0, 'cmd': 'reindex', 'returncode': 0, 'seconds': 0}
+
+    def push(self, arg2='my-repo', **kwargs):
+        r = self.cat.push_({'control': {}}, arg1='win', arg2=arg2, **kwargs)
+        self.assertEqual(r['return'], 0, r.get('error'))
+        return r
+
+    def test_a_partial_push_carries_the_identity_without_replacing_one_there(self):
+        r = self.push(dirs='category/page/')
+        self.assertEqual([c[0] for c in self.calls], ['copy', 'copyto'])
+        self.assertEqual(self.calls[1][1:], (str(self.repo / '_cmr.yaml'), 'D:/CMETA/repos/my-repo/_cmr.yaml', ['--ignore-existing']))
+        self.assertEqual(r['identity'], '_cmr.yaml')
+
+    def test_a_whole_repository_has_its_identity_in_it(self):
+        self.push()
+        self.assertEqual([c[0] for c in self.calls], ['copy'])
+
+    def test_a_dry_run_copies_no_identity_either(self):
+        self.push(dirs='category/page/', dry_run=True)
+        self.assertEqual(self.calls[1][3], ['--ignore-existing', '--dry-run'])
+
+    def test_a_file_is_no_repository(self):
+        self.push(arg2=str(self.repo / 'category' / 'page' / '..' / '..' / '_cmr.yaml'), to='D:/tmp/x.yaml')
+        self.assertEqual([c[0] for c in self.calls], ['copyto'])
+
+
+class PowerShellTransport(unittest.TestCase):
+    """A command for a PowerShell host over ssh travels -EncodedCommand: no quote or operator is left for a shell on the
+    way (2026-10-31, from this Windows machine: "a | b" ran b in this machine's cmd.exe; 2026-10-24, from a POSIX
+    controller: "a; b" ran b on the controller)."""
+
+    def setUp(self):
+        self.cat = module.Category.__new__(module.Category)
+        self.cat._host_cache = {}
+        self.cat._ssh_parts = lambda h, **k: {'return': 0, 'cmd': 'ssh -p 2222 user@win', 'target': 't', 'options': ''}
+        self.cat._here = lambda h: False
+        self.host = {'alias': 'win', 'type': 'ssh', 'desc': {'access': {'shell': 'powershell'}}}
+
+    @staticmethod
+    def decoded(line):
+        import base64
+        word = line.split('-EncodedCommand ', 1)[1].split('"', 1)[0]
+        return base64.b64decode(word).decode('utf-16-le')
+
+    def test_quotes_and_operators_never_reach_a_shell(self):
+        cmd = 'Get-ChildItem "D:\\a b" | ForEach-Object { $_.Name }; echo done & echo %PATH%'
+        for os_name in ('nt', 'posix'):
+            with mock.patch.object(module.os, 'name', os_name):
+                line = self.cat._cmd_run({}, self.host, cmd)['cmd']
+            self.assertTrue(line.startswith('ssh -p 2222 user@win "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand '), line)
+            self.assertEqual(line.count('"'), 2, os_name)
+            self.assertFalse(any(c in line for c in '|;&%$'), os_name)
+            self.assertIn(cmd, self.decoded(line))
+
+    def test_a_failed_command_still_fails(self):
+        payload = self.decoded(self.cat._cmd_run({}, self.host, 'Get-Item D:\\nope')['cmd'])
+        self.assertTrue(payload.endswith('$cmetaOk = $?\nif ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }\nif (-not $cmetaOk) { exit 1 }'))
+
+    def test_a_command_too_long_to_encode_goes_by_script(self):
+        scripts = []
+        self.cat._temp_script = lambda text, **k: scripts.append(text) or {'return': 0, 'path': 'script.ps1'}
+        self.cat._cmd_stdin = lambda ctx, h, path: {'return': 0, 'cmd': 'stdin < ' + path, 'here': False}
+        long_cmd = 'echo ' + 'x' * 5000
+        self.assertEqual(self.cat._cmd_run({}, self.host, long_cmd)['cmd'], 'stdin < script.ps1')
+        self.assertEqual(scripts, [long_cmd])
+
+
 class PowerShellOutput(unittest.TestCase):
     def test_clixml_on_stderr_becomes_the_text_of_its_records(self):
         """What a Windows host's PowerShell wrote to stderr over ssh (2026-10-29): two errors and a progress record."""
