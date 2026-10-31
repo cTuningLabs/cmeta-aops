@@ -2,6 +2,16 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.60.1.1)
+- **`cx host up <host> --project=<name>` starts the web server of a declared project** on a running host: the
+  project's new `server: start` (the command that starts it there, detached like an `after_restart` line) runs unless
+  the server already answers, then its `server: url` is checked every 5 s until it answers or `--check_timeout`
+  (120 s; 0 = no wait) runs out - a server that does not answer fails the command. The rows of `cx host ls` /
+  `status` carry the command as `start`, for a page that offers the button.
+- **`cx host probe` no longer stops on a server of the host's global environment**: a project declared without a
+  `venv` of its own (a cserver of the host's global cMeta: `path` and `cmeta: home` = the host's) stopped the probe
+  with "project ... needs venv"; it is probed with the host now, and a project with a venv as before.
+
 ## 0.60.1
 - **A value option given without its value says so.** `cx tool setup nvcc --version` (no `=13.4`) ended in a
   traceback, `--tool_path` alone looked for a tool at the path "True", and `--version_policy` alone was accepted.

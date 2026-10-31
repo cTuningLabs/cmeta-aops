@@ -296,6 +296,88 @@ class Projects(unittest.TestCase):
         r, _ = self.restart(before=('down', 'unreachable'), stub_wait=False, check_timeout=0)
         self.assertEqual(r['return'], 0, r.get('error'))
 
+    # cx host up <host> --project=<name>: the declared "server: start" of one project (2026-10-31: the P14s's cserver
+    # stayed down after a reboot, and the host page could only say so)
+
+    def start_server(self, statuses, start='setsid nohup ~/start.sh > ~/start.log 2>&1 < /dev/null &', host_status='up',
+                     **kwargs):
+        """Run up_ --project=web on the stub host; its server answers the next of statuses at each check."""
+        server = self.host['desc']['projects']['web']['server']
+        if start:
+            server['start'] = start
+        checks, ran = [], []
+        def project_status(ctx, hosts):
+            checks.append(hosts[0].get('project'))
+            hosts[0]['project_status'] = {'web': {'status': statuses[min(len(checks), len(statuses)) - 1], 'url': server['url']}}
+        self.cat._project_status_all = project_status
+        self.cat.cm.catch_error = lambda r: r.get('return', 0) > 0
+        self.cat._get_host = lambda ctx, alias: {'return': 0, 'host': self.host}
+        self.cat._status = lambda ctx, h, *a, **k: host_status
+        self.cat._cmd_run = lambda ctx, h, cmd, **k: {'return': 0, 'cmd': 'ssh vm ' + cmd}
+        self.cat._run_local = lambda cmd, **k: ran.append(cmd) or {'returncode': 0}
+        with mock.patch.object(module.time, 'sleep') as sleep:
+            r = self.cat.up_({'control': {}}, arg1='vm', project='web', **kwargs)
+        return r, checks, ran, sleep.call_count
+
+    def test_up_project_runs_its_start_command_and_waits_until_the_server_answers(self):
+        r, checks, ran, sleeps = self.start_server(['down', 'down', 'up'])
+        self.assertEqual((r['return'], r['result']), (0, 'started and up'), r.get('error'))
+        self.assertEqual(ran, ['ssh vm setsid nohup ~/start.sh > ~/start.log 2>&1 < /dev/null &'])
+        self.assertEqual((checks, sleeps), (['web', 'web', 'web'], 2))
+        self.assertNotIn('project', self.host)                     # the host itself stays global
+
+    def test_up_project_starts_nothing_when_the_server_already_answers(self):
+        r, checks, ran, _ = self.start_server(['up'])
+        self.assertEqual((r['return'], r['result'], ran, len(checks)), (0, 'already up', [], 1))
+
+    def test_up_project_fails_when_the_server_does_not_answer_in_time(self):
+        clock = iter(range(0, 10000, 20))
+        with mock.patch.object(module.time, 'monotonic', lambda: next(clock)):
+            r, _, ran, _ = self.start_server(['down'], check_timeout=60)
+        self.assertEqual((r['return'], len(ran)), (1, 1))
+        self.assertIn('does not answer', r['error'])
+        r, _, ran, sleeps = self.start_server(['down'], check_timeout=0)       # no wait: started is the answer
+        self.assertEqual((r['return'], r['result'], sleeps), (0, 'started', 0))
+
+    def test_up_project_says_why_a_start_command_that_did_not_detach_failed(self):
+        """2026-10-31: "mkdir x && setsid nohup server &" backgrounds the whole list with ssh's output: ssh waited
+        for the server, the run timed out and the answer was a bare "returned -1"."""
+        self.start_server(['up'])                                    # the stubs, then a launcher that times out
+        self.cat._run_local = lambda cmd, **k: {'returncode': -1, 'timed_out': True}
+        self.cat._project_status_all = lambda ctx, hosts: hosts[0].update(project_status={'web': {'status': 'down'}})
+        r = self.cat.up_({'control': {}}, arg1='vm', project='web')
+        self.assertEqual(r['return'], 1)
+        self.assertIn('must detach', r['error'])
+
+    def test_up_project_needs_a_start_command_a_project_and_a_running_host(self):
+        r, _, ran, _ = self.start_server(['down'], start=None)
+        self.assertIn('declares no "server: start"', r['error'])
+        self.assertEqual(ran, [])
+        r = self.cat.up_({'control': {}}, arg1='vm', project='nothing')
+        self.assertIn('has no project "nothing"', r['error'])
+        r, _, ran, _ = self.start_server(['down'], host_status='down')
+        self.assertIn('start the host first', r['error'])
+        self.assertEqual(ran, [])
+
+    def test_project_rows_carry_the_start_command(self):
+        self.assertEqual(self.cat._project_rows(self.host)[0]['start'], '')
+        self.host['desc']['projects']['web']['server']['start'] = 'sh ~/start.sh &'
+        self.assertEqual(self.cat._project_rows(self.host)[0]['start'], 'sh ~/start.sh &')
+
+    def test_probe_skips_a_server_of_the_global_environment(self):
+        """A project with no venv of its own (a cserver of the host's global cMeta) is probed with the host; before,
+        the probe stopped on "project ... needs venv"."""
+        self.host['desc']['projects']['cserver'] = {'path': '/global', 'cmeta': {'home': '/global'},
+                                                    'server': {'url': 'http://127.0.0.1:8228/', 'expected_status': [200, 401]}}
+        probed = []
+        self.cat._select = lambda ctx, *a, **k: {'return': 0, 'hosts': [self.host]}
+        self.cat.cm.catch_error = lambda r: r.get('return', 0) > 0
+        self.cat._status_all = lambda ctx, hosts, **k: None
+        self.cat._probe_one = lambda ctx, h, timeout, verbose: probed.append(h.get('project')) or {'return': 0, 'state': {}}
+        r = self.cat.probe_({'control': {}}, arg1='vm')
+        self.assertEqual(r['return'], 0, r.get('error'))
+        self.assertEqual(probed, [None, 'web'])
+
 
 class PowerShellOutput(unittest.TestCase):
     def test_clixml_on_stderr_becomes_the_text_of_its_records(self):

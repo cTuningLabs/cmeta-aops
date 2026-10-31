@@ -292,8 +292,27 @@ projects:
       # expected_status: [200, 302]  # optional; default: any HTTP 200-399
       # public:                       # the same server as the world sees it, checked FROM the orchestrator
       #   - https://my-site.example/healthz
+      # start: setsid nohup ~/projects/my-server/start.sh > ~/cmeta-tests/my-server.log 2>&1 < /dev/null &
+      #                               # optional: run ON THE HOST by "cx host up <host> --project=my-server"
     # sync: {repos_path: ..., default: copy, repos: [...], after: [...]}
+
+  cserver:                       # a server of the host's GLOBAL cMeta: no venv; path and home are the host's
+    path: /home/user/CMETA
+    cmeta:
+      home: /home/user/CMETA
+    server:
+      url: http://127.0.0.1:8004/
+      expected_status: [200, 401]  # a password gate answers 401
+      start: setsid nohup cx app run cserver --param.host=0.0.0.0 --param.port=8004 > ~/cmeta-tests/cserver.log 2>&1 < /dev/null &
 ```
+
+`server.start` is the command that starts the server on the host. `cx host up <host> --project=<name>` runs it
+there unless the server already answers, then checks `server.url` every 5 s until it answers or `--check_timeout`
+(120 s; 0 = no wait) runs out; the host page of the cserver shows a Start button and the command for a server
+that does not answer. Like an `after_restart` line, it must detach (`setsid nohup ... &` with its output
+redirected), or ssh waits for the server. A project without a `venv` is a server of the host's global
+environment: `probe` probes it with the host, and `--project` selects it only for `up` (it has no environment of
+its own).
 
 `server.url` is checked on the host (through its ssh: a local address stays local); `server.public` lists the
 URLs of the same server as the world sees them - a site behind a tunnel or a proxy - checked from this machine
