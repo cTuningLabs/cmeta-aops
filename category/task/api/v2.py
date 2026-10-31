@@ -139,16 +139,24 @@ def read_cli_words(cm, ctx, ctx_tasks, task_api_code, cdesc, artifact_alias):
 
     typed_params_from_cli = getattr(cm.utils, 'typed_params_from_cli', None)
 
-    if typed_params_from_cli is None or task_api_code is None or not hasattr(task_api_code, 'run') \
-            or 'cli' not in ctx.get('origin', {}) or not cdesc.get('cli_types', True) or not cm.utils.cli_types_enabled():
+    if typed_params_from_cli is None or 'cli' not in ctx.get('origin', {}) or not cdesc.get('cli_types', True) \
+            or not cm.utils.cli_types_enabled():
         return {'return': 0}
+
+    # A task without code (its uses alone) is read by what its cli_params describe: "--shell=bash" for a task
+    # that takes cmd, powershell or all stops the run instead of running nothing (2026-10-31)
+    run = getattr(task_api_code, 'run', None) if task_api_code is not None else None
+    if run is None:
+        if not cdesc.get('cli_params'):
+            return {'return': 0}
+        run = lambda: None
 
     words = cli_words(ctx)
     typed = {k: v for k, v in ctx_tasks['params'].items() if isinstance(v, str) and (k, v) in words}
     if not typed:
         return {'return': 0}
 
-    r = typed_params_from_cli(task_api_code.run, typed, cdesc.get('cli_params'), where = f' of task "{artifact_alias}"')
+    r = typed_params_from_cli(run, typed, cdesc.get('cli_params'), where = f' of task "{artifact_alias}"')
     if r['return'] > 0:
         return r
 

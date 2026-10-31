@@ -3,6 +3,14 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.60.1.1)
+- **`remove-conda-from-cmd-autorun-win --shell=cmd|powershell|all`**: besides cmd's AutoRun (the default, as
+  before), the "conda initialize" block of the PowerShell profile, which activated conda's base in every PowerShell
+  window - over ssh too - and with it a cMeta home of the conda environment instead of the user's. conda is found
+  where it is installed (tool/conda, never installed by this task) instead of on PATH, where the removed hook no
+  longer puts it.
+- **A task without code is read by its `cli_params` too**: a value it does not take (`--shell=bash`) stops the run
+  with the values it takes; before, only a task with a `run()` was checked and the run did nothing. Test:
+  `test_a_task_without_code_is_read_by_its_cli_params` (fails on the old code).
 - **`cx host up <host> --project=<name>` starts the web server of a declared project** on a running host: the
   project's new `server: start` (the command that starts it there, detached like an `after_restart` line) runs unless
   the server already answers, then its `server: url` is checked every 5 s until it answers or `--check_timeout`
