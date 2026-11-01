@@ -39,6 +39,12 @@ VERSION_H = """#pragma once
 """
 
 
+def quoted(path):
+    """A path as the engine's quote_path hands it to a command line: in double quotes when it holds a space, a comma
+    or a plus (a temp folder under a Windows profile with a space, the NucBox on 2026-11-01), else as it is."""
+    return f'"{path}"' if any(c in path for c in ' ,+') else path
+
+
 def load(rel_path, imports = {}, inject = {}):
     """The module's namespace, with its cMeta imports replaced and names injected."""
     path = REPO_ROOT / rel_path
@@ -83,7 +89,9 @@ class FakeCM:
         return {"return": 1, "error": text}
 
     def q(self, path):
-        return f'"{path}"' if " " in path else path
+        # as the engine's quote_path: a path already quoted stays (the program quotes the install prefix once when
+        # it sets it and once more in the -D line; the engine's guard makes that one pair, this stand-in's did not)
+        return quoted(path) if not path.startswith('"') else path
 
 
 # tool/torch-cpp-prebuilt: archives and builds
@@ -381,7 +389,8 @@ def test_customize_pytorch_installs_apart_from_the_build(tmp_path):
     local = ctx["tasks"]["local"]
     install = os.path.join(str(build), "install")
     assert local["install_prefix"] == install
-    assert f"-DCMAKE_INSTALL_PREFIX={install}" in local["cmake_d_vars"]
+    # the program quotes a path with a space as the engine does (a temp folder under a profile with one: the NucBox)
+    assert f"-DCMAKE_INSTALL_PREFIX={quoted(install)}" in local["cmake_d_vars"]
     assert local["target_path_exe"] == os.path.join(install, "lib", "libtorch.so")
     assert local["run_time_env"]["PYTHONPATH"].startswith(os.path.join(install, "lib", "python"))
 
@@ -404,7 +413,7 @@ def test_customize_test_uses_the_install_prefix(tmp_path):
                                 "ninja": {"path": "/n/ninja", "qpath": "/n/ninja"}}}}
     assert prog.customize_test(ctx, {})["return"] == 0
     local = ctx["tasks"]["local"]
-    assert f"-DTorch_DIR={torch_dir}" in local["test_cmake_d_vars"]
+    assert f"-DTorch_DIR={quoted(str(torch_dir))}" in local["test_cmake_d_vars"]
     assert local["run_time_env"]["LD_LIBRARY_PATH"].startswith(os.path.join(str(build), "install", "lib"))
     assert local["test_build_path"] == os.path.join(str(build), "test-build")
 

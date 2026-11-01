@@ -3,6 +3,12 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.61.2.1)
+- **The suite passes under a Windows profile with a space in its name** (the NucBox, `C:\Users\Grigori Fursin`,
+  with its temp folder under it): four tests had assumed a path without spaces - two expected the program's
+  CMake variables unquoted where the engine quotes such a path (and their stand-in engine quoted an already
+  quoted path again, which the engine's `quote_path` never does), one the conda prefix unquoted, and one ran a
+  generated `.bat` through `cmd /c` with its path split at the space (`/s /c` with the line in one more pair of
+  quotes keeps every inner quote). The code was right; the tests follow it.
 - **A clang build links and loads the OpenMP runtime of cMeta's LLVM, not the distribution's**: the link line
   put the shared system folder (`/usr/lib/x86_64-linux-gnu`, there for OpenSSL) before the folder of the
   `lib-openmp` entry when that folder lay in another LLVM entry than the run's `llvm` - the "default"
