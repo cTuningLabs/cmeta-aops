@@ -101,10 +101,11 @@ NOT_TOOLS = ('host', 'init', 'runner', 'target', 'enable-long-paths-win')
 ###################################################################################################
 def mode_of(value, env = None):
     """
-    'on' (the default; also None, True, yes), 'off' (False, no, none), 'loaded' or 'strict'.
+    'on' (also True, yes), 'off' (False, no, none), 'loaded' or 'strict' (the default: None).
     When the run names no mode (None), the environment sets it: CMETA_PROVENANCE when it is set
-    (a CI job exports CMETA_PROVENANCE=strict), else 'strict' inside a test session
-    (CMETA_TEST_SESSION, exported by "cx task run test-session --start"), else 'on'.
+    (CMETA_PROVENANCE=on keeps a shell passive), else 'strict' - everywhere since 0.61.1.1, after the
+    program examples passed strict on every OS (until then 'on' outside a test session, 'strict' inside
+    one: CMETA_TEST_SESSION, exported by "cx task run test-session --start").
     Anything else raises ValueError with the accepted values (`env` replaces os.environ in tests).
     """
     source = f'--provenance={value}'
@@ -112,7 +113,7 @@ def mode_of(value, env = None):
         environment = os.environ if env is None else env
         value = environment.get(MODE_ENV)
         if value is None or str(value).strip() == '':
-            return 'strict' if str(environment.get(SESSION_ENV) or '').strip() else 'on'
+            return 'strict'
         source = f'{MODE_ENV}={value}'
     if value is True:
         return 'on'

@@ -65,18 +65,21 @@ A shortened example:
 
 | Mode | What changes |
 |---|---|
-| `on` (default) | Passive: after the run, the recorder reads the binary's headers and the context the driver already has, and writes the record. No compile or run command changes, no environment variable is added, measurements are untouched. The dependencies are *resolved* — the files the loader would take — not observed. |
+| `on` | Passive: after the run, the recorder reads the binary's headers and the context the driver already has, and writes the record. No compile or run command changes, no environment variable is added, measurements are untouched. The dependencies are *resolved* — the files the loader would take — not observed. |
 | `off` | No record at all. |
 | `loaded` | The run is also observed: on Linux `LD_DEBUG=libs` (to a file per process), on macOS `DYLD_PRINT_LIBRARIES` (to a file); the record's `loaded` section then holds what every process really loaded — a Python program shows a wheel's bundled CUDA libraries, a plugin loaded with `dlopen` appears. Program start is slightly slower. On Windows and Android there is no loader log: `loaded` stays the resolution. |
-| `strict` | As `on` (or `loaded`), and a failed **error**-level check fails the run with return code 99 and the `PROVENANCE:` message. |
+| `strict` (default) | As `on` (or `loaded`), and a failed **error**-level check fails the run with return code 99 and the `PROVENANCE:` message. |
 
 In `on` and `loaded`, a failed check is printed as `PROVENANCE: ...` and recorded (`ok: false`), and the
 run's own result is returned as usual.
 
-When a run names no mode, the environment variable **`CMETA_PROVENANCE`** sets it: a test session or a
-CI job exports `CMETA_PROVENANCE=strict` and every `cx program run` in it fails on a failed error-level
-check, while an interactive shell keeps the passive default. `--provenance=<mode>` on the command line
-always wins; an unset or empty variable means `on`.
+When a run names no mode, the environment variable **`CMETA_PROVENANCE`** sets it (`CMETA_PROVENANCE=on`
+keeps a shell passive, `loaded` observes every run); unset or empty, the mode is `strict` - everywhere
+since 0.61.1.1, after the program examples (C and C++ with gcc, clang and MSVC, debug, static; Go, Rust,
+Python, Java, Swift, CUDA, ObjC/Metal) had passed strict on Windows, Linux and macOS: a run whose explicit
+configuration was not honoured fails instead of producing a mislabelled result, and a default that was
+taken is only a warning. Until then `strict` held inside a test session only and an interactive shell was
+passive. `--provenance=<mode>` on the command line always wins.
 
 ### Which tool a loaded library belongs to
 
@@ -212,8 +215,9 @@ cmd, `$env:` on PowerShell; `--print=export` prints only that line). With the va
 
 - attaches its record to the session, as `attachments/provenance--<program>--<build folder>--<HHMMSS>.json`,
   with a note `provenance: <program> (<folder>) ok, 0 failed, 1 warnings; compute cpu` in `session.md`;
-- runs with `--provenance=strict` unless the run names a mode or `CMETA_PROVENANCE` is set, so a run
-  whose explicit configuration was not honoured fails the test instead of producing a mislabelled result.
+- runs with `--provenance=strict` unless the run names a mode or `CMETA_PROVENANCE` is set (the default
+  everywhere since 0.61.1.1; a session made the difference before), so a run whose explicit configuration
+  was not honoured fails the test instead of producing a mislabelled result.
 
 The attachments stay with the session's log (`log::cmeta-aops-test-sessions`), so a result in a summary
 can always be taken back to the toolchain and the libraries that produced it. A record can still be

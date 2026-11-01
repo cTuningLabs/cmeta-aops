@@ -3,6 +3,14 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.61.1.1)
+- **Provenance is `strict` by default**: a `cx program run` that names no mode, in a shell without
+  `CMETA_PROVENANCE`, fails with return code 99 when an error-level check fails - an explicitly requested
+  configuration that was not honoured (a `--use.<tool>.version` not the one that ran, a requested accelerator
+  not used), never a default that was taken (a warning, as before). Until now that held inside a test session
+  only; the passive mode stays a word away (`CMETA_PROVENANCE=on`, `--provenance=on`). Decided after the program
+  examples passed strict on every OS: C and C++ with gcc, clang and MSVC, debug, static and static + debug
+  info, Go, Rust, Python, Java, Swift, CUDA and ObjC/Metal on Windows, Ubuntu 24.04, Ubuntu 26.04 and macOS
+  (session 20261101/2121.provenance-matrix). Docs: `docs/cmeta-aops/provenance.md`.
 - **Java programs compile again**: `setup-compile` refused `javac` as "not a compiler tool" since 0.55.0 - the
   guard against a toolchain chosen as the compiler (`--use.compiler-c.name=llvm`) took every tool without
   C-style flags in its features for a toolchain, and javac has none (the program hands its own `-d .`). A tool
