@@ -2,6 +2,30 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.61.2
+- **Provenance is `strict` by default**: a `cx program run` that names no mode, in a shell without
+  `CMETA_PROVENANCE`, fails with return code 99 when an error-level check fails - an explicitly requested
+  configuration that was not honoured (a `--use.<tool>.version` not the one that ran, a requested accelerator
+  not used), never a default that was taken (a warning, as before). Until now that held inside a test session
+  only; the passive mode stays a word away (`CMETA_PROVENANCE=on`, `--provenance=on`). Decided after the program
+  examples passed strict on every OS: C and C++ with gcc, clang and MSVC, debug, static and static + debug
+  info, Go, Rust, Python, Java, Swift, CUDA and ObjC/Metal on Windows, Ubuntu 24.04, Ubuntu 26.04 and macOS
+  (session 20261101/2121.provenance-matrix). Docs: `docs/cmeta-aops/provenance.md`.
+- **Java programs compile again**: `setup-compile` refused `javac` as "not a compiler tool" since 0.55.0 - the
+  guard against a toolchain chosen as the compiler (`--use.compiler-c.name=llvm`) took every tool without
+  C-style flags in its features for a toolchain, and javac has none (the program hands its own `-d .`). A tool
+  that takes no such flags now declares `features: all: compiler: true` (tool/javac does); the guard's message
+  says so. Found by the strict-provenance matrix of the program examples on every host (2026-11-01). Test:
+  `test_compiler_tool_guard.py`.
+- **A plain Python request takes the environment activated in the shell first**: the Python of `VIRTUAL_ENV`
+  (a venv's `activate`) or of `CONDA_PREFIX` (`conda activate <env>`) comes before the Python cMeta itself runs
+  on. For a cMeta installed as a uv tool that Python is a venv of its own, and it used to win: `conda activate ml`
+  then `cx program run <p>` ran the program on cMeta's Python, without the environment's packages (the Mac mini,
+  2026-11-01; a cMeta installed into the system Python already took the activated environment, it being first
+  on the PATH). A conda base does not count as activated (`conda init` activates it in every shell) and is taken
+  as before. Test: `test_update_paths_puts_the_activated_environment_first`; live with a conda environment on
+  Windows (Miniconda) and macOS (Miniforge).
+
 ## 0.61.1
 - **`cx host sync`: a file another process holds no longer ends a bisync pair.** A bisync that cannot read a file (a
   SQLite lock, an open document) copies everything else, holds the deletions back and ends with a critical error that

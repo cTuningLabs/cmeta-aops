@@ -193,3 +193,44 @@ def test_a_venv_python_that_resolves_to_the_base_is_still_the_venv(py, tmp_path,
     r = tool.check_features(ctx, [{'path': str(base)}, {'path': str(venv_py)}],
                             {'python_base': str(base), 'with': {'venv': True, 'pip': False}})
     assert [p['path'] for p in r['paths']] == [str(venv_py)]
+
+
+def test_update_paths_puts_the_activated_environment_first(py, tmp_path, monkeypatch):
+    """A plain request takes the environment activated in the shell - VIRTUAL_ENV, or CONDA_PREFIX of a conda
+    environment - before the python cMeta runs on (a uv tool's own venv took precedence over "conda activate ml"
+    on the Mac mini, 2026-11-01); a conda base, which conda init activates in every shell, does not count."""
+    import sys
+    tool = object.__new__(py['CTool'])
+    tool.cm = types.SimpleNamespace(debug = False)
+    for var in ('VIRTUAL_ENV', 'CONDA_PREFIX'):
+        monkeypatch.delenv(var, raising = False)
+    # a conda environment: conda-meta/ alone; its python in bin/ (POSIX) or at the root (Windows)
+    env_py = touch(tmp_path / 'ml' / PY) if WIN else touch(tmp_path / 'ml' / 'bin' / PY)
+    (tmp_path / 'ml' / 'conda-meta').mkdir(parents = True)
+
+    # no activation: cMeta's own python first, as before
+    r = tool.update_paths({}, ['/usr/bin/python3'])
+    assert r['paths'][0] == '!' + sys.executable
+
+    # a conda environment activated: first, before cMeta's python; the search's copy of its path is not repeated
+    monkeypatch.setenv('CONDA_PREFIX', str(tmp_path / 'ml'))
+    r = tool.update_paths({}, [str(env_py), '/usr/bin/python3'])
+    assert r['paths'][:2] == ['!' + str(env_py), '!' + sys.executable] and str(env_py) not in r['paths']
+
+    # a conda base activated (condabin/): not an activation
+    touch(tmp_path / 'ml' / 'condabin' / CONDA)
+    r = tool.update_paths({}, ['/usr/bin/python3'])
+    assert r['paths'][0] == '!' + sys.executable
+
+    # a venv activated wins over the conda environment (the inner, later choice)
+    (tmp_path / 'ml' / 'condabin' / CONDA).unlink()
+    venv_py = touch(tmp_path / 'venv' / BIN / PY)
+    monkeypatch.setenv('VIRTUAL_ENV', str(tmp_path / 'venv'))
+    r = tool.update_paths({}, [])
+    assert r['paths'][0] == '!' + str(venv_py)
+
+    # the activated environment is the one cMeta runs on: once
+    monkeypatch.delenv('CONDA_PREFIX')
+    monkeypatch.setenv('VIRTUAL_ENV', os.path.dirname(os.path.dirname(sys.executable)))
+    r = tool.update_paths({}, [])
+    assert r['paths'].count('!' + sys.executable) == 1 and len([p for p in r['paths'] if p.startswith('!')]) == 1

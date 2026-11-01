@@ -68,6 +68,26 @@ def conda_env_python_dir(prefix):
     return prefix if os.name == 'nt' else os.path.join(prefix, 'bin')
 
 
+def activated_environment_python():
+    """The python of the environment activated in this shell - VIRTUAL_ENV (a venv's activate) or CONDA_PREFIX
+    (conda activate <env>) - or None. A conda base (condabin/, pkgs/ or envs/ at its root, as detect-python-env
+    tells a base from an environment) does not count: conda init activates it in every shell, so it says nothing."""
+    for var in ('VIRTUAL_ENV', 'CONDA_PREFIX'):
+        root = os.environ.get(var, '').strip()
+        if not root or not os.path.isdir(root):
+            continue
+        if var == 'CONDA_PREFIX' and any(os.path.isdir(os.path.join(root, d)) for d in ('condabin', 'pkgs', 'envs')):
+            continue
+        if os.name == 'nt':
+            candidates = (os.path.join(root, 'Scripts', 'python.exe'), os.path.join(root, 'python.exe'))
+        else:
+            candidates = (os.path.join(root, 'bin', 'python'), os.path.join(root, 'bin', 'python3'))
+        for path in candidates:
+            if os.path.isfile(path):
+                return path
+    return None
+
+
 def shareable(artifact):
     """
     Whether a python request without a venv of its own may reuse this cache entry: yes for a python
@@ -309,6 +329,16 @@ class CTool(InitCTool):
 
         # ! tells setup to keep this path on top during sorting (priority key)
         paths.insert(0, '!' + self_python_path)
+
+        # The environment activated in the shell comes before the python cMeta runs on: "conda activate <env>"
+        # (CONDA_PREFIX) or a venv's activate (VIRTUAL_ENV) is the user's choice for this shell, while cMeta's own
+        # python may be a uv tool's venv of its own - which took precedence on the Mac mini (2026-11-01): a plain
+        # request ran the program on it, without the activated environment's packages. A conda base is left where
+        # the PATH puts it (see activated_environment_python).
+        activated = activated_environment_python()
+        if activated and not same_path(activated, self_python_path):
+            paths[:] = [p for p in paths if not same_path(p[1:] if p.startswith('!') else p, activated)]
+            paths.insert(0, '!' + activated)
 
 #        # Check if .venv in the current directory
 #        path_scripts = 'Scripts' if os.name == 'nt' else 'bin'

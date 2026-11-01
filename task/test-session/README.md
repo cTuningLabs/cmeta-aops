@@ -59,7 +59,8 @@ export CMETA_TEST_SESSION=20261002/0915.llama-drift      # cmd: set CMETA_TEST_S
 
 With the variable set, every `cx program run` attaches its provenance record to the session
 (`attachments/provenance--<program>--<build folder>--<HHMMSS>.json`, with a note) and runs with
-`--provenance=strict`, so a run whose explicit configuration was not honoured fails the test
+`--provenance=strict` (the default everywhere since 0.61.1.1; the session made the difference before), so a
+run whose explicit configuration was not honoured fails the test
 ([provenance.md](../../docs/cmeta-aops/provenance.md)). A remote test script exports the id of the
 session it runs in. `--attach_as=<name>` stores a single attached file under another name.
 
