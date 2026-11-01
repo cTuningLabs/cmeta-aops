@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.61.0.1)
+## 0.61.1
 - **`cx host sync`: a file another process holds no longer ends a bisync pair.** A bisync that cannot read a file (a
   SQLite lock, an open document) copies everything else, holds the deletions back and ends with a critical error that
   drops the pair's listings - a dead pair until `--resync`, which would bring deleted files back (2026-10-30, the
