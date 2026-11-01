@@ -11,6 +11,7 @@ environment and the arguments it needs, "models" lists what a harness can use th
 
 import json
 import os
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -24,10 +25,20 @@ SECRET_CATEGORY = 'secret,9d63451ea1f14010'
 HARNESS_WIRES = {'claude': ('anthropic',), 'codex': ('openai',), 'opencode': ('anthropic', 'openai'),
                  'openclaw': ('anthropic', 'openai'), 'hermes': ('openai',)}
 
-# the variable Codex's provider block reads the key from (the block names the variable, never the value)
+# the variable the key travels in to Codex's provider block (which names the variable, never the value) and to Claude
+# Code's apiKeyHelper
 KEY_VAR = 'CMETA_AI_GATEWAY_KEY'
 
 ANTHROPIC_VERSION = '2023-06-01'
+
+
+def key_helper():
+    """
+    Claude Code's apiKeyHelper for a gateway key: this Python, isolated, prints KEY_VAR. Claude Code runs the helper
+    through a shell - cmd or bash on Windows, sh elsewhere: a quoted path with forward slashes and a program without
+    $, % or backslashes reads the same in each.
+    """
+    return '"%s" -I -c "import os;print(os.environ.get(\'%s\', \'\'))"' % (sys.executable.replace('\\', '/'), KEY_VAR)
 
 
 class Category(InitCategory):
@@ -258,8 +269,9 @@ class Category(InitCategory):
     def connect_(self, ctx, arg1: str = None, harness: str = '', model: str = ''):
         """
         What a harness needs to use a gateway: the environment (the key included - this result is for the task that
-        starts the harness, never for a record), the extra command-line words, the model to pass when the user named
-        none, the wire. Prints the names of the variables and the words, never a value.
+        starts the harness, never for a record), the extra command-line words, OpenCode's providers and Claude Code's
+        settings, the model to pass when the user named none, the wire. Prints the names of the variables and the
+        words, never a value.
 
             cx ai.gateway connect acme --harness=claude
             cx ai.gateway connect llama-cpp-local --harness=codex
@@ -286,11 +298,25 @@ class Category(InitCategory):
             return self.cm.error('%s for %s: %s' % (alias, harness, err))
         mine, top = self._defaults(desc, harness)
         chosen = str(model or mine.get('default') or top or '')
-        env, args, notes, occ = {}, [], [], None
+        env, args, notes, occ, ccs = {}, [], [], None, None
         wire = avail[0]
         if harness == 'claude':
             env['ANTHROPIC_BASE_URL'] = self._url(desc, wires['anthropic'])
-            env['ANTHROPIC_AUTH_TOKEN' if header == 'bearer' else 'ANTHROPIC_API_KEY'] = key or 'local'
+
+            # The key: a bearer token as ANTHROPIC_AUTH_TOKEN; any other (x-api-key, a local server's placeholder) in
+            # KEY_VAR, printed by an apiKeyHelper. As ANTHROPIC_API_KEY beside a claude.ai login, Claude Code warned
+            # "Both claude.ai and ANTHROPIC_API_KEY set" at every start (and asked once whether to use the key); a key
+            # from apiKeyHelper is neither (Claude Code 2.1.310, 2026-11-01). The settings go into the run's --settings
+            # (run-claude); the claude.ai connectors, unavailable on a key, are switched off there, so that no notice
+            # says so at the start either.
+            if header == 'bearer':
+                env['ANTHROPIC_AUTH_TOKEN'] = key or 'local'
+                ccs = {}
+            else:
+                env[KEY_VAR] = key or 'local'
+                ccs = {'apiKeyHelper': key_helper()}
+            ccs['disableClaudeAiConnectors'] = True
+
             for a, var in (('opus', 'ANTHROPIC_DEFAULT_OPUS_MODEL'), ('sonnet', 'ANTHROPIC_DEFAULT_SONNET_MODEL'),
                            ('haiku', 'ANTHROPIC_DEFAULT_HAIKU_MODEL')):
                 if mine.get(a):
@@ -300,8 +326,8 @@ class Category(InitCategory):
                 # no default declared (a local server): the loaded model's name, so that Claude Code names it
                 names, _, e = self._catalog(desc, 'anthropic', header, key)
                 chosen = names[0] if names else ''
-            notes.append('Claude Code on an API key: the claude.ai connectors (HubSpot, Microsoft 365, ...) are unavailable '
-                         'in this session; beside a subscription login it asks once whether to use the key')
+            notes.append('Claude Code on a key: the claude.ai connectors (HubSpot, Microsoft 365, ...) are unavailable in '
+                         'this session (switched off in its settings); -ln for a session that needs them')
         elif harness == 'codex':
             p = 'model_providers.' + alias
             args = ['-c', 'model_provider="%s"' % alias,
@@ -357,12 +383,16 @@ class Category(InitCategory):
                'notes': notes, 'base_url': str(desc.get('base_url') or ''), 'provided_by': desc.get('provided_by') or {}}
         if occ:
             out['opencode_config'] = occ
+        if ccs is not None:
+            out['claude_settings'] = ccs
         if ctx['control'].get('con', False):
             print('%s for %s: the %s wire of %s' % (alias, harness, wire, out['base_url']))
             print('  environment: ' + (', '.join(sorted(env)) or 'nothing'))
             print('  words: ' + (' '.join(args) or 'none'))
             if occ:
                 print('  opencode providers: ' + ', '.join(sorted(occ['provider'])))
+            if ccs:
+                print('  claude settings: ' + ', '.join(sorted(ccs)))
             print('  model: ' + (chosen or 'the harness decides'))
             for n in notes:
                 print('  note: ' + n)

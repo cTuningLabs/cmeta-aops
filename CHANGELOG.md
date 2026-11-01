@@ -3,6 +3,36 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.60.1.1)
+- **Claude Code through an AI gateway starts without "Both claude.ai and ANTHROPIC_API_KEY set · auth may not work
+  as expected"**: beside a claude.ai login, Claude Code printed that warning at every start of a gateway session (and
+  "claude.ai connectors are disabled because ANTHROPIC_API_KEY ... takes precedence"), and asked once whether to use
+  the key. `cx ai.gateway connect <gateway> --harness=claude` now puts an x-api-key (or a local server's placeholder)
+  into `CMETA_AI_GATEWAY_KEY` instead of `ANTHROPIC_API_KEY` and returns `claude_settings`: an `apiKeyHelper` that
+  prints that variable (the key never written anywhere) and `disableClaudeAiConnectors` (the connectors are unavailable
+  on a key anyway). `set-ai-gateway` passes them on and `run-claude` merges them into the one `--settings` Claude Code
+  reads - run-ai's settings file or the user's own, as a JSON string, no file written. A bearer gateway keeps
+  `ANTHROPIC_AUTH_TOKEN`, which Claude Code never warned about. Tests: `test_connect_gives_each_harness_what_it_needs`,
+  `test_run_claude_merges_the_gateway_settings_into_one_settings_flag`.
+- **A gateway run of Claude Code starts without the user's own Anthropic credentials**: an `ANTHROPIC_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN`, URL or model name in the user's environment went to the gateway in place of its key (401
+  "invalid subscription key"); a gateway run now drops the `ANTHROPIC_*` variables, a `CLAUDE_CODE_OAUTH_TOKEN` and the
+  provider switches (`CLAUDE_CODE_USE_BEDROCK`, `_VERTEX`, `_FOUNDRY`, ...) before the gateway's own go in, and a login
+  run drops the provider switches too (the login given as `CLAUDE_CODE_OAUTH_TOKEN` stays). Codex and OpenCode keep the
+  user's keys in a gateway run: they name the gateway's provider, where those keys do not compete.
+  (`ctask.drop_provider_variables(..., gateway=True)`; test:
+  `test_a_gateway_run_keeps_the_users_keys_where_they_do_not_compete`.)
+- **run-ai: this machine's default gateway no longer stops the harnesses without gateway support**: with
+  `run_ai_gateway: true` in `config::default`, `cxai --harness=vibe` (or gemini, agy, hermes, openclaw) stopped with "no
+  gateway support" and `--list_models` showed the gateway's catalog for it. The general default is for claude, codex
+  and opencode: another harness runs on its own login, with a note, and lists its own models. A gateway chosen for the
+  run, the project (`ai_gateway`) or the harness (`run_ai_gateway_<harness>`) stays an error there. (`set-ai-gateway`
+  marks the general default `general: true`; tests: `test_the_general_default_is_marked`,
+  `test_run_ai_runs_a_harness_without_gateway_support_on_its_login_under_the_general_default`.)
+- **`test-on-hosts` keeps a round's local folder in `tmp::task-test-on-hosts`** of the local repository when no test
+  session is in the shell, never in the current directory: rounds launched from a drive's root left `round.json`, the
+  launchers and the tarball of the tree there. A round launched before keeps its folder where it was launched from
+  (peek, collect and remove find it there). Test:
+  `test_without_a_test_session_the_round_folder_is_a_tmp_artifact_never_the_current_directory`.
 - **`remove-conda-from-cmd-autorun-win --shell=cmd|powershell|all`**: besides cmd's AutoRun (the default, as
   before), the "conda initialize" block of the PowerShell profile, which activated conda's base in every PowerShell
   window - over ssh too - and with it a cMeta home of the conda environment instead of the user's. conda is found

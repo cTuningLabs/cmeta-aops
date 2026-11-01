@@ -336,3 +336,44 @@ def test_this_machines_part_lives_in_here_dir_and_round_json_names_it(module, tm
     t.local_folder = lambda rid: str(local)
     r = t.run({'control': {'con': False}}, action='peek', id='m4')
     assert r['return'] == 0 and r['done'] and r['hosts']['here']['lines'][1].startswith('1: exit 0')
+
+
+def test_without_a_test_session_the_round_folder_is_a_tmp_artifact_never_the_current_directory(module, tmp_path, monkeypatch):
+    """Rounds launched from a drive's root without a test session left round.json, the launchers and a 40 MB tarball
+    there (D:\\test-on-hosts-*, 2026-10-30): the user's rule is files only in tmp:: or log:: artifacts. Now the folder
+    is in tmp::task-test-on-hosts of the local repository, made on first use; a round launched before keeps its
+    folder in the current directory."""
+    cwd = tmp_path / 'drive-root'
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    monkeypatch.delenv(module.SESSION_ENV, raising=False)
+    made = tmp_path / 'local' / 'tmp' / module.TMP_ARTIFACT
+
+    class TmpCM(FakeCM):
+        def access(self, p):
+            self.calls.append(p)
+            if p.get('category') == module.TMP_CATEGORY and p.get('command') == 'find':
+                return {'return': 0, 'artifacts': [{'path': str(made)}] if made.is_dir() else []}
+            if p.get('category') == module.TMP_CATEGORY and p.get('command') == 'create':
+                made.mkdir(parents=True)
+                return {'return': 0, 'path': str(made)}
+            return {'return': 1, 'error': 'unexpected'}
+
+    t = task(module)
+    t.cm = TmpCM()
+    assert t.local_folder('r1') == os.path.join(str(made), 'test-on-hosts-r1')
+    assert [c['command'] for c in t.cm.calls] == ['find', 'create'] and t.cm.calls[1]['arg1'] == 'local:' + module.TMP_ARTIFACT
+    assert t.local_folder('r2') == os.path.join(str(made), 'test-on-hosts-r2') and t.cm.calls[-1]['command'] == 'find'
+    assert list(cwd.iterdir()) == []
+
+    # a round launched here before keeps its folder
+    (cwd / 'test-on-hosts-old').mkdir()
+    (cwd / 'test-on-hosts-old' / module.ROUND_FILE).write_text('{}')
+    assert t.local_folder('old') == os.path.join(str(cwd), 'test-on-hosts-old')
+
+    # no tmp artifact: no folder, and the run says why
+    t.cm = FakeCM()
+    t.cm.access = lambda p: {'return': 1, 'error': 'no local repository'}
+    assert t.local_folder('r3') is None
+    r = t.run({'control': {'con': False}}, action='peek', id='r3')
+    assert r['return'] == 1 and 'tmp::task-test-on-hosts' in r['error']

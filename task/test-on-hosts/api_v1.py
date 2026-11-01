@@ -30,6 +30,8 @@ REMOTE_BASE = 'cmeta-tests'          # under the host's login home: every remote
 ROUND_FILE = 'round.json'            # the round as launched (its hosts, instances, refs that failed), in its local folder
 SKIP = {'.git', '__pycache__', '.pytest_cache'}
 SESSION_ENV = 'CMETA_TEST_SESSION'
+TMP_CATEGORY = 'tmp,a2551f6124a34cf3'
+TMP_ARTIFACT = 'task-test-on-hosts'  # tmp::task-test-on-hosts of the local repository: the rounds without a test session
 
 
 def tar_tree(tree, out):
@@ -139,7 +141,7 @@ class CTask(InitCTask):
         runner on this machine, detached, with the tree as it is. peek: each host's state (running or done) and
         its steps. collect: the work folder of each host into <to>/<host> (cx host pull -q). remove: the hosts'
         folders of the round. The round's local folder is in the sandbox of the shell's test session
-        (CMETA_TEST_SESSION), else in the current directory: test-on-hosts-<id>.
+        (CMETA_TEST_SESSION), else in tmp::task-test-on-hosts of the local repository: test-on-hosts-<id>.
         """
 
         con = ctx['control'].get('con', False)
@@ -151,6 +153,9 @@ class CTask(InitCTask):
 
         rid = id or datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
         local = self.local_folder(rid)
+        if not local:
+            return self.cm.error(f'test-on-hosts: no folder for the round here - the artifact tmp::{TMP_ARTIFACT} of the '
+                                 f'local repository cannot be made (or start a test session: cx task run test-session --start)')
         remote = f'{REMOTE_BASE}/test-on-hosts-{rid}'
 
         # peek, collect and remove without --hosts: the hosts the launch resolved (round.json), so that a ref of an
@@ -615,11 +620,34 @@ class CTask(InitCTask):
 
     ############################################################
     def local_folder(self, rid):
-        """test-on-hosts-<id> in the sandbox of the shell's test session, else in the current directory."""
+        """
+        test-on-hosts-<id> in the sandbox of the shell's test session, else in tmp::task-test-on-hosts of the local
+        repository (made on first use) - never in the current directory, where the rounds launched from a drive's root
+        left their tarballs (D:\\test-on-hosts-*, 2026-10-30). A round launched there before keeps its folder: one
+        with round.json in the current directory is the round's. None when the tmp artifact cannot be made.
+        """
+        name = f'test-on-hosts-{rid}'
         session = os.environ.get(SESSION_ENV, '').strip()
         if session:
             r = self.cm.access({'category': 'task', 'command': 'run', 'arg1': 'test-session', 'id': session,
                                 'print': 'sandbox', 'con': False, 'quiet': True})
             if r['return'] == 0 and r.get('sandbox'):
-                return os.path.join(r['sandbox'], f'test-on-hosts-{rid}')
-        return os.path.join(os.getcwd(), f'test-on-hosts-{rid}')
+                return os.path.join(r['sandbox'], name)
+
+        before = os.path.join(os.getcwd(), name)
+        if os.path.isfile(os.path.join(before, ROUND_FILE)):
+            return before
+
+        ref = 'local:' + TMP_ARTIFACT
+        r = self.cm.access({'category': TMP_CATEGORY, 'command': 'find', 'arg1': ref, 'con': False})
+        if r['return'] == 0 and r.get('artifacts'):
+            return os.path.join(r['artifacts'][0]['path'], name)
+        if r['return'] in (0, 16):
+            r = self.cm.access({'category': TMP_CATEGORY, 'command': 'create', 'arg1': ref, 'yaml': True, 'con': False,
+                                'quiet': True, 'tags': ['test-on-hosts', 'rounds', 'cmeta-aops'],
+                                'meta': {'desc': 'The local folders of the test-on-hosts rounds launched without a test '
+                                                 'session (CMETA_TEST_SESSION): test-on-hosts-<id>/ with round.json, the '
+                                                 'tarball of the tree, the launchers and the collected results.'}})
+            if r['return'] == 0 and r.get('path'):
+                return os.path.join(r['path'], name)
+        return None

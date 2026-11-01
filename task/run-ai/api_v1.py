@@ -164,6 +164,7 @@ AI_GATEWAY_KEY = 'ai_gateway'           # the project's _desc.yaml: an ai.gatewa
 RUN_AI_CONFIG_KEY = 'run_ai_config'     # the project's _desc.yaml: the harness, model and effort its runs take without flags (its last run's)
 SET_AI_GATEWAY = 'set-ai-gateway,e10aa0a00edd4a2c'
 GATEWAY_HARNESSES = ('claude', 'codex', 'opencode')   # the run-<harness> tasks that take --gateway
+NO_GATEWAY_SUPPORT = 'the harness "%s" has no gateway support (claude, codex, opencode have): -ln for its own login'
 GATEWAY_CATEGORY = 'ai.gateway,ae1ae632e0ec4f75'
 
 # The config artifact of this task (cx config ...: in the local repository, so on this machine only; named after the
@@ -1306,7 +1307,9 @@ class CTask(InitCTask):
 
     def _gateway_choice(self, ctx, harness, gateway, gw, ln, project_path = ''):
         """Login or a gateway for a run (set-ai-gateway: the flag, the project's _desc.yaml, this machine's config)
-        -> (the alias or 'login', how, an error dict or None)."""
+        -> (the alias or 'login', how, an error dict or None, a note or ''). This machine's general default (config
+        run_ai_gateway) is for the harnesses that take a gateway: another one runs on its own login, with the note;
+        a gateway chosen for the run, the project or the harness stays its choice (and the run says it cannot)."""
         project = ''
         if project_path:
             v = self._read_desc(project_path).get(AI_GATEWAY_KEY)
@@ -1314,12 +1317,16 @@ class CTask(InitCTask):
         r = self.cm.access({'category': TASK_CATEGORY, 'command': 'run', 'arg1': SET_AI_GATEWAY, 'ctx': ctx, 'harness': harness,
                             'gateway': gateway, 'gw': gw, 'ln': ln, 'project': project, 'connect': False, 'con': False, 'quiet': True})
         if r.get('return', 1) > 0:
-            return '', '', r
-        return r['gateway'], r['how'], None
+            return '', '', r, ''
+        if r['gateway'] != 'login' and r.get('general') and harness and CONV.harness_key(harness) not in GATEWAY_HARNESSES:
+            return 'login', 'its own login: %s takes no gateway' % harness, None, \
+                'AI gateway: none for %s - the default gateway %s (%s) is for %s' % (harness, r['gateway'], r['how'], ', '.join(GATEWAY_HARNESSES))
+        return r['gateway'], r['how'], None, ''
 
-    def _list_models(self, harness, con, gateway = ''):
+    def _list_models(self, harness, con, gateways = None):
         """--list_models: the models and efforts of one harness, with every --model=<model>,<effort> ready to copy;
-        without a harness, a compact list for every known one."""
+        without a harness, a compact list for every known one. "gateways": the gateway each harness would run with
+        ({harness: alias or 'login'}); a harness without one lists its own models."""
         names = [harness] if harness else [h for h in HARNESSES if h != 'agy']
         compact = not harness
         lines = []
@@ -1329,6 +1336,7 @@ class CTask(InitCTask):
             if models is None:
                 lines += ['RUN-AI: harness "%s" (task %s): %s' % (h, task_ref, why), '']
                 continue
+            gateway = (gateways or {}).get(h, '')
             if gateway and gateway != 'login':
                 # the gateway's catalog instead of the tool's list: what this harness can use there, now
                 g = self.cm.access({'category': GATEWAY_CATEGORY, 'command': 'models', 'arg1': gateway, 'harness': h, 'con': False})
@@ -1675,10 +1683,16 @@ class CTask(InitCTask):
             notes.append('--agent is now called --harness (both work)')
 
         if list_models or models:
-            g_name, _, g_err = self._gateway_choice(ctx, given, gateway, gw, ln)
-            if g_err:
-                return g_err
-            return self._list_models(given, con, g_name)
+            # the gateway each listed harness would run with: only claude, codex and opencode take one
+            gateways = {}
+            for h in ([given] if given else list(GATEWAY_HARNESSES)):
+                g_name, _, g_err, _ = self._gateway_choice(ctx, h, gateway, gw, ln)
+                if g_err:
+                    return g_err
+                if g_name != 'login' and CONV.harness_key(h) not in GATEWAY_HARNESSES:
+                    return self.cm.error(NO_GATEWAY_SUPPORT % h)
+                gateways[h] = g_name
+            return self._list_models(given, con, gateways)
 
         if login or login_status:
             return self._login(ctx, harness, tool_ref, bool(login), con)
@@ -1983,9 +1997,11 @@ class CTask(InitCTask):
         # 2. the sub-task's parameters: everything the user gave, plus the records in !AI/log
         # login or a gateway for this run: the flag, the project's _desc.yaml (ai_gateway), this machine's config; the
         # harness task connects (or runs as before with login)
-        gateway_name, gateway_how, g_err = self._gateway_choice(ctx, hk, gateway, gw, ln, project_path)
+        gateway_name, gateway_how, g_err, g_note = self._gateway_choice(ctx, hk, gateway, gw, ln, project_path)
         if g_err:
             return g_err
+        if g_note:
+            notes.append(g_note)
         if gateway_name != 'login':
             notes.append('AI gateway: %s (%s)%s' % (gateway_name, gateway_how,
                          '; the claude.ai connectors (HubSpot, Microsoft 365, ...) are unavailable in a gateway session - -ln for a login session' if hk == 'claude' else ''))
@@ -1994,7 +2010,7 @@ class CTask(InitCTask):
         if hk in GATEWAY_HARNESSES:
             params['gateway'] = gateway_name        # the harness task connects, or runs as before with login
         elif gateway_name != 'login':
-            return self.cm.error('the harness "%s" has no gateway support (claude, codex, opencode have): -ln for its own login' % harness)
+            return self.cm.error(NO_GATEWAY_SUPPORT % harness)
 
         # only when asked for: not every run-<harness> task has them (run-openclaw has neither)
         if forward_yes:

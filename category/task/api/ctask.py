@@ -28,20 +28,34 @@ GATEWAY_VARS = 'CMETA_AI_GATEWAY_VARS'
 PROVIDERS = ('ANTHROPIC_', 'OPENAI_', 'AZURE_OPENAI_', 'MISTRAL_', 'GEMINI_', 'GOOGLE_API_KEY', 'GOOGLE_GENAI_',
              'GOOGLE_GENERATIVE_AI_API_KEY', 'OPENROUTER_', 'GROQ_', 'DEEPSEEK_', 'XAI_', 'TOGETHER_', 'FIREWORKS_',
              'CEREBRAS_', 'CMETA_AI_GATEWAY_KEY')
-LOGIN_DROPS = {'claude': ('ANTHROPIC_',),
+
+# Claude Code's provider switches: each sends a session to Bedrock, Vertex, Foundry ... - away from both the claude.ai
+# login and a gateway's URL
+CLAUDE_SWITCHES = ('CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY',
+                   'CLAUDE_CODE_USE_ANTHROPIC_AWS', 'CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD', 'CLAUDE_CODE_USE_MANTLE',
+                   'CLAUDE_CODE_USE_GATEWAY')
+LOGIN_DROPS = {'claude': ('ANTHROPIC_',) + CLAUDE_SWITCHES,           # CLAUDE_CODE_OAUTH_TOKEN stays: the login as a token
                'codex': ('OPENAI_', 'AZURE_OPENAI_', 'CODEX_API_KEY', 'CMETA_AI_GATEWAY_KEY'),
                'opencode': PROVIDERS}                                    # OpenCode takes every provider it finds
 
+# A gateway run of Claude Code takes the key through an apiKeyHelper (2026-11-01): the user's own Anthropic key, token,
+# URL or model names would compete with it - a 401 "invalid subscription key" from the gateway, which got the user's
+# ANTHROPIC_* in its place - as would a claude.ai token or a provider switch. Codex and OpenCode name the gateway's
+# provider on their command line or in their config, where the user's own keys do not compete: theirs stay.
+GATEWAY_DROPS = {'claude': ('ANTHROPIC_', 'CLAUDE_CODE_OAUTH_TOKEN') + CLAUDE_SWITCHES}
 
-def drop_provider_variables(harness='', login=False, env=None):
+
+def drop_provider_variables(harness='', login=False, env=None, gateway=False):
     """
     Removes from "env" (this process's environment by default, which the harness inherits) the variables a parent's
-    gateway put there and, for a login run of claude / codex / opencode, the ones that harness takes its models from.
+    gateway put there and, for a login run of claude / codex / opencode, the ones that harness takes its models from;
+    for a gateway run ("gateway"), those that would compete with the gateway there (GATEWAY_DROPS: Claude Code's).
     Returns the names removed (sorted), so that the caller can say it.
     """
     env = os.environ if env is None else env
     names = {n for n in str(env.get(GATEWAY_VARS) or '').split(',') if n.strip()}
-    starts = LOGIN_DROPS.get(str(harness or '').lower(), ()) if login else ()
+    h = str(harness or '').lower()
+    starts = (LOGIN_DROPS.get(h, ()) if login else ()) + (GATEWAY_DROPS.get(h, ()) if gateway else ())
     if starts:
         names |= {n for n in env if n.startswith(starts)}
     dropped = sorted(n for n in names if env.pop(n, None) is not None)

@@ -101,6 +101,11 @@ class CTask(InitCTask):
         if err:
             return self.cm.error(err)
         out = {'return': 0, 'harness': harness, 'gateway': choice, 'how': how}
+
+        # this machine's general default (run_ai_gateway), not a choice made for this run, project or harness: run-ai
+        # runs a harness without gateway support on its own login then
+        if how == 'config %s' % CONFIG_ON:
+            out['general'] = True
         if choice == LOGIN or not connect:
             if con:
                 print('AI gateway: %s (%s)' % (choice, how))
@@ -111,7 +116,7 @@ class CTask(InitCTask):
                             'model': model, 'con': False})
         if r.get('return', 1) > 0:
             return self.cm.error('gateway "%s" for %s: %s' % (choice, harness, r.get('error', 'cannot connect')))
-        for k in ('env', 'args', 'model', 'wire', 'notes', 'opencode_config', 'base_url', 'provided_by'):
+        for k in ('env', 'args', 'model', 'wire', 'notes', 'opencode_config', 'claude_settings', 'base_url', 'provided_by'):
             if k in r:
                 out[k] = r[k]
         if con:
@@ -120,6 +125,8 @@ class CTask(InitCTask):
             print('  environment: ' + (', '.join(sorted(out.get('env') or {})) or 'nothing'))
             if out.get('args'):
                 print('  words: ' + ' '.join(out['args']))
+            if out.get('claude_settings'):
+                print('  claude settings: ' + ', '.join(sorted(out['claude_settings'])))
             for n in out.get('notes') or []:
                 print('  note: ' + n)
         return out

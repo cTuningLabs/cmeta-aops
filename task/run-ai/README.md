@@ -730,6 +730,14 @@ OpenCode; the bill moves, or the model is local. The choice for a run, in order:
    --meta.run_ai_gateway_name=acme --meta.run_ai_gateway_codex=login`);
 4. `login`.
 
+Only Claude Code, Codex and OpenCode take a gateway. The general default (`run_ai_gateway`) is for them: another
+harness (vibe, gemini, agy, hermes, openclaw) runs on its own login then, with a note, and `--list_models` shows its
+own models. A gateway chosen for the run, the project or the harness is an error for it (`-ln` for its own login).
+
+A gateway run of Claude Code drops the user's own Anthropic credentials first (`ANTHROPIC_*`, `CLAUDE_CODE_OAUTH_TOKEN`,
+the provider switches `CLAUDE_CODE_USE_*`), which would compete with the gateway's key; Codex and OpenCode keep the
+user's keys in a gateway run (they name the gateway's provider, where those keys do not compete).
+
 ```
 cxai -gw "..."                                   # the configured gateway, whatever the project says
 cxai -ln "..."                                   # the tool's own account, whatever the config says
@@ -740,15 +748,17 @@ cxai --harness=codex --gateway=acme --list_models   # what Codex can use through
 The task `set-ai-gateway` makes the choice and gives the harness task what it needs (the environment, Codex's
 provider words, OpenCode's providers, the default model); the key comes from the `secret` artifact the gateway names
 and goes into the tool's environment only. Every run record carries the gateway beside the harness, the model and the
-effort. Claude Code on an API key has no claude.ai connectors: a gateway session says so in its notes - `-ln` for a
-session that needs them. Claude Code speaks the Anthropic wire only, Codex the Responses wire, OpenCode both; a
+effort. Claude Code takes a gateway's key through an `apiKeyHelper` in its `--settings` (never as `ANTHROPIC_API_KEY`,
+which beside a claude.ai login made it warn at every start), and has no claude.ai connectors on a key: they are
+switched off in the same settings and a gateway session says so in its notes - `-ln` for a session that needs them. Claude Code speaks the Anthropic wire only, Codex the Responses wire, OpenCode both; a
 gateway's catalog is filtered by the wire the harness speaks.
 
 **What a run inherits (since 2026-10-30).** A session that runs through a gateway and starts another agent no longer
 hands it the gateway. A gateway run names the variables it puts into its process (`CMETA_AI_GATEWAY_VARS`), and every
-harness task - Claude Code, Codex, OpenCode, OpenClaw, Gemini CLI, agy, Hermes - drops those of a parent's gateway
-first. A login run of Claude Code, Codex or OpenCode also drops what that harness reaches its models with, wherever it
-came from: Claude Code the `ANTHROPIC_*` variables (keys, URL, the `DEFAULT_*_MODEL` names), Codex `OPENAI_*` and
+harness task - Claude Code, Codex, OpenCode, OpenClaw, Gemini CLI, agy, Hermes, Mistral Vibe - drops those of a
+parent's gateway first. A login run of Claude Code, Codex or OpenCode also drops what that harness reaches its models with, wherever it
+came from: Claude Code the `ANTHROPIC_*` variables (keys, URL, the `DEFAULT_*_MODEL` names) and its provider switches
+(`CLAUDE_CODE_USE_BEDROCK`, `_VERTEX`, ...), Codex `OPENAI_*` and
 `AZURE_OPENAI_*`, OpenCode those of every provider it reads (Anthropic, OpenAI, Azure, Mistral, Gemini and Google API
 keys, OpenRouter, Groq, DeepSeek, xAI, Together, Fireworks, Cerebras). The run says which names left (names only). The
 user's own keys stay for the other harnesses, whose keys are one of their ways in (`GEMINI_API_KEY` for Gemini CLI,
