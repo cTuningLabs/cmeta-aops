@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.61.1.1)
+## 0.61.2
 - **Provenance is `strict` by default**: a `cx program run` that names no mode, in a shell without
   `CMETA_PROVENANCE`, fails with return code 99 when an error-level check fails - an explicitly requested
   configuration that was not honoured (a `--use.<tool>.version` not the one that ran, a requested accelerator
