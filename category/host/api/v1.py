@@ -15,6 +15,7 @@ is one more branch in _cmd_run/_status/_up/_down and all the verbs work on it at
 """
 
 import fnmatch
+import glob
 import hashlib
 import ipaddress
 import os
@@ -1324,6 +1325,7 @@ class Category(InitCategory):
 
         report = []
         problems = []            # what a person must look at: a failed repository, a check that found differences
+        skipped_all = []         # the files another process held, left out of a run and synced next time (not a problem)
         for h in hosts:
             alias = h['alias']
             sync = h['desc'].get('sync') or {}
@@ -1387,13 +1389,16 @@ class Category(InitCategory):
                 changed = True
                 result = 'ok' if dry_run else 'ok: ' + self._moved_text(r.get('moved') or {})
                 if notes: result += ' (' + '; '.join(notes) + ')'
+                skipped = list(r.get('skipped') or [])
+                if skipped:
+                    skipped_all += [f'{alias} / {name}: {s}' for s in skipped]
 
                 # the check: both sides compared; a difference right after a good sync is a file that changed during
                 # the run (the other side at work) - synced once more and compared again
                 check = '-'
                 both_sides = list(r.get('both_sides') or [])
                 if not dry_run and not skip_check and entry['method'] != 'git':
-                    c = self._check_repo(ctx, h, name, entry, con, verbose)
+                    c = self._check_repo(ctx, h, name, entry, con, verbose, ignore=skipped)
                     once_more = ''
                     if c.get('conflicts'):
                         merged = self._settle_index_conflicts(ctx, h, name, entry, c['conflicts'], con, verbose)
@@ -1411,7 +1416,11 @@ class Category(InitCategory):
                             again = self._moved_text(r2.get('moved') or {})
                             if again != 'nothing to move': result += f' + {again}'
                             both_sides += [b for b in (r2.get('both_sides') or []) if b not in both_sides]
-                        c = self._check_repo(ctx, h, name, entry, con, verbose)
+                            for s in r2.get('skipped') or []:
+                                if s not in skipped:
+                                    skipped.append(s)
+                                    skipped_all.append(f'{alias} / {name}: {s}')
+                        c = self._check_repo(ctx, h, name, entry, con, verbose, ignore=skipped)
                     check = self._check_text(c) if c.get('errors', 0) >= 0 else 'not checked: ' + str(c.get('error', ''))[:120]
                     if not c.get('ok'):
                         problems.append(f'{alias} / {name}: the check: {check}' + (f' - the list: {c["file"]}' if c.get('file') else ''))
@@ -1455,11 +1464,16 @@ class Category(InitCategory):
         else:
             summary = (f'{n_repos} synced' + ('' if skip_check else ' and checked') if ok
                        else f'{len(problems)} problem(s) - {n_repos} ok: ' + ' | '.join(p[:300] for p in problems[:6]))
+            if skipped_all:
+                # not a failure: the rest of the pair is in step, these follow when their process lets go
+                summary += f'; {len(skipped_all)} file(s) another process holds skipped, synced next time'
         if con:
             print('')
             self._print_table(['HOST', 'REPOSITORY', 'METHOD', 'RESULT', 'CHECK', 'TIME'], report)
             print('')
             print(self._banner(ok, 'STATUS: ' + ('SUCCESS - ' if ok else 'FAILED - ') + summary))
+            for s in skipped_all[:20]:
+                print(f'SKIPPED (another process holds it, synced next time): {s}')
             # a person at a terminal reads the problems before the window closes; never in a quiet run
             if problems and pause and not ctx['control'].get('quiet', False) and not ctx['control'].get('pause_at_the_end', False):
                 try:
@@ -4347,9 +4361,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
     def _sync_entries(self, h):
         """
         {name: {'method', 'local', 'remote', 'blacklist', 'workdir', 'artifacts'}} from the host's "sync:" block.
-        An entry is a name, or {name: {method, remote, blacklist, workdir, artifacts}}. The remote folder of a
-        repository is its own `remote`, else `<repos path>/<name>` (see _sync_repos_path). With `artifacts` (cRef
-        patterns) only those artifacts travel: a partial repository (see _selection_rules).
+        An entry is a name, or {name: {method, local, remote, blacklist, workdir, artifacts}}. The local folder of a
+        repository is its own `local`, else `<this machine's repos folder>/<name>` (a repository plugged from elsewhere
+        names its folder); the remote folder is its own `remote`, else `<repos path>/<name>` (see _sync_repos_path).
+        With `artifacts` (cRef patterns) only those artifacts travel: a partial repository (see _selection_rules).
         """
         sync = h['desc'].get('sync') or {}
         repos_path, source = self._sync_repos_path(h, sync)
@@ -4370,7 +4385,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             bl = list(blacklist) + self._csv(opts.get('blacklist'))
             entries[name] = {
                 'method': method,
-                'local': str(self.cm.repos_path / name),
+                'local': str(os.path.expanduser(os.path.expandvars(str(opts['local'])))) if opts.get('local') else str(self.cm.repos_path / name),
                 'remote': str(opts.get('remote') or (repos_path.rstrip('/') + '/' + name)),
                 'blacklist': bl,
                 'workdir': opts.get('workdir', workdir),
@@ -4572,9 +4587,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         return os.path.join(base, 'bisync-' + h['alias'])
 
     def _sync_repo(self, ctx, h, name, entry, resync, resync_mode, unlock, dry_run, con, verbose, backup=False,
-                   force=False, capture=False):
+                   force=False, capture=False, exclude=None):
         """One run of the declared method; force: rclone's --force past its delete guard (bisync); capture: rclone's
-        output kept in the result ('output') for the verdicts, with -v so that what moved can be counted."""
+        output kept in the result ('output') for the verdicts, with -v so that what moved can be counted; exclude:
+        filter patterns of files left out of this bisync run (the files another process holds, _exclude_rule)."""
         method = entry['method']
         if method not in SYNC_METHODS:
             return self.cm.error(f'{name}: unknown sync method "{method}" (one of {", ".join(SYNC_METHODS)})')
@@ -4681,7 +4697,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 return self.cm.error(f'unknown --resync_mode "{mode}" (newer | older | path1 | path2 | larger | smaller)')
             extra += ['--resync-mode', mode]
         r = self._rclone(ctx, h, 'resync' if resync else 'bisync', local, entry['remote'], whitelist=rules,
-                         blacklist=entry['blacklist'], extra=extra, con=con, verbose=verbose,
+                         blacklist=list(entry['blacklist']) + list(exclude or []), extra=extra, con=con, verbose=verbose,
                          workdir=self._bisync_workdir(h, entry), unlock=unlock, capture=capture)
         if r['return'] > 0: return r
         if dirs and not dry_run:
@@ -4837,11 +4853,128 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         m = re.search(r'too many deletes \(>\d+%, (\d+) of (\d+)\) on (Path[12])', s)
         if m:
             return 'too-many-deletes', (m.group(3), int(m.group(1)), int(m.group(2)))
+        # a file rclone could not read (another process holds it - a SQLite lock, an open document): a critical
+        # error that also says "Must run --resync", so it is read before that
+        files = Category._unreadable_files(s)
+        if files:
+            return 'unreadable', files
         if re.search(r'Must run --resync|all files were changed|cannot find prior Path1 or Path2 listings|listing.*not found', s):
             return 'needs-resync', None
         if re.search(r'retrying may help|Please try again|Error is retryable|connection reset|broken pipe|timed out|i/o timeout|EOF', s):
             return 'transient', None
         return 'other', None
+
+    @staticmethod
+    def _unreadable_files(text):
+        """The files a run could not read, from rclone's own lines ("ERROR : <path>: Failed to copy: read ...",
+        "Failed to calculate src hash"), relative to their side's root, in order, once each."""
+        out = []
+        for l in (text or '').splitlines():
+            m = re.search(r'ERROR : (.+?): Failed to (?:copy|calculate src hash|read|open|hash)\b', l)
+            if m and not m.group(1).startswith('Local file system at') and m.group(1) not in out:
+                out.append(m.group(1))
+        return out
+
+    @staticmethod
+    def _unreadable_here(text, local_root):
+        """Of the files a run could not read, those on this machine's side: rclone's error names the absolute path it
+        failed on ("read <path>: ..."), under local_root here, the host's own path there. A host-side file cannot be
+        probed from here and counts as still held."""
+        here = set()
+        root = os.path.normcase(os.path.abspath(local_root)).replace('\\', '/').rstrip('/') + '/'
+        for l in (text or '').splitlines():
+            m = re.search(r'ERROR : (.+?): Failed to (?:copy|calculate src hash|read|open|hash)\b.*?(?:read|open) (.+?): ', l)
+            if not m:
+                continue
+            path = os.path.normcase(m.group(2).strip()).replace('\\', '/')      # normcase first: on Windows it writes backslashes
+            path = re.sub(r'^//\?/', '', path)
+            if path.startswith(root):
+                here.add(m.group(1))
+        return here
+
+    @staticmethod
+    def _still_unreadable(root, files, tries=3, pause=5):
+        """The files (relative to root) that still cannot be read after "tries" attempts "pause" seconds apart: a lock
+        another process holds may be short. A file that is not here (the host's side) cannot be probed: unreadable."""
+        left = list(files)
+        for attempt in range(max(1, int(tries))):
+            still = []
+            for rel in left:
+                try:
+                    with open(os.path.join(root, *rel.split('/')), 'rb') as f:
+                        f.read(1)
+                except OSError:
+                    still.append(rel)
+            left = still
+            if not left or attempt >= tries - 1:
+                break
+            time.sleep(pause)
+        return left
+
+    @staticmethod
+    def _exclude_rule(rel):
+        """An rclone filter pattern for one file, relative to the root: anchored, its glob characters escaped."""
+        return '/' + re.sub(r'([\\*?\[\]{}])', r'\\\1', rel)
+
+    @staticmethod
+    def _listings_back(workdir, name=''):
+        """A bisync that met a critical error renamed the pair's pre-run listings to .lst-err and left no .lst (hence
+        "cannot find prior listings" next time); the rename keeps the listing's own time, so the time says nothing.
+        The .lst-err files without a .lst beside them - of the pair whose listing names carry the repository's name
+        when one is given (rclone writes the two paths into the name) - go back as .lst -> {path of the .lst: its
+        bytes}; {} when there are none."""
+        back = {}
+        hint = re.sub(r'[^A-Za-z0-9!.-]', '_', str(name or ''))
+        for err in glob.glob(os.path.join(workdir, '*.lst-err')):
+            lst = err[:-len('-err')]
+            if os.path.exists(lst) or (hint and hint not in os.path.basename(err)):
+                continue
+            try:
+                with open(err, 'rb') as f:
+                    data = f.read()
+                os.replace(err, lst)
+                back[lst] = data
+            except OSError:
+                continue
+        return back
+
+    @staticmethod
+    def _listings_now(workdir):
+        """The pair's listings as they are ({path of the .lst: its bytes}): a failure that left them in place (rclone
+        in --resilient mode, a host-side file it could not open) keeps them as the pre-run baseline."""
+        now = {}
+        for lst in glob.glob(os.path.join(workdir, '*.lst')):
+            try:
+                with open(lst, 'rb') as f:
+                    now[lst] = f.read()
+            except OSError:
+                continue
+        return now
+
+    @staticmethod
+    def _entries_back(listings, files):
+        """After a run that left "files" out, their pre-run entries (the listings _listings_back saved) go back into
+        the new .lst files: an excluded file is not listed, and would be new on both sides at the next run - a
+        conflict with the name gone on both sides. Binary: rclone's lines end in LF (a text-mode append on Windows
+        writes CRLF and the name grows a CR). -> how many entries were put back."""
+        n = 0
+        names = [f'"{rel}"'.encode('utf-8') for rel in files]
+        for lst, old in listings.items():
+            try:
+                with open(lst, 'rb') as f:
+                    new = f.read()
+            except OSError:
+                continue
+            missing = [nm for nm in names if nm not in new]
+            add = [l.rstrip(b'\r') for l in old.split(b'\n') if any(l.rstrip(b'\r').endswith(nm) for nm in missing)]
+            if not add:
+                continue
+            with open(lst, 'ab') as f:
+                if new and not new.endswith(b'\n'):
+                    f.write(b'\n')
+                f.write(b''.join(l + b'\n' for l in add))
+            n += len(add)
+        return n
 
     @staticmethod
     def _moved(text):
@@ -4918,13 +5051,18 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         (the deleted files kept in the host's sync-backup artifact), a new pair is seeded from this machine, a transient
         error is tried again (retries). -> the result of the last run, with 'notes' (what was done) and 'moved'."""
         notes, force, attempt = [], False, 0
+        exclude, fix = [], None             # a run without the files another process holds, and their listing entries to put back
         while True:
             attempt += 1
             r = self._sync_repo(ctx, h, name, entry, resync=resync, resync_mode=resync_mode, unlock=unlock, dry_run=dry_run,
-                                con=con, verbose=verbose, backup=backup, force=force, capture=not dry_run)
+                                con=con, verbose=verbose, backup=backup, force=force, capture=not dry_run, exclude=exclude)
             r['notes'] = notes
             if r.get('return', 0) == 0:
                 if not dry_run:
+                    if fix:
+                        listings, skipped = fix
+                        self._entries_back(listings, skipped)
+                        r['skipped'] = list(skipped)
                     r['moved'] = {'git': r['git']} if r.get('git') else self._moved(r.get('output', ''))
                     # a file changed on both sides since the last run: rclone keeps both copies as .conflict1/2 and
                     # the name itself is gone on both sides - the paths, for the verdict (from its renames: its warning
@@ -4943,6 +5081,37 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             kind, detail = self._bisync_failure((r.get('output') or '') + (r.get('error') or ''))
             if con:
                 print(f'    attempt {attempt} failed ({kind}): {str(r.get("error", ""))[:200]}')
+            if kind == 'unreadable':
+                # A file another process holds (a SQLite lock, an open document): rclone copied everything else, held
+                # the deletions back and dropped the pair's listings - a dead pair until a resync, which would bring
+                # deleted files back. Instead: the pre-run listings go back, the file is probed a few times (a short
+                # lock), and when it stays unreadable the run goes again without it - the deletions and the rest
+                # through - and its pre-run entries return to the listings, so that it is one ordinary change at the
+                # next run (2026-11-01, proven on rclone 1.75).
+                workdir = self._bisync_workdir(h, entry)
+                listings = self._listings_back(workdir, name) or self._listings_now(workdir)
+                if listings:
+                    text = (r.get('output') or '') + (r.get('error') or '')
+                    # what the stopped run had copied before it met the file (the run after it sees those files equal
+                    # on both sides and counts them no more)
+                    copied = len(re.findall(r': Copied \((?:new|replaced existing)\)', text))
+                    if copied:
+                        notes.append(f'{copied} file(s) copied before the run stopped')
+                    here = self._unreadable_here(text, entry['local'])
+                    on_host = [f for f in detail if f not in here]          # cannot be probed from here: still held
+                    still = self._still_unreadable(entry['local'], [f for f in detail if f in here], tries=retries + 1)
+                    still = [f for f in detail if f in still or f in on_host]
+                    if not still:
+                        notes.append(f'{len(detail)} file(s) another process held were readable again: tried again')
+                        if con: print(f'    {notes[-1]}')
+                        continue
+                    exclude = [self._exclude_rule(f) for f in still]
+                    fix = (listings, still)
+                    notes.append(f'{len(still)} file(s) another process holds skipped this run, synced next time: '
+                                 + ', '.join(still[:3]) + (' ...' if len(still) > 3 else ''))
+                    if con: print(f'    {notes[-1]}')
+                    continue
+                kind = 'needs-resync'           # no listings to put back: the pair needs a person (below)
             if kind == 'lock' and not unlock:
                 unlock = True
                 notes.append('a stale lock dropped')
@@ -4974,16 +5143,21 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             return r
 
     @staticmethod
-    def _check_summary(path):
+    def _check_summary(path, ignore=()):
         """rclone check --combined=<path> read: how many files are equal, missing on the host, missing here, different,
-        in error; the conflict copies rclone's bisync left (<name>.conflict<n>) on either side."""
-        n = {'equal': 0, 'missing_host': 0, 'missing_here': 0, 'differ': 0, 'errors': 0, 'conflicts': []}
+        in error; the conflict copies rclone's bisync left (<name>.conflict<n>) on either side. "ignore": the files the
+        sync left out on purpose (another process holds them) - counted as skipped, not as a difference."""
+        n = {'equal': 0, 'missing_host': 0, 'missing_here': 0, 'differ': 0, 'errors': 0, 'conflicts': [], 'skipped': 0}
         keys = {'=': 'equal', '-': 'missing_host', '+': 'missing_here', '*': 'differ', '!': 'errors'}
+        ignored = set(ignore or ())
         try:
             with open(path, encoding='utf-8', errors='replace') as f:
                 for line in f:
                     line = line.rstrip('\n')
                     if len(line) < 3 or line[1] != ' ' or line[0] not in keys:
+                        continue
+                    if line[2:] in ignored:
+                        n['skipped'] += 1
                         continue
                     n[keys[line[0]]] += 1
                     if re.search(r'\.conflict\d+$', line[2:]):
@@ -5009,10 +5183,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if n['errors']: parts.append(f'{n["errors"]} unreadable')
         return 'DIFFERENCES: ' + ', '.join(parts) + note
 
-    def _check_repo(self, ctx, h, name, entry, con, verbose):
+    def _check_repo(self, ctx, h, name, entry, con, verbose, ignore=None):
         """The two sides compared name by name and size by size (rclone check --size-only, the sync's own filters;
         one way for a copy): the proof that the repository is in step, independent of rclone's listings. -> the
-        summary of _check_summary plus 'file' (the combined listing kept in the bisync workdir)."""
+        summary of _check_summary plus 'file' (the combined listing kept in the bisync workdir). "ignore": the files
+        the sync skipped on purpose (another process holds them), not a difference."""
         method = entry['method']
         local = entry['local']
         rules = []
@@ -5035,7 +5210,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             time.sleep(3)
         if r.get('return', 0) > 0:
             return {'ok': False, 'errors': -1, 'error': r.get('error', 'rclone check failed'), 'file': combined}
-        n = self._check_summary(combined)
+        n = self._check_summary(combined, ignore or ())
         n['file'] = combined
         return n
 

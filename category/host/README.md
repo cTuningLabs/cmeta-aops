@@ -240,6 +240,7 @@ sync:
     - myorg@my-private-repo: {method: copy}
     - myorg@my-lab: {blacklist: [runs/, my-lab.egg-info/]}
     - some-repo: {remote: /other/path, workdir: ...}
+    - plugged-elsewhere: {local: D:/work/that-repo}     # a repository outside this machine's repositories folder (default: <repos folder>/<name>)
     - my-big-repo:             # a PARTIAL repository: only these artifacts travel (cRef patterns, see below)
         artifacts: [my.project::x/!AI, work::2026*, machine::*]
   after: [some command]        # run on the host after a sync that did something (a reindex is not needed: see below)
@@ -400,7 +401,11 @@ other commands (an older `after: [cx --reindex]` still works, and now rebuilds a
 repository of every selected host is synced, the table says per repository what moved (`ok: 1213 to host`, `ok:
 nothing to move`, `FAILED: ...`), the run ends with `STATUS: SUCCESS` or `STATUS: FAILED` in large letters with the
 problems under it, and its exit code is 1 when anything needs a person. A failing bisync is repaired where the cure
-is known and run again: a stale lock is dropped; rclone's delete guard ("too many deletes (>50%)") is passed with
+is known and run again: a file another process holds (a SQLite lock, an open document - rclone cannot read it, copies
+everything else, holds the deletions back and drops the pair's listings) is probed a few times and, when it stays held,
+left out of a second run with the pre-run listings put back, so the deletions and the rest go through and the file is
+one ordinary change at the next run - the result says `skipped this run, synced next time: <files>`, never a resync;
+a stale lock is dropped; rclone's delete guard ("too many deletes (>50%)") is passed with
 `--force` when the side that lost the files is still a repository (its `_cmr.*` there, not empty - the deleted
 files are kept in the host's sync-backup artifact), never for a wiped or detached side; a new pair (nothing on the
 host yet) is seeded from this machine; a transient error is tried again (`--retries`, 2). A pair whose baseline is

@@ -3,6 +3,19 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.61.0.1)
+- **`cx host sync`: a file another process holds no longer ends a bisync pair.** A bisync that cannot read a file (a
+  SQLite lock, an open document) copies everything else, holds the deletions back and ends with a critical error that
+  drops the pair's listings - a dead pair until `--resync`, which would bring deleted files back (2026-10-30, the
+  Codex lock). Now the run names the files from rclone's words, puts the pre-run listings back (rclone keeps them as
+  `.lst-err`), probes the files a few times (a lock may be short: readable again = a plain run), and when they stay
+  held runs again without them, so that the deletions and the rest go through, then returns their pre-run entries to
+  the listings (an excluded file would otherwise be "new on both sides" at the next run: conflict copies, the name
+  gone - proven on rclone 1.75); the result says `skipped this run, synced next time: <files>`, the check after the
+  sync does not count them, the verdict stays SUCCESS with the skipped files listed under it. Without listings to
+  put back the pair goes to a person, as before. A sync entry may also name the repository's `local:` folder (a
+  repository plugged from outside the repositories folder; default `<repos folder>/<name>` as before). Tests:
+  `test_host_sync_locked_files.py`; live on a throwaway pair with the T470p (a byte-range lock here, a file made
+  unreadable there).
 - **`cx host down <wsl host>` is refused while someone has a session open in the distro**: the stop (`wsl -t`) ends
   every process of the distro, a terminal tab included, and Docker Desktop's WSL integration starts the distro again
   at once - which looks like WSL failing and restarting (2026-11-01). The sessions are the `wsl.exe` processes that
