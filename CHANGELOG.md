@@ -2,6 +2,12 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.61.0.1)
+- **The `on:` block of a program or task is documented** (`docs/cmeta-aops/task-engine.md`: "An artifact's own route";
+  the program anatomy in `program-and-compute.md`): `requires_os`, a route per OS, `default`, the quoted key (PyYAML
+  reads a bare `on` as the boolean true; the readers take both), `--on` on the command line always winning. Test of the
+  program category's hand-over to the task run: `test_program_on_block.py`.
+
 ## 0.61.0
 - **`sync-system-clock` measures the clock without a time tool**: a machine with neither `timedatectl` nor `chronyc`
   (a bare container) gets one SNTP request from Python against the time server instead of "no program to measure
