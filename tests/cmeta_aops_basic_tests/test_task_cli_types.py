@@ -28,6 +28,7 @@ CHILD_UID = 'c5c5c5c5c5c5c501'
 PARENT_UID = 'c5c5c5c5c5c5c502'
 OFF_UID = 'c5c5c5c5c5c5c503'
 PARENT_CODE_UID = 'c5c5c5c5c5c5c504'
+DECLARATIVE_UID = 'c5c5c5c5c5c5c505'
 
 # The child reads its parameters by annotation (as strings: `from __future__ import annotations`) and records them
 CHILD_API = '''from __future__ import annotations
@@ -93,10 +94,12 @@ def tasks(cm, tmp_path_factory):
             ('c5-child', CHILD_UID, CHILD_API, 'cli_params:\n  count: int\n  mode:\n    values: [fast, full]\n'),
             ('c5-parent', PARENT_UID, PARENT_API, f'uses:\n  - task: c5-child,{CHILD_UID}\n'),
             ('c5-parent-code', PARENT_CODE_UID, PARENT_CODE_API, 'cli_types: true\n'),
-            ('c5-off', OFF_UID, CHILD_API, 'cli_types: false\n')):
+            ('c5-off', OFF_UID, CHILD_API, 'cli_types: false\n'),
+            ('c5-declarative', DECLARATIVE_UID, None, 'cli_params:\n  shell:\n    values: [cmd, all]\n')):
         write(repo / 'task' / alias / '_cmeta.yaml', f'artifact: {uid}\ncategory: task,c36be4b9314a45e0\n')
         write(repo / 'task' / alias / '_desc.yaml', desc)
-        write(repo / 'task' / alias / 'api_v1.py', api)
+        if api is not None:
+            write(repo / 'task' / alias / 'api_v1.py', api)
 
     r = cm.access({'category': 'repo', 'command': 'plug', 'arg1': str(repo), 'con': False})
     assert r['return'] == 0, r.get('error')
@@ -182,6 +185,16 @@ def test_errors_name_the_task(cm, tasks):
     # A bad word for a sub-task stops the parent's run the same way
     r = run(cm, 'c5-parent', use={'c5-child': {'flag': 'auto'}})
     assert r['return'] > 0 and 'for \'flag\' of task "c5-child"' in r['error'], r
+
+
+def test_a_task_without_code_is_read_by_its_cli_params(cm, tasks):
+    """A task of uses alone describes its words in cli_params too (remove-conda-from-cmd-autorun-win --shell,
+    2026-10-31): a value it does not take stops the run instead of running nothing."""
+    r = run(cm, 'c5-declarative', shell='bash')
+    assert r['return'] > 0 and r['error'] == 'Invalid value \'bash\' for \'shell\' of task "c5-declarative": must be one of cmd, all', r
+
+    r = run(cm, 'c5-declarative', shell='all')
+    assert r['return'] == 0, r.get('error')
 
 
 def test_the_switches(cm, tasks, monkeypatch):

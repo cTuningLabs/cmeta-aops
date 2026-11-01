@@ -110,8 +110,9 @@ def test_the_plan_per_os(clock):
     p = plan("wsl2", has = lambda name: name in ("timedatectl",))
     assert [(c, s) for n, c, s in p["fix"]] == [("hwclock -s", True)]
 
-    # a machine without the tools: nothing to measure with (the run says so)
-    assert plan("linux", has = lambda name: False)["measure"] == []
+    # a machine without the tools (a bare container): one SNTP request from Python, nothing to fix there
+    p = plan("linux", has = lambda name: False)
+    assert p["measure"] == [(clock["PYTHON_SNTP"], "pysntp")] and p["fix"] == []
 
 
 def test_reading_the_measurements_and_sudo(clock):
@@ -141,3 +142,42 @@ def test_check_on_this_machine_changes_nothing(cm):
     assert r["offset_seconds"] is None or isinstance(r["offset_seconds"], float)
     assert r["actions"] == [] and r["fixed"] is None
     assert isinstance(r["ok"], bool) and r["service"]["name"]
+
+
+def test_plan_without_a_time_tool_measures_with_python_sntp(clock):
+    """A bare container has neither timedatectl nor chronyc (2026-10-30): the clock is measured with one SNTP request
+    from Python instead of "no program to measure the clock with", and nothing is offered as a fix there."""
+    p = clock["plan"]("linux", has = lambda name: False)
+    assert p["measure"] == [(clock["PYTHON_SNTP"], "pysntp")] and p["fix"] == []
+    assert "container" in p["service"]
+    # a machine with timedatectl keeps the tool's path
+    p = clock["plan"]("linux", has = lambda name: name == "timedatectl")
+    assert [parser for _, parser in p["measure"]] == ["timesync", "timedatectl"] and p["fix"]
+
+
+def test_sntp_offset_from_a_server_packet(clock):
+    import struct
+    delta = clock["NTP_EPOCH_DELTA"]
+
+    def stamp(t):
+        return struct.pack("!II", int(t) + delta, int((t % 1) * 2 ** 32))
+
+    t1 = 1700000000.0
+    t4 = t1 + 0.1
+    packet = bytearray(48)
+    packet[1] = 2                                   # stratum 2
+    packet[32:40] = stamp(t1 + 0.5)                 # the server's receive time: half a second ahead of this clock
+    packet[40:48] = stamp(t1 + 0.5)                 # its transmit time
+    offset = clock["sntp_offset_from_packet"](bytes(packet), t1, t4)
+    assert abs(offset - 0.45) < 1e-5                # ((0.5) + (0.5 - 0.1)) / 2
+    assert clock["sntp_offset_from_packet"](bytes(packet)[:40], t1, t4) is None       # short
+    kiss = bytearray(packet)
+    kiss[1] = 0                                     # kiss-of-death
+    assert clock["sntp_offset_from_packet"](bytes(kiss), t1, t4) is None
+
+
+def test_read_measurements_of_python_sntp(clock):
+    offset, source, state = clock["read_measurements"]({"pysntp": "0.012345"})
+    assert offset == 0.012345 and source == "an SNTP request from Python against the server" and state == {}
+    offset, source, state = clock["read_measurements"]({"pysntp": "error: pool.ntp.org: timed out"})
+    assert offset is None and source == "python sntp: pool.ntp.org: timed out"

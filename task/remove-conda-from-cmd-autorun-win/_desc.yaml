@@ -4,7 +4,25 @@ fail_if_not_win: True
 
 cache: False                     # force by default
 
-uses:
-  - task: cmd,c9ba0a88df394d7f
-    cmd: 'conda init --reverse cmd.exe'
+# --shell=cmd (the default, as before): the AutoRun hook of cmd.exe in the registry; --shell=powershell: the
+# "conda initialize" block of the PowerShell profile, which activates conda's base in every PowerShell window (over
+# ssh too) - its Python first on PATH and, with CONDA_PREFIX, a cMeta home of that environment; --shell=all: both
+cli_params:
+  shell:
+    values: [cmd, powershell, all]
 
+# conda's own command where it is installed (Miniconda, Miniforge, Anaconda: tool/conda finds them), never installed
+# by this task: without conda there is no hook of conda's to remove
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: conda,6e70b3efba794670
+    skip_install: True
+
+uses2:
+  - task: cmd,c9ba0a88df394d7f
+    if: "'{{params.shell|cmd}}' in ('cmd', 'all')"
+    cmd: '{{global.conda.qpath}} init --reverse cmd.exe'
+
+  - task: cmd,c9ba0a88df394d7f
+    if: "'{{params.shell|cmd}}' in ('powershell', 'all')"
+    cmd: '{{global.conda.qpath}} init --reverse powershell'

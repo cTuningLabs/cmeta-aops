@@ -27,6 +27,7 @@ clock: WSL2 (a copy of the Windows host's clock), systemd-timesyncd running, off
 | Linux | `chronyc tracking` when chrony keeps the clock, else `timedatectl timesync-status`; `timedatectl show` for the service | `timedatectl set-ntp true`, then `systemctl restart systemd-timesyncd` or `chronyc makestep` |
 | WSL2 | the same as Linux | `hwclock -s`: the clock is set again from the hardware clock, which is the Windows host's — the lasting fix is the host's time service (run this task on the Windows host) |
 | macOS | `sntp <server>` | `sntp -sS <server>` and `systemsetup -setusingnetworktime on` |
+| Linux without `timedatectl` or `chronyc` (a bare container) | one SNTP request from Python against the server (nothing to install) | none: such a clock is the host kernel's and is put right on the host |
 
 Root: the system steps run with `sudo -n` (never a hidden prompt) unless the run is interactive (a terminal,
 not `-q`), where sudo may ask once; without passwordless sudo a non-interactive run says so and prints the

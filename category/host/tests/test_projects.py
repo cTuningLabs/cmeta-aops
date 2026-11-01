@@ -296,6 +296,180 @@ class Projects(unittest.TestCase):
         r, _ = self.restart(before=('down', 'unreachable'), stub_wait=False, check_timeout=0)
         self.assertEqual(r['return'], 0, r.get('error'))
 
+    # cx host up <host> --project=<name>: the declared "server: start" of one project (2026-10-31: the P14s's cserver
+    # stayed down after a reboot, and the host page could only say so)
+
+    def start_server(self, statuses, start='setsid nohup ~/start.sh > ~/start.log 2>&1 < /dev/null &', host_status='up',
+                     **kwargs):
+        """Run up_ --project=web on the stub host; its server answers the next of statuses at each check."""
+        server = self.host['desc']['projects']['web']['server']
+        if start:
+            server['start'] = start
+        checks, ran = [], []
+        def project_status(ctx, hosts):
+            checks.append(hosts[0].get('project'))
+            hosts[0]['project_status'] = {'web': {'status': statuses[min(len(checks), len(statuses)) - 1], 'url': server['url']}}
+        self.cat._project_status_all = project_status
+        self.cat.cm.catch_error = lambda r: r.get('return', 0) > 0
+        self.cat._get_host = lambda ctx, alias: {'return': 0, 'host': self.host}
+        self.cat._status = lambda ctx, h, *a, **k: host_status
+        self.cat._cmd_run = lambda ctx, h, cmd, **k: {'return': 0, 'cmd': 'ssh vm ' + cmd}
+        self.cat._run_local = lambda cmd, **k: ran.append(cmd) or {'returncode': 0}
+        with mock.patch.object(module.time, 'sleep') as sleep:
+            r = self.cat.up_({'control': {}}, arg1='vm', project='web', **kwargs)
+        return r, checks, ran, sleep.call_count
+
+    def test_up_project_runs_its_start_command_and_waits_until_the_server_answers(self):
+        r, checks, ran, sleeps = self.start_server(['down', 'down', 'up'])
+        self.assertEqual((r['return'], r['result']), (0, 'started and up'), r.get('error'))
+        self.assertEqual(ran, ['ssh vm setsid nohup ~/start.sh > ~/start.log 2>&1 < /dev/null &'])
+        self.assertEqual((checks, sleeps), (['web', 'web', 'web'], 2))
+        self.assertNotIn('project', self.host)                     # the host itself stays global
+
+    def test_up_project_starts_nothing_when_the_server_already_answers(self):
+        r, checks, ran, _ = self.start_server(['up'])
+        self.assertEqual((r['return'], r['result'], ran, len(checks)), (0, 'already up', [], 1))
+
+    def test_up_project_fails_when_the_server_does_not_answer_in_time(self):
+        clock = iter(range(0, 10000, 20))
+        with mock.patch.object(module.time, 'monotonic', lambda: next(clock)):
+            r, _, ran, _ = self.start_server(['down'], check_timeout=60)
+        self.assertEqual((r['return'], len(ran)), (1, 1))
+        self.assertIn('does not answer', r['error'])
+        r, _, ran, sleeps = self.start_server(['down'], check_timeout=0)       # no wait: started is the answer
+        self.assertEqual((r['return'], r['result'], sleeps), (0, 'started', 0))
+
+    def test_up_project_says_why_a_start_command_that_did_not_detach_failed(self):
+        """2026-10-31: "mkdir x && setsid nohup server &" backgrounds the whole list with ssh's output: ssh waited
+        for the server, the run timed out and the answer was a bare "returned -1"."""
+        self.start_server(['up'])                                    # the stubs, then a launcher that times out
+        self.cat._run_local = lambda cmd, **k: {'returncode': -1, 'timed_out': True}
+        self.cat._project_status_all = lambda ctx, hosts: hosts[0].update(project_status={'web': {'status': 'down'}})
+        r = self.cat.up_({'control': {}}, arg1='vm', project='web')
+        self.assertEqual(r['return'], 1)
+        self.assertIn('must detach', r['error'])
+
+    def test_up_project_needs_a_start_command_a_project_and_a_running_host(self):
+        r, _, ran, _ = self.start_server(['down'], start=None)
+        self.assertIn('declares no "server: start"', r['error'])
+        self.assertEqual(ran, [])
+        r = self.cat.up_({'control': {}}, arg1='vm', project='nothing')
+        self.assertIn('has no project "nothing"', r['error'])
+        r, _, ran, _ = self.start_server(['down'], host_status='down')
+        self.assertIn('start the host first', r['error'])
+        self.assertEqual(ran, [])
+
+    def test_project_rows_carry_the_start_command(self):
+        self.assertEqual(self.cat._project_rows(self.host)[0]['start'], '')
+        self.host['desc']['projects']['web']['server']['start'] = 'sh ~/start.sh &'
+        self.assertEqual(self.cat._project_rows(self.host)[0]['start'], 'sh ~/start.sh &')
+
+    def test_probe_skips_a_server_of_the_global_environment(self):
+        """A project with no venv of its own (a cserver of the host's global cMeta) is probed with the host; before,
+        the probe stopped on "project ... needs venv"."""
+        self.host['desc']['projects']['cserver'] = {'path': '/global', 'cmeta': {'home': '/global'},
+                                                    'server': {'url': 'http://127.0.0.1:8228/', 'expected_status': [200, 401]}}
+        probed = []
+        self.cat._select = lambda ctx, *a, **k: {'return': 0, 'hosts': [self.host]}
+        self.cat.cm.catch_error = lambda r: r.get('return', 0) > 0
+        self.cat._status_all = lambda ctx, hosts, **k: None
+        self.cat._probe_one = lambda ctx, h, timeout, verbose: probed.append(h.get('project')) or {'return': 0, 'state': {}}
+        r = self.cat.probe_({'control': {}}, arg1='vm')
+        self.assertEqual(r['return'], 0, r.get('error'))
+        self.assertEqual(probed, [None, 'web'])
+
+
+class Push(unittest.TestCase):
+    """cx host push of a repository in part (2026-10-31: a repository pushed with --dirs to a Windows host that had no
+    copy of it became a repository with a UID of its own there): its _cmr.yaml goes too, never over one the host
+    has."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.repo = Path(self.temp.name) / 'my-repo'
+        (self.repo / 'category' / 'page').mkdir(parents=True)
+        (self.repo / '_cmr.yaml').write_text('artifact: my-repo,1111222233334444\n')
+        self.calls = []
+        host = {'alias': 'win', 'type': 'ssh', 'state': {},
+                'desc': {'access': {'shell': 'powershell'}, 'cmeta': {'home': 'D:\\CMETA'}}}
+        self.cat = module.Category.__new__(module.Category)
+        self.cat._host_cache = {}
+        self.cat.cm = types.SimpleNamespace(error=lambda e: {'return': 1, 'error': e},
+                                            catch_error=lambda r: r.get('return', 0) > 0,
+                                            access=lambda p: {'return': 0, 'artifacts': [{'path': str(self.repo)}]})
+        self.cat._get_host = lambda ctx, alias, project=None: {'return': 0, 'host': host}
+        self.cat._here = lambda h: False
+        self.cat._sync_entries = lambda h: {}
+        self.cat._repo_desc = lambda path: {}
+        self.cat._rclone = lambda ctx, h, command, local, remote, **k: \
+            self.calls.append((command, local, remote, k.get('extra'))) or {'return': 0}
+        self.cat._index_on_host = lambda *a, **k: {'return': 0, 'cmd': 'reindex', 'returncode': 0, 'seconds': 0}
+
+    def push(self, arg2='my-repo', **kwargs):
+        r = self.cat.push_({'control': {}}, arg1='win', arg2=arg2, **kwargs)
+        self.assertEqual(r['return'], 0, r.get('error'))
+        return r
+
+    def test_a_partial_push_carries_the_identity_without_replacing_one_there(self):
+        r = self.push(dirs='category/page/')
+        self.assertEqual([c[0] for c in self.calls], ['copy', 'copyto'])
+        self.assertEqual(self.calls[1][1:], (str(self.repo / '_cmr.yaml'), 'D:/CMETA/repos/my-repo/_cmr.yaml', ['--ignore-existing']))
+        self.assertEqual(r['identity'], '_cmr.yaml')
+
+    def test_a_whole_repository_has_its_identity_in_it(self):
+        self.push()
+        self.assertEqual([c[0] for c in self.calls], ['copy'])
+
+    def test_a_dry_run_copies_no_identity_either(self):
+        self.push(dirs='category/page/', dry_run=True)
+        self.assertEqual(self.calls[1][3], ['--ignore-existing', '--dry-run'])
+
+    def test_a_file_is_no_repository(self):
+        self.push(arg2=str(self.repo / 'category' / 'page' / '..' / '..' / '_cmr.yaml'), to='D:/tmp/x.yaml')
+        self.assertEqual([c[0] for c in self.calls], ['copyto'])
+
+
+class PowerShellTransport(unittest.TestCase):
+    """A command for a PowerShell host over ssh travels -EncodedCommand: no quote or operator is left for a shell on the
+    way (2026-10-31, from this Windows machine: "a | b" ran b in this machine's cmd.exe; 2026-10-24, from a POSIX
+    controller: "a; b" ran b on the controller)."""
+
+    def setUp(self):
+        self.cat = module.Category.__new__(module.Category)
+        self.cat._host_cache = {}
+        self.cat._ssh_parts = lambda h, **k: {'return': 0, 'cmd': 'ssh -p 2222 user@win', 'target': 't', 'options': ''}
+        self.cat._here = lambda h: False
+        self.host = {'alias': 'win', 'type': 'ssh', 'desc': {'access': {'shell': 'powershell'}}}
+
+    @staticmethod
+    def decoded(line):
+        import base64
+        word = line.split('-EncodedCommand ', 1)[1].split('"', 1)[0]
+        return base64.b64decode(word).decode('utf-16-le')
+
+    def test_quotes_and_operators_never_reach_a_shell(self):
+        cmd = 'Get-ChildItem "D:\\a b" | ForEach-Object { $_.Name }; echo done & echo %PATH%'
+        for os_name in ('nt', 'posix'):
+            with mock.patch.object(module.os, 'name', os_name):
+                line = self.cat._cmd_run({}, self.host, cmd)['cmd']
+            self.assertTrue(line.startswith('ssh -p 2222 user@win "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand '), line)
+            self.assertEqual(line.count('"'), 2, os_name)
+            self.assertFalse(any(c in line for c in '|;&%$'), os_name)
+            self.assertIn(cmd, self.decoded(line))
+
+    def test_a_failed_command_still_fails(self):
+        payload = self.decoded(self.cat._cmd_run({}, self.host, 'Get-Item D:\\nope')['cmd'])
+        self.assertTrue(payload.endswith('$cmetaOk = $?\nif ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }\nif (-not $cmetaOk) { exit 1 }'))
+
+    def test_a_command_too_long_to_encode_goes_by_script(self):
+        scripts = []
+        self.cat._temp_script = lambda text, **k: scripts.append(text) or {'return': 0, 'path': 'script.ps1'}
+        self.cat._cmd_stdin = lambda ctx, h, path: {'return': 0, 'cmd': 'stdin < ' + path, 'here': False}
+        long_cmd = 'echo ' + 'x' * 5000
+        self.assertEqual(self.cat._cmd_run({}, self.host, long_cmd)['cmd'], 'stdin < script.ps1')
+        self.assertEqual(scripts, [long_cmd])
+
 
 class PowerShellOutput(unittest.TestCase):
     def test_clixml_on_stderr_becomes_the_text_of_its_records(self):

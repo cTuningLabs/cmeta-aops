@@ -49,10 +49,15 @@ DEFAULT_STATUS_TIMEOUT = 3       # seconds, the TCP probe of "status"
 DEFAULT_STATUS_CMD_TIMEOUT = 20  # seconds, a "status" check that runs a command (adb devices, docker inspect, wsl -l)
 DEFAULT_PROBE_TIMEOUT = 120      # seconds, the whole probe script
 RESTART_DOWN_WAIT = 120          # seconds a restarted ssh host without a boot stamp may stay "up" before it counts as back
+START_RETURN_TIMEOUT = 60        # seconds a project's "server: start" may take to return (it detaches: a launcher returns at once)
 DEFAULT_SHELL = 'bash -l'        # a login shell, so ~/.local/bin (cx, uv) and brew are on PATH
 
 # What never leaves this machine when a repository is synced (the user's bisync scripts, 2026-10)
-DEFAULT_BLACKLIST = ['tmp*/', '__pycache__/', '.venv/', '.git/', '.claude/', '__symlinks/']
+# The default blacklist of a sync: scratch, caches, git, and the live state of a SQLite database (the -wal / -shm /
+# -journal files and a maintenance lock a running harness holds: unreadable while it runs, and transient - the
+# .sqlite file itself travels; a Codex lock aborted a bisync on 2026-10-30)
+DEFAULT_BLACKLIST = ['tmp*/', '__pycache__/', '.venv/', '.git/', '.claude/', '__symlinks/',
+                     '*.sqlite-wal', '*.sqlite-shm', '*.sqlite-journal', '*.sqlite-maintenance.lock']
 DEFAULT_RCLONE_FLAGS = ['--transfers=4', '--checkers=4']
 
 SYNC_METHODS = ('bisync', 'copy', 'git', 'none')
@@ -475,7 +480,9 @@ class Category(InitCategory):
 
             st = r['state']
             if not project:
-                for name in (h['desc'].get('projects') or {}):
+                for name, declared in (h['desc'].get('projects') or {}).items():
+                    if not (declared or {}).get('venv'):
+                        continue        # a server of the host's global environment: probed with the host above
                     pr = self._project_host(h, name)
                     if pr['return'] > 0: return pr
                     pr = self._probe_one(ctx, pr['host'], int(timeout), verbose)
@@ -1144,6 +1151,81 @@ class Category(InitCategory):
                           + note(('url', p['alias'], x['url']), x.get('status', '')))
         return failed
 
+    def _start_server(self, ctx, arg1, name, check_timeout):
+        """cx host up <host> --project=<name>: run the project's "server: start" on the host unless its server
+        already answers, then check its server URL every 5 s until it answers or check_timeout runs out. A start
+        command must detach (setsid nohup ... &), as an after_restart command does, or ssh waits for the server."""
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        if not arg1:
+            return self.cm.error(f'which host? cx host up <host> --project={name}')
+        r = self._get_host(ctx, arg1)
+        if self.cm.catch_error(r): return r
+        h = r['host']
+        alias = h['alias']
+        projects = h['desc'].get('projects') or {}
+        project = projects.get(name)
+        if not isinstance(project, dict):
+            return self.cm.error(f'host "{alias}" has no project "{name}"' +
+                                 (f' (its projects: {", ".join(projects)})' if projects else ''))
+        server = project.get('server') or {}
+        start = server.get('start')
+        if not server.get('url'):
+            return self.cm.error(f'project "{name}" of host "{alias}" declares no server (server: url)')
+        if not start:
+            return self.cm.error(f'project "{name}" of host "{alias}" declares no "server: start" - the command '
+                                 f'that starts its server on the host')
+        if self._retired(h):
+            return self.cm.error(f'host "{alias}" is retired')
+
+        h['status'] = self._status(ctx, h)
+        if not self._usable(h):
+            return self.cm.error(f'host "{alias}" is {h["status"]} - start the host first (cx host up {alias})')
+
+        # Checks of this one project only: a copy that selects it, so that the host itself stays global
+        one = dict(h, project=name, host_desc=h['desc'])
+
+        def check():
+            self._project_status_all(ctx, [one])
+            return dict((one.get('project_status') or {}).get(name) or {})
+
+        url = server['url']
+        now = check()
+        if now.get('status') == 'up':
+            if con: print(f'{alias}: {name} already answers at {url}')
+            return {'return': 0, 'result': 'already up', 'server': now}
+
+        r = self._cmd_run(ctx, h, str(start))
+        if self.cm.catch_error(r): return r
+        if con: print(f'{alias}: {start}')
+        rr = self._run_local(r['cmd'], capture=True, con=False, verbose=verbose, timeout=START_RETURN_TIMEOUT)
+        rc = rr.get('returncode', 0)
+        if rr.get('timed_out'):
+            # the server may well run: what held ssh is a start command that did not detach from it
+            return self.cm.error(f'"{start}" on {alias} did not return within {START_RETURN_TIMEOUT} s: a start command must '
+                                 f'detach - one "setsid nohup <command> > <log> 2>&1 < /dev/null &", not "a && b &" (the '
+                                 f'whole list then waits in the background with the session\'s output)')
+        if rc != 0:
+            return self.cm.error(f'"{start}" on {alias} returned {rc}: {(rr.get("stderr") or rr.get("stdout") or "").strip()[-300:]}')
+
+        result = {'return': 0, 'result': 'started', 'start': str(start), 'server': now}
+        t_end = time.monotonic() + max(0, int(check_timeout))
+        while time.monotonic() < t_end:
+            time.sleep(5)
+            now = check()
+            if now.get('status') == 'up':
+                result.update(result='started and up', server=now)
+                break
+            if con: print(f'{alias}: waiting for {url} ({now.get("status", "?")}) ...')
+        else:
+            if int(check_timeout) > 0:
+                result.update(server=now, **{'return': 1, 'error': f'{name} on {alias} was started but does not answer '
+                                             f'at {url} after {int(check_timeout)} s ({now.get("status", "?")}) - see its log on the host'})
+        if con and result['return'] == 0:
+            print(f'{alias}: {name} {result["result"]}' + (f' - {url} answers HTTP {now.get("http_status")}' if now.get('http_status') else ''))
+        return result
+
     ############################################################
     def up_(
         self,
@@ -1152,15 +1234,24 @@ class Category(InitCategory):
         tags=None,          # or a selection
         machine=None,
         type=None,
+        project=None,       # start the server of this project instead: its "server: start" on the host (one host)
+        check_timeout=120,  # with --project: seconds to wait until the server answers (0: do not wait)
     ):
         """
         Start a host that can be started from here: a WSL distro, a container (created from its image on
         the first start), or anything with a declared "commands: up" (a cloud VM: az vm start ...).
         An ssh host without one is reported, not started.
 
+        With --project, start the web server of one declared project on a running host: its "server: start"
+        command runs there (unless the server already answers), then its server URL is checked until it answers
+        or --check_timeout runs out. The host page of the cserver offers it as "Start".
+
             cx host up my-pc-wsl2       (also: cx host start)
+            cx host up lab-laptop-ubuntu --project=cserver
         """
 
+        if project:
+            return self._start_server(ctx, arg1, str(project), check_timeout)
         return self._up_down(ctx, 'up', arg1, tags, machine, type)
 
     ############################################################
@@ -1511,6 +1602,17 @@ class Category(InitCategory):
         if self.cm.catch_error(r): return r
 
         result = {'return': 0, 'host': h['alias'], 'local': local, 'remote': remote_path, 'dirs': whitelist}
+
+        # A repository pushed in part (--dirs, --artifacts) carries its identity: its _cmr.yaml goes too when the host
+        # has none (--ignore-existing: a host's own is never replaced). Without it the host took the folder for a new
+        # repository with a UID of its own (2026-10-31: a repository pushed with --dirs to a Windows host)
+        if repository and whitelist and command != 'copyto':
+            cmr = next((os.path.join(local, n) for n in ('_cmr.yaml', '_cmr.json') if os.path.isfile(os.path.join(local, n))), '')
+            if cmr:
+                r = self._rclone(ctx, h, 'copyto', cmr, remote_path.rstrip('/') + '/' + os.path.basename(cmr),
+                                 extra=['--ignore-existing'] + (['--dry-run'] if dry_run else []), con=con, verbose=verbose)
+                if self.cm.catch_error(r): return r
+                result['identity'] = os.path.basename(cmr)
 
         if patterns and not dry_run:
             r = self._write_partial_note(ctx, h, arg2, remote_path, patterns, whitelist, 'push', verbose)
@@ -2775,6 +2877,8 @@ class Category(InitCategory):
             rows.append({'alias': name, 'path': p.get('path'), 'cmeta': st.get('cmeta_version', '-'),
                          'aops': st.get('aops_version', '-'), 'server': server,
                          'status': server.get('status', 'not checked'), 'probed': st.get('probed_at'),
+                         # the command that starts the server on the host (cx host up <host> --project=<name>)
+                         'start': str((p.get('server') or {}).get('start') or ''),
                          # the public URLs of the server checked from this machine (status: _public_status_all)
                          'public': list((h.get('public_status') or {}).get(name) or [])})
         return rows
@@ -3607,7 +3711,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         """Carry local PowerShell syntax through cmd.exe without exposing quotes or operators."""
         import base64
 
-        payload = "$ProgressPreference='SilentlyContinue'; " + cmd + '\nif ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }'
+        # the exit code: the last program's, else 1 when the last command failed (as -Command "..." answered)
+        payload = ("$ProgressPreference='SilentlyContinue'; " + cmd + '\n$cmetaOk = $?' +
+                   '\nif ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }\nif (-not $cmetaOk) { exit 1 }')
         encoded = base64.b64encode(payload.encode('utf-16-le')).decode('ascii')
         return f'{shell.strip()} -NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded}'
 
@@ -3684,12 +3790,26 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 if cmd is not None and not raw and not stdin and shell.strip() in ('powershell', 'pwsh'):
                     cmd = self._powershell_command(shell, cmd)
                 return {'return': 0, 'cmd': cmd, 'here': True}
+            # A PowerShell host: the command travels -EncodedCommand (base64 of its UTF-16 text), so no quote, |, &
+            # or ; is left in the line for this machine's shell (cmd.exe toggles its quoting at every " - the quotes
+            # of "powershell -Command \"...\"" inside the ssh argument's own let a | loose: 2026-10-31,
+            # "Get-ChildItem ... | ForEach-Object ..." ran ForEach-Object in this machine's cmd.exe; a POSIX shell split
+            # the same line at ; and ran the rest HERE, 2026-10-24) nor for the host's default shell. A command too
+            # long for a command line once encoded goes the script way below.
+            powershell_host = shell.strip() in ('powershell', 'pwsh')
+            encoded = False
+            if cmd is not None and not raw and not stdin and powershell_host:
+                line = self._powershell_command(shell, cmd)
+                if len(line) < 6000:
+                    wrapped, encoded = line, True
             # A command with a double quote cannot ride inside the one argument cmd.exe hands to ssh.exe:
             # cmd.exe toggles its quoting on EVERY ", backslash or not, so a | or & behind the first inner
             # quote is run by cmd.exe itself (seen 2026-10-06: "'head' is not recognized"). Such a command
-            # goes to the host's shell on stdin instead, from a temporary script.
+            # goes to the host's shell on stdin instead, from a temporary script - and so does a PowerShell
+            # command too long to go encoded.
             # (not when the caller feeds the host's stdin itself: the script route needs stdin too)
-            if cmd is not None and not interactive and not stdin and windows_here() and any(c in cmd for c in '"^%\n\r'):
+            if cmd is not None and not interactive and not stdin and not encoded and (
+                    (powershell_host and not raw) or (windows_here() and any(c in cmd for c in '"^%\n\r'))):
                 r = self._temp_script(cmd)
                 if r['return'] > 0: return r
                 return self._cmd_stdin(ctx, h, r['path'])

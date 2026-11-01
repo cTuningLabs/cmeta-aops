@@ -68,6 +68,8 @@ How it runs:
 - **remove:** the round's folder on each host is removed, and here the `here` copy.
 
 The round's local folder is `test-on-hosts-<id>` in the sandbox of the shell's test session (`CMETA_TEST_SESSION`),
-else in the current directory. It holds `round.json`, the tarball, the generated launchers and the collected
-results; peek, collect and remove look for it there (from another directory they say where they looked, and make
-nothing). This machine's part runs in `here_dir` (above), which `round.json` names.
+else in the artifact `tmp::task-test-on-hosts` of the local repository (made on first use) - never in the current
+directory. It holds `round.json`, the tarball, the generated launchers and the collected results; peek, collect and
+remove look for it there (without the round's test session in the shell they say where they looked, and make
+nothing). A round launched before this rule keeps its folder in the directory it was launched from: run peek, collect
+and remove from there. This machine's part runs in `here_dir` (above), which `round.json` names.

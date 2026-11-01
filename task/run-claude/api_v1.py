@@ -76,6 +76,35 @@ def _flag_value(flags, name):
     return ''
 
 
+def _with_settings(flags, add):
+    """
+    The flags after "--" with the settings "add" merged into their --settings (a file or a JSON string - Claude Code
+    reads one, the last), or with a --settings of their own when they have none. The merged settings travel as a JSON
+    string: no file is written. -> (flags, '' or an error when a --settings given cannot be read).
+    """
+    out, given = [], {}
+    k = 0
+    while k < len(flags):
+        x = str(flags[k])
+        if x.split('=')[0] != '--settings':
+            out.append(x)
+            k += 1
+            continue
+        value = x.split('=', 1)[1] if '=' in x else (str(flags[k + 1]) if k + 1 < len(flags) else '')
+        k += 1 if '=' in x else 2
+        try:
+            if os.path.isfile(value):
+                with open(value, encoding='utf-8-sig') as f:
+                    given = json.load(f)
+            else:
+                given = json.loads(value)
+        except (OSError, ValueError) as e:
+            return flags, f'the --settings "{value}" cannot be read: {e}'
+        if not isinstance(given, dict):
+            return flags, f'the --settings "{value}" is not a JSON object'
+    return ['--settings', json.dumps(dict(given, **add))] + out, ''
+
+
 def _agent_generator(claude_path, flags):
     """
     The CMETA_GENERATOR record of a claude session: the agent and its version, and the model and
@@ -122,11 +151,12 @@ class CTask(InitCTask):
         # the Anthropic variables (keys, URL, the model names of DEFAULT_*_MODEL) wherever they came from - a session
         # that runs through a company gateway starts an import whose fetch needs the claude.ai connectors (2026-10-27),
         # and its variables took precedence over the claude.ai login. They leave this process's environment, which the
-        # tool inherits (ctask.drop_provider_variables).
-        dropped = drop_provider_variables('claude', login=r['gateway'] == 'login')
+        # tool inherits (ctask.drop_provider_variables). A gateway run also starts without the user's own Anthropic key,
+        # token, URL and model names, which would compete with the gateway's key (its apiKeyHelper).
+        dropped = drop_provider_variables('claude', login=r['gateway'] == 'login', gateway=r['gateway'] != 'login')
         if dropped and ctx['control'].get('con', False):
             print('')
-            print('AI gateway: %s - %s inherited from the parent left the environment of this run' % (r['gateway'], ', '.join(dropped)))
+            print('AI gateway: %s - %s left the environment of this run' % (r['gateway'], ', '.join(dropped)))
         if r['gateway'] != 'login':
             gateway_into_environment(r.get('env'))
             if ctx['control'].get('con', False):
@@ -358,6 +388,13 @@ class CTask(InitCTask):
             flags += gwc.get('args') or []
             if gwc.get('model') and not [x for x in [x.split('=')[0] for x in extra_flags] if x in MODEL_FLAGS]:
                 flags += ['--model', gwc['model']]
+
+            # the gateway's settings (its key through an apiKeyHelper, the claude.ai connectors off) beside run-ai's
+            # or the user's own --settings: Claude Code reads only one
+            if gwc.get('claude_settings'):
+                extra_flags, err = _with_settings(extra_flags, gwc['claude_settings'])
+                if err:
+                    return self.cm.error(f'AI gateway {gwc["gateway"]}: {err}', 1)
 
         # cMeta repositories -> "--add-dir <path>": Claude Code reads their CLAUDE.md, AGENTS.md and skills.
         # Portable: the alias is resolved here, on this machine, through cMeta's own registry.

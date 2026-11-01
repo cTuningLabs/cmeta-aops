@@ -2,6 +2,77 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.61.0
+- **`sync-system-clock` measures the clock without a time tool**: a machine with neither `timedatectl` nor `chronyc`
+  (a bare container) gets one SNTP request from Python against the time server instead of "no program to measure
+  the clock with"; `--check` then answers as everywhere else. Such a clock is the host kernel's and is put right on
+  the host, so the task offers no fix there and says so. Nothing to install, nothing skipped. Tests:
+  `test_plan_without_a_time_tool_measures_with_python_sntp`, `test_sntp_offset_from_a_server_packet`.
+- **The default sync blacklist leaves the live state of a SQLite database alone**: `*.sqlite-wal`, `*.sqlite-shm`,
+  `*.sqlite-journal` and `*.sqlite-maintenance.lock` (a running harness holds them; a Codex lock aborted a bisync on
+  2026-10-30, after which only that host's blacklist carried them). The `.sqlite` files themselves still travel.
+- **A zombie process counts as stopped**: in a container without an init, a detached server (or a test-on-hosts
+  runner) that ended is never reaped and `os.kill(pid, 0)` still finds it, so `stop` reported "the server process
+  did not stop" and `peek` showed a runner as running; the state in `/proc/<pid>/stat` decides now (Linux).
+- **Two tests assumed a non-root user** (`test_reboot_task`, `test_upgrade_os`): they expected the `sudo` prefix the
+  tasks rightly omit when the suite itself runs as root (a container); they now run as a user whoever runs them.
+- **Claude Code through an AI gateway starts without "Both claude.ai and ANTHROPIC_API_KEY set · auth may not work
+  as expected"**: beside a claude.ai login, Claude Code printed that warning at every start of a gateway session (and
+  "claude.ai connectors are disabled because ANTHROPIC_API_KEY ... takes precedence"), and asked once whether to use
+  the key. `cx ai.gateway connect <gateway> --harness=claude` now puts an x-api-key (or a local server's placeholder)
+  into `CMETA_AI_GATEWAY_KEY` instead of `ANTHROPIC_API_KEY` and returns `claude_settings`: an `apiKeyHelper` that
+  prints that variable (the key never written anywhere) and `disableClaudeAiConnectors` (the connectors are unavailable
+  on a key anyway). `set-ai-gateway` passes them on and `run-claude` merges them into the one `--settings` Claude Code
+  reads - run-ai's settings file or the user's own, as a JSON string, no file written. A bearer gateway keeps
+  `ANTHROPIC_AUTH_TOKEN`, which Claude Code never warned about. Tests: `test_connect_gives_each_harness_what_it_needs`,
+  `test_run_claude_merges_the_gateway_settings_into_one_settings_flag`.
+- **A gateway run of Claude Code starts without the user's own Anthropic credentials**: an `ANTHROPIC_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN`, URL or model name in the user's environment went to the gateway in place of its key (401
+  "invalid subscription key"); a gateway run now drops the `ANTHROPIC_*` variables, a `CLAUDE_CODE_OAUTH_TOKEN` and the
+  provider switches (`CLAUDE_CODE_USE_BEDROCK`, `_VERTEX`, `_FOUNDRY`, ...) before the gateway's own go in, and a login
+  run drops the provider switches too (the login given as `CLAUDE_CODE_OAUTH_TOKEN` stays). Codex and OpenCode keep the
+  user's keys in a gateway run: they name the gateway's provider, where those keys do not compete.
+  (`ctask.drop_provider_variables(..., gateway=True)`; test:
+  `test_a_gateway_run_keeps_the_users_keys_where_they_do_not_compete`.)
+- **run-ai: this machine's default gateway no longer stops the harnesses without gateway support**: with
+  `run_ai_gateway: true` in `config::default`, `cxai --harness=vibe` (or gemini, agy, hermes, openclaw) stopped with "no
+  gateway support" and `--list_models` showed the gateway's catalog for it. The general default is for claude, codex
+  and opencode: another harness runs on its own login, with a note, and lists its own models. A gateway chosen for the
+  run, the project (`ai_gateway`) or the harness (`run_ai_gateway_<harness>`) stays an error there. (`set-ai-gateway`
+  marks the general default `general: true`; tests: `test_the_general_default_is_marked`,
+  `test_run_ai_runs_a_harness_without_gateway_support_on_its_login_under_the_general_default`.)
+- **`test-on-hosts` keeps a round's local folder in `tmp::task-test-on-hosts`** of the local repository when no test
+  session is in the shell, never in the current directory: rounds launched from a drive's root left `round.json`, the
+  launchers and the tarball of the tree there. A round launched before keeps its folder where it was launched from
+  (peek, collect and remove find it there). Test:
+  `test_without_a_test_session_the_round_folder_is_a_tmp_artifact_never_the_current_directory`.
+- **`remove-conda-from-cmd-autorun-win --shell=cmd|powershell|all`**: besides cmd's AutoRun (the default, as
+  before), the "conda initialize" block of the PowerShell profile, which activated conda's base in every PowerShell
+  window - over ssh too - and with it a cMeta home of the conda environment instead of the user's. conda is found
+  where it is installed (tool/conda, never installed by this task) instead of on PATH, where the removed hook no
+  longer puts it.
+- **A task without code is read by its `cli_params` too**: a value it does not take (`--shell=bash`) stops the run
+  with the values it takes; before, only a task with a `run()` was checked and the run did nothing. Test:
+  `test_a_task_without_code_is_read_by_its_cli_params` (fails on the old code).
+- **`cx host up <host> --project=<name>` starts the web server of a declared project** on a running host: the
+  project's new `server: start` (the command that starts it there, detached like an `after_restart` line) runs unless
+  the server already answers, then its `server: url` is checked every 5 s until it answers or `--check_timeout`
+  (120 s; 0 = no wait) runs out - a server that does not answer fails the command. The rows of `cx host ls` /
+  `status` carry the command as `start`, for a page that offers the button.
+- **`cx host probe` no longer stops on a server of the host's global environment**: a project declared without a
+  `venv` of its own (a cserver of the host's global cMeta: `path` and `cmeta: home` = the host's) stopped the probe
+  with "project ... needs venv"; it is probed with the host now, and a project with a venv as before.
+- **`cx host push` of a part of a repository (`--dirs`, `--artifacts`) keeps the repository's identity**: its
+  `_cmr.yaml` goes too when the host has none (a host's own is never replaced). Without it the host took the folder
+  for a new repository and gave it a UID of its own, so its artifacts were not found by the repository's UID there.
+- **`cx host run <host> "<command>"` on a PowerShell host takes PowerShell's syntax**: a `|`, `;`, `&` or quotes in
+  the command reach PowerShell as written. The command now travels `-EncodedCommand`, so no shell on the way (cmd.exe
+  here, a POSIX shell on a Linux or macOS controller, the host's login shell) can split it - before, the `|` of
+  `Get-ChildItem ... | ForEach-Object ...` was cmd.exe's here ("'ForEach-Object' is not recognized") and a POSIX shell
+  ran what followed a `;` on the controller. A command too long to go encoded goes as a script on the host's stdin.
+  The exit code is the last program's, else 1 when the last command failed (a cmdlet's error exited 0). Tests:
+  `PowerShellTransport` and `Push` in the host category's tests (fail on the old code).
+
 ## 0.60.1
 - **A value option given without its value says so.** `cx tool setup nvcc --version` (no `=13.4`) ended in a
   traceback, `--tool_path` alone looked for a tool at the path "True", and `--version_policy` alone was accepted.

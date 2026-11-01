@@ -61,10 +61,27 @@ def test_a_login_run_drops_what_its_harness_reaches_models_with(ctask):
     assert opencode == {'PATH': '/usr/bin', 'GOOGLE_CLOUD_PROJECT': 'my-project'}   # every provider gone, the project stays
 
 
-def test_a_gateway_run_without_a_parent_gateway_keeps_the_users_keys(ctask):
+def test_a_gateway_run_keeps_the_users_keys_where_they_do_not_compete(ctask):
+    """Codex and OpenCode name the gateway's provider (command line, config): the user's keys stay beside it. Claude
+    Code takes the gateway's key through an apiKeyHelper (2026-11-01): the user's ANTHROPIC_API_KEY / _AUTH_TOKEN went
+    to the gateway in its place (401 "invalid subscription key", proven live), so its gateway run drops them, a claude.ai
+    token and the provider switches too - the user's keys of other providers stay."""
     env = dict(USER, ANTHROPIC_API_KEY='user-anthropic')
-    assert ctask.drop_provider_variables('claude', login=False, env=env) == []
-    assert env['ANTHROPIC_API_KEY'] == 'user-anthropic'
+    for harness in ('codex', 'opencode'):
+        child = dict(env)
+        assert ctask.drop_provider_variables(harness, gateway=True, env=child) == [] and child == env
+
+    claude = dict(env, ANTHROPIC_AUTH_TOKEN='t', ANTHROPIC_BASE_URL='https://elsewhere', ANTHROPIC_DEFAULT_SONNET_MODEL='s',
+                  CLAUDE_CODE_OAUTH_TOKEN='o', CLAUDE_CODE_USE_BEDROCK='1', CLAUDE_CODE_USE_VERTEX='1')
+    assert ctask.drop_provider_variables('claude', gateway=True, env=claude) == sorted(
+        ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_DEFAULT_SONNET_MODEL',
+         'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX'])
+    assert claude == USER
+
+    # a login run keeps the claude.ai login given as a token, never a provider switch
+    claude = dict(USER, CLAUDE_CODE_OAUTH_TOKEN='o', CLAUDE_CODE_USE_BEDROCK='1')
+    assert ctask.drop_provider_variables('claude', login=True, env=claude) == ['CLAUDE_CODE_USE_BEDROCK']
+    assert claude['CLAUDE_CODE_OAUTH_TOKEN'] == 'o'
 
 
 @pytest.mark.parametrize('task', ['run-claude', 'run-codex', 'run-opencode', 'run-openclaw', 'run-gemini', 'run-agy', 'run-hermes', 'run-vibe'])
@@ -74,3 +91,5 @@ def test_every_harness_task_drops_a_parents_gateway(task):
     assert 'drop_provider_variables(' in src
     if task in ('run-claude', 'run-codex', 'run-opencode'):
         assert 'gateway_into_environment(' in src and "os.environ.update({k: str(v) for k, v in (r.get('env')" not in src
+    if task == 'run-claude':
+        assert "gateway=r['gateway'] != 'login'" in src            # its own Anthropic variables leave a gateway run

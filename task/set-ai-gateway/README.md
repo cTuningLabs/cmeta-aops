@@ -9,7 +9,8 @@ extra command-line words, the model to pass when the user named none. The choice
 2. the project's `_desc.yaml`: `ai_gateway: <alias> | login` (run-ai reads it: a work item of a company says its gateway, a task
    that needs the claude.ai connectors says `login`);
 3. this machine's `config::default`: `run_ai_gateway_<harness>: login | <alias>` (per harness), else `run_ai_gateway:
-   true` with `run_ai_gateway_name: <alias>`;
+   true` with `run_ai_gateway_name: <alias>` - the general default, which the result marks `general: true`: it is for
+   the harnesses that take a gateway (claude, codex, opencode), and run-ai runs another harness on its own login then;
 4. `login`.
 
 ```
@@ -23,7 +24,9 @@ cx config set default --meta.run_ai_gateway_codex=login                         
 
 The result: `gateway` (the alias or `login`), `how`, and for a gateway `env` (the variables, the key included - the
 task is never cached, the result is for the harness task only), `args` (Codex's `-c` provider words), `model`,
-`wire`, `opencode_config` (a provider block to merge into `OPENCODE_CONFIG_CONTENT`), `notes` (Claude Code on an API
-key has no claude.ai connectors). The harness tasks put `env` into the environment of the tool they start and add
-`args` to its command line; run-ai records the gateway of every run. With `login` the result is the choice alone and
-the harness runs exactly as before.
+`wire`, `opencode_config` (a provider block to merge into `OPENCODE_CONFIG_CONTENT`), `claude_settings` (Claude Code's
+`apiKeyHelper`, which prints the key from `CMETA_AI_GATEWAY_KEY`, and `disableClaudeAiConnectors`: run-claude merges
+them into the one `--settings` Claude Code reads, so that a gateway session starts without the "Both claude.ai and
+ANTHROPIC_API_KEY set" warning), `notes` (Claude Code on a key has no claude.ai connectors). The harness tasks put
+`env` into the environment of the tool they start and add `args` to its command line; run-ai records the gateway of
+every run. With `login` the result is the choice alone and the harness runs exactly as before.
