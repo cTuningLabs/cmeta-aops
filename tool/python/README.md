@@ -67,6 +67,14 @@ even where it counts as "virtual" - a conda base, whose root has `condabin/` (on
 base was accepted as the venv until 0.43.3, so no venv was made and `pip` would have installed into it);
 an activated conda base or venv found by a plain request is still used and extended, by design.
 
+**The environment activated in the shell comes first** (0.61.1.1): a plain request takes the Python of
+`VIRTUAL_ENV` (a venv's `activate`) or of `CONDA_PREFIX` (`conda activate <env>`) before the Python cMeta
+itself runs on - which, for a cMeta installed as a uv tool, is a venv of its own that used to win: `conda
+activate ml` then `cx program run <p>` ran the program on cMeta's Python, without the environment's packages
+(the Mac mini, 2026-11-01). A conda *base* does not count as activated (`conda init` activates it in every
+shell): it is taken as before, where the PATH puts it. The activated environment's Python is registered as a
+detected one, as above, so later plain requests reuse it.
+
 **A conda environment instead of a venv** (`--use.python.with.conda`, 0.43.3): the `venv` task makes a conda
 environment in `.conda-env` of the entry (or of the request's venv path) with the conda cMeta set up
 (`tool/conda`: a Miniforge, Miniconda or Anaconda on the machine, else the pinned Miniforge it installs) -

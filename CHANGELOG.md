@@ -2,6 +2,16 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.61.1.1)
+- **A plain Python request takes the environment activated in the shell first**: the Python of `VIRTUAL_ENV`
+  (a venv's `activate`) or of `CONDA_PREFIX` (`conda activate <env>`) comes before the Python cMeta itself runs
+  on. For a cMeta installed as a uv tool that Python is a venv of its own, and it used to win: `conda activate ml`
+  then `cx program run <p>` ran the program on cMeta's Python, without the environment's packages (the Mac mini,
+  2026-11-01; a cMeta installed into the system Python already took the activated environment, it being first
+  on the PATH). A conda base does not count as activated (`conda init` activates it in every shell) and is taken
+  as before. Test: `test_update_paths_puts_the_activated_environment_first`; live with a conda environment on
+  Windows (Miniconda) and macOS (Miniforge).
+
 ## 0.61.1
 - **`cx host sync`: a file another process holds no longer ends a bisync pair.** A bisync that cannot read a file (a
   SQLite lock, an open document) copies everything else, holds the deletions back and ends with a critical error that
