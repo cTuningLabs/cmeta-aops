@@ -18,6 +18,12 @@ match_version:
 
 cmd_get_version: '{{tool_path}} -version'
 
+# javac takes no C-style flags (the program hands its own: compile.flags '-d .'): declared a compiler, or
+# setup-compile refuses it as a toolchain without flags (it did from 0.55.0 to 0.61.1)
+features:
+  all:
+    compiler: true
+
 # The JDK: tool/openjdk (an installed JDK, else Temurin), or with --with.vendor=temurin|microsoft|
 # corretto|zulu|oracle the tool jdk-<vendor> (--with.feature=<major>). Both store their result as
 # "openjdk", so the path and the cache identity of this tool follow the JDK chosen.

@@ -3,6 +3,12 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.61.1.1)
+- **Java programs compile again**: `setup-compile` refused `javac` as "not a compiler tool" since 0.55.0 - the
+  guard against a toolchain chosen as the compiler (`--use.compiler-c.name=llvm`) took every tool without
+  C-style flags in its features for a toolchain, and javac has none (the program hands its own `-d .`). A tool
+  that takes no such flags now declares `features: all: compiler: true` (tool/javac does); the guard's message
+  says so. Found by the strict-provenance matrix of the program examples on every host (2026-11-01). Test:
+  `test_compiler_tool_guard.py`.
 - **A plain Python request takes the environment activated in the shell first**: the Python of `VIRTUAL_ENV`
   (a venv's `activate`) or of `CONDA_PREFIX` (`conda activate <env>`) comes before the Python cMeta itself runs
   on. For a cMeta installed as a uv tool that Python is a venv of its own, and it used to win: `conda activate ml`

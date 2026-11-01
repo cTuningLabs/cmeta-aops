@@ -28,6 +28,18 @@ STATIC_OPENMP_PACKAGES = {
 }
 
 
+def is_compiler_tool(features):
+    """Whether the tool chosen as the compiler is one: it declares compiler flags in its features (gcc, clang,
+    nvcc, go, rustc ...) or says so (features: all: compiler: true - javac, which takes the program's own
+    flags). A toolchain such as tool/llvm has neither and is refused before a command without -o builds "a.exe"."""
+    if not isinstance(features, dict):
+        return False
+    if features.get('flags'):
+        return True
+    value = features.get('compiler')
+    return value is True or str(value).strip().lower() in ('true', 'yes', '1', 'on')
+
+
 def static_openmp_note(uname, static, openmp):
     """
     What a static build with OpenMP cannot do on Windows: neither LLVM nor MSVC has a static OpenMP
@@ -232,8 +244,10 @@ class CTask(InitCTask):
 
         # A tool without compiler flags in its features is not a compiler (tool/llvm holds the toolchain, tool/clang
         # is the compiler): refused here, before a command without -o builds "a.exe" and the run stops at a missing
-        # target (the NucBox, 2026-10-25, --use.compiler-c.name=llvm)
-        if not flags:
+        # target (the NucBox, 2026-10-25, --use.compiler-c.name=llvm) - unless the tool declares itself a compiler
+        # (features: all: compiler: true - tool/javac, which takes the program's own flags; refused as a toolchain
+        # from 0.55.0 to 0.61.1)
+        if not is_compiler_tool(compiler_features):
             chosen = _global[global_compiler_key]
             tool_name = ''
             for key in ('name', 'tool', 'tool_name'):    # the setup result keeps the request as a dict: {'name': 'llvm', 'tags': ...}
@@ -245,7 +259,8 @@ class CTask(InitCTask):
             tool_name = tool_name or str(global_compiler_key)
             return self.cm.error(f'the tool "{tool_name}" chosen as the compiler has no compiler flags in its features: it is '
                                  f'not a compiler tool (an LLVM toolchain is "llvm", its compiler "clang") - name a compiler '
-                                 f'tool with --use.compiler-c.name=<tool> (or -cpp)')
+                                 f'tool with --use.compiler-c.name=<tool> (or -cpp); a compiler that takes no such flags '
+                                 f'declares "features: all: compiler: true" in its _desc.yaml')
 
         # The environment of a cross-compiling tool (GOOS, GOARCH of tool/go-android) for the
         # compile command; the program's own compile env wins
