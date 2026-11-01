@@ -71,6 +71,33 @@ class CTool(InitCTool):
 
 
     ############################################################
+    def update_paths(self,
+                     ctx: dict,
+                     paths: list,
+                     params: dict = {},
+    ):
+        """
+        The runtime of the LLVM that provides clang comes first. The setup sorts the candidates by version,
+        then by the length of their path, and every libomp carries the version "default", so the
+        distribution's /usr/lib/llvm-N/lib/libomp.so (a short path) came before the one in cMeta's LLVM
+        entry and a clang 23 build linked and loaded the distribution's runtime (the P14s Gen 4,
+        2026-11-01). A path under that LLVM's home is marked priority (the "!" the setup keeps on top).
+        """
+        home = (((ctx.get('tasks', {}).get('global', {}).get('llvm') or {}).get('features') or {}).get('paths') or {}).get('home')
+        if not home:
+            return {'return': 0, 'paths': paths}
+        home = os.path.normcase(os.path.normpath(home))
+        first, rest = [], []
+        for p in paths:
+            raw = p[1:] if p.startswith('!') else p
+            inside = os.path.normcase(os.path.normpath(raw)).startswith(home + os.sep)
+            if inside or p.startswith('!'):
+                first.append('!' + raw)
+            else:
+                rest.append(p)
+        return {'return': 0, 'paths': first + rest}
+
+    ############################################################
     def detect_versions(self,
                         ctx: dict,
                         paths: dict,
@@ -88,7 +115,9 @@ class CTool(InitCTool):
         uname = ctx['tasks']['global']['host']['os']['uname']
 
         for path in paths:
-             path_lib = os.path.dirname(path)
+             # a priority candidate (update_paths) carries the "!" the setup reads; the folders are of the path itself
+             raw = path[1:] if path.startswith('!') else path
+             path_lib = os.path.dirname(raw)
              path_home = os.path.dirname(path_lib)
 
              paths = {}

@@ -5,7 +5,16 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 names:
   - libomp{{global.host.vars.file_ext_dlib}}
 
-match_version: 
+# The runtime follows the LLVM of the build, as tool/clang-cpp does: another LLVM gets a lib-openmp entry of its
+# own, found in its own folders (a "default" entry made with LLVM 22 served the clang 23 builds on the P14s until
+# 2026-11-01: the link line pointed at the older LLVM's folder and the loader took the distribution's libomp)
+cache_params_use:
+  all:
+    llvm:
+      version: "{{global.llvm.version|}}"
+      path: "{{global.llvm.path|}}"
+
+match_version:
   - regex: '^.*$'
     group: 0
 
