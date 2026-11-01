@@ -110,10 +110,11 @@ def test_the_windows_update_script(up):
     assert "-AsSystem -Log" in text and "$PSCommandPath" in text
 
 
-def test_a_failed_upgrade_still_puts_the_file_mounts_back(up):
+def test_a_failed_upgrade_still_puts_the_file_mounts_back(up, monkeypatch):
     """The WSL kernel mounts its perf over /usr/bin/perf of linux-tools-common, and dpkg failed on it (2026-10-29): the
     mounts go aside before the upgrade, and back after it even when it fails - then nothing else runs."""
     import types
+    monkeypatch.setattr(up["os"], "geteuid", lambda: 1000, raising=False)     # a user, also when the suite runs as root (a container)
     ran = []
 
     def run(line, **kw):

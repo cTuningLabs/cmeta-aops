@@ -96,6 +96,7 @@ def test_interactive_prompt_confirms_or_cancels(reboot_module, monkeypatch):
 def test_linux_desktop_prompt_uses_inhibitor_override(reboot_module, monkeypatch):
     monkeypatch.setattr(reboot_module.platform, "system", lambda: "Linux")
     monkeypatch.setattr(reboot_module.platform, "node", lambda: "p14s")
+    monkeypatch.setattr(reboot_module.os, "geteuid", lambda: 1000, raising=False)     # a user, also when the suite runs as root (a container)
     monkeypatch.setattr(reboot_module.os.path, "isdir", lambda path: path == "/run/systemd/system")
     monkeypatch.setattr(reboot_module.shutil, "which", lambda name: name)
     monkeypatch.setattr(reboot_module.sys, "stdin", types.SimpleNamespace(isatty=lambda: True))

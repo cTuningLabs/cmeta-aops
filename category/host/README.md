@@ -234,7 +234,7 @@ sync:
                                # reports there), else <cmeta: home>/repos, else ~/CMETA/repos; "cx host sync" says which
   default: git                 # bisync (two-way, rclone over ssh) | copy (one-way, never deletes) | git (pull --ff-only there) | none
   workdir: '%LOCALAPPDATA%\rclone\bisync-<name>'   # bisync listings and lock (default: bisync-<alias>)
-  blacklist: [tmp*/, __pycache__/, .venv/, .git/, .claude/, __symlinks/]
+  blacklist: [tmp*/, __pycache__/, .venv/, .git/, .claude/, __symlinks/, '*.sqlite-wal', '*.sqlite-shm', '*.sqlite-journal', '*.sqlite-maintenance.lock']
   repos:
     - ctuninglabs@cmeta-aops
     - myorg@my-private-repo: {method: copy}

@@ -3,6 +3,19 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.60.1.1)
+- **`sync-system-clock` measures the clock without a time tool**: a machine with neither `timedatectl` nor `chronyc`
+  (a bare container) gets one SNTP request from Python against the time server instead of "no program to measure
+  the clock with"; `--check` then answers as everywhere else. Such a clock is the host kernel's and is put right on
+  the host, so the task offers no fix there and says so. Nothing to install, nothing skipped. Tests:
+  `test_plan_without_a_time_tool_measures_with_python_sntp`, `test_sntp_offset_from_a_server_packet`.
+- **The default sync blacklist leaves the live state of a SQLite database alone**: `*.sqlite-wal`, `*.sqlite-shm`,
+  `*.sqlite-journal` and `*.sqlite-maintenance.lock` (a running harness holds them; a Codex lock aborted a bisync on
+  2026-10-30, after which only that host's blacklist carried them). The `.sqlite` files themselves still travel.
+- **A zombie process counts as stopped**: in a container without an init, a detached server (or a test-on-hosts
+  runner) that ended is never reaped and `os.kill(pid, 0)` still finds it, so `stop` reported "the server process
+  did not stop" and `peek` showed a runner as running; the state in `/proc/<pid>/stat` decides now (Linux).
+- **Two tests assumed a non-root user** (`test_reboot_task`, `test_upgrade_os`): they expected the `sudo` prefix the
+  tasks rightly omit when the suite itself runs as root (a container); they now run as a user whoever runs them.
 - **Claude Code through an AI gateway starts without "Both claude.ai and ANTHROPIC_API_KEY set · auth may not work
   as expected"**: beside a claude.ai login, Claude Code printed that warning at every start of a gateway session (and
   "claude.ai connectors are disabled because ANTHROPIC_API_KEY ... takes precedence"), and asked once whether to use

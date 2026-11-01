@@ -25,6 +25,8 @@ machine of a fleet.
 import os
 import re
 import shutil
+import socket
+import struct
 import sys
 import time
 
@@ -170,6 +172,13 @@ def plan(uname, has = None, server = None, samples = 3):
             p['measure'].append(('timedatectl timesync-status', 'timesync'))
         if has('timedatectl'):
             p['measure'].append(('timedatectl show', 'timedatectl'))
+        if not chrony and not has('timedatectl'):
+            # No time tool at all (a bare container: no systemd, no chrony). The clock is measured with one SNTP
+            # request from Python (sntp_offset below), nothing to install; such a clock is the host kernel's and
+            # is put right on the host, so there is nothing to fix here
+            p['service'] = 'no time service (no timedatectl or chronyc - a container?)'
+            p['measure'].append((PYTHON_SNTP, 'pysntp'))
+            return p
         if uname == 'wsl2':
             p['fix'].append(('the clock set from the hardware clock (the Windows host\'s)', 'hwclock -s', True))
         else:
@@ -180,6 +189,45 @@ def plan(uname, has = None, server = None, samples = 3):
             else:
                 p['fix'].append(('systemd-timesyncd restarted', 'systemctl restart systemd-timesyncd', True))
     return p
+
+
+PYTHON_SNTP = 'python sntp'                 # the pseudo command of the measure list: one SNTP request from this process
+NTP_EPOCH_DELTA = 2208988800                # seconds from 1900-01-01 (NTP) to 1970-01-01 (Unix)
+
+
+def sntp_offset_from_packet(packet, t1, t4):
+    """
+    The offset of this clock in seconds (positive: this clock is behind the server, the sign sntp prints) from a
+    server's 48-byte NTP answer, with t1 the Unix time the request left and t4 the Unix time the answer arrived:
+    ((T2 - t1) + (T3 - t4)) / 2 with T2 the server's receive and T3 its transmit timestamp. None for a short or
+    a kiss-of-death answer (stratum 0).
+    """
+    if len(packet) < 48 or packet[1] == 0:
+        return None
+    def ts(at):
+        seconds, fraction = struct.unpack('!II', packet[at:at + 8])
+        return seconds - NTP_EPOCH_DELTA + fraction / 2 ** 32
+    t2, t3 = ts(32), ts(40)
+    if t3 == -NTP_EPOCH_DELTA:                # an empty transmit timestamp
+        return None
+    return ((t2 - t1) + (t3 - t4)) / 2
+
+
+def sntp_offset(server, timeout = 5):
+    """One SNTP request (RFC 4330) to the server over UDP 123 -> (offset in seconds or None, the error or '')."""
+    request = bytearray(48)
+    request[0] = 0x23                         # leap 0, version 4, mode 3 (client)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(timeout)
+            t1 = time.time()
+            s.sendto(bytes(request), (server, 123))
+            packet, _ = s.recvfrom(512)
+            t4 = time.time()
+    except OSError as e:
+        return None, f'{server}: {e}'
+    offset = sntp_offset_from_packet(packet, t1, t4)
+    return offset, ('' if offset is not None else f'{server}: no usable answer')
 
 
 def with_sudo(cmd, needs_sudo, interactive):
@@ -203,6 +251,13 @@ def read_measurements(outputs):
         state['state'] = parse_sc_query(outputs['sc'])
     if 'sntp' in outputs:
         offset, source = parse_sntp(outputs['sntp']), 'sntp against the server'
+    if 'pysntp' in outputs:
+        # "<offset>" from sntp_offset, or "error: <why>"
+        text = outputs['pysntp'].strip()
+        try:
+            offset, source = float(text), 'an SNTP request from Python against the server'
+        except ValueError:
+            offset, source = None, text.replace('error: ', 'python sntp: ', 1) if text else 'python sntp: no answer'
     if 'chronyc' in outputs:
         offset, source = parse_offset_line(outputs['chronyc'], 'system time'), 'chronyc tracking'
     if 'timesync' in outputs:
@@ -324,6 +379,13 @@ class CTask(InitCTask):
         """Run the 'measure' commands and read them."""
         outputs = {}
         for cmd, parser in p['measure']:
+            if cmd == PYTHON_SNTP:
+                # no tool on the machine: one SNTP request from this process
+                offset, err = sntp_offset(p['server'], timeout = min(int(timeout), 10))
+                if con and verbose:
+                    print (f'{space}RUN: {PYTHON_SNTP} {p["server"]}')
+                outputs[parser] = f'{offset:.6f}' if offset is not None else f'error: {err}'
+                continue
             rr = self.cm.utils.sys.run(cmd, capture_output = True, con = False, timeout = int(timeout), verbose = verbose,
                                        text_cmd = 'RUN:', space = space, fail_on_error = False, logger = self.logger)
             if con and verbose:

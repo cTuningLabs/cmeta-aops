@@ -120,6 +120,15 @@ def pid_alive(pid):
         return False
     except PermissionError:
         return True
+    # A zombie is gone: an ended process nobody waited for keeps its pid (a container without an init, where the
+    # orphaned server is never reaped) and os.kill still finds it - its state in /proc says Z (Linux)
+    try:
+        with open('/proc/%d/stat' % pid, encoding='ascii', errors='replace') as f:
+            state = f.read().rsplit(')', 1)[-1].split()
+        if state and state[0] == 'Z':
+            return False
+    except OSError:
+        pass
     return True
 
 

@@ -53,7 +53,11 @@ START_RETURN_TIMEOUT = 60        # seconds a project's "server: start" may take 
 DEFAULT_SHELL = 'bash -l'        # a login shell, so ~/.local/bin (cx, uv) and brew are on PATH
 
 # What never leaves this machine when a repository is synced (the user's bisync scripts, 2026-10)
-DEFAULT_BLACKLIST = ['tmp*/', '__pycache__/', '.venv/', '.git/', '.claude/', '__symlinks/']
+# The default blacklist of a sync: scratch, caches, git, and the live state of a SQLite database (the -wal / -shm /
+# -journal files and a maintenance lock a running harness holds: unreadable while it runs, and transient - the
+# .sqlite file itself travels; a Codex lock aborted a bisync on 2026-10-30)
+DEFAULT_BLACKLIST = ['tmp*/', '__pycache__/', '.venv/', '.git/', '.claude/', '__symlinks/',
+                     '*.sqlite-wal', '*.sqlite-shm', '*.sqlite-journal', '*.sqlite-maintenance.lock']
 DEFAULT_RCLONE_FLAGS = ['--transfers=4', '--checkers=4']
 
 SYNC_METHODS = ('bisync', 'copy', 'git', 'none')

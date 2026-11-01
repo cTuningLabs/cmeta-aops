@@ -76,11 +76,20 @@ def pid_alive(pid):
             k32.CloseHandle(h)
     try:
         os.kill(pid, 0)
-        return True
     except ProcessLookupError:
         return False
     except PermissionError:
         return True
+    # a zombie is gone: an ended runner nobody waited for keeps its pid in a container without an init (its state
+    # in /proc says Z on Linux) - peek would show it running for ever
+    try:
+        with open('/proc/%d/stat' % pid, encoding = 'ascii', errors = 'replace') as f:
+            state = f.read().rsplit(')', 1)[-1].split()
+        if state and state[0] == 'Z':
+            return False
+    except OSError:
+        pass
+    return True
 
 
 def sh_quote(text):
