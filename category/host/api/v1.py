@@ -1262,15 +1262,17 @@ class Category(InitCategory):
         tags=None,          # or a selection
         machine=None,
         type=None,
+        force=False,        # stop a WSL distro even when a shell is open in it (the stop ends every process of the distro)
     ):
         """
         Stop a host that can be stopped from here: a WSL distro (wsl -t), a container (docker stop), or
-        anything with a declared "commands: down".
+        anything with a declared "commands: down". A WSL distro with a shell open in it (a terminal of the
+        user) is not stopped without --force: the stop would end that shell too.
 
             cx host down my-pc-wsl2     (also: cx host stop)
         """
 
-        return self._up_down(ctx, 'down', arg1, tags, machine, type)
+        return self._up_down(ctx, 'down', arg1, tags, machine, type, force=force)
 
     ############################################################
     def sync_(
@@ -3963,7 +3965,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
     # up / down
     ############################################################
 
-    def _up_down(self, ctx, what, arg1, tags, machine, type):
+    def _up_down(self, ctx, what, arg1, tags, machine, type, force=False):
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
 
@@ -3982,7 +3984,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         results = {}
         for h in hosts:
             alias = h['alias']
-            r = self._up_one(ctx, h, verbose) if what == 'up' else self._down_one(ctx, h, verbose)
+            r = self._up_one(ctx, h, verbose) if what == 'up' else self._down_one(ctx, h, verbose, force)
             if r['return'] > 0:
                 if explicit: return r
                 results[alias] = 'error: ' + r['error']
@@ -4078,7 +4080,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
         return {'return': 0, 'result': f'{status} - nothing to start for type {t}'}
 
-    def _down_one(self, ctx, h, verbose):
+    def _down_one(self, ctx, h, verbose, force=False):
         t = h['type']
         acc = h['desc'].get('access') or {}
         status = h.get('status') or self._status(ctx, h)
@@ -4093,7 +4095,16 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             return r
 
         if t == 'wsl':
-            cmd = 'wsl.exe -t ' + str(acc.get('distro') or '')
+            distro = str(acc.get('distro') or '')
+            # A session someone has open in the distro (a terminal tab, another shell's cx host run) is not cut off
+            # without --force: the stop ends every process of the distro, and Docker Desktop's integration starts
+            # the distro again at once - what the user saw as WSL "failing" (2026-11-01)
+            sessions = self._wsl_sessions(distro)
+            if sessions and not force:
+                names = ', '.join(f'{s["parent"] or "wsl.exe"} (pid {s["pid"]}: wsl.exe {s["cmd"]})'.rstrip() for s in sessions[:5])
+                return self.cm.error(f'{h["alias"]}: a session is open in the WSL distro {distro} - {names}: close it, '
+                                     f'or "cx host down {h["alias"]} --force" ends it with the distro')
+            cmd = 'wsl.exe -t ' + distro
         elif t == 'docker':
             cmd = f'{self._engine(h)} stop ' + str(acc.get('container') or h['alias'])
             if h.get('via'):
@@ -4110,6 +4121,91 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if rr.get('returncode', 1) != 0:
             return self.cm.error(f'"{cmd}" failed: {rr.get("stderr", "").strip()}')
         return {'return': 0, 'result': 'stopped'}
+
+    def _wsl_sessions(self, distro):
+        """
+        The sessions someone has open in a WSL distro of this machine: the wsl.exe processes that target it
+        (a Windows Terminal tab, a cx host run of another shell ...) - seen from Windows, where the asking is
+        reliable; inside the distro, Docker Desktop's integration (a `wsl.exe -d <distro> sh` keep-alive and its
+        proxy, both from com.docker.backend.exe) and WSL's systemd session holders (login -> -bash per user)
+        look like shells too (2026-11-01). [{pid, parent, cmd}]; [] when there are none or Windows cannot say.
+        """
+        if os.name != 'nt':
+            return []
+        rr = self._run_local('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Select-Object ProcessId,'
+                             'ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress"', capture=True, con=False)
+        if rr.get('returncode', 1) != 0:
+            return []
+        try:
+            processes = json.loads(rr.get('stdout') or '[]')
+        except ValueError:
+            return []
+        default = ''
+        try:
+            listing = subprocess.run(['wsl.exe', '-l', '-v'], capture_output=True, timeout=20).stdout
+            for line in listing.decode('utf-16-le', errors='replace').replace('\x00', '').splitlines():
+                if line.strip().startswith('*'):
+                    default = line.strip().lstrip('*').split()[0]
+        except (OSError, subprocess.SubprocessError, IndexError):
+            pass
+        return self.wsl_sessions_in(processes, distro, os.getpid(), distro.lower() == default.lower())
+
+    # the wsl.exe words that manage distributions rather than run a session in one
+    WSL_MANAGEMENT = ('-l', '--list', '-t', '--terminate', '--shutdown', '--status', '--version', '--update', '--export',
+                      '--import', '--unregister', '--set-default', '--set-version', '--install', '--mount', '--unmount')
+    WSL_INTEGRATION_PARENTS = ('com.docker.backend.exe', 'docker desktop.exe', 'podman.exe', 'wslservice.exe')
+
+    @classmethod
+    def wsl_sessions_in(cls, processes, distro, own_pid, is_default=False):
+        """
+        From a Windows process list ([{ProcessId, ParentProcessId, Name, CommandLine}]): the wsl.exe processes that run a
+        session in the distro (`-d <distro>`, or no distro word when it is the default), minus Docker Desktop's /
+        Podman's integration (an ancestor of theirs), the management commands (-l, -t, --shutdown ...), the wslhost
+        relays, and our own process tree (own_pid). Each as {pid, parent: the first ancestor that is not wsl.exe, cmd}.
+        """
+        by_pid = {}
+        for p in processes or []:
+            try:
+                by_pid[int(p.get('ProcessId'))] = (int(p.get('ParentProcessId') or 0), str(p.get('Name') or ''), str(p.get('CommandLine') or ''))
+            except (TypeError, ValueError):
+                continue
+
+        def ancestors(pid):
+            """The process and its parents, the first parent outside the list included (ours may be it)."""
+            seen, out = set(), []
+            while pid in by_pid and pid not in seen:
+                seen.add(pid)
+                out.append(pid)
+                pid = by_pid[pid][0]
+            if pid and pid not in seen:
+                out.append(pid)
+            return out
+
+        want = distro.lower()
+        out = []
+        for pid, (ppid, name, cmd) in sorted(by_pid.items()):
+            if name.lower() != 'wsl.exe':
+                continue
+            words = cmd.replace('"', '').split()
+            if len(words) > 1 and words[1] in cls.WSL_MANAGEMENT:        # wsl.exe's own command comes first (-l -v, -t x, --shutdown)
+                continue
+            targets = [words[k + 1].lower() for k, w in enumerate(words[:-1]) if w in ('-d', '--distribution')]
+            if targets:
+                if want not in targets:
+                    continue
+            elif not is_default:
+                continue
+            chain = ancestors(pid)
+            if own_pid in chain:
+                continue
+            names = [by_pid[a][1].lower() for a in chain if a in by_pid]
+            if any(n in cls.WSL_INTEGRATION_PARENTS for n in names):
+                continue
+            if any(by_pid[a][1].lower() == 'wsl.exe' for a in chain[1:] if a in by_pid):
+                continue                                    # the inner wsl.exe of a pair: its outer one is the session
+            parent = next((by_pid[a][1] for a in chain[1:] if a in by_pid and by_pid[a][1].lower() != 'wsl.exe'), '')
+            out.append({'pid': pid, 'parent': parent, 'cmd': ' '.join(words[1:])[:80]})
+        return out
 
     ############################################################
     # probe

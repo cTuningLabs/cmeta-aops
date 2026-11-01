@@ -522,7 +522,7 @@ Both are reached through the host that runs `wsl.exe` / `docker` (`via:`); when 
 the commands run directly, otherwise through its ssh.
 
 **WSL** (`type: wsl`, `access: {distro, user, shell}`): `status` parses `wsl -l -v` (missing | down | up);
-`up` = `wsl -d <distro> -- true`, `down` = `wsl -t <distro>`, `restart` = both; `run` = `wsl -d <distro>
+`up` = `wsl -d <distro> -- true`, `down` = `wsl -t <distro>` (refused while someone has a session open in the distro - a terminal tab, another `cx host run`; Docker Desktop's integration does not count - since the stop would end it; `--force` ends it with the distro), `restart` = both; `run` = `wsl -d <distro>
 --user <user> -- bash -l -c "..."`; `probe` = the same with `bash -l -s < probe.sh`. The distro of the main
 PC lives on the USB drive (`requires:`), sees the Windows repositories through `/mnt/d` (so `sync: none`)
 and reports `sudo: password` - `user` is not in its sudoers without a password (the ThinkPads' script

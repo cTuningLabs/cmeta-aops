@@ -3,6 +3,13 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.61.0.1)
+- **`cx host down <wsl host>` is refused while someone has a session open in the distro**: the stop (`wsl -t`) ends
+  every process of the distro, a terminal tab included, and Docker Desktop's WSL integration starts the distro again
+  at once - which looks like WSL failing and restarting (2026-11-01). The sessions are the `wsl.exe` processes that
+  target the distro, read on the Windows side and named with their parent (a Windows Terminal tab, another shell's
+  `cx host run` ...); Docker Desktop's and Podman's integration, the management commands and the asking process
+  itself do not count. `--force` ends them with the distro; no session, or a Windows that cannot say, stops as
+  before. Tests: `category/host/tests/test_wsl_down_sessions.py`.
 - **The `on:` block of a program or task is documented** (`docs/cmeta-aops/task-engine.md`: "An artifact's own route";
   the program anatomy in `program-and-compute.md`): `requires_os`, a route per OS, `default`, the quoted key (PyYAML
   reads a bare `on` as the boolean true; the readers take both), `--on` on the command line always winning. Test of the
