@@ -37,6 +37,10 @@ A program is a data description patched onto a template:
 - **`use:`** — `--use.<storage_key>` injections into downstream tasks.
 - **`updates:`** — patches to the inherited `all`/`compile`/`run` pipelines.
 - **`updates_cmd:`** — per-command-line variants (deep dive #3).
+- **`'on':`** — where the program runs when the command line names no `--on`: `requires_os` (the OSes
+  its pipeline supports), a route per OS of the machine (`windows: docker:sglang`), `default`. The key is
+  quoted because PyYAML (YAML 1.1) reads a bare `on` as the boolean `true`; the readers take both. See
+  "An artifact's own route" in `task-engine.md`; `program/test-sglang` and `program/test-vllm` carry one.
 - **`api_v1.py`** — optional `CProgram(InitCProgram)` with `customize` / `customize1` /
   `customize2` / `customize_run` / `customize_pre` (and program-specific) hooks, invoked
   from the template via `internal_func … internal_func_from_local_key: selected-program`.

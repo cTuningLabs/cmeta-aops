@@ -2,6 +2,32 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.61.1
+- **`cx host sync`: a file another process holds no longer ends a bisync pair.** A bisync that cannot read a file (a
+  SQLite lock, an open document) copies everything else, holds the deletions back and ends with a critical error that
+  drops the pair's listings - a dead pair until `--resync`, which would bring deleted files back (2026-10-30, the
+  Codex lock). Now the run names the files from rclone's words, puts the pre-run listings back (rclone keeps them as
+  `.lst-err`), probes the files a few times (a lock may be short: readable again = a plain run), and when they stay
+  held runs again without them, so that the deletions and the rest go through, then returns their pre-run entries to
+  the listings (an excluded file would otherwise be "new on both sides" at the next run: conflict copies, the name
+  gone - proven on rclone 1.75); the result says `skipped this run, synced next time: <files>`, the check after the
+  sync does not count them, the verdict stays SUCCESS with the skipped files listed under it. Without listings to
+  put back the pair goes to a person, as before. A sync entry may also name the repository's `local:` folder (a
+  repository plugged from outside the repositories folder; default `<repos folder>/<name>` as before). Tests:
+  `test_host_sync_locked_files.py`; live on a throwaway pair with the T470p (a byte-range lock here, a file made
+  unreadable there).
+- **`cx host down <wsl host>` is refused while someone has a session open in the distro**: the stop (`wsl -t`) ends
+  every process of the distro, a terminal tab included, and Docker Desktop's WSL integration starts the distro again
+  at once - which looks like WSL failing and restarting (2026-11-01). The sessions are the `wsl.exe` processes that
+  target the distro, read on the Windows side and named with their parent (a Windows Terminal tab, another shell's
+  `cx host run` ...); Docker Desktop's and Podman's integration, the management commands and the asking process
+  itself do not count. `--force` ends them with the distro; no session, or a Windows that cannot say, stops as
+  before. Tests: `category/host/tests/test_wsl_down_sessions.py`.
+- **The `on:` block of a program or task is documented** (`docs/cmeta-aops/task-engine.md`: "An artifact's own route";
+  the program anatomy in `program-and-compute.md`): `requires_os`, a route per OS, `default`, the quoted key (PyYAML
+  reads a bare `on` as the boolean true; the readers take both), `--on` on the command line always winning. Test of the
+  program category's hand-over to the task run: `test_program_on_block.py`.
+
 ## 0.61.0
 - **`sync-system-clock` measures the clock without a time tool**: a machine with neither `timedatectl` nor `chronyc`
   (a bare container) gets one SNTP request from Python against the time server instead of "no program to measure

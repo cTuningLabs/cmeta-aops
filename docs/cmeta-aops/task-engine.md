@@ -269,6 +269,29 @@ Instances are kept and managed by the host category: `cx host ls --made`, `cx ho
 test-on-hosts round takes instance refs in `--hosts` (`docker:ubuntu,docker:debian,wsl`): the matrix of OS
 images runs on the carriers that have an engine, with the tree where the instance mounts it.
 
+### An artifact's own route: the `on:` block
+
+A program (or a task) whose pipeline runs on some OSes only can say so in its `_desc.yaml`, and where it should
+run instead; a command line that names no `--on` then takes that route by itself:
+
+```yaml
+# the key is quoted: PyYAML (YAML 1.1) reads a bare "on" as the boolean true (the readers take both)
+'on':
+  requires_os: [linux]        # the OSes the pipeline supports (windows, linux, darwin)
+  windows: docker:sglang      # the route on a Windows machine: a container of that template (the GPU through the engine)
+  darwin: docker:sglang       # on macOS
+  default: here               # optional: the route when the machine's OS has none above (here | <any --on ref>)
+```
+
+The machine's own OS picks its route, else `default`; `here` (or no route) means a local run. An OS that is not in
+`requires_os` and has no route is refused with the cure (`--on=docker`, `--on=wsl`, `--on=<host>`, or a route for
+it in the block). `--on` on the command line always wins (`--on=here` forces a local run), and the inner run of a
+delegation never reads the block again (`CMETA_ON=here`). The program category reads the block when
+`cx program run` starts and hands it to the task category as `on_block`; a task's own block is read by the task
+category once its `_desc.yaml` is loaded. `program/test-sglang` and `program/test-vllm` carry one: on Windows they
+run in a container, on Linux here, as before. Tests: `test_run_on.py` (the route), `test_program_on_block.py` (the
+hand-over).
+
 ## Data repositories: models and datasets apart from the tools
 
 A data task says where its entries belong with `cache_repo_key` in its `_desc.yaml` (`get-hf-model` and
