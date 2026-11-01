@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.60.1.1)
+## 0.61.0
 - **`sync-system-clock` measures the clock without a time tool**: a machine with neither `timedatectl` nor `chronyc`
   (a bare container) gets one SNTP request from Python against the time server instead of "no program to measure
   the clock with"; `--check` then answers as everywhere else. Such a clock is the host kernel's and is put right on
