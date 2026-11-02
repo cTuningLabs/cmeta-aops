@@ -1083,6 +1083,158 @@ def framework_versions(libraries, global_ctx):
 
 
 ###################################################################################################
+# What a framework says about itself once imported, asked after the run in `loaded` mode only (the
+# mode that already observes the run): the interpreter is the run's own python by its full path (never
+# "python" of the PATH), with the run's environment, in the build folder, one process per framework
+# with a time limit. The wheel's tag says what torch was built for; this says what it found - a CUDA
+# it cannot use falls back to the CPU silently, and that is a mislabelled result.
+FRAMEWORK_PROBES = {
+    'torch': (
+        "import json, torch\n"
+        "r = {'version': torch.__version__, 'cuda': torch.version.cuda, 'hip': getattr(torch.version, 'hip', None)}\n"
+        "try:\n"
+        "    r['cuda_available'] = bool(torch.cuda.is_available())\n"
+        "    r['devices'] = [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())] if r['cuda_available'] else []\n"
+        "except Exception as e:\n"
+        "    r['cuda_error'] = f'{type(e).__name__}: {e}'\n"
+        "try:\n"
+        "    r['cudnn'] = torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else None\n"
+        "except Exception as e:\n"
+        "    r['cudnn_error'] = f'{type(e).__name__}: {e}'\n"
+        "try:\n"
+        "    r['mps'] = bool(getattr(torch.backends, 'mps', None) and torch.backends.mps.is_available())\n"
+        "except Exception:\n"
+        "    r['mps'] = False\n"
+        "print('CMETA_PROBE ' + json.dumps(r))\n"),
+    'onnxruntime': (
+        "import json, onnxruntime\n"
+        "r = {'version': onnxruntime.__version__, 'device': onnxruntime.get_device(), 'providers': onnxruntime.get_available_providers()}\n"
+        "print('CMETA_PROBE ' + json.dumps(r))\n"),
+    'jax': (
+        "import json, jax\n"
+        "r = {'version': jax.__version__, 'backend': jax.default_backend(), 'devices': [str(d) for d in jax.devices()]}\n"
+        "print('CMETA_PROBE ' + json.dumps(r))\n"),
+}
+PROBE_MARK = 'CMETA_PROBE '
+PROBE_TIMEOUT = 90
+
+
+def probe_key(dist):
+    """The probe a distribution answers to: torch; onnxruntime and onnxruntime-gpu (one module); jax. None for the rest."""
+    d = str(dist or '').lower()
+    if d == 'torch':
+        return 'torch'
+    if d.startswith('onnxruntime'):
+        return 'onnxruntime'
+    if d == 'jax':
+        return 'jax'
+    return None
+
+
+def _run_probe(cmd, env, cwd, timeout):
+    """The default runner: (return code, stdout, stderr); a timeout or an OSError is a return code of -1 with the reason."""
+    full = dict(os.environ)
+    for k, v in (env or {}).items():
+        if isinstance(v, str):
+            full[str(k)] = v
+    try:
+        r = subprocess.run(cmd, capture_output = True, text = True, timeout = timeout, env = full,
+                           cwd = str(cwd) if cwd and os.path.isdir(str(cwd)) else None)
+        return r.returncode, r.stdout or '', r.stderr or ''
+    except subprocess.TimeoutExpired:
+        return -1, '', f'no answer in {timeout} s'
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        return -1, '', f'{type(e).__name__}: {e}'
+
+
+def probe_frameworks(frameworks, python_path, env = None, cwd = None, runner = None, timeout = PROBE_TIMEOUT):
+    """
+    Asks each framework of the record that has a probe what it reports about itself, through
+    `python_path` - the run's own interpreter by its full path - with the run's environment and the
+    build folder as the working folder. Fills frameworks[dist]['reports'] (the answer) and ['probe']
+    (the interpreter, the seconds, an error when no answer came). Never raises; returns the
+    distributions asked. `runner(cmd, env, cwd, timeout) -> (rc, out, err)` replaces subprocess in tests.
+    """
+    asked = []
+    if not python_path or not os.path.isfile(str(python_path)):
+        return asked
+    runner = runner or _run_probe
+    for dist, entry in (frameworks or {}).items():
+        key = probe_key(dist)
+        if not key or not isinstance(entry, dict):
+            continue
+        cmd = [str(python_path), '-c', FRAMEWORK_PROBES[key]]
+        started = time.monotonic()
+        rc, out, err = runner(cmd, env, cwd, timeout)
+        probe = {'python': str(python_path), 'seconds': round(time.monotonic() - started, 2)}
+        line = next((l for l in reversed((out or '').splitlines()) if l.startswith(PROBE_MARK)), None)
+        if rc == 0 and line:
+            try:
+                entry['reports'] = json.loads(line[len(PROBE_MARK):])
+            except ValueError as e:
+                probe['error'] = f'unreadable answer: {e}'
+        else:
+            tail = [l for l in (err or out or '').strip().splitlines() if l.strip()]
+            probe['error'] = (tail[-1].strip() if tail else f'exit {rc}')[:300]
+        entry['probe'] = probe
+        asked.append(dist)
+    return asked
+
+
+def cudnn_text(value):
+    """torch's cuDNN number as a version: 92400 -> 9.24.0, 91002 -> 9.10.2; anything else as it is."""
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return f'{v // 10000}.{(v // 100) % 100}.{v % 100}' if v >= 10000 else str(value)
+
+
+def framework_report_checks(frameworks, compute):
+    """
+    (level, ok, detail) for every framework asked: torch's CUDA against the wheel's tag and whether it
+    sees a device (a warning in a cuda run, information otherwise), its cuDNN and MPS; ONNX Runtime's
+    device and providers, JAX's backend and devices as information; a probe without an answer as a note.
+    """
+    out = []
+    for dist, e in (frameworks or {}).items():
+        if not isinstance(e, dict):
+            continue
+        r = e.get('reports')
+        if not isinstance(r, dict):
+            probe = e.get('probe')
+            if isinstance(probe, dict) and probe.get('error'):
+                out.append(('info', None, f"{dist}: nothing reported - {probe['error']}"))
+            continue
+        key = probe_key(dist)
+        if key == 'torch':
+            built, reports = e.get('cuda_build'), r.get('cuda')
+            devices = r.get('devices') or []
+            if built and reports:
+                ok = same_version(str(reports), str(built))
+                out.append(('info' if ok else 'warning', ok,
+                            f"torch reports CUDA {reports}" + ('' if ok else f", the wheel was built for CUDA {built}")))
+            elif built:
+                out.append(('warning', False, f"torch reports no CUDA, the wheel was built for CUDA {built}"))
+            if built or reports:
+                if r.get('cuda_available'):
+                    out.append(('info', True, f"torch sees {len(devices)} CUDA device(s): {', '.join(devices)}"[:300]))
+                elif 'cuda' in (compute or []):
+                    out.append(('warning', False, 'torch sees no CUDA device in a cuda run' + (f" ({r['cuda_error']})" if r.get('cuda_error') else '')))
+                else:
+                    out.append(('info', True, 'torch sees no CUDA device (not a cuda run)'))
+            if r.get('cudnn'):
+                out.append(('info', True, f"torch's cuDNN {cudnn_text(r['cudnn'])}"))
+            if r.get('mps'):
+                out.append(('info', True, 'torch sees the MPS device'))
+        elif key == 'onnxruntime':
+            out.append(('info', True, f"onnxruntime {r.get('version')} on {r.get('device')}: providers {', '.join(r.get('providers') or []) or '?'}"))
+        elif key == 'jax':
+            out.append(('info', True, f"jax {r.get('version')} backend {r.get('backend')}: {', '.join(r.get('devices') or []) or '?'}"))
+    return out
+
+
+###################################################################################################
 # What kind of Python ran: a venv (pyvenv.cfg; its base from the "home =" line, "uv =" when uv made
 # it), a conda environment or a conda base (conda-meta/), a uv-managed interpreter (uv's python
 # folder) or the system's. The record says so because "python" alone names any of them, and where a
@@ -1489,6 +1641,9 @@ def run_checks(record, global_ctx, static_effective, match_version = None):
         add('info', 'info', True, 'frameworks: ' + ', '.join(
             f"{d} {e.get('version') or '?'}" + (f" (built for CUDA {e['cuda_build']})" if e.get('cuda_build') else '')
             + ('' if e.get('loaded') else ' (installed, nothing of it loaded)') for d, e in frameworks.items()))
+        # what the frameworks reported about themselves (asked in loaded mode), against the wheels they came in
+        for level, ok, detail in framework_report_checks(frameworks, compute):
+            add('framework', level, ok, detail)
     if rt.get('driver') or rt.get('gpu'):
         add('info', 'info', True, f"driver {rt.get('driver')}, GPU {rt.get('gpu')}")
 
@@ -1646,6 +1801,17 @@ def build_record(mode, program, target_tmp, target_path, compute, global_ctx, lo
         record['loaded']['note'] = '; '.join(x for x in [record['loaded'].get('note'), f'framework versions failed: {type(e).__name__}: {e}'] if x)
     if frameworks:
         record['runtime']['frameworks'] = frameworks
+        # in `loaded` mode the frameworks are also asked what they report about themselves: the run's own
+        # interpreter by its path, the tools' and the run's environment, the build folder (`on` and `strict`
+        # start no process: nothing slows down by default)
+        if mode == 'loaded' and not android and not run_skipped and python and python.get('path'):
+            try:
+                probe_env = dict(tools_env(global_ctx))
+                if isinstance(run_env, dict):
+                    probe_env.update({str(k): v for k, v in run_env.items() if isinstance(v, str)})
+                probe_frameworks(frameworks, python['path'], probe_env, target_path)
+            except Exception as e:          # never spoils the record
+                record['loaded']['note'] = '; '.join(x for x in [record['loaded'].get('note'), f'framework probe failed: {type(e).__name__}: {e}'] if x)
 
     if result_data is not None:
         record['result'] = result_data

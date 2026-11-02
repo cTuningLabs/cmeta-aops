@@ -810,6 +810,58 @@ def go_binary(path, version = b"go1.26.2", inline = True):
     return str(path)
 
 
+def test_framework_probes_use_the_runs_python(prov, tmp_path):
+    """The probe runs the run's own interpreter by its full path (never "python" of the PATH), with the run's
+    environment, in the build folder; the answer lands in reports, a failure or a timeout in probe.error; a
+    distribution without a probe (torchvision) is left alone; no interpreter, nothing asked."""
+    py = tmp_path / "venv" / "bin" / "python"
+    py.parent.mkdir(parents = True)
+    py.write_text("")
+    calls = []
+
+    def runner(cmd, env, cwd, timeout):
+        calls.append((cmd, env, cwd, timeout))
+        if "import json, torch" in cmd[2]:
+            return 0, "some noise\nCMETA_PROBE " + json.dumps({"version": "2.14.1+cu132", "cuda": "13.2", "cuda_available": True,
+                                                              "devices": ["NVIDIA RTX A500"], "cudnn": 92400, "mps": False}) + "\n", ""
+        if "import json, onnxruntime" in cmd[2]:
+            return 1, "", "Traceback ...\nModuleNotFoundError: No module named 'onnxruntime'\n"
+        return -1, "", "no answer in 90 s"
+
+    frameworks = {"torch": {"version": "2.14.1+cu132", "cuda_build": "13.2"}, "torchvision": {"version": "0.29.1"},
+                  "onnxruntime-gpu": {"version": "1.24.0"}, "jax": {"version": "0.9.0"}}
+    asked = prov.probe_frameworks(frameworks, str(py), {"PYTHONPATH": "/x", "N": 1}, str(tmp_path), runner = runner, timeout = 90)
+    assert asked == ["torch", "onnxruntime-gpu", "jax"]
+    assert all(c[0][0] == str(py) and c[0][1] == "-c" and c[1]["PYTHONPATH"] == "/x" and c[2] == str(tmp_path) and c[3] == 90 for c in calls)
+    assert frameworks["torch"]["reports"]["cuda"] == "13.2" and frameworks["torch"]["probe"]["python"] == str(py)
+    assert "reports" not in frameworks["torchvision"] and "probe" not in frameworks["torchvision"]
+    assert frameworks["onnxruntime-gpu"]["probe"]["error"] == "ModuleNotFoundError: No module named 'onnxruntime'"
+    assert frameworks["jax"]["probe"]["error"] == "no answer in 90 s" and "reports" not in frameworks["jax"]
+    assert prov.probe_frameworks({"torch": {}}, str(tmp_path / "none"), runner = runner) == []
+
+
+def test_framework_report_checks(prov):
+    """torch's report against its wheel: the same CUDA is information, another a warning, no device in a cuda
+    run a warning and in a cpu run information; cuDNN and MPS as information; a probe without an answer a note."""
+    checks = prov.framework_report_checks
+    torch_ok = {"torch": {"cuda_build": "13.2", "reports": {"cuda": "13.2", "cuda_available": True, "devices": ["RTX A500"], "cudnn": 92400}}}
+    r = checks(torch_ok, ["cuda"])
+    assert r[0] == ("info", True, "torch reports CUDA 13.2") and r[1] == ("info", True, "torch sees 1 CUDA device(s): RTX A500")
+    assert r[2] == ("info", True, "torch's cuDNN 9.24.0")
+    r = checks({"torch": {"cuda_build": "13.2", "reports": {"cuda": "12.8", "cuda_available": False}}}, ["cuda"])
+    assert r[0] == ("warning", False, "torch reports CUDA 12.8, the wheel was built for CUDA 13.2")
+    assert r[1] == ("warning", False, "torch sees no CUDA device in a cuda run")
+    r = checks({"torch": {"cuda_build": "13.2", "reports": {"cuda": "13.2", "cuda_available": False}}}, ["cpu"])
+    assert r[1] == ("info", True, "torch sees no CUDA device (not a cuda run)")
+    r = checks({"torch": {"cuda_build": "13.2", "reports": {"cuda": None, "mps": True}}}, ["cpu"])
+    assert r[0] == ("warning", False, "torch reports no CUDA, the wheel was built for CUDA 13.2") and r[-1] == ("info", True, "torch sees the MPS device")
+    r = checks({"onnxruntime-gpu": {"reports": {"version": "1.24.0", "device": "GPU", "providers": ["CUDAExecutionProvider", "CPUExecutionProvider"]}},
+                "jax": {"probe": {"error": "no answer in 90 s"}}, "torchvision": {"version": "0.29.1"}}, ["cuda"])
+    assert r == [("info", True, "onnxruntime 1.24.0 on GPU: providers CUDAExecutionProvider, CPUExecutionProvider"),
+                 ("info", None, "jax: nothing reported - no answer in 90 s")]
+    assert prov.cudnn_text(91002) == "9.10.2" and prov.cudnn_text("x") == "x"
+
+
 def test_go_and_rust_toolchains_are_read_from_the_binary(prov, tmp_path):
     exe = go_binary(tmp_path / "program")
     assert prov.go_version_in_binary(exe) == "1.26.2"
