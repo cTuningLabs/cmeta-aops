@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.61.5.1)
+## 0.62.0
 - **The iPhone as a compute target: `ios-cpu`, `ios-gpu`, `ios-npu`.** `tool/apple.xcode` finds Xcode through
   `xcode-select` (the iOS SDK, the toolchain, devicectl); `tool/apple.xcode.clang` and `-cpp` (the `apple-xcode`
   compiler family) build for the device's architecture, SDK and minimum iOS version. `task/target--ios-cpu` selects a
