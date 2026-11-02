@@ -2,6 +2,13 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.62.0.1)
+- **A stopped container reads `stopped`, an engine that does not answer `docker engine down`.** `cx host status` said
+  `down` for a container that exists and is not running, and `missing` whether the container was gone or Docker Desktop
+  was off; a reader took `down` for Docker being off and a fleet round left four stopped test containers out
+  (2026-11-02). `cx host up` starts a stopped container as before; the commands that need a running host still skip
+  it. Tests: `test_host_docker_status.py`.
+
 ## 0.62.0
 - **The iPhone as a compute target: `ios-cpu`, `ios-gpu`, `ios-npu`.** `tool/apple.xcode` finds Xcode through
   `xcode-select` (the iOS SDK, the toolchain, devicectl); `tool/apple.xcode.clang` and `-cpp` (the `apple-xcode`

@@ -3554,8 +3554,19 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             if rr.get('timeout'):
                 return f'timeout ({int(cmd_timeout)}s, {engine} inspect' + (f' on {h["via"]}' if parent is not None else '') + ')'
             if rr.get('returncode', 1) != 0:
+                # the engine not answering (Docker Desktop off, the daemon down) is not "no such container"
+                err = (rr.get('stderr', '') or '').lower()
+                if any(x in err for x in ('error during connect', 'cannot connect to the docker daemon', 'is the docker daemon running',
+                                          'cannot connect to podman', 'connection refused')):
+                    return f'{engine} engine down' + (f' on {h["via"]}' if parent is not None else '')
                 return 'missing'
-            return 'up' if rr.get('stdout', '').strip() == 'running' else 'down'
+            st = rr.get('stdout', '').strip()
+            # a container that exists and is not running is "stopped" (cx host up starts it), not "down": read as Docker
+            # Desktop being off, it hid four stopped test containers from a fleet round (2026-11-02); the commands that
+            # need a running host skip it all the same (only a stopped WSL distro counts as reachable)
+            if st == 'running':
+                return 'up'
+            return 'stopped' if st in ('exited', 'created') else f'down ({st or "?"})'
 
         if t == 'adb':
             serial = str(acc.get('serial') or '')
