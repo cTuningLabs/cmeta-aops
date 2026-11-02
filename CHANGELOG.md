@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.61.2.1)
+## 0.61.3
 - **The suite passes under a Windows profile with a space in its name** (the NucBox, `C:\Users\Grigori Fursin`,
   with its temp folder under it): four tests had assumed a path without spaces - two expected the program's
   CMake variables unquoted where the engine quotes such a path (and their stand-in engine quoted an already
