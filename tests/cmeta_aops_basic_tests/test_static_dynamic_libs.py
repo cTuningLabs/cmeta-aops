@@ -139,6 +139,22 @@ def test_openmp_is_true():
         assert ns["is_true"](value) is True
 
 
+def test_openmp_runtime_of_the_builds_llvm_comes_first():
+    """The setup sorts candidates of the same version by the length of their path, and every libomp is "default",
+    so the distribution's /usr/lib/llvm-21/lib/libomp.so came before the one in cMeta's LLVM entry and a clang 23
+    build linked the distribution's runtime (the P14s Gen 4, 2026-11-01): the paths under the home of the build's
+    llvm are marked priority ("!") and go first; a priority mark already there stays; without an llvm, no change."""
+    ns = openmp_tool()
+    tool = object.__new__(ns["CTool"])
+    home = "/home/u/CMETA/repos/local/cache/task--setup--llvm--1111/content"
+    mine = f"{home}/lib/x86_64-unknown-linux-gnu/libomp.so"
+    dist, system = "/usr/lib/llvm-21/lib/libomp.so", "/usr/lib/x86_64-linux-gnu/libomp.so"
+    ctx = {"tasks": {"global": {"llvm": {"features": {"paths": {"home": home}}}}}}
+    assert tool.update_paths(ctx, [dist, system, mine])["paths"] == ["!" + mine, dist, system]
+    assert tool.update_paths(ctx, ["!" + system, mine])["paths"] == ["!" + system, "!" + mine]
+    assert tool.update_paths({"tasks": {"global": {}}}, [dist, mine])["paths"] == [dist, mine]
+
+
 def test_openmp_source_pins():
     src = openmp_tool()["OPENMP_SRC"]
     assert src["version"] == "21.1.8"
@@ -543,6 +559,12 @@ def test_lib_paths_of_cmeta_tools_come_before_the_system_folders(tmp_path):
     assert ns["order_lib_paths"]([system, xopenme, llvm], roots) == [xopenme, llvm, system]
     assert ns["order_lib_paths"]([system, xopenme, llvm], []) == [system, xopenme, llvm]
     assert ns["order_lib_paths"]([], roots) == []
+
+    # a folder inside another entry of the same cache - a lib-openmp resolved in an LLVM entry that is not this run's
+    # llvm (the P14s, 2026-11-01) - is cMeta's too and goes before the distribution's folder
+    other = f"{cache}/task--setup--llvm--9999/content/lib/x86_64-unknown-linux-gnu"
+    assert ns["order_lib_paths"]([system, other], roots) == [other, system]
+    assert ns["order_lib_paths"]([system, "/opt/llvm/lib"], roots) == [system, "/opt/llvm/lib"]
 
     # through the task: the -L of the cache entries before the system's, the -l order untouched
     for d in (system, xopenme, llvm):

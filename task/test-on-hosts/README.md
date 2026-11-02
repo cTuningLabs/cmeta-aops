@@ -20,7 +20,11 @@ The parameters:
 
 - **`--cmds`:** the commands, separated by `;`. Each one is the words after `cx`. A command that starts with `!` is
   a shell line of the host (bash, or cmd on Windows), with `TREE`, `WORK` and `CMETA_HOME` set, for example
-  `!uv run --no-project --with pytest ... python -m pytest $TREE/tests`.
+  `!uv run --no-project --with pytest ... python -m pytest $TREE/tests`. A `;` cannot be part of a command (it
+  separates them: a Windows `PATH` value splits), and a `&&` or a quote does not travel through a `.bat` that
+  launches the round: put such a line into a script file and make the command `!call D:\...\run.bat <args>`
+  (`!bash /path/run.sh` on a POSIX host). A command that must run in the host's own home, not the throwaway
+  one, is `!env -u CMETA_HOME cx ...` (`!set "CMETA_HOME=" && cx ...` in such a script on Windows).
 - **`--hosts`:** host aliases separated by `,`. `here` is this machine. The default is the key `hosts` of the
   config artifact `task-test-on-hosts` (`cx config set task-test-on-hosts --meta.hosts=a,b,c`: the test machines of
   a fleet, never a production host), else `here`. A ref of the run-on-any-host design - `docker:ubuntu`,

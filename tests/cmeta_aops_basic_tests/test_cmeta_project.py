@@ -117,6 +117,14 @@ def test_generated_scripts_do_not_overwrite_user_changes(project_fixture):
     assert script.read_text() == 'echo user customization\n'
 
 
+def run_bat(script, *args):
+    """A generated .bat with its arguments through cmd.exe, whatever spaces its path or they carry: "/s /c" with
+    the whole line in one more pair of quotes keeps every inner quote (a plain /c strips the first and the last
+    quote of a line that holds more than two - the NucBox, whose profile is C:\\Users\\Grigori Fursin, 2026-11-01)."""
+    line = subprocess.list2cmdline([str(script), *args])
+    return subprocess.run(f'cmd.exe /d /s /c "{line}"', stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+
 @pytest.mark.skipif(os.name != 'nt', reason='Windows batch self-regeneration semantics')
 def test_batch_adapter_can_regenerate_itself_and_preserves_failure_status(project_fixture):
     cm, root, profile = project_fixture
@@ -128,13 +136,10 @@ def test_batch_adapter_can_regenerate_itself_and_preserves_failure_status(projec
     hashes = json.loads(record.read_text())
     hashes['__cx.bat'] = hashlib.sha256(data).hexdigest()
     record.write_text(json.dumps(hashes))
-    completed = subprocess.run(['cmd.exe', '/d', '/c', str(script), 'task', 'run', MANAGER,
-                                'scripts', '--project-home=' + str(root), '-q'],
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    completed = run_bat(script, 'task', 'run', MANAGER, 'scripts', '--project-home=' + str(root), '-q')
     assert completed.returncode == 0, completed.stdout
     assert completed.stdout.count('Generated project scripts in') == 1, completed.stdout
-    failed = subprocess.run(['cmd.exe', '/d', '/c', str(script), 'task', 'run', MANAGER, 'info'],
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    failed = run_bat(script, 'task', 'run', MANAGER, 'info')
     assert failed.returncode != 0, failed.stdout
 
 

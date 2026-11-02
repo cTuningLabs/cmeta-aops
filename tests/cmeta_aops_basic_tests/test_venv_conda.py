@@ -67,7 +67,9 @@ def test_a_conda_environment_is_made_by_conda_and_recorded(venv, tmp_path, monke
     t.cm = CM(env_python = py)
     r = t.run(ctx(), conda = True, version = "3.12", conda_packages = "numpy, scipy", channel = "conda-forge", env = {}, timeout = None)
     assert r["return"] == 0, r.get("error")
-    assert t.cm.cmds == [f"conda create -y -p {prefix} python=3.12 pip numpy scipy -c conda-forge --override-channels"]
+    # the prefix quoted as the engine quotes a path with a space (a temp folder under a profile with one: the NucBox)
+    q = f'"{prefix}"' if any(c in str(prefix) for c in ' ,+') else str(prefix)
+    assert t.cm.cmds == [f"conda create -y -p {q} python=3.12 pip numpy scipy -c conda-forge --override-channels"]
     assert r["env_kind"] == "conda" and r["made_by"] == "conda 26.7.2" and r["path_to_activate_script"] == ""
     assert os.path.normcase(r["path_to_python"]) == os.path.normcase(str(py))
     assert r["_update_params"] == {"version": "3.12", "conda": True, "conda_packages": ["numpy", "scipy"], "channel": "conda-forge"}
@@ -78,7 +80,7 @@ def test_a_conda_environment_is_made_by_conda_and_recorded(venv, tmp_path, monke
     t = venv["CTask"].__new__(venv["CTask"])
     t.cm = CM(env_python = py)
     r = t.run(ctx(), conda = "true", version = None, env = {}, timeout = None)
-    assert r["return"] == 0 and t.cm.cmds == [f"conda create -y -p {prefix} python pip"]
+    assert r["return"] == 0 and t.cm.cmds == [f"conda create -y -p {q} python pip"]
     assert r["_update_params"] == {"version": None, "conda": True}
 
 

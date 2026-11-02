@@ -2,6 +2,24 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.61.3
+- **The suite passes under a Windows profile with a space in its name** (the NucBox, `C:\Users\Grigori Fursin`,
+  with its temp folder under it): four tests had assumed a path without spaces - two expected the program's
+  CMake variables unquoted where the engine quotes such a path (and their stand-in engine quoted an already
+  quoted path again, which the engine's `quote_path` never does), one the conda prefix unquoted, and one ran a
+  generated `.bat` through `cmd /c` with its path split at the space (`/s /c` with the line in one more pair of
+  quotes keeps every inner quote). The code was right; the tests follow it.
+- **A clang build links and loads the OpenMP runtime of cMeta's LLVM, not the distribution's**: the link line
+  put the shared system folder (`/usr/lib/x86_64-linux-gnu`, there for OpenSSL) before the folder of the
+  `lib-openmp` entry when that folder lay in another LLVM entry than the run's `llvm` - the "default"
+  lib-openmp entry had been made with LLVM 22 and served the LLVM 23 builds - so the linker took the
+  distribution's `libomp.so.5` and the program loaded it (the strict-provenance matrix on the P14s Gen 4,
+  2026-11-01: a warning). Now every folder inside cMeta's cache counts as cMeta's for the order of the link
+  line and of the run's library path, `lib-openmp` follows the LLVM of the build (`cache_params_use`
+  llvm, as tool/clang-cpp: another LLVM gets a lib-openmp entry of its own), and its detection puts the
+  runtime found under that LLVM's home first (the candidates are sorted by version, then by the length of
+  their path, and every libomp is "default": the distribution's `/usr/lib/llvm-N/lib` won by its short path).
+
 ## 0.61.2
 - **Provenance is `strict` by default**: a `cx program run` that names no mode, in a shell without
   `CMETA_PROVENANCE`, fails with return code 99 when an error-level check fails - an explicitly requested

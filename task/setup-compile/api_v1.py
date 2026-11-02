@@ -65,7 +65,14 @@ def order_lib_paths(lib_paths, cache_roots):
     roots = []
     for root in cache_roots or []:
         if isinstance(root, str) and root:
-            roots.append(os.path.normcase(os.path.normpath(root)))
+            entry = os.path.normcase(os.path.normpath(root))
+            roots.append(entry)
+            # the whole cache folder the entry sits in: a library folder inside another entry of the same cache (a
+            # lib-openmp found in an LLVM entry that is not this run's llvm, the P14s on 2026-11-01) is cMeta's too,
+            # and went after the distribution's folder, whose libomp the linker then took
+            cache = os.path.dirname(entry)
+            if cache and cache != entry and cache not in roots:
+                roots.append(cache)
 
     def managed(path):
         p = os.path.normcase(os.path.normpath(str(path)))
