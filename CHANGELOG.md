@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.61.4.1)
+## 0.61.5
 - **`run-ai --context` takes the alias of a declared AI context**: an artifact that declares `template: ai_uses:
   {alias, title, sort}` in its meta is an AI context (cMeta dev 2026-11-02, 0.37.13: `cx <category> add|update
   <artifact> -ai`, `cx utils ai_context`); `--context=dapple` names it as `-ai=dapple` would, an artifact alias in
