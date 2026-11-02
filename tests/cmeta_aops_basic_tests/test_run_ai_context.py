@@ -131,7 +131,7 @@ def test_context_entries_are_separated_by_semicolons_never_commas(CTask):
 
 def test_context_aliases_resolve_through_the_engine(CTask):
     """A --context entry that is a template alias or an artifact alias (not a cRef, not a folder) is given to the
-    engine's `utils ai_context` (cMeta dev 2026-11-02: the rule of `cx <category> add -au`); its cRefs replace the
+    engine's `utils ai_context` (cMeta dev 2026-11-02: the rule of `cx <category> add -ai`); its cRefs replace the
     entry; a cRef or a folder is taken as it is; an engine without the command, or a name it cannot resolve, leaves
     the entry as typed for the old lookup."""
     import types

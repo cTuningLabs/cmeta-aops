@@ -841,7 +841,7 @@ class CTask(InitCTask):
 
     def _context_crefs(self, item):
         """A --context entry -> the cRefs it names: a cRef as it is; a template alias or an artifact alias through
-        the engine's `utils ai_context` (the rule of `cx <category> add -au`); the entry itself when the engine has
+        the engine's `utils ai_context` (the rule of `cx <category> add -ai`); the entry itself when the engine has
         no such command (before cMeta 0.37.13) or cannot resolve it."""
         if '::' in item or os.sep in item or '/' in item:
             return [item]
@@ -868,7 +868,7 @@ class CTask(InitCTask):
             if item.lower().startswith('claude:'):
                 wanted.append((item, 'claude', item.split(':', 1)[1].strip(), 0))
             else:
-                # a template alias (template: ai_uses: {alias} in an artifact's meta - what `cx <category> add -au`
+                # a template alias (template: ai_uses: {alias} in an artifact's meta - what `cx <category> add -ai`
                 # takes) or an artifact alias in any category: the engine's resolver (cx utils ai_context, cMeta dev
                 # of 2026-11-02) gives the full cRef; an engine without it, or a name it cannot resolve, leaves the
                 # entry as typed for _find_artifact
