@@ -842,7 +842,7 @@ class CTask(InitCTask):
     def _context_crefs(self, item):
         """A --context entry -> the cRefs it names: a cRef as it is; a template alias or an artifact alias through
         the engine's `utils ai_context` (the rule of `cx <category> add -ai`); the entry itself when the engine has
-        no such command (before cMeta 0.37.13) or cannot resolve it."""
+        no such command (before cMeta 0.38.0) or cannot resolve it."""
         if '::' in item or os.sep in item or '/' in item:
             return [item]
         try:
