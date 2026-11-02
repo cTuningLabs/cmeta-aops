@@ -27,6 +27,10 @@ def endpoint(value):
     return value
 
 
+class NoAnswer(ValueError):
+    """adb connect got no answer at the address it tried (a ValueError, as before, for every caller)."""
+
+
 def mdns_services(text):
     """Only connection services: pairing ports must never be used by adb connect."""
     services = []
@@ -161,7 +165,14 @@ class CTask(InitCTask):
         chosen = endpoint(chosen)
         r = self.command(ctx, ['connect', chosen], timeout=timeout)
         if self.cm.catch_error(r, fail16=True) or r.get('returncode'):
-            raise ValueError(r.get('error') or r.get('stderr') or 'adb connect failed')
+            why = (r.get('error') or r.get('stderr') or 'adb connect failed').strip()
+            # The common case away from home (2026-11-02, a co-working Wi-Fi): the address saved on another network,
+            # and no discovery here - public and office networks often block mDNS - so the port must be typed
+            if not ip and not matches:
+                why += (' (' + chosen + ' is the address seen before; adb discovery found no watch on this network, '
+                        'which public and office Wi-Fi often block: give the IP:port of the MAIN Wireless debugging '
+                        'screen - cx host connect <watch> --endpoint=IP:port)')
+            raise NoAnswer(why)
         receipt = self.identity(ctx, chosen, expected, required, timeout)
         service = next((s['name'] for s in services if s['endpoint'] == chosen), saved.get('mdns_service', ''))
         receipt.update(endpoint=chosen, mdns_service=service)
@@ -211,6 +222,7 @@ class CTask(InitCTask):
                 ip = endpoint(r['answer'])
             deadline = time.monotonic() + duration if duration else None
             result = None
+            asked = False
             while True:
                 try:
                     result = self.connect_once(ctx, root, config, saved, ip, serial, timeout)
@@ -222,6 +234,17 @@ class CTask(InitCTask):
                               (result.get('model') or 'Android device', result.get('device_serial') or '?', result['serial']))
                     if once: return dict(result, **{'return': 0, 'connected': True})
                 except ValueError as exc:
+                    # A terminal and no address given: the address seen before did not answer and nothing was
+                    # discovered - ask once for the one on the watch's main Wireless debugging screen
+                    if (once and isinstance(exc, NoAnswer) and not ip and not asked and not quiet
+                            and sys.stdin and sys.stdin.isatty()):
+                        print('cMeta warning: ' + str(exc))
+                        r = ask('CONNECTION IP:port from main Wireless debugging screen: ',
+                                how='--endpoint=IP:port of cx host connect', optional=True)
+                        if r['return']: return r
+                        if (r.get('answer') or '').strip():
+                            ip, asked = endpoint(r['answer'].strip()), True
+                            continue
                     if once: raise
                     result = None
                     if ctx['control'].get('con'): print('cMeta warning: %s; retrying in %ss' % (exc, period))

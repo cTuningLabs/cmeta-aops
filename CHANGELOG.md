@@ -2,6 +2,51 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.62.0
+- **The iPhone as a compute target: `ios-cpu`, `ios-gpu`, `ios-npu`.** `tool/apple.xcode` finds Xcode through
+  `xcode-select` (the iOS SDK, the toolchain, devicectl); `tool/apple.xcode.clang` and `-cpp` (the `apple-xcode`
+  compiler family) build for the device's architecture, SDK and minimum iOS version. `task/target--ios-cpu` selects a
+  paired iPhone or iPad (`--device=<name|UDID>`), finds the signing identity, its team and a development profile for
+  one bundle id (`org.ctuning.cmeta.runner`) that provisions the device - made with Xcode's own `xcodebuild
+  -allowProvisioningUpdates -allowProvisioningDeviceRegistration` when missing, and again when it expires. A
+  program for the device gets the target's launcher as its `main` (it enters the app's Documents folder and records
+  the exit code), goes into an app bundle, is signed (through the user's GUI session when an ssh session's keychain
+  is locked), installed and launched with `devicectl` with the console attached; its output files come back
+  (`category/task/api/ios.py`, the iOS branch of `setup-run`). `target--ios-gpu` (a Metal probe: the GPU families,
+  limits, features) and `target--ios-npu` (a Core ML probe: the Neural Engine and its cores) ask the device with a
+  probe app. `test-nmm-c-cpu` and `lib-xopenme` run on `ios-cpu` (the OpenSSL test skipped there, static archives,
+  no OpenMP runtime on iOS yet). Also: a compiler that declares an empty `openmp` flag builds a program that asks
+  for OpenMP without it (an INFO line) instead of failing; the build stamp records the compile parameters as the
+  run requested them, before the program's hooks adjust them, and the iOS device's UDID; `exe_extra_sources` of a
+  compiler's `target_arch` are linked into executables only. Tests: `test_ios_target.py`.
+- **A host of type `ios`**: an iPhone or iPad declared with its UDID and the Mac it hangs on (`via`). `cx host
+  status` asks that Mac's `xcrun devicectl list devices` (up when connected, else `down (<state>)`), `cx host probe`
+  records what devicectl says of it (name, iOS version, model, CPU type, storage, developer mode) in state.yaml, the
+  listing shows `ios <UDID> via <Mac>`; `cx host run` and `restart` say that an iOS device runs no command of its own
+  (programs reach it through the ios-cpu target). The rows of `ls`/`status` carry `machine_ref`, the declared cRef of
+  the host's machine, for pages that link a machine's record. Tests: `test_host_ios_device.py`.
+- **`cx host run` of an adb host no longer lets a command escape to this machine's shell.** The command rides inside
+  `"..."` on adb's command line; one that held a double quote of its own - the words after `--` that held a space
+  arrive quoted - closed that quoting, and its `&&` and `|` ran HERE (seen on a watch: the part after a `|` started a
+  program of this Windows machine). Such a command (on Linux and macOS also one with `$`, a backtick or `\`) now goes
+  to the device's `sh` on stdin from a temporary script, as wsl and docker hosts already did; a plain command keeps
+  its one line. `host connect` hands the reconnect task a copy of the context, so a second host lookup in the same
+  call no longer searches the task category ('host "<watch>" not found'); a run connects a wireless host once.
+- **A watch away from home: `cx host connect` says what to do, and asks.** When the address seen before does not
+  answer and adb discovery finds nothing (public and office Wi-Fi often block mDNS), the error names the fix -
+  `--endpoint=IP:port` from the MAIN Wireless debugging screen - and in a terminal the command asks for that address
+  once and connects (`-q` keeps the error, no question). Tests: `test_wireless_adb_hosts.py`.
+- **`cx program run ... android-cpu --use.target--android-cpu.device_host=<host>` runs on that device.** The task
+  framework merges the `--use` words into a task's parameters after its init, and the Android target chooses its
+  device in init: the documented `device_host` (and `serial`) never reached it, and with two devices attached a quiet
+  run took the first - a run asked for a watch ran on a USB phone, under the watch's build key. The target now reads
+  them from the `--use` words too. A build made that way for the wrong ABI is refused by the strict provenance check
+  ("was built for ... asks for armeabi-v7a"); `--clean` starts it over. Tests: `test_wireless_adb_hosts.py`.
+- **Archived hosts: a host kept in a repository whose `_cmr.yaml` says `archive: true` leaves every fleet listing.**
+  `cx host ls`, `status`, the fleet commands with `--all`/`--tags` and the host pages skip it (a machine given back or
+  deleted, moved there with `cx host move <host> <repo>:`); named exactly it is still found. No repository has the
+  flag unless it is added. Tests: `test_host_archive_repo.py`.
+
 ## 0.61.5
 - **`run-ai --context` takes the alias of a declared AI context**: an artifact that declares `template: ai_uses:
   {alias, title, sort}` in its meta is an AI context (cMeta 0.38.0, 2026-11-02: `cx <category> add|update

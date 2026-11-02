@@ -1,0 +1,69 @@
+authors: Grigori Fursin
+
+# Apple's clang++ inside the Xcode toolchain, the C++ compiler of the ios-cpu target: the same flags and the same
+# target handling as tool/apple.xcode.clang (the C compiler), which explains them.
+storage_key: apple-xcode-clang-cpp
+
+names:
+  - clang++
+
+cmd_get_version: '{{tool_path}} --version'
+
+match_version:
+  - regex: 'Apple clang version\s+([\d.]+)'
+    group: 1
+
+cache_params_use:
+  all:
+    apple-xcode:
+      version: "{{global.apple-xcode.version}}"
+      path: "{{global.apple-xcode.path}}"
+
+only_paths:
+  darwin:
+    - "{{global.apple-xcode.path_toolchain_bin}}"
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: apple.xcode,1f2abbf32a664e7a
+
+install_help_text: |
+  Apple clang++ comes with Xcode: see "cx tool setup apple.xcode".
+
+features:
+  darwin:
+    flags:
+      catch_errors: ''
+      include_path: '-I'
+      dynamic_build: ''
+      static_build: ''
+      dynamic_build_debug: '-g'
+      static_build_debug: '-g'
+      obj_file: '-o '
+      exe_file: '-o '
+      lib_file: '-o '
+      lib_file2: ''
+      link_sep: ''
+      lib_path: '-L'
+      lib_prefix: '-l'
+      lib_prefix2: ''
+      lib_postfix: ''
+      openmp: ''
+      fast: '-O3'
+      fastest: '-O3 -ffast-math'
+      profile: '-fno-omit-frame-pointer'
+      link_profile: ''
+      compile_to_obj: '-c'
+      d: '-D'
+      lib_dynamic_build: '-dynamiclib -fPIC'
+      lib_static_build: '-c'
+      lib_dynamic_build_debug: '-dynamiclib -fPIC -g'
+      lib_static_build_debug: '-c -g'
+      static_lib1: 'rcs'
+      static_lib2: ''
+    vars:
+      file_ext_exe:
+      file_ext_lib: .a
+      file_ext_lib2: .a
+      file_ext_dlib: .dylib
+      file_ext_obj: .o

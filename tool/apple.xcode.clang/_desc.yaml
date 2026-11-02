@@ -1,0 +1,77 @@
+authors: Grigori Fursin
+
+# Apple's clang inside the Xcode toolchain (tool/apple.xcode names the folder), for programs built for an iPhone
+# or iPad (compute ios-cpu): api_v1.py adds the iOS SDK, the architecture and the minimum iOS version of the
+# selected device to every command (common_clang.init_ios_arch), and links the target's launcher main into every
+# executable. Not the /usr/bin/clang shim, and never a macOS build (tool/clang, the LLVM releases, does those).
+storage_key: apple-xcode-clang
+
+names:
+  - clang
+
+cmd_get_version: '{{tool_path}} --version'
+
+match_version:
+  - regex: 'Apple clang version\s+([\d.]+)'
+    group: 1
+
+cache_params_use:
+  all:
+    apple-xcode:
+      version: "{{global.apple-xcode.version}}"
+      path: "{{global.apple-xcode.path}}"
+
+only_paths:
+  darwin:
+    - "{{global.apple-xcode.path_toolchain_bin}}"
+
+uses:
+  - task: setup,a2f9b61079ce4333
+    name: apple.xcode,1f2abbf32a664e7a
+
+install_help_text: |
+  Apple clang comes with Xcode: see "cx tool setup apple.xcode".
+
+features:
+  darwin:
+    flags:
+      catch_errors: ''
+      include_path: '-I'
+
+      # iOS has no static executables (its linker refuses -static): a "static" build links static archives into
+      # a dynamically linked executable, so the flag is empty; libraries are built as .a archives
+      dynamic_build: ''
+      static_build: ''
+      dynamic_build_debug: '-g'
+      static_build_debug: '-g'
+      obj_file: '-o '
+      exe_file: '-o '
+      lib_file: '-o '
+      lib_file2: ''
+      link_sep: ''
+      lib_path: '-L'
+      lib_prefix: '-l'
+      lib_prefix2: ''
+      lib_postfix: ''
+
+      # Apple's clang brings no OpenMP runtime for iOS: a program that asks for OpenMP is built without it
+      # (_OPENMP undefined) until an iOS libomp exists as a library program
+      openmp: ''
+      fast: '-O3'
+      fastest: '-O3 -ffast-math'
+      profile: '-fno-omit-frame-pointer'
+      link_profile: ''
+      compile_to_obj: '-c'
+      d: '-D'
+      lib_dynamic_build: '-dynamiclib -fPIC'
+      lib_static_build: '-c'
+      lib_dynamic_build_debug: '-dynamiclib -fPIC -g'
+      lib_static_build_debug: '-c -g'
+      static_lib1: 'rcs'
+      static_lib2: ''
+    vars:
+      file_ext_exe:
+      file_ext_lib: .a
+      file_ext_lib2: .a
+      file_ext_dlib: .dylib
+      file_ext_obj: .o

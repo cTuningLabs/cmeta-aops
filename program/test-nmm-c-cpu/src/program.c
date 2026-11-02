@@ -15,11 +15,17 @@ Developed with the help of ChatGPT and Claude.
 #include <string.h>
 #include <time.h>
 
+/* A build without OpenMP (an iPhone: Apple's clang has no OpenMP runtime there) keeps the matmul single-threaded */
+#ifdef _OPENMP
 #include <omp.h>
+#endif
 
+/* -DCMETA_SKIP_OPENSSL: a target without an OpenSSL build yet (an iPhone) skips the OpenSSL test */
+#ifndef CMETA_SKIP_OPENSSL
 #include <openssl/opensslv.h>
 #include <openssl/crypto.h>
 #include <openssl/sha.h>
+#endif
 
 #include <math.h>
 
@@ -293,6 +299,7 @@ int main(int argc, char *argv[]) {
   printf("Testing OpenMP ...\n");
   printf("\n");
 
+#ifdef _OPENMP
   printf("_OPENMP = %d\n", _OPENMP);
   printf("max threads = %d\n", omp_get_max_threads());
 
@@ -301,6 +308,9 @@ int main(int argc, char *argv[]) {
       printf("hello from thread %d of %d\n",
              omp_get_thread_num(), omp_get_num_threads());
   }
+#else
+  printf("OpenMP is not enabled in this build\n");
+#endif
 
   printf("\n");
 
@@ -309,6 +319,9 @@ int main(int argc, char *argv[]) {
   printf("Testing OpenSSL ...\n");
   printf("\n");
 
+#ifdef CMETA_SKIP_OPENSSL
+  printf("OpenSSL is skipped in this build (CMETA_SKIP_OPENSSL)\n");
+#else
   /* 1. Print OpenSSL version */
   printf("OpenSSL version: %s\n",
          OpenSSL_version(OPENSSL_VERSION));
@@ -328,6 +341,7 @@ int main(int argc, char *argv[]) {
   }
 
   printf("\n");
+#endif
 
 
   /******************************************************/

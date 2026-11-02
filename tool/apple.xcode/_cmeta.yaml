@@ -1,0 +1,18 @@
+artifact: 1f2abbf32a664e7a
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+constraints:
+  supports_os:
+  - darwin
+creation_timestamp: '2026-11-02T19:36:45.220396+00:00'
+desc: "Xcode on macOS, found through xcode-select: the iOS SDK, the toolchain and devicectl, for building and running programs on an iPhone or iPad."
+generator:
+  method: agent
+  agent: Claude Code 2.1.310
+  via: cmeta 0.38.1
+  gateway: dapple
+  by: Grigori Fursin
+tags:
+- xcode
+- apple
+- ios

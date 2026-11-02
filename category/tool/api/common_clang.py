@@ -77,6 +77,49 @@ def init_arch(
     return _result
 
 ###################################################################################################
+def init_ios_arch(
+        ctx: dict,
+        result: dict = {},
+        params: dict = {},
+):
+    """
+    The flags of a build for the iPhone target (task/target--ios-cpu in the global context): the iOS SDK of the
+    Xcode set up (tool/apple.xcode), the device's architecture and the minimum iOS version; "main" renamed so that
+    the target's launcher (its own main, which enters the app's Documents folder) is linked into every executable
+    (setup-compile adds exe_extra_sources to an executable's compile command, never to a library's).
+    """
+
+    _result = {'return': 0}
+
+    target_ios = ctx['tasks']['global'].get('target--ios-cpu')
+    if not target_ios:
+        return _result
+
+    xcode = ctx['tasks']['global'].get('apple-xcode') or {}
+    sdk = xcode.get('ios_sdk_path') or ''
+    if not sdk:
+        return {'return': 1, 'error': 'the iOS SDK was not found in the Xcode set up (install the iOS platform: '
+                                      'xcodebuild -downloadPlatform iOS)'}
+
+    features = target_ios.get('features') or {}
+    arch = features.get('arch_normalized') or 'arm64'
+    min_os = str(target_ios.get('min_os') or '16.0')
+    launcher = target_ios.get('launcher_source') or ''
+
+    def q(path):
+        return f'"{path}"' if ' ' in path else path
+
+    _result['target_arch'] = {
+      'sdk': sdk,
+      'arch': arch,
+      'min_os': min_os,
+      'flags': f'-isysroot {q(sdk)} -arch {arch} -miphoneos-version-min={min_os} -Dmain=cmeta_program_main',
+      'exe_extra_sources': q(launcher) if launcher else '',
+    }
+
+    return _result
+
+###################################################################################################
 def detect_api_levels(
         paths,
 ):

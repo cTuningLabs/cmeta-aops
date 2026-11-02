@@ -37,4 +37,12 @@ class CProgram(InitCProgram):
             if 'm' not in lib_names:
                 lib_names.append('m')
 
+        # An iPhone (ios-cpu): no OpenSSL and no OpenMP runtime are built for iOS yet, so the OpenSSL test is
+        # skipped (the matmul and the math stay) and the libraries are linked as static archives - iOS runs no
+        # static executable, but a dynamic library would have to travel in the app bundle and be signed
+        if 'ios-cpu' in compute:
+            _compile = ctx['tasks']['local']['params'].setdefault('compile', {})
+            _compile.setdefault('d', {})['CMETA_SKIP_OPENSSL'] = None
+            _compile['static'] = True
+
         return {'return':0}

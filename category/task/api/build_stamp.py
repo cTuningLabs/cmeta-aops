@@ -113,7 +113,8 @@ def compiler_identity(compiler_result):
     return identity if any(identity.values()) else None
 
 
-def make_stamp(program, uid, compute, host, compiler = None, compile_params = None, android = None, sources = None):
+def make_stamp(program, uid, compute, host, compiler = None, compile_params = None, android = None, sources = None,
+               ios = None):
     return {'version': 1,
             'program': program,
             'uid': uid,
@@ -122,6 +123,7 @@ def make_stamp(program, uid, compute, host, compiler = None, compile_params = No
             'compiler': compiler,
             'compile': normalize_compile(compile_params),
             'android': {k: v for k, v in (android or {}).items() if v} or None,
+            'ios': {k: v for k, v in (ios or {}).items() if v} or None,
             'sources': sources if isinstance(sources, dict) else None,
             'time': time.strftime('%Y-%m-%dT%H:%M:%S')}
 
@@ -150,12 +152,13 @@ def write_stamp(target_path, stamp):
         return str(e)
 
 
-def differences(stamp, compute = None, host = None, compiler = None, compile_params = None, android = None):
+def differences(stamp, compute = None, host = None, compiler = None, compile_params = None, android = None, ios = None):
     """
     What the request differs in from the stamp: a list of (what, built for, requested). Only the facts
     given (not None) are compared, so a request whose compiler is not resolved yet compares the rest.
     The compiler compares by name and version (a path alone changes with a reinstall of the same tool);
-    the compile parameters by COMPARED_COMPILE_KEYS only, both sides normalized the same way.
+    the compile parameters by COMPARED_COMPILE_KEYS only, both sides normalized the same way; an Android
+    device by its ABI and serial, an iOS device by its UDID.
     """
     diffs = []
     if compute is not None and sorted(str(c) for c in compute) != list(stamp.get('compute') or []):
@@ -178,6 +181,10 @@ def differences(stamp, compute = None, host = None, compiler = None, compile_par
         for key in ('abi', 'serial'):
             if new.get(key) and stamp['android'].get(key) and new[key] != stamp['android'][key]:
                 diffs.append((f'android {key}', stamp['android'][key], new[key]))
+    if ios is not None and stamp.get('ios'):
+        new = {k: v for k, v in ios.items() if v}
+        if new.get('udid') and stamp['ios'].get('udid') and new['udid'] != stamp['ios']['udid']:
+            diffs.append(('ios udid', stamp['ios']['udid'], new['udid']))
     return diffs
 
 
