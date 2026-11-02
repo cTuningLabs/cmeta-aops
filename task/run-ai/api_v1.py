@@ -839,6 +839,20 @@ class CTask(InitCTask):
         items = context if isinstance(context, (list, tuple)) else re.split(r'[;\n]', str(context or ''))
         return [str(x).strip() for x in items if str(x).strip()]
 
+    def _context_crefs(self, item):
+        """A --context entry -> the cRefs it names: a cRef as it is; a template alias or an artifact alias through
+        the engine's `utils ai_context` (the rule of `cx <category> add -ai`); the entry itself when the engine has
+        no such command (before cMeta 0.38.0) or cannot resolve it."""
+        if '::' in item or os.sep in item or '/' in item:
+            return [item]
+        try:
+            r = self.cm.access({'category': 'utils', 'command': 'ai_context', 'names': item, 'con': False})
+        except Exception:
+            return [item]
+        if r.get('return', 1) == 0 and r.get('crefs'):
+            return list(r['crefs'])
+        return [item]
+
     def _context_sources(self, project_path, context, depth, limit, skip_ai_uses=False, project_cref=''):
         """--context entries (a cRef, or claude:<folder> for the memory Claude Code keeps for a folder), then the
         project's `ai_uses` - its own list, the default of its repository's _cmr.yaml, this machine's mapping (config
@@ -854,7 +868,12 @@ class CTask(InitCTask):
             if item.lower().startswith('claude:'):
                 wanted.append((item, 'claude', item.split(':', 1)[1].strip(), 0))
             else:
-                wanted.append((item, 'context', item, 1))
+                # a template alias (template: ai_uses: {alias} in an artifact's meta - what `cx <category> add -ai`
+                # takes) or an artifact alias in any category: the engine's resolver (cx utils ai_context, cMeta dev
+                # of 2026-11-02) gives the full cRef; an engine without it, or a name it cannot resolve, leaves the
+                # entry as typed for _find_artifact
+                for spec in self._context_crefs(item):
+                    wanted.append((item, 'context', spec, 1))
         if not skip_ai_uses:
             wanted += [(c, 'ai_uses', c, 1) for c, note in self._ai_uses(project_path)]
             wanted += [(c, 'ai_uses, repository default', c, 1) for c, note in self._repo_ai_uses(project_path)]
