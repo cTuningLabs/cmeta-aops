@@ -90,6 +90,52 @@ def test_first_use_cannot_guess_a_connected_phone(task_namespace):
         task.connect_once(context(), None, {}, {}, None, '', 15)
 
 
+def _away_from_home(task, answered):
+    """A saved home address that does not answer, no discovery on this network; connect answers only `answered`."""
+    def command(ctx, args, **kw):
+        if args == ['devices']: return {'return': 0, 'returncode': 0, 'stdout': 'List of devices attached\n'}
+        if args == ['mdns', 'services']: return {'return': 0, 'returncode': 0, 'stdout': 'List of discovered mdns services\n'}
+        if args[0] == 'connect':
+            ok = args[1] == answered
+            return {'return': 0, 'returncode': 0 if ok else 1, 'stdout': '', 'stderr': '' if ok else 'failed to connect'}
+        return {'return': 0, 'returncode': 0, 'stdout': 'WATCH\nWatch\nSamsung\nfeature:android.hardware.type.watch\n'}
+    task.command = command
+    task.remember = lambda root, receipt: None
+
+
+def test_away_from_home_the_error_says_to_give_the_main_screen_endpoint(task_namespace):
+    ns = task_namespace('keep-adb-connection-alive')
+    task = instance(ns)
+    _away_from_home(task, '10.0.0.5:42467')
+    with pytest.raises(ns['NoAnswer'], match='MAIN Wireless debugging screen'):
+        task.connect_once(context(), '/host', {}, {'device_serial': 'WATCH', 'endpoint': '192.168.1.127:34773'}, None, '', 15)
+
+
+def test_a_terminal_is_asked_once_for_the_main_screen_endpoint(task_namespace, monkeypatch):
+    ns = task_namespace('keep-adb-connection-alive')
+    task = instance(ns)
+    task.host_config = lambda host: ('/host', {}, {'device_serial': 'WATCH', 'endpoint': '192.168.1.127:34773'})
+    _away_from_home(task, '10.0.0.5:42467')
+    asked = []
+    monkeypatch.setattr(ns['sys'].stdin, 'isatty', lambda: True, raising=False)
+    ns['ask'] = lambda q, how='', optional=False: asked.append(q) or {'return': 0, 'answer': '10.0.0.5:42467'}
+    task.run.__globals__['ask'] = ns['ask']
+    ctx = context()
+    ctx['control']['quiet'] = False
+    r = task.run(ctx, host='watch', once=True)
+    assert r['return'] == 0 and r['serial'] == '10.0.0.5:42467' and len(asked) == 1
+
+
+def test_quiet_keeps_the_error_without_a_question(task_namespace):
+    ns = task_namespace('keep-adb-connection-alive')
+    task = instance(ns)
+    task.host_config = lambda host: ('/host', {}, {'device_serial': 'WATCH', 'endpoint': '192.168.1.127:34773'})
+    _away_from_home(task, '10.0.0.5:42467')
+    task.run.__globals__['ask'] = lambda *a, **k: pytest.fail('a quiet run must not ask')
+    r = task.run(context(), host='watch', once=True)
+    assert r['return'] != 0 and '--endpoint=IP:port' in r['error']
+
+
 def test_pairing_quiet_mode_does_not_make_up_a_pin(task_namespace):
     task = instance(task_namespace('keep-adb-connection-alive'))
     task.host_config = lambda host: (None, {}, {})
@@ -175,6 +221,72 @@ def test_host_run_reconnects_and_uses_the_new_transport():
     assert '11111' not in r['cmd']
 
 
+def _adb_category(module, scripts):
+    category = module.Category.__new__(module.Category)
+    category.cm = SimpleNamespace(catch_error=lambda r: bool(r.get('return')))
+    category._adb_cmd = lambda parent, args: 'adb ' + args
+    category._temp_script = lambda cmd: scripts.append(cmd) or {'return': 0, 'path': '/tmp/cmd.sh'}
+    category._cmd_stdin = lambda ctx, h, path: {'return': 0, 'cmd': 'adb -s S shell sh -s < ' + path}
+    return category
+
+
+@pytest.mark.parametrize('command', ['"echo one && echo two | cat"', 'dumpsys battery | grep "level"'])
+def test_an_adb_command_with_a_double_quote_goes_to_the_device_on_stdin(command):
+    # 2026-11-02: inside adb's "..." the command's own " closed the quoting and its && and | ran on THIS machine
+    module = host_module()
+    scripts = []
+    category = _adb_category(module, scripts)
+    h = {'type': 'adb', 'alias': 'watch', 'uid': '123', 'via': None, 'via_list': [],
+         'desc': {'access': {'shell': 'none', 'serial': 'S'}}}
+    r = category._cmd_run({}, h, command)
+    assert r['return'] == 0 and scripts == [command]
+    assert r['cmd'].endswith('sh -s < /tmp/cmd.sh') and '&&' not in r['cmd'] and '|' not in r['cmd']
+
+
+def test_the_script_route_connects_a_wireless_watch_once():
+    module = host_module()
+    scripts, calls = [], []
+    category = _adb_category(module, scripts)
+    category.connect_ = lambda ctx, name: calls.append(name) or {'return': 0, 'serial': '192.0.2.1:54321'}
+    # the real _cmd_stdin: it runs "sh -s" through _cmd_run again
+    category._cmd_stdin = lambda ctx, h, path: module.Category._cmd_stdin(category, ctx, h, path)
+    category._shell = lambda h: 'none'
+    category.cm.utils = SimpleNamespace(files=SimpleNamespace(quote_path=lambda p: p))
+    h = {'type': 'adb', 'alias': 'watch', 'uid': '123', 'via': None, 'via_list': [],
+         'desc': {'access': {'shell': 'none', 'serial': 'OLD', 'wireless': {'auto_connect': True}}}}
+    r = category._cmd_run({}, h, 'echo "a b" | cat')
+    assert r['return'] == 0 and calls == ['watch,123'] and scripts == ['echo "a b" | cat']
+    assert '-s 192.0.2.1:54321 shell sh -s' in r['cmd']
+
+
+def test_connect_hands_the_task_a_copy_of_the_context(monkeypatch):
+    module = host_module()
+    category = module.Category.__new__(module.Category)
+    category.cmeta = {'uses_categories': {'task': 'task,uid'},
+                      'uses_artifacts': {'task::keep-adb-connection-alive': 'keep,uid'}}
+    category._host_cache = {}
+    category._get_host = lambda ctx, alias: {'return': 0, 'host': {'alias': 'watch', 'uid': '123', 'type': 'adb'}}
+    category.cm = SimpleNamespace(error=lambda m: {'return': 1, 'error': m}, catch_error=lambda r: bool(r.get('return')))
+    def access(p):
+        p['ctx']['category'] = 'task,uid'           # what a task run does to the context it is given
+        return {'return': 0, 'serial': 'S'}
+    category.cm.access = access
+    ctx = {'category': 'host,uid', 'tasks': {}}
+    assert category.connect_(ctx, 'watch')['return'] == 0
+    assert ctx['category'] == 'host,uid'
+
+
+def test_a_plain_adb_command_keeps_its_one_line():
+    module = host_module()
+    scripts = []
+    category = _adb_category(module, scripts)
+    h = {'type': 'adb', 'alias': 'watch', 'uid': '123', 'via': None, 'via_list': [],
+         'desc': {'access': {'shell': 'none', 'serial': 'S'}}}
+    r = category._cmd_run({}, h, "getprop ro.product.model; pm list features | grep 'type.watch'")
+    assert r['return'] == 0 and scripts == []
+    assert r['cmd'] == "adb -s S shell \"getprop ro.product.model; pm list features | grep 'type.watch'\""
+
+
 def test_host_selection_accepts_a_program_context_with_loaded_modules():
     module = host_module()
     category = module.Category.__new__(module.Category)
@@ -221,3 +333,23 @@ def test_android_cpu_target_connects_the_selected_fleet_host_first(task_namespac
     assert task.init(ctx, {'device_host': 'watch'})['return'] == 0
     assert calls[0]['command'] == 'connect'
     assert ctx['tasks']['local']['adb_serial'] == '192.0.2.1:55555'
+
+
+@pytest.mark.parametrize('use,expected', [({'device_host': 'watch'}, '192.0.2.1:55555'), ({'serial': '192.0.2.1:55555'}, '192.0.2.1:55555')])
+def test_android_cpu_target_reads_the_use_words_of_a_program_run(task_namespace, use, expected):
+    # cx program run ... --use.target--android-cpu.device_host=watch: the framework merges those words after init,
+    # so init reads them from ctx['tasks']['use']; before, the quiet run took the first device - a USB phone
+    task = instance(task_namespace('target--android-cpu'))
+    task.cmeta = {'uses_categories': {'host': 'host,uid'}}
+    task.category_alias, task.category_uid = 'task', 'uid'
+    calls = []
+    def access(p):
+        calls.append(p)
+        if p['category'] == 'host,uid': return {'return': 0, 'serial': '192.0.2.1:55555'}
+        return {'return': 0, 'returncode': 0, 'stdout': 'PHONE\tdevice\n192.0.2.1:55555\tdevice\n'}
+    task.cm.access = access
+    ctx = context()
+    ctx['tasks']['use'] = {'target--android-cpu': use}
+    assert task.init(ctx, {})['return'] == 0
+    assert ctx['tasks']['local']['adb_serial'] == expected
+    assert ('device_host' in use) == (calls[0]['command'] == 'connect')

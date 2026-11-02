@@ -1,0 +1,18 @@
+authors: Grigori Fursin
+
+# Xcode is found through the developer directory it is selected in (xcode-select -p), not by a name on PATH:
+# /usr/bin/xcodebuild is a shim that answers only for the selected Xcode, and the Command Line Tools alone have no
+# iOS SDK and no devicectl. api_v1.py detect() reads that directory, asks "xcodebuild -version" and records the
+# toolchain folder (clang, ar), the iOS SDK (path and version, when the iOS platform is installed) and devicectl;
+# finish_dynamic_result() exposes them as {{global.apple-xcode.path_toolchain_bin}}, .ios_sdk_path, .path_devicectl.
+# There is no unattended install: Xcode comes from the App Store with the user's Apple ID (install_help_text).
+storage_key: apple-xcode
+
+empty: True
+
+install_help_text: |
+  Xcode was not found: "xcode-select -p" names no Xcode.app (the Command Line Tools alone are selected, or nothing).
+  Install Xcode from the App Store (an Apple ID is needed), open it once to accept the licence and install the
+  iOS platform (or: sudo xcodebuild -license accept; xcodebuild -downloadPlatform iOS), then select it:
+    sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+  and retry "cx tool setup apple.xcode".

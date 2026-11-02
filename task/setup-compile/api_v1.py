@@ -322,8 +322,16 @@ class CTask(InitCTask):
             openmp_flag = flags.get('openmp')
             link_openmp_flag = flags.get('link_openmp')
             if not openmp_flag and not link_openmp_flag:
-                return self.cm.error(f'openmp requested but flag is not defined in compiler meta in "{__file__}" ({__name__})')
-        
+                # A compiler that declares an empty openmp flag has no OpenMP for its target (Apple's clang for
+                # iOS): the program is built without it, _OPENMP undefined; one that declares none is misconfigured
+                if 'openmp' in flags:
+                    if ctx.get('control', {}).get('con', False):
+                        print(f'INFO: the compiler ({global_compiler_key}) has no OpenMP for this target: building without it')
+                    _openmp = False
+                else:
+                    return self.cm.error(f'openmp requested but flag is not defined in compiler meta in "{__file__}" ({__name__})')
+
+        if _openmp:
             if openmp_flag and openmp_flag not in compiler_flags:
                 compiler_flags.append(openmp_flag)
 
@@ -655,6 +663,11 @@ class CTask(InitCTask):
 
         x = result.get('src_file_names_str')
         if x:
+            cmd += ' ' + x
+
+        # Sources a target links into every executable (the launcher main of the iPhone target), never into a library
+        x = compiler_features.get('target_arch', {}).get('exe_extra_sources')
+        if x and not _lib:
             cmd += ' ' + x
 
         x = _with.get('flags4')

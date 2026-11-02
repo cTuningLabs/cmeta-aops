@@ -45,11 +45,12 @@ updates:
             with:
               static: True
 
-          # The static or the dynamic xopenme, as the build asks (the two have separate cache entries)
+          # The static or the dynamic xopenme, as the build asks (the two have separate cache entries); the
+          # program's hooks may have changed the request (static on an iPhone), so the local params are read
           - task: setup,a2f9b61079ce4333
             name: lib-xopenme,c7b96678a7734510
             with:
-              static: '{{params.compile.static|$None}}'
+              static: '{{local.params.compile.static|$None}}'
 
           # Only for Clang: its OpenMP runtime (static for a static build on Linux and macOS; on Windows
           # the DLL, whose folder goes on the run-time path)

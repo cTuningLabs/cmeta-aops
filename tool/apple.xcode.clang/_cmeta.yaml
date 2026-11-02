@@ -1,0 +1,29 @@
+artifact: 5202fa3f4c7845db
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+constraints:
+  supports_compute:
+  - ios-cpu
+  - ios-gpu
+  - ios-npu
+  supports_os:
+  - darwin
+creation_timestamp: '2026-11-02T19:36:45.690069+00:00'
+desc: "Apple clang C compiler of the Xcode toolchain, detected for the ios-cpu target (the iOS SDK, arm64, a minimum iOS version)."
+generator:
+  method: agent
+  agent: Claude Code 2.1.310
+  via: cmeta 0.38.1
+  gateway: dapple
+  by: Grigori Fursin
+tags:
+- lang-c
+- apple-clang
+last_update_timestamp: '2026-11-02T20:07:48.549682+00:00'
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.310
+  via: cmeta 0.38.1
+  gateway: dapple
+  by: Grigori Fursin
+  date: '2026-11-02'

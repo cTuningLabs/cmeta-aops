@@ -41,10 +41,15 @@ class CTask(InitCTask):
         adb_path = ctx_tasks['global']['adb']['qpath']
 
         env = params.get('env')
-        serial = params.get('serial')
+
+        # A program run names the device with --use.target--android-cpu.<param>, and the task framework merges those
+        # words into the parameters only AFTER init: read them here too, or a request for the watch ran on the only
+        # other device, a USB phone, without a word (2026-11-02: all four matmul runs on the Pixel)
+        use = ((ctx_tasks.get('use') or {}).get('target--android-cpu') or {})
+        serial = params.get('serial') or use.get('serial')
 
         # Optional fleet selection also reconnects wireless devices before enumerating adb transports.
-        device_host = params.get('device_host')
+        device_host = params.get('device_host') or use.get('device_host')
         if device_host:
             r = self.cm.access({'category': self.cmeta['uses_categories']['host'], 'command': 'connect',
                                 'arg1': str(device_host).split('::')[-1], 'serial': serial or '', 'ctx': ctx})

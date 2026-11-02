@@ -1,0 +1,23 @@
+authors: Grigori Fursin
+store_global: True
+storage_key: target--ios-cpu
+cache: True
+
+# Xcode (devicectl, the iOS SDK) before init selects the device
+uses_before_init:
+  - task: setup,a2f9b61079ce4333
+    name: apple.xcode,1f2abbf32a664e7a
+
+params_map:
+  arg2: device
+
+# One cache entry per device (its UDID) and bundle id: the development profile and the entitlements inside are
+# made for them (a cached entry whose profile expired or disappeared is not reused: api_v1.py)
+cache_extra_params:
+  udid: '{{local.ios_udid}}'
+  bundle_id: '{{local.ios_bundle_id}}'
+
+env_if_not_used:
+  CMETA_TARGET_IOS_CPU: 0
+env:
+  CMETA_TARGET_IOS_CPU: 1

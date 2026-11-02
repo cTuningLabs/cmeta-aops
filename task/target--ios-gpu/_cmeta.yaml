@@ -1,0 +1,13 @@
+artifact: 367cafef5c2f48e3
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-11-02T20:06:01.509524+00:00'
+desc: "Compute target: the GPU of an iPhone or iPad (the device as ios-cpu selects it), as a Metal probe run on the device reports it - the GPU families, limits and features; iOS programs run there."
+generator:
+  method: agent
+  agent: Claude Code 2.1.310
+  via: cmeta 0.38.1
+  gateway: dapple
+  by: Grigori Fursin
+name: iOS GPU
+sort: 3110

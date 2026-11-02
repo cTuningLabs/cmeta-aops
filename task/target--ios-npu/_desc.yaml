@@ -1,0 +1,16 @@
+authors: Grigori Fursin
+store_global: True
+storage_key: target--ios-npu
+cache: False
+
+# The device: target--ios-cpu selects it (--use.target--ios-cpu.device=<name|UDID>) with its signing identity and
+# development profile. api_v1.py asks the device what Core ML offers with a probe (src/probe.m, iOS 17 and newer):
+# the Neural Engine and its cores, the GPU and the CPU as Core ML compute devices. An app reaches the Neural
+# Engine only through a Core ML model (compiled into its bundle), never directly.
+uses:
+  - task: target--ios-cpu,c73b01784f3f429a
+
+env_if_not_used:
+  CMETA_TARGET_IOS_NPU: 0
+env:
+  CMETA_TARGET_IOS_NPU: 1

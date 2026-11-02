@@ -1,0 +1,17 @@
+authors: Grigori Fursin
+store_global: True
+storage_key: target--ios-gpu
+cache: False
+
+# The device: target--ios-cpu selects it (--use.target--ios-cpu.device=<name|UDID>) with its signing identity and
+# development profile; programs built for ios-gpu are compiled with Xcode's clang and run on the device like any
+# iOS program (Metal from Objective-C or Swift). api_v1.py then asks the device for its GPU with a Metal probe
+# (src/probe.m: built, signed, installed and launched like a program): the Metal device, its GPU families,
+# limits and features.
+uses:
+  - task: target--ios-cpu,c73b01784f3f429a
+
+env_if_not_used:
+  CMETA_TARGET_IOS_GPU: 0
+env:
+  CMETA_TARGET_IOS_GPU: 1

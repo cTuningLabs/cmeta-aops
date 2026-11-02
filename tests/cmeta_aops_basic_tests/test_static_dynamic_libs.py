@@ -97,7 +97,8 @@ def test_programs_pass_static_to_the_built_libs():
     for program in ["test-nmm-c-cpu", "test-nmm-cpp-cpu", "test-nmm-nvcc-cuda", "polybench-cpu-gemm", "polybench-gemm-cpu-cuda"]:
         entries = lib_entries(program, "lib-xopenme")
         assert len(entries) == 1
-        assert entries[0]["with"]["static"] == "{{params.compile.static|$None}}"
+        # test-nmm-c-cpu reads the local params: its hooks make the build static on an iPhone (2026-11-02)
+        assert entries[0]["with"]["static"] in ("{{params.compile.static|$None}}", "{{local.params.compile.static|$None}}")
     for program in ["polybench-cpu-gemm", "polybench-gemm-cpu-cuda"]:
         entries = lib_entries(program, "lib-polybench")
         assert len(entries) == 1 and entries[0]["with"]["static"] == "{{params.compile.static|$None}}"

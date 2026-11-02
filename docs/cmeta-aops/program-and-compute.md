@@ -362,6 +362,44 @@ to the host (`adb ... pull`), and profile reports are generated (`simpleperf rep
 The compiler for the exe itself comes from the android-ndk clang tool + `lib-sysroot-android`
 / `lib-openmp-android` libs (appended by programs' `updates` under an `android-cpu` `if:`).
 
+## B2. iOS remote execution
+
+iOS runs no plain executable, so the chain differs from Android's at every step after the compile:
+
+**`target--ios-cpu`** (`store_global`, key `target--ios-cpu`, `cache: True` per device and bundle id,
+`uses_before_init: setup apple.xcode`): `init` lists the paired devices (`xcrun devicectl list devices
+--json-output`) and selects one (`--device`: a name, UDID, serial or model; a question when several
+remain). `run` records the device as devicectl describes it and what signing needs: the identity
+(`security find-identity -p codesigning`, the first "Apple Development"), its team (the certificate's
+OU), a development profile of that team for the bundle id (`org.ctuning.cmeta.runner`) that provisions
+the device - found among Xcode's, or made by building a minimal runner project with `xcodebuild
+-allowProvisioningUpdates -allowProvisioningDeviceRegistration` (Xcode's own route: it registers the
+device in the team) - and the profile's entitlements (`entitlements.plist` in the cache entry). Every
+program runs under that one bundle id: a free personal team allows ten app ids a week. A cached target
+whose profile expired (seven days for a free team) or disappeared is made again (`filter_cache_artifacts`).
+`target--ios-gpu` and `target--ios-npu` depend on it and ask the device with a probe app (`ios.probe`:
+an Objective-C source built for the device, signed, installed, launched, one JSON line back).
+
+**The compile**: `tool/apple.xcode.clang` / `-cpp` (the `apple-xcode` family) add `-isysroot <iOS SDK>
+-arch arm64 -miphoneos-version-min=<min_os> -Dmain=cmeta_program_main` to every command and link the
+target's launcher (`task/target--ios-cpu/src/cmeta_ios_main.c`) into every executable (`exe_extra_sources`,
+never into a library): its `main` enters the app's Documents folder, removes last run's output files
+(`CMETA_IOS_CLEAN`), calls the program's main and writes the exit code into `tmp-cmeta-ios-exit.txt`.
+iOS has no static executables (`static_build: ''`): a "static" build links `.a` archives into a dynamically
+linked executable. Apple's clang has no OpenMP runtime for iOS: its `openmp` flag is declared empty and
+`setup-compile` builds such a program without OpenMP (an INFO line, `_OPENMP` undefined); a compiler that
+declares no `openmp` flag at all is still an error.
+
+**`setup-run`** (`category/task/api/ios.py`) makes `<program>.app` around the executable (Info.plist, the
+embedded profile), signs it (`codesign --entitlements`; through the user's GUI session with `launchctl
+asuser` and passwordless sudo when the session's login keychain is locked - an ssh session) and installs it
+(`devicectl device install app`); the run is `devicectl device process launch --console
+--terminate-existing --environment-variables <JSON> <bundle id> <arguments> < /dev/null` (stdin closed: with
+the console attached devicectl forwards it to the app); the output files and the exit file come back with
+`devicectl device copy from --domain-type appDataContainer`, and `grep -qx 0 tmp-cmeta-ios-exit.txt` fails
+the run as the program did. The build stamp records the device's UDID; `compile-and-run-program` rebuilds
+when it changes.
+
 ## C. `updates_cmd` — multi-command-line programs
 
 A program can expose several *named command lines* via `updates_cmd:`; each is a patch

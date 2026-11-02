@@ -12,6 +12,8 @@ from task_c36be4b9314a45e0.api.ctask import InitCTask
 
 from . import android
 
+from task_c36be4b9314a45e0.api import ios
+
 class CTask(InitCTask):
     """
     """
@@ -67,10 +69,15 @@ class CTask(InitCTask):
                         and not params.get('run_on_host'))
         _cuda = True if 'cuda' in target_compute else False
 
+        # A program for an iPhone or iPad runs inside an app bundle on the device that target--ios-cpu
+        # selected (ios-gpu and ios-npu set it up too): signed, installed and launched with devicectl (ios.py)
+        _ios = (any(c in ('ios-cpu', 'ios-gpu', 'ios-npu') for c in target_compute)
+                and not params.get('run_on_host'))
+
         _cpu = False
         if 'cpu' in target_compute:
             _cpu = True
-        if _android_cpu: 
+        if _android_cpu or _ios:
             _cpu = False
 
         ################################################################################
@@ -115,7 +122,10 @@ class CTask(InitCTask):
             ctx['tasks']['local']['target_path_exe'] = target_path_exe
 
         if _android_cpu:
-           target_xpath_exe = f'./{target_exe}' 
+           target_xpath_exe = f'./{target_exe}'
+        elif _ios:
+           # the launch command (the prefix) names the app by its bundle id; the arguments follow
+           target_xpath_exe = ''
         elif not target_exe:
            target_xpath_exe = ''
         else:
@@ -372,6 +382,49 @@ class CTask(InitCTask):
 
             postfix_cmd = '"'
 
+        # Setup iOS: the bundle, its signature and its installation before the run; the launch with the console
+        if _ios:
+            if not target_exe:
+                return self.cm.error('a program for the ios-cpu target needs an executable (target_exe) to put into its app bundle')
+
+            target_ios = _global['target--ios-cpu']
+            signing = target_ios.get('signing') or {}
+            udid = target_ios['udid']
+            bundle_id = signing.get('bundle_id') or target_ios.get('bundle_id')
+            devicectl = target_ios.get('devicectl') or 'xcrun devicectl'
+
+            app_dir = os.path.join(target_path, target_exe + '.app')
+            error = ios.make_bundle(app_dir, target_path_exe, bundle_id, signing['profile'], target_ios.get('min_os') or ios.MIN_OS)
+            if error:
+                return self.cm.error(f'the app bundle "{app_dir}" could not be made: {error}')
+            if con and verbose:
+                print (f'{space}INFO: app bundle "{app_dir}" ({bundle_id})')
+
+            prefix, error = ios.signing_prefix()
+            if error:
+                return self.cm.error(error)
+
+            cmds.append(ios.codesign_cmd(prefix, signing['identity'], signing['entitlements'], app_dir, self.cm.q))
+            cmds.append(ios.install_cmd(devicectl, udid, app_dir, self.cm.q))
+
+            # Input files go into the app's Documents folder, the program's working folder
+            for k in input_files:
+                f = input_files[k]
+                ff = os.path.basename(f)
+                cmds.append(ios.copy_to_cmd(devicectl, udid, bundle_id, f, ff, self.cm.q))
+                input_files[k] = ff
+
+            # The run-time environment travels with the launch; the launcher removes last run's output files
+            env_on_device = {k: str(v) for k, v in run_time_env.items() if v is not None and not k.startswith('+')}
+            if output_files:
+                env_on_device['CMETA_IOS_CLEAN'] = ';'.join(output_files)
+
+            add_to_local['ios_app_dir'] = app_dir
+            add_to_local['ios_bundle_id'] = bundle_id
+
+            prefix_cmd = ios.launch_prefix(devicectl, udid, bundle_id, env_on_device)
+            postfix_cmd = ios.LAUNCH_POSTFIX
+
         x = start_exe_prefix if target_exe else ''
 
         y = x + target_exe if target_exe else ''
@@ -407,6 +460,13 @@ class CTask(InitCTask):
                 cmds.append(adb_with_serial + f' shell "rm -rf {xx1}"')
                 run_time_cmds.append(adb_with_serial + f' pull {xx1} {xx2}')
 
+            if _ios:
+                run_time_cmds.append(ios.copy_from_cmd(devicectl, udid, bundle_id, f, f, self.cm.q))
+
+        # The program's exit code on the device, written by the launcher (devicectl reports none)
+        if _ios:
+            run_time_cmds.append(ios.copy_from_cmd(devicectl, udid, bundle_id, ios.EXIT_FILE, ios.EXIT_FILE, self.cm.q))
+            run_time_cmds.append(ios.exit_check_cmd())
 
         if _profile:
             if _android_cpu:
@@ -444,7 +504,7 @@ class CTask(InitCTask):
         if cmds:
             if con and verbose:
                 print ('')
-                print (f'{space}INFO: Running extra CMD for Android CPU')
+                print (f'{space}INFO: Running extra CMD for the target device')
 
             save_script = os.path.join(target_path, 'tmp-cmeta-prepare-run{{file_ext_bat}}')
 

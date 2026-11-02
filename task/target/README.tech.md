@@ -42,6 +42,9 @@ cx program run <program> --compute                  # asks which ones (several c
 | `android-cpu` | an Android device over adb (`--serial`) |
 | `android-gpu` | the GPU of that device: its Vulkan devices (`cmd gpu vkjson`), GLES driver and OpenCL library (public or not). Programs are built with the NDK and run over adb, as for `android-cpu`. From the adb shell, a vendor `libOpenCL.so` may find its platform only when loaded in the vendor namespace (`android_load_sphal_library`) |
 | `android-npu` | the NPU of that device, as an adb shell program reaches it: the NNAPI accelerators (`google-edgetpu`, `mtk-mdla`, ...) and the vendor stack (Samsung ENN: app only; MediaTek APU: NNAPI; Google TPU: NNAPI and LiteRT; Qualcomm: QNN). Fails without an NNAPI accelerator, saying what the vendor stack needs |
+| `ios-cpu` | an iPhone or iPad on a Mac's USB (`--device=<name or UDID>`, `xcrun devicectl`): programs are built with Xcode's clang and the iOS SDK (`tool/apple.xcode`, `tool/apple.xcode.clang`), put into an app bundle, signed with the developer's identity and the development profile the target finds or makes, installed and launched with the console attached; their output files come back from the app's Documents folder ([task/target--ios-cpu](../target--ios-cpu/README.md)) |
+| `ios-gpu` | the GPU of that device, as a Metal probe run on it reports it: the device and architecture, the highest Apple / Common / Metal GPU family, limits and features |
+| `ios-npu` | the Neural Engine of that device, as a Core ML probe run on it reports it (iOS 17 and newer): its cores and the compute devices of Core ML - an app reaches it only through a Core ML model. Fails when Core ML lists none |
 | `tpu`, `opu-lumai` | placeholders: fail until supported |
 
 ## Several targets at once

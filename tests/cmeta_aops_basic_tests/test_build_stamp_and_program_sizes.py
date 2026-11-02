@@ -137,8 +137,11 @@ def test_where_the_guard_runs():
     i_access = src.index("r = self.cm.access(p)", i_deadline)
     i_record = src.index("_impact['disk_gb'] = round(sizes.folder_gb(target_path), 6)", i_access)
     i_save = src.index("write_file(path_repro_compile", i_record)
-    i_stamp = src.index("self.write_build_stamp(ctx, target_path, artifact_alias, artifact_uid,\n", i_save)
+    i_stamp = src.index("self.write_build_stamp(ctx, target_path, artifact_alias, artifact_uid, _facts)", i_save)
     assert i_reuse < i_stampless < i_implied < i_disk < i_deadline < i_access < i_record < i_save < i_stamp
+    # the stamp records the compile parameters as requested, taken before the program's hooks run (in the compile)
+    i_requested = src.index("_requested_compile = copy.deepcopy(params.get('compile') or {})", i_implied)
+    assert i_implied < i_requested < i_disk and src.index("_facts['compile_params'] = _requested_compile", i_save) < i_stamp
     i_push = src.index("ctx['tasks'].setdefault('build_stamps', []).append({'target_path': target_path, 'rebuild': bool(params.get('recompile'))})", i_disk)
     i_pop = src.index("ctx['tasks']['build_stamps'].pop()", i_access)
     assert i_disk < i_push < i_deadline and i_access < i_pop < i_record       # pushed before, popped in the finally

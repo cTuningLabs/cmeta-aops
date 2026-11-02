@@ -63,7 +63,7 @@ class CTask(InitCTask):
         """
         What a build is made for, as the stamp of the build folder records it: the targets, the host,
         the compiler (from the global context under compiler_key, when resolved), the compile
-        parameters that change the output, the Android device.
+        parameters that change the output, the Android or iOS device.
         """
         _global = ctx['tasks']['global']
         compiler = None
@@ -72,8 +72,10 @@ class CTask(InitCTask):
         android_target = _global.get('target--android-cpu') or {}
         android = {'serial': android_target.get('serial'),
                    'abi': (android_target.get('features') or {}).get('ro.product.cpu.abi')} if android_target else None
+        ios_target = _global.get('target--ios-cpu') or {}
+        ios = {'udid': ios_target.get('udid')} if ios_target else None
         return {'compute': list(compute or []), 'host': _global['host']['os']['uname'], 'compiler': compiler,
-                'compile_params': params.get('compile') or {}, 'android': android}
+                'compile_params': params.get('compile') or {}, 'android': android, 'ios': ios}
 
     ############################################################
     def requested_compiler(self,
@@ -122,7 +124,8 @@ class CTask(InitCTask):
         cannot be written is left alone."""
         stamp = build_stamp.make_stamp(artifact_alias, artifact_uid, facts['compute'], facts['host'],
                                        compiler = facts.get('compiler'), compile_params = facts.get('compile_params'),
-                                       android = facts.get('android'), sources = self.source_digests(ctx))
+                                       android = facts.get('android'), sources = self.source_digests(ctx),
+                                       ios = facts.get('ios'))
         error = build_stamp.write_stamp(target_path, stamp)
         if error and ctx['control'].get('con', False) and ctx['control'].get('verbose', False):
             print (f'WARNING: the build stamp of "{target_path}" was not written: {error}')
@@ -679,6 +682,10 @@ class CTask(InitCTask):
                         if compile_target_adb_serial != target_adb_serial:
                             recompile = True
 
+                    if not recompile and 'ios-cpu' in compile_target_compute:
+                        if _compiled_state_global.get('target--ios-cpu',{}).get('udid') != ctx_tasks['global'].get('target--ios-cpu',{}).get('udid'):
+                            recompile = True
+
                     if not recompile:
                         compile_uname = _compiled_state_global['host']['os']['uname']
 
@@ -779,6 +786,11 @@ class CTask(InitCTask):
                         r = self.refuse_stale_build(ctx, target_path, self.build_facts(ctx, params, selected_compute))
                         if self.cm.catch_error(r): return r
 
+                    # The compile parameters as this run requested them, kept for the stamp: a program's hooks
+                    # may adjust them on the way (static libraries on an iPhone), and the next run compares its
+                    # request with the stamp before those hooks run
+                    _requested_compile = copy.deepcopy(params.get('compile') or {})
+
                     # The free space of the build folder's volume against the program's _desc_sizes.yaml
                     r = self.check_program_disk_space(ctx, params, path, artifact_alias or artifact_uid, target_path, selected_compute)
                     if self.cm.catch_error(r): return r
@@ -840,8 +852,9 @@ class CTask(InitCTask):
 
                     # The stamp: what this folder's build is made for (the compiler is resolved now)
                     _compiler_key = ctx['tasks']['local'].get('global_compiler_key')
-                    self.write_build_stamp(ctx, target_path, artifact_alias, artifact_uid,
-                                           self.build_facts(ctx, params, selected_compute, compiler_key = _compiler_key))
+                    _facts = self.build_facts(ctx, params, selected_compute, compiler_key = _compiler_key)
+                    _facts['compile_params'] = _requested_compile
+                    self.write_build_stamp(ctx, target_path, artifact_alias, artifact_uid, _facts)
 
 #                ###########################################################################################
 #                # Check if customization2 after uses_pre (compute, etc)
@@ -887,7 +900,7 @@ class CTask(InitCTask):
             # --provenance=loaded: the dynamic loader logs what the run's processes load (a file per
             # process in the build folder); nothing is added to the environment in the other modes
             if provenance_mode == 'loaded' and uname in ('linux', 'darwin') \
-                    and not any(str(c).startswith('android') for c in selected_compute):
+                    and not any(str(c).startswith(('android', 'ios')) for c in selected_compute):
                 provenance.clear_loader_logs(target_path)
                 if uname == 'darwin':
                     # macOS strips DYLD_* from the environment of the system shell that runs the

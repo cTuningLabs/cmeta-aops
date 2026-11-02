@@ -1,0 +1,13 @@
+artifact: c73b01784f3f429a
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-11-02T19:36:46.358397+00:00'
+desc: "Compute target: an iPhone or iPad on a Mac, selected by name or UDID (devicectl); the iOS SDK, the signing identity and the development profile follow."
+generator:
+  method: agent
+  agent: Claude Code 2.1.310
+  via: cmeta 0.38.1
+  gateway: dapple
+  by: Grigori Fursin
+name: iOS CPU
+sort: 3100

@@ -42,7 +42,61 @@ from cmeta.category import InitCategory
 DESC_FILE = '_desc.yaml'
 STATE_FILE = 'state.yaml'
 
-TYPES = ('ssh', 'wsl', 'docker', 'adb')
+TYPES = ('ssh', 'wsl', 'docker', 'adb', 'ios')
+
+# An iOS device (type ios) is reached through a Mac (its "via": Xcode there) with devicectl: it runs no command of
+# its own, so cx host run says so; status and probe ask the Mac's "xcrun devicectl list devices"; programs reach it
+# through the ios-cpu / ios-gpu / ios-npu targets (task/target--ios-cpu).
+DEVICECTL_LIST = 'xcrun devicectl list devices --timeout 10'
+DEVICECTL_LIST_JSON = ('f=$(mktemp /tmp/cmeta-devicectl.XXXXXX); xcrun devicectl list devices --timeout 10 --json-output "$f" '
+                       '>/dev/null 2>&1; cat "$f"; rm -f "$f"')
+
+
+def devicectl_state_of(table, udid):
+    """
+    The State column of "xcrun devicectl list devices" for the device with the UDID ("connected", "connected (no
+    DDI)", "available (paired)", "unavailable"), or None when it is not listed. The columns are separated by two
+    spaces or more; an empty Hostname cell disappears, so the state is the cell after the identifier's.
+    """
+    udid = str(udid or '').strip().lower()
+    if not udid:
+        return None
+    for line in str(table or '').splitlines():
+        cells = [c.strip() for c in re.split(r'\s{2,}', line.strip()) if c.strip()]
+        for i, cell in enumerate(cells):
+            if cell.lower().startswith(udid):
+                return cells[i + 1] if i + 1 < len(cells) else ''
+    return None
+
+
+def ios_state_of(devices, udid):
+    """
+    What state.yaml records of an iOS device from devicectl's JSON device list: its name, OS, model, CPU type,
+    storage and developer mode, as the probe of a host writes them (hostname, os, arch, model, ...). None when
+    the UDID is not listed.
+    """
+    udid = str(udid or '').strip().lower()
+    for d in devices or []:
+        hp = d.get('hardwareProperties') or {}
+        if str(hp.get('udid') or '').lower() != udid:
+            continue
+        dp = d.get('deviceProperties') or {}
+        cp = d.get('connectionProperties') or {}
+        state = {'hostname': dp.get('name') or '',
+                 'os': f"iOS {dp.get('osVersionNumber') or '?'} ({hp.get('marketingName') or '?'}, {hp.get('productType') or '?'})",
+                 'arch': 'arm64',
+                 'cpu': (hp.get('cpuType') or {}).get('name') or '',
+                 'model': hp.get('productType') or '',
+                 'marketing_name': hp.get('marketingName') or '',
+                 'os_build': dp.get('osBuildUpdate') or '',
+                 'developer_mode': dp.get('developerModeStatus') or '',
+                 'pairing': cp.get('pairingState') or '',
+                 'identifier': d.get('identifier') or ''}
+        storage = hp.get('internalStorageCapacity')
+        if isinstance(storage, (int, float)) and storage > 0:
+            state['storage'] = f'{int(round(storage / 1e9))} GB'
+        return {k: v for k, v in state.items() if v != ''}
+    return None
 
 DEFAULT_SSH_PORT = 22
 DEFAULT_CONNECT_TIMEOUT = 15     # seconds, ssh -o ConnectTimeout
@@ -526,9 +580,12 @@ class Category(InitCategory):
                     break
             if not local_parent:
                 return self.cm.error('run connect on a declared ADB controller: ' + ', '.join(parents))
+        # A shallow copy: the task run sets the top-level keys of the context it is given (its category among them),
+        # and a later host lookup of the same call with the caller's context then searched the task category ('host
+        # "<watch>" not found', 2026-11-02); the nested dicts stay shared, as the task framework expects
         r = self.cm.access({'category': self.cmeta['uses_categories']['task'], 'command': 'run',
                             'arg1': self.cmeta['uses_artifacts']['task::keep-adb-connection-alive'],
-                            'ctx': ctx, 'host': h['alias'] + ',' + h['uid'], 'ip': endpoint,
+                            'ctx': dict(ctx), 'host': h['alias'] + ',' + h['uid'], 'ip': endpoint,
                             'serial': serial or '', 'once': not keepalive, 'pair': pair,
                             'pairing_endpoint': pairing_endpoint or '', 'period': period,
                             'duration': duration, 'timeout': timeout, 'instructions': instructions})
@@ -991,6 +1048,8 @@ class Category(InitCategory):
                 r = self._cmd_run(ctx, parent, local_cmd)
                 if r['return'] > 0: return r
                 local_cmd = r['cmd']
+        elif t == 'ios':
+            return self.cm.error(f'host "{alias}" is an iOS device: restart it from its own screen')
         else:
             return self.cm.error(f'unknown type "{t}"')
 
@@ -3077,10 +3136,17 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         r = self.cm.access(p)
         if r['return'] > 0 and r['return'] != 16: return r
 
+        # A host kept in an archive repository ("archive: true" in its _cmr.yaml - a machine given back or deleted,
+        # moved there with "cx host move <host> <archive repo>:") is out of every fleet selection, listing and page;
+        # named exactly, it is still found (2026-11-02, the user's deleted Scaleway VM in fgg-arc)
+        exact = arg1 is not None and not any(c in str(arg1) for c in '*?')
+
         hosts = []
         for a in r.get('artifacts', []):
             # Alias-only lookups follow redirects in base find; fleet selections skip the stubs.
             if (a.get('cmeta') or {}).get('migrated_to'):
+                continue
+            if not exact and self._in_archive_repo(a.get('path')):
                 continue
             h = self._load_host(a)
             if machine and h['machine'] != machine: continue
@@ -3096,6 +3162,26 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 selected.append(r['host'])
             hosts = selected
         return {'return': 0, 'hosts': hosts}
+
+    def _in_archive_repo(self, path):
+        """Whether the artifact at `path` lives in a repository whose _cmr.yaml says "archive: true" (read from the
+        file, cached per repository: a flag added later is seen without a reindex)."""
+        if not path:
+            return False
+        cache = self.__dict__.setdefault('_archive_repo_cache', {})
+        d = os.path.dirname(os.path.abspath(path))
+        for _ in range(8):
+            if d in cache:
+                return cache[d]
+            f = os.path.join(d, '_cmr.yaml')
+            if os.path.isfile(f):
+                cache[d] = bool((self._read_yaml(f) or {}).get('archive'))
+                return cache[d]
+            parent = os.path.dirname(d)
+            if parent == d:
+                break
+            d = parent
+        return False
 
     def _get_host(self, ctx, alias, project=None):
         """Exactly one host."""
@@ -3486,6 +3572,26 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 return f'no serial declared (connected: {", ".join(connected)})' if connected else 'down'
             return 'down'
 
+        if t == 'ios':
+            # the Mac that holds the device lists it: connected (USB, or a tunnel), else known but away
+            udid = str(acc.get('udid') or '')
+            if not udid:
+                return 'no udid declared'
+            cmd = DEVICECTL_LIST
+            if parent is not None:
+                r = self._cmd_run(ctx, parent, cmd)
+                if r['return'] > 0: return 'error: ' + r['error']
+                cmd = r['cmd']
+            rr = self._run_quick(cmd, cmd_timeout)
+            if rr.get('timeout'):
+                return f'timeout ({int(cmd_timeout)}s, devicectl' + (f' on {h["via"]}' if parent is not None else '') + ')'
+            if rr.get('returncode', 1) != 0:
+                return 'error: devicectl not available' + (f' on {h["via"]}' if parent is not None else '') + ' (Xcode)'
+            state = devicectl_state_of(rr.get('stdout', ''), udid)
+            if state is None:
+                return 'down (not paired with ' + (h['via'] if parent is not None else 'this Mac') + ')'
+            return 'up' if state.startswith('connected') else f'down ({state})'
+
         return f'unknown type "{t}"'
 
     def _status_through_ssh(self, ctx, h, cmd_timeout):
@@ -3761,10 +3867,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         """
         t = h['type']
         wireless = (h['desc'].get('access') or {}).get('wireless')
-        if t == 'adb' and isinstance(wireless, dict) and wireless.get('auto_connect'):
+        if t == 'adb' and isinstance(wireless, dict) and wireless.get('auto_connect') and not h.get('_adb_connected'):
             r = self.connect_(ctx, h['alias'] + ',' + h['uid'])
             if self.cm.catch_error(r): return r
             h['desc'].setdefault('access', {})['serial'] = r['serial']
+            h['_adb_connected'] = True          # once per run: the script route below comes back here
         acc = h['desc'].get('access') or {}
         shell = self._shell(h)
         if acc.get('x11'):
@@ -3795,6 +3902,17 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         # such a command goes to the host's shell on stdin, from a temporary script.
         if (t in ('wsl', 'docker') and local_windows and cmd is not None and not raw and not interactive and not stdin
                 and any(c in cmd for c in '"^%\n\r')):
+            r = self._temp_script(cmd)
+            if r['return'] > 0: return r
+            return self._cmd_stdin(ctx, h, r['path'])
+
+        # An adb host of this machine: the command rides inside "..." on adb's command line, which this machine's shell
+        # reads first. A command holding a double quote closed that quoting and its && and | ran HERE (2026-11-02:
+        # "... | grep -E 'level|AC powered'" for the watch ran this laptop's ac.bat, which opened Acrobat). Such a
+        # command - on a POSIX machine also one with $, ` or \, which its shell expands inside double quotes - goes
+        # to the device's sh on stdin, from a temporary script, as for wsl and docker above.
+        if (t == 'adb' and parent is None and cmd is not None and not raw and not interactive and not stdin
+                and any(c in cmd for c in ('"^%\n\r' if os.name == 'nt' else '"$`\\\n\r'))):
             r = self._temp_script(cmd)
             if r['return'] > 0: return r
             return self._cmd_stdin(ctx, h, r['path'])
@@ -3866,6 +3984,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             else:
                 inner = f'{s}shell "{cmd}"'
             local = self._adb_cmd(parent, inner)
+
+        elif t == 'ios':
+            return self.cm.error(f'host "{h["alias"]}" is an iOS device: it runs no command of its own - a program reaches it '
+                                 f'through the ios-cpu target on {h.get("via") or "its Mac"} '
+                                 f'(cx program run <program> ios-cpu --use.target--ios-cpu.device={acc.get("udid") or "<UDID>"})')
 
         else:
             return self.cm.error(f'host "{h["alias"]}": unknown type "{t}" (one of {", ".join(TYPES)})')
@@ -4255,7 +4378,51 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             print(f'{h["alias"]}: probed - cMeta {st.get("cmeta_version") or "-"}, aops {st.get("aops_version") or "-"}, '
                   f'{st.get("os", "?")}')
 
+    def _probe_ios(self, ctx, h, timeout, verbose):
+        """The probe of an iOS device: what devicectl on its Mac says of it (no script runs on the device)."""
+        acc = h['desc'].get('access') or {}
+        udid = str(acc.get('udid') or '')
+        if not udid:
+            return self.cm.error(f'host "{h["alias"]}": no udid declared (access: udid: <from xcrun devicectl list devices>)')
+        parent = None
+        if h.get('via'):
+            r = self._get_host(ctx, h['via'])
+            if r['return'] > 0: return r
+            if not self._here(r['host']):
+                parent = r['host']
+        cmd = DEVICECTL_LIST_JSON
+        if parent is not None:
+            r = self._cmd_run(ctx, parent, cmd)
+            if r['return'] > 0: return r
+            cmd = r['cmd']
+        rr = self._run_local(cmd, capture=True, timeout=timeout, con=verbose, verbose=verbose)
+        try:
+            devices = (json.loads(rr.get('stdout', '') or '{}').get('result') or {}).get('devices') or []
+        except ValueError:
+            devices = []
+        if rr.get('returncode', 1) != 0 and not devices:
+            err = (rr.get('stderr', '') or '').strip().splitlines()
+            return self.cm.error(f'probe failed: devicectl answered nothing' + (f' on {h["via"]}' if parent is not None else '')
+                                 + (f': {err[-1]}' if err else ''))
+        found = ios_state_of(devices, udid)
+        if found is None:
+            return self.cm.error(f'device {udid} is not paired with ' + (h['via'] if parent is not None else 'this Mac')
+                                 + ' (unlock it, connect it over USB, answer "Trust This Computer")')
+
+        state = {'probed_at': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
+                 'probed_from': platform.node(),
+                 'probed_via': h.get('via') or ''}
+        state.update(found)
+        state['repos'] = {}
+        r = self.cm.utils.files.safe_write_file(os.path.join(h['path'], STATE_FILE), state, atomic=True,
+                                                sort_keys=False, logger=self.logger)
+        if r['return'] > 0: return r
+        h['state'] = state
+        return {'return': 0, 'state': state}
+
     def _probe_one(self, ctx, h, timeout, verbose):
+        if h['type'] == 'ios':
+            return self._probe_ios(ctx, h, timeout, verbose)
         shell = self._shell(h).strip()
         if h['type'] == 'adb':
             name = 'probe-android.sh'
@@ -5367,6 +5534,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             if h.get('via_seen'):
                 return text + f' via {h["via"]} (moves)'
             return text + ' (moves: ' + ', '.join(via_list) + ')'
+        if t == 'ios':
+            return f'ios {acc.get("udid", "?")}' + (f' via {h["via"]}' if h.get('via') else '')
         return '?'
 
     @staticmethod
@@ -5403,6 +5572,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             'alias': h['alias'],
             'type': h['type'],
             'machine': machine,
+            'machine_ref': str(h['desc'].get('machine') or ''),    # the declared cRef: a page links the machine's record
             'os': os_text if len(os_text) <= 26 else os_text[:25] + '~',
             'os_short': self._os_short(h),
             'sudo': st.get('sudo', '-'),
