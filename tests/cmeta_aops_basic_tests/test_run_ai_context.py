@@ -129,6 +129,35 @@ def test_context_entries_are_separated_by_semicolons_never_commas(CTask):
     assert CTask._context_items("") == [] and CTask._context_items(None) == []
 
 
+def test_context_aliases_resolve_through_the_engine(CTask):
+    """A --context entry that is a template alias or an artifact alias (not a cRef, not a folder) is given to the
+    engine's `utils ai_context` (cMeta dev 2026-11-02: the rule of `cx <category> add -au`); its cRefs replace the
+    entry; a cRef or a folder is taken as it is; an engine without the command, or a name it cannot resolve, leaves
+    the entry as typed for the old lookup."""
+    import types
+    t = CTask.__new__(CTask)
+    calls = []
+
+    def access(i):
+        calls.append(i)
+        if i['names'] == 'dapple':
+            return {'return': 0, 'crefs': ['fgg.project,cc4b::Dapple,1234']}
+        if i['names'] == 'two':
+            return {'return': 0, 'crefs': ['a,1::x,2', 'b,3::y,4']}
+        if i['names'] == 'old-engine':
+            raise RuntimeError('no such command')
+        return {'return': 1, 'error': 'no artifact for the name "%s"' % i['names']}
+
+    t.cm = types.SimpleNamespace(access=access)
+    assert t._context_crefs('dapple') == ['fgg.project,cc4b::Dapple,1234']
+    assert calls[-1]['category'] == 'utils' and calls[-1]['command'] == 'ai_context' and calls[-1]['names'] == 'dapple'
+    assert t._context_crefs('two') == ['a,1::x,2', 'b,3::y,4']
+    assert t._context_crefs('nobody') == ['nobody'] and t._context_crefs('old-engine') == ['old-engine']
+    n = len(calls)
+    assert t._context_crefs('fgg.project,cc4b::cMeta,5e1b') == ['fgg.project,cc4b::cMeta,5e1b']
+    assert t._context_crefs('/work/x') == ['/work/x'] and len(calls) == n       # a cRef or a folder asks nothing
+
+
 # ---------------------------------------------------------------------------------------------- cRefs
 def test_cref_parts_keep_commas_in_an_artifact_alias(CTask):
     assert CTask._cref_parts(PROJECT) == ("work", "0f1e2d3c4b5a6978", "20260101.a work folder, with commas", "0123456789abcdef")

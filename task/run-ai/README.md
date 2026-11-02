@@ -403,7 +403,7 @@ applied on the user's word (the section after next). The sources, in this order:
 
 | Source | Where it is written | Kind in the dry run |
 |---|---|---|
-| `--context` | the command line, for this run: entries separated by `;` - a cRef, or `claude:<folder>` for the memory Claude Code keeps for a folder | `context`, `claude` |
+| `--context` | the command line, for this run: entries separated by `;` - a cRef, the alias of a declared AI context (`template: ai_uses: {alias, title, sort}` in an artifact's meta: `cx utils ai_context` lists them, the rule of `cx <category> add -au`; an artifact alias in any category too; an ambiguity is an error naming the candidates), or `claude:<folder>` for the memory Claude Code keeps for a folder | `context`, `claude` |
 | the project's `ai_uses` | its `_desc.yaml` | `ai_uses` |
 | the repository default | an `ai_uses` list in the `_cmr.yaml` of the project's repository: every artifact of that repository reads it, on top of its own list | `ai_uses, repository default` |
 | this machine's mapping | the config artifact `task-run-ai` of this machine, key `local_ai_uses` (next section) | `ai_uses, machine-local: <key>` |
