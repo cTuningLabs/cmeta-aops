@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.61.3.1)
+## 0.61.4
 - **A framework's own report in `--provenance=loaded`**: after an observed run the recorder asks torch
   (`torch.version.cuda`, cuDNN, the CUDA devices it sees, MPS), ONNX Runtime (device, providers) and JAX
   (backend, devices) what they report about themselves - through the run's own interpreter by its full
