@@ -2,6 +2,16 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.61.3.1)
+- **A framework's own report in `--provenance=loaded`**: after an observed run the recorder asks torch
+  (`torch.version.cuda`, cuDNN, the CUDA devices it sees, MPS), ONNX Runtime (device, providers) and JAX
+  (backend, devices) what they report about themselves - through the run's own interpreter by its full
+  path, with the run's environment, in the build folder, one process per framework with a 90 s limit -
+  and records it under `runtime.frameworks[<dist>].reports` (the interpreter and the seconds under
+  `.probe`). A torch that reports another CUDA than its wheel was built for, or no CUDA device in a `cuda`
+  run, is a warning (`framework`); a probe without an answer is a note. `on` and `strict` start no process.
+  Tests: `test_framework_probes_use_the_runs_python`, `test_framework_report_checks`.
+
 ## 0.61.3
 - **The suite passes under a Windows profile with a space in its name** (the NucBox, `C:\Users\Grigori Fursin`,
   with its temp folder under it): four tests had assumed a path without spaces - two expected the program's

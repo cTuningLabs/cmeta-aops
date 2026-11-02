@@ -231,8 +231,15 @@ attached by hand: `cx task run test-session --id=<id> --attach=<build folder>/pr
 - **Python programs:** the binary is the interpreter; the interesting libraries (a wheel's CUDA runtime)
   appear with `--provenance=loaded`, each attributed to the pip tool that installed its distribution, and
   `runtime.frameworks` names the distributions and versions behind them (and the CUDA a wheel was built
-  for, from its version tag). What a framework reports about itself at run time (`torch.version.cuda`,
-  ONNX Runtime's active providers) is not asked: it would need a process of its own after the run.
+  for, from its version tag). With `--provenance=loaded` (since 0.61.3.1) the recorder also asks each
+  framework what it reports about itself after the run - torch's `torch.version.cuda`, its cuDNN, the
+  CUDA devices it sees, MPS; ONNX Runtime's device and providers; JAX's backend and devices - through the
+  run's own interpreter by its full path (the `python` tool of the run, never the `python` of the PATH),
+  with the run's environment, in the build folder, one process per framework with a 90 s limit. The answer
+  is `runtime.frameworks[<dist>].reports`, the interpreter and the seconds `.probe`; a framework that
+  reports another CUDA than its wheel was built for, or no CUDA device in a `cuda` run, is a **warning**
+  (`framework`); a probe that does not answer is a note, never a failed run. `on` and `strict` start no
+  process: a run costs what it cost before.
 - The record describes **one run** in one build folder. The folder's entry is named by the request, so a
   changed `--use.<tool>.version` builds in its own entry; a changed resolution of the *same* request (a
   toolkit upgraded underneath an auto choice) is refused by the build-folder stamp and rebuilt with
