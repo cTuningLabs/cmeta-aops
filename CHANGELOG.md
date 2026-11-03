@@ -2,6 +2,13 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.63.0.1)
+- **`cx host upgrade --version=X`: a host that ends on another version failed.** A host that declares its own
+  `cmeta: upgrade` command runs it as written, so the version did not reach it, and the round said "already <old>"
+  as a success (a WSL distro's `pip install -U cmeta` met pip's cached view of PyPI right after a release). Now such
+  a host reads `asked X, has Y`, counts as failed and is not restarted, and a warning says beforehand when a declared
+  command does not name the version (also in `--dry-run`). Tests: `test_host_upgrade_version.py`.
+
 ## 0.63.0
 - **run-ai: a conversation goes on natively on any machine the project is synced to (Claude Code and Codex).** Their
   native session files live in the user's home (Claude Code's `projects/<slug>/<id>.jsonl` and its `<id>/` folder,

@@ -2173,6 +2173,22 @@ class Category(InitCategory):
             f.write('# Written by "cx host backup": what was copied from the host and where it belongs; "cx host restore" reads it.\n\n')
             f.write(yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=120))
 
+    @staticmethod
+    def _engine_step(before, after, rc, version=None):
+        """
+        The summary of an engine upgrade and its exit code: a host that ends on another version than --version asked
+        for failed - a declared "cmeta: upgrade" command does not get the version, and pip's cached view of PyPI kept
+        a WSL distro on 0.38.1 while the round said "already 0.38.1" (2026-11-03). An unknown version is not judged.
+        """
+        want = str(version or '').strip().lstrip('vV')
+        if rc != 0:
+            return f'exit code {rc} (cMeta {after or "?"})', rc
+        if want and after and after != want:
+            return f'asked {want}, has {after}' + (' (unchanged)' if after == before else f' (was {before or "?"})'), 1
+        if after and before and after == before:
+            return f'already {after}', 0
+        return f'{before or "?"} -> {after or "?"}', 0
+
     ############################################################
     def upgrade_(
         self,
@@ -2197,7 +2213,9 @@ class Category(InitCategory):
         Update the cMeta engine on a host, as its _desc.yaml declares under "cmeta:":
         install "uv-tool" -> uv tool upgrade cmeta (or uv tool install --force "cmeta==<version>");
         install "pip" -> pip install -U cmeta; install "editable" -> git pull in the source tree;
-        or the literal "cmeta: upgrade" command. Then prints the new "cx --version".
+        or the literal "cmeta: upgrade" command. Then prints the new "cx --version". With --version, a host that
+        ends on another version counts as failed ("asked X, has Y", not restarted); a literal command runs as
+        written, so a warning says when it does not name that version.
 
         --system (and --firmware) also runs the task upgrade-os on the host: the OS packages with the OS's
         own commands (apt, dnf, zypper, pacman, apk, softwareupdate + brew, winget), the firmware with fwupd,
@@ -2238,6 +2256,8 @@ class Category(InitCategory):
             steps = []          # what this host got: sync / upgrade / restart notes for the summary
 
             cmd = cm.get('upgrade')
+            # a declared command runs as written: --version reaches it only if it names that version
+            pinned = not version or not cmd or str(version) in str(cmd)
             if not cmd:
                 if install == 'uv-tool':
                     # "uv tool install ... --force", not "uv tool upgrade": a tool installed with an exact
@@ -2305,7 +2325,7 @@ class Category(InitCategory):
                 if system or firmware:
                     steps.append('would run: ' + self._upgrade_os_cmd(system, firmware, check))
                 if engine:
-                    steps.append(f'would run: {cmd}')
+                    steps.append(f'would run: {cmd}' + ('' if pinned else f' (its own command: --version={version} does not reach it)'))
                 if restart:
                     if here and not explicit:
                         steps.append('no restart (this machine, in a selection)')
@@ -2366,6 +2386,8 @@ class Category(InitCategory):
 
             # 2. upgrade the engine
             if engine:
+                if not pinned and con:
+                    print(f'cMeta warning: {alias} declares its own "cmeta: upgrade" command - --version={version} does not reach it')
                 before = self._cmeta_version_on(ctx, h)
 
                 r = self._cmd_run(ctx, h, cmd)
@@ -2377,12 +2399,8 @@ class Category(InitCategory):
                 rc = rr.get('returncode', 0)
 
                 after = self._cmeta_version_on(ctx, h)
-                if rc != 0:
-                    steps.append(f'exit code {rc} (cMeta {after or "?"})')
-                elif after and before and after == before:
-                    steps.append(f'already {after}')
-                else:
-                    steps.append(f'{before or "?"} -> {after or "?"}')
+                step, rc = self._engine_step(before, after, rc, version)
+                steps.append(step)
             results[alias] = '; '.join(steps) or 'nothing asked'
             if con: print(f'{alias:32} {results[alias]}')
             if rc != 0:
