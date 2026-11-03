@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.62.0.1)
+## 0.63.0
 - **run-ai: a conversation goes on natively on any machine the project is synced to (Claude Code and Codex).** Their
   native session files live in the user's home (Claude Code's `projects/<slug>/<id>.jsonl` and its `<id>/` folder,
   Codex's `sessions/<date>/rollout-*-<id>.jsonl`), so a conversation continued on another machine had to start a new
