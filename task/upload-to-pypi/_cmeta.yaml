@@ -1,0 +1,20 @@
+artifact: f95a78ca13934522
+category: task,c36be4b9314a45e0
+authors: Grigori Fursin
+creation_timestamp: '2026-11-03T16:34:21.129710+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.310
+  via: cmeta 0.38.1
+  by: Grigori Fursin
+desc: 'Upload a Python package (the wheel and the sdist of a dist folder) to PyPI with
+  twine: twine check first, then the upload with the API token of a cMeta secret in
+  the environment of twine alone - a password-protected secret asks for its password,
+  on Windows in a console window of its own when the caller has no terminal.'
+tags:
+- upload
+- pypi
+- twine
+- python
+- package
+- release

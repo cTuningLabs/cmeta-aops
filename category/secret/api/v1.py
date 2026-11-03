@@ -12,19 +12,97 @@ holds references, never values; the files live inside the artifact (self-contain
     cx secret generate <alias>              # a new ed25519 key pair without a passphrase (automation, containers, hosts)
     cx secret use <alias> --repo=<clone>    # the git identity written into a clone's .git/config (or --git_global)
     cx secret render <alias> --out=<file>   # the same as a git config include file, with the ssh config stanza
+    cx secret store <alias> [--password_protected]   # a token typed at a hidden prompt, kept owner-only or sealed
+    cx secret run <alias> --env.<NAME>={secret} -- <command>   # the value in the command's environment alone
 """
 
+import base64
 import datetime
+import getpass
+import hashlib
+import hmac
+import json
 import os
 import re
 import shutil
 import stat
 import subprocess
+import sys
+import tempfile
+import unicodedata
 
 from cmeta.category import InitCategory
 
 CATEGORY = 'secret,9d63451ea1f14010'
 DESC_FILE = '_desc.yaml'
+
+# A value kept encrypted with a password (password_protected: true), with the standard library alone: two keys from
+# the password by scrypt (a new salt each time), the value XORed with an HMAC-SHA256 key stream, and an HMAC-SHA256
+# tag over all of it with the second key (encrypt-then-MAC). A wrong password and a changed file both fail the tag.
+SEALED = 'cmeta-secret-sealed-v1'
+SCRYPT = {'n': 2 ** 17, 'r': 8, 'p': 1}
+TRIES = 3
+
+# What stands for the value in the text of a variable (cx secret run --env.TWINE_PASSWORD={secret})
+VALUE_MARK = '{secret}'
+
+
+def _keys(password, salt, n, r, p):
+    """The two 32-byte keys of a password: to encrypt and to sign."""
+    if not hasattr(hashlib, 'scrypt'):
+        raise RuntimeError('this Python has no hashlib.scrypt (it needs OpenSSL 1.1 or newer)')
+    if n < 2 or n & (n - 1) or not 1 <= r <= 32 or not 1 <= p <= 16 or 128 * r * (n + p + 2) > 2 ** 30:
+        raise ValueError(f'scrypt parameters out of range (n={n}, r={r}, p={p})')
+    key = hashlib.scrypt(unicodedata.normalize('NFC', password).encode('utf-8'), salt=salt, n=n, r=r, p=p,
+                         maxmem=128 * r * (n + p + 2) + 2 ** 20, dklen=64)
+    return key[:32], key[32:]
+
+
+def _stream(key, nonce, size):
+    """The key stream: HMAC-SHA256 of the nonce and a block counter."""
+    blocks = (size + 31) // 32
+    return b''.join(hmac.new(key, nonce + i.to_bytes(8, 'big'), hashlib.sha256).digest() for i in range(blocks))[:size]
+
+
+def _signed(head, data):
+    """What the tag covers: the parameters, the salt, the nonce and the encrypted value."""
+    return json.dumps(head, sort_keys=True).encode('utf-8') + b'\n' + data
+
+
+def seal(value, password, params=None):
+    """A value encrypted with a password: the text of a sealed file (JSON; nothing of the value or the password)."""
+    params = dict(params or SCRYPT)
+    salt, nonce = os.urandom(16), os.urandom(16)
+    enc, mac = _keys(password, salt, **params)
+    plain = value.encode('utf-8')
+    data = bytes(a ^ b for a, b in zip(plain, _stream(enc, nonce, len(plain))))
+    head = {'format': SEALED, 'kdf': 'scrypt', **params,
+            'salt': base64.b64encode(salt).decode('ascii'), 'nonce': base64.b64encode(nonce).decode('ascii')}
+    tag = hmac.new(mac, _signed(head, data), hashlib.sha256).digest()
+    return json.dumps({**head, 'data': base64.b64encode(data).decode('ascii'),
+                       'tag': base64.b64encode(tag).decode('ascii')}, indent=1) + '\n'
+
+
+def sealed_head(text):
+    """The parameters of a sealed file, or None when the text is not one."""
+    try:
+        d = json.loads(text)
+    except ValueError:
+        return None
+    return d if isinstance(d, dict) and d.get('format') == SEALED else None
+
+
+def unseal(text, password):
+    """The value of a sealed file, or None when the password does not open it (or the file was changed)."""
+    d = sealed_head(text)
+    if d is None or d.get('kdf') != 'scrypt':
+        raise ValueError(f'not a sealed value of the format {SEALED}')
+    head = {k: d[k] for k in ('format', 'kdf', 'n', 'r', 'p', 'salt', 'nonce')}
+    salt, nonce, data, tag = (base64.b64decode(str(d[k]), validate=True) for k in ('salt', 'nonce', 'data', 'tag'))
+    enc, mac = _keys(password, salt, int(d['n']), int(d['r']), int(d['p']))
+    if not hmac.compare_digest(hmac.new(mac, _signed(head, data), hashlib.sha256).digest(), tag):
+        return None
+    return bytes(a ^ b for a, b in zip(data, _stream(enc, nonce, len(data)))).decode('utf-8')
 
 # The keys of _desc.yaml that name a file (dotted), with what the file is
 FILE_KEYS = {'ssh.key': 'private key', 'ssh.public_key': 'public key', 'signing.key': 'signing key',
@@ -70,7 +148,7 @@ class Category(InitCategory):
         for a in sorted(r.get('artifacts', []), key = lambda a: a['cmeta_ref_parts']['artifact_alias']):
             rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(a['path'], '_desc'))
             desc = rd.get('data') or {} if rd['return'] == 0 else {}
-            found.append({'alias': a['cmeta_ref_parts']['artifact_alias'], 'path': a['path'],
+            found.append({'alias': a['cmeta_ref_parts']['artifact_alias'], 'uid': a['cmeta_ref_parts'].get('artifact_uid', ''), 'path': a['path'],
                           'repo': a['cmeta_ref_parts'].get('repo_alias') or a['cmeta_ref_parts'].get('artifact_repo_alias', ''), 'desc': desc})
         return {'return': 0, 'secrets': found}
 
@@ -92,9 +170,10 @@ class Category(InitCategory):
         return os.path.join(s['path'], *ref.replace('\\', '/').split('/')), 'inside'
 
     ############################################################
-    def ls_(self, ctx, arg1: str = None):
+    def list_(self, ctx, arg1: str = None):
         """
-        The secret artifacts: alias, kind, repository, hosts, used by - never a value.
+        The secret artifacts: alias, kind, repository, hosts, used by - never a value. (cx secret ls: the engine turns
+        ls into list before it looks for the command, so a category's own listing is its list_, not an ls_.)
         """
         r = self._select(ctx, arg1)
         if r['return'] > 0:
@@ -138,6 +217,12 @@ class Category(InitCategory):
                         print (f'  {what:<16} {ref}  [{how}: {path or "unresolved"}]')
                 if _get(d, 'ssh.passphrase'):
                     print (f'  {"passphrase":<16} {_get(d, "ssh.passphrase")}')
+                if d.get('service'):
+                    print (f'  {"service":<16} {d.get("service")}  (the secret a task of that service takes when --secret names none)')
+                if d.get('password_protected'):
+                    print (f'  {"password":<16} protected: encrypted, the password is asked at each use')
+                if _get(d, 'token.stored'):
+                    print (f'  {"stored":<16} {_get(d, "token.stored")}')
                 if d.get('used_by'):
                     print ('  used by:')
                     for x in d['used_by']:
@@ -275,12 +360,14 @@ class Category(InitCategory):
         return {'return': 0, 'secret': found[0]['secret'], 'path': found[0]['path'], 'found': found}
 
     ############################################################
-    def check_(self, ctx, arg1: str = None, fix: bool = False):
+    def check_(self, ctx, arg1: str = None, fix: bool = False, unlock: bool = False):
         """
         The files of each secret exist, a private key has the declared passphrase policy (ssh-keygen asks it
         with an empty passphrase: refused = a passphrase is set; the output is never printed), the mode is 600.
         --fix tightens a file of the artifact that others can read (after a copy to another machine, whose
         transfer does not keep the mode) through the task fix-ssh-key-permissions; a source file is left alone.
+        A password-protected value is looked at without its password (sealed, its parameters); --unlock asks for
+        the password and says whether it opens the value (nothing of the value is printed).
         """
         r = self._select(ctx, arg1)
         if r['return'] > 0:
@@ -332,6 +419,8 @@ class Category(InitCategory):
                         notes.append('declared none but the key HAS a passphrase')
                     else:
                         notes.append('passphrase ' + ('set' if has_pass else 'none') + (f' as declared ({policy})' if policy else ''))
+                if key == 'token.file' and status == 'ok':
+                    status = self._check_sealed(ctx, s, path, notes, unlock)
                 rows.append((s['alias'], what, status, '; '.join(notes)))
 
         if con:
@@ -341,6 +430,43 @@ class Category(InitCategory):
                 print (f'{row[0]:<30} {row[1]:<16} {row[2]:<8} {row[3]}')
 
         return {'return': 0, 'rows': rows}
+
+    def _check_sealed(self, ctx, s, path, notes, unlock):
+        """
+        The status of a token file against password_protected: a sealed file is looked at without its password (its
+        parameters), with --unlock opened with the password asked; a plain file where a sealed one is declared is PLAIN.
+        """
+        with open(path, encoding='utf-8') as f:
+            text = f.read()
+        head = sealed_head(text)
+        declared = bool(s['desc'].get('password_protected'))
+        if head is None:
+            if declared:
+                notes.append(f'password_protected, but the value is kept in plain text: cx secret store {s["alias"]} --password_protected --force')
+                return 'PLAIN'
+            return 'ok'
+
+        if not declared:
+            notes.append('sealed, but password_protected is not declared in _desc.yaml')
+        notes.append(f'sealed ({head.get("kdf")}, n={head.get("n")}): opened with its password only')
+        if not unlock:
+            return 'ok'
+        if not self._interactive(ctx):
+            notes.append('--unlock needs a person at a terminal (not -q)')
+            return 'ok'
+        try:
+            value = unseal(text, getpass.getpass(f'Password of the secret {s["alias"]}: '))
+        except (KeyboardInterrupt, EOFError):
+            notes.append('not unlocked: cancelled')
+            return 'ok'
+        except (ValueError, KeyError, RuntimeError) as e:
+            notes.append(f'cannot be opened: {e}')
+            return 'BROKEN'
+        if value is None:
+            notes.append('this password does NOT open it')
+            return 'WRONG PW'
+        notes.append(f'the password opens it ({len(value)} characters)')
+        return 'ok'
 
     ############################################################
     def _one(self, ctx, arg1, kinds, what):
@@ -531,3 +657,325 @@ class Category(InitCategory):
         if con:
             print (f'cMeta info: {s["alias"]}: {path} (git config --global include.path "{path}")')
         return {'return': 0, 'path': path, 'set': dict(rs['pairs'])}
+
+    ############################################################
+    def _interactive(self, ctx):
+        """
+        A person can type here: not -q (a quiet run never answers a prompt), and a terminal - on Windows a real
+        console: the NUL device says isatty too, and getpass reads the console, not the standard input, so a caller
+        with "< NUL" (an AI agent's shell) would wait at a prompt nobody sees.
+        """
+        if ctx['control'].get('quiet', False):
+            return False
+        try:
+            if not (sys.stdin and sys.stdin.isatty()):
+                return False
+        except Exception:
+            # a stdin object without isatty, or a closed one
+            return False
+        if os.name != 'nt':
+            return True
+        try:
+            import ctypes
+            import msvcrt
+            handle = msvcrt.get_osfhandle(sys.stdin.fileno())
+        except (AttributeError, OSError, ValueError):
+            # a stand-in for the standard input (a test, an embedding): its own isatty answers
+            return True
+        mode = ctypes.c_ulong()
+        return bool(ctypes.windll.kernel32.GetConsoleMode(ctypes.c_void_p(handle), ctypes.byref(mode)))
+
+    def _write_owner_only(self, ctx, path, text):
+        """
+        A file only its owner can read: created with mode 600 on Linux and macOS, tightened on Windows to the owner's
+        ACL (fix-ssh-key-permissions). Returns what is still wrong ('' when nothing).
+        """
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + '.tmp'
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(text)
+        os.replace(tmp, path)
+        return self._tighten(ctx, path) if os.name == 'nt' else ''
+
+    def _token_text(self, s):
+        """The text of a token's file and its path - (None, path) when there is no file."""
+        ref = _get(s['desc'], 'token.file')
+        path = self._resolve(s, ref)[0] if ref else None
+        if not path or not os.path.isfile(path):
+            return None, path
+        with open(path, encoding='utf-8') as f:
+            return f.read(), path
+
+    def _needs_password(self, s):
+        """The value of this secret is opened with a password: declared so, or its file is sealed."""
+        text = self._token_text(s)[0]
+        return bool(s['desc'].get('password_protected')) or (text is not None and sealed_head(text) is not None)
+
+    def _value(self, ctx, s):
+        """
+        The value of a token secret: from its variable (token.env), its file (token.file) or - password-protected -
+        its sealed file opened with the password asked at a hidden prompt (three tries). For the environment of a
+        command (run); never printed, never written, never returned by a command.
+        """
+        d = s['desc']
+        name = _get(d, 'token.env')
+        if name:
+            value = os.environ.get(str(name), '')
+            return {'return': 0, 'value': value} if value else self.cm.error(f'{s["alias"]}: the variable {name} is not set')
+
+        text, path = self._token_text(s)
+        if text is None:
+            return self.cm.error(f'{s["alias"]}: no value is kept ({_get(d, "token.file") or "no token.file"}): cx secret store {s["alias"]}')
+        if sealed_head(text) is None:
+            if d.get('password_protected'):
+                return self.cm.error(f'{s["alias"]} is password_protected but its value is kept in plain text, so it is not used: '
+                                     f'cx secret store {s["alias"]} --password_protected --force')
+            return {'return': 0, 'value': text.strip()}
+
+        if not self._interactive(ctx):
+            return self.cm.error(f'{s["alias"]} is password-protected and nobody can type the password here (no terminal, or -q)')
+        for attempt in range(1, TRIES + 1):
+            try:
+                value = unseal(text, getpass.getpass(f'Password of the secret {s["alias"]}: '))
+            except (KeyboardInterrupt, EOFError):
+                return self.cm.error(f'{s["alias"]}: cancelled')
+            except (ValueError, KeyError, RuntimeError) as e:
+                return self.cm.error(f'{s["alias"]}: {path} cannot be opened ({e})')
+            if value is not None:
+                return {'return': 0, 'value': value}
+            if attempt < TRIES:
+                print ('This password does not open it - try again.')
+        return self.cm.error(f'{s["alias"]}: the password does not open it ({TRIES} tries)')
+
+    ############################################################
+    def store_(self, ctx, arg1: str = None, password_protected: bool = False, force: bool = False):
+        """
+        Keep a value (a token) in a secret: typed at a hidden prompt, never printed. Kept owner-only in files/token,
+        or with --password_protected encrypted with a password you choose (asked twice) in files/token.sealed - every
+        use asks for that password again (cx secret run, the task upload-to-pypi). _desc.yaml gets kind: token,
+        token.file, token.stored and password_protected. Needs a person at a terminal (never -q).
+
+            cx secret add my-vault:my-pypi --yaml --desc.service=pypi   # the artifact first; service: what it is for
+            cx secret store my-pypi --password_protected
+            cx secret store my-pypi --password_protected --force        # a new value or a new password
+        """
+        if not arg1:
+            return self.cm.error('cx secret store <alias> [--password_protected]')
+        r = self._select(ctx, arg1)
+        if r['return'] > 0:
+            return r
+        if len(r['secrets']) != 1:
+            return self.cm.error(f'"{arg1}" matches {len(r["secrets"])} secrets: name one (a new one first: cx secret add <your secrets repository>:{arg1} --yaml)')
+        s = r['secrets'][0]
+        d = s['desc']
+        kind = str(d.get('kind') or 'token')
+        if kind != 'token':
+            return self.cm.error(f'{s["alias"]} is a secret of kind "{kind}": store keeps the value of a token')
+        if _get(d, 'token.env'):
+            return self.cm.error(f'{s["alias"]} takes its value from the variable {_get(d, "token.env")}: nothing to store')
+        if not self._interactive(ctx):
+            return self.cm.error('cx secret store asks for the value at a hidden prompt: run it in a terminal, without -q')
+
+        rel = 'files/token.sealed' if password_protected else 'files/token'
+        path = os.path.join(s['path'], *rel.split('/'))
+        kept = [p for p in (os.path.join(s['path'], 'files', 'token.sealed'), os.path.join(s['path'], 'files', 'token')) if os.path.isfile(p)]
+        if kept and not force:
+            return self.cm.error(f'{s["alias"]}: a value is kept already ({os.path.relpath(kept[0], s["path"])}): --force replaces it')
+
+        try:
+            if ctx['control'].get('con', False):
+                print (f'cMeta info: {s["alias"]} keeps one token (an API key, the password of a service): paste it at the next '
+                       'prompt - nothing is shown as you type' + (', then choose the password that protects it' if password_protected else ''))
+            value = getpass.getpass(f'Token/secret of {s["alias"]}: ').strip()
+            if not value:
+                return self.cm.error('no token typed: nothing was written')
+            text = value + '\n'
+            if password_protected:
+                password = getpass.getpass('A password for it (asked at each use): ')
+                if not password:
+                    return self.cm.error('an empty password: nothing was written')
+                if getpass.getpass('The same password again: ') != password:
+                    return self.cm.error('the two passwords differ: nothing was written')
+                text = seal(value, password)
+                # never keep what would not open again
+                if unseal(text, password) != value:
+                    return self.cm.error('the sealed value does not open again: nothing was written')
+        except (KeyboardInterrupt, EOFError):
+            return self.cm.error('cancelled: nothing was written')
+        except RuntimeError as e:
+            return self.cm.error(f'{e}: nothing was written')
+
+        left = self._write_owner_only(ctx, path, text)
+        if left:
+            return self.cm.error(f'{s["alias"]}: {rel} written but not made owner-only ({left})')
+        # the other form of the value (plain or sealed) does not stay behind
+        for p in kept:
+            if os.path.normcase(p) != os.path.normcase(path):
+                os.remove(p)
+
+        # _desc.yaml: kind, password_protected, token.file and token.stored (an existing file keeps its other text)
+        desc_path = os.path.join(s['path'], DESC_FILE)
+        stamp = datetime.datetime.now().astimezone().isoformat(timespec='minutes')
+        if not os.path.isfile(desc_path):
+            with open(desc_path, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(f'# A token kept by "cx secret store" - never printed; "cx secret show {s["alias"]}" says how.\n'
+                        'kind: token\n'
+                        + ('password_protected: true    # encrypted: the password is asked at each use\n' if password_protected else '')
+                        + f'token:\n  file: {rel}\n  stored: \'{stamp}\'\n')
+        else:
+            new = dict(d)
+            new['kind'] = 'token'
+            if password_protected:
+                new['password_protected'] = True
+            else:
+                new.pop('password_protected', None)
+            new['token'] = dict(new.get('token') or {}, file=rel, stored=stamp)
+            try:
+                rw = self.cm.utils.files.safe_write_file(desc_path, new, sort_keys=False, preserve=True)
+            except TypeError:
+                # an engine before the preserve option: the file is written again
+                rw = self.cm.utils.files.safe_write_file(desc_path, new, sort_keys=False)
+            if rw['return'] > 0:
+                return rw
+
+        if ctx['control'].get('con', False):
+            how = f'encrypted in {rel} - every use asks for the password' if password_protected else f'in {rel}, readable by you alone'
+            print (f'cMeta info: {s["alias"]}: the value ({len(value)} characters) is kept {how}')
+            if password_protected and len(password) < 8:
+                print ('cMeta warning: a password of fewer than 8 characters keeps the value from a casual reader, '
+                       'not from someone who copies the file and tries passwords')
+        return {'return': 0, 'secret': s['alias'], 'file': path, 'password_protected': bool(password_protected)}
+
+    ############################################################
+    def run_(self, ctx, arg1: str = None, env: dict = None, window: bool = False, pause: bool = False, log: str = '',
+             cmd: list = None, unparsed: list = None):
+        """
+        Run a command with the value of a secret in its environment - and nowhere else: not on its command line, not
+        in a file, not in the environment of cMeta. --env.<NAME>=<text> sets a variable of the command; {secret} in the
+        text stands for the value. A password-protected secret asks for its password first. On Windows, from a process
+        without a terminal (an AI agent) or with --window, it happens in a console window of its own: the password is
+        typed there, the command runs there, SUCCESS or FAILED stays until Enter, and the output comes back here.
+
+            cx secret run my-pypi --env.TWINE_USERNAME=__token__ --env.TWINE_PASSWORD={secret} -- twine upload dist/*
+            cx secret run <alias> --env.GH_TOKEN={secret} --window -- gh auth status
+        """
+        words = [str(w) for w in (cmd or unparsed or [])]
+        env = env if isinstance(env, dict) else {}
+        if not words or not any(VALUE_MARK in str(v) for v in env.values()):
+            return self.cm.error(f'cx secret run <alias> --env.<NAME>={VALUE_MARK} -- <command>: the variable that gets the value, then the command')
+        r = self._one(ctx, arg1, ('token',), 'run')
+        if r['return'] > 0:
+            return r
+        s = r['secret']
+
+        if os.name == 'nt' and (window or (self._needs_password(s) and not self._interactive(ctx))):
+            if ctx['control'].get('quiet', False):
+                return self.cm.error(f'{s["alias"]}: a console window waits for a person, which a quiet run (-q) never does')
+            return self._run_in_window(ctx, s, env, words)
+        if window and not self._interactive(ctx):
+            return self.cm.error(f'{s["alias"]}: --window opens a console window on Windows only - run it in a terminal here')
+        return self._run_here(ctx, s, env, words, pause=pause, log=log)
+
+    def _run_here(self, ctx, s, env, words, pause=False, log=''):
+        """
+        The value opened (the password asked when it is sealed), the command run with its variables, the verdict.
+        With pause (the console window of run) SUCCESS or FAILED stays on the screen until Enter; with log, what the
+        command prints is also written there for the process that waits for the window.
+        """
+        if pause:
+            if os.name == 'nt':
+                try:
+                    import ctypes
+                    ctypes.windll.kernel32.SetConsoleTitleW(f'cMeta: secret {s["alias"]}')
+                except (ImportError, AttributeError, OSError):
+                    pass
+            print (f'cMeta: {" ".join(words)}')
+            print (f'       the secret {s["alias"]} in ' + ', '.join(str(k) for k, v in env.items() if VALUE_MARK in str(v)))
+            print ('')
+
+        opened = self._value(ctx, s)
+        if opened['return'] > 0:
+            result = opened
+        else:
+            child = dict(os.environ)
+            for k, v in env.items():
+                child[str(k)] = str(v).replace(VALUE_MARK, opened['value'])
+            del opened
+            result = self._command(words, child, log)
+
+        verdict = 'SUCCESS' if result['return'] == 0 else f'FAILED: {result.get("error", "")}'
+        if pause or log:
+            print ('')
+            print (verdict)
+        if log:
+            with open(log, 'a', encoding='utf-8', newline='\n') as f:
+                f.write(verdict + '\n')
+        if pause:
+            try:
+                input('Press Enter to close this window ... ')
+            except (KeyboardInterrupt, EOFError):
+                pass
+        return result
+
+    def _command(self, words, env, log=''):
+        """The command run with these variables; what it prints goes to the screen, and into log when one is given."""
+        words = [shutil.which(words[0]) or words[0]] + words[1:]
+        try:
+            if not log:
+                rc = subprocess.run(words, env=env).returncode
+            else:
+                env = dict(env, PYTHONIOENCODING=env.get('PYTHONIOENCODING') or 'utf-8')
+                decode = getattr(getattr(self.cm.utils, 'sys', None), 'decode_output', None) or (lambda b: b.decode('utf-8', 'replace'))
+                p = subprocess.Popen(words, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                with open(log, 'a', encoding='utf-8', newline='\n') as f:
+                    for line in iter(p.stdout.readline, b''):
+                        text = decode(line)
+                        sys.stdout.write(text)
+                        sys.stdout.flush()
+                        f.write(text)
+                rc = p.wait()
+        except OSError as e:
+            return self.cm.error(f'{words[0]} cannot be started: {e}')
+        if rc != 0:
+            return {'return': 1, 'error': f'{os.path.basename(words[0])} ended with exit code {rc}', 'exit_code': rc}
+        return {'return': 0, 'exit_code': 0}
+
+    def _run_in_window(self, ctx, s, env, words):
+        """
+        The run in a console window of its own (Windows): the same call with pause and a log, started with
+        CREATE_NEW_CONSOLE as "python -m cmeta @@<call file>" (the file holds the call - never the value - and is
+        deleted when read). This process waits for the window, then prints what the command printed and its verdict.
+        """
+        con = ctx['control'].get('con', False)
+        fd, log = tempfile.mkstemp(prefix='cmeta-secret-run-', suffix='.log')
+        os.close(fd)
+        fd, call = tempfile.mkstemp(prefix='cmeta-secret-run-', suffix='.json')
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump({'category': CATEGORY, 'command': 'run', 'arg1': f'{s["alias"]},{s["uid"]}' if s.get('uid') else s['alias'],
+                       'env': env, 'cmd': words, 'pause': True, 'log': log}, f)
+        if con:
+            print (f'cMeta info: {s["alias"]}: a console window asks for the password and runs the command - waiting for it to close ...')
+
+        output = ''
+        try:
+            rc = subprocess.Popen([sys.executable, '-m', 'cmeta', '@@' + call], creationflags=subprocess.CREATE_NEW_CONSOLE).wait()
+        except OSError as e:
+            return self.cm.error(f'the console window could not be opened: {e}')
+        finally:
+            if os.path.isfile(log):
+                with open(log, encoding='utf-8', errors='replace') as f:
+                    output = f.read()
+            for p in (log, call):
+                if os.path.exists(p):
+                    os.remove(p)
+
+        if con and output:
+            print (output.rstrip('\n'))
+        if rc != 0:
+            last = (output.strip().splitlines() or [''])[-1]
+            error = last[len('FAILED: '):] if last.startswith('FAILED: ') else f'the window ended with exit code {rc} (closed?)'
+            return {'return': 1, 'error': error, 'exit_code': rc}
+        return {'return': 0, 'exit_code': 0}

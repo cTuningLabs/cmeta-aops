@@ -2,6 +2,25 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.64.0
+- **A token kept with a password, and given to one command alone.** `cx secret store <alias>` keeps the value of a
+  token secret typed at a hidden prompt (never printed), owner-only in `files/token`, or with `--password_protected`
+  encrypted with a password you choose in `files/token.sealed` (standard library only: scrypt keys, an HMAC-SHA256
+  key stream and tag; a wrong password or a changed file is refused). `cx secret run <alias> --env.<NAME>={secret}
+  -- <command>` gives the value to the command's environment and nowhere else, asking for the password first; on
+  Windows, from a caller without a terminal (an AI agent) or with `--window`, in a console window of its own that
+  shows SUCCESS or FAILED until Enter, the output coming back to the caller. `cx secret check --unlock` says whether
+  a password opens a value; `show` tells a password-protected secret. Tests: `test_secret_sealed.py`.
+- **`tool/twine` and the task `upload-to-pypi`.** twine 7.0.0 in its own Python 3.12 environment (common_pyvenv);
+  `cxt upload-to-pypi <dist folder>` runs `twine check`, then `twine upload --non-interactive` with the API token in
+  twine's environment alone - `secret_env` of the task's `_desc.yaml`: `TWINE_USERNAME=__token__`,
+  `TWINE_PASSWORD={secret}`, `TWINE_NON_INTERACTIVE=1`. The token comes from `--secret=<alias>`, or from the one token
+  secret whose `_desc.yaml` declares `service: pypi` (`service: testpypi` for `--repository=testpypi`; a URL needs
+  `--secret`); `--dry_run` checks and shows the command.
+- **`cx secret ls` and `cx ai.gateway ls` show their own tables.** The engine turns `ls` into `list` before it looks
+  for a command, so both reached the base `list` (bare aliases) instead of the categories' `ls_`; the commands are
+  `list_` now, reached as `ls` and as `list`.
+
 ## 0.63.1
 - **run-ai keeps what a session really ran with: `run_ai_config.last_seen`.** A run without `--model` leaves the
   choice to the harness, and the project never knew it; after a Claude Code or Codex run, the model and the effort of

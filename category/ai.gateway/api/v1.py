@@ -190,9 +190,10 @@ class Category(InitCategory):
         return mine, top
 
     ############################################################ ls
-    def ls_(self, ctx, arg1: str = None):
+    def list_(self, ctx, arg1: str = None):
         """
         The gateways this machine knows: alias, base URL, wires, auth (the header and the secret's name), repository.
+        (cx ai.gateway ls: the engine turns ls into list before it looks for the command, so the listing is list_.)
 
             cx ai.gateway ls
         """

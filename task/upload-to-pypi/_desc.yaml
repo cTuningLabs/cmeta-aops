@@ -1,0 +1,31 @@
+authors: Grigori Fursin
+
+# Upload a Python package - the wheel and the sdist of a dist folder - to PyPI with twine, the API token coming from a
+# cMeta secret: "twine check" first, then "twine upload --non-interactive" with the token in the environment of twine
+# alone (never on a command line, in a file or in the environment of cMeta), through "cx secret run". A
+# password-protected secret (cx secret store <alias> --password_protected) asks for its password; on Windows, without
+# a terminal (an AI agent) or with --window, in a console window of its own that shows SUCCESS or FAILED until Enter,
+# and the output comes back to the caller.
+#
+#   cxt upload-to-pypi <dist folder>                        # the token secret whose _desc.yaml says "service: pypi"
+#   cxt upload-to-pypi <dist folder> --secret=<alias>
+#   cxt upload-to-pypi <dist folder> --repository=testpypi  # the one with "service: testpypi" (a URL needs --secret)
+#   cxt upload-to-pypi <dist folder> --dry_run              # twine check and the command; nothing uploaded
+
+cache: False
+
+params_map:
+  arg2: dist
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: setup,a2f9b61079ce4333
+    name: twine,76b8b4f2a1864b10
+
+# The variables of twine's environment during the upload; {secret} is the value of the secret (the API token).
+# TWINE_USERNAME is __token__ for every PyPI API token; TWINE_NON_INTERACTIVE makes twine fail instead of asking.
+secret_env:
+  TWINE_USERNAME: __token__
+  TWINE_PASSWORD: '{secret}'
+  TWINE_NON_INTERACTIVE: '1'
