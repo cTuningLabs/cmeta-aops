@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.63.1.1)
+## 0.64.0
 - **A token kept with a password, and given to one command alone.** `cx secret store <alias>` keeps the value of a
   token secret typed at a hidden prompt (never printed), owner-only in `files/token`, or with `--password_protected`
   encrypted with a password you choose in `files/token.sealed` (standard library only: scrypt keys, an HMAC-SHA256
