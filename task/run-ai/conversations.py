@@ -590,6 +590,111 @@ def codex_threads(project_path, since=0):
 
 
 def codex_exists(sid):
+    """Whether "codex resume <sid>" can continue the session on THIS machine: its rollout file is under CODEX_HOME here.
+    The thread's row in state_*.sqlite is not enough: run-ai keeps that store in the project's !AI, which travels to the
+    other machines, while the rollout stays in the CODEX_HOME of the machine that ran the session - a session of the
+    P14s Gen 4 continued on the laptop ended at once with "No saved session found with ID ..." (2026-11-03). Without the
+    rollout, the conversation goes on in a new native session with the transcript handed over (its segment is still
+    exported from the travelling thread_history)."""
+    return bool(_glob(codex_home(), 'sessions', '*', '*', '*', 'rollout-*-%s.jsonl' % sid))
+
+
+# The native session files travel with the project (2026-11-03): a copy of each in !AI/sessions/<harness>/, made after a
+# run and put back where the harness looks on another machine before a resume - Claude Code's <slug>/<id>.jsonl (and
+# its <id>/ folder) and Codex's sessions/<date>/rollout-*-<id>.jsonl live in the user's home, not in the project, and a
+# conversation continued on another machine had to start a new native session. Proven on the P14s Gen 4 -> laptop:
+# both harnesses resumed a session made on the other machine from such a copy.
+SESSIONS_DIR = 'sessions'
+NATIVE_COPIED = ('claude', 'codex')
+
+
+def native_session_files(harness, sid, project_path):
+    """The files of a native session on this machine: [(absolute path, path relative to the harness's store)]."""
+    h = harness_key(harness)
+    out = []
+    if h == 'claude':
+        fp = claude_session_file(project_path, sid)
+        if fp:
+            base = os.path.dirname(fp)
+            out.append((fp, os.path.basename(fp)))
+            for root, _, files in os.walk(os.path.join(base, sid)):     # the session's subagents and tool results
+                for n in files:
+                    full = os.path.join(root, n)
+                    out.append((full, os.path.relpath(full, base).replace('\\', '/')))
+    elif h == 'codex':
+        store = os.path.join(codex_home(), 'sessions')
+        for fp in _glob(store, '*', '*', '*', 'rollout-*-%s.jsonl' % sid):
+            out.append((fp, os.path.relpath(fp, store).replace('\\', '/')))
+    return out
+
+
+def _newer(src, dest):
+    """src should replace dest: dest is missing, or src holds more (the files only grow) or is newer at the same size."""
+    if not os.path.isfile(dest):
+        return True
+    a, b = os.path.getsize(src), os.path.getsize(dest)
+    return a > b or (a == b and os.path.getmtime(src) > os.path.getmtime(dest) + 1)
+
+
+def stash_session(ai_root, harness, sid, project_path):
+    """Copies of a native session's files into !AI/sessions/<harness>/, where they travel with the project. -> the
+    number of files copied (a copy as new as the file is left)."""
+    import shutil
+    h = harness_key(harness)
+    if h not in NATIVE_COPIED or not sid:
+        return 0
+    n = 0
+    for full, rel in native_session_files(h, sid, project_path):
+        dest = os.path.join(ai_root, SESSIONS_DIR, h, *rel.split('/'))
+        try:
+            if _newer(full, dest):
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                shutil.copy2(full, dest)
+                n += 1
+        except OSError:
+            pass
+    return n
+
+
+def restore_session(ai_root, harness, sid, project_path):
+    """The copy of a native session in !AI/sessions/<harness>/ put back where the harness looks on this machine, when the
+    session is missing here or the copy holds more (it went on on another machine): the session then resumes natively.
+    -> (files put back, why nothing was: '' when it was or nothing was needed)."""
+    import shutil
+    h = harness_key(harness)
+    if h not in NATIVE_COPIED or not sid:
+        return 0, ''
+    src_root = os.path.join(ai_root, SESSIONS_DIR, h)
+    if h == 'claude':
+        main = os.path.join(src_root, sid + '.jsonl')
+        if not os.path.isfile(main):
+            return 0, 'no copy of the session in the project'
+        here = claude_session_file(project_path, sid)
+        dirs = [os.path.dirname(here)] if here else claude_project_dirs(project_path)
+        if not dirs:
+            return 0, 'the Claude Code folder of this path cannot be named here (a path longer than 200 characters)'
+        dest_root = dirs[0]
+        files = [main] + [os.path.join(r, n) for r, _, fs in os.walk(os.path.join(src_root, sid)) for n in fs]
+    else:
+        dest_root = os.path.join(codex_home(), 'sessions')
+        files = _glob(src_root, '*', '*', '*', 'rollout-*-%s.jsonl' % sid)
+        if not files:
+            return 0, 'no copy of the session in the project'
+    n = 0
+    for src in files:
+        dest = os.path.join(dest_root, os.path.relpath(src, src_root))
+        try:
+            if _newer(src, dest):
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                shutil.copy2(src, dest)
+                n += 1
+        except OSError as e:
+            return n, 'could not put the copy back (%s)' % e
+    return n, ''
+
+
+def codex_known(sid):
+    """The thread is in the project's Codex store (state_*.sqlite): it ran here or on another machine."""
     for db in _glob(codex_sqlite_home(), 'state_*.sqlite'):
         try:
             con = _ro_sqlite(db)
@@ -599,7 +704,7 @@ def codex_exists(sid):
                 return True
         except Exception:
             pass
-    return bool(_glob(codex_home(), 'sessions', '*', '*', '*', 'rollout-*-%s.jsonl' % sid))
+    return False
 
 
 def codex_export(sid):

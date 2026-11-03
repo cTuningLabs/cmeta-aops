@@ -2,6 +2,29 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.63.0
+- **run-ai: a conversation goes on natively on any machine the project is synced to (Claude Code and Codex).** Their
+  native session files live in the user's home (Claude Code's `projects/<slug>/<id>.jsonl` and its `<id>/` folder,
+  Codex's `sessions/<date>/rollout-*-<id>.jsonl`), so a conversation continued on another machine had to start a new
+  native session with the transcript handed over - and for Codex run-ai even tried `codex resume <id>` there, which
+  ended at once with "No saved session found" (the project's Codex SQLite store travels, the rollout did not). Now
+  run-ai keeps a copy of the session's files in `!AI/sessions/<harness>/` after every run and, before a resume, puts the
+  copy back where the harness looks on this machine when the session is missing here or went on elsewhere (the copy
+  holds more): the harness resumes it natively. Proven between the laptop and the P14s Gen 4 for both harnesses. A
+  Codex session is resumed only where its rollout is; the other harnesses go on with the hand-over as before. Tests:
+  `test_run_ai_conversations.py`.
+- **run-ai tells the harness where results go**: what the user asks to produce (a document, a message, code, data meant
+  as part of the artifact) goes into the artifact's own folder or a sub-folder, not into `!AI`, which keeps the AI's
+  own memories, skills, logs and scratch files (a session's final message for the user had landed in `!AI`).
+- **A stopped container reads `stopped`, an engine that does not answer `docker engine down`.** `cx host status` said
+  `down` for a container that exists and is not running, and `missing` whether the container was gone or Docker Desktop
+  was off; a reader took `down` for Docker being off and a fleet round left four stopped test containers out
+  (2026-11-02). `cx host up` starts a stopped container as before; the commands that need a running host still skip
+  it. `missing` is now only the engine's own "no such container" (Docker or Podman): the wording of a newer Docker CLI
+  with Docker Desktop off ("failed to connect to the docker API at npipe:...") reads `docker engine down`, and any
+  other failure is `error: <its first line>`, so `cx host up` never creates a container that may still exist.
+  Tests: `test_host_docker_status.py`.
+
 ## 0.62.0
 - **The iPhone as a compute target: `ios-cpu`, `ios-gpu`, `ios-npu`.** `tool/apple.xcode` finds Xcode through
   `xcode-select` (the iOS SDK, the toolchain, devicectl); `tool/apple.xcode.clang` and `-cpp` (the `apple-xcode`

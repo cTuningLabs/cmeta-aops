@@ -3554,8 +3554,25 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             if rr.get('timeout'):
                 return f'timeout ({int(cmd_timeout)}s, {engine} inspect' + (f' on {h["via"]}' if parent is not None else '') + ')'
             if rr.get('returncode', 1) != 0:
-                return 'missing'
-            return 'up' if rr.get('stdout', '').strip() == 'running' else 'down'
+                # only the engine's own "no such container" is "missing" (cx host up then creates it); an engine that does
+                # not answer (Docker Desktop off, the daemon down) says so in words that change between versions - "failed
+                # to connect to the docker API at npipe:..." of a newer CLI read as "missing" (2026-11-03) - and any other
+                # failure is an error with its first line, never "missing"
+                err = (rr.get('stderr', '') or '').strip()
+                low = err.lower()
+                if any(x in low for x in ('no such container', 'no such object', 'no container with name or id')):
+                    return 'missing'
+                if any(x in low for x in ('error during connect', 'failed to connect to the docker api', 'cannot connect to the docker daemon',
+                                          'daemon is running', 'cannot connect to podman', 'connection refused')):
+                    return f'{engine} engine down' + (f' on {h["via"]}' if parent is not None else '')
+                return 'error: ' + (err.splitlines() or [f'{engine} inspect exit code {rr.get("returncode")}'])[0][:160]
+            st = rr.get('stdout', '').strip()
+            # a container that exists and is not running is "stopped" (cx host up starts it), not "down": read as Docker
+            # Desktop being off, it hid four stopped test containers from a fleet round (2026-11-02); the commands that
+            # need a running host skip it all the same (only a stopped WSL distro counts as reachable)
+            if st == 'running':
+                return 'up'
+            return 'stopped' if st in ('exited', 'created') else f'down ({st or "?"})'
 
         if t == 'adb':
             serial = str(acc.get('serial') or '')

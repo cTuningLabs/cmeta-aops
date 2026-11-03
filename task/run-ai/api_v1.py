@@ -1180,10 +1180,14 @@ class CTask(InitCTask):
                 lines.append('- There is no earlier conversation recorded for this project: this one is the first.')
             lines.append('- A question about a previous conversation is answered from those transcripts, never from the harness\'s own '
                          'session history (~/.claude/projects, CODEX_HOME, ...), which is not the record of this project.')
-        lines.append('- Everything learnt or made for this project stays in its %s folder, never in the user\'s home: a new memory is a '
-                     'Markdown file in %s/%s/ with a line added to MEMORY.md (Claude Code does this by itself there); a new skill is '
-                     '%s/%s/<name>/SKILL.md (loaded on the next run), not ~/.claude/skills or .claude/skills.' % (
-                         AI_DIR, posix, MEMORY_DIR, posix, SKILLS_DIR))
+        lines.append('- What you keep for yourself - memories, skills, logs, notes and scratch files of the work - stays in the '
+                     'project\'s %s folder, never in the user\'s home: a new memory is a Markdown file in %s/%s/ with a line added '
+                     'to MEMORY.md (Claude Code does this by itself there); a new skill is %s/%s/<name>/SKILL.md (loaded on the '
+                     'next run), not ~/.claude/skills or .claude/skills.' % (AI_DIR, posix, MEMORY_DIR, posix, SKILLS_DIR))
+        # a result is the artifact's, not the AI's (2026-11-03: a session's final message for the user landed in !AI)
+        lines.append('- What the user asks you to produce - a document, a message, a report, code or data meant as part of this '
+                     'artifact - goes into the artifact\'s own folder (%s) or a sub-folder there, beside its other files, not into '
+                     '%s, unless the user names another place.' % (os.path.dirname(ai_root).replace('\\', '/'), AI_DIR))
         lines.append('- The %s folder travels between machines. A location inside a cMeta artifact - in a memory, a skill, a record or '
                      'a reply - is written as {{{<category>::<artifact alias>,<artifact UID>}}}/<relative path, forward slashes>: the '
                      'braces stand for that artifact\'s folder on whichever machine reads it ("cx utils find_by_cid" resolves them; a '
@@ -1932,6 +1936,19 @@ class CTask(InitCTask):
                 conv_how = 'continued'
                 notes += self._recover_sessions(conv, project_path)
             sess = (conv.get('sessions') or {}).get(hk) or {}
+            if sess.get('id') and hk in CONV.NATIVE_COPIED:
+                # the native session travels with the project: this machine's copy goes up to !AI/sessions (a session
+                # made here before the copies existed), and a copy that went on on another machine comes back down
+                try:
+                    CONV.stash_session(ai_root, harness, sess['id'], project_path)
+                    put, why_not = CONV.restore_session(ai_root, harness, sess['id'], project_path)
+                except Exception as e:
+                    put, why_not = 0, str(e)
+                if put:
+                    notes.append('%s: the session %s went on on another machine - its copy from %s/%s is put back here: '
+                                 'resumed natively' % (hk, sess['id'], AI_DIR, CONV.SESSIONS_DIR))
+                elif why_not and not CONV.session_exists(harness, sess['id'], project_path):
+                    notes.append('%s: the session %s cannot be resumed here: %s' % (hk, sess['id'], why_not))
             if sess.get('id') and CONV.session_exists(harness, sess['id'], project_path):
                 native_sid = sess['id']
                 if hk == 'codex':
@@ -1945,7 +1962,15 @@ class CTask(InitCTask):
                     has_content = any(s.get('exported') for s in (conv.get('sessions') or {}).values()) or \
                         any(os.path.isfile(os.path.join(log_dir, '%s.%s.output.txt' % (r.get('stamp'), r.get('harness')))) for r in conv['runs'])
                     if has_content:
-                        why = ('no %s session in it yet' % hk) if not sess.get('id') else ('its %s session %s is not in the store any more' % (hk, sess['id']))
+                        if not sess.get('id'):
+                            why = 'no %s session in it yet' % hk
+                        elif hk == 'codex' and CONV.codex_known(sess['id']):
+                            # the project's Codex store travels, the session's rollout file does not
+                            why = 'its %s session %s ran on another machine and cannot be resumed here' % (hk, sess['id'])
+                            notes.append('codex: the session %s ran on another machine (its rollout is not in this machine\'s '
+                                         'CODEX_HOME): a new codex session, with the transcript handed over' % sess['id'])
+                        else:
+                            why = 'its %s session %s is not in the store any more' % (hk, sess['id'])
                         handover = CONV.handover_text(conv, harness, log_dir, why)
                     else:
                         notes.append('the previous run(s) of this conversation left no transcript (quit before the first message): '
@@ -2446,6 +2471,14 @@ class CTask(InitCTask):
                         s['id'] = real
                     run_entry['session'] = real
                     after_notes.append('openclaw session %s (the id its terminal UI chose)' % real)
+            # a copy of the native session's files in !AI/sessions: the conversation goes on natively on any machine
+            # the project is synced to (restore_session before the next resume there)
+            current = run_entry.get('session') or (conv['sessions'].get(hk) or {}).get('id')
+            if current and hk in CONV.NATIVE_COPIED:
+                try:
+                    CONV.stash_session(ai_root, harness, current, project_path)
+                except Exception as e:
+                    after_notes.append('%s: the session was not copied into %s/%s (%s)' % (hk, AI_DIR, CONV.SESSIONS_DIR, e))
             run_entry['finished'] = CONV.now_iso()
             run_entry['seconds'] = round(seconds, 1)
             run_entry['return'] = rr.get('return', 1)
