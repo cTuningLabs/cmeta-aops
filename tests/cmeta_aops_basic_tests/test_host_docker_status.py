@@ -37,7 +37,8 @@ def container(**state):
 
 
 def answer(host, returncode, stdout = '', stderr = ''):
-    host._run_quick = staticmethod(lambda cmd, timeout: {'returncode': returncode, 'stdout': stdout, 'stderr': stderr})
+    # an attribute of the instance is never bound: a plain function (a staticmethod object is callable only since 3.10)
+    host._run_quick = lambda cmd, timeout: {'returncode': returncode, 'stdout': stdout, 'stderr': stderr}
 
 
 def test_running_stopped_and_other_states(host):
