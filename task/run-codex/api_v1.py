@@ -458,9 +458,10 @@ class CTask(InitCTask):
         # Provenance: an artifact codex creates through cMeta records how it was made (the _cmeta
         # "generator"), and one it updates records it as "last_generator". A task that runs codex may
         # have set CMETA_GENERATOR already (method "task", its log, ...) - it is kept then.
+        # (the gateway is not part of it: its alias names an organisation, and the record lands in public
+        # repositories too - the run's own log keeps which gateway it used, 2026-11-03)
         if not os.environ.get('CMETA_GENERATOR'):
-            os.environ['CMETA_GENERATOR'] = json.dumps(dict(_agent_generator(codex_path, extra_flags),
-                                                           **({'gateway': gwc['gateway']} if gwc['gateway'] != 'login' else {})))
+            os.environ['CMETA_GENERATOR'] = json.dumps(_agent_generator(codex_path, extra_flags))
 
         # The run's duration, on the monotonic clock: the wall clock can be set while it runs
         start_time = time.monotonic()

@@ -311,8 +311,21 @@ run_ai_config:                     # what cxai / run-ai takes without flags: its
 - A flag wins, and the run records what it was made with: `cxai --harness=claude` once, and the project is a Claude
   project from then on. The model and the effort travel together and only with their harness - a recorded Codex model
   is never handed to Claude; `--harness=claude` alone records `harness: claude` without a model.
-- A model or an effort nobody gave is not recorded: the harness picks its default itself, and run-ai cannot know it
-  before the run (`--conversations` shows what each run used).
+- A model or an effort nobody gave is not taken again: the harness picks its default itself. What it picked is read
+  after the run from the session's own file (Claude Code writes the model and the effort of every reply, Codex of
+  every turn) and kept as `last_seen` - shown by the next run ("no model given: the harness picks its own - its last
+  run here ran claude-opus-5-5, effort xhigh"), never passed to the harness; a switch inside the session shows as
+  the last one, and the block is written only when the harness, the model or the effort changed:
+
+  ```yaml
+  run_ai_config:
+    harness: claude
+    last_seen:                     # what its last run's session says it ran with: shown, never passed on
+      harness: claude
+      model: claude-opus-5-5
+      effort: xhigh
+      since: '2026-11-03T15:18:21.114Z'
+  ```
 - Only the `run_ai_config` block is written (replaced where it is, else appended): the rest of the `_desc.yaml`,
   comments included, stays as it was. A project whose description is a `_desc.json` is not converted - the run says so.
 - Nothing is recorded by `--dry_run`, the listing views, `--no_log`, a scratch workspace (`-l`) or a plain folder (no

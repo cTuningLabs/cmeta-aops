@@ -10,7 +10,6 @@ generator:
   method: agent
   agent: Claude Code 2.1.310
   via: cmeta 0.38.1
-  gateway: dapple
   by: Grigori Fursin
 tags:
 - xcode

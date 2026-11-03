@@ -518,3 +518,31 @@ def test_the_transcript_keeps_the_longest_copy_of_a_segment_the_sync_left(tmp_pa
     C.write_transcript(conv, str(log))
     assert (log / "other.md.conflict1").exists()
     assert [(pathlib.Path(o).name, [pathlib.Path(c).name for c in cs]) for o, cs in C.conflict_copies(str(log))] == [("other.md", ["other.md.conflict1"])]
+
+
+def test_what_a_session_ran_with_is_read_from_its_end(tmp_path, monkeypatch):
+    """The model and the effort of a session's last reply (2026-11-03): Claude Code writes them on every reply (a switch
+    inside the session shows as the last one, a "<synthetic>" reply is not a model), Codex on every turn; read from the
+    end of the file, which may be tens of megabytes."""
+    f = tmp_path / "claude.jsonl"
+    put(f, [{"type": "assistant", "message": {"model": "claude-opus-5-5"}, "effort": "xhigh", "timestamp": "2026-11-01T12:14:32Z"},
+            {"type": "user", "message": {"content": "go on"}},
+            {"type": "assistant", "message": {"model": "claude-fable-5-1"}, "effort": "max", "timestamp": "2026-11-03T11:03:42Z"},
+            {"type": "assistant", "message": {"model": "<synthetic>"}, "timestamp": "2026-11-03T11:04:00Z"}])
+    assert C.seen_in_files("claude", [str(f)]) == {"model": "claude-fable-5-1", "effort": "max", "since": "2026-11-03T11:03:42Z"}
+    # a window smaller than the file: only its end is read, and the line it cuts is skipped
+    monkeypatch.setattr(C, "SEEN_TAIL_BYTES", 200)
+    with open(f, "a", encoding="utf-8") as out:
+        for _ in range(50):
+            out.write(json.dumps({"type": "progress", "data": "x" * 40}) + "\n")
+    assert C.seen_in_files("claude", [str(f)]) == {}
+    monkeypatch.setattr(C, "SEEN_TAIL_BYTES", 4 * 1024 * 1024)
+
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    put(tmp_path / "codex" / "sessions" / "2026" / "11" / "02" / ("rollout-2026-11-02T17-50-37-%s.jsonl" % SID),
+        [{"type": "session_meta", "payload": {}},
+         {"type": "turn_context", "payload": {"model": "gpt-6.1-sol", "effort": None}, "timestamp": "2026-11-02T16:50:38Z"},
+         {"type": "turn_context", "payload": {"model": "gpt-6.1-sol", "effort": "xhigh"}, "timestamp": "2026-11-02T16:56:42Z"},
+         {"type": "event_msg", "payload": {}}])
+    assert C.seen_in_session("codex", SID, ".") == {"model": "gpt-6.1-sol", "effort": "xhigh", "since": "2026-11-02T16:56:42Z"}
+    assert C.seen_in_session("codex", "no-such-session", ".") == {} and C.seen_in_files("gemini", [str(f)]) == {}

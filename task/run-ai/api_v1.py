@@ -285,6 +285,12 @@ def run_ai_config_text(text, values):
     nl = '\r\n' if '\r\n' in text else '\n'
     block = ['%s:                     # what cxai / run-ai takes without flags: its last run\'s (a flag changes it)' % RUN_AI_CONFIG_KEY]
     block += ['  %s: %s' % (k, word(values[k])) for k in ('harness', 'model', 'effort') if values.get(k)]
+    # what the last run's session says it ran with (2026-11-03): the harness's own choice when no model was given -
+    # shown by the next run, never passed to the harness
+    seen = values.get('last_seen')
+    if isinstance(seen, dict) and seen.get('model'):
+        block.append('  last_seen:                     # what its last run\'s session says it ran with: shown, never passed on')
+        block += ['    %s: %s' % (k, word(seen[k])) for k in ('harness', 'model', 'effort', 'since') if seen.get(k)]
     lines = text.splitlines()
     start = next((i for i, line in enumerate(lines) if re.match(r'%s\s*:' % RUN_AI_CONFIG_KEY, line)), None)
     if start is None:
@@ -751,17 +757,23 @@ class CTask(InitCTask):
         if isinstance(r, dict) or not r[1]:
             return {}
         cfg = self._read_desc(r[0]).get(RUN_AI_CONFIG_KEY)
-        return {k: str(v).strip() for k, v in cfg.items() if v is not None and str(v).strip()} if isinstance(cfg, dict) else {}
+        if not isinstance(cfg, dict):
+            return {}
+        out = {k: str(v).strip() for k, v in cfg.items() if v is not None and not isinstance(v, dict) and str(v).strip()}
+        if isinstance(cfg.get('last_seen'), dict):
+            out['last_seen'] = cfg['last_seen']           # what the last run's session ran with: for a note, never a flag
+        return out
 
     def _record_run_config(self, project_path, values):
         """run_ai_config of the project's _desc.yaml set to what this run is made with, when it differs (only that block
-        changes: run_ai_config_text). -> a note for the run, or '' when nothing changed."""
+        changes: run_ai_config_text; its last_seen stays). -> a note for the run, or '' when nothing changed."""
         values = {k: str(v) for k, v in values.items() if v}
         yaml_path = os.path.join(project_path, '_desc.yaml')
         if not os.path.isfile(yaml_path) and os.path.isfile(os.path.join(project_path, '_desc.json')):
             return "%s not recorded: the project's _desc is JSON (YAML is the rule: a _desc.yaml in its place keeps it)" % RUN_AI_CONFIG_KEY
-        old = self._read_desc(project_path).get(RUN_AI_CONFIG_KEY)
-        old = {k: str(v) for k, v in old.items() if v} if isinstance(old, dict) else {}
+        cfg = self._read_desc(project_path).get(RUN_AI_CONFIG_KEY)
+        cfg = cfg if isinstance(cfg, dict) else {}
+        old = {k: str(v) for k, v in cfg.items() if v and not isinstance(v, dict)}
         if old == values:
             return ''
         try:
@@ -771,9 +783,34 @@ class CTask(InitCTask):
             text = ''
         tmp = yaml_path + '.tmp'
         with open(tmp, 'w', encoding='utf-8', newline='') as f:
-            f.write(run_ai_config_text(text, values))
+            f.write(run_ai_config_text(text, dict(values, last_seen=cfg.get('last_seen'))))
         os.replace(tmp, yaml_path)
         return "%s of the project's _desc.yaml: %s" % (RUN_AI_CONFIG_KEY, ', '.join('%s %s' % (k, v) for k, v in values.items()))
+
+    def _record_last_seen(self, project_path, harness, seen):
+        """run_ai_config.last_seen of the project's _desc.yaml (2026-11-03): the harness, model and effort its last run's
+        session says it ran with (CONV.seen_in_session) and since when - shown by the next run, never passed to the
+        harness (what a run is given stays run_ai_config.model / effort). Written when they change, so that a plain
+        run does not rewrite the file. -> a note, or '' when nothing changed or nothing is known."""
+        yaml_path = os.path.join(project_path, '_desc.yaml')
+        if not (seen or {}).get('model') or not os.path.isfile(yaml_path):
+            return ''
+        cfg = self._read_desc(project_path).get(RUN_AI_CONFIG_KEY)
+        cfg = cfg if isinstance(cfg, dict) else {}
+        new = {'harness': CONV.harness_key(harness), 'model': seen['model'], 'effort': seen.get('effort') or '',
+               'since': seen.get('since') or CONV.now_iso()}
+        old = cfg.get('last_seen') if isinstance(cfg.get('last_seen'), dict) else {}
+        if all(str(old.get(k) or '') == str(new[k]) for k in ('harness', 'model', 'effort')):
+            return ''
+        with open(yaml_path, encoding='utf-8', newline='') as f:
+            text = f.read()
+        flat = {k: str(v) for k, v in cfg.items() if v and not isinstance(v, dict)}
+        tmp = yaml_path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8', newline='') as f:
+            f.write(run_ai_config_text(text, dict(flat, last_seen=new)))
+        os.replace(tmp, yaml_path)
+        return '%s.last_seen of the project\'s _desc.yaml: %s, model %s%s (what the session ran with)' % (
+            RUN_AI_CONFIG_KEY, new['harness'], new['model'], ', effort ' + new['effort'] if new['effort'] else '')
 
     def _run_ai_config(self):
         """The data of the config artifact task-run-ai, read without creating it ("config get" would) -> dict."""
@@ -1698,6 +1735,12 @@ class CTask(InitCTask):
                 and (saved.get('model') or saved.get('effort')):
             model, effort = saved.get('model', ''), saved.get('effort', '')
             saved_notes.append("the model %s, effort %s: the project's %s" % (model or 'default', effort or 'default', RUN_AI_CONFIG_KEY))
+        # no model for this run: the harness picks its own - what its last run here ran with, for the record
+        seen = saved.get('last_seen') if isinstance(saved.get('last_seen'), dict) else {}
+        if not str(model or '').strip() and seen.get('model') and str(seen.get('harness') or '').lower() == CONV.harness_key(harness):
+            saved_notes.append("no model given: the harness picks its own - its last run here ran %s%s (%s.last_seen, since %s)" % (
+                seen['model'], ', effort ' + str(seen['effort']) if seen.get('effort') else '', RUN_AI_CONFIG_KEY,
+                str(seen.get('since') or '?')[:16]))
 
         task_ref, tool_ref = self._harness_refs(harness)
         hk = CONV.harness_key(harness)
@@ -2479,6 +2522,15 @@ class CTask(InitCTask):
                     CONV.stash_session(ai_root, harness, current, project_path)
                 except Exception as e:
                     after_notes.append('%s: the session was not copied into %s/%s (%s)' % (hk, AI_DIR, CONV.SESSIONS_DIR, e))
+                # what the session says it ran with (the harness's own choice when no model was given): the project's
+                # run_ai_config.last_seen, where the next run shows it - a cMeta artifact only, as run_ai_config
+                if cref and not scratch and not no_log:
+                    try:
+                        seen_note = self._record_last_seen(project_path, harness, CONV.seen_in_session(harness, current, project_path))
+                        if seen_note:
+                            after_notes.append(seen_note)
+                    except Exception as e:
+                        after_notes.append('%s.last_seen not recorded (%s)' % (RUN_AI_CONFIG_KEY, e))
             run_entry['finished'] = CONV.now_iso()
             run_entry['seconds'] = round(seconds, 1)
             run_entry['return'] = rr.get('return', 1)

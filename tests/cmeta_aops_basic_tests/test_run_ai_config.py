@@ -74,3 +74,32 @@ def test_a_run_takes_the_saved_harness_and_records_its_own(run_ai, tmp_path):
     (js / '_desc.json').write_text('{"a": 1}', encoding='utf-8')
     assert 'not recorded' in t._record_run_config(str(js), {'harness': 'claude'})
     assert sorted(os.listdir(js)) == ['_desc.json']
+
+
+def test_last_seen_is_recorded_kept_and_never_given_to_the_harness(run_ai, tmp_path):
+    """run_ai_config.last_seen (2026-11-03): what the last run's session says it ran with - recorded when it changes,
+    kept when the rest of the block is rewritten, read back as a note and never as the model of the next run."""
+    CTask = run_ai['CTask']
+    t = CTask.__new__(CTask)
+    project = tmp_path / 'work-item'
+    project.mkdir()
+    (project / '_desc.yaml').write_text(DESC, encoding='utf-8')
+    t._resolve_project = lambda project_arg, con, space, ai_dir: (str(project), 'work::work-item', 'test')
+    t._record_run_config(str(project), {'harness': 'claude'})
+
+    seen = {'model': 'claude-opus-5-5', 'effort': 'max', 'since': '2026-11-03T13:08:52Z'}
+    note = t._record_last_seen(str(project), 'claude', seen)
+    assert 'last_seen' in note and 'claude-opus-5-5' in note
+    cfg = yaml.safe_load((project / '_desc.yaml').read_text(encoding='utf-8'))['run_ai_config']
+    assert cfg == {'harness': 'claude', 'last_seen': {'harness': 'claude', 'model': 'claude-opus-5-5', 'effort': 'max',
+                                                      'since': '2026-11-03T13:08:52Z'}}       # the time stays a text
+    assert (project / '_desc.yaml').read_text(encoding='utf-8').startswith(DESC)
+    assert t._record_last_seen(str(project), 'claude', dict(seen, since='2026-11-04T09:00:00Z')) == ''    # unchanged: no write
+
+    # the block rewritten for a run with another model: last_seen stays; read back, it is a note and not a flag
+    t._record_run_config(str(project), {'harness': 'claude', 'model': 'claude-fable-5-1'})
+    saved = t._saved_run_config('', None, None, '', '!AI')
+    assert saved['model'] == 'claude-fable-5-1' and saved['last_seen']['model'] == 'claude-opus-5-5'
+    assert t._record_last_seen(str(project), 'claude', {'model': 'claude-fable-5-1', 'since': 'x'}).endswith('(what the session ran with)')
+    assert yaml.safe_load((project / '_desc.yaml').read_text(encoding='utf-8'))['run_ai_config']['model'] == 'claude-fable-5-1'
+    assert t._record_last_seen(str(project), 'claude', {}) == ''

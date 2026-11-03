@@ -693,6 +693,71 @@ def restore_session(ai_root, harness, sid, project_path):
     return n, ''
 
 
+# What a native session says it ran with (2026-11-03, the user: the model a run was not given - the harness's own
+# choice - is worth knowing): the model and the effort of its last reply. Claude Code writes them on every reply
+# (message.model, effort), Codex on every turn (turn_context: model, effort), so a switch inside the session shows as
+# the last one. Read from the end of the file: a long session's file runs to tens of megabytes.
+SEEN_TAIL_BYTES = 4 * 1024 * 1024
+
+
+def _tail_entries(path, max_bytes = None):
+    """The JSON lines at the end of a file, the last first (the line the start of the window cuts is skipped)."""
+    max_bytes = max_bytes or SEEN_TAIL_BYTES
+    try:
+        size = os.path.getsize(path)
+        with open(path, 'rb') as f:
+            if size > max_bytes:
+                f.seek(size - max_bytes)
+                f.readline()
+            data = f.read()
+    except OSError:
+        return
+    for line in reversed(data.splitlines()):
+        try:
+            d = json.loads(line.decode('utf-8', 'replace'))
+        except ValueError:
+            continue
+        if isinstance(d, dict):
+            yield d
+
+
+def seen_in_files(harness, paths):
+    """The model and the effort of the last reply of a native session, from its files -> {'model', 'effort', 'since'}
+    ({} when they say nothing): Claude Code's last assistant message with a real model (not "<synthetic>"), Codex's
+    last turn_context. 'since' is when that reply was written."""
+    h = harness_key(harness)
+    for path in paths:
+        for d in _tail_entries(path):
+            if h == 'claude' and d.get('type') == 'assistant':
+                msg = d.get('message') if isinstance(d.get('message'), dict) else {}
+                model = str(msg.get('model') or '')
+                if not model or model.startswith('<'):
+                    continue
+                effort = d.get('effort') or d.get('perTurnEffort')
+            elif h == 'codex' and d.get('type') == 'turn_context':
+                p = d.get('payload') if isinstance(d.get('payload'), dict) else {}
+                model = str(p.get('model') or '')
+                if not model:
+                    continue
+                effort = p.get('effort')
+            else:
+                continue
+            out = {'model': model, 'since': str(d.get('timestamp') or '')}
+            if isinstance(effort, str) and effort:
+                out['effort'] = effort
+            return out
+    return {}
+
+
+def seen_in_session(harness, sid, project_path):
+    """seen_in_files of the native session `sid` on this machine: Claude Code's own session file (its subagents'
+    replies come from other models), Codex's rollout."""
+    files = [full for full, rel in native_session_files(harness, sid, project_path)]
+    if harness_key(harness) == 'claude':
+        files = files[:1]
+    return seen_in_files(harness, files) if files else {}
+
+
 def codex_known(sid):
     """The thread is in the project's Codex store (state_*.sqlite): it ran here or on another machine."""
     for db in _glob(codex_sqlite_home(), 'state_*.sqlite'):

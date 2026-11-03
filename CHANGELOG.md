@@ -2,6 +2,24 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.63.1
+- **run-ai keeps what a session really ran with: `run_ai_config.last_seen`.** A run without `--model` leaves the
+  choice to the harness, and the project never knew it; after a Claude Code or Codex run, the model and the effort of
+  the session's last reply (read from the end of its own file) go into `run_ai_config.last_seen` with the time, the
+  next run shows them ("no model given: the harness picks its own - its last run here ran ...") and never passes them
+  on. Written when the harness, the model or the effort changed; a rewrite of the block keeps it. Tests:
+  `test_run_ai_config.py`, `test_run_ai_conversations.py`.
+- **The generator record of an agent session no longer names its AI gateway.** run-claude and run-codex put
+  `gateway: <alias>` into CMETA_GENERATOR, so every artifact an agent made through a gateway recorded the alias
+  in its `_cmeta` - in public repositories too, where an alias may name an organisation; the record names the
+  agent and its version, the run's own log keeps the gateway. The records of eleven artifacts here lost the key;
+  a changelog line, a comment and a test fixture got neutral names.
+- **`cx host upgrade --version=X`: a host that ends on another version failed.** A host that declares its own
+  `cmeta: upgrade` command runs it as written, so the version did not reach it, and the round said "already <old>"
+  as a success (a WSL distro's `pip install -U cmeta` met pip's cached view of PyPI right after a release). Now such
+  a host reads `asked X, has Y`, counts as failed and is not restarted, and a warning says beforehand when a declared
+  command does not name the version (also in `--dry-run`). Tests: `test_host_upgrade_version.py`.
+
 ## 0.63.0
 - **run-ai: a conversation goes on natively on any machine the project is synced to (Claude Code and Codex).** Their
   native session files live in the user's home (Claude Code's `projects/<slug>/<id>.jsonl` and its `<id>/` folder,
@@ -73,7 +91,7 @@ All notable changes to cMeta AOps are documented here, newest first.
 ## 0.61.5
 - **`run-ai --context` takes the alias of a declared AI context**: an artifact that declares `template: ai_uses:
   {alias, title, sort}` in its meta is an AI context (cMeta 0.38.0, 2026-11-02: `cx <category> add|update
-  <artifact> -ai`, `cx utils ai_context`); `--context=dapple` names it as `-ai=dapple` would, an artifact alias in
+  <artifact> -ai`, `cx utils ai_context`); `--context=acme` names it as `-ai=acme` would, an artifact alias in
   any category works too, a cRef and `claude:<folder>` as before; an engine without the resolver, or a name it
   cannot resolve, leaves the entry as typed. Test: `test_context_aliases_resolve_through_the_engine`.
 
@@ -367,7 +385,7 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **A stopped website lets its port go:** `__run_server.sh --stop` (manage-cmeta-project `kill_tree`) ends with
   SIGKILL any process of the server's tree that is still alive after the SIGTERM and the wait - the worker processes
   of the site's process pool survived a stop and kept the port, so the next start failed with "address already in
-  use" (the Dapple Labs site, 2026-10-27).
+  use" (a web site's server, 2026-10-27).
 - **run-ai with OpenCode reads its context folders and finishes a one-prompt run:** the folders handed over with
   `--add-dir` are outside the project, which OpenCode's permission `external_directory` asks about - and refuses in
   `opencode run` - so `OPENCODE_CONFIG_CONTENT` now allows them (subfolders included); a refused tool call ended
