@@ -60,6 +60,17 @@ def test_missing_container_and_engine_down(host):
     assert host._status({}, container()) == 'docker engine down'
     answer(host, 1, '', 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?')
     assert host._status({}, container()) == 'docker engine down'
+    # the wording of a newer Docker CLI with Docker Desktop off (2026-11-03): it read as "missing"
+    answer(host, 1, '', 'failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine; check if the path is correct '
+                        'and if the daemon is running: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.')
+    assert host._status({}, container()) == 'docker engine down'
+    answer(host, 125, '', 'Error: no such object: "c"')
+    assert host._status({}, container()) == 'missing', 'Podman'
+    # anything else is an error, never "missing" (cx host up would create a new container for a missing one)
+    answer(host, 1, '', 'permission denied while trying to connect to the docker API at unix:///var/run/docker.sock\nmore')
+    assert host._status({}, container()) == 'error: permission denied while trying to connect to the docker API at unix:///var/run/docker.sock'
+    answer(host, 1)
+    assert host._status({}, container()) == 'error: docker inspect exit code 1'
 
 
 def test_a_stopped_container_is_not_reachable_for_commands(host):

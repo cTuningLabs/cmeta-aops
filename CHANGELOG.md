@@ -20,7 +20,10 @@ All notable changes to cMeta AOps are documented here, newest first.
   `down` for a container that exists and is not running, and `missing` whether the container was gone or Docker Desktop
   was off; a reader took `down` for Docker being off and a fleet round left four stopped test containers out
   (2026-11-02). `cx host up` starts a stopped container as before; the commands that need a running host still skip
-  it. Tests: `test_host_docker_status.py`.
+  it. `missing` is now only the engine's own "no such container" (Docker or Podman): the wording of a newer Docker CLI
+  with Docker Desktop off ("failed to connect to the docker API at npipe:...") reads `docker engine down`, and any
+  other failure is `error: <its first line>`, so `cx host up` never creates a container that may still exist.
+  Tests: `test_host_docker_status.py`.
 
 ## 0.62.0
 - **The iPhone as a compute target: `ios-cpu`, `ios-gpu`, `ios-npu`.** `tool/apple.xcode` finds Xcode through
