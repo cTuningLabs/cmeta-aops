@@ -140,8 +140,8 @@ def test_context_aliases_resolve_through_the_engine(CTask):
 
     def access(i):
         calls.append(i)
-        if i['names'] == 'dapple':
-            return {'return': 0, 'crefs': ['fgg.project,cc4b::Dapple,1234']}
+        if i['names'] == 'acme':
+            return {'return': 0, 'crefs': ['project,cc4b::Acme,1234']}
         if i['names'] == 'two':
             return {'return': 0, 'crefs': ['a,1::x,2', 'b,3::y,4']}
         if i['names'] == 'old-engine':
@@ -149,8 +149,8 @@ def test_context_aliases_resolve_through_the_engine(CTask):
         return {'return': 1, 'error': 'no artifact for the name "%s"' % i['names']}
 
     t.cm = types.SimpleNamespace(access=access)
-    assert t._context_crefs('dapple') == ['fgg.project,cc4b::Dapple,1234']
-    assert calls[-1]['category'] == 'utils' and calls[-1]['command'] == 'ai_context' and calls[-1]['names'] == 'dapple'
+    assert t._context_crefs('acme') == ['project,cc4b::Acme,1234']
+    assert calls[-1]['category'] == 'utils' and calls[-1]['command'] == 'ai_context' and calls[-1]['names'] == 'acme'
     assert t._context_crefs('two') == ['a,1::x,2', 'b,3::y,4']
     assert t._context_crefs('nobody') == ['nobody'] and t._context_crefs('old-engine') == ['old-engine']
     n = len(calls)

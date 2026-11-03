@@ -6,7 +6,6 @@ desc: "The NVIDIA GPU driver: detected by nvidia-smi (the installed version, the
 generator:
   agent: Claude Code 2.1.310
   by: Grigori Fursin
-  gateway: dapple
   method: agent
   via: cmeta 0.37.11
   model: claude-opus-5-5

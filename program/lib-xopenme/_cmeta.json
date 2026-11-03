@@ -18,7 +18,6 @@
     "agent": "Claude Code 2.1.310",
     "by": "Grigori Fursin",
     "date": "2026-11-02",
-    "gateway": "dapple",
     "method": "agent",
     "via": "cmeta 0.38.1"
   },
