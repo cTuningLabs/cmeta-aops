@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.63.0.1)
+## 0.63.1
 - **run-ai keeps what a session really ran with: `run_ai_config.last_seen`.** A run without `--model` leaves the
   choice to the harness, and the project never knew it; after a Claude Code or Codex run, the model and the effort of
   the session's last reply (read from the end of its own file) go into `run_ai_config.last_seen` with the time, the
