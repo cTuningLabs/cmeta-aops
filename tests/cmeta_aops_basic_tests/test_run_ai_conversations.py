@@ -112,6 +112,78 @@ def test_how_each_harness_starts_and_resumes_a_session():
     assert len(C.new_id()) == 36
 
 
+def test_a_codex_session_resumes_only_where_its_rollout_is(tmp_path, monkeypatch):
+    """The project's Codex store (state_*.sqlite in !AI) travels between machines, the session's rollout file stays in
+    the CODEX_HOME of the machine that ran it: "codex resume <id>" there and only there (2026-11-03: a session of the
+    P14s Gen 4 continued on the laptop ended with "No saved session found with ID ...")."""
+    import sqlite3
+    home, store = tmp_path / "codex-home", tmp_path / "project" / "!AI" / "codex"
+    store.mkdir(parents = True)
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    con = sqlite3.connect(str(store / "state_5.sqlite"))
+    con.execute("create table threads (id text, created_at integer, source text, cwd text)")
+    con.execute("insert into threads values (?, 1, 'cli', '/elsewhere')", (SID,))
+    con.commit()
+    con.close()
+    C.set_codex_sqlite_home(str(store))
+    try:
+        assert C.codex_known(SID) and not C.codex_known("other")
+        assert not C.session_exists("codex", SID, "."), "the thread alone: a new session with the transcript handed over"
+        put(home / "sessions" / "2026" / "11" / "02" / ("rollout-2026-11-02T17-50-37-%s.jsonl" % SID), [{"type": "session_meta"}])
+        assert C.session_exists("codex", SID, "."), "its rollout is here: resumed natively"
+    finally:
+        C.set_codex_sqlite_home("")
+
+
+def test_a_claude_session_travels_with_the_project(tmp_path, monkeypatch):
+    """A copy of the session file goes into !AI/sessions/claude after a run; on another machine (another config folder,
+    another path of the project) it is put back into that machine's Claude Code folder and the session resumes there;
+    a copy that went on elsewhere (bigger) replaces the local file, an older one does not (2026-11-03)."""
+    ai = tmp_path / "project" / "!AI"
+    here, there = tmp_path / "laptop" / "task", tmp_path / "p14s" / "task"
+    here.mkdir(parents = True)
+    there.mkdir(parents = True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-laptop"))
+    slug = lambda p: __import__("re").sub(r"[^A-Za-z0-9]", "-", __import__("os").path.normpath(str(p)))
+    fp = put(tmp_path / "claude-laptop" / "projects" / slug(here) / (SID + ".jsonl"), [{"type": "user", "cwd": str(here)}])
+    put(tmp_path / "claude-laptop" / "projects" / slug(here) / SID / "subagents" / "a.jsonl", [{"x": 1}])
+    assert C.stash_session(str(ai), "claude", SID, str(here)) == 2
+    assert (ai / "sessions" / "claude" / (SID + ".jsonl")).is_file() and (ai / "sessions" / "claude" / SID / "subagents" / "a.jsonl").is_file()
+    assert C.stash_session(str(ai), "claude", SID, str(here)) == 0, "a copy as new as the file is left"
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-p14s"))
+    assert not C.session_exists("claude", SID, str(there))
+    assert C.restore_session(str(ai), "claude", SID, str(there)) == (2, "")
+    assert C.session_exists("claude", SID, str(there))
+    assert (tmp_path / "claude-p14s" / "projects" / slug(there) / SID / "subagents" / "a.jsonl").is_file()
+
+    # it goes on on the P14s: its copy grows, and the laptop takes it back
+    local = tmp_path / "claude-p14s" / "projects" / slug(there) / (SID + ".jsonl")
+    local.write_text(local.read_text(encoding = "utf-8") + json.dumps({"type": "assistant"}) + "\n", encoding = "utf-8")
+    assert C.stash_session(str(ai), "claude", SID, str(there)) == 1
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-laptop"))
+    assert C.restore_session(str(ai), "claude", SID, str(here)) == (1, "")
+    assert fp.read_text(encoding = "utf-8").count("\n") == 2
+    assert C.restore_session(str(ai), "claude", SID, str(here)) == (0, ""), "nothing newer: nothing to put back"
+    assert C.restore_session(str(ai), "claude", "other", str(here))[1] == "no copy of the session in the project"
+
+
+def test_a_codex_session_travels_with_the_project(tmp_path, monkeypatch):
+    """The rollout file goes into !AI/sessions/codex/<date>/ after a run and comes back under CODEX_HOME/sessions/<date>/
+    on another machine, where "codex resume <id>" then finds it (2026-11-03)."""
+    ai = tmp_path / "project" / "!AI"
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-p14s"))
+    name = "rollout-2026-11-02T17-50-37-%s.jsonl" % SID
+    put(tmp_path / "codex-p14s" / "sessions" / "2026" / "11" / "02" / name, [{"type": "session_meta"}])
+    assert C.stash_session(str(ai), "codex", SID, ".") == 1
+    assert (ai / "sessions" / "codex" / "2026" / "11" / "02" / name).is_file()
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-laptop"))
+    assert not C.session_exists("codex", SID, ".")
+    assert C.restore_session(str(ai), "codex", SID, ".") == (1, "")
+    assert C.session_exists("codex", SID, ".")
+    assert C.stash_session(str(ai), "gemini", SID, ".") == 0 and C.restore_session(str(ai), "gemini", SID, ".") == (0, "")
+
+
 def test_claude_sessions_are_found_and_exported(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     project = tmp_path / "my project, with a comma"
