@@ -1,0 +1,19 @@
+artifact: 76b8b4f2a1864b10
+category: tool,c393ba5c6fa14f66
+authors: Grigori Fursin
+creation_timestamp: '2026-11-03T16:34:20.899856+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.310
+  via: cmeta 0.38.1
+  by: Grigori Fursin
+desc: 'twine: checks and uploads Python packages to PyPI - installed as a pinned PyPI
+  package in its own Python 3.12 environment on Windows, Linux and macOS.'
+note: The upload with an API token kept in a cMeta secret (password-protected) is the
+  task upload-to-pypi; "cx tool run twine -- check dist/*" checks a dist folder.
+tags:
+- twine
+- pypi
+- python
+- package
+- upload
