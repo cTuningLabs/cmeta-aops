@@ -1693,6 +1693,7 @@ class CTask(InitCTask):
             reproducible: bool = False,     # the sub-task's flags that cut the run-to-run variation
             stats: bool = True,             # record the token use and cost (ignored in an interactive session)
             no_log: bool = False,           # do not write the output, the stats, the run record and the conversation into !AI/log
+            record_prompt: bool = False,    # keep the submitted text prompt in !AI/log and return prompt_file, without adding it to the result
             add_repos: str = '',            # claude only: cMeta repos to add to the context ("alias,alias"; "none")
             codex_state: str = 'project',   # codex only: where its threads, history and memories live - "project" (<project>/!AI/codex, CODEX_SQLITE_HOME) or "home" (CODEX_HOME)
             context: str = '',              # read-only memory and skills of more sources, ";"-separated: "category::artifact;claude:<folder>;..."
@@ -2622,6 +2623,13 @@ class CTask(InitCTask):
                'context_guard': guard_mode, 'context_changes': guard_records, 'pending': staged_now}
         if scratch:
             out['log_project'] = project_path
+        if record_prompt and not no_log and isinstance(rr.get('prompt'), str):
+            # Some adapters keep a long interactive prompt already. Headless consumers can explicitly retain the
+            # submitted text too, beside the run record, without returning a growing prompt in every access result.
+            prompt_path = os.path.join(log_dir, '%s.%s.prompt.md' % (stamp, harness))
+            with open(prompt_path, 'w', encoding='utf-8') as stream:
+                stream.write(rr['prompt'])
+            out['prompt_file'] = prompt_path
         if rr.get('return', 0) > 0:
             out['error'] = rr.get('error', 'the harness task failed')
         for k in ('output_file', 'stats_file', 'stats', 'returncode', 'tokens'):

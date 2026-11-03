@@ -129,7 +129,9 @@ asking, preserving unattended usage. A closed input without `-q` gives an error 
 ```
 
 The folders are created on the first real run; `--dry_run` creates nothing. `--no_log` leaves `log/` out (the
-settings file then goes to the temp directory, and no conversation is recorded or continued).
+settings file then goes to the temp directory, and no conversation is recorded or continued). `--record_prompt`
+keeps the text submitted to the harness as `log/<stamp>.<harness>.prompt.md` and answers with `prompt_file` - for a
+caller that wants the exact prompt beside the run record without carrying it in every result.
 
 ## Conversations: continue by default, `--new`, `--conversation`, the transcript
 
