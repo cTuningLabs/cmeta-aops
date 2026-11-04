@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.64.0.1)
+## 0.64.1
 - **run-ai `--record_prompt`.** The text submitted to the harness is kept as `!AI/log/<stamp>.<harness>.prompt.md`
   and the run answers with `prompt_file` - for a headless caller that wants the exact prompt beside the run record
   without a growing `prompt` in every result. Off by default; nothing with `--no_log`.
