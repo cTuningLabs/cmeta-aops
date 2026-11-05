@@ -21,3 +21,14 @@ uses:
     version: "{{params.version|$None}}"
     with:
       package: huggingface_hub
+
+# The key of the config artifact "task" this tool reads.
+
+configs:
+  task:
+    keys:
+      hf.cache:
+        desc: 'the Hugging Face cache (HF_HOME of the hf tool and of what runs with it): one folder, or several separated
+          by ; on Windows (: elsewhere) - the first one that exists or can be made'
+        type: path
+        example: D:\hf-cache

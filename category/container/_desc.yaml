@@ -1,0 +1,17 @@
+# The keys of the config artifacts the container category reads (cx container build / render / run ..., and the tasks
+# get-host--docker and get-host--wsl, which build their images with it).
+
+configs:
+  container:
+    desc: 'the container engine of this machine and the cMeta engine checkout that a local build takes'
+    keys:
+      engine:
+        desc: 'the container engine of a command that names none - docker or podman (--engine wins); empty: docker if
+          it is installed here, else podman'
+        example: podman
+      cmeta_local_path:
+        desc: 'the cMeta engine checkout (a folder with pyproject.toml and cmeta/) that an image built with
+          cmeta_source=local takes (--template.cmeta_local_path wins); empty: <cMeta home>/__symlinks/cmeta, then the
+          folder above the cmeta package this Python imports (an editable install)'
+        type: path
+        example: ~/work/cmeta

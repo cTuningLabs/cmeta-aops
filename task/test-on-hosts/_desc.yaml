@@ -13,3 +13,20 @@ store_global: False
 cli_params:
   action:
     values: [launch, peek, collect, remove]
+
+# The keys of the config artifact task-test-on-hosts, this machine's defaults of the rounds.
+
+configs:
+  task-test-on-hosts:
+    desc: 'the defaults of the test-on-hosts rounds of this machine'
+    keys:
+      hosts:
+        desc: 'the hosts of a round when --hosts is not given: host aliases, a list or comma-separated (the test
+          machines of a fleet); empty: here, this machine'
+        type: list
+        example: host-a,host-b
+      here_dir:
+        desc: 'where this machine''s part of a round runs (<here_dir>/test-on-hosts-<id>); empty: ~/cmeta-tests. Keep it
+          short on Windows - MSVC writes no file beyond 260 characters'
+        type: path
+        example: D:\cmeta-tests

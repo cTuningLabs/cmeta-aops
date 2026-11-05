@@ -1,0 +1,9 @@
+# The keys of the config artifact "task" that the install commands of the tools use (their _desc.yaml).
+
+configs:
+  task:
+    keys:
+      winget_install_flags:
+        desc: 'extra flags at the end of every "winget install" of a tool on Windows (the install commands of the tools
+          take them as global.init.winget_install_flags; empty by default) - for installs that ask no question'
+        example: --silent --accept-source-agreements --accept-package-agreements

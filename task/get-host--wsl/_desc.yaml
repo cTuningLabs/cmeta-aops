@@ -24,3 +24,19 @@ cache: False
 
 params_map:
   arg2: name
+
+# The keys of the config artifacts this task reads.
+
+configs:
+  task-get-host--wsl:
+    desc: 'where get-host--wsl puts the WSL 2 distributions it makes on this machine'
+    keys:
+      location:
+        desc: 'the folder of the distributions'' disks (--location wins); empty: %LOCALAPPDATA%\cmeta\wsl'
+        type: path
+        example: D:\WSL\cmeta
+  task:
+    keys:
+      cmeta_version:
+        desc: 'a fallback only: the cMeta version written into the readme and the record of an instance when the engine
+          names none (the engine''s own version otherwise)'

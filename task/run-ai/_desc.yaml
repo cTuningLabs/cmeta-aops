@@ -48,3 +48,15 @@ params_map:
 
 uses:
   - task: runner,1e48cc0c5f6041a5
+
+# The key of config::default run-ai still reads (the keys of its own config task-run-ai are in its README).
+
+configs:
+  default:
+    keys:
+      run_ai_max_context_tokens:
+        desc: 'the older key of the limit of the context estimate of run-ai, in tokens (over it a run asks, or fails
+          under -q, --yes or without a terminal): --max_context_tokens and the key max_context_tokens of the config
+          task-run-ai come first'
+        type: number
+        default: '30000'
