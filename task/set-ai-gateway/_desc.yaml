@@ -15,3 +15,20 @@ usage: |
     run_ai_gateway: true            every run goes through the gateway named below unless a flag or a project says otherwise
     run_ai_gateway_name: acme       the gateway -gw and run_ai_gateway mean
     run_ai_gateway_codex: login     per harness: login or an alias (wins over the two keys above)
+
+# The keys of config::default this task reads (the usage above).
+
+configs:
+  default:
+    keys:
+      run_ai_gateway_<harness>:
+        desc: 'login or an ai.gateway alias for one harness (claude, codex, opencode, ...): it wins over run_ai_gateway
+          and run_ai_gateway_name; the flags -ln, -gw and --gateway and a project''s ai_gateway win over it'
+        example: login
+      run_ai_gateway:
+        desc: 'true: every run of a harness without a key of its own goes through the gateway run_ai_gateway_name;
+          empty or false: the harness''s own login'
+        type: yes/no
+      run_ai_gateway_name:
+        desc: 'the ai.gateway alias that run_ai_gateway and the flag -gw mean'
+        example: acme

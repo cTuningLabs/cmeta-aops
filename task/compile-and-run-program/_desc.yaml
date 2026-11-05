@@ -29,3 +29,15 @@ cli_params:
   skip_compile: bool
   skip_run: bool
   skip_size_check: bool
+
+# The key of the config artifact "task" this task reads besides the ones its README names.
+
+configs:
+  task:
+    keys:
+      compile_and_run_program.skip_cache:
+        desc: 'true: a program is built and run in a folder of its own artifact (tmp, or what --target_tmp or
+          compile_and_run_program.target_tmp names), the same for every request; false: each request - its explicit
+          choices and its targets - gets a build entry of its own in the cache and comes back to it'
+        type: yes/no
+        default: 'false'

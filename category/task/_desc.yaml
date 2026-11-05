@@ -1,0 +1,29 @@
+# The keys of the config artifact "task" that the task engine reads (cx task run ...). The task init reads the config
+# and offers it to every task as global.init.<key>; --use.init.<key>=<value> changes one key for one run.
+#
+# An entry of "use" is what --use.<storage key>.<param> would say on every command line of this machine:
+#   cx config set task --meta.use.python.tool_path=/opt/venv/bin/python
+
+configs:
+  task:
+    keys:
+      use:
+        desc: 'this machine''s own defaults of --use, read once by the outermost task of a command line and merged under
+          the command line''s --use (an instance of a stack template gets them from its template)'
+        type: dict
+      tool.check_versions:
+        desc: 'true: a reused cache entry of a tool that asks for it (skip_cache_version_check: false) has its version
+          checked against the tool itself. --check_versions checks the tool a command line names unless its entry
+          says skip_cache_version_check: true; the nested tools are not checked by default (a check costs seconds per
+          reuse)'
+        type: yes/no
+        default: 'false'
+      cache_repos.<key>:
+        desc: 'the repository that keeps the cache entries, and their files, of the data tasks whose cache_repo_key is
+          <key>: portable, shared with the instances and the other hosts (such a task ignores file_cache);
+          --use.init.cache_repos.<key>=<repo> for one run'
+        example: my-data
+      cache_repos.data:
+        desc: 'the repository of the data tasks (get-hf-model, get-hf-dataset: cache_repo_key data) - their entries and
+          files stay together there; get-host--docker mounts it into the instances it makes'
+        example: my-data

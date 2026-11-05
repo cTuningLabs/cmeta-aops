@@ -26,3 +26,12 @@ cache: False
 
 params_map:
   arg2: name
+
+# The key of the config artifact "task" this task reads.
+
+configs:
+  task:
+    keys:
+      cmeta_version:
+        desc: 'a fallback only: the cMeta version written into the readme and the record of an instance when the engine
+          names none (the engine''s own version otherwise)'

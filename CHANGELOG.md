@@ -2,6 +2,23 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.65.1
+- **Every config key cmeta-aops reads is described** - for the engine's page `/cmeta.configs` (cMeta 0.38.7), which
+  listed keys that tasks, tools and categories read without saying what they do. Each now has a description,
+  written from the code that reads it, in a `configs:` block of the reader's `_desc.yaml`: `run-ai` (default:
+  `run_ai_max_context_tokens`; the config `task-run-ai`, this machine's settings of run-ai), `set-ai-gateway`
+  (default: `run_ai_gateway`, `run_ai_gateway_name`, `run_ai_gateway_<harness>`), `get-host--docker` and
+  `get-host--wsl` (task: `cmeta_version`; task-get-host--wsl: `location`), `compile-and-run-program` (task:
+  `compile_and_run_program.skip_cache`), `test-session` (task: `test_session.*`), `test-on-hosts`
+  (task-test-on-hosts: `hosts`, `here_dir`), `tool/hf` (task: `hf.cache`); the keys a whole category reads, in a
+  new `_desc.yaml` of the category: `task` (`use`, `tool.check_versions`, `cache_repos.<key>`, `cache_repos.data`),
+  `tool` (`winget_install_flags`), `container` (`engine`, `cmeta_local_path`; the config a container command names
+  with `--secret=<alias>`, whose every key is a secret for the template's build or run). The examples are values,
+  as the page builds its "set it" line from them; the types are the page's words (yes/no, dict).
+  `cx cserver.cmeta.configs list "repo:ctuninglabs@cmeta-aops is:undocumented"` lists nothing now.
+- **`tool/codex`:** the model list of 2026-11-04 (`gpt-6.1-terra` with its efforts; the ChatGPT models page among
+  the sources).
+
 ## 0.65.0
 - **Where each compute target works, declared.** Every `task/target--<name>/_desc.yaml` has a `support` block: the
   kind (cpu, gpu, npu, stack, app), the hardware, `host_os` (the OS of the machine cMeta runs on: linux, windows,

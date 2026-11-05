@@ -51,3 +51,35 @@ cli_params:
   all: bool
   remove_old: bool
   skip_usage: bool
+
+# The keys of the config artifact "task" this task reads (all under test_session).
+
+configs:
+  task:
+    keys:
+      test_session.repo:
+        desc: 'the repository of the session records (log) and sandboxes (tmp); --repo wins'
+        default: local
+      test_session.artifact:
+        desc: 'the name of the log and tmp artifacts that hold them; --artifact wins'
+        default: cmeta-aops-test-sessions
+      test_session.max_keep_mib:
+        desc: 'finish removes a sandbox larger than this (MiB) unless --keep; --max_keep_mib wins'
+        type: number
+        default: '1024'
+      test_session.prices.<model>.<p>:
+        desc: 'the prices of a model in USD per million tokens, for the cost of a finished session: <p> is input,
+          output, cache_write or cache_read (the four keys below); no cost unless every model used has its prices'
+        type: number
+      test_session.prices.<model>.input:
+        desc: 'the price in USD per million input tokens of the model <model>'
+        type: number
+      test_session.prices.<model>.output:
+        desc: 'the price in USD per million output tokens of the model <model>'
+        type: number
+      test_session.prices.<model>.cache_write:
+        desc: 'the price in USD per million tokens written to the prompt cache by the model <model>'
+        type: number
+      test_session.prices.<model>.cache_read:
+        desc: 'the price in USD per million tokens read from the prompt cache by the model <model>'
+        type: number
