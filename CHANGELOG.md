@@ -2,6 +2,21 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.65.0
+- **Where each compute target works, declared.** Every `task/target--<name>/_desc.yaml` has a `support` block: the
+  kind (cpu, gpu, npu, stack, app), the hardware, `host_os` (the OS of the machine cMeta runs on: linux, windows,
+  darwin), `device_os` (android, ios - the program runs on another device, driven from the host) and the status
+  (supported, placeholder). `cx program targets` returns it and prints it under each target ("-> Linux, Windows",
+  "-> Android devices, driven from Linux, Windows, macOS"). Tests: `test_target_support.py`.
+- **The page `cserver.cmeta.targets`** (`/cmeta.targets` on the engine's cserver; the first page category of
+  cmeta-aops): the compute targets against Linux, Windows, macOS, Android and iOS, and every program against the
+  targets it declares (`constraints.supported_compute`), grouped by family, with an OS filter, the route a program
+  names for another OS (`on:`, e.g. a container), a run command per target, and the four things a run gives -
+  portable execution, reproducible runs, benchmarking, optimization and co-design. All read live from the plugged
+  artifacts; `files/targets.yaml` holds the words, the kinds and their colours (light and dark, colour-blind safe)
+  and the families. A host may name the only repositories shown (`only_repos`, as for `cserver.cmeta.configs`);
+  `cx cserver.cmeta.targets matrix [--only_repos=...] [--as_json]` prints the first matrix in a terminal.
+
 ## 0.64.1
 - **run-ai `--record_prompt`.** The text submitted to the harness is kept as `!AI/log/<stamp>.<harness>.prompt.md`
   and the run answers with `prompt_file` - for a headless caller that wants the exact prompt beside the run record

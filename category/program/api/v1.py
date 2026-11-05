@@ -108,6 +108,10 @@ class Category(InitCategory):
         List the compute targets that --compute (or --target) of "cx program run" accepts: the
         task/target--<name> artifacts. Several go together: --compute=cpu,cuda.
 
+        Each target carries what its _desc.yaml declares in "support": the kind (cpu, gpu, npu,
+        stack, app), the hardware, host_os (the OS of the machine cMeta runs on) and device_os
+        (the OS of another device the program runs on, driven from the host), the status.
+
             cx program targets
         """
 
@@ -125,13 +129,19 @@ class Category(InitCategory):
             if not alias.startswith('target--'):
                 continue
             meta = a.get('cmeta', {})
+
+            rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(a.get('path', ''), '_desc'))
+            support = ((rd.get('data') or {}).get('support') or {}) if rd.get('return', 1) == 0 else {}
+
             targets.append({'target': alias[len('target--'):], 'name': meta.get('name', ''),
-                            'desc': meta.get('desc', ''), 'sort': meta.get('sort', 0)})
+                            'desc': meta.get('desc', ''), 'sort': meta.get('sort', 0),
+                            'support': support if isinstance(support, dict) else {}})
 
         targets.sort(key = lambda t: (t['sort'], t['target']))
 
         if con:
             width = max([len(t['target']) for t in targets] + [6])
+            os_names = {'linux': 'Linux', 'windows': 'Windows', 'darwin': 'macOS', 'android': 'Android', 'ios': 'iOS'}
             print ('')
             print ('Compute targets ("cx program run <program> --compute=<target>[,<target>...]"):')
             print ('')
@@ -140,6 +150,15 @@ class Category(InitCategory):
                 if desc.startswith('Compute target: '):
                     desc = desc[len('Compute target: '):]
                 print (f'  {t["target"]:{width}}  {desc}')
+
+                s = t['support']
+                if s.get('status') == 'placeholder':
+                    print (f'  {"":{width}}  -> not supported yet')
+                elif s.get('host_os'):
+                    where = ', '.join(os_names.get(x, x) for x in s['host_os'])
+                    if s.get('device_os'):
+                        where = f'{os_names.get(s["device_os"], s["device_os"])} devices, driven from {where}'
+                    print (f'  {"":{width}}  -> {where}')
             print ('')
             print ('A bare --compute (or --target) asks which ones to use.')
 

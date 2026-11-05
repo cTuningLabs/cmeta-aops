@@ -1,0 +1,126 @@
+/* Licensed under the Apache License, Version 2.0. See the COPYRIGHT and LICENSE files in the project root for details.
+   cserver.cmeta.targets - scoped to #cmt. The kind colours (--k-cpu, --k-gpu, ...) are set by targets.js from
+   files/targets.yaml, light or dark. */
+
+.cmt { --ink: #1f2328; --ink2: #57606a; --muted: #6e7781; --line: rgba(128, 128, 128, .22); --soft: rgba(128, 128, 128, .07);
+       --card: #fcfcfb; --accent: #2a78d6; --row: rgba(42, 120, 214, .07);
+       --top: 0px;   /* the tables scroll in their own box (.cmt-scroll), so a sticky header sticks there: never offset it */
+       max-width: 1240px; margin: 0 auto; padding: 4px 4px 32px; color: var(--ink); font-size: 14px; line-height: 1.45;
+       font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+.cmt.hosted { font-family: inherit; }
+.cmt.dark { --ink: #f0efec; --ink2: #c3c2b7; --muted: #9a998f; --line: rgba(200, 200, 190, .18); --soft: rgba(255, 255, 255, .05);
+            --card: #1a1a19; --accent: #6da7ec; --row: rgba(109, 167, 236, .10); }
+.cmt.dark:not(.hosted) { background: #121211; box-shadow: 0 0 0 100vmax #121211; clip-path: inset(-100vmax -100vmax 0); }
+.cmt code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; color: inherit; }   /* not a host's code colour */
+
+.cmt-head h1 { font-size: 26px; margin: 6px 0 4px; letter-spacing: -.01em; }
+.cmt-sub { margin: 0 0 16px; color: var(--ink2); font-size: 15.5px; max-width: 900px; }
+.cmt h2 { font-size: 18px; margin: 0 0 4px; }
+.cmt-lede { color: var(--ink2); margin: 0 0 12px; max-width: 980px; }
+.cmt-lede code { background: var(--soft); padding: 0 4px; border-radius: 4px; }
+.cmt-sec { margin: 28px 0 0; }
+
+/* the numbers */
+.cmt-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 0 0 16px; }
+.cmt-stat { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 10px 14px; display: flex; flex-direction: column; }
+.cmt-stat b { font-size: 30px; line-height: 1.1; font-weight: 650; font-variant-numeric: tabular-nums; }
+.cmt-stat span { font-weight: 600; }
+.cmt-stat small { color: var(--muted); font-size: 12px; }
+
+/* the pillars */
+.cmt-pillars { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
+.cmt-pillar { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px 14px 10px; display: flex; flex-direction: column; gap: 6px; }
+.cmt-pillar h3 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.cmt-pillar h3 .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--soft); color: var(--accent); font-size: 12.5px; }
+.cmt-pillar p { margin: 0; color: var(--ink2); font-size: 13.5px; flex: 1; }
+
+/* a command with its copy button */
+.cmt-cmd { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cmt-cmd code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--soft); padding: 3px 7px; border-radius: 6px; }
+.cmt-cp { font: inherit; font-size: 11.5px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; flex: none; }
+.cmt-cp:hover { border-color: var(--accent); }
+
+/* the marks: a filled dot runs there, a ring builds and launches it from there */
+.cmt-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--k, var(--accent)); vertical-align: middle; }
+.cmt-dot.drive { background: transparent; box-shadow: inset 0 0 0 2px var(--k, var(--accent)); width: 11px; height: 11px; }
+.cmt-key { white-space: nowrap; margin-right: 10px; color: var(--ink); }
+.cmt-key .cmt-dot { width: 10px; height: 10px; margin: 0 2px 2px 0; --k: var(--ink2); }
+.cmt-key .cmt-dot.drive { width: 9px; height: 9px; }
+.k-cpu { --k: var(--k-cpu); } .k-gpu { --k: var(--k-gpu); } .k-npu { --k: var(--k-npu); } .k-stack, .k-app { --k: var(--k-stack); }
+.k-planned { --k: var(--muted); }
+
+.cmt-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.cmt table { border-collapse: separate; border-spacing: 0; width: 100%; }
+.cmt th, .cmt td { padding: 5px 8px; border-bottom: 1px solid var(--line); }
+.cmt th.l, .cmt td.l { text-align: left; }
+.cmt td.c, .cmt th.c { text-align: center; }
+.cmt thead th { font-size: 12.5px; color: var(--ink2); font-weight: 600; background: var(--card); }
+
+/* the first matrix */
+.cmt-tos { min-width: 760px; }
+.cmt-tos thead th { position: sticky; top: var(--top); z-index: 2; }
+.cmt-tos th.dev { box-shadow: inset 1px 0 0 var(--line); }
+.cmt-tos tr.grp th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink2); background: var(--soft); padding-top: 7px; }
+.cmt-tos tr.grp .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--k); margin-right: 7px; vertical-align: -1px; }
+.cmt-tos tr.cmt-trow { cursor: pointer; }
+.cmt-tos tr.cmt-trow:hover, .cmt-tos tr.cmt-trow:focus-visible { background: var(--row); outline: none; }
+.cmt-tos tr.cmt-trow.on { background: var(--row); box-shadow: inset 3px 0 0 var(--accent); }
+.cmt-tos tr.cmt-trow th.l { font-weight: 500; white-space: nowrap; }
+.cmt-tos td.hw { color: var(--ink2); font-size: 13px; }
+.cmt-tos td.n { font-variant-numeric: tabular-nums; color: var(--ink2); }
+.cmt-tos tr.muted { color: var(--muted); }
+.cmt-tos td.planned { color: var(--muted); }
+.cmt-tos tr td:nth-child(6) { box-shadow: inset 1px 0 0 var(--line); }
+
+/* the bar of the second matrix */
+.cmt-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 10px; }
+.cmt-bar input { flex: 1; min-width: 240px; max-width: 460px; font: inherit; padding: 7px 13px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: inherit; outline: none; }
+.cmt-bar input:focus { border-color: var(--accent); }
+.cmt-chips { display: inline-flex; flex-wrap: wrap; gap: 5px; }
+.cmt-chips button, .cmt-clear { font: inherit; font-size: 12.5px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--soft); color: inherit; cursor: pointer; }
+.cmt-chips button.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
+.cmt-count { color: var(--muted); font-size: 13px; }
+
+/* the second matrix */
+.cmt-ptm { min-width: 980px; }
+.cmt-ptm thead tr.kinds th { position: sticky; top: var(--top); z-index: 3; height: 22px; padding: 3px 4px; }
+.cmt-ptm thead tr.tg th { position: sticky; top: calc(var(--top) + 29px); z-index: 3; }
+.cmt-ptm th.kh { white-space: nowrap; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink2); text-align: center; box-shadow: inset 0 3px 0 var(--k), inset 1px 0 0 var(--line); }
+.cmt-ptm th.v { width: 26px; min-width: 26px; padding: 6px 2px; vertical-align: bottom; cursor: pointer; font-weight: 500; }
+.cmt-ptm th.v span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; }
+.cmt-ptm th.v:hover, .cmt-ptm th.v.on { color: var(--accent); }
+.cmt-ptm th.v.on, .cmt-ptm td.on { background: var(--row); }
+.cmt-ptm th.prog { position: sticky; left: 0; z-index: 2; background: var(--card); width: 330px; min-width: 260px; max-width: 360px; }
+.cmt-ptm thead th.prog { z-index: 4; }
+.cmt-ptm tr.fam th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink2); background: var(--soft); padding-top: 9px; }
+.cmt-ptm tr.prow { cursor: pointer; }
+.cmt-ptm tr.prow:hover > *, .cmt-ptm tr.prow.open > * { background-color: var(--row); }
+.cmt-ptm tr.prow:hover th.prog, .cmt-ptm tr.prow.open th.prog { background: linear-gradient(var(--row), var(--row)), var(--card); }
+.cmt-ptm .pn { display: block; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; font-weight: 500; }
+.cmt-ptm .pd { display: block; color: var(--muted); font-size: 12px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 330px; }
+.cmt-ptm td.c { padding: 4px 2px; }
+.cmt-ptm td.c .cmt-dot { width: 11px; height: 11px; }
+.cmt-ptm td.osb { white-space: nowrap; padding-left: 10px; }
+.cmt-os { display: inline-block; font-size: 11px; padding: 0 6px; margin: 1px 3px 1px 0; border-radius: 999px; border: 1px solid var(--line); color: var(--ink2); }
+.cmt-os.via { border-style: dashed; }
+.cmt-ptm tr.pdet td { background: var(--soft); }
+.cmt-det { display: flex; flex-direction: column; gap: 6px; max-width: 900px; padding: 4px 4px 8px; }
+.cmt-det p { margin: 0; color: var(--ink2); }
+.cmt-det a { color: var(--accent); text-decoration: none; margin-left: 6px; }
+.cmt-det a:hover { text-decoration: underline; }
+.cmt-repo, .cmt-tag { font-size: 11.5px; padding: 0 7px; border-radius: 999px; background: var(--soft); color: var(--muted); border: 1px solid var(--line); }
+.cmt-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.cmt-note { font-size: 12.5px; color: var(--muted); }
+.cmt-empty, .cmt-err { color: var(--muted); }
+
+/* try it */
+.cmt-cmds { display: flex; flex-direction: column; gap: 6px; max-width: 980px; }
+.cmt-try-row { display: grid; grid-template-columns: minmax(280px, 420px) 1fr; gap: 6px 14px; align-items: center; }
+.cmt-try-row > * { min-width: 0; }
+.cmt-try-row span { color: var(--ink2); font-size: 13px; }
+@media (max-width: 700px) { .cmt-try-row { grid-template-columns: 1fr; } .cmt-head h1 { font-size: 22px; } }
+
+/* the tooltip */
+.cmt-tip { position: fixed; z-index: 50; max-width: 340px; padding: 6px 9px; border-radius: 8px; font-size: 12.5px; line-height: 1.35;
+           background: #1f2328; color: #f0efec; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); pointer-events: none; }
+.cmt.dark .cmt-tip { background: #f0efec; color: #1f2328; }
