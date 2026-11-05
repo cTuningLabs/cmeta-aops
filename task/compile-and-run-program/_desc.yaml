@@ -39,5 +39,5 @@ configs:
         desc: 'true: a program is built and run in a folder of its own artifact (tmp, or what --target_tmp or
           compile_and_run_program.target_tmp names), the same for every request; false: each request - its explicit
           choices and its targets - gets a build entry of its own in the cache and comes back to it'
-        type: bool
+        type: yes/no
         default: 'false'

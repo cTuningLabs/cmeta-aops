@@ -28,7 +28,7 @@ configs:
       run_ai_gateway:
         desc: 'true: every run of a harness without a key of its own goes through the gateway run_ai_gateway_name;
           empty or false: the harness''s own login'
-        type: bool
+        type: yes/no
       run_ai_gateway_name:
         desc: 'the ai.gateway alias that run_ai_gateway and the flag -gw mean'
         example: acme
