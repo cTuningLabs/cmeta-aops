@@ -10,10 +10,11 @@ authors: Grigori Fursin
 # levels a model takes "depend on the model and client" (config reference), so each model lists its own. Same file
 # conventions as tool/claude/_desc_models.yaml (updated, disabled, legacy, unverified, until).
 
-updated: '2026-10-04'
+updated: '2026-11-04'
 checked_with: 'codex-cli 0.159.3 (codex --help, codex exec --help); the models from the Codex models page of 2026-10-04'
 list_cmd: '/model inside an interactive codex session'
 sources:
+  - https://learn.chatgpt.com/docs/models
   - https://developers.openai.com/codex/models
   - https://developers.openai.com/codex/config-reference (model_reasoning_effort)
   - docs/cmeta-aops/agent-tasks.md ("run-codex")
@@ -48,6 +49,9 @@ models:
   - name: gpt-6-astra
     desc: 'GPT-6 Astra: the most capable, for the hardest end-to-end work across code, apps and research'
     efforts: [low, medium, high, xhigh, max, ultra]
+  - name: gpt-6.1-terra
+    desc: 'GPT-6.1 Terra: clear writing, visual understanding and computer use'
+    efforts: [none, low, medium, high, xhigh, max]
   - name: gpt-6-luna
     desc: 'GPT-6 Luna: the most efficient, for focused high-volume tasks (summaries, extraction, subagents)'
     efforts: [low, medium, high, xhigh, max]
