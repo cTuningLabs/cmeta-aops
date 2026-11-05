@@ -15,3 +15,8 @@ configs:
           folder above the cmeta package this Python imports (an editable install)'
         type: path
         example: ~/work/cmeta
+  <alias>:
+    desc: 'a config named by --secret=<alias>: each of its keys is a secret, its name and its value (env:VAR - read
+      from this machine''s environment at the call, so the value need not be stored), for the secrets a template asks
+      for (build - a BuildKit secret mount, never an image layer; run - the container''s environment) and
+      GITHUB_TOKEN for a clone of a private repository'
