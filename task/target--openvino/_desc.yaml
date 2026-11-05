@@ -21,3 +21,13 @@ sdk:
       name: pip
       with:
         package: openvino
+
+# Where this target works - declared facts read by "cx program targets" and the page cserver.cmeta.targets:
+# kind (cpu, gpu, npu, stack, app), the hardware, host_os = the OS of the machine cMeta runs on (linux,
+# windows, darwin), device_os = the OS of another device the program runs on (driven from the host), status
+# (supported, placeholder).
+support:
+  kind: stack
+  hardware: 'the OpenVINO stack on Intel CPUs, GPUs and NPUs'
+  host_os: [linux, windows, darwin]
+  status: supported

@@ -29,3 +29,12 @@ sdk:
     - task: setup,a2f9b61079ce4333
       name: swiftlang,043d6514109e495d
 
+# Where this target works - declared facts read by "cx program targets" and the page cserver.cmeta.targets:
+# kind (cpu, gpu, npu, stack, app), the hardware, host_os = the OS of the machine cMeta runs on (linux,
+# windows, darwin), device_os = the OS of another device the program runs on (driven from the host), status
+# (supported, placeholder).
+support:
+  kind: gpu
+  hardware: 'Apple GPUs (Metal)'
+  host_os: [darwin]
+  status: supported

@@ -1,0 +1,61 @@
+# cserver.cmeta.targets - what the page says around the data it reads. The data itself (the targets, what each
+# supports, the programs and the targets they declare) comes from the plugged artifacts; this file only names and
+# groups. Edit it, reload the page: no restart.
+
+title: cMeta programs everywhere
+subtitle: 'Describe a program once, then build and run it on any compute target and operating system with one command - the tools it needs are detected or installed on the way, and every run records what ran.'
+
+# The columns of the targets matrix: the OS of the machine cMeta runs on (host_os of a target) and of the devices it
+# drives (device_os)
+os:
+  - {id: linux,   name: Linux,   note: 'any distribution; WSL2 and containers too'}
+  - {id: windows, name: Windows, note: 'Windows 10 and 11, x86-64 and Arm64'}
+  - {id: darwin,  name: macOS,   note: 'Apple silicon and Intel Macs'}
+  - {id: android, name: Android, note: 'phones, tablets, boards and watches over adb', device: true}
+  - {id: ios,     name: iOS,     note: 'iPhones and iPads on a Mac', device: true}
+
+# The kinds of targets, in this order (rows of the first matrix, column groups of the second - "short" names a narrow
+# group there); the colours are categorical slots validated for light and dark surfaces (CVD-safe in this order)
+kinds:
+  - {id: cpu,   name: CPUs,  light: '#2a78d6', dark: '#3987e5'}
+  - {id: gpu,   name: GPUs,  light: '#eb6834', dark: '#d95926'}
+  - {id: npu,   name: NPUs,  light: '#1baf7a', dark: '#199e70'}
+  - {id: stack, name: Stacks and apps, short: Stacks, light: '#eda100', dark: '#c98500', also: [app]}
+
+# What a program run gives, beyond running: the four lines under the title
+pillars:
+  - title: Portable execution
+    text: 'One description of a program; cMeta picks the compiler, SDK and libraries of the target on each OS, installs what is missing, and can run the same command on another machine or in a container (--on).'
+    cmd: 'cx program run test-nmm-c-cpu cpu'
+  - title: Reproducible runs
+    text: 'Every run records the targets and their devices, drivers, tool versions and flags; builds are cached per target set, so a run is repeated, shared and checked later.'
+    cmd: 'cx program provenance test-nmm-c-cpu --as_flags'
+  - title: Benchmarking
+    text: 'The same program on CPUs, GPUs, NPUs and phones, with other compilers, versions and sizes - side by side on one machine or across a fleet.'
+    cmd: 'cx program run llama-cpp --compute=cpu,cuda --target_tmp=auto'
+  - title: Optimization and co-design
+    text: 'Vary the target, the compiler, the flags, the libraries, the model - and keep what each choice gave: the evidence to pick and co-design software and hardware.'
+    cmd: 'cx program run test-nmm-c-cpu cpu --use.compiler-c.name=llvm --target_tmp=llvm'
+
+# The families the programs are grouped into: the first family whose patterns match a program's alias (fnmatch)
+families:
+  - name: Getting started
+    match: [test-hello-*]
+  - name: One kernel in many languages and on many accelerators
+    match: [test-nmm-*]
+  - name: LLM inference and serving
+    match: [llama-cpp, build-llama-cpp, test-ollama, test-vllm, build-vllm, test-sglang, test-flm]
+  - name: ML frameworks and models
+    match: [image-classification-*, model-*, test-pytorch-*, test-onnxruntime, test-openvino]
+  - name: Classic benchmarks and codelets
+    match: [cbench-*, polybench-*, milepost-*]
+  - name: Frameworks built from source
+    match: [build-*]
+  - name: Libraries and templates
+    match: [lib-*, template-*]
+  - name: Other programs
+    match: ['*']
+
+# Where a repository's artifacts are on GitHub (the link of a program on a site without its own artifact pages)
+github:
+  ctuninglabs@cmeta-aops: https://github.com/cTuningLabs/cmeta-aops/tree/main

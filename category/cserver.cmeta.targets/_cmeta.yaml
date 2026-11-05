@@ -1,0 +1,33 @@
+artifact: 45ed3a25ca204fc2
+category: category,dd9ea50e7f76467f
+authors: Grigori Fursin
+creation_timestamp: '2026-11-05T12:39:29.409308+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.310
+  via: cmeta 0.38.8
+  by: Grigori Fursin
+last_api_version: 1
+base_category_default_api_versions:
+  '1': 1
+
+name: cMeta programs everywhere - the compute targets, the operating systems and the programs that run on them
+short: cMeta targets and OS
+desc: 'Where a cMeta program runs: every compute target (CPUs, GPUs, NPUs, stacks, phones) against the operating
+  systems that drive it, and every program against the targets it declares - read live from the target tasks
+  (the "support" block of their _desc.yaml) and the program artifacts (constraints.supported_compute) of the plugged
+  repositories. One description per program, one command per run (cx program run <program> <target>): portable,
+  reproducible execution, benchmarking, optimization and co-design.'
+tags:
+- cserver
+- web
+- program
+- programs
+- targets
+- compute
+- portability
+
+uses_categories:
+  program: program,22788f3c30d04e6d
+  task: task,c36be4b9314a45e0
+  tool: tool,c393ba5c6fa14f66

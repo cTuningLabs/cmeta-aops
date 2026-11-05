@@ -34,3 +34,12 @@ sdk:
 # have no gfx1152: presented as gfx1150 with 11.5.0 the Radeon 860M runs them). Never set by itself: the
 # same GPU runs the ROCm 10 wheels natively, and the override then breaks them.
 
+# Where this target works - declared facts read by "cx program targets" and the page cserver.cmeta.targets:
+# kind (cpu, gpu, npu, stack, app), the hardware, host_os = the OS of the machine cMeta runs on (linux,
+# windows, darwin), device_os = the OS of another device the program runs on (driven from the host), status
+# (supported, placeholder).
+support:
+  kind: gpu
+  hardware: 'AMD GPUs (ROCm)'
+  host_os: [linux]
+  status: supported

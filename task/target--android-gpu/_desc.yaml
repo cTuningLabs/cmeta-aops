@@ -15,3 +15,14 @@ env_if_not_used:
   CMETA_TARGET_ANDROID_GPU: 0
 env:
   CMETA_TARGET_ANDROID_GPU: 1
+
+# Where this target works - declared facts read by "cx program targets" and the page cserver.cmeta.targets:
+# kind (cpu, gpu, npu, stack, app), the hardware, host_os = the OS of the machine cMeta runs on (linux,
+# windows, darwin), device_os = the OS of another device the program runs on (driven from the host), status
+# (supported, placeholder).
+support:
+  kind: gpu
+  hardware: 'the GPU of an Android device (Vulkan, OpenCL, GLES)'
+  host_os: [linux, windows, darwin]
+  device_os: android
+  status: supported

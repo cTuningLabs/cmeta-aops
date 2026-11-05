@@ -47,6 +47,24 @@ cx program run <program> --compute                  # asks which ones (several c
 | `ios-npu` | the Neural Engine of that device, as a Core ML probe run on it reports it (iOS 17 and newer): its cores and the compute devices of Core ML - an app reaches it only through a Core ML model. Fails when Core ML lists none |
 | `tpu`, `opu-lumai` | placeholders: fail until supported |
 
+## Where each target works
+
+Each `task/target--<name>/_desc.yaml` declares it in a `support` block, which `cx program targets` prints
+under each target and the page `cserver.cmeta.targets` draws as a matrix (`/cmeta.targets` on the engine's
+cserver; `cx cserver.cmeta.targets matrix` in a terminal):
+
+```yaml
+support:
+  kind: gpu                      # cpu, gpu, npu, stack, app
+  hardware: 'NVIDIA GPUs (CUDA)'
+  host_os: [linux, windows]      # the OS of the machine cMeta runs on (linux, windows, darwin)
+  device_os: android             # only when the program runs on another device, driven from the host (android, ios)
+  status: supported              # supported, placeholder
+```
+
+These are declared facts, read from what the target's code does on each OS - not test results. A new target
+declares its block too (`tests/cmeta_aops_basic_tests/test_target_support.py` checks it).
+
 ## Several targets at once
 
 What a program does with `--compute=a,b` is up to the program:
