@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.65.1.1)
+## 0.65.2
 - **`cx host ls` shows the Python each host's cx runs on, next to cMeta and AOPS** (the user, 2026-11-06): a column
   PYTHON - "3.14.7", "3.15.2t" for a free-threaded build (no GIL) - for the host and for each of its projects (a
   server's own environment), and in the project line of `cx host status` ("Python: ..."). The probe records it
