@@ -2,6 +2,17 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.65.1.1)
+- **`cx host ls` shows the Python each host's cx runs on, next to cMeta and AOPS** (the user, 2026-11-06): a column
+  PYTHON - "3.14.7", "3.15.2t" for a free-threaded build (no GIL) - for the host and for each of its projects (a
+  server's own environment), and in the project line of `cx host status` ("Python: ..."). The probe records it
+  (`cmeta_python` in state.yaml; probe.sh and probe.ps1 ask the interpreter that `cx --version` names for its
+  version), so it appears after the next `cx host probe`; "-" until then. Why: the Python decides how a server's
+  workers start (cMeta 0.38.11: forkserver on Linux up to 3.13 too, where Python's own default was fork), and the
+  night of 2026-11-05/06 showed the fleet runs five different ones. The backup record keeps it with the other
+  versions. Test: `tests/cmeta_aops_basic_tests/test_host_table_projects.py` (the column aligned for a host and its
+  projects, "-" for a project never probed).
+
 ## 0.65.1
 - **Every config key cmeta-aops reads is described** - for the engine's page `/cmeta.configs` (cMeta 0.38.7), which
   listed keys that tasks, tools and categories read without saying what they do. Each now has a description,

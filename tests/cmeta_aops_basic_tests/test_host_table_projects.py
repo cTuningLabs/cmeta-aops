@@ -26,7 +26,7 @@ def server_host(live=True):
         "alias": "my-vm",
         "desc": {"projects": {"site-a": {"path": "/srv/a", "server": {"url": "http://127.0.0.1:8118/health/"}},
                               "env-b": {"path": "/srv/b"}}},
-        "state": {"projects": {"site-a": {"cmeta_version": "0.37.4", "aops_version": "0.51.0",
+        "state": {"projects": {"site-a": {"cmeta_version": "0.37.4", "aops_version": "0.51.0", "cmeta_python": "3.12.14",
                                           "probed_at": "2026-10-19T16:17:53+02:00",
                                           "server": {"status": "up"}}}},
     }
@@ -50,8 +50,25 @@ def test_status_rows_use_the_host_columns(capsys):
         cell = {"ssh": "server", "up": "up", "me@192.0.2.1": "http://127.0.0.1:8118/health/"}[word]
         assert server_line[column:].startswith(cell)
     assert server_line.startswith("  * site-a")
-    assert server_line.endswith("(cMeta: 0.37.4  AOPS: 0.51.0)")
+    assert server_line.endswith("(cMeta: 0.37.4  AOPS: 0.51.0  Python: 3.12.14)")
     assert env_line.split()[:3] == ["*", "env-b", "project"]
+
+
+def test_ls_rows_put_the_python_in_its_column(capsys):
+    """The Python cx runs on (a probe since 2026-11-06, "3.15.2t" without the GIL): a column of its own after AOPS,
+    for the host and for its projects; a project never probed shows "-"."""
+    category = host_category()
+    host = server_host(live=False)
+    columns = ["HOST", "TYPE", "CMETA", "AOPS", "PYTHON", "PROBED"]
+    projects = category._project_details([host], columns)
+    host_row = {"alias": "my-vm", "type": "ssh", "cmeta": "0.38.11", "aops": "0.65.2", "python": "3.15.2t",
+                "probed": "2026-11-06 07:00"}
+    category._print_table(columns, [host_row], projects=projects)
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].split() == columns
+    host_line, server_line, env_line = lines[1], lines[2], lines[3]
+    assert server_line.index("3.12.14") == host_line.index("3.15.2t")
+    assert env_line[host_line.index("3.15.2t")] == "-"
 
 
 def test_ls_rows_put_the_versions_in_their_columns(capsys):
