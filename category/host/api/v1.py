@@ -126,7 +126,7 @@ UID_SUFFIX = re.compile(r',[0-9a-f]{16}$')
 
 # Columns of the fleet table (list); DOCKER and PODMAN = the client versions the probe saw ("-" = not
 # installed, "(daemon down)" when the Docker client is there but no daemon answers)
-LIST_COLUMNS = ['HOST', 'TYPE', 'MACHINE', 'STATUS', 'OS', 'SUDO', 'DOCKER', 'PODMAN', 'CMETA', 'AOPS', 'PROBED']
+LIST_COLUMNS = ['HOST', 'TYPE', 'MACHINE', 'STATUS', 'OS', 'SUDO', 'DOCKER', 'PODMAN', 'CMETA', 'AOPS', 'PYTHON', 'PROBED']
 
 # The cMeta AOPS repository (ctuninglabs@cmeta-aops), known by the UID in its _cmr.yaml "artifact:" -
 # its folder name differs between hosts (cTuningLabs@cmeta-aops on the Mac); the name is the fallback
@@ -548,7 +548,8 @@ class Category(InitCategory):
             if con:
                 repos = st.get('repos', {})
                 print(f'{alias:32} {st.get("os", "?"):28} cMeta {st.get("cmeta_version") or "-":9} '
-                      f'aops {st.get("aops_version") or "-":8} {len(repos)} repos  ({time.monotonic() - t0:.1f}s)')
+                      f'aops {st.get("aops_version") or "-":8} python {st.get("cmeta_python") or "-":8} '
+                      f'{len(repos)} repos  ({time.monotonic() - t0:.1f}s)')
 
         return {'return': 0, 'probed': results}
 
@@ -1893,7 +1894,7 @@ class Category(InitCategory):
             'address': self._address_text(h),
             'backed_up': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
             'home': stat.get('_home', ''),
-            'state': {k: (h.get('state') or {}).get(k) for k in ('os', 'cmeta_version', 'cmeta_home', 'aops_version', 'probed') if (h.get('state') or {}).get(k)},
+            'state': {k: (h.get('state') or {}).get(k) for k in ('os', 'cmeta_version', 'cmeta_home', 'aops_version', 'cmeta_python', 'probed') if (h.get('state') or {}).get(k)},
             # per entry: what it is, its size and mode, the matched files of a "files" entry, and the modes of what a
             # folder holds (the restore puts them back; the copy keeps none)
             'entries': [{k: v for k, v in {'path': e['path'], 'kind': stat[e['path']]['kind'], 'size': stat[e['path']].get('size'),
@@ -2968,7 +2969,7 @@ class Category(InitCategory):
             if self._retired(h):
                 server = {'status': 'retired', 'url': (p.get('server') or {}).get('url')}
             rows.append({'alias': name, 'path': p.get('path'), 'cmeta': st.get('cmeta_version', '-'),
-                         'aops': st.get('aops_version', '-'), 'server': server,
+                         'aops': st.get('aops_version', '-'), 'python': st.get('cmeta_python') or '-', 'server': server,
                          'status': server.get('status', 'not checked'), 'probed': st.get('probed_at'),
                          # the command that starts the server on the host (cx host up <host> --project=<name>)
                          'start': str((p.get('server') or {}).get('start') or ''),
@@ -3054,10 +3055,11 @@ class Category(InitCategory):
                 url = (p['server'] or {}).get('url') or ((declared.get(p['alias']) or {}).get('server') or {}).get('url', '')
                 probed = p['probed'] or ''
                 row = {'alias': '  * ' + p['alias'], 'type': 'server' if url else 'project', 'status': p['status'],
-                       'cmeta': p['cmeta'], 'aops': p['aops'], 'probed': probed[:16].replace('T', ' ')}
+                       'cmeta': p['cmeta'], 'aops': p['aops'], 'python': p['python'],
+                       'probed': probed[:16].replace('T', ' ')}
                 if 'ADDRESS' in columns:
                     row['address'] = url
-                    row['extra'] = f'(cMeta: {p["cmeta"]}  AOPS: {p["aops"]})'
+                    row['extra'] = f'(cMeta: {p["cmeta"]}  AOPS: {p["aops"]}  Python: {p["python"]})'
                 else:
                     # cx host ls: the versions have their own columns; without STATUS, the status saved by the last check
                     row['extra'] = url + ('' if 'STATUS' in columns or not p['server'] else f'  ({p["status"]} at the last check)')
@@ -3065,7 +3067,8 @@ class Category(InitCategory):
                 # the public URLs of the server, checked from here: one line each under the project
                 for pub in p.get('public') or []:
                     site = site_label(pub['url'])
-                    prow = {'alias': '      ' + site, 'type': 'web', 'status': pub.get('status', ''), 'cmeta': '', 'aops': '', 'probed': ''}
+                    prow = {'alias': '      ' + site, 'type': 'web', 'status': pub.get('status', ''), 'cmeta': '', 'aops': '',
+                            'python': '', 'probed': ''}
                     if 'ADDRESS' in columns:
                         prow['address'] = pub['url']
                         prow['extra'] = f'(HTTP {pub["http_status"]})' if pub.get('http_status') else ''
@@ -4411,7 +4414,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         st = r['state']
         if con:
             print(f'{h["alias"]}: probed - cMeta {st.get("cmeta_version") or "-"}, aops {st.get("aops_version") or "-"}, '
-                  f'{st.get("os", "?")}')
+                  f'python {st.get("cmeta_python") or "-"}, {st.get("os", "?")}')
 
     def _probe_ios(self, ctx, h, timeout, verbose):
         """The probe of an iOS device: what devicectl on its Mac says of it (no script runs on the device)."""
@@ -5615,6 +5618,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             'podman': self._tool_text(st.get('podman')),
             'cmeta': st.get('cmeta_version', '-'),
             'aops': st.get('aops_version') or self._aops_version(st.get('repos') or {}) or ('none' if probed != '-' else '-'),
+            # the Python cx runs on there ("3.14.7", "3.15.2t" without the GIL), recorded by a probe since 2026-11-06
+            'python': st.get('cmeta_python') or '-',
             'probed': probed,
         }
         row['projects'] = self._project_rows(h)
@@ -5661,7 +5666,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         that row (their "extra" text after the last column); `details` = {host: [lines]} printed indented."""
         keys = {'HOST': 'alias', 'TYPE': 'type', 'MACHINE': 'machine', 'STATUS': 'status', 'OS': 'os',
                 'SUDO': 'sudo', 'DOCKER': 'docker', 'PODMAN': 'podman', 'CMETA': 'cmeta', 'AOPS': 'aops',
-                'PROBED': 'probed'}
+                'PYTHON': 'python', 'PROBED': 'probed'}
         table = []
         for row in rows:
             if isinstance(row, dict):

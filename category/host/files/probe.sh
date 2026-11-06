@@ -77,6 +77,13 @@ if [ -n "$CX" ]; then
   V=$(cx --version 2>/dev/null)
   echo "cmeta_version=$(echo "$V" | grep -m1 -i 'cMeta version' | sed 's/.*version *//')"
 
+  # The Python cx runs on ("cMeta python path" of "cx --version"), asked for its version - "3.14.7t" when it runs
+  # without the GIL (free-threaded): what decides how a server's workers start (cx host ls, the /host page, 2026-11-06)
+  P=$(echo "$V" | grep -m1 'cMeta python path' | sed 's/^[^:]*: *//')
+  if [ -n "$P" ] && [ -x "$P" ]; then
+    echo "cmeta_python=$("$P" -c 'import sys; g=getattr(sys, "_is_gil_enabled", None); print(".".join(str(x) for x in sys.version_info[:3]) + ("" if g is None or g() else "t"))' 2>/dev/null)"
+  fi
+
   # The home: "cx --print-home" (a cMeta newer than 0.35.1); an older cMeta has no such flag and fails, and its home is the
   # "cMeta home path" line of "cx --version"
   H=$(cx --print-home 2>/dev/null) || H=""

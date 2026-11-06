@@ -62,6 +62,14 @@ if ($cx) {
   $ver = ($v | Where-Object { $_ -match 'cMeta version' } | Select-Object -First 1) -replace '.*version\s*', ''
   Line 'cmeta_version' $ver
 
+  # The Python cx runs on ("cMeta python path" of "cx --version"), asked for its version - "3.14.7t" when it runs
+  # without the GIL (free-threaded): what decides how a server's workers start (cx host ls, the /host page, 2026-11-06)
+  $py = (($v | Where-Object { $_ -match 'cMeta python path' } | Select-Object -First 1) -replace '^[^:]*:\s*', '')
+  if ($py -and (Test-Path -LiteralPath $py)) {
+    $pv = (& $py -c "import sys; g=getattr(sys, '_is_gil_enabled', None); print('.'.join(str(x) for x in sys.version_info[:3]) + ('' if g is None or g() else 't'))" 2>$null) | Select-Object -First 1
+    if ($pv) { Line 'cmeta_python' "$pv".Trim() }
+  }
+
   # The home: "cx --print-home" (a cMeta newer than 0.35.1); an older cMeta has no such flag and fails, and its home is the
   # "cMeta home path" line of "cx --version"
   $printed = @(& cx --print-home 2>$null)
