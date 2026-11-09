@@ -124,6 +124,12 @@ PARTIAL_NOTE = 'PARTIAL.md'
 GLOB_CHARS = re.compile(r'([\[\]{}\\])')        # escaped in a rule; * and ? are escaped too where a part is literal
 UID_SUFFIX = re.compile(r',[0-9a-f]{16}$')
 
+# A memory index has one line per memory, "- [Title](file.md) - hook": two sides that changed one index between two
+# syncs are merged line by line per memory file, against the index both started from - a copy of each index kept
+# after every good sync, beside the bisync listings (MEMORY_BASE)
+INDEX_TARGET = re.compile(r'^\s*[-*]\s+\[[^\]]*\]\(([^)\s]+)\)')
+MEMORY_BASE = 'memory-base'
+
 # Columns of the fleet table (list); DOCKER and PODMAN = the client versions the probe saw ("-" = not
 # installed, "(daemon down)" when the Docker client is there but no daemon answers)
 LIST_COLUMNS = ['HOST', 'TYPE', 'MACHINE', 'STATUS', 'OS', 'SUDO', 'DOCKER', 'PODMAN', 'CMETA', 'AOPS', 'PYTHON', 'PROBED']
@@ -1484,6 +1490,9 @@ class Category(InitCategory):
                     check = self._check_text(c) if c.get('errors', 0) >= 0 else 'not checked: ' + str(c.get('error', ''))[:120]
                     if not c.get('ok'):
                         problems.append(f'{alias} / {name}: the check: {check}' + (f' - the list: {c["file"]}' if c.get('file') else ''))
+                    elif entry['method'] == 'bisync':
+                        # both sides equal: the memory indexes as they are now, the base of the next merge of an index
+                        self._remember_index_bases(h, name, entry)
                     if con: print(f'CHECK ({alias} / {name}): {check}')
                 if both_sides:
                     # the run itself made conflict copies: a person merges them (an index was merged by the run)
@@ -5420,20 +5429,139 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         return n
 
     @staticmethod
-    def _merge_index_lines(a, b):
-        """Two versions of a memory index (one line per memory): the lines of the first, then the lines of the second
-        it does not have, in their order - nothing of either side is lost."""
-        la = a.rstrip('\n').split('\n') if a.strip() else []
-        lb = b.rstrip('\n').split('\n') if b.strip() else []
-        seen = set(la)
-        merged = la + [l for l in lb if l not in seen and l.strip()]
-        return '\n'.join(merged).rstrip('\n') + '\n'
+    def _merge_index_lines(a, b, base=None, a_newer=True):
+        """Two versions of a memory index merged. A line that names a memory file ("- [Title](file.md) - hook") is
+        merged PER FILE (2026-11-09: a plain union kept both versions of a line two sides had changed - the new one
+        and the old one - so an index could name one memory three times): the same line on both sides stays; with the
+        index both sides started from (base), the side that changed a line wins over the side that did not, a line
+        one side removed and the other did not change goes, a line one side changed wins over its removal; a line
+        changed on both sides (or with no base) is taken from the newer copy (a_newer: the first). Several lines for
+        one file in one version (left by an earlier union) count as its line that differs from the base, else its
+        first. Every other line (a heading, a note) is kept as before: the lines of the first, then those of the
+        second it does not have - nothing of either side is lost there. The order: the first's, then the second's
+        new lines."""
+        def parse(text):
+            lines = text.rstrip('\n').split('\n') if text and text.strip() else []
+            return [(l, (INDEX_TARGET.match(l).group(1) if INDEX_TARGET.match(l) else None)) for l in lines]
+
+        def by_file(rows):
+            d = {}
+            for line, t in rows:
+                if t is not None:
+                    d.setdefault(t, []).append(line)
+            return d
+
+        def its(lines, was):
+            if not lines:
+                return None
+            changed = [l for l in lines if l != was]
+            return changed[0] if (changed and was is not None) else lines[0]
+
+        ra, rb = parse(a), parse(b)
+        da, db = by_file(ra), by_file(rb)
+        do = by_file(parse(base)) if base is not None else None
+
+        def choose(t):
+            was = its(do.get(t, []), None) if do is not None else None
+            la, lb = its(da.get(t, []), was), its(db.get(t, []), was)
+            if la == lb:
+                return la
+            if la is None:
+                return None if (was is not None and lb == was) else lb
+            if lb is None:
+                return None if (was is not None and la == was) else la
+            if was is not None and la == was:
+                return lb
+            if was is not None and lb == was:
+                return la
+            return la if a_newer else lb
+
+        def key(line, t):
+            return ('file', t) if t is not None else ('line', line)
+
+        out, done = [], set()                       # [(line, key)] in the first's order
+        for line, t in ra:
+            if t is None:
+                out.append((line, key(line, t)))
+            elif t not in done:
+                done.add(t)
+                pick = choose(t)
+                if pick is not None:
+                    out.append((pick, key(line, t)))
+
+        # the second's lines the first has not: each after the line it follows there (and after the first's own new
+        # lines at that place), so that a kept line stays where it was
+        theirs = {key(line, t) for line, t in rb}
+        pos = 0
+        for line, t in rb:
+            k = key(line, t)
+            at = next((i for i, (_, kk) in enumerate(out) if kk == k), None)
+            if at is not None:
+                pos = at + 1
+                continue
+            if t is None and not line.strip():
+                continue
+            if t is not None:
+                if t in done:
+                    continue
+                done.add(t)
+                line = choose(t)
+                if line is None:
+                    continue
+            while pos < len(out) and out[pos][1] not in theirs:
+                pos += 1
+            out.insert(pos, (line, k))
+            pos += 1
+        return '\n'.join(l for l, _ in out).rstrip('\n') + '\n'
+
+    def _index_base_file(self, h, entry, name, rel):
+        """Where the copy of a memory index after the last good sync is kept: beside the bisync listings of the host,
+        <workdir>/memory-base/<repository>/<path in it>."""
+        return os.path.join(self._bisync_workdir(h, entry), MEMORY_BASE, re.sub(r'[^A-Za-z0-9_.@-]+', '_', name), *rel.split('/'))
+
+    def _remember_index_bases(self, h, name, entry):
+        """After a good sync (both sides checked equal): a copy of every memory index of the repository, the base of
+        the next merge (_merge_index_lines). The indexes are found in the bisync listing of this machine's side (no walk
+        of the repository); a copy is written only when it changed -> how many were written."""
+        workdir = self._bisync_workdir(h, entry)
+        prefix = re.sub(r'[:\\/]', '_', os.path.normpath(entry['local'])) + '..'
+        try:
+            lists = [os.path.join(workdir, n) for n in os.listdir(workdir) if n.startswith(prefix) and n.endswith('.path1.lst')]
+        except OSError:
+            return 0
+        if not lists:
+            return 0
+        written = 0
+        with open(max(lists, key=os.path.getmtime), encoding='utf-8', errors='replace') as f:
+            for line in f:
+                m = re.search(r'"(.+)"\s*$', line)
+                if not m or os.path.basename(m.group(1)) != 'MEMORY.md':
+                    continue
+                rel = m.group(1)
+                src = os.path.join(entry['local'], *rel.split('/'))
+                dst = self._index_base_file(h, entry, name, rel)
+                try:
+                    with open(src, 'rb') as s:
+                        data = s.read()
+                    if os.path.isfile(dst):
+                        with open(dst, 'rb') as d:
+                            if d.read() == data:
+                                continue
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    with open(dst + '.tmp', 'wb') as d:
+                        d.write(data)
+                    os.replace(dst + '.tmp', dst)
+                    written += 1
+                except OSError:
+                    continue
+        return written
 
     def _settle_index_conflicts(self, ctx, h, name, entry, conflicts, con, verbose):
         """Conflict copies of a memory index (MEMORY.md.conflict1 / .conflict2: two sessions wrote one index between two
-        syncs) merged by line union into MEMORY.md, written here and put on the host with the same time (so the next
-        bisync sees one equal file), the copies removed on both sides. Other conflicts are left for a person.
-        -> the list of indexes merged."""
+        syncs) merged into MEMORY.md - per memory file against the index both sides started from when its copy was kept
+        (_remember_index_bases), else by line union for the lines and the newer copy for a line both changed -,
+        written here and put on the host with the same time (so the next bisync sees one equal file), the copies removed
+        on both sides. Other conflicts are left for a person. -> the list of indexes merged."""
         local, remote = entry['local'], entry['remote']
         merged = []
         by_base = {}
@@ -5442,21 +5570,27 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             if m and os.path.basename(m.group(1)) == 'MEMORY.md':
                 by_base.setdefault(m.group(1), []).append(path)
         for base, copies in sorted(by_base.items()):
-            texts = []
+            versions = []                           # (text, time): conflict1 is this machine's, conflict2 the host's
             for c in sorted(copies):
                 lp = os.path.join(local, *c.split('/'))
                 if os.path.isfile(lp):
                     with open(lp, encoding='utf-8', errors='replace') as f:
-                        texts.append(f.read())
+                        versions.append((f.read(), os.path.getmtime(lp)))
             lp = os.path.join(local, *base.split('/'))
             if os.path.isfile(lp):
                 with open(lp, encoding='utf-8', errors='replace') as f:
-                    texts.insert(0, f.read())
-            if not texts:
+                    versions.insert(0, (f.read(), os.path.getmtime(lp)))
+            if not versions:
                 continue
-            text = texts[0]
-            for other in texts[1:]:
-                text = self._merge_index_lines(text, other)
+            start = None
+            kept = self._index_base_file(h, entry, name, base)
+            if os.path.isfile(kept):
+                with open(kept, encoding='utf-8', errors='replace') as f:
+                    start = f.read()
+            text, when = versions[0]
+            for other, other_when in versions[1:]:
+                text = self._merge_index_lines(text, other, base=start, a_newer=when >= other_when)
+                when = max(when, other_when)
             os.makedirs(os.path.dirname(lp), exist_ok=True)
             with open(lp, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(text)
@@ -5474,7 +5608,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                     if rr.get('return', 0) == 0:
                         self._run_local(rr['cmd'], capture=True, con=False, verbose=False, timeout=60)
             merged.append(base)
-            if con: print(f'    {base}: {len(copies)} conflict copies merged by line union, the same file on both sides')
+            if con: print(f'    {base}: {len(copies)} conflict copies merged per memory file ' +
+                          ('against the index of the last good sync' if start is not None else '(no index of a last good sync kept: '
+                           'the newer copy for a line both changed)') + ', the same file on both sides')
         return merged
 
     @staticmethod
