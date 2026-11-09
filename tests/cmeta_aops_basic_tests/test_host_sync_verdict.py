@@ -295,3 +295,30 @@ def test_the_banner_says_it_in_large_letters(host):
     bad = host._banner(False, 'STATUS: FAILED - 2 problem(s) - 3 repositories ok: ' + 'a' * 150 + ' | host / repo: the check: DIFFERENCES: 1 differ')
     assert all(len(l) <= 100 for l in bad.split('\n'))
     assert bad.count('#') > good.count('#') - 200               # both words drawn in block letters
+
+
+def test_the_verdict_of_a_sync_is_kept_beside_its_listings(host, tmp_path):
+    """2026-11-09: each run that is not a dry run writes the host's verdict beside its bisync listings (cmeta-sync.json) -
+    the last run (when, SUCCESS or not, all its repositories or a part) and the last full one that succeeded: what the
+    AI sessions page reads to tell whether a host was synced after a session started there."""
+    import json as json_module
+    wd = tmp_path / 'wd'
+    selected = [('repo-a', {'method': 'bisync', 'workdir': str(wd)}), ('repo-b', {'method': 'copy', 'workdir': str(wd)})]
+    host._remember_sync(HOST, selected, [], True)
+    assert not wd.exists()                                       # no bisync of the host ever ran here: nothing written
+    wd.mkdir()
+    host._remember_sync(HOST, selected, [], True)
+    rec = json_module.loads((wd / 'cmeta-sync.json').read_text(encoding='utf-8'))
+    assert rec['last']['ok'] and rec['last']['all'] and rec['last']['repos'] == ['repo-a', 'repo-b'] and rec['last']['problems'] == []
+    assert rec['last_ok']['at'] == rec['last']['at'] and rec['last_ok']['time'] == rec['last']['time']
+    first_ok = rec['last_ok']
+
+    # a part of it (--repos), then a run with a problem: the last run says so, the last full success stays
+    host._remember_sync(HOST, selected[:1], [], False)
+    rec = json_module.loads((wd / 'cmeta-sync.json').read_text(encoding='utf-8'))
+    assert rec['last']['ok'] and not rec['last']['all'] and rec['last']['repos'] == ['repo-a'] and rec['last_ok'] == first_ok
+    host._remember_sync(HOST, selected, ['h / repo-b: the check: DIFFERENCES: 1 differ'], True)
+    rec = json_module.loads((wd / 'cmeta-sync.json').read_text(encoding='utf-8'))
+    assert not rec['last']['ok'] and rec['last']['problems'] == ['h / repo-b: the check: DIFFERENCES: 1 differ'] and rec['last_ok'] == first_ok
+    host._remember_sync(HOST, selected, [], True)
+    assert json_module.loads((wd / 'cmeta-sync.json').read_text(encoding='utf-8'))['last_ok']['at'] >= first_ok['at']

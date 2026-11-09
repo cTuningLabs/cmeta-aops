@@ -130,6 +130,11 @@ UID_SUFFIX = re.compile(r',[0-9a-f]{16}$')
 INDEX_TARGET = re.compile(r'^\s*[-*]\s+\[[^\]]*\]\(([^)\s]+)\)')
 MEMORY_BASE = 'memory-base'
 
+# The verdict of a host's last sync, kept beside its bisync listings too: when it ran, SUCCESS or not, all its
+# repositories or a part, and when the last full one succeeded - what a page reads to tell whether the host was synced
+# after something happened there (the AI sessions page: a session started on it)
+SYNC_RECORD = 'cmeta-sync.json'
+
 # Columns of the fleet table (list); DOCKER and PODMAN = the client versions the probe saw ("-" = not
 # installed, "(daemon down)" when the Docker client is there but no daemon answers)
 LIST_COLUMNS = ['HOST', 'TYPE', 'MACHINE', 'STATUS', 'OS', 'SUDO', 'DOCKER', 'PODMAN', 'CMETA', 'AOPS', 'PYTHON', 'PROBED']
@@ -1372,6 +1377,10 @@ class Category(InitCategory):
             cx host sync lab-thinkpad-ubuntu --repos=ctuninglabs@cmeta-aops --resync --resync_mode=path1
 
         A few directories only, one-way: "cx host push".
+
+        Each run that is not a dry run keeps the host's verdict beside its bisync listings (cmeta-sync.json: the last
+        run - when, SUCCESS or not, all its repositories or a part - and the last full one that succeeded); a page reads
+        it to tell whether the host was synced after something happened there.
         """
 
         con = ctx['control'].get('con', False)
@@ -1437,6 +1446,7 @@ class Category(InitCategory):
                     print(f'    into {first["repos_path"]} ({why.get(first["repos_path_from"], first["repos_path_from"])})')
 
             changed = False
+            n_problems = len(problems)              # this host's own verdict: no problem added while it runs
             for name, entry in selected:
                 t0 = time.monotonic()
                 try:
@@ -1524,6 +1534,8 @@ class Category(InitCategory):
 
             if changed and not dry_run:
                 self._refresh_state(ctx, h, con)        # state.yaml says what is there now
+            if not dry_run:
+                self._remember_sync(h, selected, problems[n_problems:], not only)
 
         synced = [row for row in report if str(row[3]).startswith('ok')]
         ok = not problems
@@ -5518,6 +5530,33 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         """Where the copy of a memory index after the last good sync is kept: beside the bisync listings of the host,
         <workdir>/memory-base/<repository>/<path in it>."""
         return os.path.join(self._bisync_workdir(h, entry), MEMORY_BASE, re.sub(r'[^A-Za-z0-9_.@-]+', '_', name), *rel.split('/'))
+
+    def _remember_sync(self, h, selected, problems, full):
+        """The verdict of a host's sync (2026-11-09), kept beside its bisync listings (SYNC_RECORD): the last run - when,
+        SUCCESS or not, all the repositories of its sync block or a part (--repos) - and when the last full one
+        succeeded. Nothing is written where that folder is not (no bisync of the host ever ran here)."""
+        workdir = self._bisync_workdir(h, selected[0][1]) if selected else ''
+        if not workdir or not os.path.isdir(workdir):
+            return
+        path = os.path.join(workdir, SYNC_RECORD)
+        try:
+            with open(path, encoding='utf-8') as f:
+                rec = json.load(f)
+        except (OSError, ValueError):
+            rec = {}
+        rec = rec if isinstance(rec, dict) else {}
+        now = time.time()
+        stamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now))
+        rec['last'] = {'at': now, 'time': stamp, 'ok': not problems, 'all': bool(full), 'repos': [n for n, _ in selected],
+                       'problems': [str(p)[:300] for p in problems[:6]]}
+        if not problems and full:
+            rec['last_ok'] = {'at': now, 'time': stamp}
+        try:
+            with open(path + '.tmp', 'w', encoding='utf-8') as f:
+                json.dump(rec, f, indent=1)
+            os.replace(path + '.tmp', path)
+        except OSError:
+            pass
 
     def _remember_index_bases(self, h, name, entry):
         """After a good sync (both sides checked equal): a copy of every memory index of the repository, the base of
