@@ -124,6 +124,74 @@ def test_two_indexes_merge_as_a_line_union(host):
     assert host._merge_index_lines('# Memory index\n\n- x\n', '# Memory index\n\n- w\n') == '# Memory index\n\n- x\n- w\n'
 
 
+A0 = '- [Sessions page](sessions.md) — the page; morning\n'
+A1 = '- [Sessions page](sessions.md) — the page; morning; night: one Sync button\n'
+B0 = '- [Templates](templates.md) — 9 templates\n'
+B1 = '- [Templates](templates.md) — 12 templates\n'
+C0 = '- [Other](other.md) — untouched\n'
+
+
+def test_index_lines_merge_per_memory_file_against_the_base(host):
+    """The case of 2026-11-09: each side changed the line of ITS memory - the union kept both versions of both lines."""
+    base = '# Memory\n' + A0 + B0 + C0
+    ours, theirs = '# Memory\n' + A1 + B0 + C0, '# Memory\n' + A0 + B1 + C0
+    assert host._merge_index_lines(ours, theirs, base=base) == '# Memory\n' + A1 + B1 + C0
+    assert host._merge_index_lines(theirs, ours, base=base, a_newer=False) == '# Memory\n' + A1 + B1 + C0
+
+    # a line one side removed and the other kept as it was: gone; one side removed, the other changed: the change
+    assert host._merge_index_lines(A0 + C0, A0 + B0 + C0, base=base.split('\n', 1)[1]) == A0 + C0
+    assert host._merge_index_lines(A0 + C0, A0 + B1 + C0, base=base.split('\n', 1)[1]) == A0 + B1 + C0
+
+    # both changed one line: the newer copy's; a new line on either side is kept
+    A2 = '- [Sessions page](sessions.md) — the page; changed elsewhere\n'
+    new = '- [New](new.md) — added there\n'
+    assert host._merge_index_lines(A1 + C0, A2 + C0 + new, base=A0 + C0, a_newer=True) == A1 + C0 + new
+    assert host._merge_index_lines(A1 + C0, A2 + C0 + new, base=A0 + C0, a_newer=False) == A2 + C0 + new
+
+
+def test_index_lines_merge_per_memory_file_without_a_base(host):
+    """No index of a last good sync (the first merge): one line per memory - the newer copy's where both differ - and
+    the lines of an earlier union (three versions of one line) become one."""
+    ours = '# Memory\n' + A1 + C0 + '- [Sessions page](sessions.md) — stale 1\n' + '- [Sessions page](sessions.md) — stale 2\n'
+    theirs = '# Memory\n' + A0 + B1 + C0
+    merged = host._merge_index_lines(ours, theirs, a_newer=True)
+    assert merged == '# Memory\n' + A1 + B1 + C0                     # the host's new line where it was there
+    assert merged.count('](sessions.md)') == 1
+    # lines that name no memory file stay a union, as before
+    assert host._merge_index_lines('# M\n\nnote a\n' + C0, '# M\n\nnote b\n' + C0) == '# M\n\nnote a\nnote b\n' + C0
+
+
+def test_the_index_of_the_last_good_sync_is_kept_and_used(host, tmp_path):
+    """After a good sync the indexes the bisync listing names are copied beside the listings (only when changed); a
+    later conflict of one is merged against that copy."""
+    local = tmp_path / 'repo'
+    folder = local / 'work' / 'item' / '!AI' / 'memory'
+    folder.mkdir(parents=True)
+    (folder / 'MEMORY.md').write_text(A0 + B0 + C0, encoding='utf-8')
+    wd = tmp_path / 'wd'
+    wd.mkdir()
+    entry = {'local': str(local), 'remote': '/home/u/CMETA/repos/repo', 'method': 'bisync', 'workdir': str(wd)}
+    prefix = __import__('re').sub(r'[:\\/]', '_', os.path.normpath(str(local))) + '..'
+    (wd / (prefix + '_sftp__home_u_CMETA_repos_repo.path1.lst')).write_text(
+        '# bisync listing v1\n-       10 - - 2026-11-08T23:00:00.000000000+0000 "work/item/!AI/memory/MEMORY.md"\n'
+        '-        5 - - 2026-11-08T23:00:00.000000000+0000 "work/item/notes.md"\n', encoding='utf-8')
+
+    assert host._remember_index_bases(HOST, 'repo', entry) == 1
+    kept = wd / 'memory-base' / 'repo' / 'work' / 'item' / '!AI' / 'memory' / 'MEMORY.md'
+    assert kept.read_text(encoding='utf-8') == A0 + B0 + C0
+    assert host._remember_index_bases(HOST, 'repo', entry) == 0           # unchanged: not written again
+
+    # the next run: both sides changed the index - this machine one line, the host another
+    (folder / 'MEMORY.md').unlink()
+    (folder / 'MEMORY.md.conflict1').write_text(A1 + B0 + C0, encoding='utf-8')
+    (folder / 'MEMORY.md.conflict2').write_text(A0 + B1 + C0, encoding='utf-8')
+    merged = host._settle_index_conflicts({}, HOST, 'repo', entry,
+                                          ['work/item/!AI/memory/MEMORY.md.conflict1', 'work/item/!AI/memory/MEMORY.md.conflict2'],
+                                          con=False, verbose=False)
+    assert merged == ['work/item/!AI/memory/MEMORY.md']
+    assert (folder / 'MEMORY.md').read_text(encoding='utf-8') == A1 + B1 + C0
+
+
 def test_index_conflicts_are_merged_and_settled_on_both_sides(host, tmp_path):
     local = tmp_path / 'repo'
     folder = local / 'work' / 'item' / '!AI' / 'memory'
@@ -227,3 +295,30 @@ def test_the_banner_says_it_in_large_letters(host):
     bad = host._banner(False, 'STATUS: FAILED - 2 problem(s) - 3 repositories ok: ' + 'a' * 150 + ' | host / repo: the check: DIFFERENCES: 1 differ')
     assert all(len(l) <= 100 for l in bad.split('\n'))
     assert bad.count('#') > good.count('#') - 200               # both words drawn in block letters
+
+
+def test_the_verdict_of_a_sync_is_kept_beside_its_listings(host, tmp_path):
+    """2026-11-09: each run that is not a dry run writes the host's verdict beside its bisync listings (cmeta-sync.json) -
+    the last run (when, SUCCESS or not, all its repositories or a part) and the last full one that succeeded: what the
+    AI sessions page reads to tell whether a host was synced after a session started there."""
+    import json as json_module
+    wd = tmp_path / 'wd'
+    selected = [('repo-a', {'method': 'bisync', 'workdir': str(wd)}), ('repo-b', {'method': 'copy', 'workdir': str(wd)})]
+    host._remember_sync(HOST, selected, [], True)
+    assert not wd.exists()                                       # no bisync of the host ever ran here: nothing written
+    wd.mkdir()
+    host._remember_sync(HOST, selected, [], True)
+    rec = json_module.loads((wd / 'cmeta-sync.json').read_text(encoding='utf-8'))
+    assert rec['last']['ok'] and rec['last']['all'] and rec['last']['repos'] == ['repo-a', 'repo-b'] and rec['last']['problems'] == []
+    assert rec['last_ok']['at'] == rec['last']['at'] and rec['last_ok']['time'] == rec['last']['time']
+    first_ok = rec['last_ok']
+
+    # a part of it (--repos), then a run with a problem: the last run says so, the last full success stays
+    host._remember_sync(HOST, selected[:1], [], False)
+    rec = json_module.loads((wd / 'cmeta-sync.json').read_text(encoding='utf-8'))
+    assert rec['last']['ok'] and not rec['last']['all'] and rec['last']['repos'] == ['repo-a'] and rec['last_ok'] == first_ok
+    host._remember_sync(HOST, selected, ['h / repo-b: the check: DIFFERENCES: 1 differ'], True)
+    rec = json_module.loads((wd / 'cmeta-sync.json').read_text(encoding='utf-8'))
+    assert not rec['last']['ok'] and rec['last']['problems'] == ['h / repo-b: the check: DIFFERENCES: 1 differ'] and rec['last_ok'] == first_ok
+    host._remember_sync(HOST, selected, [], True)
+    assert json_module.loads((wd / 'cmeta-sync.json').read_text(encoding='utf-8'))['last_ok']['at'] >= first_ok['at']
