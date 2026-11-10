@@ -2,6 +2,20 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.65.3
+- **`cx host sync` keeps each run's verdict beside the host's bisync listings** (`<workdir>/cmeta-sync.json`): the last
+  run - when, how long, SUCCESS or not, all the repositories of the host's sync block or a part (`--repos`), which ones,
+  its problems - and the last full run that succeeded, kept through later partial or failed runs. Nothing is written
+  where the host's bisync workdir is missing. A page can tell whether a host was synced after something happened there
+  (the AI sessions page shows a red Sync button after a session started on a host that is not a hub, until such a sync).
+- **A memory index changed on both sides of a sync is merged per memory file.** When two machines changed one MEMORY.md
+  between two syncs, the bisync left two conflict copies and the line-union merge kept a line both sides had changed in
+  both versions, so an index could name one memory file two or three times. Now every memory index the bisync listing
+  names is kept beside the listings after a run that found both sides equal (`<workdir>/memory-base/<repository>/<path>`),
+  and a conflict is merged per memory line against that kept copy: the side that changed a line wins over the side that
+  did not, a line one side removed and the other kept unchanged goes, a change wins over a removal, a line both changed
+  is the newer copy's; other lines (headings, notes) stay a union, as before.
+
 ## 0.65.2
 - **`cx host ls` shows the Python each host's cx runs on, next to cMeta and AOPS** (the user, 2026-11-06): a column
   PYTHON - "3.14.7", "3.15.2t" for a free-threaded build (no GIL) - for the host and for each of its projects (a
