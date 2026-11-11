@@ -1,8 +1,10 @@
 /* Licensed under the Apache License, Version 2.0. See the COPYRIGHT and LICENSE files in the project root for details.
  *
- * cserver.cmeta.targets: the numbers, the four pillars, the matrix of the targets against the operating systems, the
- * matrix of the programs against the targets (filtered by words, an OS, a target), the commands to try. Everything
- * comes from CMT_DATA (api/v1.py); the state (q, target, os) is kept in the address so a view can be shared.
+ * cserver.cmeta.targets (Supported compute): the numbers, the four pillars, the matrix of the targets against the
+ * operating systems, the matrix of the programs against the targets (filtered by an OS, a target), the commands to try;
+ * one search at the top (it stays there while the page scrolls) narrows both matrices. Everything comes from CMT_DATA
+ * (api/v1.py); the state (q, target, os) is kept in the address so a view can be shared; A- / A+ (the size) and the
+ * theme - the one of every page of a cMeta server, cmeta.theme - are kept in the browser.
  */
 (function () {
   'use strict';
@@ -21,10 +23,16 @@
     return;
   }
 
-  // the theme: the cPlatform's shell decides when the page is inside it (and may switch without a reload)
-  function theme() {
-    var t = C.hosted ? document.documentElement.getAttribute('data-ctp-theme') : '';
-    root.classList.toggle('dark', t ? t === 'dark' : C.dark_mode === true);
+  var SHARED_THEME = 'cmeta.theme';                  // the theme of every page of a cMeta server (2026-11-10)
+  var THEME_KEY = 'cserver.cmeta.targets.theme', SCALE_KEY = 'cserver.cmeta.targets.scale';
+  function stored(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function store(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+
+  // the theme: inside the cPlatform's shell the shell's (it may switch without a reload; no switch of our own); on a
+  // cMeta server the one theme of its pages (cmeta.theme in this browser), this page's switch, followed when another
+  // page (another tab) changes it; else the server's (?dark=1)
+  function setDark(dark) {
+    root.classList.toggle('dark', !!dark);
     paintKinds();
   }
   function paintKinds() {
@@ -33,9 +41,36 @@
   }
   if (C.hosted) {
     root.classList.add('hosted');
-    new MutationObserver(theme).observe(document.documentElement, {attributes: true, attributeFilter: ['data-ctp-theme']});
+    $('cmt-theme').hidden = true;
+    var follow = function () {
+      var t = document.documentElement.getAttribute('data-ctp-theme');
+      setDark(t ? t === 'dark' : C.dark_mode === true);
+    };
+    new MutationObserver(follow).observe(document.documentElement, {attributes: true, attributeFilter: ['data-ctp-theme']});
+    follow();
+  } else {
+    var t0 = stored(SHARED_THEME) || stored(THEME_KEY);
+    setDark(t0 ? t0 === 'dark' : C.dark_mode === true);
+    $('cmt-theme').addEventListener('click', function () {
+      var dark = !root.classList.contains('dark');
+      setDark(dark);
+      store(SHARED_THEME, dark ? 'dark' : 'light');
+      store(THEME_KEY, dark ? 'dark' : 'light');
+    });
+    window.addEventListener('storage', function (e) { if (e.key === SHARED_THEME && e.newValue) setDark(e.newValue === 'dark'); });
   }
-  theme();
+
+  // the size: A- / A+ (kept in this browser), or ?font=1.2 in the address - the whole of the page under the search
+  var scale = 1;
+  function setScale(s, keep) {
+    scale = Math.max(0.7, Math.min(2.2, Math.round(s * 10) / 10));
+    $('cmt-body').style.zoom = String(scale);
+    if (keep) store(SCALE_KEY, String(scale));
+  }
+  var askedFont = parseFloat((/[?&]font=([\d.]+)/.exec(location.search) || [])[1]);
+  setScale(askedFont > 0 ? askedFont : (parseFloat(stored(SCALE_KEY)) || 1), false);
+  $('cmt-smaller').addEventListener('click', function () { setScale(scale - 0.1, true); });
+  $('cmt-bigger').addEventListener('click', function () { setScale(scale + 0.1, true); });
 
   var OS = D.os || [];
   var osName = {};
@@ -70,6 +105,20 @@
     return '<div class="cmt-pillar"><h3><span class="n">' + (i + 1) + '</span>' + esc(p.title) + '</h3><p>' + esc(p.text) + '</p>' + (p.cmd ? cmdLine(p.cmd) : '') + '</div>';
   }).join('');
 
+  // ---- the search (the box at the top): its words narrow both tables - a program when every word is in its name, what
+  // it does, its tags, its targets or its family; a target when every word is in its name, its hardware, what it is,
+  // its kind - or when it runs one of the programs the words keep (a program's name finds where it runs)
+  function words() { return st.q.toLowerCase().split(/\s+/).filter(Boolean); }
+  function progHits(p, ws) {
+    var hay = (p.alias + ' ' + p.name + ' ' + p.desc + ' ' + p.tags.join(' ') + ' ' + p.targets.join(' ') + ' ' + p.family).toLowerCase();
+    return ws.every(function (w) { return hay.indexOf(w) >= 0; });
+  }
+  function targetHits(t, ws, kept) {
+    if (!ws.length) return true;
+    var hay = (t.id + ' ' + (t.name || '') + ' ' + (t.hardware || '') + ' ' + (t.desc || '') + ' ' + (kindName[t.kind] || t.kind)).toLowerCase();
+    return ws.every(function (w) { return hay.indexOf(w) >= 0; }) || kept.some(function (p) { return p.targets.indexOf(t.id) >= 0; });
+  }
+
   // ---- the targets against the operating systems
   function osCell(t, o) {
     if (t.status === 'placeholder') return '<td class="c planned" data-tip="' + esc(t.name + ': planned') + '">·</td>';
@@ -85,7 +134,11 @@
             '<th class="c">Programs</th></tr></thead><tbody>';
     var groups = (D.kinds || []).map(function (k) { return {id: k.id, name: k.name, rows: []}; });
     var planned = {id: 'planned', name: 'Planned', rows: []};
+    var ws = words(), kept = ws.length ? programs.filter(function (p) { return progHits(p, ws); }) : [];
+    var n = 0;
     targets.forEach(function (t) {
+      if (!targetHits(t, ws, kept)) return;
+      n++;
       if (t.status === 'placeholder') { planned.rows.push(t); return; }
       var g = groups.filter(function (x) { return x.id === t.kind; })[0];
       (g || planned).rows.push(t);
@@ -101,6 +154,8 @@
       });
     });
     $('cmt-tos').innerHTML = h + '</tbody>';
+    $('cmt-tempty').hidden = n > 0;
+    return n;
   }
 
   // ---- the programs against the targets
@@ -110,13 +165,11 @@
     return b.join('');
   }
   function shown() {
-    var ws = st.q.toLowerCase().split(/\s+/).filter(Boolean);
+    var ws = words();
     return programs.filter(function (p) {
       if (st.target && p.targets.indexOf(st.target) < 0) return false;
       if (st.os && p.os.indexOf(st.os) < 0 && !(p.via || {})[st.os]) return false;
-      if (!ws.length) return true;
-      var hay = (p.alias + ' ' + p.name + ' ' + p.desc + ' ' + p.tags.join(' ') + ' ' + p.targets.join(' ') + ' ' + p.family).toLowerCase();
-      return ws.every(function (w) { return hay.indexOf(w) >= 0; });
+      return !ws.length || progHits(p, ws);
     });
   }
   function ptmTable() {
@@ -170,7 +223,15 @@
     var s = q.toString();
     try { history.replaceState(null, '', location.pathname + (s ? '?' + s : '') + location.hash); } catch (e) { /* ignore */ }
   }
-  function render() { tosTable(); osChips(); ptmTable(); keep(); }
+  // what the search keeps, beside it: the targets and the programs it leaves in the tables
+  function render() {
+    var nt = tosTable();
+    osChips();
+    ptmTable();
+    keep();
+    var all = targets.length, np = st.q ? programs.filter(function (p) { return progHits(p, words()); }).length : programs.length;
+    $('cmt-qcount').textContent = st.q ? nt + ' of ' + all + ' targets · ' + np + ' of ' + programs.length + ' programs' : '';
+  }
 
   function pickTarget(id, scroll) {
     st.target = st.target === id ? '' : id;
@@ -190,7 +251,13 @@
 
   // ---- events
   $('cmt-q').value = st.q;
-  $('cmt-q').addEventListener('input', function () { st.q = this.value.trim(); ptmTable(); keep(); });
+  $('cmt-q').addEventListener('input', function () { st.q = this.value.trim(); render(); });
+  $('cmt-q').addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { this.value = ''; st.q = ''; render(); } });
+  // "/" anywhere but in a field: to the search
+  document.addEventListener('keydown', function (ev) {
+    var tag = (ev.target && ev.target.tagName) || '';
+    if (ev.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(tag) && !ev.target.isContentEditable) { ev.preventDefault(); $('cmt-q').focus(); }
+  });
   $('cmt-clear').addEventListener('click', function () { st.q = ''; st.target = ''; st.os = ''; $('cmt-q').value = ''; render(); });
   $('cmt-os-chips').addEventListener('click', function (ev) {
     var b = ev.target.closest('button');

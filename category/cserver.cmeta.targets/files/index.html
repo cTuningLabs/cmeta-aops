@@ -5,42 +5,58 @@
 <div id="cmt" class="cmt">
 
   <header class="cmt-head">
-    <h1>%%TITLE%%</h1>
-    <p class="cmt-sub">%%SUBTITLE%%</p>
+    <div class="cmt-titles">
+      <h1>%%TITLE%%</h1>
+      <p class="cmt-sub">%%SUBTITLE%%</p>
+    </div>
+    <div class="cmt-tools">
+      <button type="button" class="cmt-tool" id="cmt-smaller" title="Smaller (kept in this browser)" aria-label="Smaller">A&#8722;</button>
+      <button type="button" class="cmt-tool" id="cmt-bigger" title="Bigger (kept in this browser)" aria-label="Bigger">A+</button>
+      <button type="button" class="cmt-tool" id="cmt-theme" title="Dark / light - for every page of this server" aria-label="Dark or light">&#9680;</button>
+    </div>
   </header>
 
-  <div class="cmt-stats" id="cmt-stats"></div>
+  <!-- the search: on the left, staying at the top while the page scrolls; it narrows both tables -->
+  <div class="cmt-top" id="cmt-top">
+    <input type="search" id="cmt-q" spellcheck="false" autocomplete="off" aria-label="Search the targets and the programs"
+           placeholder="Search the targets and the programs - a name, a tag, what it does ...   ( / to focus )">
+    <span class="cmt-qcount" id="cmt-qcount"></span>
+  </div>
 
-  <section class="cmt-pillars" id="cmt-pillars" aria-label="What a run gives"></section>
+  <div class="cmt-body" id="cmt-body">
+    <div class="cmt-stats" id="cmt-stats"></div>
 
-  <section class="cmt-sec" id="cmt-sec-os">
-    <h2>Compute targets and operating systems</h2>
-    <p class="cmt-lede">Each target is a task (<code>task/target--&lt;name&gt;</code>) that finds the device, its drivers and
-      versions, and sets up what a build needs. A row says where it works: <span class="cmt-key"><i class="cmt-dot"></i> runs
-      there</span> <span class="cmt-key"><i class="cmt-dot drive"></i> builds, installs and launches it from there</span>.
-      Click a row to see its programs below.</p>
-    <div class="cmt-scroll"><table class="cmt-tos" id="cmt-tos"></table></div>
-  </section>
+    <section class="cmt-pillars" id="cmt-pillars" aria-label="What a run gives"></section>
 
-  <section class="cmt-sec" id="cmt-sec-prog">
-    <h2>Programs and the targets they run on</h2>
-    <p class="cmt-lede">Every program artifact and the targets it declares (<code>constraints.supported_compute</code>); the
-      last column is where it runs, with the route a program names for another OS (a container). Click a program for its
-      commands.</p>
-    <div class="cmt-bar">
-      <input type="search" id="cmt-q" placeholder="Filter: a name, a tag, what it does..." aria-label="Filter the programs">
-      <span class="cmt-chips" id="cmt-os-chips" role="group" aria-label="Operating system"></span>
-      <span class="cmt-count" id="cmt-count"></span>
-      <button type="button" class="cmt-clear" id="cmt-clear" hidden>show all</button>
-    </div>
-    <div class="cmt-scroll"><table class="cmt-ptm" id="cmt-ptm"></table></div>
-    <p class="cmt-empty" id="cmt-empty" hidden>No program matches - try fewer words or another target.</p>
-  </section>
+    <section class="cmt-sec" id="cmt-sec-os">
+      <h2>Compute targets and operating systems</h2>
+      <p class="cmt-lede">Each target is a task (<code>task/target--&lt;name&gt;</code>) that finds the device, its drivers and
+        versions, and sets up what a build needs. A row says where it works: <span class="cmt-key"><i class="cmt-dot"></i> runs
+        there</span> <span class="cmt-key"><i class="cmt-dot drive"></i> builds, installs and launches it from there</span>.
+        Click a row to see its programs below.</p>
+      <div class="cmt-scroll"><table class="cmt-tos" id="cmt-tos"></table></div>
+      <p class="cmt-empty" id="cmt-tempty" hidden>No target matches - try fewer words.</p>
+    </section>
 
-  <section class="cmt-sec cmt-try">
-    <h2>Try it</h2>
-    <div class="cmt-cmds" id="cmt-cmds"></div>
-  </section>
+    <section class="cmt-sec" id="cmt-sec-prog">
+      <h2>Programs and the targets they run on</h2>
+      <p class="cmt-lede">Every program artifact and the targets it declares (<code>constraints.supported_compute</code>); the
+        last column is where it runs, with the route a program names for another OS (a container). Click a program for its
+        commands.</p>
+      <div class="cmt-bar">
+        <span class="cmt-chips" id="cmt-os-chips" role="group" aria-label="Operating system"></span>
+        <span class="cmt-count" id="cmt-count"></span>
+        <button type="button" class="cmt-clear" id="cmt-clear" hidden>show all</button>
+      </div>
+      <div class="cmt-scroll"><table class="cmt-ptm" id="cmt-ptm"></table></div>
+      <p class="cmt-empty" id="cmt-empty" hidden>No program matches - try fewer words or another target.</p>
+    </section>
+
+    <section class="cmt-sec cmt-try">
+      <h2>Try it</h2>
+      <div class="cmt-cmds" id="cmt-cmds"></div>
+    </section>
+  </div>
 
   <p class="cmt-err" id="cmt-err" hidden></p>
   <div class="cmt-tip" id="cmt-tip" role="tooltip" hidden></div>
