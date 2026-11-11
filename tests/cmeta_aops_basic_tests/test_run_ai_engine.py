@@ -558,11 +558,36 @@ def test_context_entries_are_crefs_or_claude_folders_separated_by_semicolons(fre
     r = fresh.run(dry_run = True, context = "%s; %s" % (full, fresh.cref(fresh.other)))
     assert kinds(r) == [(fresh.other.name, "context"), (fresh.used.name, "context")]
 
+    # an artifact without !AI is a plain source (2026-11-10), no longer skipped; the others are skipped with the reason
     r = fresh.run(dry_run = True, context = "claude:%s;nonsense;%s;tmp::no-such-artifact" % (fresh.scratch / "no-such-folder", fresh.cref(fresh.empty)))
-    assert r["return"] == 0 and r["context"] == []
+    assert r["return"] == 0 and kinds(r) == [(fresh.empty.name, "context")] and r["context"][0]["plain"] is True
     skipped = dict(r["context_skipped"])
-    assert len(skipped) == 4 and "not a cRef" in skipped["nonsense"] and skipped["tmp::no-such-artifact"] == "not found"
-    assert any("no !AI" in why for why in skipped.values()) and any("no native Claude memory" in why for why in skipped.values())
+    assert len(skipped) == 3 and "not a cRef" in skipped["nonsense"] and skipped["tmp::no-such-artifact"] == "not found"
+    assert not any("no !AI" in why for why in skipped.values()) and any("no native Claude memory" in why for why in skipped.values())
+
+
+def test_an_artifact_without_ai_in_ai_uses_is_a_plain_source(fresh):
+    """2026-11-10, the user: "quick add of various other artifacts without context but just to use them quickly" - the
+    harness is told what the artifact is and where it is, and may read it; nothing of it is staged or guarded."""
+    put(fresh.empty / "_cmeta.yaml", read(fresh.empty / "_cmeta.yaml") + "name: The empty one\ndesc: an artifact with no !AI at all\n")
+    try:
+        fresh.uses(fresh.used, fresh.empty)
+        r = fresh.run(dry_run = True)
+        assert r["return"] == 0 and kinds(r) == [(fresh.empty.name, "ai_uses"), (fresh.used.name, "ai_uses")]
+        plain = next(s for s in r["context"] if s["root"].endswith(fresh.empty.name))
+        assert plain["plain"] is True and plain["has_memory"] is False and plain["skills"] == [] and not plain.get("stage_dir")
+        assert plain["name"] == "The empty one" and plain["desc"] == "an artifact with no !AI at all"
+        prompt = r["params"]["prompt"]
+        folder = str(fresh.empty).replace("\\", "/")
+        assert "works with these artifacts too" in prompt and folder in prompt and "name: The empty one" in prompt
+        assert "the memory of " + fresh.used.name in prompt                     # the source with memory as before
+        assert any("a plain artifact" in n and fresh.empty.name in n for n in r["notes"])
+        # the real run: the plain artifact is not guarded, so a file written there is no "direct change" to report
+        r = fresh.run(context_guard = "report")
+        assert r["return"] == 0 and not any(fresh.empty.name in n and "direct change" in n for n in r.get("notes") or [])
+    finally:
+        put(fresh.empty / "_cmeta.yaml", "\n".join(l for l in read(fresh.empty / "_cmeta.yaml").splitlines()
+                                                   if not l.startswith(("name:", "desc:"))) + "\n")
 
 
 def test_ai_uses_of_the_project_and_its_depth(fresh):

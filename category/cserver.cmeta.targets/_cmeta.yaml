@@ -11,8 +11,8 @@ last_api_version: 1
 base_category_default_api_versions:
   '1': 1
 
-name: cMeta programs everywhere - the compute targets, the operating systems and the programs that run on them
-short: cMeta targets and OS
+name: Supported compute - the compute targets, the operating systems and the programs that run on them
+short: Supported compute
 desc: 'Where a cMeta program runs: every compute target (CPUs, GPUs, NPUs, stacks, phones) against the operating
   systems that drive it, and every program against the targets it declares - read live from the target tasks
   (the "support" block of their _desc.yaml) and the program artifacts (constraints.supported_compute) of the plugged

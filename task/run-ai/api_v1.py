@@ -82,6 +82,10 @@ claude:<folder> for the memory Claude Code keeps for a folder), the project's ow
 local repository, key "local_ai_uses" = {<repository alias,UID | alias | UID, or an artifact cRef | UID>: "<cref>[;<cref>...]"}
 (cx config set task-run-ai --meta.local_ai_uses.<repository alias,UID>=<cref>) - for repositories that are shared and
 must not name a private artifact themselves. --skip_ai_uses skips the last three; --context_depth follows them further.
+An artifact of those lists that has no !AI memory or skills (a page's category, a tool, a data artifact the project
+works with) is a plain source (2026-11-10): the harness is told what it is and where its folder is on this machine
+(its name and desc from its _cmeta), and may read it, so it goes there instead of searching; nothing of it is staged
+or guarded.
 
 The memory and skills of the artifacts a project uses (its `ai_uses`, --context) are read-only for a run, and changed
 only on the user's word (pending.py) - by run-ai itself, so the same for every harness, platform and
@@ -945,19 +949,37 @@ class CTask(InitCTask):
                     # this machine's mapping)
                     wanted += [(c, 'ai_uses', c, level + 1) for c, note in self._ai_uses(path) + self._repo_ai_uses(path)]
                     wanted += [(c, 'ai_uses', c, level + 1) for c, note, key in self._local_ai_uses(path, info)]
-                if not _glob(mem, '*.md') and not skills:
-                    skipped.append((label, 'no %s/%s or %s/%s there yet' % (AI_DIR, MEMORY_DIR, AI_DIR, SKILLS_DIR)))
-                    continue
             if os.path.normcase(root) in seen:
                 continue
             seen.add(os.path.normcase(root))
             if len(sources) >= limit:
                 skipped.append((label, 'over --context_limit=%d' % limit))
                 continue
-            sources.append({'label': label, 'kind': kind if not kind.startswith('ai_uses') or level == 1 else ('%s, depth %d' % (kind, level)),
-                            'root': root, 'memory_dir': mem, 'has_memory': bool(_glob(mem, '*.md')),
-                            'skills': skills, 'plugin': plugin})
+            # an artifact without memory or skills (no !AI yet) is a plain source (2026-11-10, the user: "quick add of
+            # various other artifacts without context but just to use them quickly" - a page's category, a tool ...):
+            # the harness is told where it is and what it is, and may read its folder; nothing of it is staged or guarded
+            plain = kind != 'claude' and not _glob(mem, '*.md') and not skills
+            source = {'label': label, 'kind': kind if not kind.startswith('ai_uses') or level == 1 else ('%s, depth %d' % (kind, level)),
+                      'root': root, 'memory_dir': mem, 'has_memory': bool(_glob(mem, '*.md')), 'skills': skills, 'plugin': plugin}
+            if plain:
+                meta = self._meta_of(root)
+                source.update(plain=True, name=str(meta.get('name') or '').strip(), desc=str(meta.get('desc') or '').strip())
+            sources.append(source)
         return sources, skipped
+
+    @staticmethod
+    def _meta_of(path):
+        """The _cmeta.yaml or _cmeta.json of an artifact folder (what it is: its name, its desc), or {}."""
+        for fn in ('_cmeta.yaml', '_cmeta.json'):
+            fp = os.path.join(path, fn)
+            if os.path.isfile(fp):
+                try:
+                    with open(fp, encoding='utf-8') as f:
+                        d = yaml.safe_load(f) if fn.endswith('.yaml') else json.load(f)
+                except Exception:
+                    return {}
+                return d if isinstance(d, dict) else {}
+        return {}
 
     # ------------------------------------------------------------------ used artifacts: proposals and the guard (pending.py)
     @staticmethod
@@ -967,8 +989,8 @@ class CTask(InitCTask):
         is no artifact: it gets none."""
         guarded, taken = [], set()
         for s in sources:
-            if s['kind'] == 'claude':
-                continue
+            if s['kind'] == 'claude' or s.get('plain'):
+                continue        # a plain artifact (no !AI) has nothing to stage or guard
             key = PEND.stage_key(s['label'], s['root'])
             n = 2
             while key in taken:                     # two artifacts with one alias and no UID
@@ -1128,6 +1150,18 @@ class CTask(InitCTask):
             'this run may change their memory and skills directly' if writable else 'read-only', AI_DIR, MEMORY_DIR), '']
         for s in sources:
             lines += ['## %s' % s['label']]
+            if s.get('plain'):
+                # an artifact without memory or skills: what it is and where, so that the agent works with it at once
+                # instead of searching for it (its folder may be read; it is not a place for this project's own notes)
+                lines += ['a cMeta artifact this project works with (no %s memory or skills of its own): its folder on this '
+                          'machine is %s - read its files there; what you keep for yourself stays in this project\'s %s.' % (
+                              AI_DIR, s['root'].replace('\\', '/'), AI_DIR)]
+                if s.get('name'):
+                    lines += ['name: %s' % s['name']]
+                if s.get('desc'):
+                    lines += ['desc: %s' % s['desc']]
+                lines.append('')
+                continue
             if s.get('stage_dir') and not writable:
                 lines += ['read-only; a change to it is proposed under: %s/' % s['stage_dir'].replace('\\', '/')]
             if s['has_memory']:
@@ -1168,11 +1202,18 @@ class CTask(InitCTask):
                          'workspace.' % (os.path.dirname(posix), own_workspace))
         lines.append('- Its memory is %s/%s/ (MEMORY.md is the index)%s.' % (
             posix, MEMORY_DIR, ('; its skills are in %s/%s/' % (posix, SKILLS_DIR)) if own_skills else ''))
-        if sources:
+        with_ai = [s for s in sources if not s.get('plain')]
+        plain = [s for s in sources if s.get('plain')]
+        if with_ai:
             lines.append('- It also reads%s the memory and skills of the artifacts it uses (its `%s`: the list of its _desc, '
                          'its repository\'s default, this machine\'s mapping; and --context; their indexes follow below): %s.' % (
                              ' - and in this run may change -' if guard == 'keep' else ', read-only,',
-                             AI_USES_KEY, '; '.join(s['label'] for s in sources)))
+                             AI_USES_KEY, '; '.join(s['label'] for s in with_ai)))
+        if plain:
+            lines.append('- It works with these artifacts too, which have no %s memory or skills yet (its `%s` names them; their '
+                         'folders on this machine follow below - go to them, do not search for them): %s.' % (
+                             AI_DIR, AI_USES_KEY, '; '.join(s['label'] for s in plain)))
+        if sources:
             if guard == 'keep':
                 lines.append('- This run has write access to those artifacts (--write=all): change their memory and skills where they '
                              'are, when it serves the request. Keep the format of the files (a memory is one fact in a Markdown file '
@@ -2243,6 +2284,10 @@ class CTask(InitCTask):
                 params['prompt'] = CONV.REQUEST_MARK + '\n' + (params.get('prompt') or '')
             params['prompt'] = handover + '\n' + params['prompt']
         for s in sources:
+            if s.get('plain'):
+                notes.append('context: %s (%s) <- a plain artifact (no %s memory or skills): its folder %s is in the context' % (
+                    s['label'], s['kind'], AI_DIR, s['root']))
+                continue
             notes.append('context: %s (%s) <- %s%s' % (s['label'], s['kind'], s['memory_dir'] if s['has_memory'] else 'no memory',
                                                      (', %d skill(s)%s' % (len(s['skills']), ' as a plugin' if (s['plugin'] and harness == 'claude') else ' listed')) if s['skills'] else ''))
         for label, why in skipped:

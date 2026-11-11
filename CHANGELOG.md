@@ -2,6 +2,20 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.66.0
+- **The page of the targets is "Supported compute"** (category `cserver.cmeta.targets`, `/cmeta.targets`; it was
+  "cMeta programs everywhere"): its title, its card and its `targets.yaml`. It got the controls of the other pages: a
+  dark / light switch that follows the theme every page of the server shares (`cmeta.theme` in the browser), a font
+  size (A- / A+, kept), and a search box that stays on top as one scrolls - it prunes the programs and the targets by
+  any word of their names, OSes, tools and notes, counts what it keeps, says when nothing matches, "/" focuses it and
+  Esc clears it.
+- **run-ai: an `ai_uses` entry without an `!AI` folder is a plain context source.** A project can now name the
+  artifacts it works with - a page's category, a tool, a data artifact - in its `_desc.yaml` `ai_uses` even when they
+  hold no memory or skills: the agent is told what each is (the `name` and `desc` of its `_cmeta`) and where its folder
+  is on this machine, so it goes there instead of searching; nothing of it is staged or guarded (`plain: true` in the
+  dry run). Sources with memory or skills work as before; what is not found, not a cRef or over `--context_limit` is
+  still listed as skipped, with the reason.
+
 ## 0.65.3
 - **`cx host sync` keeps each run's verdict beside the host's bisync listings** (`<workdir>/cmeta-sync.json`): the last
   run - when, how long, SUCCESS or not, all the repositories of the host's sync block or a part (`--repos`), which ones,

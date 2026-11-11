@@ -2,8 +2,10 @@
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 
-cserver.cmeta.targets - where a cMeta program runs: the compute targets against the operating systems, and the
-programs against the targets they declare, read live from the artifacts plugged into this machine.
+cserver.cmeta.targets - Supported compute (named so since 2026-11-10; it was "cMeta programs everywhere"): where a
+cMeta program runs - the compute targets against the operating systems, and the programs against the targets they
+declare, read live from the artifacts plugged into this machine. One search at the top narrows both tables; A- / A+
+set the size and the theme switch the dark or light of every page of the server (both kept in the browser).
 
     cx app run cserver      ->  http://127.0.0.1:8004/cmeta.targets
 
@@ -180,7 +182,7 @@ class Category(InitCategory):
         order = {f.get('name'): i for i, f in enumerate(families)}
         programs.sort(key = lambda p: (order.get(p['family'], 999), p['alias']))
 
-        return {'title': settings.get('title') or 'cMeta programs everywhere', 'subtitle': settings.get('subtitle') or '',
+        return {'title': settings.get('title') or 'Supported compute', 'subtitle': settings.get('subtitle') or '',
                 'os': settings.get('os') or [], 'kinds': settings.get('kinds') or [], 'pillars': settings.get('pillars') or [],
                 'families': [f.get('name') for f in families], 'targets': targets, 'programs': programs,
                 'counts': {'programs': len(programs), 'targets': sum(1 for t in targets if t['status'] == 'supported'),
@@ -230,7 +232,7 @@ class Category(InitCategory):
         url_files = urls.get('url_files') or ''
         with open(os.path.join(path_to_files, 'index.html'), encoding = 'utf-8') as f:
             body = f.read()
-        title = data.get('title') or 'cMeta programs everywhere'
+        title = data.get('title') or 'Supported compute'
         body = (body.replace('%%DATA%%', _js(data)).replace('%%CONFIG%%', _js(config))
                 .replace('%%TITLE%%', html.escape(title)).replace('%%SUBTITLE%%', html.escape(data.get('subtitle') or '')))
         head = ('\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n'

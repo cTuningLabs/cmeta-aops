@@ -454,8 +454,12 @@ cxt run-ai --trim_context                                         # over that li
   every clone; that is what this machine's mapping is for.
 - **`--context`** entries count like `ai_uses` entries (they are read-only, guarded, and followed with
   `--context_depth`); `claude:<folder>` is useful until such memories are moved into artifacts.
-- A source counts when it holds memory (`!AI/memory/*.md`) or skills (`!AI/skills/*/SKILL.md`); the others are listed
-  as skipped, with the reason (no `!AI` yet, not found, not a cRef, over `--context_limit`).
+- A source with memory (`!AI/memory/*.md`) or skills (`!AI/skills/*/SKILL.md`) gives the agent its index and its
+  skills. A source without them - a page's category, a tool, a data artifact the project works with - is a **plain
+  source** (since 2026-11-10): the agent is told what it is (the `name` and `desc` of its `_cmeta`) and where its folder
+  is on this machine, and may read it, so it goes there instead of searching for it; nothing of it is staged or guarded
+  (`plain: true` in the dry run). What is not found, not a cRef or over `--context_limit` is listed as skipped, with
+  the reason.
 - **The estimate:** before the run, the orientation, the memory index, the skills, the context sources, the hand-over
   and the prompt are counted (chars / 4, within about 25%) and printed with the limit; over the limit the run fails
   under `-q`, `--yes` or without a terminal, and asks otherwise. With `--trim_context` (or `trim_context: true` in the

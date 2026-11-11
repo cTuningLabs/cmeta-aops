@@ -2,7 +2,7 @@
 # supports, the programs and the targets they declare) comes from the plugged artifacts; this file only names and
 # groups. Edit it, reload the page: no restart.
 
-title: cMeta programs everywhere
+title: Supported compute
 subtitle: 'Describe a program once, then build and run it on any compute target and operating system with one command - the tools it needs are detected or installed on the way, and every run records what ran.'
 
 # The columns of the targets matrix: the OS of the machine cMeta runs on (host_os of a target) and of the devices it
