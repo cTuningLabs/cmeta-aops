@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (after 0.66.0)
+## 0.67.0
 - **`run-codex` (and so `cxai` with codex): a stale daemon record no longer stops codex without a word.** codex
   0.166 keeps a record of its background daemon (`~/.codex/app-server-daemon/daemon.pid`, `daemon-updater.pid`); one
   that outlived its process - a restart, a crash - names a number the OS may have given to another process, and on
