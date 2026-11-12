@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.68.0
 - **Two-way syncs: a folder deleted on one side no longer stays on the other.** A folder deleted on one machine
   stayed on the other one when it still held files the sync leaves out on purpose - SQLite side files and locks
   (`*.sqlite-wal`, `*.sqlite-shm`, `.sqlite-maintenance.lock`), `__pycache__/`, `.venv/`, `tmp*/` ... -, which rclone
