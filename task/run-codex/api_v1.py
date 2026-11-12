@@ -111,6 +111,127 @@ def _agent_generator(codex_path, flags):
     return rec
 
 
+# codex's own record of its background daemon (codex 0.166, 2026-11): <codex home>/app-server-daemon/daemon.pid and
+# daemon-updater.pid - JSON {"pid", "processStartTime", ...}. A record that outlives its process (a restart, a crash)
+# names a number the OS may give to another process; on Windows a system service (2026-11-12: after a restart, pid 2768
+# was svchost.exe): codex cannot open it and stops at once - "failed to open daemon process: Access is denied (os
+# error 5)" - before any session, with no word of why. Before each run, a record that names no running codex is moved
+# aside (<name>.stale-<when>) and the run says so; codex starts its daemon anew.
+DAEMON_RECORDS = ('daemon.pid', 'daemon-updater.pid')
+STILL_ACTIVE = 259
+
+
+def _codex_home():
+    return os.environ.get('CODEX_HOME') or os.path.join(os.path.expanduser('~'), '.codex')
+
+
+def _process_now(pid):
+    """What runs under a process number now -> (state, image, start): state 'alive', 'gone' or 'closed' (it cannot be
+    opened: a system service, another user's process); start - Windows' FILETIME (100 ns since 1601), else 0."""
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        handle = k32.OpenProcess(0x1000, False, int(pid))         # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ('closed' if ctypes.get_last_error() == 5 else 'gone', '', 0)
+        try:
+            buf = ctypes.create_unicode_buffer(32768)
+            size = wintypes.DWORD(len(buf))
+            image = buf.value if k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)) else ''
+            times = [wintypes.FILETIME() for _ in range(4)]
+            start = 0
+            if k32.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
+                start = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+            code = wintypes.DWORD()
+            if k32.GetExitCodeProcess(handle, ctypes.byref(code)) and code.value != STILL_ACTIVE:
+                return ('gone', image, start)
+            return ('alive', image, start)
+        finally:
+            k32.CloseHandle(handle)
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return ('gone', '', 0)
+    except PermissionError:
+        return ('closed', '', 0)
+    except OSError:
+        return ('gone', '', 0)
+    image = ''
+    try:
+        with open(f'/proc/{int(pid)}/comm', encoding='utf-8') as f:
+            image = f.read().strip()
+    except OSError:
+        try:
+            image = subprocess.run(['ps', '-p', str(int(pid)), '-o', 'comm='], capture_output=True, text=True,
+                                   timeout=10, stdin=subprocess.DEVNULL).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            image = ''
+    return ('alive', image, 0)
+
+
+def stale_daemon_records(home=None, move=True):
+    """codex's daemon records that name no running codex (a restart, a crash), moved aside as <name>.stale-<when>
+    -> [(record path, pid, what runs under that number now)]. A record of a running codex - or one this check cannot
+    read - is left alone."""
+    folder = os.path.join(home or _codex_home(), 'app-server-daemon')
+    out = []
+    for name in DAEMON_RECORDS:
+        path = os.path.join(folder, name)
+        try:
+            with open(path, encoding='utf-8') as f:
+                record = json.load(f)
+            pid = int(record.get('pid'))
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+        state, image, start = _process_now(pid)
+        base = os.path.basename(image).lower()
+        recorded = str(record.get('processStartTime') or '')
+        same_start = not (start and recorded.isdigit()) or abs(int(recorded) - start) < 10_000_000
+        if state == 'alive' and 'codex' in base and same_start:
+            continue
+        now = ('no process' if state == 'gone' else
+               'a process this user may not open (a system service or another user\'s)' if state == 'closed' else
+               (os.path.basename(image) or 'another process') + ('' if 'codex' in base else ' - not codex')
+               + ('' if same_start else ', started after the record'))
+        if move:
+            try:
+                os.replace(path, path + '.stale-' + time.strftime('%Y%m%d-%H%M%S'))
+            except OSError:
+                continue
+        out.append((path, pid, now))
+    return out
+
+
+def _seconds_text(seconds):
+    """Seconds for a person (2026-11-12, the user: "2h34m20s"): 7.4s, 45s, 10m32s, 2h34m20s."""
+    x = max(float(seconds or 0), 0.0)
+    if x < 10:
+        return f'{x:.1f}s'
+    s = int(round(x))
+    if s < 60:
+        return f'{s}s'
+    if s < 3600:
+        return f'{s // 60}m{s % 60:02d}s'
+    return f'{s // 3600}h{(s % 3600) // 60:02d}m{s % 60:02d}s'
+
+
+# codex ending this fast with an error never reached a session: what it usually means and what to do (2026-11-12, the
+# user: "there are no messages explaining what is happening so I am (or users) will be lost")
+QUICK_EXIT = 15
+
+
+def _quick_exit_hint(space, returncode, duration):
+    return (f'{space}INFO: codex ended at once (return code {returncode}, after {_seconds_text(duration)}) - its own '
+            f'message is above. The usual causes:\n'
+            f'{space}      - "failed to open daemon process": a stale daemon record - cMeta moves those aside before '
+            f'every run, so run it again; to start codex without its background server: add "-- --no-daemon"\n'
+            f'{space}      - a login that expired or was revoked: "cx tool run codex -- login"\n'
+            f'{space}      - a session that no longer exists ("resume"): "cxt run-ai --new" starts another')
+
+
 class CTask(InitCTask):
     """
     """
@@ -463,6 +584,14 @@ class CTask(InitCTask):
         if not os.environ.get('CMETA_GENERATOR'):
             os.environ['CMETA_GENERATOR'] = json.dumps(_agent_generator(codex_path, extra_flags))
 
+        # A daemon record that outlived its codex (a restart): codex would stop at once with "failed to open daemon
+        # process: Access is denied" - moved aside, and said why (2026-11-12)
+        for path, pid, now in stale_daemon_records():
+            if con:
+                print (f'{space}INFO: codex\'s daemon record {path} named process {pid}, now {now} - left by a restart or '
+                       f'a crash, it makes codex stop at once ("failed to open daemon process: Access is denied"); moved '
+                       f'aside as {os.path.basename(path)}.stale-<time>, codex starts its daemon anew')
+
         # The run's duration, on the monotonic clock: the wall clock can be set while it runs
         start_time = time.monotonic()
 
@@ -487,10 +616,13 @@ class CTask(InitCTask):
 
             if con:
                 print ('')
-                if returncode != 0:
+                if returncode != 0 and duration < QUICK_EXIT:
+                    # it never reached a session: say what that usually means (2026-11-12)
+                    print (_quick_exit_hint(space, returncode, duration))
+                elif returncode != 0:
                     # Leaving a session early is normal - report the code, do not fail the task
                     print (f'{space}INFO: codex exited with return code {returncode}')
-                print (f'{space}Duration: {duration:.1f} sec')
+                print (f'{space}Duration: {_seconds_text(duration)}')
 
             return {'return':0,
                     'output': '',
@@ -643,7 +775,9 @@ class CTask(InitCTask):
 
         if con:
             print ('')
-            print (f'{space}Duration: {duration:.1f} sec')
+            if returncode != 0 and duration < QUICK_EXIT:
+                print (_quick_exit_hint(space, returncode, duration))
+            print (f'{space}Duration: {_seconds_text(duration)}')
 
         if returncode != 0:
             return self.cm.error(f'codex failed with return code {returncode}', 99)

@@ -1674,7 +1674,12 @@ class Category(InitCategory):
                     except OSError:
                         pass
 
-                return self.cm.error(result['error'], result['return'])
+                # the error keeps what the task returned beside it (2026-11-11: the results of a sequence of syncs
+                # that stopped at a conflict - the caller shows which step, which file, the counts)
+                err = self.cm.error(result['error'], result['return'])
+                for key, value in result.items():
+                    err.setdefault(key, value)
+                return err
 
         # Check if extra params were produced by the task that should be added to cache entry
         _update_params = result.pop('_update_params', {})

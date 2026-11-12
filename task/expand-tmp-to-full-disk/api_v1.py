@@ -68,7 +68,7 @@ def with_sudo(cmd, needs_sudo, interactive):
 
 
 def gib(n):
-    return f'{n / 2**30:.1f} GiB'
+    return f'{n / 1e9:.1f} GB'                  # 1000-based, as every size cMeta prints (2026-11-12)
 
 
 class CTask(InitCTask):

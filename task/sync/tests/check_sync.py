@@ -328,6 +328,24 @@ assert all(not r['initial'] for r in continued['results'])
 assert (v / 'from-first').read_text() == 'first pair'
 assert (w / 'from-second').read_text() == 'second pair'
 
+# --progress: the statistics only, one line each (rclone writes a block at the end of every run); --transfers=N for the run
+p1, p2 = root / 'progress-1', root / 'progress-2'
+p1.mkdir()
+for i in range(20):
+    put(p1 / ('big' + str(i)), 'x' * 50000, 1700000000)
+artifact('pq', p1, p2)
+assert sync('pq', plan=True, transfers=8)['plans'][0]['transfers'] == 8
+assert sync('pq', plan=True)['plans'][0]['transfers'] == 4
+with redirect_stdout(io.StringIO()) as terminal:
+    r = sync('pq', progress=True, transfers=8, con=True)
+progress_output = terminal.getvalue()
+assert 'Syncing files, 8 files at a time; live log:' in progress_output, progress_output
+assert any(l.startswith('    pq ') and (' files, ' in l or 'comparing the two sides' in l)
+           for l in progress_output.splitlines()), progress_output
+assert sorted(p.name for p in p2.iterdir()) == sorted(p.name for p in p1.iterdir())
+bad = cm.access({'con': False, 'quiet': True, 'category': 'task', 'command': 'run', 'arg1': 'sync', 'name': 'pq', 'transfers': 0})
+assert bad['return'] > 0 and 'transfers' in bad['error']
+
 print(json.dumps({'status': 'passed', 'sandbox': str(root),
                   'checks': ['initialize', 'repeat', 'backups', 'two-way edits', 'delete', 'conflict',
                              'ordered chain', 'copy', 'mirror', 'list', 'plan', 'dry-run baseline',
@@ -336,4 +354,5 @@ print(json.dumps({'status': 'passed', 'sandbox': str(root),
                              'interrupted initialization', 'renamed definition', 'nested selected repo',
                              'confirmation decline', 'permanent result state', 'legacy cache migration',
                              'first-run repeat refusal', 'complete state loss', 'stale archive refusal',
-                             'live file output with retained log', 'linked definition transfers']}, indent=2))
+                             'live file output with retained log', 'linked definition transfers',
+                             'progress lines and transfers per run']}, indent=2))

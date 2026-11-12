@@ -14,6 +14,8 @@ cxt sync my-pair                       # preview, then Proceed (Y/n)?
 cxt sync my-pair -q                    # run without preview/questions
 cxt sync my-pair --live                # show file operations while syncing
 cxt sync my-pair --live -q             # live output without preview/questions
+cxt sync my-pair --progress -q         # one line every 10 s: files and bytes moved, %, speed, time left
+cxt sync my-pair --transfers=16 -q     # 16 files at once in this run (many small files; 4 by default)
 cx sync run my-pair                    # same task through the category
 cxt sync --names,=first,second,first -q # ordered sequence; repeats are intentional
 cxt sync --names,=first,second --passes=2 -q
@@ -184,6 +186,28 @@ names. This is a file sync, not a merge of JSON records or Git branches. Inspect
 conflict files before using them as application data. Quiet mode skips questions,
 but retains conflicts, backups and rclone's deletion/error checks.
 
+A conflict is a file changed on both sides since the last run, to different bytes:
+bisync keeps both versions as `<file>.conflict1` (the source's) and `<file>.conflict2`
+(the destination's), and the name itself is gone on both sides - a page served from
+such a file breaks. rclone still reports "Bisync successful"; this task does not: each
+run ends with its verdict in large letters - `STATUS: SUCCESS` or `STATUS: CONFLICTS`
+with the files moved, deleted (put aside in the backups) and, for conflicts, the file
+names, the two sides and what to do - kept in `last-result.json` (`summary`,
+`verdict`). A run with conflicts returns 1 and stops a sequence (`--names`, a chain)
+there, so the copies are not carried to the next pair. `--dry-run` says
+`WOULD CONFLICTS` with the names before anything is done. To resolve: on one side copy
+the right version back under its name and delete both conflict copies there, then run
+the sync again (it carries the name across and puts the other side's copies aside).
+
+After a run that changed something, the cMeta repositories it changed are reindexed on
+each side that can have changed (both for bisync, the destination otherwise), so each
+home knows the artifacts that arrived and forgets the deleted ones: a side that is a
+home's `repos` folder (`repos:`) by the listed repositories the run touched, a side that
+is one repository of a home (`<home>/repos/<repo>`, a home has its `repos.json`) by that
+repository; on a host through `cx host run`, with the home's own `.venv` cx when it has
+one. The reindex is incremental; a failure is a warning and the sync stays successful.
+`reindex: false` in a definition turns it off.
+
 Overwritten/deleted data is retained on the **same endpoint filesystem**, in the result artifact
 `sync-backup--<alias>--<sync-UID>` of that side's `local` repository (an artifact the index knows: `cx result ls`),
 one folder per run:
@@ -257,6 +281,13 @@ separately, and the complete log is still saved in `runs/<run-id>.log`.
 quiet mode skips questions, not the requested live output. Omitting `--live`
 retains the shorter end-of-stage display. Programmatic `con=False` suppresses
 the task's terminal log display even when `live=True`.
+
+`--progress` shows only the statistics, one line every 10 seconds (the files and
+bytes moved of those to move, the percentage, the speed and the time left, or,
+while the sides are still listed, how far the listing is) and the errors; the
+end of the log follows each stage as without it. `--live` wins over it.
+`--transfers=N` copies N files at once in this run (a definition's `transfers`,
+4 by default): 8 or 16 help with many small files.
 
 Deep paths can exceed rclone's combined baseline-filename component limit;
 use shorter endpoint paths if rclone reports that filename error. Changing an

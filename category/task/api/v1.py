@@ -866,7 +866,12 @@ class Category(InitCategory):
                     r = self.cm.utils.files.write_file(self.CACHE_FILE_WITH_RESULTS, result)
                     if self.cm.catch_error(r): return r
 
-                return self.cm.error(result['error'], result['return'])
+                # the error keeps what the task returned beside it (2026-11-11: the results of a sequence of syncs
+                # that stopped at a conflict - the caller shows which step, which file, the counts)
+                err = self.cm.error(result['error'], result['return'])
+                for key, value in result.items():
+                    err.setdefault(key, value)
+                return err
 
 
 

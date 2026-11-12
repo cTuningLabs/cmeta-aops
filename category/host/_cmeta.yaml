@@ -30,6 +30,10 @@ uses_categories:
 uses_artifacts:
   task::rclone-to-ssh: rclone-to-ssh
   task::keep-adb-connection-alive: keep-adb-connection-alive,58392c394a8f4ae3
+  task::setup: setup,a2f9b61079ce4333
+  task::untar: untar,a49b3cbd6f8f4bd6
+  tool::gnu-tar: gnu-tar,93bb237a0ee04cd6
+  tool::zstd: zstd,e70d016f472d462e
 last_update_timestamp: '2026-10-06T12:11:39.368138+00:00'
 last_generator:
   method: agent

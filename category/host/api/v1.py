@@ -16,7 +16,9 @@ is one more branch in _cmd_run/_status/_up/_down and all the verbs work on it at
 
 import fnmatch
 import glob
+import gzip
 import hashlib
+import io
 import ipaddress
 import os
 import urllib.error
@@ -34,8 +36,10 @@ import threading
 import copy
 import json
 import shlex
+import tarfile
 import tempfile
 import textwrap
+import uuid
 
 from cmeta.category import InitCategory
 
@@ -115,7 +119,325 @@ DEFAULT_BLACKLIST = ['tmp*/', '__pycache__/', '.venv/', '.git/', '.claude/', '__
                      '*.sqlite-wal', '*.sqlite-shm', '*.sqlite-journal', '*.sqlite-maintenance.lock']
 DEFAULT_RCLONE_FLAGS = ['--transfers=4', '--checkers=4']
 
+# Files copied at once by a sync (rclone --transfers, and as many checkers): 4 by default, the host's "sync: transfers"
+# or --transfers=N for a run - 8 to 16 help with many small files, where each file costs round trips (2026-11-11)
+DEFAULT_TRANSFERS = 4
+MAX_TRANSFERS = 64
+
+# --progress: rclone's statistics every 10 s, read from its log and shown as one line each (2026-11-11, the user: "is it
+# possible to see the % of copying?")
+PROGRESS_EVERY = '10s'
+STATS_START = re.compile(r'^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d (?:INFO|NOTICE)\s*:\s*$')
+
+# cx host archive (2026-11-11): a whole host as one dated tar.zst in <drive>/cmeta_backup/<host>/ - what it holds by
+# default, the runs kept on this machine (the drives come and go), a progress line every 10 s; tar's checkpoint every
+# 1000 records of 10 KiB tells how much it has read; the marker before the stream drops what a login script may print
+ARCHIVE_DIR = 'cmeta_backup'
+ARCHIVE_STATE = 'local:host-archives'
+ARCHIVE_DEFAULT_PATHS = ['~', '/etc', '/var/www', '/root', '/var/spool/cron']
+ARCHIVE_DEFAULT_EXCLUDE = ['~/.cache']
+ARCHIVE_PROGRESS_EVERY = 10
+ARCHIVE_RECORD = 10240
+ARCHIVE_MARK = b'CMETA-ARCHIVE-START\n'
+
+# The archive's tools (2026-11-12, the user: "for tar, zip, rsync, etc in backups, syncs and any other cMeta automation,
+# we should use cMeta tools that will automate installation and their use on any platform fully portably"): GNU tar
+# and zstd set up by cMeta ("cx task run setup <tool>": found, else installed) on the machine that runs tar, their
+# paths handed to the script
+ARCHIVE_TOOLS = (('TAR', 'tool::gnu-tar'), ('ZSTD', 'tool::zstd'))
+
+# A Windows machine archives itself with Python (2026-11-12): no GNU tar there - tarfile writes the archive, zstd
+# compresses it (Python 3.14's own, else the zstd tool of cMeta). The names in the archive are the paths without the
+# colon of their drive (C/Users/me/x), as GNU tar's are the paths without their first slash. An increment holds what
+# changed since the part before - the chain's snapshot (<alias>-<chain>.snar: gzip JSON, every name with its size and
+# time) says what was there - and lists what was removed since in .cmeta-archive/deleted.txt, its first member
+ARCHIVE_META_DIR = '.cmeta-archive'
+ARCHIVE_SNAPSHOT_FORMAT = 'cmeta-archive-snapshot 1'
+# Windows attributes of a file whose data is elsewhere (OneDrive's online-only files): reading it would download it
+WIN_ONLINE_ONLY = 0x1000 | 0x40000 | 0x400000      # OFFLINE, RECALL_ON_OPEN, RECALL_ON_DATA_ACCESS
+WIN_REPARSE_POINT = 0x400
+WIN_MOUNT_POINT = 0xA0000003                         # IO_REPARSE_TAG_MOUNT_POINT: a junction or a mounted volume
+
+
+def _size_text(n):
+    """Bytes for a person, 1000-based (2026-11-12, the user: "GB with 1000-based numbers everywhere to be consistent (Win, MacOS, Linux)"): 812 B, 3.4 GB, 7.3 TB."""
+    n = float(n or 0)
+    for unit in ('B', 'kB', 'MB', 'GB', 'TB'):
+        if n < 1000 or unit == 'TB':
+            return f'{n:.0f} {unit}' if unit in ('B', 'kB') else f'{n:.1f} {unit}'
+        n /= 1000
+    return f'{n:.1f} TB'
+
+
+# rclone's sizes are 1024-based (1.721 MiB, 12.0 KiB/s): the same figures in the units of _size_text
+_BINARY = {'B': 1, 'KiB': 1024, 'MiB': 1024 ** 2, 'GiB': 1024 ** 3, 'TiB': 1024 ** 4, 'PiB': 1024 ** 5}
+_BINARY_RE = re.compile(r'(\d+(?:\.\d+)?)\s?(PiB|TiB|GiB|MiB|KiB|B)\b')
+
+
+def _si(text):
+    return _BINARY_RE.sub(lambda m: _size_text(float(m.group(1)) * _BINARY[m.group(2)]), str(text or ''))
+
+
+def _dur_text(seconds):
+    """Seconds for a person (2026-11-12, the user: "2h34m20s"): 7.4s, 45s, 10m32s, 2h34m20s."""
+    x = max(float(seconds or 0), 0.0)
+    if x < 10:
+        return f'{x:.1f}s'
+    s = int(round(x))
+    if s < 60:
+        return f'{s}s'
+    if s < 3600:
+        return f'{s // 60}m{s % 60:02d}s'
+    return f'{s // 3600}h{(s % 3600) // 60:02d}m{s % 60:02d}s'
+
+
+def _every_seconds(text):
+    """'7d', '12h', '30m' -> seconds (7 days when unreadable)."""
+    m = re.match(r'^\s*(\d+)\s*([dhm]?)\s*$', str(text or ''))
+    if not m:
+        return 7 * 86400
+    return int(m.group(1)) * {'d': 86400, 'h': 3600, 'm': 60, '': 86400}[m.group(2)]
+
+
+# Incremental archives (2026-11-11), GNU tar's own: a CHAIN is a full archive <alias>-<chain>.tar.zst followed by its
+# increments <alias>-<chain>+<when>.tar.zst (what changed since the archive before, deletions recorded), and the
+# chain's snapshot file <alias>-<chain>.snar - tar's --listed-incremental state after its newest part, kept with the
+# chain on the drive, sent to the host for the next increment and brought back updated
+def _archive_name_parts(alias, name):
+    """A file of a host's archives by its name -> (kind, chain, stamp): ('full', c, c), ('increment', c, when),
+    ('snar', c, c); None for anything else (another host's, a .json, a .part)."""
+    m = re.match(re.escape(alias) + r'-(\d{8}-\d{4})(?:\+(\d{8}-\d{4}))?\.(tar\.zst|snar)$', name)
+    if not m or (m.group(3) == 'snar' and m.group(2)):
+        return None
+    if m.group(3) == 'snar':
+        return ('snar', m.group(1), m.group(1))
+    return ('increment', m.group(1), m.group(2)) if m.group(2) else ('full', m.group(1), m.group(1))
+
+
+def _archive_chains(folder, alias):
+    """The chains of a host in a folder, oldest first -> [{chain, full (name or '' when it is missing), increments
+    (names, oldest first), snar (name or '')}]."""
+    chains = {}
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []
+    for name in names:
+        parts = _archive_name_parts(alias, name)
+        if not parts:
+            continue
+        kind, chain, stamp = parts
+        c = chains.setdefault(chain, {'chain': chain, 'full': '', 'increments': [], 'snar': ''})
+        if kind == 'full':
+            c['full'] = name
+        elif kind == 'snar':
+            c['snar'] = name
+        else:
+            c['increments'].append((stamp, name))
+    out = []
+    for chain in sorted(chains):
+        c = chains[chain]
+        c['increments'] = [n for _, n in sorted(c['increments'])]
+        out.append(c)
+    return out
+
+
+def _archive_rel(p):
+    """A path of the host as tar names it in an archive: relative to / (~: the user's home, "${HOME#/}" in bash)."""
+    p = str(p).strip()
+    if p == '~' or p.startswith('~/'):
+        return '"${HOME#/}"' + shlex.quote(p[1:]) if len(p) > 1 else '"${HOME#/}"'
+    return shlex.quote(p.lstrip('/'))
+
+
+def _win_abs(p, home=None):
+    """A path of an "archive:" block on Windows -> absolute (~: the user's profile; / and \\ alike)."""
+    p = str(p).strip()
+    if p == '~' or p[:2] in ('~/', '~\\'):
+        p = (home or os.path.expanduser('~')) + p[1:]
+    return os.path.normpath(os.path.abspath(p))
+
+
+def _win_tar_name(path):
+    """C:\\Users\\me\\x -> C/Users/me/x: the name of a Windows path in an archive."""
+    drive, rest = os.path.splitdrive(path)
+    return (drive.replace(':', '') + rest.replace('\\', '/')).strip('/')
+
+
+def _win_long(path):
+    """A path Windows opens whatever its length: \\\\?\\ before a long one."""
+    if os.name == 'nt' and len(path) >= 240 and not path.startswith('\\\\'):
+        return '\\\\?\\' + path
+    return path
+
+
+def _snapshot_read(path):
+    """The snapshot of a chain made by the Python archiver -> {name: [size, mtime_ns] | 'd' | ['l', target]}; None
+    when it is missing or not one of its own (GNU tar's)."""
+    try:
+        with gzip.open(path, 'rt', encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError, EOFError):
+        return None
+    if not isinstance(data, dict) or data.get('format') != ARCHIVE_SNAPSHOT_FORMAT:
+        return None
+    return data.get('entries') or {}
+
+
+def _snapshot_write(path, entries):
+    with gzip.open(path + '.part', 'wt', encoding='utf-8') as f:
+        json.dump({'format': ARCHIVE_SNAPSHOT_FORMAT, 'entries': entries}, f, separators=(',', ':'))
+    os.replace(path + '.part', path)
+
+
+def _archive_deleted(old, current):
+    """The names of the snapshot before that are gone now, without those inside a folder that is gone itself (a
+    restore removes the folder whole)."""
+    gone = {n for n in old if n not in current}
+    out = []
+    for n in sorted(gone):
+        parts = n.split('/')
+        if not any('/'.join(parts[:i]) in gone for i in range(1, len(parts))):
+            out.append(n)
+    return out
+
+
+class _HashWriter:
+    """A file written through: its bytes counted and hashed (sha256) on the way."""
+
+    def __init__(self, f):
+        self.f, self.sha, self.n = f, hashlib.sha256(), 0
+
+    def write(self, b):
+        self.f.write(b)
+        self.sha.update(b)
+        self.n += len(b)
+        return len(b)
+
+    def flush(self):
+        self.f.flush()
+
+
+class _ExactReader:
+    """A file read as exactly n bytes, the size tarfile wrote in its header: one that shrank while read (or a part
+    that cannot be read) is made up with zeros - GNU tar does the same and warns - and what it grew by waits for the
+    next archive. tick(n): the bytes read, for the progress line."""
+
+    def __init__(self, f, n, tick):
+        self.f, self.left, self.tick, self.short, self.error = f, n, tick, False, ''
+
+    def read(self, size=-1):
+        if self.left <= 0:
+            return b''
+        want = self.left if size is None or size < 0 else min(size, self.left)
+        buf = b''
+        while len(buf) < want and not self.short:
+            try:
+                b = self.f.read(want - len(buf))
+            except OSError as e:
+                self.error = str(e.strerror or e)
+                b = b''
+            if not b:
+                self.short = True
+                break
+            buf += b
+        if len(buf) < want:
+            buf += bytes(want - len(buf))
+        self.left -= len(buf)
+        self.tick(len(buf))
+        return buf
+
+
+# The longest name a POSIX filesystem holds (ext4, APFS, btrfs: 255 bytes of UTF-8); NTFS counts 255 UTF-16 units. A
+# file whose name is longer is refused by the host ("Bad message" through sftp) and never syncs there (2026-11-11: one
+# Russian title of 319 bytes stopped a whole partial repository on a Linux host)
+NAME_MAX = 255
+
 SYNC_METHODS = ('bisync', 'copy', 'git', 'none')
+
+
+def _stats_text(block):
+    """One line from one of rclone's statistics blocks ("Transferred: 1.0 MiB / 8.5 MiB, 12%, 1.0 MiB/s, ETA 6s",
+    "Checks: ...", "Transferred: 2 / 30, 7%", "Errors: ...", "Elapsed time: 0.9s"): what has moved of what is to move,
+    the speed and the time left - or, while the two sides are still listed, how far the listing is."""
+    got = {}
+    for line in block:
+        key, _, value = line.partition(':')
+        key, value = key.strip(), value.strip()
+        if key == 'Transferred' and 'ETA' in value:
+            got['bytes'] = value
+        elif key == 'Transferred':
+            got['files'] = value.split(',')[0]
+        elif key in ('Checks', 'Errors', 'Deleted', 'Elapsed time'):
+            got[key] = value
+    listed = re.search(r'Listed (\d+)', got.get('Checks', ''))
+    parts = []
+    m = re.match(r'(.+?) / (.+?), (\S+), (.+?), ETA (.+)$', got.get('bytes', ''))
+    files = got.get('files', '')
+    if m and files and not files.endswith('/ 0'):
+        parts.append(f'{files} files, {m.group(1).strip()} of {m.group(2).strip()} ({m.group(3)}), {m.group(4)}, ETA {m.group(5)}')
+    else:
+        parts.append('comparing the two sides')
+    if listed:
+        parts.append(f'{int(listed.group(1)):,} listed')
+    checks = re.match(r'(\d+) / (\d+)', got.get('Checks', ''))
+    if checks and checks.group(2) != '0':
+        parts.append(f'{int(checks.group(1)):,} of {int(checks.group(2)):,} compared')
+    if got.get('Deleted'):
+        parts.append(got['Deleted'].split(',')[0] + ' deleted')
+    if got.get('Errors') and not got['Errors'].startswith('0'):
+        parts.append('errors: ' + got['Errors'])
+    return _si((got.get('Elapsed time') or '?') + ': ' + ' | '.join(parts))
+
+
+class _FollowRclone:
+    """While rclone writes its log (--log-file), a thread shows each statistics block as one line ("label 1m10s: ...")
+    and the errors as they come; relay_all shows every other line too (a run whose output would go to the terminal
+    anyway). The log stays the source of what happened: the caller reads it after the run."""
+
+    def __init__(self, path, label, relay_all=False):
+        self.path, self.label, self.relay_all = path, label, relay_all
+        self.stopped = threading.Event()
+        self.thread = threading.Thread(target=self._relay, name='cmeta-sync-progress', daemon=True)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stopped.set()
+        self.thread.join(timeout=10)
+        return False
+
+    def _relay(self):
+        pending, block = '', None
+        try:
+            with open(self.path, 'rb') as stream:
+                while True:
+                    data = stream.read(65536)
+                    if not data:
+                        if self.stopped.is_set():
+                            break
+                        self.stopped.wait(0.2)
+                        continue
+                    pending += data.decode('utf-8', errors='replace')
+                    *lines, pending = pending.split('\n')
+                    for line in lines:
+                        line = line.rstrip('\r')
+                        if STATS_START.match(line):
+                            block = []
+                        elif block is not None:
+                            if line.startswith('Elapsed time:'):
+                                block.append(line)
+                                print(f'    {self.label} {_stats_text(block)}', flush=True)
+                                block = None
+                            elif line.strip():
+                                block.append(line)
+                        elif ' ERROR : ' in line or (self.relay_all and line.strip() and not line.startswith(' * ')
+                                                     and not line.startswith('Transferring:')):
+                            print('    ' + line, flush=True)
+        except OSError:
+            pass
 
 # A partial repository (a sync entry with "artifacts:"): only the artifacts its cRef patterns select travel. The
 # rclone rules they give are kept beside the bisync listings (a bisync whose rules changed needs --resync), and
@@ -1365,6 +1687,8 @@ class Category(InitCategory):
         skip_check=False,   # do not compare the two sides after the sync (the check is on by default: rclone check, name and size)
         retries=2,          # how many times a transient failure of a repository is tried again
         pause=True,         # on problems, wait for Enter at the end when a person is at the terminal (never with -q; --pause- turns it off)
+        transfers=None,     # files copied at once: the host's "sync: transfers" or 4; 8-16 for many small files, 4 for big files or a slow link
+        progress=False,     # a line every 10 s while a repository syncs: files and bytes moved of those to move, %, speed, time left
     ):
         """
         Bring a host's repositories up to date, the way its _desc.yaml declares: "bisync" (two-way, rclone
@@ -1375,8 +1699,13 @@ class Category(InitCategory):
             cx host sync my-azure-vm-ubuntu      # one host (being down is an error)
             cx host sync --tags=ubuntu --dry_run
             cx host sync lab-thinkpad-ubuntu --repos=ctuninglabs@cmeta-aops --resync --resync_mode=path1
+            cx host sync lab-laptop-ubuntu --progress --transfers=16    # many small files: 16 at once, a line every 10 s
 
         A few directories only, one-way: "cx host push".
+
+        A file whose name is longer than the host's filesystem holds (255 bytes of UTF-8 on Linux and macOS) is refused
+        there and would stop the run every time: it is left out of that pair for good, and the verdict names it - renamed
+        shorter, it syncs again.
 
         Each run that is not a dry run keeps the host's verdict beside its bisync listings (cmeta-sync.json: the last
         run - when, SUCCESS or not, all its repositories or a part - and the last full one that succeeded); a page reads
@@ -1396,15 +1725,34 @@ class Category(InitCategory):
 
         only = self._csv(repos)
 
+        if transfers in (None, '', True):
+            transfers = None
+        else:
+            try:
+                transfers = int(transfers)
+            except (TypeError, ValueError):
+                transfers = 0
+            if not 1 <= transfers <= MAX_TRANSFERS:
+                return self.cm.error(f'--transfers is how many files are copied at once: 1 to {MAX_TRANSFERS} (4 by default; 8-16 for many small files)')
+
         self._status_all(ctx, hosts)
 
         report = []
         problems = []            # what a person must look at: a failed repository, a check that found differences
         skipped_all = []         # the files another process held, left out of a run and synced next time (not a problem)
+        long_all = []            # the files whose names a host cannot hold, left out of their pair for good (not a problem)
         for h in hosts:
             alias = h['alias']
             sync = h['desc'].get('sync') or {}
             entries = self._sync_entries(h)
+
+            # files at once: --transfers, else the host's "sync: transfers", else 4
+            n_transfers = transfers
+            if n_transfers is None:
+                try:
+                    n_transfers = min(max(int(sync.get('transfers') or DEFAULT_TRANSFERS), 1), MAX_TRANSFERS)
+                except (TypeError, ValueError):
+                    n_transfers = DEFAULT_TRANSFERS
 
             if not entries:
                 if explicit:
@@ -1435,7 +1783,8 @@ class Category(InitCategory):
 
             if con:
                 print('')
-                print(f'=== {alias} ({self._address_text(h)}): {len(selected)} repositories' + (' - DRY RUN' if dry_run else ''))
+                print(f'=== {alias} ({self._address_text(h)}): {len(selected)} repositories, {n_transfers} files at a time'
+                      + (', progress every 10 s' if progress else '') + (' - DRY RUN' if dry_run else ''))
 
                 # A folder that the _desc.yaml does not name says where it comes from
                 first = selected[0][1] if selected else {}
@@ -1454,10 +1803,11 @@ class Category(InitCategory):
                 except (TypeError, ValueError):
                     retries_n = 2
                 r = self._sync_repo_robust(ctx, h, name, entry, resync=resync, resync_mode=resync_mode, unlock=unlock,
-                                           dry_run=dry_run, con=con, verbose=verbose, backup=backup, retries=retries_n)
+                                           dry_run=dry_run, con=con, verbose=verbose, backup=backup, retries=retries_n,
+                                           transfers=n_transfers, progress=progress)
                 notes = r.get('notes') or []
                 if r['return'] > 0:
-                    elapsed = f'{time.monotonic() - t0:.0f}s'
+                    elapsed = _dur_text(time.monotonic() - t0)
                     report.append([alias, name, entry['method'], 'FAILED: ' + str(r['error'])[:300], '-', elapsed])
                     problems.append(f'{alias} / {name}: {str(r["error"])[:300]}')
                     if con: print(f'*** FAILED: {alias} / {name} - {r["error"]} (the other repositories go on)')
@@ -1468,6 +1818,12 @@ class Category(InitCategory):
                 skipped = list(r.get('skipped') or [])
                 if skipped:
                     skipped_all += [f'{alias} / {name}: {s}' for s in skipped]
+                long_names = list(r.get('long_names') or [])
+                if long_names:
+                    long_all += [f'{alias} / {name}: {s}' for s in long_names]
+                    if not any('left out for good' in n for n in notes):
+                        result += f' ({len(long_names)} left out: the name is too long there)'
+                skipped += long_names               # the check counts them as skipped, not as a difference
 
                 # the check: both sides compared; a difference right after a good sync is a file that changed during
                 # the run (the other side at work) - synced once more and compared again
@@ -1487,7 +1843,8 @@ class Category(InitCategory):
                     if once_more:
                         if con: print(f'    {once_more}: synced once more')
                         r2 = self._sync_repo_robust(ctx, h, name, entry, resync=False, resync_mode=resync_mode, unlock=unlock,
-                                                    dry_run=False, con=con, verbose=verbose, backup=backup, retries=retries_n)
+                                                    dry_run=False, con=con, verbose=verbose, backup=backup, retries=retries_n,
+                                                    transfers=n_transfers, progress=progress)
                         if r2.get('return', 0) == 0:
                             again = self._moved_text(r2.get('moved') or {})
                             if again != 'nothing to move': result += f' + {again}'
@@ -1514,7 +1871,7 @@ class Category(InitCategory):
                 elif skip_check and not dry_run:
                     check = 'skipped'
                 if notes and 'merged' in notes[-1]: result += ' (' + notes[-1] + ')'
-                elapsed = f'{time.monotonic() - t0:.0f}s'
+                elapsed = _dur_text(time.monotonic() - t0)
                 report.append([alias, name, entry['method'], result, check, elapsed])
 
             after = sync.get('after') or []
@@ -1548,6 +1905,8 @@ class Category(InitCategory):
             if skipped_all:
                 # not a failure: the rest of the pair is in step, these follow when their process lets go
                 summary += f'; {len(skipped_all)} file(s) another process holds skipped, synced next time'
+            if long_all:
+                summary += f'; {len(long_all)} file(s) left out: the name is longer than the host holds'
         if con:
             print('')
             self._print_table(['HOST', 'REPOSITORY', 'METHOD', 'RESULT', 'CHECK', 'TIME'], report)
@@ -1555,6 +1914,8 @@ class Category(InitCategory):
             print(self._banner(ok, 'STATUS: ' + ('SUCCESS - ' if ok else 'FAILED - ') + summary))
             for s in skipped_all[:20]:
                 print(f'SKIPPED (another process holds it, synced next time): {s}')
+            for s in long_all[:20]:
+                print(f'LEFT OUT (its name is longer than {NAME_MAX} bytes, more than the host holds - rename it shorter to sync it): {s}')
             # a person at a terminal reads the problems before the window closes; never in a quiet run
             if problems and pause and not ctx['control'].get('quiet', False) and not ctx['control'].get('pause_at_the_end', False):
                 try:
@@ -1639,6 +2000,14 @@ class Category(InitCategory):
             repository = arg2
             if not patterns and not dirs:
                 patterns = entry.get('artifacts') or []         # a partial repository goes as declared, never whole
+            # a repository the host bisyncs (2026-11-12): the pushed files are new on both sides for the next bisync -
+            # equal there, so no conflict - as long as neither side changes them again before it; a file pushed and then
+            # edited again here became .conflict1 / .conflict2 on both sides, its own name gone (category/host lost its
+            # _cmeta.yaml so: the host category gone from both machines' indexes until it was put back)
+            if entry.get('method') == 'bisync' and con and not dry_run:
+                print(f'cMeta warning: {arg2} is bisynced with {h["alias"]} - sync it ("cx host sync {h["alias"]} '
+                      f'--repos={arg2}") before these files change again on either side: a file pushed, then edited again, '
+                      f'becomes a conflict at the next bisync (.conflict1/.conflict2, its name gone on both sides)', flush=True)
         elif os.path.exists(arg2):
             local = os.path.abspath(arg2)
             if not to:
@@ -1959,6 +2328,9 @@ class Category(InitCategory):
         name=None,          # an instance's snapshot name (cx host restore <instance> --name=<snapshot>)
         force=False,        # an instance declared by hand (docker, wsl)
         project=None,       # named environment; omitted: the host's global environment
+        archive=None,       # from the archives of "cx host archive": bare - the newest; =<part> - its chain up to that part
+        until=None,         # with --archive: the parts made at or before this time (YYYYMMDD-HHMM, or a day YYYYMMDD)
+        drive=None,         # with --archive: the drive to read from (its label; default: the first that has the archives)
     ):
         """
         Put a backup back on a host: every path of "cx host backup" to where it came from, root-only ones through
@@ -1969,6 +2341,15 @@ class Category(InitCategory):
             cx host restore my-azure-vm-ubuntu --dry_run
             cx host restore new-vm-ubuntu --source=<machine>/backup/my-azure-vm-ubuntu/20261023-1130 --yes
             cx host restore lab-laptop-ubuntu --source=<that folder> --into=cmeta-tests/restore-test
+
+        From the archives of "cx host archive" (--archive): the chain's parts in order - the full archive, then each
+        increment, deletions applied - streamed from a drive here into the host's zstd | sudo tar (set up by cMeta
+        there); a machine that archives itself restores from its own drives. In place only with --yes.
+
+            cx host restore my-vm --archive --dry_run                         # what would go where
+            cx host restore my-vm --archive --into=cmeta-tests/look           # under that folder of the host (a look)
+            cx host restore my-vm --archive --paths=~/work,/etc/nginx --into=/tmp/r   # only these
+            cx host restore my-vm --archive --until=20261115 --yes            # in place, as it was on that day
 
         An instance cMeta made (docker, wsl) goes back to a snapshot instead: cx host restore <instance> [--name=<snapshot>].
         """
@@ -1982,6 +2363,10 @@ class Category(InitCategory):
         r = self._get_host(ctx, arg1, project=project)
         if self.cm.catch_error(r): return r
         h = r['host']
+        if archive not in (None, False, ''):
+            if h['type'] != 'ssh':
+                return self.cm.error(f'--archive restores ssh hosts ({h["alias"]} is {h["type"]})')
+            return self._restore_archive(ctx, h, archive, until, into, paths, drive, dry_run, yes)
         if h['type'] in ('docker', 'wsl'):
             return self._restore_instance(ctx, arg1, name, force)
         if h['type'] != 'ssh':
@@ -2210,6 +2595,1554 @@ class Category(InitCategory):
         if after and before and after == before:
             return f'already {after}', 0
         return f'{before or "?"} -> {after or "?"}', 0
+
+    ############################################################
+    # The whole host as one dated archive on this machine's backup drives (2026-11-11, the user: "archive everything
+    # into dated backup zip and send it over ... it can be huge so maybe there is a way to zip on the fly while sending
+    # to avoid sending tons of files ... when we receive it, if it's non incremental, we delete old archive and keep new
+    # one"): tar run by sudo on the host - owners, modes and links kept, as a full restore needs - compressed by zstd
+    # there and sent over ssh as one stream, written straight to <drive>/cmeta_backup/<host>/<host>-<stamp>.tar.zst on
+    # the first drive of the host's "archive:" block, checked, copied to the next drives, and the older archives removed
+    # once the new one is checked (keep: 1, incremental off). Progress every 10 s with the time left.
+    def archive_(
+        self,
+        ctx,
+        arg1=None,          # host alias
+        to=None,            # the drives (labels, comma-separated) instead of the block's "to"
+        paths=None,         # the paths (comma-separated; ~ is the host user's home) instead of the block's
+        exclude=None,       # the paths left out (comma-separated) instead of the block's
+        keep=None,          # archives kept per drive (1: the new one replaces the old one once checked)
+        dry_run=False,      # the sizes and where it would go; nothing sent
+        copy_only=False,    # no new archive: the newest one copied to the block's other drives that lack it
+        project=None,       # named environment; omitted: the host's global environment
+        incremental=None,   # yes / no: increments of a chain (GNU tar --listed-incremental) instead of the block's choice
+        full=False,         # with incremental: a new full archive (a new chain) now
+    ):
+        """
+        Archive a host as one dated file on this machine's backup drives, the way the "archive:" block of its
+        _desc.yaml declares it:
+
+            archive:
+              paths: [~, /etc, /var/www, /root, /var/spool/cron]   # ~ is the host user's home
+              exclude: [~/.cache]
+              to: [BACKUP1, BACKUP2]     # drive labels: the first gets the stream, the next ones a copy
+              keep: 1                   # archives kept per drive (incremental off: the new one replaces the old one)
+              every: 7d                 # how often it should run (the /backups page colours its age)
+              incremental: false        # true: a full archive starts a chain, later runs add only what changed
+              full_every: 30d           # incremental: a new full archive (a new chain) after this
+
+        On the host, sudo tar reads the paths (owners, modes, links kept) and zstd compresses them; the stream comes
+        over ssh into <drive>\\cmeta_backup\\<host>\\<host>-<YYYYMMDD-HHMM>.tar.zst - no file is made on the host. The
+        archive is checked (read through to its end, its entries counted), described in a .json beside it, copied to the
+        next drives (checked by their sha256) and the older archives of the host are removed from each drive that holds
+        the new one. A line every 10 s: what was read of the estimated size, the speed, the time left.
+
+            cx host archive my-vm --dry_run          # the sizes, the drives found, where it goes; nothing sent
+            cx host archive my-vm
+            cx host archive my-vm --copy_only        # the newest archive to the drives that were not attached
+            cx host archive my-vm --incremental=yes  # the next increment of the chain (or its full archive)
+            cx host archive my-vm --incremental=yes --full   # a new chain now
+            cx host archives                         # what is where (the drives here, every host's archives)
+
+        Restore: zstd -dc <archive> | ssh <host> "sudo tar -xpf - --numeric-owner -C /"   (or into a folder: -C /tmp/restore);
+        a chain: its full archive, then each increment in order, with --listed-incremental=/dev/null added.
+        """
+        con = ctx['control'].get('con', False)
+        if not arg1:
+            return self.cm.error('which host? cx host archive <host> [--dry_run] [--to=BACKUP1,BACKUP2] [--copy_only]')
+        r = self._get_host(ctx, arg1, project=project)
+        if self.cm.catch_error(r): return r
+        h = r['host']
+        if h['type'] != 'ssh':
+            return self.cm.error(f'archive works on ssh hosts ({h["alias"]} is {h["type"]})')
+        # the host that is this machine archives itself onto its own drives (2026-11-11: the fleet machines - the same
+        # script by the local bash instead of ssh); Windows has no GNU tar: the Python archiver (2026-11-12)
+        py = self._here(h) and os.name == 'nt'
+
+        block = self._archive_block(h, to=to, paths=paths, exclude=exclude, keep=keep, incremental=incremental)
+        # a machine that archives itself (on_host: true) and is not this one: the same command run there, its lines
+        # streamed back (2026-11-11: the fleet's backups started from the Hub)
+        if block['on_host'] and not self._here(h):
+            words = [f'cx host archive {h["alias"]}'] + [f'--{k}={v}' for k, v in (('to', to), ('paths', paths), ('exclude', exclude),
+                                                                                  ('keep', keep), ('incremental', incremental)) if v not in (None, '')]
+            words += [w for w, on in (('--dry_run', dry_run), ('--copy_only', copy_only), ('--full', full)) if on]
+            if con:
+                print(f'=== {h["alias"]} archives itself onto its own drives: {" ".join(words)}', flush=True)
+            return self.run_(ctx, arg1=h['alias'], arg2=' '.join(words + ['-q']), timeout=None)
+        if not block['to']:
+            return self.cm.error(f'{h["alias"]}: no drive to write to - "archive: to: [<drive label>, ...]" in its _desc.yaml, or --to')
+        drives = self._drive_roots()
+        present = [d for d in block['to'] if d in drives]
+        absent = [d for d in block['to'] if d not in drives]
+        if not present:
+            return self.cm.error(f'{h["alias"]}: none of its drives is attached here ({", ".join(block["to"])}) - '
+                                 f'drives here: {", ".join(sorted(drives)) or "none with a label"}')
+        alias = h['alias']
+        folders = {d: os.path.join(drives[d]['root'], ARCHIVE_DIR, alias) for d in present}
+
+        if con:
+            print(f'=== {alias} ({self._address_text(h)}): {", ".join(block["paths"])}'
+                  + (f'; without {", ".join(block["exclude"])}' if block['exclude'] else '') + (' - DRY RUN' if dry_run else ''))
+            for i, d in enumerate(present):
+                print(f'    {"the stream" if i == 0 else "a copy"} -> {d}: {folders[d]}  ({_size_text(drives[d]["free"])} free of '
+                      f'{_size_text(drives[d]["size"])})')
+            for d in absent:
+                print(f'    {d}: not attached here - "cx host archive {alias} --copy_only" when it is')
+
+        if copy_only:
+            return self._archive_copy_only(h, block, present, folders, con)
+
+        # GNU tar and zstd where tar runs, set up by cMeta there (the Python archiver: zstd of Python or the zstd tool)
+        tools = {}
+        if not py:
+            tools = self._archive_tools(h)
+            if self.cm.catch_error(tools): return tools
+            if con:
+                print(f'    tools: {tools["text"]}' + (f'\n    cMeta warning: {tools["warning"]}' if tools['warning'] else ''),
+                      flush=True)
+        elif con:
+            try:
+                from compression import zstd as _z     # noqa: F401
+                how = f'zstd of Python {platform.python_version()}'
+            except ImportError:
+                how = 'the zstd tool of cMeta'
+            print(f"    tools: the Python archiver (Windows has no GNU tar) - Python's tarfile and {how}", flush=True)
+
+        # what to read: measured on the host (du of every path - ten minutes on a big, slow disk, 2026-11-11), or for a
+        # run the host's own measurement of the last 7 days with the same paths (a dry run's or a run's): the stream
+        # starts at once, its share of the whole still close. The Python archiver walks the paths every time: the walk
+        # is its list of what to read
+        walk = None
+        known = self._archive_estimates().get(alias) or {}
+        fresh_known = (not dry_run and not py and known.get('bytes') and known.get('paths') == block['paths']
+                       and known.get('exclude') == block['exclude'] and known.get('at'))
+        try:
+            age = (datetime.datetime.now().astimezone() - datetime.datetime.fromisoformat(known['at'])).total_seconds() if fresh_known else None
+        except (ValueError, TypeError):
+            age = None
+        if py:
+            walk = self._archive_walk_py(block, con, skip=[os.path.join(drives[d]['root'], ARCHIVE_DIR) for d in drives])
+            est = {'return': 0, 'bytes': walk['bytes'], 'missing': walk['missing']}
+            self._archive_record_estimate(alias, est, block, self._archive_expect(alias, est['bytes']))
+        elif age is not None and 0 <= age <= 7 * 86400:
+            est = {'return': 0, 'bytes': known['bytes'], 'missing': known.get('missing') or [], 'measured': known['at']}
+        else:
+            r = self._archive_estimate(h, block, con)
+            if self.cm.catch_error(r): return r
+            est = r
+            # kept for the page (2026-11-11, the user: "record estimates of size ... before 1st copy so that I know
+            # what to expect"): every measurement, a dry run's or a run's, in estimates.json of this machine's state
+            self._archive_record_estimate(alias, est, block, self._archive_expect(alias, est['bytes']))
+        expect = self._archive_expect(alias, est['bytes'])
+        if con:
+            print(f'    about {_size_text(est["bytes"])} to read' + (f' (missing on the host: {", ".join(est["missing"])})' if est['missing'] else '')
+                  + (f' - as measured {est["measured"][:16].replace("T", " ")}; a dry run measures again' if est.get('measured') else ''))
+            print(f'    expect: an archive of about {_size_text(expect["archive"])} ({expect["archive_how"]})'
+                  + (f', about {_dur_text(expect["seconds"])} ({expect["seconds_how"]})' if expect.get('seconds') else ''))
+        if len(est['missing']) >= len(block['paths']):
+            return self.cm.error(f'{alias}: none of the paths exists on the host ({", ".join(block["paths"])}) - nothing sent')
+        first = present[0]
+        # what a stopped run left half written (an archive or a copy never finished: *.part) goes first
+        if not dry_run:
+            for d in present:
+                for n in (os.listdir(folders[d]) if os.path.isdir(folders[d]) else []):
+                    if n.startswith(alias + '-') and n.endswith('.part'):
+                        try:
+                            os.remove(os.path.join(folders[d], n))
+                        except OSError:
+                            pass
+        # incremental: the newest chain completed on every attached drive first (a drive that was away gets the parts
+        # it lacks), then the drive of the stream says what this run is - a full archive or the next increment
+        if block['incremental'] and not dry_run:
+            r = self._archive_chains_sync(alias, present, folders, con)
+            if r['return'] > 0:
+                return r
+        plan = self._archive_chain_plan(folders[first], alias, block, full)
+        # the Python archiver's increment needs the chain's snapshot in its own form (a chain of GNU tar's: a new one)
+        old = {}
+        if py and plan['level'] > 0:
+            old = _snapshot_read(plan['snar'])
+            if old is None:
+                plan = {'level': 0, 'chain': '', 'snar': '', 'reason': 'a full archive: the snapshot of the chain is not '
+                                                                      'one of the Python archiver - a new chain starts'}
+                old = {}
+        if con:
+            print(f'    this run: {plan["reason"]}')
+        # zstd -3 keeps text and code at a quarter to a half: half the estimate free is the floor; less than that refuses
+        if plan['level'] == 0 and drives[first]['free'] and drives[first]['free'] < est['bytes'] * 0.5:
+            return self.cm.error(f'{alias}: {first} has {_size_text(drives[first]["free"])} free, the archive may need up to '
+                                 f'{_size_text(est["bytes"] * 0.5)} - nothing sent')
+        if dry_run:
+            return {'return': 0, 'host': alias, 'estimate': est['bytes'], 'paths': block['paths'], 'drives': present,
+                    'absent': absent, 'folders': folders, 'dry_run': True, 'plan': plan['reason'],
+                    'tools': tools.get('text') or 'Python\'s tarfile and zstd'}
+
+        stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M')
+        chain = stamp if plan['level'] == 0 else plan['chain']
+        name = f'{alias}-{stamp}.tar.zst' if plan['level'] == 0 else f'{alias}-{chain}+{stamp}.tar.zst'
+        os.makedirs(folders[first], exist_ok=True)
+        target = os.path.join(folders[first], name)
+        if os.path.exists(target):
+            return self.cm.error(f'{alias}: {name} exists already (an archive of this minute) - run it again in a minute')
+        # the snapshot file of tar's --listed-incremental on the host for this run: a new one for a full archive of a
+        # chain, the chain's own (sent from the drive) for an increment; brought back after the archive is checked
+        # in a folder of the user's own (mode 700), not /tmp itself: Linux's protected_regular refuses even root an
+        # open-with-create of another user's file in a sticky world-writable folder, and tar opens it so
+        # (the Python archiver keeps its snapshot here, on the drive: nothing goes to a host)
+        snar_dir = f'/tmp/cmeta-archive-{uuid.uuid4().hex[:12]}' if block['incremental'] and not py else ''
+        snar = f'{snar_dir}/state.snar' if snar_dir else ''
+        if snar and plan['level'] > 0:
+            with open(plan['snar'], 'rb') as f:
+                rc, _, err = self._ssh_io(h, f'umask 077; mkdir -p {snar_dir} && cat > {snar}', data=f.read())
+            if rc != 0:
+                return self.cm.error(f'{alias}: the snapshot file of the chain could not be sent to the host: {err.strip()[-200:]}')
+        t0 = time.monotonic()
+        started = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+        deleted = []
+        if py:
+            deleted = _archive_deleted(old, {e[0] for e in walk['entries']}) if plan['level'] > 0 else []
+            r = self._archive_stream_py(walk, target + '.part', est['bytes'] if plan['level'] == 0 else 0, con, alias,
+                                        plan['level'], old, deleted, block['level'])
+        else:
+            r = self._archive_stream(h, block, target + '.part', est['bytes'] if plan['level'] == 0 else 0, con, tools,
+                                     snar=snar, fresh=plan['level'] == 0)
+        chained = bool(snar) or (py and block['incremental'])
+        run = {'host': alias, 'started': started, 'paths': block['paths'], 'exclude': block['exclude'], 'drives': present,
+               'absent': absent, 'estimate': est['bytes'], 'level': plan['level'], 'chain': chain if chained else ''}
+        if r['return'] > 0:
+            try:
+                os.remove(target + '.part')
+            except OSError:
+                pass
+            if snar:
+                self._ssh_io(h, f'sudo -n rm -rf {snar_dir}')
+            run.update(ok=False, error=r['error'], seconds=round(time.monotonic() - t0))
+            self._archive_record(run)
+            if con:
+                print(self._banner(False, f'STATUS: FAILED - {alias}: {r["error"]}'))
+            return r
+        stream = r
+        check = self._archive_check(target + '.part', con, alias)
+        # tar tells what it read every 10 MiB: a small archive ends before its first word - the check counted it
+        if check.get('bytes') and stream['read'] < check['bytes']:
+            stream['read'] = check['bytes']
+        if con:
+            print(f'    {alias}: {_size_text(stream["read"])} read in {_dur_text(stream["seconds"])}, archive {_size_text(stream["written"])}'
+                  + (f' ({100 * stream["written"] / stream["read"]:.0f} %)' if stream['read'] else '')
+                  + (f'; {stream["warnings"]} warnings of tar (files changed or unreadable while read)' if stream['warnings'] else ''))
+        if not check['ok']:
+            os.remove(target + '.part')
+            if snar:
+                self._ssh_io(h, f'sudo -n rm -rf {snar_dir}')
+            run.update(ok=False, error='the archive did not read back: ' + check['error'], seconds=round(time.monotonic() - t0))
+            self._archive_record(run)
+            if con:
+                print(self._banner(False, f'STATUS: FAILED - {alias}: {run["error"]}'))
+            return self.cm.error(run['error'])
+        os.replace(target + '.part', target)
+        # the chain's snapshot file back from the host, updated by tar: the state the next increment starts from
+        snar_name, snar_warning = '', ''
+        if snar:
+            rc, data, err = self._ssh_io(h, f'sudo -n cat {snar} && sudo -n rm -rf {snar_dir}')
+            if rc == 0 and data:
+                snar_name = f'{alias}-{chain}.snar'
+                with open(os.path.join(folders[first], snar_name + '.part'), 'wb') as f:
+                    f.write(data)
+                os.replace(os.path.join(folders[first], snar_name + '.part'), os.path.join(folders[first], snar_name))
+            else:
+                self._ssh_io(h, f'sudo -n rm -rf {snar_dir}')
+                snar_warning = ('the snapshot file did not come back from the host' + (f' ({err.strip()[-160:]})' if err.strip() else '')
+                                + (' - the next run makes a new full archive' if plan['level'] == 0 else
+                                   ' - the next increment repeats what this one holds (still correct)'))
+                if con:
+                    print(f'    cMeta warning: {snar_warning}', flush=True)
+        # the Python archiver's snapshot: written here, beside the chain on the drive
+        if py and block['incremental']:
+            snar_name = f'{alias}-{chain}.snar'
+            try:
+                _snapshot_write(os.path.join(folders[first], snar_name), stream['snapshot'])
+            except OSError as e:
+                snar_name = ''
+                snar_warning = (f'the snapshot of the chain could not be written ({e})'
+                                + (' - the next run makes a new full archive' if plan['level'] == 0 else
+                                   ' - the next increment repeats what this one holds (still correct)'))
+                if con:
+                    print(f'    cMeta warning: {snar_warning}', flush=True)
+        if py:
+            restore = ('cx host restore <host> --archive=' + name + ' (the chain in order, what each increment deleted '
+                       'removed first); or any tar that reads zstd - Windows: tar -xf <part> -C <folder> - the names are '
+                       'the paths without the colon of their drive (C/Users/...)')
+        else:
+            restore = (f'zstd -dc {name} | ssh <host> "sudo tar -xpf - --numeric-owner -C /"' if not snar else
+                       f'the chain {chain} in order - its full archive, then each increment: zstd -dc <part> | ssh <host> '
+                       f'"sudo tar -xpf - --listed-incremental=/dev/null --numeric-owner -C /" (deletions applied)')
+        info = {'host': f'{alias},{h["uid"]}', 'machine': h['desc'].get('machine'), 'address': self._address_text(h),
+                'started': started, 'finished': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
+                'seconds': round(time.monotonic() - t0), 'paths': block['paths'], 'exclude': block['exclude'],
+                'read': stream['read'], 'size': stream['written'], 'sha256': stream['sha256'], 'entries': check['entries'],
+                'content': check['bytes'], 'checked': check['checked'], 'tar_exit': stream['tar_exit'],
+                'warnings': stream['warnings'], 'warning_lines': stream['warning_lines'][:20],
+                'kind': 'increment' if plan['level'] > 0 else 'full', 'incremental': chained, 'chain': chain if chained else '',
+                'level': plan['level'], 'snar': snar_name, 'restore': restore, 'made_by': 'cx host archive',
+                'format': 'python-tar' if py else 'gnu-tar', 'tools': tools.get('text') or "Python's tarfile and zstd"}
+        if py:
+            info.update(deleted=len(deleted), names='the paths without the colon of their drive (C/Users/...)')
+        with open(target + '.json', 'w', encoding='utf-8', newline='\n') as f:
+            json.dump(info, f, indent=2)
+        kept = {first: target}
+        removed = self._archive_prune(folders[first], alias, block['keep'], keep_name=name)
+        removed_on = {first: [os.path.basename(x) for x in removed]}
+
+        # the copies: each to the next drive, checked by its sha256 before the older archives there go
+        copies = []
+        for d in present[1:]:
+            r = self._archive_copy(target, folders[d], info['sha256'], con, label=f'copy to {d}')
+            if r['return'] > 0:
+                copies.append({'drive': d, 'ok': False, 'error': r['error']})
+                continue
+            if snar_name:
+                try:
+                    shutil.copy2(os.path.join(folders[first], snar_name), os.path.join(folders[d], snar_name))
+                except OSError as e:
+                    copies.append({'drive': d, 'ok': False, 'error': f'the snapshot file of the chain: {e}'})
+                    continue
+            kept[d] = r['path']
+            gone = self._archive_prune(folders[d], alias, block['keep'], keep_name=name)
+            removed += gone
+            removed_on[d] = [os.path.basename(x) for x in gone]
+            copies.append({'drive': d, 'ok': True})
+
+        bad = [c for c in copies if not c['ok']]
+        run.update(ok=not bad, archive=name, size=stream['written'], read=stream['read'], entries=check['entries'],
+                   seconds=round(time.monotonic() - t0), copies=copies, removed=sorted({os.path.basename(x) for x in removed}),
+                   removed_on={d: v for d, v in removed_on.items() if v})
+        if snar_warning:
+            run['warning'] = snar_warning
+        if bad:
+            run['error'] = '; '.join(f'{c["drive"]}: {c["error"]}' for c in bad)
+        self._archive_record(run)
+        if con:
+            print('')
+            for d, p in kept.items():
+                print(f'    {d}: {p}')
+            if removed:
+                print('    older archives removed - ' + '; '.join(f'{d}: {", ".join(v)}' for d, v in removed_on.items() if v))
+            summary = (f'{alias}: {name}' + (f' (increment {plan["level"]} of the chain of {chain})' if plan['level'] else
+                                             (' (the full archive of a new chain)' if chained else '')) +
+                       f' - {_size_text(stream["written"])}, {check["entries"]:,} entries, {_dur_text(run["seconds"])}; '
+                       f'on {", ".join(kept)}' + (f'; not attached: {", ".join(absent)}' if absent else ''))
+            print(self._banner(not bad, ('STATUS: SUCCESS - ' if not bad else 'STATUS: FAILED - ') + summary
+                               + (' | ' + run['error'] if bad else '')))
+        out = {'return': 0, 'host': alias, 'archive': name, 'drives': kept, 'size': stream['written'], 'read': stream['read'],
+               'entries': check['entries'], 'removed': removed, 'absent': absent}
+        if bad:
+            out.update(self.cm.error(run['error']))
+        return out
+
+    ############################################################
+    def archives_(
+        self,
+        ctx,
+        arg1=None,          # host alias or wildcard (default: every host with an "archive:" block)
+        fresh=False,        # ask the machines that archive themselves again (else their state as last seen, 10 min)
+    ):
+        """
+        What "cx host archive" keeps: the drives attached here (label, where, size, free), and for every host with an
+        "archive:" block its archives on each of them (date, size, entries, checked) and its last runs.
+
+            cx host archives
+            cx host archives my-vm*
+        """
+        con = ctx['control'].get('con', False)
+        r = self._select(ctx, arg1 or '*', None, None, None)
+        if self.cm.catch_error(r): return r
+        drives = self._drive_roots()
+        runs = self._archive_runs()
+        estimates = self._archive_estimates()
+        fleet, fleet_changed = self._archive_fleet(), False
+        hosts = []
+        for h in r['hosts']:
+            arch = h['desc'].get('archive')
+            if not isinstance(arch, dict):
+                continue
+            block = self._archive_block(h)
+            # a machine that archives itself and is not this one: its drives are there - its state asked from it when it
+            # is named (cx host archives <it>), else only said
+            if block['on_host'] and not self._here(h):
+                entry = {'host': h['alias'], 'address': self._address_text(h), 'machine': h['desc'].get('machine'),
+                         'paths': block['paths'], 'exclude': block['exclude'], 'to': block['to'], 'keep': block['keep'],
+                         'every': block['every'], 'every_seconds': _every_seconds(block['every']), 'archives': {},
+                         'incremental': block['incremental'], 'full_every': block['full_every'], 'on_host': True}
+                # its state as the machine reports it: asked when named, when --fresh, or when none is kept of the
+                # last 10 minutes (fleet.json of this machine's state); else as last seen
+                cached = fleet.get(h['alias']) or {}
+                try:
+                    age = time.time() - float(cached.get('checked_ts') or 0)
+                except (TypeError, ValueError):
+                    age = 1e9
+                if fresh or (arg1 and arg1 == h['alias']) or age > 600:
+                    cached = self._archive_remote_state(h)
+                    cached.update(checked_ts=time.time(), checked_at=datetime.datetime.now().astimezone().isoformat(timespec='seconds'))
+                    fleet[h['alias']] = cached
+                    fleet_changed = True
+                entry.update(cached)
+                hosts.append(entry)
+                continue
+            found = {}
+            for d, info in drives.items():
+                folder = os.path.join(info['root'], ARCHIVE_DIR, h['alias'])
+                items = []
+                # newest first: by chain, then by when (an increment after its full archive)
+                parts = sorted(((_archive_name_parts(h['alias'], n), n) for n in (os.listdir(folder) if os.path.isdir(folder) else [])),
+                               key=lambda x: (x[0][1], x[0][2], x[0][0] == 'increment') if x[0] else ('', '', False), reverse=True)
+                for kind_chain, n in parts:
+                    if not kind_chain or kind_chain[0] == 'snar':
+                        continue
+                    p = os.path.join(folder, n)
+                    meta = {}
+                    try:
+                        with open(p + '.json', encoding='utf-8') as f:
+                            meta = json.load(f)
+                    except (OSError, ValueError):
+                        pass
+                    items.append({'name': n, 'path': p, 'size': os.path.getsize(p),
+                                  'finished': meta.get('finished') or '', 'entries': meta.get('entries'),
+                                  'read': meta.get('read'), 'seconds': meta.get('seconds'), 'checked': meta.get('checked'),
+                                  'sha256': meta.get('sha256', ''), 'kind': kind_chain[0], 'chain': kind_chain[1],
+                                  'level': meta.get('level', 0 if kind_chain[0] == 'full' else None)})
+                if items:
+                    found[d] = items
+            mine = [x for x in runs if x.get('host') == h['alias']]
+            hosts.append({'host': h['alias'], 'address': self._address_text(h), 'machine': h['desc'].get('machine'),
+                          'paths': block['paths'], 'exclude': block['exclude'], 'to': block['to'], 'keep': block['keep'],
+                          'every': block['every'], 'every_seconds': _every_seconds(block['every']), 'archives': found,
+                          'last_run': mine[-1] if mine else None,
+                          'last_success': next((x for x in reversed(mine) if x.get('ok')), None),
+                          'estimate': estimates.get(h['alias']), 'incremental': block['incremental'],
+                          'full_every': block['full_every']})
+        if con:
+            print('DRIVES HERE: ' + (', '.join(f'{d} ({v["root"]}, {_size_text(v["free"])} free of {_size_text(v["size"])})'
+                                               for d, v in sorted(drives.items())) or 'none with a label'))
+            for x in hosts:
+                print('')
+                print(f'{x["host"]}: {", ".join(x["paths"])} -> {", ".join(x["to"])} (every {x["every"]}, keep {x["keep"]})')
+                own = x.get('on_host')
+                if own:
+                    print(f'    archives itself onto its own drives' + (f' (as seen {x["checked_at"][11:16]})' if x.get('checked_at') else '')
+                          + ('' if x.get('reached', True) else f' - not reached: {x.get("error", "")[:120]}'))
+                there = (x.get('drives') or {}) if own else drives
+                for d in x['to']:
+                    items = (x.get('archives') or {}).get(d) or []
+                    state = (f'{items[0]["name"]}  {_size_text(items[0]["size"])}' + (f'  {items[0]["entries"]:,} entries' if items[0].get('entries') else '')
+                             if items else (('not attached there' if own else 'not attached here') if d not in there else 'no archive yet'))
+                    print(f'    {d}: {state}')
+        if fleet_changed:
+            self._archive_fleet(save=fleet)
+        return {'return': 0, 'drives': drives, 'hosts': hosts, 'runs': runs[-50:]}
+
+    def _archive_fleet(self, save=None):
+        """The state of the machines that archive themselves, as last seen from here (fleet.json of the state artifact
+        local:host-archives) - read, or written when save is given."""
+        folder = self._archive_state_folder()
+        path = os.path.join(folder, 'fleet.json') if folder else ''
+        if save is not None:
+            if path:
+                try:
+                    with open(path + '.part', 'w', encoding='utf-8', newline='\n') as f:
+                        json.dump(save, f, indent=2)
+                    os.replace(path + '.part', path)
+                except OSError:
+                    pass
+            return save
+        try:
+            with open(path, encoding='utf-8') as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    # ------------------------------------------------------------ archive helpers
+    def _archive_block(self, h, to=None, paths=None, exclude=None, keep=None, incremental=None):
+        """The "archive:" block of a host with its defaults, and the command line's words over it."""
+        a = h['desc'].get('archive') if isinstance(h['desc'].get('archive'), dict) else {}
+        # the run's own choice (--incremental=yes|no, the page's switch) over the block's
+        inc = a.get('incremental', False) if incremental in (None, '') else incremental
+        if isinstance(inc, str):
+            inc = inc.strip().lower() in ('1', 'yes', 'true', 'on')
+
+        def words(v, dflt):
+            if v in (None, '', True):
+                v = dflt
+            # a bare ~ in a YAML list is null: read as the home it was meant to be
+            return [('~' if x is None else str(x).strip()) for x in (v.split(',') if isinstance(v, str) else v)
+                    if x is None or str(x).strip()]
+
+        try:
+            k = int(keep if keep not in (None, '', True) else a.get('keep', 1))
+        except (TypeError, ValueError):
+            k = 1
+        return {'paths': words(paths, a.get('paths') or ARCHIVE_DEFAULT_PATHS),
+                'exclude': words(exclude, a.get('exclude') if a.get('exclude') is not None else ARCHIVE_DEFAULT_EXCLUDE),
+                'to': words(to, a.get('to') or []), 'keep': max(k, 1),
+                'incremental': bool(inc), 'full_every': str(a.get('full_every') or '30d'),
+                'every': str(a.get('every') or '7d'), 'level': int(a.get('level', 3)),
+                # the machine archives itself onto its own drives (a fleet machine with its drive attached)
+                'on_host': bool(a.get('on_host', False))}
+
+    @staticmethod
+    def _drive_roots():
+        """The labelled drives mounted on this machine -> {label: {root, size, free}} (Windows: the volumes with a letter;
+        Linux: lsblk's labels and mount points; macOS: /Volumes)."""
+        out = {}
+        try:
+            if os.name == 'nt':
+                cmd = ('Get-Volume | Where-Object { $_.DriveLetter -and $_.FileSystemLabel } | '
+                       'Select-Object DriveLetter,FileSystemLabel,Size,SizeRemaining | ConvertTo-Json -Compress')
+                p = subprocess.run(['powershell', '-NoProfile', '-Command', cmd], capture_output=True, text=True,
+                                   timeout=60, stdin=subprocess.DEVNULL)
+                data = json.loads(p.stdout or '[]')
+                for v in data if isinstance(data, list) else [data]:
+                    out[str(v['FileSystemLabel'])] = {'root': f'{v["DriveLetter"]}:\\', 'size': int(v.get('Size') or 0),
+                                                      'free': int(v.get('SizeRemaining') or 0)}
+            elif sys.platform == 'darwin':
+                for name in os.listdir('/Volumes'):
+                    root = os.path.join('/Volumes', name)
+                    if os.path.ismount(root):
+                        u = shutil.disk_usage(root)
+                        out[name] = {'root': root, 'size': u.total, 'free': u.free}
+            else:
+                p = subprocess.run(['lsblk', '-J', '-b', '-o', 'LABEL,MOUNTPOINT'], capture_output=True, text=True,
+                                   timeout=60, stdin=subprocess.DEVNULL)
+
+                def walk(devs):
+                    for d in devs or []:
+                        if d.get('label') and d.get('mountpoint'):
+                            u = shutil.disk_usage(d['mountpoint'])
+                            out[d['label']] = {'root': d['mountpoint'], 'size': u.total, 'free': u.free}
+                        walk(d.get('children'))
+                walk(json.loads(p.stdout or '{}').get('blockdevices'))
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+            pass
+        return out
+
+    def _ssh_popen(self, h, script):
+        """The host's bash reading a script from stdin, its stdout and stderr as pipes (the archive's stream); the host
+        that is this machine (it archives itself onto its own drives, 2026-11-11): the local bash."""
+        if self._here(h):
+            cmd = ['bash', '-s']
+        else:
+            r = self._ssh_parts(h)
+            if r['return'] > 0:
+                return r
+            cmd = r['cmd'] + ' "bash -s"' if os.name == 'nt' else shlex.split(r['cmd']) + ['bash -s']
+        p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p.stdin.write(script.encode('utf-8'))
+        p.stdin.close()
+        return {'return': 0, 'process': p}
+
+    # du in bytes on the host (macOS: du -sk, in KiB) - a part of the OS, as sudo is
+    ARCHIVE_DU = ('DU() { sudo -n du -sb --apparent-size "$1" 2>/dev/null | cut -f1; }\n'
+                  'if [ "$(uname -s)" = Darwin ]; then DU() { sudo -n du -sk "$1" 2>/dev/null | awk \'{print $1 * 1024}\'; }; fi\n')
+
+    def _archive_tools(self, h):
+        """GNU tar and zstd on the machine that runs tar, set up by cMeta there: "cx task run setup gnu-tar" and "zstd"
+        (found, else installed; -q: without asking) -> {return, TAR, ZSTD, text, warning}. A host without cMeta, or
+        whose cmeta-aops has no such tool yet: the tool from its PATH, with a warning; neither: an error."""
+        alias = h['alias']
+        uses = self.cmeta.get('uses_artifacts') or {}
+        got, why = {}, {}
+        if self._here(h):
+            for var, key in ARCHIVE_TOOLS:
+                r = self.cm.access({'category': self.cmeta['uses_categories']['task'], 'command': 'run',
+                                    'arg1': uses['task::setup'], 'name': uses[key], 'con': False, 'quiet': True})
+                if r.get('return', 1) == 0 and r.get('path'):
+                    got[var] = (r['path'], str(r.get('version') or ''))
+                else:
+                    why[var] = str(r.get('error') or 'no path')
+        else:
+            words = [f'cx task run setup {uses[key]} -q -j' for _, key in ARCHIVE_TOOLS]
+            r = self.run_({'control': {'con': False, 'quiet': True}}, arg1=alias, arg2='; echo CMETA-TOOL-END; '.join(words),
+                          capture=True, timeout=1800)
+            outs = list((r.get('outputs') or {}).values())
+            stdout = str(outs[0].get('stdout', '')) if outs else ''
+            stderr = str(outs[0].get('stderr', '')) if outs else str(r.get('error', ''))
+            for (var, key), part in zip(ARCHIVE_TOOLS, stdout.split('CMETA-TOOL-END') + ['', '']):
+                i = part.rfind('\n{')
+                try:
+                    data = json.loads(part[i + 1:] if i >= 0 else part.strip() or 'null')
+                except ValueError:
+                    data = None
+                if isinstance(data, dict) and data.get('return', 1) == 0 and data.get('path'):
+                    got[var] = (data['path'], str(data.get('version') or ''))
+                else:
+                    why[var] = (str(data.get('error')) if isinstance(data, dict) and data.get('error') else
+                                (stderr.strip().splitlines() or ['no cx there'])[-1][:200])
+        # what cMeta could not set up: from the host's PATH (GNU tar only - gtar first, the name Homebrew gives it)
+        warning = ''
+        if why:
+            probe = ('export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"\n'
+                     'for t in gtar tar; do p=$(command -v $t 2>/dev/null) && "$p" --version 2>/dev/null | grep -q "GNU tar" '
+                     '&& { echo "TAR $p"; break; }; done\np=$(command -v zstd 2>/dev/null) && echo "ZSTD $p"\n')
+            rc, out, err = self._ssh_io(h, 'bash -s', data=probe.encode('utf-8'), timeout=120)
+            found = dict(l.split(' ', 1) for l in out.decode('utf-8', 'replace').splitlines() if l[:4] in ('TAR ', 'ZSTD'))
+            for var in list(why):
+                if found.get(var):
+                    got[var] = (found[var].strip(), '')
+            missing = [v for v in why if v not in got]
+            if missing:
+                names = {'TAR': 'GNU tar (cx tool install gnu-tar)', 'ZSTD': 'zstd (cx tool install zstd)'}
+                return self.cm.error(f'{alias}: ' + '; '.join(f'{names[v]} - cMeta could not set it up there ({why[v]}) '
+                                                              f'and it is not on its PATH' for v in missing))
+            warning = ('; '.join(f'{"GNU tar" if v == "TAR" else "zstd"} from the PATH ({why[v]})' for v in why) +
+                       ' - cMeta sets it up there once the host has cMeta with the tools gnu-tar and zstd (cmeta-aops)')
+        text = ', '.join(f'{"GNU tar" if v == "TAR" else "zstd"} {got[v][1] or ""} ({got[v][0]})'.replace('  ', ' ')
+                         for v, _ in ARCHIVE_TOOLS)
+        return {'return': 0, 'TAR': got['TAR'][0], 'ZSTD': got['ZSTD'][0], 'text': text, 'warning': warning}
+
+    @staticmethod
+    def _archive_tools_script(tools):
+        """The script's TAR and ZSTD: the paths the tools were set up at."""
+        return f'TAR={shlex.quote(tools["TAR"])}; ZSTD={shlex.quote(tools["ZSTD"])}\n'
+
+    @staticmethod
+    def _archive_paths_script(block):
+        """The lines of bash that turn the block's paths and exclusions into arrays relative to / (~: $HOME), the paths
+        that do not exist left out (MISSING)."""
+        lines = ['P=(' + ' '.join(_archive_rel(p) for p in block['paths']) + ')',
+                 'X=(' + ' '.join(_archive_rel(p) for p in block['exclude']) + ')',
+                 'E=(); MISSING=(); for p in "${P[@]}"; do if [ -e "/$p" ]; then E+=("$p"); else MISSING+=("/$p"); fi; done']
+        return '\n'.join(lines) + '\n'
+
+    def _archive_estimate(self, h, block, con=False):
+        """The bytes tar will read on the host (du of the paths, less the excluded ones) - the base of the percentage.
+        A line every 10 s while it measures (2026-11-11: ten silent minutes on a big VM): the paths done, the one now."""
+        script = ('cd / || exit 9\n' + self.ARCHIVE_DU + self._archive_paths_script(block) +
+                  'for p in "${E[@]}"; do printf "MEASURING /%s\\n" "$p"; printf "SIZE %s /%s\\n" "$(DU "/$p")" "$p"; done\n'
+                  # an excluded path counts only inside an archived one (~/.cache is no part of /etc)
+                  'for p in "${X[@]}"; do for e in "${E[@]}"; do if [[ "$p" == "$e"/* ]] && [ -e "/$p" ]; then '
+                  'printf "MEASURING /%s\\n" "$p"; printf "EXCL %s /%s\\n" "$(DU "/$p")" "$p"; fi; done; done\n'
+                  'for p in "${MISSING[@]}"; do printf "MISSING %s\\n" "$p"; done\n'
+                  'sudo -n true 2>/dev/null || echo NOSUDO\n')
+        r = self._ssh_popen(h, script)
+        if r['return'] > 0:
+            return r
+        p = r['process']
+        lines, errs = [], []
+
+        def read_lines():
+            for raw in iter(p.stdout.readline, b''):         # to the end of the stream (an empty line is no end)
+                lines.append(raw.decode('utf-8', 'replace').rstrip('\r\n'))
+        reader = threading.Thread(target=read_lines, daemon=True)
+        ereader = threading.Thread(target=lambda: errs.append(p.stderr.read()), daemon=True)
+        reader.start()
+        ereader.start()
+        t0 = last = time.monotonic()
+        while reader.is_alive():
+            reader.join(timeout=1)
+            now = time.monotonic()
+            if now - t0 > 3600:
+                p.kill()
+                return self.cm.error(f'{h["alias"]}: measuring the sizes took longer than an hour')
+            if con and now - last >= ARCHIVE_PROGRESS_EVERY:
+                last = now
+                done = [l.split(' ', 2) for l in list(lines) if l.startswith('SIZE ')]
+                current = [l[len('MEASURING '):] for l in list(lines) if l.startswith('MEASURING ')]
+                print(f'    measuring what to read on the host {_dur_text(now - t0)}: '
+                      + (', '.join(f'{x[2] if len(x) > 2 else "?"} {_size_text(int(x[1])) if x[1:2] and x[1].isdigit() else "?"}' for x in done) or 'nothing yet')
+                      + (f'; now {current[-1]}' if current and len(current) > len(done) else ''), flush=True)
+        p.wait()
+        ereader.join(timeout=5)
+        out, err = '\n'.join(lines).encode('utf-8'), (errs[0] if errs else b'')
+        text = out.decode('utf-8', 'replace')
+        need = [l[len('CMETA-NEED '):] for l in text.splitlines() if l.startswith('CMETA-NEED ')]
+        if need:
+            return self.cm.error(f'{h["alias"]}: {need[0]}')
+        if 'NOSUDO' in text:
+            return self.cm.error(f'{h["alias"]}: sudo asks a password there - an archive of the whole host needs passwordless sudo')
+        size = sum(int(l.split()[1]) for l in text.splitlines() if l.startswith('SIZE ') and l.split()[1:2] and l.split()[1].isdigit())
+        size -= sum(int(l.split()[1]) for l in text.splitlines() if l.startswith('EXCL ') and l.split()[1:2] and l.split()[1].isdigit())
+        missing = [l.split(' ', 1)[1] for l in text.splitlines() if l.startswith('MISSING ')]
+        if size <= 0 and not missing:
+            return self.cm.error(f'{h["alias"]}: the sizes could not be read (ssh exit {r["process"].returncode}): '
+                                 + ((err.decode('utf-8', 'replace').strip()[-300:] + ' ' + text.strip()[-300:]).strip() or 'no answer'))
+        return {'return': 0, 'bytes': max(size, 0), 'missing': missing}
+
+    def _archive_stream(self, h, block, part, estimate, con, tools, snar='', fresh=False):
+        """sudo tar | zstd on the host, its stdout written to part: a line every 10 s (read of the estimate, the speed,
+        the time left; an increment - estimate 0 - says what it has read so far). tools: the paths of GNU tar and zstd
+        there (_archive_tools). snar: tar's snapshot file on the host (--listed-incremental), removed first when fresh
+        (a full archive of a new chain). -> read, written, sha256, seconds, tar_exit, warnings."""
+        inc = (f' --listed-incremental={shlex.quote(snar)} --no-check-device' if snar else '')
+        script = ('set -o pipefail\ncd / || exit 9\n' + self._archive_tools_script(tools) + self._archive_paths_script(block) +
+                  'XA=(); for x in "${X[@]}"; do XA+=("--exclude=$x"); done\n' +
+                  (f'umask 077; mkdir -p {shlex.quote(os.path.dirname(snar))} || exit 9\n' if snar else '') +
+                  (f'sudo -n rm -f {shlex.quote(snar)}\n' if snar and fresh else '') +
+                  'printf "CMETA-ARCHIVE-START\\n"\n'
+                  f'sudo -n "$TAR" --create --file=- --numeric-owner --anchored "${{XA[@]}}"{inc} --warning=no-file-changed '
+                  f'--warning=no-file-removed --warning=no-file-shrank --ignore-failed-read --checkpoint=1000 '
+                  f'--checkpoint-action=echo="CMETA-CHECKPOINT %u" -- "${{E[@]}}" < /dev/null | "$ZSTD" -T0 -{block["level"]} -q -c\n'
+                  'echo "CMETA-TAR-EXIT ${PIPESTATUS[0]} ${PIPESTATUS[1]}" >&2\n')
+        r = self._ssh_popen(h, script)
+        if r['return'] > 0:
+            return r
+        p = r['process']
+        st = {'read': 0, 'exit': None, 'warnings': 0, 'lines': []}
+
+        def errors():
+            for raw in iter(p.stderr.readline, b''):
+                line = raw.decode('utf-8', 'replace').rstrip()
+                m = re.search(r'CMETA-CHECKPOINT (\d+)', line)
+                if m:
+                    st['read'] = int(m.group(1)) * ARCHIVE_RECORD
+                elif line.startswith('CMETA-TAR-EXIT'):
+                    st['exit'] = [int(x) if x.isdigit() else -1 for x in line.split()[1:3]]
+                elif line.strip():
+                    st['warnings'] += 1
+                    if len(st['lines']) < 200:
+                        st['lines'].append(line)
+                    if con and st['warnings'] <= 5:
+                        print(f'    tar: {line[:180]}', flush=True)
+        reader = threading.Thread(target=errors, daemon=True)
+        reader.start()
+
+        sha = hashlib.sha256()
+        written, head, started = 0, b'', False
+        t0 = last = time.monotonic()
+        window = [(t0, 0)]
+        last_data = t0
+        with open(part, 'wb') as f:
+            while True:
+                chunk = p.stdout.read1(1 << 20)          # what has come, so that the line every 10 s never waits for a full MiB
+                if not chunk:
+                    break
+                last_data = time.monotonic()
+                if not started:
+                    head += chunk
+                    i = head.find(ARCHIVE_MARK)
+                    if i < 0:
+                        if len(head) > (1 << 20):
+                            p.kill()
+                            return self.cm.error(f'{h["alias"]}: the host sent something else than an archive: {head[:200]!r}')
+                        continue
+                    chunk, started = head[i + len(ARCHIVE_MARK):], True
+                f.write(chunk)
+                sha.update(chunk)
+                written += len(chunk)
+                now = time.monotonic()
+                if con and now - last >= ARCHIVE_PROGRESS_EVERY:
+                    last = now
+                    window = [w for w in window if now - w[0] <= 30] + [(now, st['read'])]
+                    rate = (window[-1][1] - window[0][1]) / max(window[-1][0] - window[0][0], 1e-6) if len(window) > 1 else 0
+                    if rate <= 0:
+                        rate = st['read'] / max(now - t0, 1e-6)
+                    if estimate:
+                        left = max(estimate - st['read'], 0)
+                        eta = _dur_text(left / rate) if rate > 0 else '?'
+                        print(f'    {h["alias"]} {_dur_text(now - t0)}: {_size_text(st["read"])} of ~{_size_text(estimate)} read '
+                              f'({min(100 * st["read"] / estimate, 100):.0f}%), {_size_text(rate)}/s, archive {_size_text(written)}, '
+                              f'ETA {eta}', flush=True)
+                    else:
+                        # an increment: only what changed is read - no share of the whole to tell
+                        print(f'    {h["alias"]} {_dur_text(now - t0)}: {_size_text(st["read"])} read so far (only what changed), '
+                              f'{_size_text(rate)}/s, archive {_size_text(written)}', flush=True)
+        p.wait()
+        reader.join(timeout=10)
+        seconds = time.monotonic() - t0
+        if not started:
+            return self.cm.error(f'{h["alias"]}: no archive came (ssh exit {p.returncode}): ' + ' | '.join(st['lines'][-3:]))
+        codes = list(st['exit'] or []) + [None, None]
+        tar_rc, zstd_rc = codes[0], codes[1]
+        # tar: 0 done, 1 some files changed or vanished while read (the archive is good), 2 a fatal error
+        if tar_rc is None or tar_rc > 1 or zstd_rc not in (0, None):
+            return self.cm.error(f'{h["alias"]}: tar ended with {tar_rc}, zstd with {zstd_rc}: ' + ' | '.join(st['lines'][-3:]))
+        if con:
+            print(f'    {h["alias"]} {_dur_text(seconds)}: ' + (f'{_size_text(st["read"])} read, ' if st['read'] else '')
+                  + f'archive {_size_text(written)} - the stream ended; checking it', flush=True)
+        return {'return': 0, 'read': st['read'], 'written': written, 'sha256': sha.hexdigest(), 'seconds': round(seconds),
+                'tar_exit': tar_rc, 'warnings': st['warnings'], 'warning_lines': st['lines']}
+
+    def _archive_check(self, path, con, label):
+        """The archive read through to its end (the zstd frames and every tar header): its entries and content bytes;
+        a line every 10 s. zstd: Python's own (3.14+), else the zstd tool of cMeta here; neither - size checks only
+        (checked: false)."""
+        proc = None
+        try:
+            t0 = last = time.monotonic()
+            n = total = 0
+            size = os.path.getsize(path)
+            try:
+                from compression import zstd as _z      # noqa: F401 - tarfile reads zstd through it
+                tf = tarfile.open(path, mode='r|zst')
+            except ImportError:
+                r = self._local_tool('tool::zstd')
+                if r['return'] > 0:
+                    return {'ok': size > 0, 'entries': None, 'bytes': None, 'checked': False, 'error': ''}
+                proc = subprocess.Popen([r['path'], '-dc', '-q', path], stdout=subprocess.PIPE, stdin=subprocess.DEVNULL)
+                tf = tarfile.open(fileobj=proc.stdout, mode='r|')
+            with tf:
+                for m in tf:
+                    n += 1
+                    total += m.size if m.isfile() else 0
+                    now = time.monotonic()
+                    if con and now - last >= ARCHIVE_PROGRESS_EVERY:
+                        last = now
+                        print(f'    check {label} {_dur_text(now - t0)}: {n:,} entries, {_size_text(total)} read back', flush=True)
+            if proc and proc.wait() != 0:
+                return {'ok': False, 'entries': n, 'bytes': total, 'checked': True, 'error': f'zstd ended with {proc.returncode}'}
+            if con:
+                print(f'    checked: {n:,} entries, {_size_text(total)} of content in {_size_text(size)}', flush=True)
+            return {'ok': n > 0, 'entries': n, 'bytes': total, 'checked': True, 'error': '' if n else 'no entry'}
+        except Exception as e:      # a truncated or damaged archive
+            return {'ok': False, 'entries': 0, 'bytes': 0, 'checked': False, 'error': f'{type(e).__name__}: {e}'}
+        finally:
+            if proc and proc.poll() is None:
+                proc.kill()
+
+    @staticmethod
+    def _archive_copy(src, folder, sha256, con, label='copy'):
+        """The archive (and its .json) copied into folder, a line every 10 s, then read back: its sha256 must be the
+        stream's. -> path."""
+        os.makedirs(folder, exist_ok=True)
+        dst = os.path.join(folder, os.path.basename(src))
+        size = os.path.getsize(src)
+        t0 = last = time.monotonic()
+        done = 0
+        try:
+            with open(src, 'rb') as fi, open(dst + '.part', 'wb') as fo:
+                while True:
+                    chunk = fi.read(8 << 20)
+                    if not chunk:
+                        break
+                    fo.write(chunk)
+                    done += len(chunk)
+                    now = time.monotonic()
+                    if con and now - last >= ARCHIVE_PROGRESS_EVERY:
+                        last = now
+                        rate = done / max(now - t0, 1e-6)
+                        print(f'    {label} {_dur_text(now - t0)}: {_size_text(done)} of {_size_text(size)} ({100 * done / max(size, 1):.0f}%), '
+                              f'{_size_text(rate)}/s, ETA {_dur_text((size - done) / rate) if rate else "?"}', flush=True)
+            # the copy read back to its end - as long as the copy itself on a slow drive: a line every 10 s too
+            if con:
+                print(f'    {label}: copied, reading it back to check it', flush=True)
+            sha = hashlib.sha256()
+            t1 = last = time.monotonic()
+            got = 0
+            with open(dst + '.part', 'rb') as f:
+                for chunk in iter(lambda: f.read(8 << 20), b''):
+                    sha.update(chunk)
+                    got += len(chunk)
+                    now = time.monotonic()
+                    if con and now - last >= ARCHIVE_PROGRESS_EVERY:
+                        last = now
+                        rate = got / max(now - t1, 1e-6)
+                        print(f'    {label} read back {_dur_text(now - t1)}: {_size_text(got)} of {_size_text(size)} '
+                              f'({100 * got / max(size, 1):.0f}%), {_size_text(rate)}/s, '
+                              f'ETA {_dur_text((size - got) / rate) if rate else "?"}', flush=True)
+            if sha256 and sha.hexdigest() != sha256:
+                os.remove(dst + '.part')
+                return {'return': 1, 'error': 'the copy does not read back the same (sha256)'}
+            os.replace(dst + '.part', dst)
+            if os.path.isfile(src + '.json'):
+                shutil.copy2(src + '.json', dst + '.json')
+        except OSError as e:
+            try:
+                os.remove(dst + '.part')
+            except OSError:
+                pass
+            return {'return': 1, 'error': str(e)}
+        if con:
+            print(f'    {label}: {_size_text(size)} in {_dur_text(time.monotonic() - t0)}, read back: the same', flush=True)
+        return {'return': 0, 'path': dst}
+
+    @staticmethod
+    def _archive_prune(folder, alias, keep, keep_name=None):
+        """The host's chains in folder beyond the newest keep removed - a chain whole: its full archive, its increments
+        (each with its .json) and its snapshot file; never the chain of keep_name. Without increments a chain is one
+        archive, so keep counts archives as it always did. -> the paths of the archives removed."""
+        chains = _archive_chains(folder, alias)
+        removed = []
+        for c in chains[:-keep] if keep > 0 else []:
+            parts = ([c['full']] if c['full'] else []) + c['increments']
+            if keep_name and keep_name in parts:
+                continue
+            for n in parts:
+                p = os.path.join(folder, n)
+                for q in (p, p + '.json'):
+                    try:
+                        os.remove(q)
+                    except OSError:
+                        pass
+                removed.append(p)
+            if c['snar']:
+                try:
+                    os.remove(os.path.join(folder, c['snar']))
+                except OSError:
+                    pass
+        return removed
+
+    def _archive_copy_only(self, h, block, present, folders, con):
+        """The newest chain of the host (a full archive and its increments) on any present drive, completed on the
+        others: the parts each lacks, in order, and the chain's snapshot file; then their older chains removed."""
+        alias = h['alias']
+        r = self._archive_chains_sync(alias, present, folders, con)
+        if r['return'] > 0:
+            return r
+        if not r['chain']:
+            return self.cm.error(f'{alias}: no archive on {", ".join(present)} to copy')
+        for d in r['copied']:
+            self._archive_prune(folders[d], alias, block['keep'], keep_name=r['newest'])
+        if con:
+            print(f'    {r["newest"]}: ' + (f'copied to {", ".join(r["copied"])}' if r['copied'] else 'every attached drive has it'))
+        return {'return': 0, 'host': alias, 'archive': r['newest'], 'copied': r['copied']}
+
+    def _archive_remote_state(self, h):
+        """What a machine that archives itself keeps, asked from it ("cx host archives <it> -j" there): its drives, its
+        archives on them, its runs, its estimate -> the host entry's keys (+ drives, reached, error)."""
+        r = self.run_({'control': {'con': False, 'quiet': True}}, arg1=h['alias'], arg2=f'cx host archives {h["alias"]} -j -q',
+                      capture=True, timeout=90)
+        out = ''.join(str(o.get('stdout', '')) for o in (r.get('outputs') or {}).values()) if not r.get('return') else ''
+        i = out.find('\n{')
+        try:
+            data = json.loads(out[i + 1:] if i >= 0 else out)
+        except ValueError:
+            return {'reached': False, 'error': (r.get('error') or out.strip()[-300:] or 'no answer')}
+        mine = next((x for x in data.get('hosts') or [] if x.get('host') == h['alias']), {})
+        state = {k: mine.get(k) for k in ('archives', 'last_run', 'last_success', 'estimate', 'incremental', 'full_every')
+                 if k in mine}
+        state.update(reached=True, drives=data.get('drives') or {},
+                     runs=[x for x in data.get('runs') or [] if x.get('host') == h['alias']][-20:])
+        return state
+
+    def _archive_walk_py(self, block, con, skip=()):
+        """What the Python archiver reads on this machine (Windows): every folder, file and link under the block's paths,
+        the excluded ones and skip (the archive's own folders) left out; links and junctions are not followed, online-only
+        files (OneDrive) are left where they are -> {entries: [(name, path, kind 'd'|'f'|'l', size, mtime_ns, link)],
+        bytes, files, missing, skipped, warnings}. A line every 10 s while it walks."""
+        home = os.path.expanduser('~')
+        roots = [_win_abs(p, home) for p in block['paths']]
+        excl = {_win_abs(p, home).lower() for p in block['exclude']} | {os.path.normpath(s).lower() for s in skip if s}
+        entries, missing, warnings = [], [], []
+        total = files = 0
+        skipped = {'junctions': 0, 'online-only files': 0}
+        t0 = last = time.monotonic()
+        seen = set()
+
+        def add(path, st, is_link):
+            nonlocal total, files
+            name = _win_tar_name(path)
+            if is_link:
+                try:
+                    entries.append((name, path, 'l', 0, 0, os.readlink(_win_long(path))))
+                except OSError as e:
+                    warnings.append(f'{path}: {e.strerror or e}')
+                return False
+            attrs = getattr(st, 'st_file_attributes', 0)
+            if stat_isdir(st):
+                # a junction or a mount point (the profile's "Application Data", "My Documents" ...): not followed; a
+                # folder of a cloud provider is a reparse point too, of another kind - walked as any folder
+                if attrs & WIN_REPARSE_POINT and getattr(st, 'st_reparse_tag', 0) == WIN_MOUNT_POINT:
+                    skipped['junctions'] += 1
+                    return False
+                entries.append((name, path, 'd', 0, st.st_mtime_ns, ''))
+                return True
+            if attrs & WIN_ONLINE_ONLY:
+                skipped['online-only files'] += 1
+                return False
+            entries.append((name, path, 'f', st.st_size, st.st_mtime_ns, ''))
+            total += st.st_size
+            files += 1
+            return False
+
+        def stat_isdir(st):
+            return (st.st_mode & 0o170000) == 0o040000
+
+        for root in roots:
+            if root.lower() in seen or root.lower() in excl:
+                continue
+            seen.add(root.lower())
+            try:
+                st = os.stat(_win_long(root))
+            except OSError:
+                missing.append(root)
+                continue
+            stack = [root] if add(root, st, False) else []
+            while stack:
+                d = stack.pop()
+                try:
+                    with os.scandir(_win_long(d)) as it:
+                        items = list(it)
+                except OSError as e:
+                    warnings.append(f'{d}: {e.strerror or e}')
+                    continue
+                for e in items:
+                    path = os.path.join(d, e.name)
+                    if path.lower() in excl:
+                        continue
+                    try:
+                        link = e.is_symlink()
+                        st = None if link else e.stat(follow_symlinks=False)
+                    except OSError as x:
+                        warnings.append(f'{path}: {x.strerror or x}')
+                        continue
+                    if add(path, st, link):
+                        stack.append(path)
+                now = time.monotonic()
+                if con and now - last >= ARCHIVE_PROGRESS_EVERY:
+                    last = now
+                    print(f'    measuring what to read on this machine {_dur_text(now - t0)}: {files:,} files, '
+                          f'{_size_text(total)} so far; now {d}', flush=True)
+        if con:
+            print(f'    measured in {_dur_text(time.monotonic() - t0)}: {files:,} files, '
+                  f'{sum(1 for x in entries if x[2] == "d"):,} folders, {sum(1 for x in entries if x[2] == "l"):,} links, '
+                  f'{_size_text(total)}' + ''.join(f'; {v:,} {k} left out' for k, v in skipped.items() if v)
+                  + (f'; {len(warnings)} not readable' if warnings else ''), flush=True)
+        return {'entries': entries, 'bytes': total, 'files': files, 'missing': missing, 'skipped': skipped,
+                'warnings': warnings}
+
+    def _archive_stream_py(self, walk, part, estimate, con, label, level, old, deleted, zlevel):
+        """The walked entries as a tar.zst written to part - tarfile, then zstd (Python 3.14's own, else the zstd tool
+        of cMeta): a full archive (level 0) every entry; an increment the files whose size or time differ from old (the
+        snapshot of the part before), the new folders and links, and deleted (the names gone since) in
+        .cmeta-archive/deleted.txt first. A line every 10 s -> {return, read, written, sha256, seconds, tar_exit,
+        warnings, warning_lines, snapshot (the new one: what is in the chain once this part is), archived}."""
+        try:
+            from compression import zstd as pyzstd
+        except ImportError:
+            pyzstd = None
+        st = {'read': 0, 'files': 0, 'last': time.monotonic(), 'warnings': 0, 'lines': []}
+        t0 = st['last']
+        window = [(t0, 0, 0)]
+        raw = open(part, 'wb')
+        hw = _HashWriter(raw)
+        proc = pump = None
+        if pyzstd is not None:
+            opts = {pyzstd.CompressionParameter.compression_level: zlevel}
+            try:
+                if pyzstd.CompressionParameter.nb_workers.bounds()[1] > 0:
+                    opts[pyzstd.CompressionParameter.nb_workers] = min(os.cpu_count() or 1, 8)
+            except (AttributeError, ValueError, pyzstd.ZstdError):
+                pass
+            zout = pyzstd.ZstdFile(hw, 'wb', options=opts)
+            how = 'zstd of Python'
+        else:
+            r = self._local_tool('tool::zstd')
+            if r['return'] > 0:
+                raw.close()
+                return r
+            proc = subprocess.Popen([r['path'], '-T0', f'-{zlevel}', '-q', '-c'], stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE)
+            pump = threading.Thread(target=lambda: [hw.write(c) for c in iter(lambda: proc.stdout.read(1 << 20), b'')],
+                                    daemon=True)
+            pump.start()
+            zout = proc.stdin
+            how = f'the zstd tool of cMeta ({r["path"]})'
+        if con:
+            print(f'    archiving with Python\'s tarfile and {how}', flush=True)
+
+        def warn(text):
+            st['warnings'] += 1
+            if len(st['lines']) < 200:
+                st['lines'].append(text)
+            if con and st['warnings'] <= 5:
+                print(f'    warning: {text[:180]}', flush=True)
+
+        # the walk counted the files: their share tells the time left where small files go slowly (each opened file
+        # is scanned - Windows Defender), the bytes' share where big ones do; the slower of the two
+        files_total = walk.get('files') or 0
+
+        def tick(n):
+            st['read'] += n
+            now = time.monotonic()
+            if con and now - st['last'] >= ARCHIVE_PROGRESS_EVERY:
+                st['last'] = now
+                window[:] = [w for w in window if now - w[0] <= 30] + [(now, st['read'], st['files'])]
+                span = max(window[-1][0] - window[0][0], 1e-6) if len(window) > 1 else 0
+                rate = (window[-1][1] - window[0][1]) / span if span else 0
+                frate = (window[-1][2] - window[0][2]) / span if span else 0
+                if rate <= 0:
+                    rate = st['read'] / max(now - t0, 1e-6)
+                if frate <= 0:
+                    frate = st['files'] / max(now - t0, 1e-6)
+                files = f', {st["files"]:,} of {files_total:,} files' if files_total else ''
+                if estimate:
+                    left = [max(estimate - st['read'], 0) / rate if rate > 0 else None,
+                            max(files_total - st['files'], 0) / frate if frate > 0 and files_total else None]
+                    left = [x for x in left if x is not None]
+                    print(f'    {label} {_dur_text(now - t0)}: {_size_text(st["read"])} of ~{_size_text(estimate)} read '
+                          f'({min(100 * st["read"] / estimate, 100):.0f}%){files}, {_size_text(rate)}/s, archive {_size_text(hw.n)}, '
+                          f'ETA {_dur_text(max(left)) if left else "?"}', flush=True)
+                else:
+                    print(f'    {label} {_dur_text(now - t0)}: {_size_text(st["read"])} read so far (only what changed){files} '
+                          f'looked at, {_size_text(rate)}/s, archive {_size_text(hw.n)}', flush=True)
+
+        snapshot, archived = {}, 0
+        try:
+            tf = tarfile.open(fileobj=zout, mode='w|', format=tarfile.PAX_FORMAT)
+            if deleted:
+                data = ('\n'.join(deleted) + '\n').encode('utf-8')
+                ti = tarfile.TarInfo(ARCHIVE_META_DIR + '/deleted.txt')
+                ti.size, ti.mtime, ti.mode = len(data), int(time.time()), 0o644
+                tf.addfile(ti, io.BytesIO(data))
+            for name, path, kind, size, mtime_ns, link in walk['entries']:
+                prev = old.get(name) if level else None
+                if kind == 'd':
+                    snapshot[name] = 'd'
+                    if prev == 'd':
+                        continue
+                    ti = tarfile.TarInfo(name)
+                    ti.type, ti.mode, ti.mtime = tarfile.DIRTYPE, 0o755, mtime_ns // 1_000_000_000
+                    tf.addfile(ti)
+                elif kind == 'l':
+                    snapshot[name] = ['l', link]
+                    if prev == ['l', link]:
+                        continue
+                    ti = tarfile.TarInfo(name)
+                    ti.type, ti.linkname, ti.mode = tarfile.SYMTYPE, link, 0o777
+                    tf.addfile(ti)
+                else:
+                    st['files'] += 1
+                    if prev == [size, mtime_ns]:
+                        snapshot[name] = prev          # unchanged: in the chain already
+                        tick(0)
+                        continue
+                    try:
+                        f = open(_win_long(path), 'rb')
+                    except OSError as e:
+                        warn(f'{path}: {e.strerror or e}')      # in use, gone, denied: tried again by the next part
+                        tick(0)
+                        continue
+                    with f:
+                        try:
+                            fs = os.fstat(f.fileno())
+                            n, m = fs.st_size, fs.st_mtime_ns
+                        except OSError:
+                            n, m = size, mtime_ns
+                        ti = tarfile.TarInfo(name)
+                        ti.size, ti.mtime, ti.mode = n, m / 1e9, 0o644
+                        reader = _ExactReader(f, n, tick)
+                        tf.addfile(ti, reader)
+                    if reader.short:
+                        warn(f'{path}: ' + (reader.error or 'shrank while read') + ' - the rest is zeros; read again by the next part')
+                    else:
+                        snapshot[name] = [n, m]
+                archived += 1
+            tf.close()
+            zout.close()
+            if proc:
+                proc.wait()
+                pump.join()
+                if proc.returncode != 0:
+                    raise OSError(f'zstd ended with {proc.returncode}')
+        except Exception as e:
+            try:
+                if proc:
+                    proc.kill()
+            except OSError:
+                pass
+            raw.close()
+            return self.cm.error(f'{label}: the archive could not be written: {type(e).__name__}: {e}')
+        raw.close()
+        seconds = time.monotonic() - t0
+        if con:
+            print(f'    {label} {_dur_text(seconds)}: {_size_text(st["read"])} read, archive {_size_text(hw.n)} - written; '
+                  f'checking it', flush=True)
+        return {'return': 0, 'read': st['read'], 'written': hw.n, 'sha256': hw.sha.hexdigest(), 'seconds': round(seconds),
+                'tar_exit': 1 if st['warnings'] else 0, 'warnings': st['warnings'], 'warning_lines': st['lines'],
+                'snapshot': snapshot, 'archived': archived}
+
+    def _local_tool(self, key):
+        """A tool set up by cMeta on this machine (found, else installed; without asking) -> {return, path, version}."""
+        uses = self.cmeta.get('uses_artifacts') or {}
+        r = self.cm.access({'category': self.cmeta['uses_categories']['task'], 'command': 'run',
+                            'arg1': uses['task::setup'], 'name': uses[key], 'con': False, 'quiet': True})
+        if r.get('return', 1) > 0 or not r.get('path'):
+            return self.cm.error(f'{key[6:]} could not be set up by cMeta here: {r.get("error", "no path")}')
+        return {'return': 0, 'path': r['path'], 'version': str(r.get('version') or '')}
+
+    def _archive_chains_sync(self, alias, present, folders, con):
+        """The newest chain on the present drives - the newest full, with the most increments - made complete on every
+        present drive: each part it lacks copied in order (read back by its sha256), the snapshot file copied over
+        (it belongs to the newest part). -> {chain, newest (its newest part), copied (the drives that got a part)}."""
+        best = None
+        for d in present:
+            for c in _archive_chains(folders[d], alias):
+                if not c['full']:
+                    continue
+                key = (c['chain'], len(c['increments']))
+                if best is None or key > best[0]:
+                    best = (key, d, c)
+        if best is None:
+            return {'return': 0, 'chain': '', 'newest': '', 'copied': []}
+        _, src, c = best
+        parts = [c['full']] + c['increments']
+        copied = []
+        for d in present:
+            if d == src:
+                continue
+            got = False
+            for n in parts:
+                if os.path.isfile(os.path.join(folders[d], n)):
+                    continue
+                sha = ''
+                try:
+                    with open(os.path.join(folders[src], n + '.json'), encoding='utf-8') as f:
+                        sha = json.load(f).get('sha256', '')
+                except (OSError, ValueError):
+                    pass
+                r = self._archive_copy(os.path.join(folders[src], n), folders[d], sha, con, label=f'copy to {d}')
+                if r['return'] > 0:
+                    return self.cm.error(f'{alias}: the copy of {n} to {d} failed: {r["error"]}')
+                got = True
+            if c['snar']:
+                try:
+                    os.makedirs(folders[d], exist_ok=True)
+                    shutil.copy2(os.path.join(folders[src], c['snar']), os.path.join(folders[d], c['snar']))
+                except OSError as e:
+                    return self.cm.error(f'{alias}: the snapshot file of the chain could not be copied to {d}: {e}')
+            if got:
+                copied.append(d)
+        return {'return': 0, 'chain': c['chain'], 'newest': parts[-1], 'copied': copied}
+
+    def _archive_chain_plan(self, folder, alias, block, full=False):
+        """What this run makes on the drive that gets the stream: a full archive (level 0: a new chain) or the next
+        increment of its newest chain - only when incremental is on, that chain has its snapshot file and is younger
+        than full_every. -> {level, chain, snar (its path, level > 0), reason}."""
+        if not block['incremental']:
+            return {'level': 0, 'chain': '', 'snar': '', 'reason': 'a full archive (incremental off)'}
+        if full:
+            return {'level': 0, 'chain': '', 'snar': '', 'reason': 'a full archive (asked for)'}
+        chains = [c for c in _archive_chains(folder, alias) if c['full']]
+        if not chains:
+            return {'level': 0, 'chain': '', 'snar': '', 'reason': 'a full archive: the first of a new chain'}
+        c = chains[-1]
+        if not c['snar']:
+            return {'level': 0, 'chain': '', 'snar': '', 'reason': f'a full archive: the newest one ({c["full"]}) was made '
+                                                                  f'without incremental - a new chain starts'}
+        try:
+            began = datetime.datetime.strptime(c['chain'], '%Y%m%d-%H%M')
+        except ValueError:
+            began = None
+        if began and (datetime.datetime.now() - began).total_seconds() > _every_seconds(block['full_every']):
+            return {'level': 0, 'chain': '', 'snar': '', 'reason': f'a full archive: the chain of {c["chain"]} is older '
+                                                                  f'than full_every ({block["full_every"]})'}
+        level = len(c['increments']) + 1
+        return {'level': level, 'chain': c['chain'], 'snar': os.path.join(folder, c['snar']),
+                'reason': f'increment {level} of the chain of {c["chain"]} (only what changed since its newest part)'}
+
+    def _ssh_io(self, h, command, data=None, timeout=900):
+        """One command on the host by ssh (this machine: its local bash), data on its stdin -> (exit code, stdout
+        bytes, stderr text)."""
+        if self._here(h):
+            cmd = ['bash', '-c', command]
+        else:
+            r = self._ssh_parts(h)
+            if r['return'] > 0:
+                return 255, b'', r.get('error', '')
+            cmd = r['cmd'] + ' "' + command + '"' if os.name == 'nt' else shlex.split(r['cmd']) + [command]
+        try:
+            p = subprocess.run(cmd, input=data if data is not None else b'', stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, timeout=timeout)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return 255, b'', str(e)
+        return p.returncode, p.stdout, p.stderr.decode('utf-8', 'replace')
+
+    ############################################################
+    # cx host restore <host> --archive (2026-11-12, the user: "restore ... untar learns .tar.zst, --chain, --until ...
+    # a Restore button"): the parts of a chain, in order, from a drive here - each streamed into the host's zstd | sudo
+    # tar (both set up by cMeta there; the increments with --listed-incremental=/dev/null, so their deletions apply).
+    # A machine that archives itself restores from its own drives (the command run there); a Windows one through
+    # "cx task run untar --chain" (its Python archiver's parts)
+    def _restore_archive(self, ctx, h, archive, until, into, paths, drive, dry_run, yes):
+        con = ctx['control'].get('con', False)
+        alias = h['alias']
+        block = self._archive_block(h)
+        named = os.path.basename(str(archive).strip()) if isinstance(archive, str) and str(archive).strip().lower() not in ('', 'true', 'yes', '1') else ''
+        if block['on_host'] and not self._here(h):
+            def q(v):
+                return f'"{v}"' if any(c.isspace() for c in str(v)) else str(v)
+            words = [f'cx host restore {alias} --archive' + (f'={q(named)}' if named else '')]
+            words += [f'--{k}={q(v)}' for k, v in (('until', until), ('into', into), ('paths', paths), ('drive', drive))
+                      if v not in (None, '', True, False)]
+            words += [w for w, on in (('--dry_run', dry_run), ('--yes', yes)) if on]
+            if con:
+                print(f'=== {alias} restores from its own drives: {" ".join(words)}', flush=True)
+            return self.run_(ctx, arg1=alias, arg2=' '.join(words + ['-q']), timeout=None)
+
+        py = self._here(h) and os.name == 'nt'
+        drives = self._drive_roots()
+        order = [drive] if drive else ([d for d in block['to'] if d in drives] + sorted(d for d in drives if d not in block['to']))
+        found = None
+        for d in order:
+            if d not in drives:
+                continue
+            folder = os.path.join(drives[d]['root'], ARCHIVE_DIR, alias)
+            chains = [c for c in _archive_chains(folder, alias) if c['full']]
+            if named:
+                chains = [c for c in chains if named in [c['full']] + c['increments']]
+            if chains:
+                found = (d, folder, chains)
+                break
+        if not found:
+            return self.cm.error(f'{alias}: ' + (f'{named} is on none of the drives attached here' if named else
+                                                 'no archive of it on the drives attached here')
+                                 + f' ({", ".join(order) or "no drive with a label"})')
+        d, folder, chains = found
+
+        # the parts: the chain of the part named (up to it), else the newest chain - cut at --until either way
+        u = ''
+        if until not in (None, '', True):
+            digits = re.sub(r'\D', '', str(until))
+            u = digits[:8] + ('-' + digits[8:12] if len(digits) > 8 else '')
+            chains = [c for c in chains if c['chain'][:len(u)] <= u]
+            if not chains:
+                return self.cm.error(f'{alias}: no archive of it made at or before {until} on {d}')
+        c = chains[-1] if not named else chains[0]
+        parts = [c['full']] + c['increments']
+        if named:
+            parts = parts[:parts.index(named) + 1]
+        if u:
+            parts = [x for x in parts if (_archive_name_parts(alias, x) or ('', '', ''))[2][:len(u)] <= u]
+        infos = []
+        for x in parts:
+            try:
+                with open(os.path.join(folder, x + '.json'), encoding='utf-8') as f:
+                    infos.append(json.load(f))
+            except (OSError, ValueError):
+                infos.append({})
+        formats = {i.get('format') or 'gnu-tar' for i in infos}
+        if 'python-tar' in formats and not py:
+            return self.cm.error(f'{alias}: its archives were made by the Python archiver of a Windows machine - restore them '
+                                 f'there (or into a folder: cx task run untar <part> --chain --directory=<folder>)')
+        chained = len(parts) > 1 or any(i.get('incremental') for i in infos)
+        only = self._csv(paths)
+        into = str(into or '').strip()
+        if into.replace('\\', '/').strip('/') == '':
+            into = ''                       # --into=/ is in place: --yes, as any restore in place
+        if not into and not yes and not dry_run:
+            return self.cm.error(f'{alias}: a restore in place puts every file of the archive back where it was, over what is '
+                                 f'there now' + (' - and deletes what the increments record as deleted' if chained else '')
+                                 + ': --yes to do it, or --into=<folder> (a look), or --dry_run')
+
+        if con:
+            print(f'=== {alias}: restore from {d} ({folder})' + (' - DRY RUN' if dry_run else ''))
+            for x, i in zip(parts, infos):
+                print(f'    {x}  {_size_text(os.path.getsize(os.path.join(folder, x)))}'
+                      + (f'  ({i.get("kind", "full")}, made {str(i.get("finished") or "")[:16].replace("T", " ")})' if i else ''))
+            print('    into: ' + (f'{into} on the host' if into else 'the places the files come from (in place)')
+                  + (f'; only {", ".join(only)}' if only else '')
+                  + ('; the deletions of the increments applied' if chained else ''), flush=True)
+        if dry_run:
+            return {'return': 0, 'host': alias, 'drive': d, 'folder': folder, 'parts': parts, 'into': into, 'dry_run': True}
+
+        t0 = time.monotonic()
+        if py:
+            # the Python archiver's chain, here: by the untar task (its deletions, the names back to their drives)
+            home = os.path.expanduser('~')
+            ii = {'category': self.cmeta['uses_categories']['task'], 'command': 'run',
+                  'arg1': self.cmeta['uses_artifacts']['task::untar'], 'filename': os.path.join(folder, parts[-1]),
+                  'chain': True, 'con': con, 'quiet': True}
+            if into:
+                ii['directory'] = into if os.path.isabs(into) else os.path.join(home, into)
+            else:
+                ii['in_place'] = True
+            if only:
+                ii['paths'] = ','.join(_win_tar_name(_win_abs(p, home)) for p in only)
+            r = self.cm.access(ii)
+            ok = r.get('return', 1) == 0
+            summary = (f'{alias}: {len(parts)} part(s) of the chain of {c["chain"]} restored '
+                       + (f'into {ii.get("directory")}' if into else 'in place') + f' in {_dur_text(time.monotonic() - t0)}'
+                       + (f'; {r.get("entries", 0):,} entries, {r.get("deleted", 0):,} deleted' if ok else ''))
+            if con:
+                print(self._banner(ok, ('STATUS: SUCCESS - ' if ok else 'STATUS: FAILED - ') + (summary if ok else f'{alias}: {r.get("error")}')))
+            return r if not ok else {'return': 0, 'host': alias, 'parts': parts, 'entries': r.get('entries'), 'deleted': r.get('deleted')}
+
+        tools = self._archive_tools(h)
+        if self.cm.catch_error(tools): return tools
+        if con:
+            print(f'    tools: {tools["text"]}' + (f'\n    cMeta warning: {tools["warning"]}' if tools['warning'] else ''), flush=True)
+        # in place: tar through sudo - the owners and modes as they were; into a folder (a look, a file to get back):
+        # tar as the host's user - the files become the user's (modes kept), the whole folder the user's to remove
+        # (through sudo, the folders tar makes above the archived paths, and the folder itself, would be root's)
+        if not into:
+            target = '/'
+        elif into == '~' or into.startswith('~/'):
+            target = '"$HOME"' + ('/' + shlex.quote(into[2:]) if into[2:] else '')
+        else:
+            target = shlex.quote(into) if into.startswith('/') else '"$HOME"/' + shlex.quote(into)
+        members = ' '.join(_archive_rel(p) for p in only)
+        tar_cmd = ('sudo -n "$TAR" -xpf - --numeric-owner' if not into else '"$TAR" -xpf -')
+        warnings = 0
+        for i, x in enumerate(parts):
+            label = f'part {i + 1}/{len(parts)} {x}'
+            script = (self._archive_tools_script(tools) + f'M=({members})\nT={target}\n'
+                      + ('sudo -n true 2>/dev/null || { echo "CMETA-NOSUDO" >&2; exit 9; }\n' if not into else
+                         'mkdir -p "$T" || { echo "cannot make the folder $T (a folder of the user\'s: under the home)" >&2; exit 9; }\n')
+                      + f'"$ZSTD" -dc -q | {tar_cmd}'
+                      + (' --listed-incremental=/dev/null' if chained else '') + ' -C "$T" -- "${M[@]}"\n'
+                      'echo "CMETA-RESTORE-EXIT ${PIPESTATUS[0]} ${PIPESTATUS[1]}" >&2\n')
+            r = self._restore_feed(h, script, os.path.join(folder, x), label, con)
+            if r['return'] > 0:
+                if con:
+                    print(self._banner(False, f'STATUS: FAILED - {alias}: {r["error"]}'))
+                return r
+            warnings += r['warnings']
+        summary = (f'{alias}: {len(parts)} part(s) of the chain of {c["chain"]} restored '
+                   + (f'into {into}' if into else 'in place') + f' in {_dur_text(time.monotonic() - t0)}'
+                   + (f'; {warnings} warnings of tar' if warnings else ''))
+        if con:
+            print(self._banner(True, 'STATUS: SUCCESS - ' + summary))
+        return {'return': 0, 'host': alias, 'parts': parts, 'into': into, 'warnings': warnings}
+
+    def _ssh_feed(self, h, script):
+        """A script run on the host with this side's data on its stdin (an archive into tar): the script goes first as a
+        file of its own in /tmp (mode 600; it removes itself as it starts) -> {return, process}."""
+        name = f'/tmp/cmeta-restore-{uuid.uuid4().hex[:12]}.sh'
+        rc, _, err = self._ssh_io(h, f'umask 077; cat > {name}', data=('rm -f -- "$0"\n' + script).encode('utf-8'))
+        if rc != 0:
+            return self.cm.error(f'{h["alias"]}: the restore script could not be sent there: {err.strip()[-200:]}')
+        if self._here(h):
+            cmd = ['bash', name]
+        else:
+            r = self._ssh_parts(h)
+            if r['return'] > 0:
+                return r
+            cmd = r['cmd'] + f' "bash {name}"' if os.name == 'nt' else shlex.split(r['cmd']) + [f'bash {name}']
+        p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return {'return': 0, 'process': p}
+
+    def _restore_feed(self, h, script, path, label, con):
+        """One part of an archive sent into the restore script on the host: a line every 10 s (sent, the speed, the
+        time left) -> {return, warnings, lines}."""
+        r = self._ssh_feed(h, script)
+        if r['return'] > 0:
+            return r
+        p = r['process']
+        st = {'exit': None, 'lines': [], 'nosudo': False}
+
+        def errors():
+            for raw in iter(p.stderr.readline, b''):
+                line = raw.decode('utf-8', 'replace').rstrip()
+                if line.startswith('CMETA-RESTORE-EXIT'):
+                    st['exit'] = [int(x) if x.isdigit() else -1 for x in line.split()[1:3]]
+                elif line.startswith('CMETA-NOSUDO'):
+                    st['nosudo'] = True
+                elif line.strip():
+                    if len(st['lines']) < 200:
+                        st['lines'].append(line)
+                    if con and len(st['lines']) <= 5:
+                        print(f'    tar: {line[:180]}', flush=True)
+        threads = [threading.Thread(target=errors, daemon=True),
+                   threading.Thread(target=lambda: p.stdout.read(), daemon=True)]
+        for t in threads:
+            t.start()
+        size = os.path.getsize(path)
+        t0 = last = time.monotonic()
+        done = 0
+        try:
+            with open(path, 'rb') as f:
+                for chunk in iter(lambda: f.read(1 << 20), b''):
+                    p.stdin.write(chunk)
+                    done += len(chunk)
+                    now = time.monotonic()
+                    if con and now - last >= ARCHIVE_PROGRESS_EVERY:
+                        last = now
+                        rate = done / max(now - t0, 1e-6)
+                        print(f'    {label}: {_size_text(done)} of {_size_text(size)} sent ({100 * done / max(size, 1):.0f}%), '
+                              f'{_size_text(rate)}/s, ETA {_dur_text((size - done) / rate) if rate else "?"}', flush=True)
+            p.stdin.close()
+        except OSError:
+            pass                    # the host's side ended: its exit codes tell why
+        p.wait()
+        for t in threads:
+            t.join(timeout=10)
+        if st['nosudo']:
+            return self.cm.error(f'{h["alias"]}: sudo asks a password there - a restore needs passwordless sudo')
+        codes = list(st['exit'] or []) + [None, None]
+        if codes[0] != 0 or codes[1] is None or codes[1] > 1:
+            return self.cm.error(f'{label}: zstd ended with {codes[0]}, tar with {codes[1]} (ssh {p.returncode}): '
+                                 + ' | '.join(st['lines'][-3:]))
+        if con:
+            print(f'    {label}: {_size_text(size)} in {_dur_text(time.monotonic() - t0)}', flush=True)
+        return {'return': 0, 'warnings': len(st['lines']), 'lines': st['lines'][:20]}
+
+    def _archive_state_folder(self):
+        r = self.cm.access({'category': 'state,a1ed1ed7ca7043b6', 'command': 'get', 'arg1': ARCHIVE_STATE, 'con': False,
+                            'meta': {'desc': 'cx host archive: the runs of this machine (runs.json)',
+                                     'generator': {'method': 'script', 'script': 'cx host archive'}}})
+        return r['artifact']['path'] if r.get('return', 1) == 0 else ''
+
+    def _archive_expect(self, alias, read):
+        """What an archive of read bytes should give: its size (the host's own last ratio, else about half - zstd -3 on
+        homes and sites) and its time (the host's own last read speed, else the last speed of any host, as a rough
+        guide) -> {archive, archive_how, seconds, seconds_how}."""
+        # full archives only: an increment reads what changed and scans the rest - its ratio and speed say nothing of
+        # a full archive (2026-11-11: an increment of 2.9 MB in 15 s made a full one "expect 448 MiB, 41 min")
+        good = [x for x in self._archive_runs() if x.get('ok') and x.get('read') and x.get('seconds') and x.get('size')
+                and not x.get('level')]
+        mine = [x for x in good if x.get('host') == alias]
+        out = {'archive': int(read * 0.5), 'archive_how': 'about half of what is read, as zstd -3 usually gives'}
+        if mine:
+            x = mine[-1]
+            out.update(archive=int(read * x['size'] / x['read']),
+                       archive_how=f'{100 * x["size"] / x["read"]:.0f} % of what is read, as its last archive')
+            out.update(seconds=int(read / (x['read'] / x['seconds'])),
+                       seconds_how=f'at its last speed, {_size_text(x["read"] / x["seconds"])}/s read')
+        elif good:
+            x = good[-1]
+            out.update(seconds=int(read / (x['read'] / x['seconds'])),
+                       seconds_how=f'a rough guide: at the last speed of {x["host"]}, {_size_text(x["read"] / x["seconds"])}/s read')
+        return out
+
+    def _archive_estimates(self):
+        folder = self._archive_state_folder()
+        try:
+            with open(os.path.join(folder, 'estimates.json'), encoding='utf-8') as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _archive_record_estimate(self, alias, est, block, expect):
+        """The last estimate of a host kept in estimates.json of the state artifact local:host-archives."""
+        folder = self._archive_state_folder()
+        if not folder:
+            return
+        data = self._archive_estimates()
+        data[alias] = {'bytes': est['bytes'], 'missing': est['missing'], 'paths': block['paths'], 'exclude': block['exclude'],
+                       'at': datetime.datetime.now().astimezone().isoformat(timespec='seconds'), 'expect': expect}
+        path = os.path.join(folder, 'estimates.json')
+        try:
+            with open(path + '.part', 'w', encoding='utf-8', newline='\n') as f:
+                json.dump(data, f, indent=2)
+            os.replace(path + '.part', path)
+        except OSError:
+            pass
+
+    def _archive_runs(self):
+        folder = self._archive_state_folder()
+        try:
+            with open(os.path.join(folder, 'runs.json'), encoding='utf-8') as f:
+                data = json.load(f)
+            return data if isinstance(data, list) else []
+        except (OSError, ValueError):
+            return []
+
+    def _archive_record(self, run):
+        """The run appended to runs.json of the state artifact local:host-archives (the last 300 kept)."""
+        folder = self._archive_state_folder()
+        if not folder:
+            return
+        path = os.path.join(folder, 'runs.json')
+        run = dict(run, finished=datetime.datetime.now().astimezone().isoformat(timespec='seconds'))
+        try:
+            with self.cm.utils.files.PathLock(path + '.lock'):
+                runs = self._archive_runs()
+                runs = (runs + [run])[-300:]
+                with open(path + '.part', 'w', encoding='utf-8', newline='\n') as f:
+                    json.dump(runs, f, indent=1)
+                os.replace(path + '.part', path)
+        except (OSError, TimeoutError):
+            pass
 
     ############################################################
     def upgrade_(
@@ -4746,6 +6679,41 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         """The rules of the last bisync of a partial repository, beside rclone's listings of that host."""
         return os.path.join(self._bisync_workdir(h, entry), f'cmeta-selection-{name}.txt')
 
+    def _long_names_file(self, h, name, entry):
+        """The files of a pair whose names the host cannot hold (one path per line), beside rclone's listings."""
+        return os.path.join(self._bisync_workdir(h, entry), f'cmeta-long-names-{name}.txt')
+
+    def _long_names(self, h, name, entry):
+        """The remembered files of a pair whose names the host cannot hold - those still here and still too long (a
+        file renamed shorter syncs again)."""
+        try:
+            with open(self._long_names_file(h, name, entry), encoding='utf-8') as f:
+                lines = [l.rstrip('\r\n') for l in f if l.strip()]
+        except OSError:
+            return []
+        windows = self._shell(h).strip() in ('powershell', 'pwsh')
+        return [l for l in lines if self._name_too_long(l, windows)
+                and os.path.exists(os.path.join(entry['local'], *l.split('/')))]
+
+    def _remember_long_names(self, h, name, entry, names):
+        path = self._long_names_file(h, name, entry)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(''.join(n + '\n' for n in sorted(set(names))))
+        except OSError:
+            pass                                  # then found again by the next run
+
+    @staticmethod
+    def _name_too_long(rel, windows=False):
+        """Whether a part of a path is longer than a filesystem holds: 255 bytes of UTF-8 (POSIX), 255 UTF-16 units
+        (NTFS, windows)."""
+        for part in str(rel).split('/'):
+            size = len(part.encode('utf-16-le')) // 2 if windows else len(part.encode('utf-8'))
+            if size > NAME_MAX:
+                return True
+        return False
+
     @staticmethod
     def _sh_path(path):
         """A remote path for a POSIX shell: quoted, a leading ~/ kept as the home."""
@@ -4813,7 +6781,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         return os.path.join(base, 'bisync-' + h['alias'])
 
     def _sync_repo(self, ctx, h, name, entry, resync, resync_mode, unlock, dry_run, con, verbose, backup=False,
-                   force=False, capture=False, exclude=None):
+                   force=False, capture=False, exclude=None, transfers=None, progress=False):
         """One run of the declared method; force: rclone's --force past its delete guard (bisync); capture: rclone's
         output kept in the result ('output') for the verdicts, with -v so that what moved can be counted; exclude:
         filter patterns of files left out of this bisync run (the files another process holds, _exclude_rule)."""
@@ -4857,7 +6825,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             return self.cm.error(f'{name} holds secrets (secrets: true in its _cmr.yaml) and is never synced - push the ones '
                                  f'{h["alias"]} needs: cx host push {h["alias"]} {name} --artifacts="secret::<alias>;..." --secrets')
 
-        extra = list(DEFAULT_RCLONE_FLAGS)
+        n = int(transfers or DEFAULT_TRANSFERS)
+        extra = [f'--transfers={n}', f'--checkers={max(n, DEFAULT_TRANSFERS)}']
         if dry_run: extra.append('--dry-run')
         if capture: extra.append('-v')                  # the per-file lines, counted after the run (never shown live)
         if force and method == 'bisync': extra.append('--force')
@@ -4894,7 +6863,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
         if method == 'copy':
             r = self._rclone(ctx, h, 'copy', local, entry['remote'], whitelist=rules, blacklist=entry['blacklist'],
-                             extra=extra, con=con, verbose=verbose, capture=capture)
+                             extra=extra, con=con, verbose=verbose, capture=capture, progress=progress, label=name)
             if r['return'] > 0: return r
             if dirs and not dry_run:
                 self._backup_mark_remote(ctx, h, dirs, con, verbose)
@@ -4924,7 +6893,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             extra += ['--resync-mode', mode]
         r = self._rclone(ctx, h, 'resync' if resync else 'bisync', local, entry['remote'], whitelist=rules,
                          blacklist=list(entry['blacklist']) + list(exclude or []), extra=extra, con=con, verbose=verbose,
-                         workdir=self._bisync_workdir(h, entry), unlock=unlock, capture=capture)
+                         workdir=self._bisync_workdir(h, entry), unlock=unlock, capture=capture, progress=progress,
+                         label=name)
         if r['return'] > 0: return r
         if dirs and not dry_run:
             self._backup_mark_remote(ctx, h, dirs, con, verbose)
@@ -5271,18 +7241,25 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         rr = self._run_local(r['cmd'], capture=True, con=False, verbose=False, timeout=60)
         return rr.get('returncode', 1) == 0 and not (rr.get('stdout') or '').strip()
 
-    def _sync_repo_robust(self, ctx, h, name, entry, resync, resync_mode, unlock, dry_run, con, verbose, backup, retries):
+    def _sync_repo_robust(self, ctx, h, name, entry, resync, resync_mode, unlock, dry_run, con, verbose, backup, retries,
+                          transfers=None, progress=False):
         """The declared sync of one repository, run until it finishes or until nothing known cures it: a stale lock is
         dropped, rclone's delete guard is passed with --force when the side that lost the files is still a repository
         (the deleted files kept in the host's sync-backup artifact), a new pair is seeded from this machine, a transient
-        error is tried again (retries). -> the result of the last run, with 'notes' (what was done) and 'moved'."""
+        error is tried again (retries), a file whose name the host cannot hold is left out for good. -> the result of the
+        last run, with 'notes' (what was done), 'moved' and 'long_names' (the files left out for their names)."""
         notes, force, attempt = [], False, 0
         exclude, fix = [], None             # a run without the files another process holds, and their listing entries to put back
+        # the names the host cannot hold, found by an earlier run of this pair: left out from the start, named in the verdict
+        long_names = self._long_names(h, name, entry) if entry['method'] == 'bisync' else []
         while True:
             attempt += 1
             r = self._sync_repo(ctx, h, name, entry, resync=resync, resync_mode=resync_mode, unlock=unlock, dry_run=dry_run,
-                                con=con, verbose=verbose, backup=backup, force=force, capture=not dry_run, exclude=exclude)
+                                con=con, verbose=verbose, backup=backup, force=force, capture=not dry_run,
+                                exclude=[self._exclude_rule(f) for f in long_names] + list(exclude),
+                                transfers=transfers, progress=progress)
             r['notes'] = notes
+            r['long_names'] = list(long_names)
             if r.get('return', 0) == 0:
                 if not dry_run:
                     if fix:
@@ -5305,8 +7282,27 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             if dry_run or entry['method'] != 'bisync' or attempt > retries + 3:
                 return r
             kind, detail = self._bisync_failure((r.get('output') or '') + (r.get('error') or ''))
+            if kind == 'unreadable':
+                # a file the host refused to make because its name is too long there reads as a failed copy too - no
+                # process holds it, and no retry will ever cure it
+                windows = self._shell(h).strip() in ('powershell', 'pwsh')
+                too_long = [f for f in detail if self._name_too_long(f, windows) and f not in long_names]
+                if too_long:
+                    kind, detail = 'long-names', too_long
             if con:
                 print(f'    attempt {attempt} failed ({kind}): {str(r.get("error", ""))[:200]}')
+            if kind == 'long-names':
+                # The name is remembered for this pair (beside its listings) and left out of every run from now on - the
+                # verdict names it, and once renamed shorter it syncs again; the pre-run listings go back (a critical
+                # error took them), so that the run goes on as it was (2026-11-11: a Russian title of 319 bytes stopped
+                # a partial repository six times, each read as a file another process held)
+                self._listings_back(self._bisync_workdir(h, entry), name)
+                long_names += detail
+                self._remember_long_names(h, name, entry, long_names)
+                notes.append(f'{len(detail)} file(s) left out for good: the name is longer than {h["alias"]} allows '
+                             f'({NAME_MAX} bytes) - ' + ', '.join(detail[:2]) + (' ...' if len(detail) > 2 else ''))
+                if con: print(f'    {notes[-1]}')
+                continue
             if kind == 'unreadable':
                 # A file another process holds (a SQLite lock, an open document): rclone copied everything else, held
                 # the deletions back and dropped the pair's listings - a dead pair until a resync, which would bring
@@ -5679,12 +7675,32 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         return {'return': 0}
 
     def _rclone(self, ctx, h, command, local, remote_path, whitelist=None, blacklist=None, extra=None,
-                con=True, verbose=False, workdir=None, unlock=False, from_remote=False, capture=False, accept=(0,)):
+                con=True, verbose=False, workdir=None, unlock=False, from_remote=False, capture=False, accept=(0,),
+                progress=False, label='', _log=None):
         """rclone <command> local -> host (host -> local with from_remote), through the task rclone-to-ssh (which
         sets rclone up if needed). capture: rclone's output comes back in 'output' instead of the console; accept:
-        the return codes that are not an error (rclone check answers 1 when the sides differ)."""
+        the return codes that are not an error (rclone check answers 1 when the sides differ); progress: rclone logs
+        into a file whose statistics (every 10 s) are shown as one line each while it runs (_FollowRclone) - with
+        capture, the log is the output; without, every line of it is shown as it comes."""
         r = self._ssh_parts(h)
         if r['return'] > 0: return r
+
+        log = None
+        if progress and con:
+            fd, log = tempfile.mkstemp(prefix='cmeta-sync-', suffix='.log')
+            os.close(fd)
+            extra = list(extra or []) + ['--log-file', log, '--stats', PROGRESS_EVERY, '--stats-log-level', 'NOTICE']
+            try:
+                with _FollowRclone(log, label or command, relay_all=not capture):
+                    return self._rclone(ctx, h, command, local, remote_path, whitelist=whitelist, blacklist=blacklist,
+                                        extra=extra, con=con, verbose=verbose, workdir=workdir, unlock=unlock,
+                                        from_remote=from_remote, capture=capture, accept=accept, progress=False,
+                                        label=label, _log=log)
+            finally:
+                try:
+                    os.remove(log)
+                except OSError:
+                    pass
 
         ii = {
             'category': self.cmeta['uses_categories']['task'],
@@ -5710,12 +7726,40 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             ii['capture'] = True
             ii['unparsed'] = list(ii['unparsed']) + ['--color', 'never']      # the paths it names, read as they are
 
-        rr = self.cm.access(ii)
+        # The lists go to rclone-to-ssh as files, one entry per line (its whitelist_from / blacklist_from): its inline
+        # form splits every entry at its commas (for --blacklist=a,b,c on a command line), so a path with a comma
+        # ("War with Nature, Russia, etc/...") became three filters - one of them "- Russia", which left out every
+        # file and folder of that name (2026-11-11)
+        lists = []
+        try:
+            for key in ('whitelist', 'blacklist'):
+                if ii[key]:
+                    fd, path = tempfile.mkstemp(prefix=f'cmeta-sync-{key}-', suffix='.txt')
+                    lists.append(path)
+                    with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as f:
+                        f.write(''.join(str(e) + '\n' for e in ii[key]))
+                    ii[key + '_from'], ii[key] = path, []
+            rr = self.cm.access(ii)
+        finally:
+            for path in lists:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
         if self.cm.catch_error(rr): return rr
-        output = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', (rr.get('stdout') or '') + (rr.get('stderr') or ''))
+        logged = ''
+        if _log:                                        # --progress: what rclone said went into its log file
+            try:
+                with open(_log, encoding='utf-8', errors='replace') as f:
+                    logged = f.read()
+            except OSError:
+                pass
+        output = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', logged + (rr.get('stdout') or '') + (rr.get('stderr') or ''))
         if rr.get('returncode', 0) not in accept:
             # the cause from rclone's own words, for the table and the verdict
-            tail = [l.split(' : ', 1)[-1].strip() for l in output.splitlines() if 'ERROR' in l or 'NOTICE' in l]
+            # (not the empty header line of a statistics block, logged at NOTICE with --progress)
+            tail = [l.split(' : ', 1)[-1].strip() for l in output.splitlines()
+                    if ('ERROR' in l or 'NOTICE' in l) and not STATS_START.match(l)]
             tail = [l for l in tail if l and 'Skipped' not in l][-2:]
             r = self.cm.error(f'rclone {command} returned {rr.get("returncode")}' + (': ' + ' | '.join(tail) if tail else ''))
             r['output'] = output

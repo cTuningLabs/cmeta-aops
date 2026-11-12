@@ -88,7 +88,7 @@ def seed(source, destination):
         if destination.exists():
             raise RuntimeError('Docker repository appeared during seeding; refusing to replace it')
         staging.rename(destination)
-        print('Seed complete: {:,} files, {:.1f} MiB.'.format(counts['files'], counts['bytes'] / 2**20), flush=True)
+        print('Seed complete: {:,} files, {:.1f} MB.'.format(counts['files'], counts['bytes'] / 1e6), flush=True)
         return record
     finally:
         lock.unlink()

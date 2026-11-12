@@ -71,6 +71,7 @@ cx host snapshot <instance> [--name=<name>] [--note=<text>]       the instance's
 cx host restore <instance> [--name=<snapshot>]                    the instance back to a snapshot (the last one by default): the container made again from the image, the distribution imported again
 cx host restart <host> [--yes] [--no-wait] [--timeout=600] [--skip_after] [--skip_check] [--check_timeout=300] [--dry_run]   (also: reboot)
 cx host sync [host|selection] [--repos=a,b] [--resync [--resync_mode=newer|path1|path2]] [--unlock] [--dry_run] [--skip_after] [--backup]
+             [--progress] [--transfers=N]   a line every 10 s (files and bytes moved, %, speed, time left); N files at once (4, or the host's sync: transfers)
 cx host push <host> <repo> --dirs=task/x/,tool/y/ [--dry_run] [--delete] [--index-]   then "cx repo reindex <repo>" on the host, so a new artifact is found there
 cx host push <host> <local path> --to=<remote path>      a folder goes under --to, a single file lands AT --to (rclone copyto)
 cx host pull <host> <remote file or folder> [--to=<local folder>] [--files=*.jsonl,steps.txt] [--dry_run]   the other way: host -> here (rclone copy --from_remote of rclone-to-ssh); nothing here is deleted
@@ -79,6 +80,10 @@ cx host backup <host> [--to=<folder>] [--dry_run] [--skip_commands]   what only 
                                       into <its machine artifact>/backup/<host>/<YYYYMMDD-HHMM>/ with backup.yaml
 cx host restore <host> [--source=<backup folder>] [--into=<folder>] [--paths=a,b] [--dry_run] [--yes]   a backup back onto the host (the newest of its own by default,
                                       --source: another host's - a rebuilt VM), then "backup: commands: after_restore"; a production host needs --yes; --into: under a folder (a test)
+cx host archive <host> [--dry_run] [--to=BACKUP1,BACKUP2] [--paths=~,/etc] [--exclude=~/.cache] [--keep=N] [--copy_only]
+                                      the whole host as one dated <host>-<YYYYMMDD-HHMM>.tar.zst on this machine's drives (its "archive:" block),
+                                      a line every 10 s (read of the estimate, speed, time left); --copy_only: the newest one to the drives that were away
+cx host archives [host|wildcard]      the drives attached here and, for every host with an "archive:" block, its archives on each of them and its last runs
 cx host upgrade [host|selection] [--version=0.33.0] [--sync] [--restart [--yes] [--timeout=600]] [--dry_run]
                                       (sync, upgrade and restart probe the host again afterwards: "cx host ls" shows what is there now)
 cx host upgrade <host> [--engine-] --system [--firmware] [--check]   the OS packages (and firmware) too: "cx task run upgrade-os" on the host
@@ -461,6 +466,11 @@ outside the patterns stays there.
 
 A partial repository is never pushed whole: `cx host push <host> <repo>` without `--dirs` takes its patterns.
 
+A file whose **name is longer than the host holds** (255 bytes of UTF-8 on Linux and macOS: a title of 160
+Cyrillic letters is 319 bytes) is refused there; the run that meets it leaves it out of that pair for good (the
+names are kept next to the listings, `cmeta-long-names-<repo>.txt`), the verdict names it, the check does not count
+it as a difference - renamed shorter, it syncs again.
+
 ### A repository of secrets
 
 A repository whose `_cmr.yaml` says `secrets: true` (the `secret` category's identities and keys) is never synced -
@@ -506,6 +516,90 @@ copy in the backup and is made again, empty; then the host's `backup: commands: 
 test of the mechanics on a disposable host), with no sudo and no after commands; `--paths=a,b` restores a part. A
 production host (`ai: production: true`) restores only with `--yes`. Nothing on the host is deleted by a restore:
 what the backup does not hold stays as it is.
+
+## Archive: the whole host on this machine's drives
+
+`cx host backup` keeps what only the host has, small and file by file. `cx host archive <host>` keeps what a full
+restore needs - the home with every cMeta home and site in it, `/etc`, `/var/www`, root's home, the crontabs - as one
+file on the drives of the machine that runs it (USB drives of a laptop, usually two: the first gets the stream, the
+next ones a copy). The host's `archive:` block says what and where:
+
+    archive:
+      paths: ['~', /etc, /var/www, /root, /var/spool/cron]   # these are the defaults; '~' quoted: a bare ~ is null in YAML (read as the home anyway)
+      exclude: [~/.cache]
+      to: [BACKUP1, BACKUP2]     # drive labels: the volume label on Windows, the filesystem label on Linux, the volume name on macOS
+      keep: 1                    # archives kept per drive: 1 = the new one replaces the old one once it is checked
+      every: 7d                  # how often it should run (the /backups page of cmeta-aops-ext2 colours its age)
+      level: 3                   # zstd's level
+
+- **One stream, nothing written on the host.** `sudo tar` reads the paths there (owners as numbers, modes, links;
+  tar and not zip, which keeps none of them; ACLs and extended attributes are not kept) and `zstd -T0` compresses
+  them with all the host's cores. The stream comes over ssh straight into
+  `<drive>/cmeta_backup/<host>/<host>-<YYYYMMDD-HHMM>.tar.zst.part`: the many small files of a home travel as one
+  stream instead of a round trip each, and a host with a full disk can still be archived.
+- **A line every 10 s.** The size is estimated first (`du` of the paths, less the excluded ones); tar's checkpoints
+  say how much it has read, so each line gives the percentage, the speed of the last 30 s and the time left. A drive
+  with less than half the estimate free is refused before anything is sent.
+- **Checked before anything old goes.** The archive is read back to its end (zstd frames and every tar header; a
+  Python before 3.14 has no zstd and checks only that it is not empty: `checked: false`), its entries and bytes
+  counted, and only then renamed from `.part`; a `.json` beside it holds what was read, its size, entries, sha256,
+  tar's warnings and the restore command. Tar's exit 1 (a file changed while it was read - a log, a database) is a
+  warning; 2 is a failure and nothing is kept. Each copy to the next drives is read back and compared by its sha256.
+  Only then are the older archives of that host removed from each drive that holds the new one (`keep`).
+- **A drive that is away** is named; `cx host archive <host> --copy_only` copies the newest archive to it once it is
+  attached.
+- Every run is recorded in this machine's `state::local:host-archives` (`runs.json`): when, how long, how big, the
+  drives, the warnings, the error - what `cx host archives` and the /backups page show.
+- **The tools come from cMeta.** The machine that runs tar sets GNU tar and zstd up through cMeta's tools (`cx task
+  run setup gnu-tar` and `zstd` there: found, else installed - the distribution's package, Homebrew's `gnu-tar` on
+  macOS, whose own tar is bsdtar) and the script gets their paths; every run names them. A host without cMeta, or
+  with an older cmeta-aops, takes them from its PATH, with a warning. The host needs passwordless sudo; this machine
+  needs `ssh` and its drives.
+- **A machine that archives itself** (`on_host: true` in the block: a fleet machine with its own backup drive): the
+  command runs there - started here, its lines come back here - and writes onto that machine's drives, its runs
+  recorded there (`cx host archives <host>` asks it). The /backups page runs one job per writing machine at a time.
+- **Windows: the Python archiver.** A Windows machine that archives itself has no GNU tar: Python walks its paths and
+  writes the archive with `tarfile` (zstd of Python 3.14, else the zstd tool of cMeta). The names are the paths
+  without the colon of their drive (`C/Users/me/...`); junctions are not followed; OneDrive's online-only files stay
+  where they are (reading one would download it); a file in use - the user's registry hive - is a warning (a shadow
+  copy would need administrator rights). Its increments keep the files whose size or time changed since the chain's
+  snapshot (`<host>-<chain>.snar`, its own: gzip JSON of every name with its size and time) and list what was removed
+  in `.cmeta-archive/deleted.txt`, the increment's first member.
+- **Incremental** (`incremental: true` in the block, or `--incremental=yes` for one run; off by default): GNU tar's
+  `--listed-incremental`. A full archive starts a CHAIN (`<host>-<when>.tar.zst`); each later run adds an increment
+  (`<host>-<chain>+<when>.tar.zst`) with only what changed since the chain's newest part, deletions recorded. tar's
+  snapshot file (`<host>-<chain>.snar`) is kept with the chain on the drive: sent to the host for the next
+  increment (in a private folder under /tmp - Linux's protected_regular forbids even root to open another user's
+  file in /tmp itself), brought back updated once the increment is checked. A new full archive after `full_every`
+  (30d by default), with `--full`, or when the newest archive has no snapshot file. `keep` counts chains, removed
+  whole (full, increments, snapshot). A drive that was away is completed first - every part of the newest chain it
+  lacks, in order. An increment's progress line says what it has read so far (no share of a whole).
+- A dry run says what the run would make ("a full archive: the first of a new chain", "increment 3 of the chain of
+  ...") and records its estimate; the next run expects the host's own last ratio and speed (else half the read
+  size, and the last speed of another host as a rough guide) - `cx host archives` and the /backups page show it.
+- The copy to the next drive is read back to its end with a line every 10 s too (it takes as long as the copy).
+
+**Restore** - `cx host restore <host> --archive`: the chain's parts in order (its full archive, then every increment,
+each with `--listed-incremental=/dev/null` so that what was deleted between them is deleted again), streamed from a
+drive here into the host's `zstd | tar` - both set up by cMeta there - with a line every 10 s:
+
+    cx host restore my-vm --archive --dry_run                          # the parts, where they would go
+    cx host restore my-vm --archive --into=cmeta-restore/look          # under the host user's home: a look
+    cx host restore my-vm --archive --paths=~/work --into=cmeta-restore/work   # only that folder
+    cx host restore my-vm --archive=my-vm-20261110-0800+20261112-0800.tar.zst --into=/tmp/r   # the chain up to that part
+    cx host restore my-vm --archive --until=20261111 --yes             # in place, as it was on that day
+
+Into a folder, tar runs as the host's user: the files - and the whole folder - are that user's (modes kept). In place
+(`/`) only with `--yes`, through sudo: owners and modes as they were, and the increments' deletions applied. A machine
+that archives itself restores from its own drives (the command runs there); a Windows one through the untar task.
+The /backups page has a Restore button per host: the part, a folder or in place (behind "I am sure"), some paths, a
+dry run first.
+
+By hand, on any machine that holds the parts (zstd and tar set up by cMeta; the Python archiver's parts by Python):
+
+    cx task run untar <host>-<chain>+<when>.tar.zst --chain --directory=restore            # the chain up to that part
+    cx task run untar <host>-<chain>.tar.zst --chain --until=20261120 --directory=restore   # up to a day
+    for a in <host>-<chain>.tar.zst <host>-<chain>+*.tar.zst; do zstd -dc $a | ssh <host> "sudo tar -xpf - --listed-incremental=/dev/null --numeric-owner -C /"; done
 
 ## Drivers
 

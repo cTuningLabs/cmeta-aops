@@ -2,6 +2,114 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (after 0.66.0)
+- **`run-codex` (and so `cxai` with codex): a stale daemon record no longer stops codex without a word.** codex
+  0.166 keeps a record of its background daemon (`~/.codex/app-server-daemon/daemon.pid`, `daemon-updater.pid`); one
+  that outlived its process - a restart, a crash - names a number the OS may have given to another process, and on
+  Windows to a system service: codex cannot open it and stops at once, "failed to open daemon process: Access is
+  denied (os error 5)". Before every run, a record that names no running codex (gone, not openable, another program,
+  or started after the record) is moved aside as `<name>.stale-<time>` and the run says so; codex starts its daemon
+  anew. A codex that still ends within seconds with an error gets a hint of the usual causes and what to do (the
+  daemon, `-- --no-daemon`, a login, a session that no longer exists). Durations read `7.4s`, `10m32s`, `2h34m20s`.
+- **Durations for a person**: `cx host archive`, `cx host sync` (the table of repositories) and the named syncs'
+  verdicts say `7.4s`, `45s`, `10m32s`, `2h34m20s` instead of seconds.
+- **Sizes 1000-based, the same on every system**: B, kB, MB, GB, TB (1000 bytes to the kB) in `cx host archive`,
+  `archives`, `restore --archive` and the drives' free space, `cx host sync` and the named syncs - rclone's own
+  1024-based figures (MiB, GiB/s) converted in their progress lines and verdicts -, `cx task run untar`, the tmp-disk
+  task and the docker seed. A 4 TB drive reads 4.0 TB, as on its box. (RAM sizes stay as every system shows them.)
+- **`cx host archive`: GNU tar and zstd set up by cMeta.** The machine that runs tar sets them up through cMeta's own
+  tools - `cx task run setup gnu-tar` and `zstd` there (found, else installed: the distribution's package, Homebrew) -
+  and the archive script gets their paths; no tool is looked for by hand any more. A host whose cMeta lacks one of
+  them (no cMeta there, or a cmeta-aops older than this one) takes it from its PATH, with a warning; neither: the run
+  stops and says how to get it. Every run and dry run names the tools it uses. The archive check reads zstd through
+  Python 3.14, else through the zstd tool of cMeta.
+- **New tool `gnu-tar`**: GNU tar alone (its version line says "GNU tar"; macOS's own tar is bsdtar, without
+  `--listed-incremental`, `--checkpoint` or `--anchored`) - Linux's `tar`, Homebrew's `gtar`, Git for Windows' tar;
+  installed by the distribution or by Homebrew.
+- **A Windows machine archives itself: the Python archiver.** Windows has no GNU tar: a host that is this machine
+  and runs Windows walks its paths with Python and writes the archive with `tarfile`, compressed by Python 3.14's zstd
+  (else the zstd tool of cMeta) - a progress line every 10 s with the files done of those found. The names are the
+  paths without the colon of their drive (`C/Users/me/...`); junctions are not followed; OneDrive's online-only files
+  are left where they are (reading one would download it); a file in use (the user's registry hive) is a warning. An
+  increment keeps the files whose size or time changed since the chain's snapshot (`<host>-<chain>.snar`: gzip JSON of
+  every name with its size and time) and lists what was removed since in `.cmeta-archive/deleted.txt`, its first
+  member. The chain, the copies to the next drives and the checks are those of the other hosts.
+- **`cx host restore <host> --archive`: back from the archives of `cx host archive`.** The chain's parts in order - the
+  full archive, then each increment, what each deleted deleted (GNU tar's `--listed-incremental=/dev/null`) - from a
+  drive here into the host's `zstd | tar`, both set up by cMeta there, a line every 10 s. `--archive=<part>`: its chain
+  up to that part; `--until=YYYYMMDD[-HHMM]`: as it was then; `--paths=~/work,/etc/nginx`: only these;
+  `--drive=<label>`; `--dry_run`: the parts and where they would go. `--into=<folder>` (under the host user's home
+  unless it starts with /): tar as that user - the files, and the whole folder, are the user's (a look, a file to take
+  back). In place only with `--yes`: through sudo, owners and modes as they were. A machine that archives itself
+  restores from its own drives (the command runs there); a Windows one through `cx task run untar --chain`.
+- **`cx task run untar`: `.tar.zst` and the chains of `cx host archive`.** zstd and tar set up by cMeta;
+  `--chain` restores the full archive of the part's chain, then each increment up to that part (`--until=<time>`: up to
+  the newest part made at or before it) - GNU tar's deletions through `--listed-incremental=/dev/null` (GNU tar is set
+  up for a chain), the Python archiver's parts by Python with their `deleted.txt` applied; `--paths` (names as in the
+  archive), `--sudo` (owners and modes, system folders), `--in_place` (the Python archiver's names back to their
+  drives). Git for Windows' GNU tar reads a backslash as an escape: it gets forward slashes.
+- **`cx host push` into a repository the host bisyncs: a warning.** The pushed files are new on both sides for the
+  next bisync - equal there, so no conflict - as long as neither side changes them again before it; a file pushed and
+  then edited again became `.conflict1`/`.conflict2` on both sides, its name gone (a category lost its `_cmeta.yaml`
+  so, and with it its artifacts dropped out of both indexes until it was put back). The warning says to sync first.
+- **`cx host sync --progress` and `cx task run sync <name> --progress`: a line every 10 s while rclone runs** - the files
+  and the bytes moved of those to move, the percentage, the speed and the time left, or, while the two sides are still
+  listed, how many files are listed and compared - and the errors as they come. rclone's statistics are read from its
+  log; the host sync still counts what moved from the same log for its verdict. `--live` of the named syncs (every
+  line) wins over `--progress`.
+- **`--transfers=N`: how many files are copied at once** (rclone's `--transfers`, and as many checkers, at least 4), for
+  one run of `cx host sync` or of a named sync; 4 stays the default, a host may declare its own `sync: transfers:`.
+  8 or 16 help with many small files, where each file costs a few round trips.
+- **`cx host sync`: a file whose name the host cannot hold no longer stops the repository.** A name longer than 255
+  bytes of UTF-8 (the limit of ext4, APFS, btrfs; a Russian title of 160 letters is 319 bytes) is refused through sftp
+  ("Bad message") and stopped the whole run - read as a file another process held, retried six times, then FAILED.
+  Now it is told apart, left out of that pair for good (remembered beside its listings), named in the verdict
+  ("LEFT OUT ... rename it shorter to sync it"), and not counted as a difference by the check; renamed shorter, it
+  syncs again.
+- **`cx host sync`, push, pull: a path with a comma in a filter stays one filter.** The host category handed its lists
+  (the declared blacklist, a partial repository's selection, the files a run leaves out) to rclone-to-ssh inline,
+  where every entry is split at its commas (for `--blacklist=a,b,c` on a command line): a folder "War with Nature,
+  Russia, etc" became three filters, one of them `- Russia`, which left out every file and folder of that name. They
+  now go as files, one entry per line (`whitelist_from` / `blacklist_from` of the task), never split.
+- **A named sync ends with its verdict, and a conflict is a failure that stops the sequence.** `cx task run sync
+  <name>` now prints STATUS: SUCCESS or STATUS: CONFLICTS in large letters (as `cx host sync` does) with what the
+  run did - files moved, bytes, deleted (put aside in the sync backups), errors - read from its rclone log, and keeps
+  it in the pair's `last-result.json` (`summary`, `verdict`). A file changed on both sides since the last run is a
+  **conflict**: bisync keeps both as `<file>.conflict1` (the first side's) and `<file>.conflict2` (the second's) and
+  the name itself disappears on both sides - a page served from such a file breaks. Until now such a run was reported
+  as a success; now it is reported as CONFLICTS with the file names and the two sides, the task returns 1, and a
+  sequence of syncs (`--names`, a chain) stops there instead of carrying the renamed copies to the next pair - a
+  production site. `--dry_run` says "WOULD CONFLICT" with the names before anything is done. The fix is said too: on
+  one side copy the right version back under its name and delete the conflict copies, then run the sync again.
+- **A named sync reindexes the cMeta repositories it changed, on both sides.** An artifact that arrives by a sync was
+  unknown to the index of the home that received it: a page that then asked for it by `get` failed with "artifact
+  already exists" (the folder was there, the index said no), and a deleted one was still listed. After a run that
+  changed something, `cx task run sync` now reindexes, on each side that can have changed, the repositories the run
+  touched: a side that is a home's `repos` folder (`repos:` in the definition) gives the listed repositories that
+  changed, a side that is one repository of a home (`<home>/repos/<repo>`, the home known by its `repos.json`) gives
+  that repository - this home in this process, another home on this machine by the same engine with its
+  `CMETA_HOME`, a home on a host through `cx host run` (the home's own `.venv` cx, else `cx`). A reindex is
+  incremental (a second or two when little changed); a failure is a warning, never the sync's. `reindex: false` in a
+  definition turns it off; the result keeps what was reindexed (`reindexed`).
+- **`cx task run`: a task that fails keeps what it returned beside its error** (the task category, APIv2 and v1): a
+  caller of a sequence that stopped at a conflict reads the steps that ran and the conflicting files, not only the
+  message. Callers that read `return` and `error` see no change.
+- **`cx host archive <host>`: the whole host as one dated file on this machine's backup drives** - for a full
+  restore of a server: its home with every cMeta home and site, `/etc`, `/var/www`, root's home, the crontabs (the
+  host's `archive:` block says what, where and how many to keep). `sudo tar | zstd` runs on the host and the stream
+  comes over ssh straight into `<drive>/cmeta_backup/<host>/<host>-<YYYYMMDD-HHMM>.tar.zst` - one stream instead of
+  a round trip per file, nothing written on the host. A line every 10 s gives what was read of the estimated size,
+  the speed and the time left. The archive is read back to its end and described in a `.json` beside it (entries,
+  sizes, sha256, tar's warnings, the restore command), copied to the next drives (checked by the sha256), and only
+  then are the older archives of that host removed (`keep: 1` by default). `--dry_run` gives the sizes and the
+  drives; `--copy_only` brings a drive that was away up to date. `cx host archives` lists the drives here and every
+  host's archives on them, with the last runs. **Incremental** archives (`incremental: true` or `--incremental=yes`,
+  off by default): GNU tar's `--listed-incremental` - a full archive starts a chain, each later run adds only what
+  changed (deletions recorded), the snapshot file kept with the chain on the drive; a new full archive after
+  `full_every` (30d) or `--full`; `keep` counts chains; a drive that was away gets every part of the chain it lacks.
+  Every estimate (a dry run's too) is kept for the page with what to expect - the archive's size and time from the
+  host's own last run; the copy to the next drive is read back with a line every 10 s.
+
 ## 0.66.0
 - **The page of the targets is "Supported compute"** (category `cserver.cmeta.targets`, `/cmeta.targets`; it was
   "cMeta programs everywhere"): its title, its card and its `targets.yaml`. It got the controls of the other pages: a
