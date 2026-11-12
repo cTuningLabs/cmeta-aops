@@ -645,6 +645,43 @@ class CTask(InitCTask):
             raise ValueError('rclone failed (exit ' + str(r['returncode']) + '). See ' + str(log))
         if remote_art and not dry:
             self.mark_backup(ctx, setup['path'], env, local_art, remote_art, run_id)
+        # where this run's backups went on each side, for the folders it left behind (leftovers)
+        return dict(local_art=local_art, remote_art=remote_art, rclone=setup['path'], env=env)
+
+    def leftovers(self, ctx, plan, workdir, run_id, moved, text):
+        """After a two-way run that was not a first one: the folders it left behind - emptied of every file it carries,
+        held on a side by files its filters leave out (SQLite side files, a lock ...), which rclone neither lists nor
+        deletes - moved aside, whole, into the run's folder of each side's sync-backup artifact, as cx host sync does
+        (the host category's sync_leftovers; 2026-11-12: a deleted folder stayed on the other side). moved: where the run's
+        backups went (transfer). A failure is a warning, never the sync's. -> the notes for the verdict."""
+        # each side named as cx host sync names them: this machine, or the host (the source / the destination when
+        # both are here)
+        here_only = not plan['source']['remote'] and not plan['destination']['remote']
+        sides = []
+        for word, side in (('the source', plan['source']), ('the destination', plan['destination'])):
+            if side['remote']:
+                sides.append({'where': str(side.get('host')).split('::')[-1].split(',')[0], 'host': side.get('host'),
+                              'root': side['path'][len(':sftp:'):],
+                              'dest': posixpath.join(moved['remote_art'], run_id) if moved.get('remote_art') else ''})
+            else:
+                sides.append({'where': f'this machine ({word})' if here_only else 'this machine', 'host': 'local',
+                              'root': side['path'], 'dest': str(Path(moved['local_art']['path']) / run_id)})
+        try:
+            r = self.cm.access({'category': self.cmeta['uses_categories']['host'], 'command': 'sync_leftovers',
+                                'workdir': str(workdir), 'sides': sides, 'filters': list(plan['filters']),
+                                'deleted': 'Queue delete' in text,
+                                'partial': any(str(f).startswith('+') for f in plan['filters']),
+                                'con': bool(ctx['control'].get('con')), 'quiet': True})
+        except Exception as exc:                # a courtesy after a good run: never the sync's failure
+            r = {'return': 1, 'error': str(exc)}
+        if r.get('return', 0):
+            if ctx['control'].get('con'):
+                print('cMeta warning: the folders this run left behind were not looked at: ' + str(r.get('error')), flush=True)
+            return []
+        remote = next((str(n) for n, s in enumerate((plan['source'], plan['destination']), 1) if s['remote']), None)
+        if remote and (r.get('moved') or {}).get(remote) and moved.get('remote_art'):
+            self.mark_backup(ctx, moved['rclone'], moved['env'], moved['local_art'], moved['remote_art'], run_id)
+        return list(r.get('notes') or [])
 
     def mark_backup(self, ctx, rclone, env, local_art, remote_art, run_id):
         """The remote copy of the backup artifact gets the local one's _cmeta once its folder exists there (a run
@@ -811,7 +848,7 @@ class CTask(InitCTask):
                     self.transfer(ctx, preview_plan, workdir, log, True, False, run_id,
                                   overwrite_all=True, live=live)
                 baseline_plan = dict(plan, resync_mode='path1') if bootstrap else plan
-                self.transfer(ctx, baseline_plan, workdir, log, initial, False, run_id, live=live)
+                moved = self.transfer(ctx, baseline_plan, workdir, log, initial, False, run_id, live=live)
             except Exception as exc:
                 self.write(root / 'last-result.json', dict(status='failed', error=str(exc), log=str(log)))
                 raise
@@ -820,9 +857,14 @@ class CTask(InitCTask):
             # success, however well rclone did: the names are gone on both sides until someone puts one back
             text = log.read_text(encoding='utf-8', errors='replace') if log.exists() else ''
             summary = run_summary(text, (plan['source']['path'], plan['destination']['path']))
+            # the folders the run left behind on a side, held there by files the filters leave out: moved aside
+            left = (self.leftovers(ctx, plan, workdir, run_id, moved, text)
+                    if plan['mode'] == 'bisync' and not initial and moved else [])
             elapsed = round(time.monotonic() - started, 3)
             result = dict(status='conflicts' if summary['conflicts'] else 'ok', state=str(root), log=str(log),
                           initial=initial, elapsed=elapsed, summary=summary)
+            if left:
+                result['leftovers'] = left
             # the homes learn what came: the changed repositories reindexed on each side (a failure is a warning)
             targets = reindex_targets(plan, changed_tops(text))
             if targets:
@@ -831,6 +873,8 @@ class CTask(InitCTask):
                     + f', {summary["deleted"]} deleted (put aside in the sync backups), {duration_text(elapsed)}')
             if summary['errors']:
                 text += f' | errors: {summary["errors"]} - see the run log {log}'
+            if left:
+                text += ' | ' + '; '.join(left)
             if summary['conflicts']:
                 result['error'] = conflicts_text(summary, self._sides(plan))
                 text += ' | ' + result['error']

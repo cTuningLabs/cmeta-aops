@@ -27,3 +27,4 @@ defaults:
     - '- **/.cmeta-sync*'
     - '- **/.cmeta-sync-backups/**'
     - '- **/result/sync-backup--*/**'
+    - '- **/result/cserver-browse-files/**'     # the file index of /browse: a machine's own paths, rebuilt on each machine

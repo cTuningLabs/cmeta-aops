@@ -116,7 +116,9 @@ DEFAULT_SHELL = 'bash -l'        # a login shell, so ~/.local/bin (cx, uv) and b
 # -journal files and a maintenance lock a running harness holds: unreadable while it runs, and transient - the
 # .sqlite file itself travels; a Codex lock aborted a bisync on 2026-10-30)
 DEFAULT_BLACKLIST = ['tmp*/', '__pycache__/', '.venv/', '.git/', '.claude/', '__symlinks/',
-                     '*.sqlite-wal', '*.sqlite-shm', '*.sqlite-journal', '*.sqlite-maintenance.lock']
+                     '*.sqlite-wal', '*.sqlite-shm', '*.sqlite-journal', '*.sqlite-maintenance.lock',
+                     # the file index of /browse (cMeta 0.41+): a machine's own paths, rebuilt on each machine, never carried
+                     'result/cserver-browse-files/']
 DEFAULT_RCLONE_FLAGS = ['--transfers=4', '--checkers=4']
 
 # Files copied at once by a sync (rclone --transfers, and as many checkers): 4 by default, the host's "sync: transfers"
@@ -438,6 +440,219 @@ class _FollowRclone:
                             print('    ' + line, flush=True)
         except OSError:
             pass
+
+
+# A folder deleted on one side of a two-way sync stayed on the other when it still held files the sync leaves out on
+# purpose - its blacklist: SQLite side files, a lock, __pycache__/, .venv/ ... - which rclone neither lists nor deletes,
+# and it removes a folder only once it is empty (2026-11-12: a work/2026 deleted on one machine stayed on the other,
+# held by five SQLite side files of Codex). After a run, the folders it emptied of every file it carries are moved
+# aside, with what they still hold, into the run's folder of the sync-backup artifact (_sync_leftovers); a folder with
+# a file changed in the last LEFTOVERS_QUIET seconds is looked at again by the next run (kept beside the listings,
+# LEFTOVERS_STATE).
+LEFTOVERS_QUIET = 600
+LEFTOVERS_STATE = '.leftovers.json'
+LEFTOVERS_MARK = 'CMETA-SYNC-LEFTOVERS '
+
+# A name in rclone's bisync listings is quoted as Go quotes it (strconv.Quote): \" \\, and \u with four hex
+# digits for a character it does not print - a no-break space in a folder's name
+_GO_ESCAPE = re.compile(r'\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|[0-7]{3}|.)')
+_GO_SIMPLE = {'a': '\a', 'b': '\b', 'f': '\f', 'n': '\n', 'r': '\r', 't': '\t', 'v': '\v'}
+
+
+def _go_unquote(text):
+    """The inside of a Go-quoted name (a line of rclone's bisync listings) back to the name."""
+    if '\\' not in text:
+        return text
+
+    def one(m):
+        e = m.group(1)
+        if len(e) > 1 and e[0] in 'xuU':
+            return chr(int(e[1:], 16))
+        if len(e) == 3:
+            return chr(int(e, 8))
+        return _GO_SIMPLE.get(e, e)
+
+    return _GO_ESCAPE.sub(one, text)
+
+
+def _sync_leftovers(p):
+    """
+    One side of a two-way sync after a run - this machine, or the host, whose Python runs this function's own source
+    (so it imports what it needs and uses nothing else of this file). p: 'root' (the repository there), 'dirs' (the
+    folders the run emptied of every file it carries, relative, "/"), 'patterns' (the sync's blacklist, rclone filter
+    globs), 'ignore_case' (rclone's --ignore-case of a partial repository), 'quiet' (seconds), 'dest' (where such a
+    folder goes there: the run's folder of the sync-backup artifact), 'dry' (only say).
+
+    A folder still there that holds only files the blacklist leaves out goes whole under dest (one rename; to another
+    drive a copy, then the folder removed) - into the same folder there, file by file, when the run's backup holds it
+    already (what the run deleted from it); with no file at all it is removed. It stays when it holds a file the
+    blacklist does not leave out (outside a partial selection, or new since the run): 'kept' / 'carried'; when it holds
+    a cMeta artifact or repository the sync leaves out (a named sync's own state and backups): 'kept' / 'artifact';
+    when one of its files changed in the last 'quiet' seconds (a program may be at work there): 'kept' / 'recent' and
+    'pending', for the next run; when it cannot be read whole or moved: 'kept' / 'error'.
+    -> {'moved': [{'dir', 'files', 'bytes', 'sample', 'to'}], 'kept': [{'dir', 'why', 'file'}], 'pending': [...]}
+    """
+    import errno
+    import os
+    import re
+    import shutil
+    import time
+
+    flags = re.IGNORECASE if p.get('ignore_case') else 0
+
+    def glob_re(pattern):
+        # rclone's filter glob (fs/filter/glob.go): a "/" in front anchors it at the root, else it matches whole path
+        # elements at the end of a path; * is [^/]*, ** is .*, ? is [^/], [...] a class, {a,b} alternatives, \c a c
+        anchored = pattern.startswith('/')
+        s, i, out, braces = pattern[1:] if anchored else pattern, 0, [], False
+        while i < len(s):
+            c = s[i]
+            if c == '\\' and i + 1 < len(s):
+                out.append(re.escape(s[i + 1]))
+                i += 2
+                continue
+            if c == '*':
+                two = s[i:i + 2] == '**'
+                out.append('.*' if two else '[^/]*')
+                i += 2 if two else 1
+                continue
+            if c == '[':
+                j = s.find(']', i + 1)
+                if j < 0:
+                    raise ValueError(pattern)
+                body = s[i + 1:j]
+                out.append('[' + ('^' + body[1:] if body.startswith('!') else body) + ']')
+                i = j + 1
+                continue
+            if c == '?':
+                out.append('[^/]')
+            elif c == '{' and not braces:
+                braces = True
+                out.append('(?:')
+            elif c == '}' and braces:
+                braces = False
+                out.append(')')
+            elif c == ',' and braces:
+                out.append('|')
+            else:
+                out.append(re.escape(c))
+            i += 1
+        return re.compile(('^' if anchored else '(?:^|/)') + ''.join(out) + '$', flags)
+
+    def move(src, dst):
+        # one rename; to another drive a copy, then the original removed (a folder whole, never half of it)
+        try:
+            os.rename(src, dst)
+        except OSError as e:
+            if e.errno != errno.EXDEV:
+                raise
+            if os.path.islink(src):
+                os.symlink(os.readlink(src), dst)
+                os.remove(src)
+            elif os.path.isdir(src):
+                shutil.copytree(src, dst, symlinks=True)
+                shutil.rmtree(src)
+            else:
+                shutil.copy2(src, dst)
+                os.remove(src)
+
+    rules = []
+    for x in p.get('patterns') or []:
+        x = str(x).strip()
+        if x and not x.startswith('#'):
+            try:
+                rules.append(glob_re(x + '**' if x.endswith('/') else x))
+            except (ValueError, re.error):
+                pass                        # a pattern not understood leaves nothing out: such a folder stays
+
+    root = os.path.expanduser(str(p['root']))
+    since = time.time()                     # the files' times are times of day: one after "since" is a recent change
+    since -= float(p.get('quiet', 600))
+    out = {'moved': [], 'kept': [], 'pending': []}
+    done = []
+    for d in sorted(set(p.get('dirs') or []), key=lambda x: (x.count('/'), x)):
+        parts = [x for x in str(d).split('/') if x]
+        if not parts or '..' in parts or any(d == x or d.startswith(x + '/') for x in done):
+            continue
+        full = os.path.join(root, *parts)
+        if os.path.islink(full) or not os.path.isdir(full):
+            continue
+        files, size, carried, recent, unread = [], 0, None, None, []
+        for base, subdirs, names in os.walk(full, onerror=unread.append):
+            rel = os.path.relpath(base, root).replace(os.sep, '/')
+            for n in names + [x for x in subdirs if os.path.islink(os.path.join(base, x))]:
+                path, name = os.path.join(base, n), rel + '/' + n
+                try:
+                    st = os.lstat(path)
+                except OSError as e:
+                    unread.append(e)
+                    continue
+                link = os.path.islink(path)         # a link is never carried, and holds nothing of its own
+                if not link and not any(r.search(name) for r in rules):
+                    carried = ('carried', name)
+                    break
+                if not link and n in ('_cmeta.yaml', '_cmeta.json', '_cmr.yaml', '_cmr.json'):
+                    # an artifact or a repository the sync leaves out on purpose (a named sync's own state, its
+                    # backups): this side's own, never a leftover
+                    carried = ('artifact', name)
+                    break
+                files.append(name)
+                size += 0 if link else st.st_size
+                if st.st_mtime > since and not recent:
+                    recent = name
+            if carried:
+                break
+        if carried:                         # a folder inside it may still go (the artifact of a partial selection)
+            out['kept'].append({'dir': d, 'why': carried[0], 'file': carried[1]})
+            continue
+        if unread or recent:                # it stays whole, the folders inside it with it
+            out['kept'].append({'dir': d, 'why': 'error', 'file': str(unread[0])} if unread else
+                               {'dir': d, 'why': 'recent', 'file': recent})
+            if not unread:
+                out['pending'].append(d)
+            done.append(d)
+            continue
+        sample = []
+        for f in files:
+            b = f.rsplit('/', 1)[-1]
+            if b not in sample:
+                sample.append(b)
+        item = {'dir': d, 'files': len(files), 'bytes': size, 'sample': sample[:3], 'to': ''}
+        if not p.get('dry'):
+            try:
+                if not files:
+                    shutil.rmtree(full)
+                elif not p.get('dest'):
+                    raise OSError('no folder to move it to')
+                else:
+                    to = os.path.join(os.path.expanduser(str(p['dest'])), *parts)
+                    if os.path.isdir(to) and not os.path.islink(to):
+                        # the run's backup holds this folder already (what the run deleted from it): the files left join
+                        # it one by one, a name taken there with a suffix; then the folders, empty now, go
+                        for base, subdirs, names in os.walk(full):
+                            there = os.path.normpath(os.path.join(to, os.path.relpath(base, full)))
+                            os.makedirs(there, exist_ok=True)
+                            for n in names + [x for x in subdirs if os.path.islink(os.path.join(base, x))]:
+                                target = os.path.join(there, n)
+                                if os.path.lexists(target):
+                                    target += '.' + time.strftime('%H%M%S')
+                                move(os.path.join(base, n), target)
+                        for base, subdirs, names in os.walk(full, topdown=False):
+                            os.rmdir(base)          # a file come meanwhile stops it: the folder stays, said
+                    else:
+                        if os.path.lexists(to):
+                            to += '.' + time.strftime('%H%M%S')
+                        os.makedirs(os.path.dirname(to), exist_ok=True)
+                        move(full, to)
+                    item['to'] = to
+            except OSError as e:
+                out['kept'].append({'dir': d, 'why': 'error', 'file': str(e)})
+                done.append(d)
+                continue
+        out['moved'].append(item)
+        done.append(d)
+    return out
+
 
 # A partial repository (a sync entry with "artifacts:"): only the artifacts its cRef patterns select travel. The
 # rclone rules they give are kept beside the bisync listings (a bisync whose rules changed needs --resync), and
@@ -1848,6 +2063,7 @@ class Category(InitCategory):
                         if r2.get('return', 0) == 0:
                             again = self._moved_text(r2.get('moved') or {})
                             if again != 'nothing to move': result += f' + {again}'
+                            if r2.get('leftovers'): result += ' (' + '; '.join(r2['leftovers']) + ')'
                             both_sides += [b for b in (r2.get('both_sides') or []) if b not in both_sides]
                             for s in r2.get('skipped') or []:
                                 if s not in skipped:
@@ -4815,6 +5031,44 @@ class Category(InitCategory):
         return dict(r, host_uid=h['uid'], host_alias=h['alias'],
                     repos=self._sync_repos_path(h, h['desc'].get('sync') or {})[0])
 
+    def sync_leftovers_(self, ctx, workdir=None, sides=None, filters=None, deleted=None, partial=False, con=False,
+                        verbose=False):
+        """
+        For the named syncs (task::sync), what cx host sync does after its two-way runs: the folders a run left behind -
+        emptied of every file it carries, held on a side by files its filters leave out (SQLite side files, a lock ...)
+        - moved aside on that side, whole; a folder whose files changed lately is looked at again by the next run.
+
+        workdir: the folder of the pair's rclone listings; sides: [Path1's, Path2's], each {'where' (its name for a
+        person), 'host' (a host alias, or none: this machine), 'root' (the synced folder there), 'dest' (where its
+        folders go there)}; filters: the run's rclone rules - the "-" ones before any "+" are what it leaves out;
+        deleted: whether the run deleted anything (rclone queued a delete); partial: a side holds more than the rules
+        select. -> {'return': 0, 'notes': [...], 'moved': {'1': bool, '2': bool}}
+        """
+        found = self._bisync_listings(None, None, workdir=str(workdir)) if workdir else None
+        if not found:
+            return {'return': 0, 'notes': [], 'moved': {}}
+        patterns = []
+        for rule in filters or []:
+            sign, _, pattern = str(rule).strip().partition(' ')
+            if sign == '+':
+                break
+            if sign == '-' and pattern.strip() not in ('', '**'):
+                patterns.append(pattern.strip())
+        resolved = {}
+        for i, side in enumerate(list(sides or [])[:2], 1):
+            h = None
+            if str(side.get('host') or 'local') != 'local':
+                r = self._select(ctx, str(side['host']).split('::')[-1])
+                if r.get('return', 0) > 0 or not r.get('hosts'):
+                    return {'return': 0, 'notes': [f'the folders this run emptied were not looked at on {side.get("where")}: '
+                                                   f'no host {side["host"]}'], 'moved': {}}
+                h = r['hosts'][0]
+            resolved[i] = dict(side, host=h)
+        if len(resolved) != 2:
+            return self.cm.error('sync_leftovers needs the two sides of the pair')
+        notes, went = self._leftovers_both(ctx, found, resolved, patterns, False, deleted, bool(partial), con, verbose)
+        return {'return': 0, 'notes': notes, 'moved': {str(k): v for k, v in went.items()}}
+
     def show_(
         self,
         ctx,
@@ -6896,6 +7150,16 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                          workdir=self._bisync_workdir(h, entry), unlock=unlock, capture=capture, progress=progress,
                          label=name)
         if r['return'] > 0: return r
+        if not dry_run and not resync:
+            # the folders this run emptied that stay on a side with files the sync leaves out: moved aside there; a
+            # captured run without rclone's "Queue delete" deleted nothing, so only the folders left last time are seen
+            said = r.get('output') if capture else None
+            try:
+                r['leftovers'] = self._sync_leftovers_after(ctx, h, name, entry, rules, dirs,
+                                                            None if said is None else 'Queue delete' in said, con, verbose)
+            except Exception as e:              # a courtesy after a good run: never the sync's failure
+                if con: print(f'    WARNING: the folders this run left behind were not looked at: {e}')
+                r['leftovers'] = [f'the folders this run left behind were not looked at: {e}']
         if dirs and not dry_run:
             self._backup_mark_remote(ctx, h, dirs, con, verbose)
         if dry_run: return r
@@ -6910,12 +7174,20 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         self._index_after_sync(ctx, h, name, entry, method, con, verbose, on_host=False)
         return r
 
-    def _backup_dirs(self, h, name, entry):
+    @staticmethod
+    def _backup_remote(name, entry, run_id):
+        """The host's side of a run's backup: (this machine's name there, the artifact sync-backup--<repository> of the
+        host's local repository, the run's folder in it - <this machine>/<run id>)."""
+        here = re.sub(r'[^A-Za-z0-9_.-]', '-', socket.gethostname()).strip('-.') or 'orchestrator'
+        artifact = '/'.join([entry['remote'].rstrip('/').rsplit('/', 1)[0], 'local', 'result', f'sync-backup--{name}'])
+        return here, artifact, '/'.join([artifact, here, run_id])
+
+    def _backup_dirs(self, h, name, entry, run_id=None):
         """
         Where a --backup run keeps what it overwrites or deletes: the result artifact sync-backup--<repository> of
         this machine's local repository (made now, under <host alias>/<run id>/) and the same artifact of the host's
         local repository (under <this machine>/<run id>/): {'artifact', 'run_id', 'here', 'local', 'remote',
-        'remote_artifact', 'cmeta_file'}.
+        'remote_artifact', 'cmeta_file'}. run_id: of a run that put files there already (the folders it left behind).
         """
         alias = f'sync-backup--{name}'
         r = self.cm.access({'category': self.cmeta['uses_categories'].get('result', 'result,6567e4df4d04488a'), 'command': 'get',
@@ -6923,12 +7195,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                             'con': False})
         if r['return'] > 0: return r
         path = r['artifact']['path']
-        run_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-        here = re.sub(r'[^A-Za-z0-9_.-]', '-', socket.gethostname()).strip('-.') or 'orchestrator'
-        remote_artifact = '/'.join([entry['remote'].rstrip('/').rsplit('/', 1)[0], 'local', 'result', alias])
+        run_id = run_id or datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+        here, remote_artifact, remote_run = self._backup_remote(name, entry, run_id)
         cmeta_file = next((os.path.join(path, n) for n in ('_cmeta.yaml', '_cmeta.json') if os.path.isfile(os.path.join(path, n))), '')
         return {'return': 0, 'artifact': alias, 'run_id': run_id, 'here': here, 'local': os.path.join(path, h['alias'], run_id),
-                'remote': '/'.join([remote_artifact, here, run_id]), 'remote_artifact': remote_artifact, 'cmeta_file': cmeta_file}
+                'remote': remote_run, 'remote_artifact': remote_artifact, 'cmeta_file': cmeta_file}
 
     def _backup_mark_remote(self, ctx, h, dirs, con, verbose):
         """
@@ -6961,7 +7232,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         first sync, a resync).
         """
         workdir = self._bisync_workdir(h, entry)
-        prefix = re.sub(r'[\s\\/:?*]', '_', str(entry['local']).strip('\\/')) + '..'
+        prefix = self._bisync_pair_prefix(entry)
         suffix = f'.path{side}.lst'
         files = [f for f in os.listdir(workdir) if f.startswith(prefix) and f.endswith(suffix)] if os.path.isdir(workdir) else []
         if len(files) != 1 or not os.path.isfile(os.path.join(workdir, files[0] + '-old')):
@@ -6979,6 +7250,226 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             if m and not line.startswith('#') and os.path.basename(m.group(1)).startswith(('_cmeta.', '_cmr.')):
                 if m.group(1) not in changed: changed.append(m.group(1))
         return changed
+
+    @staticmethod
+    def _bisync_pair_prefix(entry):
+        """How rclone's names of a pair's files in its bisync workdir begin: this machine's path with its separators,
+        colon, blanks, ? and * as "_", then ".." (the host's path follows)."""
+        return re.sub(r'[\s\\/:?*]', '_', str(entry['local']).strip('\\/')) + '..'
+
+    def _bisync_listings(self, h, entry, workdir=None):
+        """The listings of a pair after a run: {1: (.path1.lst, .path1.lst-old), 2: (...), 'base': their path before
+        ".path1.lst"} - this host's pair of the entry's repository (its names begin with this machine's path), or, with
+        workdir, the one pair of that folder (a named sync's) - None when there is not exactly one such pair, or a
+        listing is missing (a first sync)."""
+        prefix = '' if workdir else self._bisync_pair_prefix(entry)
+        workdir = workdir or self._bisync_workdir(h, entry)
+        try:
+            names = set(os.listdir(workdir))
+        except OSError:
+            return None
+        out = {}
+        for side in (1, 2):
+            found = [f for f in names if f.startswith(prefix) and f.endswith(f'.path{side}.lst')]
+            if len(found) != 1 or found[0] + '-old' not in names:
+                return None
+            out[side] = (os.path.join(workdir, found[0]), os.path.join(workdir, found[0] + '-old'))
+        out['base'] = out[1][0][:-len('.path1.lst')]
+        return out
+
+    @staticmethod
+    def _listing_names(path):
+        """The names in one of rclone's bisync listings, relative to the root ("/")."""
+        names = set()
+        with open(path, encoding='utf-8', errors='replace') as f:
+            for line in f:
+                m = None if line.startswith('#') else re.search(r'"(.*)"\s*$', line)
+                if m:
+                    names.add(_go_unquote(m.group(1)))
+        return names
+
+    @staticmethod
+    def _emptied_dirs(old, new):
+        """The folders a run emptied, every level of them: a folder of a name the listings held before the run (old)
+        and of none they hold after it (new). Never the root."""
+        alive = set()
+        for name in new:
+            parts = name.split('/')
+            for i in range(1, len(parts)):
+                alive.add('/'.join(parts[:i]))
+        out = set()
+        for name in old - new:
+            parts = name.split('/')
+            for i in range(1, len(parts)):
+                d = '/'.join(parts[:i])
+                if d not in alive:
+                    out.add(d)
+        return out
+
+    def _leftovers_both(self, ctx, found, sides, patterns, ignore_case, deleted, partial, con, verbose):
+        """
+        The step after a two-way run, for both kinds of sync (cx host sync; the named syncs of task::sync, through
+        sync_leftovers): the folders the run emptied of every file it carries - from its listings before and after (found,
+        _bisync_listings), unless it deleted nothing (deleted: False) - and those a recent change kept last time
+        (LEFTOVERS_STATE beside the listings), looked at on each side by _sync_leftovers: here in this process, on a host
+        by its Python. sides: {1: Path1's, 2: Path2's}, each {'where' (its name for a person), 'host' (None: this
+        machine, else the host as _select gives it), 'root' (the folder there), 'dest' (where its folders go: a path, or
+        a function giving it - called only when files are to go)}. partial: the root holds more than the sync selects.
+        -> (the notes for the verdict, {side: True when files went to its dest})
+        """
+        state = found['base'] + LEFTOVERS_STATE
+        try:
+            with open(state, encoding='utf-8') as f:
+                pending = json.load(f)
+        except (OSError, ValueError):
+            pending = {}
+        emptied = set()
+        if deleted is not False:
+            try:
+                emptied = self._emptied_dirs(self._listing_names(found[1][1]) | self._listing_names(found[2][1]),
+                                             self._listing_names(found[1][0]) | self._listing_names(found[2][0]))
+            except OSError:
+                emptied = set()
+        dirs = {s: sorted(emptied | set(pending.get(str(s)) or [])) for s in (1, 2)}
+        common = {'patterns': list(patterns or []), 'ignore_case': bool(ignore_case), 'quiet': LEFTOVERS_QUIET}
+        notes, went, left = [], {}, {}
+        for s in (1, 2):
+            if not dirs[s]:
+                continue
+            side = sides[s]
+            p = dict(common, root=side['root'], dirs=dirs[s])
+            if side.get('host') is None:
+                # here: looked at first, and the folder for the files (the sync-backup artifact) made only when they go
+                res = _sync_leftovers(dict(p, dry=True))
+                if res['moved']:
+                    dest = ''
+                    if any(m['files'] for m in res['moved']):
+                        dest = side['dest']() if callable(side['dest']) else side['dest']
+                    res = _sync_leftovers(dict(p, dest=dest))
+            else:
+                dest = side['dest']() if callable(side['dest']) else side['dest']
+                res = self._sync_leftovers_on_host(ctx, side['host'], dict(p, dest=dest), verbose)
+            notes += self._leftovers_report(side['where'], res, partial, con)
+            left[str(s)] = dirs[s] if res.get('error') else (res.get('pending') or [])
+            went[s] = any(m.get('to') for m in res.get('moved') or [])
+        left = {k: v for k, v in left.items() if v}
+        try:
+            if left:
+                with open(state, 'w', encoding='utf-8', newline='\n') as f:
+                    json.dump(left, f, indent=1)
+            elif os.path.isfile(state):
+                os.remove(state)
+        except OSError:
+            pass
+        return notes, went
+
+    def _sync_leftovers_after(self, ctx, h, name, entry, rules, backup_dirs, deleted, con, verbose):
+        """
+        After a two-way run of cx host sync: the folders it left behind (_leftovers_both) moved aside into the run's
+        folder of the sync-backup artifact of each side - with --backup the folder of what the run deleted; the artifact
+        here made only when files go to it, the one on the host given its _cmeta after files went there. -> the notes.
+        """
+        found = self._bisync_listings(h, entry)
+        if not found:
+            return []
+        run_id = (backup_dirs or {}).get('run_id') or datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+
+        def dest_here():
+            bd = backup_dirs or self._backup_dirs(h, name, entry, run_id=run_id)
+            return bd.get('local', '') if bd.get('return', 0) == 0 else ''
+
+        sides = {1: {'where': 'this machine', 'host': None, 'root': entry['local'], 'dest': dest_here},
+                 2: {'where': h['alias'], 'host': h, 'root': entry['remote'],
+                     'dest': backup_dirs['remote'] if backup_dirs else self._backup_remote(name, entry, run_id)[2]}}
+        notes, went = self._leftovers_both(ctx, found, sides, entry.get('blacklist'), bool(rules), deleted, bool(rules),
+                                           con, verbose)
+        if went.get(2) and not backup_dirs:         # (with --backup the caller marks it, after the run)
+            bd = self._backup_dirs(h, name, entry, run_id=run_id)
+            if bd.get('return', 0) == 0:
+                self._backup_mark_remote(ctx, h, bd, con, verbose)
+        return notes
+
+    def _sync_leftovers_on_host(self, ctx, h, params, verbose):
+        """_sync_leftovers run by the host's Python - its own source and the parameters sent in a script -> its result,
+        or {'error': ...}."""
+        import inspect
+        code = (inspect.getsource(_sync_leftovers) + '\n\nimport json\n'
+                f'print({LEFTOVERS_MARK!r} + json.dumps(_sync_leftovers(json.loads({json.dumps(params)!r}))))\n')
+        powershell = self._shell(h).strip() in ('powershell', 'pwsh')
+        if powershell:
+            # the Python cMeta runs on there ("cMeta python path" of cx --version, as the probe reads it: "python" can be
+            # the Store's stub - a Windows host, 2026-11-12), else the py launcher; the code into a file there and run (a
+            # "python -c" line of a sync that emptied many folders could pass Windows' 32 KB limit of a command line) -
+            # the code is ASCII, no line of it starts with '@
+            script = ("$py = ((& cx --version 2>$null) | Where-Object { $_ -match 'cMeta python path' } | "
+                      "Select-Object -First 1) -replace '^[^:]*:\\s*', ''\n"
+                      "$pa = @()\n"
+                      "if (-not ($py -and (Test-Path -LiteralPath $py))) { if (Get-Command py -ErrorAction SilentlyContinue) "
+                      "{ $py = 'py'; $pa = @('-3') } else { $py = 'python' } }\n"
+                      "$f = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'cmeta-sync-leftovers-' + [guid]::NewGuid() + '.py')\n"
+                      "[IO.File]::WriteAllText($f, @'\n" + code + "'@)\n"
+                      "& $py @pa $f; $rc = $LASTEXITCODE; Remove-Item -Force $f; exit $rc\n")
+        else:
+            # python3, else the Python cMeta runs on there
+            script = ("P=$(command -v python3 2>/dev/null)\n"
+                      "[ -n \"$P\" ] || P=$(cx --version 2>/dev/null | grep -m1 'cMeta python path' | sed 's/^[^:]*: *//')\n"
+                      "\"${P:-python}\" - <<'CMETA_SYNC_LEFTOVERS'\n" + code + 'CMETA_SYNC_LEFTOVERS\n')
+        r = self._temp_script(script, suffix='.ps1' if powershell else '.sh')
+        if r['return'] == 0:
+            r = self._cmd_stdin(ctx, h, r['path'])
+        if r['return'] > 0:
+            return {'error': str(r.get('error'))}
+        rr = self._run_local(r['cmd'], capture=True, timeout=300, con=False, verbose=verbose)
+        for line in (rr.get('stdout') or '').splitlines():
+            if line.startswith(LEFTOVERS_MARK):
+                try:
+                    return json.loads(line[len(LEFTOVERS_MARK):])
+                except ValueError:
+                    break
+        said = [l.strip() for l in ((rr.get('stdout') or '') + '\n' + (rr.get('stderr') or '')).splitlines() if l.strip()]
+        return {'error': f'its Python returned {rr.get("returncode")}' + (': ' + said[-1][:200] if said else '')}
+
+    @staticmethod
+    def _leftovers_report(where, res, partial, con):
+        """What _sync_leftovers did on one side, shown (con) -> the notes of the verdict. A folder kept because it holds a
+        file the sync carries is shown only for a whole repository (a partial one holds the rest of it here)."""
+        if res.get('error'):
+            if con: print(f'    WARNING: the folders this run emptied were not looked at on {where}: {res["error"]}')
+            return [f'the folders this run emptied were not looked at on {where}']
+        notes, moved, recent, failed = [], [], [], []
+        for m in res.get('moved') or []:
+            moved.append(m['dir'])
+            if con:
+                if m['files']:
+                    what = (f'{m["files"]} file(s) the sync leaves out ({", ".join(m["sample"])}'
+                            + (', ...' if m['files'] > len(m['sample']) else '') + f'; {_size_text(m["bytes"])})')
+                else:
+                    what = 'empty folders only'
+                print(f'    LEFTOVERS ({where}): {m["dir"]}/ - no file the sync carries is left in it, only {what}: '
+                      + (f'moved to {m["to"]}' if m.get('to') else 'removed' if not m['files'] else 'to be moved aside'))
+        for k in res.get('kept') or []:
+            if k['why'] == 'recent':
+                recent.append(k['dir'])
+                if con: print(f'    LEFTOVERS ({where}): {k["dir"]}/ - no file the sync carries is left in it, but {k["file"]} '
+                              f'changed in the last {LEFTOVERS_QUIET // 60} minutes (a program may be at work there): '
+                              f'looked at again by the next sync')
+            elif k['why'] == 'error':
+                failed.append(k['dir'])
+                if con: print(f'    WARNING: LEFTOVERS ({where}): {k["dir"]}/ was left as it is: {k["file"]}')
+            elif k['why'] == 'artifact':
+                if con: print(f'    LEFTOVERS ({where}): {k["dir"]}/ - no file the sync carries is left in it, but it holds '
+                              f'{k["file"]}, a cMeta artifact the sync leaves out: left as it is')
+            elif not partial and con:
+                print(f'    LEFTOVERS ({where}): {k["dir"]}/ - emptied by this run, but it holds {k["file"]}, which this '
+                      f'sync does not list: left as it is')
+        if moved:
+            notes.append(f'{len(moved)} folder(s) left behind with only files the sync leaves out, moved aside on {where}: '
+                         + ', '.join(moved[:2]) + (' ...' if len(moved) > 2 else ''))
+        if recent:
+            notes.append(f'{len(recent)} folder(s) left behind on {where} changed lately: looked at again by the next sync')
+        if failed:
+            notes.append(f'{len(failed)} folder(s) left behind on {where} could not be moved aside: ' + ', '.join(failed[:2]))
+        return notes
 
     def _index_here(self, h, name, entry, con):
         """
@@ -7261,6 +7752,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             r['notes'] = notes
             r['long_names'] = list(long_names)
             if r.get('return', 0) == 0:
+                notes += r.get('leftovers') or []           # the folders the run left behind, moved aside
                 if not dry_run:
                     if fix:
                         listings, skipped = fix
