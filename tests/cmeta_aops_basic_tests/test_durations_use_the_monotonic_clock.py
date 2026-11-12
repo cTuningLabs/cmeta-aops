@@ -26,7 +26,11 @@ FOLDERS = ('category', 'task', 'tool')
 SKIP = {'.venv', 'site-packages', 'node_modules', '__pycache__', 'tests'}
 
 # (the file under the repository, a piece of the source line): the wall clock against a time WRITTEN somewhere
-ALLOWED = ()
+ALLOWED = (
+    # cx host archives: how old the state of a fleet machine is, against its checked_ts kept in fleet.json (read by
+    # another process, after a restart: a monotonic time means nothing there)
+    ('category/host/api/v1.py', "age = time.time() - float(cached.get('checked_ts') or 0)"),
+)
 
 
 def is_wall_clock_call(node):

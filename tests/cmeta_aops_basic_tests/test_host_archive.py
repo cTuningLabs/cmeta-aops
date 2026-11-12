@@ -516,20 +516,31 @@ def test_restore_sends_each_part_into_the_hosts_tar(host, tmp_path, monkeypatch)
 
 
 def load_untar():
-    """The untar task's module with a stand-in for the task base class cMeta gives it."""
+    """The untar task's module with a stand-in for the task base class cMeta gives it - the stand-in only while the
+    module loads: what sys.modules held is put back at once, so that the tests after this one load the real tasks
+    (left in place, it broke every later task test of the same process on CI)."""
     import types
-    base = types.ModuleType('task_c36be4b9314a45e0.api.ctask')
+    keys = ('task_c36be4b9314a45e0', 'task_c36be4b9314a45e0.api', 'task_c36be4b9314a45e0.api.ctask')
+    saved = {k: sys.modules.get(k) for k in keys}
+    base = types.ModuleType(keys[2])
 
     class InitCTask:
         def __init__(self, *a, **k):
             pass
     base.InitCTask = InitCTask
-    for name in ('task_c36be4b9314a45e0', 'task_c36be4b9314a45e0.api'):
-        sys.modules.setdefault(name, types.ModuleType(name))
-    sys.modules['task_c36be4b9314a45e0.api.ctask'] = base
-    spec = importlib.util.spec_from_file_location('task_untar_under_test', str(REPO_ROOT / 'task' / 'untar' / 'api_v1.py'))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        for name in keys[:2]:
+            sys.modules.setdefault(name, types.ModuleType(name))
+        sys.modules[keys[2]] = base
+        spec = importlib.util.spec_from_file_location('task_untar_under_test', str(REPO_ROOT / 'task' / 'untar' / 'api_v1.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
     return module
 
 

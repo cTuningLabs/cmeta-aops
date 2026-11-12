@@ -96,7 +96,12 @@ def robust(host, answers, work, local, entry_extra=None):
 def test_a_name_the_host_refuses_is_left_out_for_good_and_named(host, tmp_path):
     work, local = tmp_path / 'work', tmp_path / 'repo'
     (local / 'notes' / '2013 war').mkdir(parents=True)
-    (local / 'notes' / '2013 war' / LONG).write_text('x', encoding='utf-8')
+    try:
+        (local / 'notes' / '2013 war' / LONG).write_text('x', encoding='utf-8')
+    except OSError:
+        # the case is a machine that holds the name (Windows: 255 characters) and a host that refuses it (Linux, macOS:
+        # 255 bytes): a file system that refuses it here cannot play the first part
+        pytest.skip('this file system refuses the long name too (the case needs a Windows side)')
     r, seen = robust(host, [{'return': 1, 'error': 'rclone resync returned 7', 'output': REFUSED}, {'return': 0, 'output': ''}],
                      work, local)
     assert r['return'] == 0 and len(seen) == 2                       # one more run, not six
