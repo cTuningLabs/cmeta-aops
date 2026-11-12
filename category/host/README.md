@@ -436,6 +436,19 @@ gets its `_cmeta` after a run that put files there, and the host's `local` repos
 ls` shows it there too. rclone makes a run folder only when a file goes there; nothing prunes them. It is the undo
 of a repository that is not git: a sync that took a wrong file leaves its previous version there.
 
+**Folders a run leaves behind.** rclone never lists, copies or deletes what the blacklist leaves out (SQLite side
+files and locks, `__pycache__/`, `.venv/`, `tmp*/` ...), and it removes a folder only once it is empty: a folder
+deleted on one side used to stay on the other when it still held such files (2026-11-12: `work/2026` of a
+repository deleted here stayed on the host, kept by five SQLite side files of Codex). After every two-way run (not
+a dry run, not a `--resync`) the folders it emptied of every file it carries - from rclone's listings before and after
+the run - are looked at on each side: one still there with nothing but files the blacklist leaves out goes, whole,
+into the run's folder of that side's `sync-backup--<repository>` artifact (with `--backup`, beside what the run
+deleted from it), the host's side done by the host's own Python. A folder whose files changed in the last 10 minutes
+(a program may be at work there) is looked at again by the next run (the list is kept beside the listings,
+`<pair>.leftovers.json`); one that holds a file the sync carries (a partial repository's other artifacts) or a cMeta
+artifact stays. The run prints a `LEFTOVERS (<side>): <folder>/ ...` line for each, and its line in the table names the
+folders moved. The named syncs of `cxt sync` do the same after their runs (`cx host sync_leftovers`).
+
 ### A partial repository: `artifacts:`
 
 A repository too big to copy (a personal one of hundreds of GB) can travel as a selection of its artifacts, two-way

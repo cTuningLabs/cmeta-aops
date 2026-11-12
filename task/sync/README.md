@@ -226,6 +226,16 @@ the remote index knows it after its next reindex (`cx host sync`'s after step, o
 Before 2026-10-25 the folder was `.cmeta-sync-backups/<sync-UID>/<run-id>/` beside the transfer root; such folders
 stay where they are.
 
+**Folders a run leaves behind** (since 2026-11-12). rclone never touches what the filters leave out, and removes a
+folder only once it is empty: a folder deleted on one side stayed on the other when it still held files the
+definition excludes (SQLite side files, a lock, `__pycache__/` ...). After every bisync run that is not a first one,
+the folders it emptied of every file it carries (from rclone's listings, before and after) are looked at on each side
+by the host category (`cx host sync_leftovers`, the step of `cx host sync`): one still there with nothing but files
+the `-` filters leave out goes, whole, into that run's folder above - beside what the run deleted from it; on the
+remote side the host's own Python does it. A folder whose files changed in the last 10 minutes waits for the next run
+(the list beside the listings, `<pair>.leftovers.json`); one holding a file the selection carries elsewhere or a cMeta
+artifact (the pair's own state and backups) stays. The run's verdict names the folders moved.
+
 Backups have no automatic expiry in this prototype. Monitor their space usage.
 `max_delete` is a percentage for bisync (default 50) and a file count for mirror
 (default 100). Empty or unexpectedly missing established roots fail rather than

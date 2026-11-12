@@ -2,6 +2,24 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.68.0
+- **Two-way syncs: a folder deleted on one side no longer stays on the other.** A folder deleted on one machine
+  stayed on the other one when it still held files the sync leaves out on purpose - SQLite side files and locks
+  (`*.sqlite-wal`, `*.sqlite-shm`, `.sqlite-maintenance.lock`), `__pycache__/`, `.venv/`, `tmp*/` ... -, which rclone
+  neither lists nor deletes; it removes a folder only once it is empty. After every two-way run (not a first one, not
+  a dry run), `cx host sync` and the named syncs (`cx sync`, the /sync page) take the folders the run emptied of every
+  file it carries, from rclone's own listings before and after the run, and look at each side: a folder still there
+  with nothing but such files goes, whole, into the run's folder of that side's sync-backup artifact (the same place
+  as what the run deleted; `cx result ls` finds it), so nothing is lost. A folder whose files changed in the last 10
+  minutes (a program may be at work there) is looked at again by the next run; one that holds a file the sync carries
+  (outside a partial repository's selection), or a cMeta artifact the sync leaves out (a named sync's own state and
+  backups), stays. The host's side is done by its own Python. Each run says what it moved, and its verdict names the
+  folders.
+- Names in rclone's bisync listings are read as rclone writes them (Go's quoting: `\u00a0` for a no-break space).
+- The file index of /browse (cMeta 0.41, `result::local:cserver-browse-files`: a machine's own paths, rebuilt on each
+  machine) is never carried by a sync: in the default blacklist of `cx host sync` and in the built-in filters of the
+  named syncs (a built-in filter changes no pair's identity: no resync).
+
 ## 0.67.0
 - **`run-codex` (and so `cxai` with codex): a stale daemon record no longer stops codex without a word.** codex
   0.166 keeps a record of its background daemon (`~/.codex/app-server-daemon/daemon.pid`, `daemon-updater.pid`); one
