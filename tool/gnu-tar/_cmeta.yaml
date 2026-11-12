@@ -1,0 +1,16 @@
+artifact: 93bb237a0ee04cd6
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-11-12T06:08:45.082609+00:00'
+generator:
+  agent: Claude Code 2.1.319
+  by: Grigori Fursin
+  method: agent
+  via: cmeta 0.39.0.1
+tags:
+- tool
+- archive
+- tar
+- gnu
+desc: 'GNU tar - the tar with incremental archives (--listed-incremental), checkpoints and anchored exclusions: detected (Linux
+  "tar", macOS "gtar", Git for Windows'' tar), else installed (the distribution, Homebrew)'
