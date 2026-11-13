@@ -2,6 +2,17 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.68.1
+- **A website started in the background comes back after a reboot.** The runtime of `manage-cmeta-project` (the
+  `--detach` start of a site and the after-restart commands of a host, `__run_server_nohup.sh`, `--status`, `--stop`)
+  read the process number its `server.pid` recorded and took any live process of that number for its server. After
+  a reboot the numbers are given out again from the start: a process of the new boot could hold the old number, the
+  start said "Already running" and returned, and the site stayed down until someone started it by hand
+  (2026-11-13); a stop would have killed that unrelated process. Now a record counts only while it names the server
+  that was started: written after the machine's last boot (Linux `/proc/stat`, macOS `kern.boottime`, Windows the
+  time since the start), the process alive, and not started after the record was written (`/proc/<pid>/stat`,
+  `ps -o lstart`, `GetProcessTimes`). A stale record is never "already running" and never stopped.
+
 ## 0.68.0
 - **Two-way syncs: a folder deleted on one side no longer stays on the other.** A folder deleted on one machine
   stayed on the other one when it still held files the sync leaves out on purpose - SQLite side files and locks

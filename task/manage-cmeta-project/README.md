@@ -168,7 +168,10 @@ combination in the new project workflow.
 Generated Linux project scripts also include `__run_server_nohup.sh` for a manual
 background start. It writes `.setup/runtime/server.log` and `server.pid`, uses a
 short start lock, and avoids starting a second matching live launcher. It does
-not install a service or arrange boot startup. A host artifact can call this
+not install a service or arrange boot startup. A `server.pid` counts only while it
+names the server that was started - written after the machine's last boot, the
+process alive and not started after the record: after a reboot the old number may
+belong to another process, which is then neither "already running" nor stopped. A host artifact can call this
 script in `commands.after_restart`; declaring the project's root, venv and
 health URL lets the host commands select and check that environment.
 

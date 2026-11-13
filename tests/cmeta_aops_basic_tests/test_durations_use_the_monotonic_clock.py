@@ -30,6 +30,9 @@ ALLOWED = (
     # cx host archives: how old the state of a fleet machine is, against its checked_ts kept in fleet.json (read by
     # another process, after a restart: a monotonic time means nothing there)
     ('category/host/api/v1.py', "age = time.time() - float(cached.get('checked_ts') or 0)"),
+    # the website runtime: when the machine started (the wall clock minus the time since the start), compared with the
+    # time a server.pid was written - a record from before the boot is stale
+    ('task/manage-cmeta-project/runtime.py', 'return time.time() - ticks() / 1000.0'),
 )
 
 
