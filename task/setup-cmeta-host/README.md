@@ -3,7 +3,9 @@
 `setup-cmeta-host` prepares selected services on **the machine where the task runs**.
 It preserves the active cMeta home. Run it after installing cMeta and registering
 this repository. Existing `run-openssh`, `start-tailscale-service`, and
-`prevent-mac-to-sleep` tasks keep their behavior.
+`prevent-mac-to-sleep` tasks keep their behavior. To have the machine's cserver
+and an ssh server of the user start after every restart, before anyone logs in
+(reached over Tailscale), see `start-after-restart`.
 
 ```text
 cxt setup-cmeta-host

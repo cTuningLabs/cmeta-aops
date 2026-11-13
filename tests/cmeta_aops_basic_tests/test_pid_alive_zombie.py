@@ -26,19 +26,22 @@ def load_runtime():
     return module
 
 
-def load_test_on_hosts():
+def load_test_on_hosts(helpers):
     path = REPO_ROOT / 'task' / 'test-on-hosts' / 'api_v1.py'
-    src = path.read_text(encoding='utf-8').replace('from task_c36be4b9314a45e0.api.ctask import InitCTask',
-                                                   'class InitCTask:\n    pass')
+    line = 'from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive'
+    src = path.read_text(encoding='utf-8')
+    assert line in src
+    src = src.replace(line, 'class InitCTask:\n    pass')
     ns = types.ModuleType('test_on_hosts_pid_under_test')
     ns.__file__ = str(path)
+    ns.__dict__.update(helpers('recorded_process_alive'))
     exec(compile(src, str(path), 'exec'), ns.__dict__)
     return ns
 
 
 @pytest.mark.skipif(not hasattr(os, 'fork') or not os.path.isdir('/proc'), reason='a zombie needs fork and /proc')
-def test_a_zombie_counts_as_stopped():
-    checks = [load_runtime().pid_alive, load_test_on_hosts().pid_alive]
+def test_a_zombie_counts_as_stopped(ctask_helpers):
+    checks = [load_runtime().pid_alive, load_test_on_hosts(ctask_helpers).pid_alive]
     for alive in checks:
         assert alive(os.getpid()) is True
 

@@ -18,7 +18,7 @@ import sys
 import time
 import urllib.request
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive
 
 TASK_CATEGORY = 'task,c36be4b9314a45e0'
 STATE_CATEGORY = 'state'
@@ -93,7 +93,9 @@ class CTask(InitCTask):
             return {}
         try:
             with open(fp, encoding = 'utf-8') as f:
-                return json.load(f)
+                rec = json.load(f)
+            rec['_written'] = os.path.getmtime(fp)      # when the record was written: its process must be of that run
+            return rec
         except Exception:
             return {}
 
@@ -108,8 +110,8 @@ class CTask(InitCTask):
             if s2 == 200 and isinstance(data, dict):
                 models = [str(m.get('id')) for m in data.get('data') or [] if isinstance(m, dict) and m.get('id')]
         return {'running': status == 200, 'listening': up, 'health': health if status == 200 else '',
-                'pid': pid, 'pid_alive': alive(pid) if pid else False, 'models': models,
-                'ours': bool(pid) and alive(pid) and up}
+                'pid': pid, 'pid_alive': recorded_process_alive(pid, rec.get('_written', 0), alive) if pid else False,
+                'models': models, 'ours': bool(pid) and up and recorded_process_alive(pid, rec.get('_written', 0), alive)}
 
     def run(self,
             ctx: dict,
@@ -162,7 +164,8 @@ class CTask(InitCTask):
 
         if action in ('stop', 'restart'):
             pid = int(rec.get('pid') or 0)
-            if pid and alive(pid):
+            # only the process the record was written for: after a reboot its number may be any other program's
+            if pid and recorded_process_alive(pid, rec.get('_written', 0), alive):
                 stop_process(pid)
                 for _ in range(50):
                     if not alive(pid):

@@ -286,6 +286,134 @@ def changed_mounts(folder, mounts):
     return [m for m in mounts if m.get('path') and known.get(m['repo']) != tree_signature(m['path'])]
 
 
+# A process a task recorded (a server's number in a file) is still the one it started only while the record was
+# written after the machine's last boot and the process did not start after the record was written: after a reboot
+# the numbers are given out again, and the same number may belong to any program - or to the task's own new process
+# tree (2026-11-13: a website's start said "Already running" over a helper of its own start and stayed down; a stop
+# would have killed that process). Every task that keeps a process number asks recorded_process_alive() before it
+# says "running" or stops anything (the website runtime of manage-cmeta-project has the same three functions).
+
+def boot_time():
+    """When this machine started (seconds since the epoch), or 0 when the system does not say."""
+    import subprocess
+    import sys
+    import time
+    try:
+        if sys.platform.startswith('linux'):
+            with open('/proc/stat', encoding='ascii', errors='replace') as f:
+                for line in f:
+                    if line.startswith('btime '):
+                        return float(line.split()[1])
+        elif os.name == 'nt':
+            import ctypes
+            ticks = ctypes.windll.kernel32.GetTickCount64
+            ticks.restype = ctypes.c_ulonglong
+            return time.time() - ticks() / 1000.0     # the wall clock minus the time since the start
+        else:                                          # macOS and the BSDs: "{ sec = 1794470153, usec = 0 } ..."
+            import re
+            out = subprocess.run(['sysctl', '-n', 'kern.boottime'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 stdin=subprocess.DEVNULL, text=True, timeout=10).stdout
+            m = re.search(r'sec\s*=\s*(\d+)', out)
+            if m:
+                return float(m.group(1))
+    except Exception:
+        pass
+    return 0.0
+
+
+def process_started(pid):
+    """When a process started (seconds since the epoch), or None when the system does not say."""
+    import subprocess
+    import sys
+    import time
+    try:
+        pid = int(pid)
+        if sys.platform.startswith('linux'):
+            with open('/proc/%d/stat' % pid, encoding='ascii', errors='replace') as f:
+                fields = f.read().rsplit(')', 1)[-1].split()
+            boot = boot_time()
+            # starttime, the 22nd field: clock ticks after the boot (the 20th after the name)
+            return boot + int(fields[19]) / os.sysconf('SC_CLK_TCK') if boot else None
+        if os.name == 'nt':
+            import ctypes
+            from ctypes import wintypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x1000, False, pid)     # PROCESS_QUERY_LIMITED_INFORMATION
+            if not handle:
+                return None
+            try:
+                times = [wintypes.FILETIME() for _ in range(4)]
+                if not kernel32.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
+                    return None
+                created = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+                return created / 1e7 - 11644473600.0     # 100 ns since 1601 -> seconds since 1970
+            finally:
+                kernel32.CloseHandle(handle)
+        out = subprocess.run(['ps', '-o', 'lstart=', '-p', str(pid)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             stdin=subprocess.DEVNULL, text=True, timeout=10, env=dict(os.environ, LC_ALL='C')).stdout.strip()
+        if out:
+            return time.mktime(time.strptime(out, '%a %b %d %H:%M:%S %Y'))
+    except Exception:
+        pass
+    return None
+
+
+def process_exists(pid):
+    """Whether a process of this number runs on this machine: the engine's pid_exists (cMeta 0.38.12+), else
+    os.kill(pid, 0) - a process this one may not signal exists too."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        from cmeta.utils.sys import pid_exists
+        return bool(pid_exists(pid))
+    except ImportError:
+        pass
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def recorded_process_alive(pid, written, alive=None):
+    """Whether the process a record names (pid) is still the one the record was written for: written (the record's
+    time - a pid file's mtime, or the time.time() kept in it) after the machine's last boot, the process alive (alive(pid)
+    when the task has its own check - the program's name, say -, else process_exists), and not started more than 5 s
+    after written (a task writes its record right after starting the process)."""
+    try:
+        pid = int(pid)
+        written = float(written)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    boot = boot_time()
+    if boot and written < boot - 2:
+        return False
+    if not (alive(pid) if alive else process_exists(pid)):
+        return False
+    started = process_started(pid)
+    return not (started is not None and started > written + 5)
+
+
+def recorded_file_alive(pid_file, pid=None, alive=None):
+    """recorded_process_alive() for a pid file: its number (or pid, when the caller read it already) and its mtime."""
+    try:
+        written = os.path.getmtime(pid_file)
+        if pid is None:
+            with open(pid_file, encoding='utf-8', errors='replace') as f:
+                pid = int((f.read().split() or ['0'])[0])
+    except (OSError, ValueError):
+        return False
+    return recorded_process_alive(pid, written, alive)
+
+
 class InitCTask:
     """
     """

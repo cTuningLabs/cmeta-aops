@@ -200,14 +200,16 @@ into it are the machine's, live. `--on_pull` makes the run work in `~/work/<run 
 what `--save_here` writes) and brings that folder back into `on-runs/<run id>` here; `--on_rm` makes a
 throwaway instance for the run and destroys it after. `--on_detach` keeps the run going there after the command
 returns - a server: it runs in a session of its own, its output in `~/cmeta-detached/<run id>.log`, its process group
-in the `.pid` file next to it, and the closing line says how to read the output and how to stop it; `--on_ports=8080`
+and the start time of its process in the `.pid` file next to it, and the closing line says how to read the output and
+how to stop it - `<run id>.stop`, a script that stops the group only while that process is the one started (after a
+restart of the host the number may belong to another program); `--on_ports=8080`
 (or `8080:80`, comma-separated) publishes ports of a new instance on 127.0.0.1 (a container cannot publish a port later:
 an instance made without it says so):
 
 ```text
 cx tool run python --on=docker --on_instance=web --on_ports=8765 --on_detach -- -m http.server 8765
 cx host run web "tail -n 50 ~/cmeta-detached/<run id>.log"            # what it prints
-cx host run web "kill -- -$(cat ~/cmeta-detached/<run id>.pid)"      # stop it
+cx host run web "sh ~/cmeta-detached/<run id>.stop"                 # stop it
 ```
 
 POSIX hosts and instances only for now (a Windows host refuses `--on_detach`). Started from a terminal on a

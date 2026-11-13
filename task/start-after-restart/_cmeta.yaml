@@ -1,0 +1,25 @@
+artifact: 9bfa8da390e84d16
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-11-13T12:47:23.383452+00:00'
+desc: Start a cserver and an ssh server of this machine after every restart, before anyone logs in (a Windows
+  startup task as the user, crontab @reboot elsewhere) - enable, disable, status, start, stop.
+generator:
+  agent: Claude Code 2.1.322
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  via: cmeta 0.41.1
+tags:
+- run
+- boot
+- restart
+- startup
+- cserver
+- ssh
+- server
+uses_categories:
+  config: config,cc6bfe174be847ed
+  host: host,e4e49c251c814f6d
+  log: log,487a7639093a4685
+  task: task,c36be4b9314a45e0

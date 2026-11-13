@@ -27,7 +27,7 @@ import sys
 import time
 import uuid
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_file_alive
 
 SETUP = 'setup,a2f9b61079ce4333'
 TOOL = 'openshell,7990c822d96f41d4'
@@ -267,7 +267,7 @@ class CTask(InitCTask):
             return self.cm.error('this OpenShell has no gateway binary (openshell-gateway): cx tool setup openshell --new')
 
         pid = self._pid()
-        if pid and alive(pid) and listening(c['port']):
+        if pid and recorded_file_alive(os.path.join(c['workdir'], 'gateway.pid'), pid, alive) and listening(c['port']):
             if con:
                 print(f'cMeta info: the gateway "{c["name"]}" runs already (pid {pid}, {c["endpoint"]})')
             return self._register(con)
@@ -354,7 +354,8 @@ class CTask(InitCTask):
     def _stop(self, con):
         c = self._ctx
         pid = self._pid()
-        if not pid or not alive(pid):
+        # only the process the record was written for (after a reboot its number may be another program's group)
+        if not pid or not recorded_file_alive(os.path.join(c['workdir'], 'gateway.pid'), pid, alive):
             if con:
                 print(f'cMeta info: the gateway "{c["name"]}" is not running')
             return False

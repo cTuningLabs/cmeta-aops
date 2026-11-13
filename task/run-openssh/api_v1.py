@@ -53,7 +53,7 @@ import subprocess
 import sys
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_file_alive
 
 TAILSCALE = ipaddress.ip_network('100.64.0.0/10')
 
@@ -417,7 +417,8 @@ class CTask(InitCTask):
                 pid = int(open(pidfile).read().strip())
             except ValueError:
                 pid = None
-        running = bool(pid) and alive(pid)
+        # an sshd of the record's own run: after a reboot the number may be another sshd's (the system's, a session's)
+        running = bool(pid) and recorded_file_alive(pidfile, pid, alive)
         listen_file = os.path.join(state, 'listen.txt')
         current = open(listen_file).read().strip() if os.path.isfile(listen_file) else ''
 

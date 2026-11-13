@@ -47,12 +47,15 @@ class FakeCM:
 
 
 @pytest.fixture(scope='module')
-def module():
+def module(ctask_helpers):
     path = REPO_ROOT / 'task' / 'test-on-hosts' / 'api_v1.py'
-    src = path.read_text(encoding='utf-8').replace('from task_c36be4b9314a45e0.api.ctask import InitCTask',
-                                                   'class InitCTask:\n    pass')
+    line = 'from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive'
+    src = path.read_text(encoding='utf-8')
+    assert line in src
+    src = src.replace(line, 'class InitCTask:\n    pass')
     ns = types.ModuleType('test_on_hosts_under_test')
     ns.__file__ = str(path)
+    ns.__dict__.update(ctask_helpers('recorded_process_alive'))      # the real check of a recorded process
     exec(compile(src, str(path), 'exec'), ns.__dict__)
     return ns
 

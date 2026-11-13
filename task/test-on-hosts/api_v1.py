@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tarfile
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive
 
 # The hosts of a round when --hosts is not given: the key "hosts" of the config artifact task-test-on-hosts
 # (cx config set task-test-on-hosts --meta.hosts=a,b,c - the test machines of a fleet, never production ones),
@@ -170,10 +170,12 @@ class CTask(InitCTask):
         # peek, collect and remove without --hosts: the hosts the launch resolved (round.json), so that a ref of an
         # instance is not made again and a ref that failed at the launch is not tried again
         saved = {}
+        self.launch_written = 0.0
         if action != 'launch':
             try:
                 with open(os.path.join(local, ROUND_FILE), encoding = 'utf-8') as f:
                     saved = json.load(f)
+                self.launch_written = os.path.getmtime(os.path.join(local, ROUND_FILE))
             except (OSError, ValueError):
                 saved = {}
 
@@ -416,7 +418,10 @@ class CTask(InitCTask):
                         # the runner here, by the pid the launch recorded ("started here: pid N"); a round without one
                         # (launched before 2026-10-30) is running, as it was always said
                         pid = str(started.get(HERE) or '').rpartition('pid ')[2].strip()
-                        if not pid.isdigit() or pid_alive(int(pid)):
+                        # the runner the launch recorded - not a process that got its number since (a reboot)
+                        written = getattr(self, 'launch_written', 0.0)
+                        if not pid.isdigit() or (recorded_process_alive(int(pid), written, pid_alive) if written
+                                                 else pid_alive(int(pid))):
                             text += 'running\n'
                         elif os.path.isfile(os.path.join(root, 'work', 'steps.txt')):
                             text += 'stopped: the runner ended before its last command\n'

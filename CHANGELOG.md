@@ -2,6 +2,64 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV
+- **New task `start-after-restart`: a machine's cserver and ssh server start after every restart, before anyone
+  logs in.** It is for reaching a machine over Tailscale from elsewhere: its pages, a shell, a way to restart things.
+  Actions `enable`, `disable`, `status` (the default), `start`, `stop`; servers `--what=cserver,ssh`.
+  - **Windows:** a startup task of the Task Scheduler per server, in the folder `\cMeta\`. It runs as the user, with
+    no login and no stored password (S4U), on battery too, with no time limit. Registering one needs an
+    administrator; Windows asks (UAC) when the console is not one.
+  - **Linux and macOS:** a line in the user's crontab, `@reboot`.
+  - **The supervisor:** each server runs under one, the task's `run` action. It waits for the Tailscale address,
+    since a server started before it would listen on 127.0.0.1 only. It starts the server in the foreground, and
+    again when the server ends, until `stop` or `disable`. Its log and records are in `log::local:start-after-restart`.
+  - **`--workdir`** sets the folder they start in (default: the user's). A folder gone since the `enable` is logged,
+    and the user's folder is used instead.
+  - **`--ssh_host`** names the host artifact whose key the fleet uses (default: what `cx host whoami` finds).
+  - **`start`** runs what a restart runs: the registered task, or the crontab line.
+  - **`status`** says whether a server is enabled, running and answering, and the folder of the registered start.
+    It also names what a start without a login needs: Tailscale unattended, the home's drive unlocked (BitLocker),
+    the cserver's sign-in. "Answering" means an HTTP status line from the cserver and the banner of the ssh
+    server; a connection alone is not an answer.
+  - **One supervisor per server:** a second one ends at once. On macOS, cron runs the `@reboot` lines when launchd
+    starts it for the first change of a crontab after a boot, so an `enable` starts the server there too.
+  - **`disable`** of the last line leaves no crontab, as before the first `enable`.
+  - **macOS:** a server run by a Python that does not come with macOS may not get connections on the Tailscale
+    address until the system allows that Python on the network; Apple's own programs do. `status` names this case.
+- **New task `ai-account-status`: what is left of an AI account's allowance, read without an AI turn.**
+  - **Codex:** its app-server's account and rate-limit protocol, with the personal login.
+  - **Claude:** a read-only usage request with the existing OAuth login.
+  - **OpenCode:** the selected OpenAI or Anthropic OAuth login of its own credential store.
+  - **OpenClaw:** `status --usage --json`, for the selected provider.
+  - **Vibe, Gemini, Antigravity and Hermes:** a plain explanation and the provider's usage page, never an invented
+    percentage. A gateway never shows another account's allowance.
+  - **The output** is allowlisted:
+    - `available`, the account's display fields;
+    - `windows`, with the consumed `usedPercent` and the reset times;
+    - `credits` apart, the diagnostics, and `checked_at` / `cached` / `stale`.
+  - **A two-minute cache** in the machine's `log::local:ai-account-status`.
+  - **`client_script=True`** gives an optional browser component for the pages that show it.
+  - **Credentials stay on each machine** and are never logged, returned or written. Only fixed provider HTTPS
+    endpoints are asked, with redirects blocked.
+  - 23 offline tests (fake credentials and replies, no network).
+  - **Session 0:** a Windows start without a login runs there. The ssh server is started without `run-openssh`'s
+    hidden desktop, on which sshd cannot start in that session (0xC0000142).
+- **A process number in a record is trusted only while it names the process that was started.** This is the rule
+  0.68.1 gave the website runtime, now in the task base module (`recorded_process_alive` and `recorded_file_alive`
+  in `category/task/api/ctask.py`). Every task that keeps a process number uses it:
+  - `run-openssh` (start and stop);
+  - `run-llama-cpp-server` (status and stop);
+  - `run-paperclip` and `run-openshell-gateway` (start and stop): a stale record made their stop end another
+    program's process group;
+  - `test-on-hosts`: a round whose runner had ended was reported running.
+
+  After a restart, such a record is never "running" and is never stopped.
+- **A detached run (`--on=<host> --on_detach`) is stopped only while it is the run that was started.** Its record
+  keeps the process's start time beside its number. The stop is a script beside the record
+  (`~/cmeta-detached/<run>.stop`), which ends the process group only while that process is the one started. The
+  command printed before, `kill -- -$(cat <run>.pid)`, ended whatever group had the number after a restart of the
+  host.
+
 ## 0.68.1
 - **A website started in the background comes back after a reboot.** The runtime of `manage-cmeta-project` (the
   `--detach` start of a site and the after-restart commands of a host, `__run_server_nohup.sh`, `--status`, `--stop`)

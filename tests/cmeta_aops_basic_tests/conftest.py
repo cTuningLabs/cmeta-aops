@@ -82,6 +82,20 @@ def task_namespace():
 
 
 @pytest.fixture(scope="session")
+def ctask_helpers():
+    """The real helpers of category/task/api/ctask.py (it needs no cMeta to load) as {name: function}, for the tests
+    that load a task's hook file with a loader of their own and a stand-in for its base class: the shared checks a
+    task imports beside the base class (recorded_process_alive, recorded_file_alive ...) stay the real ones.
+
+        ns = {..., **ctask_helpers("recorded_file_alive")}
+    """
+    spec = importlib.util.spec_from_file_location("ctask_helpers_under_test", str(REPO_ROOT / "category" / "task" / "api" / "ctask.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return lambda *names: {n: getattr(module, n) for n in names}
+
+
+@pytest.fixture(scope="session")
 def cm():
     """A CMeta engine instance with this repo plugged into an isolated CMETA_HOME."""
     from cmeta import CMeta

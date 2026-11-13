@@ -26,22 +26,23 @@ KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2xbm5Yx5tSdyFiK0gYn6kSPW0C3ZoD2b0C
 OTHER = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTY other@example"
 
 
-def load(rel_path, imports):
-    """The module's namespace, with its cMeta imports replaced."""
+def load(rel_path, imports, helpers = None):
+    """The module's namespace, with its cMeta imports replaced (helpers: the real functions it imports beside)."""
     path = REPO_ROOT / rel_path
     src = path.read_text(encoding = "utf-8")
     for line, replacement in imports.items():
         assert line in src
         src = src.replace(line, replacement)
-    ns = {"__name__": path.parent.name, "__file__": str(path)}
+    ns = {"__name__": path.parent.name, "__file__": str(path), **(helpers or {})}
     exec(compile(src, str(path), "exec"), ns)
     return ns
 
 
 @pytest.fixture(scope = "module")
-def task():
+def task(ctask_helpers):
     return load("task/run-openssh/api_v1.py",
-                {"from task_c36be4b9314a45e0.api.ctask import InitCTask": "class InitCTask: pass"})
+                {"from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_file_alive": "class InitCTask: pass"},
+                ctask_helpers("recorded_file_alive"))
 
 
 @pytest.fixture(scope = "module")

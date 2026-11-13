@@ -33,6 +33,8 @@ ALLOWED = (
     # the website runtime: when the machine started (the wall clock minus the time since the start), compared with the
     # time a server.pid was written - a record from before the boot is stale
     ('task/manage-cmeta-project/runtime.py', 'return time.time() - ticks() / 1000.0'),
+    # the same for every task that keeps a process number (recorded_process_alive of the task base module)
+    ('category/task/api/ctask.py', 'return time.time() - ticks() / 1000.0'),
 )
 
 

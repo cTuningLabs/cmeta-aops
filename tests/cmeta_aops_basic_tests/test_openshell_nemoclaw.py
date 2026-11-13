@@ -52,9 +52,10 @@ def openshell():
 
 
 @pytest.fixture(scope='module')
-def gateway():
+def gateway(ctask_helpers):
     return load('task/run-openshell-gateway/api_v1.py', {'task_c36be4b9314a45e0': {}, 'task_c36be4b9314a45e0.api': {},
-                                                         'task_c36be4b9314a45e0.api.ctask': {'InitCTask': Base}})
+                                                         'task_c36be4b9314a45e0.api.ctask': {'InitCTask': Base,
+                                                                                             **ctask_helpers('recorded_file_alive')}})
 
 
 @pytest.fixture(scope='module')
