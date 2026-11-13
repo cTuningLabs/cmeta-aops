@@ -10,6 +10,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -176,6 +177,88 @@ def read_pid(path):
         return int(path.read_text(encoding='utf-8').strip())
     except (OSError, ValueError):
         return 0
+
+
+def boot_time():
+    """When this machine started (seconds since the epoch), or 0 when the system does not say."""
+    try:
+        if sys.platform.startswith('linux'):
+            with open('/proc/stat', encoding='ascii', errors='replace') as f:
+                for line in f:
+                    if line.startswith('btime '):
+                        return float(line.split()[1])
+        elif os.name == 'nt':
+            import ctypes
+            ticks = ctypes.windll.kernel32.GetTickCount64
+            ticks.restype = ctypes.c_ulonglong
+            return time.time() - ticks() / 1000.0     # the wall clock minus the time since the start
+        else:                                          # macOS and the BSDs: "{ sec = 1794470153, usec = 0 } ..."
+            out = subprocess.run(['sysctl', '-n', 'kern.boottime'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 stdin=subprocess.DEVNULL, text=True, timeout=10).stdout
+            m = re.search(r'sec\s*=\s*(\d+)', out)
+            if m:
+                return float(m.group(1))
+    except Exception:
+        pass
+    return 0.0
+
+
+def process_started(pid):
+    """When a process started (seconds since the epoch), or None when the system does not say."""
+    try:
+        if sys.platform.startswith('linux'):
+            with open('/proc/%d/stat' % pid, encoding='ascii', errors='replace') as f:
+                fields = f.read().rsplit(')', 1)[-1].split()
+            boot = boot_time()
+            # starttime, the 22nd field: clock ticks after the boot (the 20th after the name)
+            return boot + int(fields[19]) / os.sysconf('SC_CLK_TCK') if boot else None
+        if os.name == 'nt':
+            import ctypes
+            from ctypes import wintypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x1000, False, pid)     # PROCESS_QUERY_LIMITED_INFORMATION
+            if not handle:
+                return None
+            try:
+                times = [wintypes.FILETIME() for _ in range(4)]
+                if not kernel32.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
+                    return None
+                created = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+                return created / 1e7 - 11644473600.0     # 100 ns since 1601 -> seconds since 1970
+            finally:
+                kernel32.CloseHandle(handle)
+        out = subprocess.run(['ps', '-o', 'lstart=', '-p', str(pid)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             stdin=subprocess.DEVNULL, text=True, timeout=10, env=dict(os.environ, LC_ALL='C')).stdout.strip()
+        if out:
+            return time.mktime(time.strptime(out, '%a %b %d %H:%M:%S %Y'))
+    except Exception:
+        pass
+    return None
+
+
+def recorded_server(pid_file):
+    """The process server.pid records, while it is still the server that was started: the record written after the
+    machine's last boot (nothing survives a reboot, and the numbers are given out again from the start), the process
+    alive, and not started after the record was written (a number given to another process since). 0 otherwise: a
+    stale record - never "already running", never stopped. On 2026-11-13 a server's reboot left its website
+    down: the record of the day before named a number a process of the new boot held, the start said "Already
+    running" and returned; a stop would have killed that process."""
+    pid = read_pid(pid_file)
+    if not pid:
+        return 0
+    try:
+        written = pid_file.stat().st_mtime
+    except OSError:
+        return 0
+    boot = boot_time()
+    if boot and written < boot - 2:
+        return 0
+    if not pid_alive(pid):
+        return 0
+    started = process_started(pid)
+    if started is not None and started > written + 5:   # the server starts before its number is written down
+        return 0
+    return pid
 
 
 def tail(path, lines=80):
@@ -428,8 +511,8 @@ def native_control(action, runtime):
     if runtime is None:
         raise ValueError('status/stop/logs of a native server need a project instance (--project-home)')
     pid_file, log_file = runtime / 'server.pid', runtime / 'server.log'
-    pid = read_pid(pid_file)
-    alive = pid_alive(pid)
+    pid = recorded_server(pid_file)
+    alive = bool(pid)
     if action == 'stop':
         if alive:
             print('Stopping the background server (process {} and its children) ...'.format(pid), flush=True)
@@ -451,8 +534,8 @@ def detach(request, runtime):
     A second start while that process lives only reports it. No service is installed."""
     runtime.mkdir(parents=True, exist_ok=True)
     pid_file, log_file = runtime / 'server.pid', runtime / 'server.log'
-    old = read_pid(pid_file)
-    if pid_alive(old):
+    old = recorded_server(pid_file)
+    if old:
         print('Already running: PID {}; log: {}'.format(old, log_file), flush=True)
         return {'return': 0, 'running': True, 'pid': old, 'log': str(log_file), 'already': True}
     child = dict(request, options={k: v for k, v in request['options'].items() if k != 'detach'}, _selected=True)
