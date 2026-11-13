@@ -8,7 +8,7 @@ cx task run start-after-restart                                    # status: ena
 cx task run start-after-restart enable --what=cserver,ssh          # ssh: the fleet's key for this machine (cx host whoami)
 cx task run start-after-restart enable --what=cserver              # the cserver alone
 cx task run start-after-restart enable --what=cserver --workdir=D:\Work   # started in that folder (default: the user's)
-cx task run start-after-restart disable --what=cserver,ssh         # nothing starts after a restart any more (those running stop)
+cx task run start-after-restart disable --what=cserver,ssh         # nothing starts after a restart any more (those running keep running)
 cx task run start-after-restart start --what=cserver,ssh           # now, the way a restart starts them
 cx task run start-after-restart stop --what=cserver,ssh
 ```
@@ -38,7 +38,7 @@ Each server runs under a supervisor, the `run` action of this task:
    would listen on 127.0.0.1 only.
 3. It starts the server in the foreground.
 4. If the server ends, it starts it again 30 s later.
-5. It stops when `stop` or `disable` asks it to.
+5. It stops when `stop` asks it to. `disable` leaves it running: it only removes the start after a restart.
 
 The logs and records live in the log artifact `log::local:start-after-restart`:
 
@@ -53,7 +53,9 @@ The logs and records live in the log artifact `log::local:start-after-restart`:
 password (S4U). It runs on battery too, with no time limit. Its "Start in" is the user's folder, which always exists
 (a missing one would stop the task from starting); `--workdir` is on its command line. Registering or removing such
 a task needs an administrator: from a console that is not one, `enable` and `disable` ask Windows for one (UAC). The
-machine needs:
+servers such a task starts run in the session without a login, which a console that is not an administrator's may
+not reach either. `stop` then asks the same way, once for all the servers, and says when one still runs.
+The machine needs:
 
 - Tailscale unattended (`tailscale set --unattended=true`);
 - the drive of the cMeta home readable before a login: BitLocker auto-unlock, or no BitLocker.

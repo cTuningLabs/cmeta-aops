@@ -2,6 +2,30 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.69.1
+- **New task `lid-close-action`: what closing a laptop's lid does.** A laptop reached from elsewhere must keep running
+  with its lid closed. Actions `status` (the default), `disable` (closing the lid does nothing) and `enable` (what it
+  did before); `--power=ac` (the default), `battery` or `both`.
+  - **Windows:** the active power plan's `LIDACTION` (powercfg). `disable` keeps the values it replaces in
+    `log::local:lid-close-action` and `enable` puts them back; with nothing kept, `--to` (sleep by default).
+  - **Linux:** a drop-in of this task for systemd-logind (`/etc/systemd/logind.conf.d/50-cmeta-lid-close-action.conf`,
+    sudo), and logind asked to read it again - never restarted, since that may end the graphical session. `enable`
+    removes the file. `status` names the programs that hold the lid switch.
+  - **macOS:** `pmset disablesleep`, which governs all the sleep of the machine. `enable` puts back only what this
+    task's `disable` changed.
+- **`start-after-restart`: `stop` from a console that is not an administrator's ends the servers too.** The
+  servers of a start without a login run in a session such a console may not reach; the stop failed without a word.
+  Windows now asks for an administrator, once for all the servers, and `stop` says when a server still runs.
+- **`start-after-restart`: `disable` only removes the start after a restart.** Servers running now keep running, and
+  `disable` says so; `stop` ends them. One question for an administrator for all the startup tasks, not one per
+  server.
+- **`cx host status`: the ssh server of every ssh host, this machine's too, and where a browser opens a server.**
+  - **`ssh` in each ssh host's row:** for another machine, its own banner check. For this machine, whose check says
+    only "here", its declared address and port are asked for their banner too.
+  - **`browse` in each declared server's row:** `server: browse:` when declared; else its `url`, unless that is the
+    machine itself (127.0.0.1, localhost); else the root of its first public URL.
+  - Fleet pages use them for an SSH and a cServer column.
+
 ## 0.69.0
 - **New task `start-after-restart`: a machine's cserver and ssh server start after every restart, before anyone
   logs in.** It is for reaching a machine over Tailscale from elsewhere: its pages, a shell, a way to restart things.

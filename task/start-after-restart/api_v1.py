@@ -5,7 +5,7 @@ start-after-restart - start a cserver and an ssh server of this machine after ev
   cx task run start-after-restart                                   status: what is enabled here, what runs, its log
   cx task run start-after-restart enable --what=cserver,ssh         ssh: the fleet's key for this machine (cx host whoami)
   cx task run start-after-restart enable --what=cserver             only the cserver
-  cx task run start-after-restart disable --what=cserver,ssh        no start after a restart any more (and those running stop)
+  cx task run start-after-restart disable --what=cserver,ssh        no start after a restart any more (those running keep running)
   cx task run start-after-restart start|stop --what=cserver,ssh     now, as a restart would start it (and stop it)
   cx task run start-after-restart run --what=cserver                what a restart runs (waits for Tailscale, keeps it up)
   --workdir=<folder>                                                the folder the servers start in (default: the user's)
@@ -15,7 +15,7 @@ login and no stored password (S4U), on battery too, with no time limit; register
 administrator - enable and disable ask Windows for one (UAC) when this console is not one. Linux and macOS: a line in
 the user's crontab, @reboot - cron starts it as the user at the boot. The server runs under a supervisor of this
 task (`run`): it waits until the Tailscale address exists, starts the server in the foreground and starts it again
-when it ends, until `stop` or `disable`; its log and records in log::local:start-after-restart. The supervisor
+when it ends, until `stop`; its log and records in log::local:start-after-restart. The supervisor
 starts in the user's folder (always there) and moves into --workdir: a folder gone since the enable is logged and the
 servers start in the user's folder - a restart never fails over it.
 
@@ -120,6 +120,31 @@ def kill_group(pid):
         time.sleep(2)
 
 
+def can_terminate(pid):
+    """Whether this process may end that one. On Windows the servers of a start without a login run in a session a
+    console that is not an administrator's may not reach: OpenProcess is refused (access denied, error 5). A process
+    that is gone needs nothing (True)."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return True
+    if os.name == 'nt':
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        handle = k32.OpenProcess(0x0001, False, pid)           # PROCESS_TERMINATE
+        if handle:
+            k32.CloseHandle(handle)
+            return True
+        return k32.GetLastError() != 5
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        return False
+    except OSError:
+        pass
+    return True
+
+
 def ps_quote(s):
     return "'" + str(s).replace("'", "''") + "'"
 
@@ -212,6 +237,29 @@ class CTask(InitCTask):
             if len(whats) != 1:
                 return self.cm.error('run takes one server: --what=cserver or --what=ssh')
             return self._supervise(whats[0])
+
+        if action == 'disable':
+            # the start after a restart only: servers running now keep running (the user, 2026-11-13: "sometimes I
+            # just want to disable them for the next restart but not stop them") - stop ends them
+            r = self._disable_all(whats)
+            if r['return'] > 0:
+                return r
+            running = [w for w in whats if self._running(w)[1]]
+            if running and self.con:
+                print(f'{" and ".join(running)}: still running now, as before - '
+                      f'cx task run start-after-restart stop --what={",".join(running)}'
+                      f'{" --name=" + self.opts["name"] if self.opts["name"] else ""} ends {"them" if len(running) > 1 else "it"}')
+            return {'return': 0, 'action': action, 'running': running}
+
+        if action == 'stop':
+            # all the servers at once: on Windows one question for an administrator at most, not one per server
+            results = self._stop_all(whats)
+            left = [w for w in whats if results[w].get('still_running')]
+            if left:
+                return self.cm.error(f'{" and ".join(left)} still running: Windows refused to end it, or the question for '
+                                     'an administrator was declined - run this again and answer it, or from an '
+                                     'administrator\'s console')
+            return {'return': 0, 'action': action, 'servers': results}
 
         results = {}
         for w in whats:
@@ -467,33 +515,70 @@ class CTask(InitCTask):
             print(f'{what}: {"started by " + how + " (supervisor " + str(rec.get("pid")) + ")" if running else "did not start - see " + p["log"] + " and " + p["boot_log"]}')
         return {'return': 0 if running else 1, 'started': running, **({} if running else {'error': f'{what} did not start'})}
 
-    def _stop(self, what):
-        p = self._paths(what)
-        with open(p['stop'], 'w', encoding='utf-8') as f:
-            f.write(time.strftime('%Y-%m-%d %H:%M:%S'))
-        rec, running = self._running(what)
-        if os.name == 'nt' and self._win_query(what)[0]:
-            r = self._powershell(f'Stop-ScheduledTask -TaskPath {ps_quote(WIN_FOLDER)} -TaskName {ps_quote(self._win_name(what))}',
-                                 admin=False)
-            if r['return'] > 0:
+    def _end_processes(self, pids, windows=None):
+        """Ends processes and everything they started. On Windows the servers of a start without a login run in a
+        session that a console which is not an administrator's may not reach (access denied; 2026-11-13: such a
+        console could not end them and said nothing): then Windows asks for an
+        administrator (UAC), once, and an administrator's PowerShell ends their trees."""
+        pids = [int(p) for p in pids if p]
+        windows = os.name == 'nt' if windows is None else windows
+        if windows and pids and not all(can_terminate(p) for p in pids):
+            if self.con:
+                print('the servers run in the session without a login, which this console may not reach: '
+                      'Windows asks for an administrator to end them')
+            return self._powershell('\n'.join(f'& cmd.exe /d /c "taskkill /PID {p} /T /F >nul 2>&1"' for p in pids),
+                                    admin=True)
+        for p in pids:
+            kill_group(p)
+        return {'return': 0}
+
+    def _stop_all(self, whats):
+        """stop for the servers named: their stop files (no new start by their supervisors), their startup tasks
+        stopped (the user's own right), the processes ended - on Windows with one question for an administrator at
+        most - and a check that they are gone (10 s). {what: {'stopped', 'still_running'}}."""
+        found, pids = {}, []
+        for what in whats:
+            with open(self._paths(what)['stop'], 'w', encoding='utf-8') as f:
+                f.write(time.strftime('%Y-%m-%d %H:%M:%S'))
+            rec, running = self._running(what)
+            found[what] = (rec, running)
+            if os.name == 'nt' and self._win_query(what)[0]:
                 self._powershell(f'Stop-ScheduledTask -TaskPath {ps_quote(WIN_FOLDER)} -TaskName {ps_quote(self._win_name(what))}',
-                                 admin=True)
-        if running:
-            child = rec.get('child')
-            if child and recorded_process_alive(child, rec.get('child_started', 0)):
-                kill_group(child)
-            kill_group(rec.get('pid'))
-        if what == 'ssh':
-            # the server run-openssh started (its own record, its own stop): never an sshd of another run; the port of
-            # the running supervisor when there was one
-            port = (rec.get('opts') or {}).get('ssh_port', self.opts['ssh_port']) if running else self.opts['ssh_port']
-            words = [sys.executable, '-m', 'cmeta', 'task', 'run', 'run-openssh', 'stop', f'--port={port}', '-q']
-            if self.opts['name']:
-                words.append(f'--name={self.opts["name"]}')
-            subprocess.run(words, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if self.con:
-            print(f'{what}: {"stopped (supervisor " + str(rec.get("pid")) + ")" if running else "was not started by this task"}')
-        return {'return': 0, 'stopped': running}
+                                 admin=False)
+            if running:
+                child = rec.get('child')
+                if child and recorded_process_alive(child, rec.get('child_started', 0)):
+                    pids.append(child)
+                pids.append(rec.get('pid'))
+        r = self._end_processes(pids)
+        if r['return'] > 0 and self.con:
+            print('cMeta warning: ' + str(r.get('error') or 'the servers could not be ended'))
+
+        results = {}
+        for what in whats:
+            rec, running = found[what]
+            if what == 'ssh':
+                # the server run-openssh started (its own record, its own stop): never an sshd of another run; the
+                # port of the running supervisor when there was one
+                port = (rec.get('opts') or {}).get('ssh_port', self.opts['ssh_port']) if running else self.opts['ssh_port']
+                words = [sys.executable, '-m', 'cmeta', 'task', 'run', 'run-openssh', 'stop', f'--port={port}', '-q']
+                if self.opts['name']:
+                    words.append(f'--name={self.opts["name"]}')
+                subprocess.run(words, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            still = False
+            if running:
+                for _ in range(10):
+                    if not self._running(what)[1]:
+                        break
+                    time.sleep(1)
+                else:
+                    still = True
+            if self.con:
+                print(f'{what}: ' + ('NOT stopped - supervisor %s still runs' % rec.get('pid') if still else
+                                     'stopped (supervisor %s)' % rec.get('pid') if running else
+                                     'was not started by this task'))
+            results[what] = {'return': 0, 'stopped': running and not still, 'still_running': still}
+        return results
 
     ############################################################
     # enable, disable
@@ -515,14 +600,25 @@ class CTask(InitCTask):
                   f'cx task run start-after-restart start --what={what}{" --name=" + o["name"] if o["name"] else ""}')
         return r
 
-    def _disable(self, what):
-        self._stop(what)
-        r = self._win_disable(what) if os.name == 'nt' else self._cron_disable(what)
-        if r['return'] > 0:
-            return r
+    def _disable_all(self, whats):
+        """No start after a restart any more for the servers named (those running keep running): on Windows their
+        startup tasks removed with one question for an administrator at most, elsewhere their crontab lines."""
+        if os.name == 'nt':
+            names = [self._win_name(w) for w in whats if self._win_query(w)[0]]
+            if names:
+                r = self._powershell('\n'.join(f'Unregister-ScheduledTask -TaskPath {ps_quote(WIN_FOLDER)} -TaskName '
+                                               f'{ps_quote(n)} -Confirm:$false' for n in names), admin=True)
+                if r['return'] > 0:
+                    return r
+        else:
+            for w in whats:
+                r = self._cron_disable(w)
+                if r['return'] > 0:
+                    return r
         if self.con:
-            print(f'{what}: DISABLED - nothing starts it after a restart any more')
-        return r
+            for w in whats:
+                print(f'{w}: DISABLED - nothing starts it after a restart any more')
+        return {'return': 0}
 
     ############################################################
     # Windows: the Task Scheduler
@@ -596,14 +692,6 @@ class CTask(InitCTask):
         ])
         r = self._powershell(script, admin=True)
         return r if r['return'] > 0 else {'return': 0, 'enabled': True, 'task': WIN_FOLDER + self._win_name(what), 'command': argument}
-
-    def _win_disable(self, what):
-        if not self._win_query(what)[0]:
-            return {'return': 0, 'enabled': False}
-        script = (f"Unregister-ScheduledTask -TaskPath {ps_quote(WIN_FOLDER)} -TaskName {ps_quote(self._win_name(what))} "
-                  "-Confirm:$false")
-        r = self._powershell(script, admin=True)
-        return r if r['return'] > 0 else {'return': 0, 'enabled': False}
 
     ############################################################
     # Linux, macOS: crontab @reboot
