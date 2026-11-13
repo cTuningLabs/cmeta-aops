@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.68.1
 - **A website started in the background comes back after a reboot.** The runtime of `manage-cmeta-project` (the
   `--detach` start of a site and the after-restart commands of a host, `__run_server_nohup.sh`, `--status`, `--stop`)
   read the process number its `server.pid` recorded and took any live process of that number for its server. After
