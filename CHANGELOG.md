@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.69.1
 - **New task `lid-close-action`: what closing a laptop's lid does.** A laptop reached from elsewhere must keep running
   with its lid closed. Actions `status` (the default), `disable` (closing the lid does nothing) and `enable` (what it
   did before); `--power=ac` (the default), `battery` or `both`.
