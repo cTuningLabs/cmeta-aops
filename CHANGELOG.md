@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.69.0
 - **New task `start-after-restart`: a machine's cserver and ssh server start after every restart, before anyone
   logs in.** It is for reaching a machine over Tailscale from elsewhere: its pages, a shell, a way to restart things.
   Actions `enable`, `disable`, `status` (the default), `start`, `stop`; servers `--what=cserver,ssh`.
