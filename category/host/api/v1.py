@@ -5182,8 +5182,29 @@ class Category(InitCategory):
                          # the command that starts the server on the host (cx host up <host> --project=<name>)
                          'start': str((p.get('server') or {}).get('start') or ''),
                          # the public URLs of the server checked from this machine (status: _public_status_all)
-                         'public': list((h.get('public_status') or {}).get(name) or [])})
+                         'public': list((h.get('public_status') or {}).get(name) or []),
+                         # the address a browser opens for it (the links of the /host page)
+                         'browse': self._browse_url(p.get('server') or {})})
         return rows
+
+    @staticmethod
+    def _browse_url(server):
+        """The address a browser opens for a project's server: its "browse" when declared; else its "url" unless that
+        is the machine itself (127.0.0.1, localhost: no other machine reaches it); else its first public URL, as the
+        site's root (a health path is not a page); else ''."""
+        url = str(server.get('browse') or '')
+        if url:
+            return url
+        url = str(server.get('url') or '')
+        host = urllib.parse.urlsplit(url).hostname or ''
+        if url and host and host != 'localhost' and not host.startswith('127.') and host != '::1':
+            return url
+        public = server.get('public')
+        public = [public] if isinstance(public, str) else list(public or [])
+        if public:
+            parts = urllib.parse.urlsplit(str(public[0]))
+            return f'{parts.scheme}://{parts.netloc}/' if parts.scheme and parts.netloc else ''
+        return ''
 
     @staticmethod
     def _public_urls(server):
@@ -5709,6 +5730,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             except Exception as e:
                 h['status'] = f'error: {e}'
             h['status_time'] = time.monotonic() - t0
+            if h.get('type') == 'ssh':
+                h['ssh'] = self._ssh_server_status(h, h['status'], timeout)
 
         if not hosts:
             return
@@ -5718,6 +5741,19 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 list(ex.map(one, hosts))
         finally:
             self._adb_batch = None
+
+    @staticmethod
+    def _ssh_server_status(h, status, timeout=DEFAULT_STATUS_TIMEOUT):
+        """The ssh server of an ssh host as another machine of the fleet reaches it (the SSH column of the /host page):
+        for another machine its own check (the banner); for this machine ("here": no ssh is needed to reach it, and
+        its check said nothing about its ssh server) its declared address and port asked for their banner too -
+        the server start-after-restart or run-openssh started there, or none."""
+        if status != 'here':
+            return status
+        acc = h['desc'].get('access') or {}
+        if not acc.get('address'):
+            return 'not declared'
+        return ssh_banner_status(acc['address'], int(acc.get('port') or DEFAULT_SSH_PORT), timeout)
 
     def _status(self, ctx, h, timeout=DEFAULT_STATUS_TIMEOUT, cmd_timeout=DEFAULT_STATUS_CMD_TIMEOUT):
         if self._retired(h):
@@ -8345,6 +8381,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             row['status'] = 'retired' if row['retired'] else (h.get('status') or '-')
             if h.get('status_time') is not None:
                 row['status_time'] = round(h['status_time'], 2)
+            if h.get('ssh') is not None:
+                row['ssh'] = 'retired' if row['retired'] else h['ssh']      # the ssh server (_ssh_server_status)
             if h.get('parents'):
                 row['parents'] = list(h['parents'])
         return row

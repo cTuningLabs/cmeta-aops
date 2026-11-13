@@ -1,0 +1,12 @@
+authors: Grigori Fursin
+
+# What closing a laptop's lid does (api_v1.py, README.md): nothing, or what it did before.
+#
+#   cx task run lid-close-action                        status
+#   cx task run lid-close-action disable [--power=both] closing the lid does nothing (on AC power; both: on battery too)
+#   cx task run lid-close-action enable  [--power=both] what it did before the disable, again
+
+cache: False
+
+params_map:
+  arg2: action

@@ -302,6 +302,76 @@ def test_the_probe_wants_an_answer_not_only_a_connection(ns):
                 c.close()
 
 
+def test_processes_this_console_may_not_end_go_to_an_administrator_once(ns, tmp_path, monkeypatch):
+    # Windows: the servers of a start without a login are out of reach of a console that is not an administrator's
+    # (2026-11-13: such a disable left both running) - one question for an administrator ends them all
+    task = make_task(ns, tmp_path)
+    calls, killed = [], []
+    task._powershell = lambda script, admin=False: calls.append((script, admin)) or {'return': 0}
+    monkeypatch.setitem(ns, 'kill_group', lambda pid: killed.append(pid))
+    monkeypatch.setitem(ns, 'can_terminate', lambda pid: pid != 222)
+    assert task._end_processes([111, 222, None], windows=True) == {'return': 0}
+    assert killed == [] and len(calls) == 1 and calls[0][1] is True
+    assert 'taskkill /PID 111 /T /F' in calls[0][0] and 'taskkill /PID 222 /T /F' in calls[0][0]
+
+    calls.clear()
+    monkeypatch.setitem(ns, 'can_terminate', lambda pid: True)
+    task._end_processes([111, 222], windows=True)
+    assert calls == [] and killed == [111, 222]                 # no question when this console may end them
+    task._end_processes([], windows=True)
+    assert calls == []
+
+
+def test_this_process_may_end_itself(ns):
+    assert ns['can_terminate'](os.getpid()) is True
+    assert ns['can_terminate'](None) is True
+
+
+def test_stop_ends_the_servers_together_and_says_when_one_still_runs(ns, tmp_path, monkeypatch, capsys):
+    task = make_task(ns, tmp_path)
+    task.con = True
+    monkeypatch.setattr(ns['time'], 'sleep', lambda seconds: None)
+    task._win_query = task._cron_has = lambda what: (False, '', '')
+    ended = []
+    task._end_processes = lambda pids, windows=None: ended.append(list(pids)) or {'return': 0}
+    states = {'cserver': [True, False]}                          # running at the stop, gone at the check
+
+    def running(what):
+        seq = states[what]
+        return {'pid': 41, 'child': 0}, (seq.pop(0) if len(seq) > 1 else seq[0])
+    task._running = running
+
+    r = task._stop_all(['cserver'])
+    assert ended == [[41]] and r['cserver'] == {'return': 0, 'stopped': True, 'still_running': False}
+    assert os.path.isfile(task._paths('cserver')['stop'])        # its supervisor starts nothing again
+    assert 'cserver: stopped (supervisor 41)' in capsys.readouterr().out
+
+    states['cserver'] = [True]                                   # never gone: refused, or the question declined
+    r = task._stop_all(['cserver'])
+    assert r['cserver'] == {'return': 0, 'stopped': False, 'still_running': True}
+    assert 'cserver: NOT stopped - supervisor 41 still runs' in capsys.readouterr().out
+
+
+def test_disable_leaves_running_servers_running(ns, tmp_path, capsys):
+    # the user, 2026-11-13: "sometimes I just want to disable them for the next restart but not stop them"
+    task = ns['CTask'].__new__(ns['CTask'])
+    task.cm = StubCM(tmp_path / 'home')
+    task.cmeta = {'uses_categories': {'host': 'host', 'log': 'log', 'config': 'config'}}
+    task._folder = lambda: {'return': 0, 'path': str(tmp_path)}
+    disabled = []
+    task._disable_all = lambda whats: disabled.append(list(whats)) or {'return': 0}
+
+    def no_stop(whats):
+        raise AssertionError('disable must stop nothing')
+    task._stop_all = no_stop
+    task._running = lambda what: ({'pid': 7}, what == 'cserver')
+
+    r = task.run({'control': {'con': True}}, action='disable', what='cserver,ssh')
+    assert r == {'return': 0, 'action': 'disable', 'running': ['cserver']} and disabled == [['cserver', 'ssh']]
+    assert 'cserver: still running now, as before - cx task run start-after-restart stop --what=cserver ends it' in capsys.readouterr().out
+    assert not os.path.exists(os.path.join(str(tmp_path), 'cserver.stop'))
+
+
 def test_the_ssh_host_comes_from_whoami_unless_given(ns, tmp_path):
     task = make_task(ns, tmp_path)
     task.cm.whoami = {'return': 0, 'host': 'worker', 'uid': '5a3c9e0b7d214f68', 'by': 'system_id'}

@@ -1,0 +1,21 @@
+artifact: 7b140061872eac83
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-11-13T16:50:00.000000+00:00'
+desc: What closing a laptop's lid does - nothing (a machine reached from elsewhere keeps running) or its sleep,
+  hibernation or shutdown again (Windows powercfg, Linux systemd-logind, macOS pmset) - disable, enable, status.
+generator:
+  agent: Claude Code 2.1.322
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  via: cmeta 0.41.1
+tags:
+- power
+- lid
+- laptop
+- sleep
+- hibernate
+uses_categories:
+  log: log,487a7639093a4685
+  task: task,c36be4b9314a45e0
