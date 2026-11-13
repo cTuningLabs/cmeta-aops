@@ -96,7 +96,10 @@ def get_usage(url, token, account_id=''):
             raise ValueError('Invalid provider response')
         return value
     except HTTPError as exc:
-        exc.close()
+        try:
+            exc.close()  # Its response body; Python 3.9/3.10 cannot close an error made without one (fp=None).
+        except Exception:
+            pass
         if exc.code == 401:
             raise StatusError('login_expired', 'The server login expired. Run this harness once to refresh its login, then check again.', 30) from None
         if exc.code == 403:
