@@ -26,7 +26,7 @@ import subprocess
 import time
 import urllib.request
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_file_alive
 
 SETUP = 'setup,a2f9b61079ce4333'
 TOOL = 'paperclip,dbf17b0c34d145cf'
@@ -187,7 +187,7 @@ class CTask(InitCTask):
     def _start(self, cli, bind, wait, con):
         c = self._c
         pid = self._pid()
-        if pid and alive(pid) and listening(c['port']):
+        if pid and recorded_file_alive(c['pid_file'], pid, alive) and listening(c['port']):
             if con:
                 print(f'cMeta info: Paperclip "{c["instance"]}" runs already (pid {pid}, http://127.0.0.1:{c["port"]})')
             return {'return': 0}
@@ -223,7 +223,8 @@ class CTask(InitCTask):
     def _stop(self, con):
         c = self._c
         pid = self._pid()
-        if not pid or not alive(pid):
+        # only the process the record was written for (after a reboot its number may be another program's group)
+        if not pid or not recorded_file_alive(c['pid_file'], pid, alive):
             if con:
                 print(f'cMeta info: Paperclip "{c["instance"]}" is not running')
             return False

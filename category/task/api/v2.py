@@ -2260,13 +2260,26 @@ class Category(InitCategory):
                 inner = f'mkdir -p ~/{work} && cd ~/{work} && ' + inner
             if detach:
                 # a session of its own (setsid; nohup where there is none: macOS), so that it survives the ssh / docker
-                # exec / wsl session that started it; $$ of the wrapper is the process group to stop
+                # exec / wsl session that started it; $$ of the wrapper is the process group to stop. Its record keeps
+                # the process's start time beside its number, and the stop is a script beside it (<run>.stop) that stops
+                # the group only while that process is the one started: after a restart of the host (or of a container)
+                # the number may belong to any other program, whose whole group a plain "kill -- -<number>" would end
                 base = f'~/cmeta-detached/{run_id}'
-                wrapper = shlex.quote(f'echo $$ > {base}.pid; ' + inner)
+                wrapper = shlex.quote(f'echo $$ > {base}.pid; ps -o lstart= -p $$ >> {base}.pid 2>/dev/null; ' + inner)
+                stop = ['#!/bin/sh',
+                        f'# Stops the detached run {run_id}: its process group, only while the process its record names is the',
+                        '# one started (the start time beside the number) - after a restart the number may be another program\'s.',
+                        f'f=~/cmeta-detached/{run_id}.pid',
+                        'p=$(sed -n 1p "$f" 2>/dev/null); s=$(sed -n 2p "$f" 2>/dev/null); ok=',
+                        'if [ -n "$p" ] && [ -n "$s" ]; then [ "$(ps -o lstart= -p "$p" 2>/dev/null)" = "$s" ] && ok=1',
+                        'elif [ -n "$p" ]; then kill -0 "$p" 2>/dev/null && ok=1; fi',
+                        f'if [ -n "$ok" ]; then kill -- -"$p" && echo "stopped: the run {run_id} (process group $p)"; '
+                        f'else echo "not stopped: the run {run_id} does not run (it ended, or the machine restarted since)"; fi']
                 inner = (f'mkdir -p ~/cmeta-detached && cd ~ && '
+                         f'printf \'%s\\n\' {" ".join(shlex.quote(line) for line in stop)} > {base}.stop && '
                          f'if command -v setsid >/dev/null 2>&1; then setsid -f sh -c {wrapper} > {base}.log 2>&1 < /dev/null; '
                          f'else nohup sh -c {wrapper} > {base}.log 2>&1 < /dev/null & fi; '
-                         f'sleep 2; echo "detached: {base}.log (stop: kill -- -$(cat {base}.pid))"')
+                         f'sleep 2; echo "detached: {base}.log (stop: sh {base}.stop)"')
         run_on = {'host': host, 'ref': ref, 'engine': engine, 'words': inner, 'instance_made': bool(made and made.get('made')),
                   'image': image, 'terminal': terminal}
         if work:
@@ -2275,7 +2288,7 @@ class Category(InitCategory):
             base = f'~/cmeta-detached/{run_id}'
             run_on['detached'] = {'log': f'{base}.log', 'pid_file': f'{base}.pid',
                                   'tail': f'cx host run {host} "tail -n 50 {base}.log"',
-                                  'stop': f'cx host run {host} "kill -- -$(cat {base}.pid)"'}
+                                  'stop': f'cx host run {host} "sh {base}.stop"'}
             if made and made.get('ports'):
                 run_on['ports'] = made['ports']
         if screen:

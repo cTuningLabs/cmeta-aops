@@ -267,9 +267,12 @@ def test_detach_keeps_the_run_going_there_and_says_how_to_stop_it(module):
     cmd = host_run(c)['arg2']
     assert 'setsid -f sh -c' in cmd and 'nohup sh -c' in cmd and 'echo $$ > ~/cmeta-detached/' in cmd
     assert 'cx tool run python -- -m http.server 8765' in cmd and '--on_detach' not in cmd
+    # the record keeps the start time of the process beside its number; the stop is a script that checks it
+    # (2026-11-13: after a restart the number may be another program's - a plain kill -- -<number> would end its group)
+    assert 'ps -o lstart= -p $$ >>' in cmd and '.stop' in cmd and 'kill -- -' in cmd
     d = r['run_on']['detached']
     assert d['log'].startswith('~/cmeta-detached/') and d['log'].endswith('.log')
-    assert 'kill -- -$(cat' in d['stop'] and d['pid_file'] in d['stop']
+    assert d['stop'].endswith('.stop"') and 'sh ~/cmeta-detached/' in d['stop'] and 'kill -- -$(cat' not in d['stop']
 
 
 def test_a_detached_run_asks_for_no_terminal_even_from_one(module, monkeypatch):

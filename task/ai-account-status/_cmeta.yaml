@@ -1,0 +1,10 @@
+artifact: 85f3b9fe115a4b62
+category: task,c36be4b9314a45e0
+name: AI account status
+desc: Read provider account allowances without starting an AI turn.
+authors: Grigori Fursin
+creation_timestamp: '2026-11-13T14:00:00+00:00'
+tags: [ai, account, quota]
+uses_categories:
+  task: task,c36be4b9314a45e0
+  log: log,487a7639093a4685

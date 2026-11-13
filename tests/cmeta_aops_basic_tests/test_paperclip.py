@@ -15,10 +15,12 @@ import pytest
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
-def load(rel, base, stub):
+def load(rel, base, stub, helpers=None):
     path = REPO_ROOT / rel
-    src = path.read_text(encoding='utf-8').replace(base, stub)
-    ns = {'__name__': 'paperclip_under_test', '__file__': str(path)}
+    src = path.read_text(encoding='utf-8')
+    assert base in src
+    src = src.replace(base, stub)
+    ns = {'__name__': 'paperclip_under_test', '__file__': str(path), **(helpers or {})}
     exec(compile(src, str(path), 'exec'), ns)
     return ns
 
@@ -29,8 +31,9 @@ def tool():
 
 
 @pytest.fixture(scope='module')
-def task():
-    return load('task/run-paperclip/api_v1.py', 'from task_c36be4b9314a45e0.api.ctask import InitCTask', 'class InitCTask: pass')
+def task(ctask_helpers):
+    return load('task/run-paperclip/api_v1.py', 'from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_file_alive',
+                'class InitCTask: pass', ctask_helpers('recorded_file_alive'))
 
 
 def test_the_launchers_run_the_cli_with_cmetas_node_and_no_telemetry(tool):
