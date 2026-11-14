@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.70.2
 - **`ai-account-status` names the account a quota belongs to.** Beside the quota, the identity of the login it was
   read with: `Claude (you@example.com): 5h: 94% remaining`, or `Codex (API): ...` for an API credential or a selected
   gateway; `identity` holds an allowlisted `kind` (login / api) and `label`, `account.authType` says login or api where
