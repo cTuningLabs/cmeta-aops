@@ -102,6 +102,72 @@ def secure_boot_on():
     return rc == 0 and 'enabled' in out.lower()
 
 
+def linux_pci_gpus():
+    """The NVIDIA GPUs on the PCI bus, also when no driver runs (a first install): lspci's names."""
+    if not shutil.which('lspci'):
+        return []
+    rc, out = run(['lspci', '-nn'], 30)
+    return drivers.pci_gpus(out) if rc == 0 else []
+
+
+def enrolled_signing_pair():
+    """A module-signing key pair of this Linux whose certificate the firmware has enrolled (mokutil --test-key):
+    (private key, certificate), or None. The private key is root's: only its presence is checked here."""
+    if not shutil.which('mokutil'):
+        return None
+    for private_key, certificate in drivers.MOK_PAIRS:
+        if os.path.exists(private_key) and os.path.isfile(certificate):
+            rc, out = run(['mokutil', '--test-key', certificate], 30)
+            if drivers.enrolled(out):
+                return private_key, certificate
+    return None
+
+
+def linux_build_facts(version = None):
+    """What drivers.preflight checks: the kernel and its compiler, the gcc found (gcc-<the kernel's major> first when
+    the default gcc is another one), make, the headers, DKMS, Secure Boot and its key, the distribution's packages."""
+    kernel = os.uname().release
+    try:
+        with open('/proc/version', encoding = 'utf-8', errors = 'replace') as fh:
+            proc_version = fh.read()
+    except OSError:
+        proc_version = ''
+    _, kcc = drivers.kernel_compiler(proc_version)
+
+    cc_path, cc = None, None
+    for name in ([f'gcc-{kcc.split(".")[0]}'] if kcc else []) + ['gcc']:
+        path = shutil.which(name)
+        if path:
+            rc, out = run([path, '-dumpfullversion', '-dumpversion'], 30)
+            if rc == 0 and out.strip():
+                cc_path, cc = path, out.strip().splitlines()[0]
+                break
+
+    dkms = None
+    if shutil.which('dkms'):
+        rc, out = run(['dkms', '--version'], 30)
+        dkms = out.strip().splitlines()[0] if rc == 0 and out.strip() else 'dkms'
+
+    rc, dpkg_l = run(['dpkg', '-l'], 60) if shutil.which('dpkg') else (1, '')
+    distro_driver, distro_userspace = drivers.distro_packages(dpkg_l if rc == 0 else '')
+    smi = shutil.which('nvidia-smi')
+    package = linux_package_of(smi) if smi and not distro_driver and not distro_userspace else None
+    if package:
+        distro_userspace = [package]
+
+    sb = secure_boot_on()
+    return {'kernel': kernel, 'proc_version': proc_version, 'cc': cc, 'cc_path': cc_path,
+            'make': bool(shutil.which('make')), 'headers': os.path.isdir(f'/lib/modules/{kernel}/build'),
+            'dkms': dkms, 'secure_boot': sb, 'signing': enrolled_signing_pair() if sb else None,
+            'distro_driver': distro_driver, 'distro_userspace': distro_userspace, 'version': version}
+
+
+def module_signer():
+    """Who signed the nvidia module on disk (modinfo), '' when it is not signed."""
+    rc, out = run(['modinfo', '-F', 'signer', 'nvidia'], 30)
+    return out.strip().splitlines()[0].strip() if rc == 0 and out.strip() else ''
+
+
 class CTool(InitCTool):
 
     def __init__(self, *args, **kwargs):
@@ -165,7 +231,15 @@ class CTool(InitCTool):
         best = drivers.pick([x['version'] for x in r['releases']], max_branch = r['max_branch'], branches = branches_of(r))
         if not best:
             return {'return': 16, 'error': 'no driver release for this GPU'}
-        return {'return': 0, 'version': best, 'source': r['source']}
+
+        # Linux: whether it can be built here (compiler, headers, DKMS, Secure Boot, the distribution's packages) -
+        # --status shows what is not right
+        notes = []
+        if ctx['tasks']['global']['host']['os']['uname'] == 'linux':
+            checks = drivers.preflight(linux_build_facts(best), self.facts().get('known_build_failures'))
+            notes = [f'{"cannot install" if state == "fail" else "warning"} - {what}: {detail}'
+                     for state, what, detail in checks if state != 'ok']
+        return {'return': 0, 'version': best, 'source': r['source'], 'notes': notes}
 
     def gpu(self, ctx):
         """{name, compute_cap} of the oldest NVIDIA GPU here (the one that limits the driver branch), and a note."""
@@ -178,6 +252,11 @@ class CTool(InitCTool):
             names = windows_gpu_names()
             if names:
                 return {'name': names[0][0], 'compute_cap': None, 'driver_version': drivers.windows_version(names[0][1])}, error
+        if uname == 'linux':
+            # no driver runs (a first install): the PCI bus names the GPU, its chip the compute capability
+            found = linux_pci_gpus()
+            if found:
+                return min(found, key = lambda g: g.get('compute_cap') or 999), ''
         return None, error
 
     def releases(self, ctx, params):
@@ -269,22 +348,26 @@ class CTool(InitCTool):
 
     def install_linux(self, ctx, params, release, gpu, content, con, quiet, space):
         version = release['version']
-        smi = shutil.which('nvidia-smi')
-        if smi:
-            package = linux_package_of(smi)
-            if package:
-                return {'return': 16, 'error': f'the driver here comes from the package {package}: upgrade it with the '
-                                               f'distribution (sudo apt install nvidia-driver-<branch>, or cx task run '
-                                               f'upgrade-os), not with NVIDIA\'s .run installer'}
-        if secure_boot_on():
-            return {'return': 16, 'error': 'Secure Boot is on: the module the .run installer builds is not signed '
-                                           'and would not load - use the distribution\'s signed driver packages'}
+
+        # Can it be built here - the kernel and its compiler, the headers, DKMS, Secure Boot and its key, the
+        # distribution's packages - checked before anything is downloaded; any failure stops here
+        f = linux_build_facts(version)
+        checks = drivers.preflight(f, self.facts().get('known_build_failures'))
+        if con:
+            print(f'{space}INFO: what NVIDIA driver {version} needs here:')
+            for state, what, detail in checks:
+                print(f'{space}  {state.upper():5} {what}: {detail}')
+        failed = drivers.blocking(checks)
+        if failed:
+            return {'return': 16, 'error': 'NVIDIA driver %s cannot be installed here yet:\n%s' % (
+                version, '\n'.join(f'  - {what}: {detail}' for _, what, detail in failed))}
+        signing = drivers.signing_args(*f['signing']) if f['signing'] else []
 
         installed = linux_module_version()
         if installed == version:
             if con:
                 print(f'{space}INFO: NVIDIA driver {version} is already installed (modinfo nvidia)')
-            return {'return': 0, 'found_path': smi or '/usr/bin/nvidia-smi'}
+            return {'return': 0, 'found_path': shutil.which('nvidia-smi') or '/usr/bin/nvidia-smi'}
 
         url, sha_url = drivers.linux_runfile(self.facts()['linux_archive'], version)
         try:
@@ -306,7 +389,10 @@ class CTool(InitCTool):
         rc, lsmod = run(['lsmod'], 30)
         kind = drivers.module_type(linux_running(), gpu.get('compute_cap'),
                                    self.facts().get('open_kernel_modules_min_arch', 75))
-        cmd = ['sh', path] + drivers.linux_install_args(kind, nouveau_loaded = 'nouveau' in lsmod)
+        cmd = ['sh', path] + drivers.linux_install_args(kind, nouveau_loaded = 'nouveau' in lsmod) + signing
+        # the compiler of the kernel's major version (gcc-15 when the default gcc is another one)
+        if f.get('cc_path') and os.path.basename(f['cc_path']) != 'gcc':
+            cmd = ['env', 'CC=' + f['cc_path']] + cmd
         if os.geteuid() != 0:
             cmd = ['sudo', '-n'] + cmd if quiet else ['sudo'] + cmd
         if con:
@@ -332,8 +418,16 @@ class CTool(InitCTool):
             tail = ''.join(log.splitlines(True)[-25:])
             return {'return': 16, 'error': why + (f'\n{tail}' if tail else '')}
         os.remove(path)
+
+        # with Secure Boot, a module that is not signed would not load at the next boot: said now, not then
+        signer = module_signer()
+        if signing and not signer:
+            return {'return': 16, 'error': f'NVIDIA driver {version} is installed, but its module is not signed '
+                                           f'(modinfo -F signer nvidia): Secure Boot would not load it'}
         if con:
             print('')
+            if signer:
+                print(f'{space}INFO: the module is signed by "{signer}"')
             print(f'{space}INFO: NVIDIA driver {version} is installed; the driver that runs now'
                   f'{f" ({installed})" if installed else ""} stays until the next boot - reboot to load it')
         return {'return': 0, 'found_path': shutil.which('nvidia-smi') or '/usr/bin/nvidia-smi'}

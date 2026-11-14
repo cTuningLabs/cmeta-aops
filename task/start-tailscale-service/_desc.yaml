@@ -6,9 +6,10 @@ uses:
   - task: setup,a2f9b61079ce4333
     name: tailscale,85ccb347faed443e
 
+  # Windows: the Tailscale installer runs the service itself
   - task: force-fail,fbc834fe54894aec
-    if: '"{{global.host.os.uname}}" != "darwin"'
-    text: "start-tailscale-service task currently works only on MacOS"
+    if: '"{{global.host.os.uname}}" == "windows"'
+    text: "start-tailscale-service starts Tailscale on macOS and Linux; on Windows its installer runs the service"
 
   - task: setup,a2f9b61079ce4333
     name: brew,27859c999bdd4085

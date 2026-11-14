@@ -1,0 +1,16 @@
+artifact: dbde32a885734595
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-11-14T10:45:20.020376+00:00'
+desc: Google Chrome, detected where the system keeps it and upgraded through the system's own channel - Google's apt
+  repository (or dnf) on Linux, winget on Windows, Homebrew's cask on macOS; the newest version from Google's version
+  history.
+generator:
+  method: agent
+  agent: Claude Code 2.1.325
+  model: claude-opus-5-5
+  via: cmeta 0.41.1
+tags:
+- browser
+- chrome
+- google

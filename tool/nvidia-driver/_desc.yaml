@@ -50,11 +50,21 @@ legacy_branches:
   - below_arch: 75
     last_branch: 580
 
+# Driver branches whose kernel module did not build from a kernel on (drivers.preflight warns before the download;
+# fixed_in: the first release that builds again, when one does)
+known_build_failures:
+  - branch: 615
+    kernel_from: '7.0'
+    seen: 615.71.09 and 615.78.08 on 7.0.0-42, 2026-10-30 - nv-linux.h field 'cxlds' has incomplete type
+    try_branch: 610
+
 # NVIDIA's open kernel modules run on Turing (sm_75) and newer
 open_kernel_modules_min_arch: 75
 
-# The CUDA a driver branch runs (the CUDA Toolkit release notes, 2026-10-30): for the messages
+# The CUDA a driver branch runs (the CUDA Toolkit release notes, 2026-10-30): for the messages. R620 / CUDA 13.5
+# (2026-11-14) by the same pattern - nvidia-smi shows the real one once it runs
 cuda_of_branch:
+  '620': '13.5'
   '615': '13.4'
   '610': '13.3'
   '595': '13.2'

@@ -20,10 +20,14 @@ class CTask(InitCTask):
     def run(self,
             ctx: dict,        # cMeta context
             env: dict = {},
+            hostname: str = '',     # Linux: the machine's name in the tailnet (default: its hostname)
+            operator: str = '',     # Linux: the user who may run "tailscale" without sudo (default: this user)
+            timeout: str = '600',   # Linux: seconds to wait for the login in the browser
     ):
 
         """
-        Untar file.
+        Start the Tailscale service: Linux - tailscaled at every boot (systemd) and, when this machine is not logged
+        in yet, "tailscale up" (it prints the login link to open in a browser); macOS - brew services.
 
         Returns:
             dict: A cMeta dictionary with the following keys:
@@ -44,6 +48,10 @@ class CTask(InitCTask):
         uname = ctx['tasks']['global']['host']['os']['uname']
 
         path_to_tailscale = ctx['tasks']['global']['tailscale']['qpath']
+
+        if uname == 'linux':
+            return self._linux(ctx['tasks']['global']['tailscale'].get('path') or 'tailscale', con, quiet,
+                               hostname, operator, timeout)
 
         if con and not quiet:
             print ('')
@@ -74,4 +82,49 @@ class CTask(InitCTask):
         if self.cm.catch_error(rx): return rx
 
         return rx
+
+    ############################################################
+    def _linux(self, tailscale, con, quiet, hostname, operator, timeout):
+        """tailscaled enabled and started (systemd), then logged in once: "tailscale up" prints the link to open in a
+        browser and waits for it. A machine logged in already only has its service checked."""
+        import json
+        import socket
+        import subprocess
+
+        sudo = [] if os.geteuid() == 0 else (['sudo', '-n'] if quiet else ['sudo'])
+
+        def say(text):
+            if con:
+                print(text)
+
+        def state():
+            p = subprocess.run([tailscale, 'status', '--json'], stdin = subprocess.DEVNULL, stdout = subprocess.PIPE,
+                               stderr = subprocess.DEVNULL)
+            try:
+                return json.loads(p.stdout.decode('utf-8', 'replace'))
+            except ValueError:
+                return {}
+
+        rc = subprocess.call(sudo + ['systemctl', 'enable', '--now', 'tailscaled'], stdin = subprocess.DEVNULL)
+        if rc != 0:
+            return {'return': 1, 'error': 'systemctl enable --now tailscaled failed (is the tailscale package installed? '
+                                          'cx tool install tailscale)'}
+
+        s = state()
+        if s.get('BackendState') != 'Running':
+            words = sudo + [tailscale, 'up', '--operator=' + (operator or os.environ.get('USER') or 'root'),
+                            '--hostname=' + (hostname or socket.gethostname()), '--timeout=%ss' % int(timeout or 600)]
+            say('Tailscale: this machine is not logged in - open the link "tailscale up" prints in a browser, sign in, '
+                'and approve the machine: ' + ' '.join(words))
+            rc = subprocess.call(words, stdin = subprocess.DEVNULL)
+            s = state()
+            if rc != 0 or s.get('BackendState') != 'Running':
+                return {'return': 1, 'error': f'Tailscale is not logged in (state {s.get("BackendState") or "unknown"}): '
+                                              f'run this task again in a terminal and open the link it prints'}
+
+        me = s.get('Self') or {}
+        address = (me.get('TailscaleIPs') or [''])[0]
+        name = (me.get('DNSName') or '').rstrip('.')
+        say(f'Tailscale is up: {name or me.get("HostName", "?")} {address} (tailscaled starts at every boot)')
+        return {'return': 0, 'address': address, 'dns_name': name, 'hostname': me.get('HostName')}
 

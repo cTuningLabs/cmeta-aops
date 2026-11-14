@@ -1,0 +1,27 @@
+authors: Grigori Fursin
+
+# Restart into another system of the firmware's boot menu, once or always (api_v1.py, uefi_boot.py, README.md):
+#
+#   cx task run reboot-to                       the systems, numbered: which one? then a restart
+#   cx task run reboot-to ubuntu                once into ubuntu (the start after it is the usual one)
+#   cx task run reboot-to windows --always      Windows first in the boot order, then a restart
+#   cx task run reboot-to --list                the systems and the word of --os for each (--all: every boot entry)
+
+cache: False
+
+params_map:
+  arg2: os
+
+# The settings this task reads (shown by the pages /cmeta.configs and /settings)
+configs:
+  task-reboot-to:
+    desc: How reboot-to chooses the next system on this machine - set per machine (a dual-boot laptop's Linux side).
+    keys:
+      via:
+        desc: >-
+          firmware - the UEFI boot entries (BootNext once, BootOrder always), on Windows and Linux; grub - GRUB's menu
+          on Linux (grub-reboot once, its saved default always). --via=<firmware|grub> or --grub on the command line
+          wins. GRUB's files are out of reach from Windows, which always uses the firmware.
+        type: text
+        default: firmware
+        example: grub
