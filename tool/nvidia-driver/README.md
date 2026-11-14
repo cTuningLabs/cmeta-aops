@@ -36,9 +36,27 @@ cx tool install nvcc                          # then the newest CUDA toolkit thi
 - **A module that does not build** against the kernel is named with its first compiler error, and the driver stays as
   it was (NVIDIA's installer stops before it removes anything). A newer kernel can be ahead of a driver release: an
   older branch may build (`--version=<branch>`).
-- **Refused on Linux:**
-  - a driver that came from the distribution's packages: upgrade it with them;
-  - Secure Boot on: the module built here is not signed.
+- **A first install:** with no driver running, `nvidia-smi` cannot answer; the GPU is found on the PCI bus (`lspci`),
+  and its chip's code name (GB207, AD107, TU117 ...) gives its compute capability.
+
+## Can it be built here? (Linux)
+
+Checked before anything is downloaded, shown by `--status` (as notes) and in full by an install, which stops on any
+failure:
+
+- **the compiler:** the gcc of the same major version as the one the running kernel was built with (`/proc/version`);
+  `gcc-<major>` is used when the default `gcc` is another one;
+- **make** and the **kernel headers** of the running kernel (`/lib/modules/<release>/build`);
+- **DKMS**, which rebuilds the module for every new kernel;
+- **Secure Boot:** on, the module must be signed with a key the firmware has enrolled: Ubuntu's own pair
+  (`/var/lib/shim-signed/mok/MOK.priv` + `MOK.der`, the one its DKMS signs with) or DKMS's (`/var/lib/dkms/mok.key`),
+  checked with `mokutil --test-key` and passed to NVIDIA's installer; the signer is read back after the install.
+  Without an enrolled key the install stops and says how to make and enroll one;
+- **the distribution's packages:** its driver is left to it; its user-space packages alone (`nvidia-utils-*`,
+  `libnvidia-compute-*` ... without a kernel module of it) collide with NVIDIA's installer - the command that removes
+  them is shown;
+- **known build failures** of a branch on a kernel (`known_build_failures` in `_desc.yaml`): a warning that names the
+  branch to fall back to.
 
 After an install the cached record of `tool/cuda` (the CUDA version of the driver) is dropped, so the next run that
 needs it, `tool/nvcc` included, reads the new driver.

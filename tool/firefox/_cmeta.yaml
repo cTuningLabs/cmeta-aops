@@ -1,0 +1,15 @@
+artifact: 798b15d2121f4d9e
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-11-14T10:45:19.950600+00:00'
+desc: Mozilla Firefox, detected where the system keeps it and upgraded through the system's own channel - snap or apt
+  on Linux, winget on Windows, Homebrew's cask on macOS; the newest version from Mozilla or the snap's channel.
+generator:
+  method: agent
+  agent: Claude Code 2.1.325
+  model: claude-opus-5-5
+  via: cmeta 0.41.1
+tags:
+- browser
+- firefox
+- mozilla

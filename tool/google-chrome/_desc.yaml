@@ -1,0 +1,47 @@
+authors: Grigori Fursin
+
+# Google Chrome (README.md, api_v1.py): detected where the system keeps it and upgraded through the system's own
+# channel - a browser updates through its channel, never as a copy in the cMeta cache:
+#
+#   cx tool setup google-chrome --status    the installed version, the newest one, outdated or not
+#   cx tool upgrade google-chrome           Linux: Google's apt repository (or dnf); Windows: winget; macOS: brew cask
+
+names:
+  - google-chrome-stable
+  - google-chrome
+  - chrome{{global.host.vars.file_ext_exe}}
+  - Google Chrome
+
+# detect_versions (api_v1.py) answers "BROWSER version : <x>": --version on Linux and macOS, the version folder beside
+# chrome.exe on Windows (which prints nothing to a console)
+match_version:
+  - regex: 'BROWSER version\s*:\s*([0-9][0-9.]*)'
+    group: 1
+  - regex: 'Google Chrome\s+([0-9][0-9.]*)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+# Installed into the system (/usr/bin, /opt/google, Program Files, /Applications)
+installs_into_system: True
+
+requires_sudo:
+  linux: True
+  windows: True
+
+extra_paths:
+  linux:
+    - /usr/bin
+    - /opt/google/chrome
+  windows:
+    - 'C:\Program Files\Google\Chrome\Application'
+    - 'C:\Program Files (x86)\Google\Chrome\Application'
+    - '{{global.host.os_env.LOCALAPPDATA}}\Google\Chrome\Application'
+  darwin:
+    - '/Applications/Google Chrome.app/Contents/MacOS'
+
+install_help_text: |
+  Chrome could not be installed automatically: https://www.google.com/chrome/
+    Linux   : sudo apt install ./google-chrome-stable_current_amd64.deb (it adds Google's repository)
+    Windows : winget install --id Google.Chrome -e
+    macOS   : brew install --cask google-chrome

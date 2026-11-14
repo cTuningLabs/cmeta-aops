@@ -1,0 +1,12 @@
+authors: Grigori Fursin
+
+# The system's own OpenSSH server of a Linux machine, keys only (api_v1.py, README.md):
+#
+#   cx task run system-ssh-server                  status
+#   cx task run system-ssh-server enable           installed if missing, keys only, the fleet's key, started at boot
+#   cx task run system-ssh-server disable          stopped, not started at boot (its settings stay)
+
+cache: False
+
+params_map:
+  arg2: action

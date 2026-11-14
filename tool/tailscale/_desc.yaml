@@ -9,20 +9,18 @@ match_version:
 
 cmd_get_version: '{{tool_path}} --version'
 
+# Linux: Tailscale's own installer (2026-11-14). It adds Tailscale's package repository for the distribution (apt,
+# dnf, zypper, pacman ...) and installs the package, whose tailscaled runs as a system service - a VPN daemon needs
+# root and the tun device, which Homebrew's user install had not; upgrades then come with the system's packages
+# (running it again installs the newest). Started and logged in by "cx task run start-tailscale-service".
 install_cmd:
   darwin: '{{global.brew.qpath}} install tailscale'
-  linux: '{{global.brew.qpath}} install tailscale'
+  linux: 'curl -fsSL https://tailscale.com/install.sh | sh'
   windows: "{{global.winget.qpath}} install --id=Tailscale.Tailscale -e --no-upgrade --source winget {{global.init.winget_install_flags|}}"
 
 install_cmd_version:
   darwin: '{{global.brew.qpath}} install tailscale@{{major_version}}'
-  linux: '{{global.brew.qpath}} install tailscale@{{major_version}}'
   windows: "{{global.winget.qpath}} install --id=Tailscale.Tailscale -e --version={{simple_version}} --no-upgrade --source winget {{global.init.winget_install_flags|}}"
-
-install_uses:
-  linux:
-    - task: setup,a2f9b61079ce4333
-      name: brew,27859c999bdd4085
 
 extra_paths:
   linux:
@@ -40,3 +38,4 @@ extra_paths:
 # without -q, Windows asks (UAC).
 requires_sudo:
   windows: True
+  linux: True

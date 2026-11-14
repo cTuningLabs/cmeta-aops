@@ -120,6 +120,190 @@ def build_error(log_text):
     return None
 
 
+############################################################ Linux: a GPU without a running driver
+
+# The compute capability (x 10, the lowest of the family) of an NVIDIA chip by its code name, as lspci names it
+# (GB207GLM, AD107M, TU117): what the legacy branches and the open kernel modules are decided by. The longest prefix
+# wins: GA100 is sm_80, the other Ampere chips sm_86.
+ARCH_OF_CODENAME = [('GB2', 120), ('GB1', 100), ('GH', 90), ('AD', 89), ('GA100', 80), ('GA', 86), ('TU', 75),
+                    ('GV', 70), ('GP', 60), ('GM', 50), ('GK', 30), ('GF', 20)]
+
+PCI_GPU_RE = re.compile(r'\[03[0-9a-f]{2}\]:\s+NVIDIA Corporation\s+(?:(\S+)\s+)?(?:\[(.+?)\]\s+)?\[10de:([0-9a-f]{4})\]',
+                        re.I)
+
+
+def arch_of_codename(code):
+    code = str(code or '').upper()
+    for prefix, arch in sorted(ARCH_OF_CODENAME, key = lambda x: -len(x[0])):
+        if code.startswith(prefix):
+            return arch
+    return None
+
+
+def pci_gpus(lspci_nn):
+    """The NVIDIA GPUs of "lspci -nn" (display controllers, class 03xx) before any driver runs: [{name,
+    compute_cap, pci_id}] - the name of the PCI database (RTX PRO 1000 Blackwell Generation Laptop GPU) and the
+    compute capability of its chip's code name (GB207GLM: 120), None when the database does not know it."""
+    found = []
+    for line in (lspci_nn or '').splitlines():
+        m = PCI_GPU_RE.search(line)
+        if not m:
+            continue
+        code, name, device = m.group(1) or '', m.group(2) or '', m.group(3)
+        if code.lower() == 'device':
+            code = ''
+        found.append({'name': ('NVIDIA ' + name) if name else f'NVIDIA GPU 10de:{device}',
+                      'compute_cap': arch_of_codename(code), 'pci_id': f'10de:{device}', 'driver_version': None})
+    return found
+
+
+############################################################ Linux: what is installed already
+
+# Distribution packages that hold an NVIDIA kernel module (the driver itself) - left to the distribution to upgrade
+DISTRO_DRIVER_RE = re.compile(r'^(nvidia-driver-|nvidia-dkms-|linux-modules-nvidia-|linux-objects-nvidia-|'
+                              r'kmod-nvidia|akmod-nvidia|nvidia-open|nvidia-kmod)')
+
+# ... and the user-space parts of a distribution's driver: nvidia-smi and the libraries, which NVIDIA's installer
+# would collide with. Not the container toolkit, nor the firmware of linux-firmware.
+DISTRO_USERSPACE_RE = re.compile(r'^(nvidia-utils-|libnvidia-(compute|decode|encode|extra|fbc1|gl|cfg1|common)|'
+                                 r'nvidia-kernel-common-|nvidia-kernel-source-|nvidia-firmware-|nvidia-compute-utils-|'
+                                 r'xserver-xorg-video-nvidia-)')
+
+
+def distro_packages(dpkg_l):
+    """(the packages of a distribution driver, the user-space packages) among the installed ones ("dpkg -l")."""
+    drivers_, userspace = [], []
+    for line in (dpkg_l or '').splitlines():
+        parts = line.split()
+        if len(parts) < 2 or not parts[0].startswith('ii'):
+            continue
+        name = parts[1].split(':', 1)[0]
+        if DISTRO_DRIVER_RE.match(name):
+            drivers_.append(name)
+        elif DISTRO_USERSPACE_RE.match(name):
+            userspace.append(name)
+    return drivers_, userspace
+
+
+############################################################ Linux: Secure Boot
+
+# The module-signing key pairs a Linux keeps for the modules it builds (private key, certificate): Ubuntu's (made by
+# update-secureboot-policy, used by its DKMS) and DKMS's own
+MOK_PAIRS = [('/var/lib/shim-signed/mok/MOK.priv', '/var/lib/shim-signed/mok/MOK.der'),
+             ('/var/lib/dkms/mok.key', '/var/lib/dkms/mok.pub')]
+
+
+def enrolled(mokutil_test_key_output):
+    """mokutil --test-key: "<cert> is already enrolled"."""
+    return 'is already enrolled' in (mokutil_test_key_output or '')
+
+
+def signing_args(private_key, certificate):
+    """NVIDIA's installer signs the modules it builds with this pair, so Secure Boot loads them."""
+    return ['--module-signing-secret-key=' + private_key, '--module-signing-public-key=' + certificate]
+
+
+############################################################ Linux: can it be built here? (versions vs build vs gcc)
+
+def kernel_compiler(proc_version):
+    """(compiler, version) the running kernel was built with, from /proc/version: ('gcc', '15.2.0'), ('clang',
+    '19.1.7'), or (None, None)."""
+    text = proc_version or ''
+    m = re.search(r'clang version (\d+(?:\.\d+)+)', text)
+    if m:
+        return 'clang', m.group(1)
+    m = re.search(r'gcc(?:-\d+)?\s+(?:\([^)]*\)\s+)?(?:version\s+)?(\d+\.\d+(?:\.\d+)?)', text)
+    if m:
+        return 'gcc', m.group(1)
+    return None, None
+
+
+def kernel_at_least(kernel_release, minimum):
+    """7.0.0-43-generic >= 7.0: the numbers of the release compared with as many numbers as the minimum has."""
+    have, want = key(kernel_release.split('-')[0]), key(minimum)
+    return have[:len(want)] >= want
+
+
+def known_failure(version, kernel_release, known):
+    """A known build failure of this driver release on this kernel (known_build_failures of _desc.yaml), or None: a
+    branch from a kernel on, up to the release that fixed it when one did."""
+    for k in known or []:
+        if str(branch(version)) != str(k.get('branch')) or not kernel_at_least(kernel_release, str(k.get('kernel_from'))):
+            continue
+        if k.get('fixed_in') and key(version) >= key(k['fixed_in']):
+            continue
+        return k
+    return None
+
+
+def preflight(f, known = None):
+    """What installing a driver release with NVIDIA's .run installer needs here, checked before anything is
+    downloaded: [(state, what, detail)] with state ok / warn / fail - any fail stops the install.
+
+    f: kernel (release), proc_version, cc (the version of the compiler found, None), make, headers, dkms (its version,
+    or None), secure_boot, signing ((private key, certificate) enrolled, or None), distro_driver, distro_userspace
+    (lists of packages), version (the release to install)."""
+    checks = []
+    add = lambda state, what, detail: checks.append((state, what, detail))
+
+    kernel = f.get('kernel') or '?'
+    compiler, kcc = kernel_compiler(f.get('proc_version'))
+    if compiler == 'clang':
+        add('warn', 'compiler', f'the kernel {kernel} was built with clang {kcc}: NVIDIA\'s installer builds with gcc - '
+                                f'it may refuse the mix')
+    elif not f.get('cc'):
+        add('fail', 'compiler', f'no gcc: the kernel {kernel} was built with gcc {kcc or "?"} - Ubuntu / Debian: '
+                                f'sudo apt install gcc{"-" + kcc.split(".")[0] if kcc else ""}')
+    elif kcc and key(f['cc'])[:1] != key(kcc)[:1]:
+        add('fail', 'compiler', f'gcc {f["cc"]} here, but the kernel {kernel} was built with gcc {kcc}: a module must be '
+                                f'built by the same major version - sudo apt install gcc-{kcc.split(".")[0]}')
+    else:
+        add('ok', 'compiler', f'gcc {f["cc"]}, as the kernel {kernel} (gcc {kcc or "?"})')
+
+    if not f.get('make'):
+        add('fail', 'make', 'no make - Ubuntu / Debian: sudo apt install make (or build-essential)')
+
+    if f.get('headers'):
+        add('ok', 'kernel headers', f'/lib/modules/{kernel}/build')
+    else:
+        add('fail', 'kernel headers', f'missing for {kernel} - Ubuntu / Debian: sudo apt install linux-headers-{kernel}')
+
+    if f.get('dkms'):
+        add('ok', 'DKMS', f'{f["dkms"]}: the module is rebuilt for every new kernel')
+    else:
+        add('fail', 'DKMS', 'not installed: it rebuilds the module for every new kernel - Ubuntu / Debian: sudo apt '
+                            'install dkms')
+
+    if not f.get('secure_boot'):
+        add('ok', 'Secure Boot', 'off: the module needs no signature')
+    elif f.get('signing'):
+        add('ok', 'Secure Boot', f'on: the module is signed with {f["signing"][1]}, enrolled in the firmware')
+    else:
+        add('fail', 'Secure Boot', 'on, and no module-signing key here is enrolled in the firmware: the module would not '
+                                   'load. Ubuntu: sudo update-secureboot-policy --new-key && sudo update-secureboot-policy '
+                                   '--enroll-key, then reboot and enroll it in the MOK manager')
+
+    if f.get('distro_driver'):
+        add('fail', 'distribution', f'its driver is installed ({", ".join(f["distro_driver"])}): upgrade it with the '
+                                    f'distribution, not with NVIDIA\'s .run installer')
+    elif f.get('distro_userspace'):
+        add('fail', 'distribution', f'its NVIDIA user-space packages are installed without its driver, and NVIDIA\'s '
+                                    f'installer would collide with them - remove them first: sudo apt purge '
+                                    f'{" ".join(sorted(f["distro_userspace"]))}')
+
+    version = f.get('version')
+    failure = known_failure(version, kernel, known) if version else None
+    if failure:
+        add('warn', 'known failure', f'R{failure.get("branch")} did not build on kernel {failure.get("kernel_from")}+ '
+                                     f'({failure.get("seen", "seen before")}) - if {version} fails too, an older branch: '
+                                     f'--version={failure.get("try_branch") or "<branch>"}')
+    return checks
+
+
+def blocking(checks):
+    return [c for c in checks if c[0] == 'fail']
+
+
 ############################################################ Windows: the download service
 
 def normalize(name):

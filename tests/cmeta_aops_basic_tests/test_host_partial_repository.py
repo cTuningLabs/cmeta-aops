@@ -240,3 +240,22 @@ def test_check_fix_makes_a_copied_key_owner_only(world):
     r = c.access({'category': 'secret', 'command': 'check', 'arg1': 'ssh-test', 'fix': True, 'con': False})
     assert r['return'] == 0 and any('tightened' in row[3] for row in r['rows']), r['rows']
     assert stat.S_IMODE(os.stat(key).st_mode) & 0o077 == 0
+
+
+def test_a_repository_plugged_from_another_drive_is_synced_from_there(world):
+    """A dual-boot laptop's Linux (2026-11-14): its cMeta home is on the Ubuntu partition, its repositories are plugged from the
+    Windows drive - a host's sync entry without `local` takes the folder the repository is registered at here, not
+    <home>/repos/<name> (cx host push then said 'local directory ... not found'). Not registered here: as before."""
+    c, host, h, tmp = world['cm'], world['host'], world['h'], world['tmp']
+    elsewhere = tmp / 'other-drive' / 'repos' / 'faraway-content'
+    put(elsewhere / '_cmr.yaml', 'artifact: faraway-content,c9a1b2c3d4e5f607\ncategory: repo,f4f792ab40c7498f\n')
+    r = c.access({'category': 'repo', 'command': 'plug', 'arg1': str(elsewhere), 'con': False})
+    assert r['return'] == 0, r
+
+    h['desc']['sync']['repos'] += ['faraway-content', 'never-plugged']
+    entries = host._sync_entries(h)
+    assert os.path.realpath(entries['faraway-content']['local']) == os.path.realpath(str(elsewhere))
+    assert entries['faraway-content']['remote'] == '/home/u/CMETA/repos/faraway-content'
+    assert entries['never-plugged']['local'] == str(c.repos_path / 'never-plugged')
+    # the repositories under the home are found where they are, as before
+    assert os.path.realpath(entries['content']['local']) == os.path.realpath(str(world['content']))

@@ -179,3 +179,131 @@ def test_find_latest_notes_a_failed_answer_and_goes_on(up):
         assert any("could not tell its newest version" in n for n in r["notes"])
     r = up.find_latest(None, CTX, {}, {"tool_api_code": object()}, {}, CHANNELS)    # a tool without the hook
     assert r["upstream_version"] is None and not any("could not tell" in n for n in r["notes"])
+
+
+###################################################################################################
+# Linux without a running driver, and with Secure Boot (a laptop's Ubuntu, 2026-11-14)
+
+LSPCI = """00:02.0 VGA compatible controller [0300]: Intel Corporation Arrow Lake-P [Intel Graphics] [8086:7dd1] (rev 03)
+01:00.0 VGA compatible controller [0300]: NVIDIA Corporation GB207GLM [RTX PRO 1000 Blackwell Generation Laptop GPU] [10de:2db8] (rev a1)
+01:00.1 Audio device [0403]: NVIDIA Corporation Device [10de:22eb] (rev a1)
+02:00.0 3D controller [0302]: NVIDIA Corporation GM108M [GeForce 940MX] [10de:134d] (rev a2)
+03:00.0 3D controller [0302]: NVIDIA Corporation Device [10de:2f00]
+"""
+
+DPKG_LEFTOVERS = """ii  libnvidia-compute-580:amd64   580.178.04-0ubuntu0.26.04.1 amd64 NVIDIA libcompute package
+ii  libnvidia-container1:amd64    1.18.0~rc.1-1               amd64 NVIDIA container runtime library
+ii  linux-firmware-nvidia-graphics 20260319.git217ca6e4-0ubuntu1.1 all Firmware for NVIDIA GPUs
+ii  nvidia-container-toolkit      1.18.0~rc.1-1               amd64 NVIDIA Container toolkit
+ii  nvidia-firmware-580-580.178.04 580.178.04-0ubuntu0.26.04.1 amd64 Firmware files used by the kernel module
+ii  nvidia-kernel-common-580      580.178.04-0ubuntu0.26.04.1 amd64 Shared files used with the kernel module
+ii  nvidia-utils-535              580.178.04-0ubuntu0.26.04.1 amd64 Transitional package for nvidia-utils-580
+ii  nvidia-utils-580              580.178.04-0ubuntu0.26.04.1 amd64 NVIDIA driver support binaries
+rc  nvidia-utils-570              570.10-1                    amd64 removed, its configuration kept
+"""
+
+
+def test_the_gpu_is_found_on_the_pci_bus_before_any_driver_runs(nv):
+    found = nv.pci_gpus(LSPCI)
+    assert [g["name"] for g in found] == ["NVIDIA RTX PRO 1000 Blackwell Generation Laptop GPU", "NVIDIA GeForce 940MX",
+                                         "NVIDIA GPU 10de:2f00"]
+    assert [g["compute_cap"] for g in found] == [120, 50, None]
+    assert found[0]["pci_id"] == "10de:2db8" and found[0]["driver_version"] is None
+    assert nv.pci_gpus("") == []
+
+
+def test_the_compute_capability_of_a_chip(nv):
+    assert nv.arch_of_codename("GB207GLM") == 120 and nv.arch_of_codename("GB100") == 100
+    assert nv.arch_of_codename("GA100") == 80 and nv.arch_of_codename("GA107") == 86
+    assert nv.arch_of_codename("AD107M") == 89 and nv.arch_of_codename("TU117") == 75
+    assert nv.arch_of_codename("GM108M") == 50 and nv.arch_of_codename("XYZ") is None and nv.arch_of_codename("") is None
+
+
+def test_a_gpu_found_on_the_bus_gets_its_branch_and_module(nv, desc):
+    blackwell, maxwell = nv.pci_gpus(LSPCI)[:2]
+    assert nv.last_branch(blackwell["compute_cap"], desc["legacy_branches"]) is None
+    assert nv.last_branch(maxwell["compute_cap"], desc["legacy_branches"]) == 580
+    assert nv.module_type("", blackwell["compute_cap"], desc["open_kernel_modules_min_arch"]) == "open"
+    assert nv.module_type("", maxwell["compute_cap"], desc["open_kernel_modules_min_arch"]) == "proprietary"
+
+
+def test_distribution_packages_driver_or_leftovers(nv):
+    driver, userspace = nv.distro_packages(DPKG_LEFTOVERS)
+    assert driver == []
+    assert userspace == ["libnvidia-compute-580", "nvidia-firmware-580-580.178.04", "nvidia-kernel-common-580",
+                         "nvidia-utils-535", "nvidia-utils-580"]
+    driver, _ = nv.distro_packages(DPKG_LEFTOVERS + "ii  nvidia-driver-580-open 580.178.04 amd64 NVIDIA driver\n"
+                                                    "ii  linux-modules-nvidia-580-open-generic 7.0.0-43 amd64 modules\n")
+    assert driver == ["nvidia-driver-580-open", "linux-modules-nvidia-580-open-generic"]
+
+
+def test_secure_boot_signing(nv):
+    assert nv.enrolled("/var/lib/shim-signed/mok/MOK.der is already enrolled\n")
+    assert not nv.enrolled("/var/lib/shim-signed/mok/MOK.der is not enrolled\n") and not nv.enrolled("")
+    assert nv.signing_args("/k/MOK.priv", "/k/MOK.der") == ["--module-signing-secret-key=/k/MOK.priv",
+                                                            "--module-signing-public-key=/k/MOK.der"]
+    assert ("/var/lib/shim-signed/mok/MOK.priv", "/var/lib/shim-signed/mok/MOK.der") in nv.MOK_PAIRS
+
+
+def test_the_cuda_of_the_newest_branch_is_known(desc):
+    assert desc["cuda_of_branch"]["620"] == "13.5" and desc["cuda_of_branch"]["615"] == "13.4"
+
+
+###################################################################################################
+# Can it be built here? The kernel and its compiler, headers, DKMS, Secure Boot, the distribution's packages
+
+PROC_UBUNTU = ("Linux version 7.0.0-43-generic (buildd@lcy02-amd64-080) (x86_64-linux-gnu-gcc (Ubuntu 15.2.0-16ubuntu1) "
+               "15.2.0, GNU ld (GNU Binutils for Ubuntu) 2.46) #43-Ubuntu SMP PREEMPT_DYNAMIC Fri Oct 23 13:25:25 UTC 2026")
+PROC_OLD = "Linux version 6.8.0-64-generic (buildd@lcy02) (gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04)) #67-Ubuntu"
+PROC_CLANG = "Linux version 6.12.1 (builder@host) (clang version 19.1.7, LLD 19.1.7) #1 SMP"
+
+READY = {'kernel': '7.0.0-43-generic', 'proc_version': PROC_UBUNTU, 'cc': '15.2.0', 'make': True, 'headers': True,
+         'dkms': 'dkms-3.2.2', 'secure_boot': True,
+         'signing': ('/var/lib/shim-signed/mok/MOK.priv', '/var/lib/shim-signed/mok/MOK.der'),
+         'distro_driver': [], 'distro_userspace': [], 'version': '620.70.06'}
+
+
+def test_the_compiler_of_the_kernel(nv):
+    assert nv.kernel_compiler(PROC_UBUNTU) == ('gcc', '15.2.0')
+    assert nv.kernel_compiler(PROC_OLD) == ('gcc', '13.3.0')
+    assert nv.kernel_compiler(PROC_CLANG) == ('clang', '19.1.7')
+    assert nv.kernel_compiler('') == (None, None)
+
+
+def test_a_ready_machine_passes(nv, desc):
+    checks = nv.preflight(READY, desc['known_build_failures'])
+    assert nv.blocking(checks) == [] and all(state == 'ok' for state, _, _ in checks)
+    assert any('MOK.der' in detail for _, what, detail in checks if what == 'Secure Boot')
+
+
+@pytest.mark.parametrize("change, what, words", [
+    ({'cc': None}, 'compiler', 'apt install gcc-15'),
+    ({'cc': '14.2.0'}, 'compiler', 'same major version'),
+    ({'make': False}, 'make', 'apt install make'),
+    ({'headers': False}, 'kernel headers', 'linux-headers-7.0.0-43-generic'),
+    ({'dkms': None}, 'DKMS', 'apt install dkms'),
+    ({'signing': None}, 'Secure Boot', 'update-secureboot-policy'),
+    ({'distro_driver': ['nvidia-driver-580-open']}, 'distribution', 'upgrade it with the distribution'),
+    ({'distro_userspace': ['nvidia-utils-580', 'libnvidia-compute-580']}, 'distribution',
+     'apt purge libnvidia-compute-580 nvidia-utils-580'),
+])
+def test_what_stops_an_install(nv, desc, change, what, words):
+    failed = nv.blocking(nv.preflight(dict(READY, **change), desc['known_build_failures']))
+    assert [w for _, w, _ in failed] == [what] and words in failed[0][2]
+
+
+def test_secure_boot_off_and_a_minor_compiler_difference_pass(nv):
+    assert nv.blocking(nv.preflight(dict(READY, secure_boot=False, signing=None, cc='15.1.0'))) == []
+    states = {what: state for state, what, _ in nv.preflight(dict(READY, proc_version=PROC_CLANG))}
+    assert states['compiler'] == 'warn'
+
+
+def test_a_known_build_failure_warns(nv, desc):
+    known = desc['known_build_failures']
+    assert nv.kernel_at_least('7.0.0-43-generic', '7.0') and not nv.kernel_at_least('6.8.0-64-generic', '7.0')
+    assert nv.known_failure('615.78.08', '7.0.0-43-generic', known)['try_branch'] == 610
+    assert nv.known_failure('615.78.08', '6.8.0-64-generic', known) is None
+    assert nv.known_failure('620.70.06', '7.0.0-43-generic', known) is None
+    assert nv.known_failure('615.90.01', '7.1.0-1', [dict(known[0], fixed_in='615.90.01')]) is None
+    checks = nv.preflight(dict(READY, version='615.78.08'), known)
+    assert [(s, w) for s, w, _ in checks if s != 'ok'] == [('warn', 'known failure')] and nv.blocking(checks) == []

@@ -6807,6 +6807,16 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
         return '~/CMETA/repos', 'default'
 
+    def _local_repo_path(self, name):
+        """This machine's folder of a repository a host syncs: where the repository of that alias is registered here
+        (a home whose repositories are plugged from another drive - a dual-boot laptop's Linux plugs those of its Windows drive,
+        2026-11-14), else <this machine's repos folder>/<name> as before."""
+        r = self.cm.access({'category': 'repo,f4f792ab40c7498f', 'command': 'find', 'arg1': name, 'con': False})
+        arts = (r.get('artifacts') or []) if r.get('return', 1) == 0 else []
+        found = [a['path'] for a in arts if os.path.isdir(a.get('path') or '')
+                 and (a.get('cmeta_ref_parts') or {}).get('artifact_alias', name) == name]
+        return str(found[0]) if len(found) == 1 else str(self.cm.repos_path / name)
+
     def _sync_entries(self, h):
         """
         {name: {'method', 'local', 'remote', 'blacklist', 'workdir', 'artifacts'}} from the host's "sync:" block.
@@ -6834,7 +6844,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             bl = list(blacklist) + self._csv(opts.get('blacklist'))
             entries[name] = {
                 'method': method,
-                'local': str(os.path.expanduser(os.path.expandvars(str(opts['local'])))) if opts.get('local') else str(self.cm.repos_path / name),
+                'local': str(os.path.expanduser(os.path.expandvars(str(opts['local'])))) if opts.get('local') else self._local_repo_path(name),
                 'remote': str(opts.get('remote') or (repos_path.rstrip('/') + '/' + name)),
                 'blacklist': bl,
                 'workdir': opts.get('workdir', workdir),

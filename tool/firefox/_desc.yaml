@@ -1,0 +1,44 @@
+authors: Grigori Fursin
+
+# Mozilla Firefox (README.md, api_v1.py): detected where the system keeps it and upgraded through the system's own
+# channel - a browser updates through its channel, never as a copy in the cMeta cache:
+#
+#   cx tool setup firefox --status       the installed version, the newest one, outdated or not
+#   cx tool upgrade firefox              Linux: snap refresh (Firefox closed) or apt; Windows: winget; macOS: brew cask
+
+names:
+  - firefox{{global.host.vars.file_ext_exe}}
+
+# detect_versions (api_v1.py) answers "BROWSER version : <x>": --version on Linux and macOS, application.ini beside
+# firefox.exe on Windows (which prints nothing to a console)
+match_version:
+  - regex: 'BROWSER version\s*:\s*([0-9][0-9.]*(?:esr)?)'
+    group: 1
+  - regex: 'Mozilla Firefox\s+([0-9][0-9.]*(?:esr)?)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+# Installed into the system (/snap/bin, Program Files, /Applications): --status guesses no other channel from that
+installs_into_system: True
+
+requires_sudo:
+  linux: True
+  windows: True
+
+extra_paths:
+  linux:
+    - /snap/bin
+    - /usr/bin
+  windows:
+    - 'C:\Program Files\Mozilla Firefox'
+    - 'C:\Program Files (x86)\Mozilla Firefox'
+  darwin:
+    - /Applications/Firefox.app/Contents/MacOS
+    - '{{user_home}}/Applications/Firefox.app/Contents/MacOS'
+
+install_help_text: |
+  Firefox could not be installed automatically: https://www.mozilla.org/firefox/
+    Linux   : sudo snap install firefox (Ubuntu), or the distribution's package (apt / dnf / pacman install firefox)
+    Windows : winget install --id Mozilla.Firefox -e
+    macOS   : brew install --cask firefox

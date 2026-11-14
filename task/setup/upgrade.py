@@ -779,6 +779,8 @@ def find_latest(self, ctx, desc, tool_read, params, channels, query_channel = No
         if r.get('return', 0) == 0 and r.get('version'):
             result['upstream_version'] = r['version']
             result['upstream_source'] = r.get('source') or 'the tool'
+            # what the tool found about installing it here (the driver: compiler, headers, Secure Boot ...)
+            notes.extend(str(n) for n in (r.get('notes') or []))
         else:
             notes.append(f'the tool could not tell its newest version ({r.get("error", "no answer")})')
 

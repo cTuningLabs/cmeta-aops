@@ -1,0 +1,22 @@
+artifact: 44c919e7857a43d1
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-11-14T07:56:50.097175+00:00'
+desc: Restart into another system of the UEFI boot menu (Windows, Ubuntu, ...), once or always, on Windows and Linux -
+  the firmware's BootNext / BootOrder, a list and a menu of the systems; the firmware starts the loader itself, so
+  BitLocker sees nothing new.
+generator:
+  agent: Claude Code 2.1.322
+  by: Grigori Fursin
+  method: agent
+  model: claude-opus-5-5
+  via: cmeta 0.41.1
+tags:
+- reboot
+- boot
+- uefi
+- dual-boot
+- system
+- power
+uses_categories:
+  task: task,c36be4b9314a45e0

@@ -1,0 +1,18 @@
+artifact: b9758008054f4d73
+authors: Grigori Fursin
+category: task,c36be4b9314a45e0
+creation_timestamp: '2026-11-14T11:09:48.185038+00:00'
+desc: The system's own OpenSSH server of a Linux machine - installed if missing, key logins only, the fleet's key for
+  this machine allowed, started at every boot by systemd (before any login, without the cMeta repositories).
+generator:
+  method: agent
+  agent: Claude Code 2.1.325
+  model: claude-opus-5-5
+  via: cmeta 0.41.1
+tags:
+- ssh
+- server
+- openssh
+- linux
+uses_categories:
+  task: task,c36be4b9314a45e0

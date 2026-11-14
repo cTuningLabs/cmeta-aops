@@ -2,6 +2,59 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV
+- **New task `reboot-to`: restart into another system of the firmware's boot menu, once or always, on Windows and
+  Linux.** Without `--os` it lists the systems (Windows Boot Manager, ubuntu, ...) numbered and asks which one;
+  `--os=<word>` names it (`cxt reboot-to ubuntu`), `--list` shows the word of each (`--all`: every boot entry),
+  `--always` puts it first in the boot order, `--cancel` takes back a "once", `--reboot=no`, `--dry_run`.
+  - **How:** the firmware's own variables, `BootNext` (once) and `BootOrder` (always), read and written by the
+    task's `uefi_boot.py` with the standard library only (Linux: efivarfs; Windows:
+    `Get/SetFirmwareEnvironmentVariableExW`) - the same list on both systems, whatever the language of Windows. The
+    firmware starts the loader itself, so BitLocker sees nothing new; never GRUB's chainload.
+  - **Rights:** only an administrator reads or changes them on Windows: from another console Windows asks (UAC)
+    for the helper - once when `--os` names the system. On Linux everyone reads them and `sudo` writes. Only
+    `uefi_boot.py` runs with those rights; the restart is the task `reboot`'s, after a question (`--yes` skips it).
+- **`reboot-to --grub` (Linux): the choice in GRUB's menu.** Once: `grub-reboot` (GRUB's `next_entry`); `--always`:
+  GRUB's saved default (`grub-set-default`, `GRUB_DEFAULT=saved` set once with `update-grub`); `--grub_timeout=<s>`
+  shows the menu at every boot; `--cancel`, `--list` (the menu, its default, the next boot), `--dry_run`. Entries by
+  their GRUB id. The firmware is set to start GRUB when it would not. `--grub` = `--via=grub`; a machine's own default
+  in `config::task-reboot-to` (`via: grub`).
+- **New task `system-ssh-server`: the system's own OpenSSH server of a Linux machine, keys only.** `enable` installs it
+  when missing, writes `/etc/ssh/sshd_config.d/50-cmeta-keys-only.conf` (checked by `sshd -t`), allows the fleet's key
+  of this machine (`cx host whoami`, `cx host key`; or `--host`, `--key`) and starts it at every boot (`ssh.socket` on
+  Ubuntu); `status`, `disable`. It runs before any login and without the cMeta repositories - for a machine whose
+  repositories are on a drive unlocked later; elsewhere `start-after-restart --what=ssh` stays the way.
+- **New tools `firefox` and `google-chrome`: browsers upgraded through the system's own channel.** `cx tool setup
+  <tool> --status` tells the installed and the newest version; `cx tool upgrade <tool>` brings it there - nothing is
+  copied into the cMeta cache, since a browser's profile and updates follow the system's installation.
+  - **Linux:** Firefox through its snap (`snap refresh`, refused while Firefox runs - snap waits until it is closed)
+    or the distribution's package (apt); Chrome through Google's apt repository, or Google's `.deb` where Chrome is
+    missing (it adds the repository), dnf with the rpm.
+  - **Windows:** winget (`Mozilla.Firefox`, `Google.Chrome`); **macOS:** Homebrew's casks.
+  - **Versions:** `--version`, or on Windows the files beside the program (Firefox's `application.ini`, Chrome's
+    version folder), since there they print nothing to a console. The newest: Mozilla's product details or the snap's
+    tracked channel; Google's version history per platform.
+- **`tool/nvidia-driver` on Linux: a first install, Secure Boot, and a check of what the build needs.**
+  - **A first install:** with no driver running (`nvidia-smi` cannot answer), the GPU is found on the PCI bus and its
+    compute capability comes from its chip's code name.
+  - **Secure Boot:** no longer refused - the module is signed with a key the firmware has enrolled (Ubuntu's
+    `/var/lib/shim-signed/mok` pair, the one its DKMS signs with, or DKMS's own), and the signer is checked after the
+    install.
+  - **Can it be built here?** Checked before the download and shown by `--status`: the gcc of the kernel's major
+    version (`gcc-<major>` used when the default is another one), make, the kernel headers, DKMS, Secure Boot and its
+    key, the distribution's driver or its leftover user-space packages (the `apt purge` to run), and the known build
+    failures of a branch on a kernel (`known_build_failures`). The install prints the table and stops on a failure.
+  - R620 / CUDA 13.5 known for the messages.
+- **`tool/tailscale` on Linux through Tailscale's own installer** (its package repository and the system service),
+  no longer Homebrew - a VPN daemon needs root and the tun device. **`start-tailscale-service` on Linux:** tailscaled
+  enabled at boot, and a first `tailscale up` (the login link printed; `--hostname`, `--operator` - this user runs
+  `tailscale` without sudo - and `--timeout`).
+- **`--status` shows the notes of a tool's `latest_version`** (task/setup): what the tool found about installing it here.
+- **`cx host push` / `sync`: a repository plugged from another drive is taken from where it is registered.** A host's
+  sync entry without `local` assumed `<this cMeta home>/repos/<name>`; a home whose repositories are plugged from
+  elsewhere (a dual-boot Ubuntu plugging the Windows drive's) got "local directory ... not found". Now the folder of
+  the repository registered here under that alias, and the old path when there is none.
+
 ## 0.69.1
 - **New task `lid-close-action`: what closing a laptop's lid does.** A laptop reached from elsewhere must keep running
   with its lid closed. Actions `status` (the default), `disable` (closing the lid does nothing) and `enable` (what it
