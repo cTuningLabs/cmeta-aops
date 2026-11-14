@@ -208,6 +208,44 @@ def test_regular_bisync_requires_success_without_creating_destination(cm, tmp_pa
     assert not (tmp_path / 'b').exists()
 
 
+def test_live_log_shows_the_last_output_that_lands_as_the_command_ends(task_namespace, tmp_path, monkeypatch):
+    """
+    The relay thread may read an empty chunk, then the command writes its last line and ends: that line must still
+    reach the screen. Until 0.70.2 the relay saw the stop after its empty read and quit - the last output of a run
+    was lost from the live display about one run in ten (the log kept it). Made deterministic here: the last bytes
+    become visible only when the relay asks whether the command has stopped, after its empty read.
+    """
+    ns = task_namespace('sync')
+    follow_log = ns['follow_log']
+    log = tmp_path / 'run.log'
+    log.write_bytes(b'')
+    tail = b'last action without newline'
+
+    class LateEvent(threading.Event):
+        pending = True
+
+        def is_set(self):
+            stopped = super().is_set()
+            if stopped and LateEvent.pending:
+                # what the command wrote last becomes visible only now, after the relay's empty read
+                LateEvent.pending = False
+                with log.open('ab') as writer:
+                    writer.write(tail)
+            return stopped
+
+    class Threading:
+        Event = LateEvent
+        Thread = threading.Thread
+
+    monkeypatch.setitem(ns, 'threading', Threading)
+    output = io.StringIO()
+    monkeypatch.setattr('sys.stdout', output)
+    with follow_log(log):
+        pass
+    assert not LateEvent.pending
+    assert output.getvalue() == tail.decode('utf-8')
+
+
 @pytest.mark.parametrize('fail', [False, True])
 def test_live_log_arrives_before_command_finishes_and_drains_on_exit(task_namespace, tmp_path, monkeypatch, fail):
     follow_log = task_namespace('sync')['follow_log']

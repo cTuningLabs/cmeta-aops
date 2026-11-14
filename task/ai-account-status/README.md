@@ -30,11 +30,52 @@ explain the outcome. `account` contains allowlisted display fields only.
 `credits` is separate from subscription allowance; token counts and dollar costs
 of an individual run are not remaining account quota.
 
+Account identity is shown by default, for example `Claude (you@example.com): 5h:
+94% remaining` or `Codex (API): API usage…`. The same bracket is used in compact
+and full browser displays. `identity` contains the allowlisted `kind` and `label`;
+`account.authType` is `login` or `api` when the adapter can establish it. A missing
+identity is explicitly shown as unavailable/unknown, never guessed from another
+harness or an unrelated saved account.
+
+Disable identity for **every app using this task in the serving cMeta home**:
+
+```sh
+cx config set task-ai-account-status --meta.show_identity=false
+# Enable it again:
+cx config set task-ai-account-status --meta.show_identity=true
+```
+
+Run the command with the website's `CMETA_HOME` on the machine serving the site.
+This is a host configuration, independent of the browser/device and other cMeta
+homes. No website restart is needed for a config change; refresh account status.
+An individual call can override the setting with `show_identity=False`. When
+disabled, emails/usernames and the identity label are omitted from returned data
+and newly written cache entries, not just hidden by CSS. Earlier visible-mode
+cache entries expire normally and are not reused by hidden mode.
+
+The setting is also discovered automatically by `/cmeta.configs` (reference)
+and `/settings` (editable on the cMeta server). Search for `task-ai-account-status`
+or `show_identity`; choose **yes** to show identities or **no** to hide them.
+Reset restores the enabled default. The cTuning platform's hosted config views
+are read-only; change this machine setting on its cMeta server or through the CLI.
+Both native booleans and the config convention yes/no (also true/false, on/off,
+1/0) are accepted; explicit `show_identity` task arguments remain booleans.
+
+Claude's email comes from the read-only OAuth profile endpoint using **the same
+token** as the quota request. Its potentially stale local `oauthAccount` email is
+never used. Codex uses its installed app-server's `account/read` result. Changing
+the local Codex credentials/config invalidates the status cache. OpenCode uses
+its own selected provider's OAuth profile/token claims or reports `API` for an
+API credential in its supported store. OpenClaw displays an email only when its
+provider status reports one. A selected cMeta gateway is labelled `API` and does
+not read a personal login. Unsupported identity adapters show `Account unknown`;
+quota support is unchanged. No API key, prefix or credential fingerprint is shown.
+
 | Harness | Automatic account quota | Source / limitation |
 | --- | --- | --- |
 | Codex | Yes, personal login | Installed `codex app-server`, `account/read` and `account/rateLimits/read`. No credential file is copied. |
 | Claude | Yes, full OAuth personal login | Read-only Anthropic usage request using the server's existing login; five-hour, weekly and reported model windows. Inference-only tokens/API keys cannot supply subscription quota. |
-| OpenCode | Yes, selected OpenAI/Anthropic OAuth provider | Reads that provider from OpenCode's legacy `auth.json`, never another harness's login. API keys, plugins and newer credential stores return a specific diagnostic and usage link. |
+| OpenCode | Yes, selected OpenAI/Anthropic OAuth provider | Reads that provider from OpenCode's legacy `auth.json`, never another harness's login. API credentials show `API`; plugins and newer credential stores return a specific diagnostic and usage link. |
 | OpenClaw | Yes, where its CLI reports windows | `openclaw status --usage --json`, filtered to the explicit `provider/model`; ambiguous accounts are rejected. Requires a configured CLI/provider. |
 | Vibe | Usage page | Mistral account dashboard; no automatic quota reader connected to the installed login. |
 | Gemini | Usage page / CLI stats | Quota depends on Google login, Code Assist licence, API key or Vertex project. No automatic reader connected here. |
@@ -74,6 +115,7 @@ Provider references checked 2026-11-13:
 
 - [Codex account/rate-limit protocol tests](https://github.com/openai/codex/blob/main/codex-rs/app-server/tests/suite/v2/rate_limits.rs)
 - [Claude rate-limit status fields](https://code.claude.com/docs/en/statusline) and [Anthropic usage endpoint issue](https://github.com/anthropics/claude-code/issues/31021)
+- [Claude cached account identity after switching logins](https://github.com/anthropics/claude-code/issues/81231)
 - [OpenCode provider authentication](https://opencode.ai/docs/cli/providers/)
 - [OpenClaw quota tracking](https://docs.openclaw.ai/concepts/usage-tracking)
 - [Mistral Usage and limits](https://docs.mistral.ai/admin/billing-usage/usage-limits)

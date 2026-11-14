@@ -5,7 +5,8 @@
   const harnessName = value => ({codex:'Codex',claude:'Claude',opencode:'OpenCode',vibe:'Vibe',gemini:'Gemini',antigravity:'Antigravity',openclaw:'OpenClaw',hermes:'Hermes'}[value] || value || 'AI');
   function describe(out, {compact=false, includeAccount=false}={}) {
     const parts=[], a=out.account||{};
-    if(includeAccount)parts.push(...[a.email||a.type,a.planType].filter(Boolean));
+    const label=out.identity_visible===false?'':out.identity?.label;
+    if(includeAccount)parts.push(...[a.type,a.planType].filter(Boolean));
     for(const w of out.windows||[]) {
       if(typeof w.usedPercent!=='number'||!Number.isFinite(w.usedPercent))continue;
       const mins=w.windowDurationMins;
@@ -19,7 +20,7 @@
     if(out.message)parts.push(out.message);
     if(out.stale)parts.unshift('Last known quota (refresh pending)');
     else if(out.cached&&!compact)parts.push('Cached for up to 2 minutes');
-    return harnessName(out.harness)+': '+(parts.join(' · ')||'Quota not reported');
+    return harnessName(out.harness)+(label?' ('+label+')':'')+': '+(parts.join(' · ')||'Quota not reported');
   }
   function details(out) {
     return [out.message||'',out.checked_at?'Checked '+new Date(out.checked_at*1000).toLocaleString()+'.':'',
