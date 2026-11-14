@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.70.0
 - **New task `reboot-to`: restart into another system of the firmware's boot menu, once or always, on Windows and
   Linux.** Without `--os` it lists the systems (Windows Boot Manager, ubuntu, ...) numbered and asks which one;
   `--os=<word>` names it (`cxt reboot-to ubuntu`), `--list` shows the word of each (`--all`: every boot entry),
