@@ -333,6 +333,12 @@ def follow_log(path, label=None):
                     if data:
                         show(decoder.decode(data))
                     elif stopped.is_set():
+                        # The command has ended: what it wrote last may have landed between the empty read above
+                        # and the stop - read to the end once more, or its last line never reaches the screen
+                        data = stream.read(65536)
+                        while data:
+                            show(decoder.decode(data))
+                            data = stream.read(65536)
                         show(decoder.decode(b'', final=True))
                         break
                     else:

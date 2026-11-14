@@ -18,6 +18,10 @@ All notable changes to cMeta AOps are documented here, newest first.
   still pass `show_identity=False`. The config takes yes/no as well as true/false.
 - **Codex: a login switch in the same `CODEX_HOME` refreshes the cached status** (the cache key follows its
   `auth.json` and `config.toml`), and the app-server it starts never sees the provider variables of an API key.
+- **The live display of a named sync no longer loses the last output of a run.** When a command's last lines landed
+  as it ended, the display's reader could see the end before reading them and stop - about one run in ten lost its
+  final line from the screen (the log always kept it). The reader now reads to the end once more after the stop. A
+  test makes that moment deterministic; the existing live-log test failed now and then for the same reason.
 
 ## 0.70.1
 - **`cx secret settings <alias>`: the git settings of an identity as pairs.** What `cx secret use` writes into a
