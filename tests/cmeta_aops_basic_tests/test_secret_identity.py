@@ -102,3 +102,36 @@ def test_generate_use_render(cm, tmp_path):
 
     # the user's global config was never touched
     assert not (tmp_path / 'global.gitconfig').exists() or 'test@example.invalid' not in (tmp_path / 'global.gitconfig').read_text()
+
+
+def test_settings_gives_the_pairs_use_writes(cm, tmp_path):
+    """cx secret settings: the (key, value) pairs of the identity - what cx repo pull --identity takes - paths only."""
+    c, vault = cm
+    files = vault / 'secret' / 'test-identity' / 'files'
+
+    r = secret(c, 'settings')
+    assert r['return'] == 1 and 'not there' in r['error']                # no key yet: refused with the cure
+
+    assert secret(c, 'generate', comment='pytest')['return'] == 0
+    pub = (files / 'id_ed25519_test.pub').read_text().strip()
+    (files / 'allowed_signers').write_text(f'test@example.invalid {pub}\n')
+
+    r = secret(c, 'settings')
+    assert r['return'] == 0, r
+    pairs = dict((k, v) for k, v in r['pairs'])
+    assert r['kind'] == 'git'
+    assert pairs['user.name'] == 'Test Identity' and pairs['user.email'] == 'test@example.invalid'
+    assert pairs['core.sshCommand'].startswith('ssh -i "') and 'IdentitiesOnly=yes' in pairs['core.sshCommand']
+    assert str(files / 'id_ed25519_test').replace(os.sep, '/') in pairs['core.sshCommand']
+    assert pairs['commit.gpgsign'] == 'true' and pairs['gpg.format'] == 'ssh'
+
+    # the private key's content is in no value
+    private = (files / 'id_ed25519_test').read_text()
+    body = [line for line in private.splitlines() if line and not line.startswith('-----')][0]
+    assert all(body not in str(v) for v in pairs.values())
+
+    # the same pairs are what "use" writes into a clone
+    clone = tmp_path / 'clone2'
+    git('init', '-q', str(clone))
+    assert secret(c, 'use', repo=str(clone))['return'] == 0
+    assert git('config', '--local', 'core.sshCommand', cwd=clone).strip() == pairs['core.sshCommand']
