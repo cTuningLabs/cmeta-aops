@@ -3,6 +3,7 @@
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
+import base64
 import hashlib
 import json
 import math
@@ -18,10 +19,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from cmeta.utils.files import PathLock
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, drop_provider_variables
 
 HARNESSES = ('codex', 'claude', 'opencode', 'vibe', 'gemini', 'antigravity', 'openclaw', 'hermes')
 CLAUDE_URL = 'https://api.anthropic.com/api/oauth/usage'
+CLAUDE_PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile'
 OPENAI_URL = 'https://chatgpt.com/backend-api/wham/usage'
 PAGES = {'claude': 'https://claude.ai/settings/usage', 'openai': 'https://chatgpt.com/codex/settings/usage',
          'vibe': 'https://admin.mistral.ai/usage', 'opencode': 'https://opencode.ai/docs/providers/',
@@ -74,15 +76,16 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 class StatusError(Exception):
-    def __init__(self, reason, message, retry=30):
+    def __init__(self, reason, message, retry=30, account=None):
         self.reason, self.message, self.retry = reason, message, retry
+        self.account = account or {}
 
 
 def get_usage(url, token, account_id=''):
-    # URLs come only from these two fixed adapters, never from a web request/config.
-    assert url in (CLAUDE_URL, OPENAI_URL)
+    # Fixed provider endpoints only; never a URL supplied by a web request/config.
+    assert url in (CLAUDE_URL, CLAUDE_PROFILE_URL, OPENAI_URL)
     headers = {'Authorization': 'Bearer ' + token, 'User-Agent': 'cmeta-ai-account-status/1.0'}
-    if url == CLAUDE_URL:
+    if url in (CLAUDE_URL, CLAUDE_PROFILE_URL):
         headers['anthropic-beta'] = 'oauth-2025-04-20'
     if account_id:
         headers['ChatGPT-Account-Id'] = account_id
@@ -115,8 +118,35 @@ def get_usage(url, token, account_id=''):
         raise StatusError('provider_unreachable', 'Account usage could not be read from the provider. AI requests can still be tried.') from None
 
 
-def claude_usage(token, plan=''):
-    raw = get_usage(CLAUDE_URL, token)
+def display_text(value):
+    """Bounded display text, never a credential or an arbitrary provider response."""
+    return value.strip() if isinstance(value, str) and 0 < len(value.strip()) <= 254 and not any(ord(c) < 32 for c in value) else ''
+
+
+def api_status():
+    return {'available': False, 'account': {'authType': 'api', 'type': 'API'}, 'windows': [],
+            'reason': 'api', 'message': 'API usage: subscription quota does not apply. Check the provider or gateway billing page.'}
+
+
+def claude_usage(token, plan='', include_identity=True):
+    account = {'type': 'Claude personal login', 'planType': plan, 'authType': 'login'}
+    if include_identity:
+        try:
+            # The local oauthAccount cache can belong to a previous login. Ask the
+            # profile endpoint with exactly the bearer used for this quota request.
+            profile = get_usage(CLAUDE_PROFILE_URL, token).get('account') or {}
+            profile = profile if isinstance(profile, dict) else {}
+            for key in ('email', 'display_name'):
+                value = display_text(profile.get(key))
+                if value:
+                    account['email' if key == 'email' else 'username'] = value
+        except StatusError:
+            pass  # Profile scope/failure must not break an otherwise valid quota.
+    try:
+        raw = get_usage(CLAUDE_URL, token)
+    except StatusError as exc:
+        exc.account = account
+        raise
     windows = []
     for key, minutes, label in (('five_hour', 300, '5h'), ('seven_day', 10080, '7d'),
                                 ('seven_day_sonnet', 10080, '7d Sonnet'), ('seven_day_opus', 10080, '7d Opus'),
@@ -126,12 +156,12 @@ def claude_usage(token, plan=''):
             parsed = window(value.get('utilization'), minutes, value.get('resets_at'), label)
             if parsed:
                 windows.append(parsed)
-    return {'available': bool(windows), 'account': {'type': 'Claude personal login', 'planType': plan},
+    return {'available': bool(windows), 'account': account,
             'windows': windows, 'source': 'claude-oauth-usage',
             'message': '' if windows else 'Claude did not report active quota windows for this account.'}
 
 
-def openai_usage(token, account_id=''):
+def openai_usage(token, account_id='', include_identity=True):
     raw = get_usage(OPENAI_URL, token, account_id)
     rates = raw.get('rate_limit') or {}
     windows = []
@@ -143,7 +173,20 @@ def openai_usage(token, account_id=''):
             if parsed:
                 windows.append(parsed)
     plan = raw.get('plan_type')
-    return {'available': bool(windows), 'account': {'type': 'OpenCode OpenAI login', 'planType': plan[:80] if isinstance(plan, str) else ''},
+    account = {'type': 'OpenCode OpenAI login', 'authType': 'login', 'planType': plan[:80] if isinstance(plan, str) else ''}
+    if include_identity:
+        # Display-only claim from the same access token just accepted by OpenAI.
+        # Never use it for authentication or fall back to Codex's separate login.
+        try:
+            part = token.split('.')[1]
+            claims = json.loads(base64.urlsafe_b64decode(part + '=' * (-len(part) % 4))) if len(part) < 16384 else {}
+            profile = claims.get('https://api.openai.com/profile') or {}
+            email = display_text(profile.get('email') or claims.get('email'))
+            if email:
+                account['email'] = email
+        except (ValueError, IndexError, TypeError, AttributeError):
+            pass
+    return {'available': bool(windows), 'account': account,
             'windows': windows, 'credits': credits(raw.get('credits')), 'source': 'openai-usage',
             'message': '' if windows else 'OpenAI did not report subscription quota windows for this OpenCode login.'}
 
@@ -162,9 +205,11 @@ class CTask(InitCTask):
         if not executable:
             raise StatusError('not_installed', 'Codex is not installed on this server.')
         options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+        env = dict(os.environ, CODEX_SQLITE_HOME=str(folder / 'state'))
+        drop_provider_variables('codex', login=True, env=env)
         proc = subprocess.Popen([executable, 'app-server', '--stdio'], stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=folder,
-            env=dict(os.environ, CODEX_SQLITE_HOME=str(folder / 'state')), **options)
+            env=env, **options)
         messages = queue.Queue()
         def reader():
             for line in proc.stdout:
@@ -196,9 +241,17 @@ class CTask(InitCTask):
             send({'method': 'initialized', 'params': {}})
             send({'id': 2, 'method': 'account/read', 'params': {'refreshToken': False}})
             account = receive(2).get('account') or {}
-            send({'id': 3, 'method': 'account/rateLimits/read'})
-            limits = receive(3)
-            shown = {k: v for k, v in account.items() if k in ('type', 'email', 'planType') and isinstance(v, str) and len(v) <= 254}
+            shown = {k: display_text(v) for k, v in account.items() if k in ('type', 'email', 'planType') and display_text(v)}
+            if account.get('type') in ('apiKey', 'api_key'):
+                return dict(api_status(), source='codex-app-server')
+            if not account:
+                raise StatusError('login_required', 'Codex has no active account on this server.')
+            shown['authType'] = 'login'
+            try:
+                send({'id': 3, 'method': 'account/rateLimits/read'})
+                limits = receive(3)
+            except (OSError, ValueError, TimeoutError, queue.Empty):
+                raise StatusError('quota_unavailable', 'Codex account is connected, but its quota could not be read.', account=shown) from None
             rates = limits.get('rateLimits') or {}
             windows = [window(w.get('usedPercent'), w.get('windowDurationMins'), w.get('resetsAt'))
                        for w in (rates.get('primary'), rates.get('secondary')) if isinstance(w, dict)]
@@ -253,10 +306,14 @@ class CTask(InitCTask):
         for source, target in (('accountEmail', 'email'), ('plan', 'planType')):
             if isinstance(raw.get(source), str) and len(raw[source]) <= 254:
                 shown[target] = raw[source]
+        if shown.get('email'):
+            shown['authType'] = 'login'
+        elif raw.get('authType') in ('api', 'apiKey', 'api_key'):
+            shown['authType'] = 'api'
         return {'available': bool(windows), 'account': shown, 'windows': windows, 'source': 'openclaw-status',
                 'message': '' if windows else 'OpenClaw did not report quota windows for this provider.'}
 
-    def _selection(self, harness, model):
+    def _selection(self, harness, model, include_identity=True):
         """Read only this harness's credentials; never substitute another harness's account."""
         if harness == 'claude':
             token = os.environ.get('CLAUDE_CODE_OAUTH_TOKEN')
@@ -267,23 +324,34 @@ class CTask(InitCTask):
             if not isinstance(token, str) or not token:
                 raise StatusError('login_required', 'No readable Claude personal login on this server. API keys do not expose the Claude subscription allowance; use Claude Usage for that account.', 30)
             plan = data.get('subscriptionType')
-            return token, lambda folder: claude_usage(token, plan[:80] if isinstance(plan, str) else ''), PAGES['claude']
+            return token, lambda folder: claude_usage(token, plan[:80] if isinstance(plan, str) else '', include_identity=include_identity), PAGES['claude']
         if harness == 'opencode':
             provider = model.split('/', 1)[0] if '/' in model else ''
-            if provider not in ('openai', 'anthropic'):
+            if not provider:
                 raise StatusError('provider_required', 'OpenCode quota belongs to its selected provider. Select an openai/… or anthropic/… model with OAuth login for automatic quota; other providers report usage in their own dashboard.', 120)
             path = Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'opencode/auth.json'
             data = read_json(path).get(provider) or {}
+            if isinstance(data, dict) and data.get('type') == 'api' and isinstance(data.get('key'), str) and data['key']:
+                return data['key'], lambda folder: api_status(), PAGES.get(provider, PAGES['opencode'])
             if not isinstance(data, dict) or data.get('type') != 'oauth' or not isinstance(data.get('access'), str):
                 raise StatusError('provider_login_required', 'No readable OpenCode %s OAuth login. API keys, plugins and newer credential stores need their provider usage page; another harness login is never substituted.' % provider, 120)
             token = data['access']
             if provider == 'anthropic':
-                return token, lambda folder: claude_usage(token), PAGES['claude']
+                return token, lambda folder: claude_usage(token, include_identity=include_identity), PAGES['claude']
+            if provider != 'openai':
+                raise StatusError('not_supported', 'The selected OpenCode OAuth provider has no connected account-status adapter.', 120)
             account_id = data.get('accountId')
             account_id = account_id if isinstance(account_id, str) and len(account_id) <= 200 else ''
-            return token + account_id, lambda folder: openai_usage(token, account_id), PAGES['openai']
+            return token + account_id, lambda folder: openai_usage(token, account_id, include_identity=include_identity), PAGES['openai']
         if harness == 'codex':
-            return os.environ.get('CODEX_HOME', str(Path.home() / '.codex')), self._codex, PAGES['openai']
+            home = Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex')
+            # A login switch in the same CODEX_HOME must invalidate the quota cache.
+            fingerprint = hashlib.sha256()
+            for name in ('auth.json', 'config.toml'):
+                path = home / name
+                if path.is_file() and path.stat().st_size <= 1_048_576:
+                    fingerprint.update(path.read_bytes())
+            return str(home) + fingerprint.hexdigest(), self._codex, PAGES['openai']
         if harness == 'openclaw':
             provider = model.split('/', 1)[0] if '/' in model else ''
             if not provider:
@@ -297,25 +365,57 @@ class CTask(InitCTask):
         }
         raise StatusError('not_supported', messages.get(harness, 'Automatic quota reporting is not configured for this harness.'), 120)
 
-    def run(self, ctx: dict, harness: str = 'codex', gateway: str = 'login', model: str = '', client_script: bool = False):
+    def _display(self, out, show_identity):
+        out = dict(out, identity_visible=show_identity)
+        account = dict(out.get('account') or {})
+        if show_identity:
+            label = display_text(account.get('email')) or display_text(account.get('username'))
+            kind = account.get('authType', 'unknown')
+            out['identity'] = {'kind': kind, 'label': 'API' if kind == 'api' else label or ('Login identity unavailable' if kind == 'login' else 'Account unknown')}
+        else:
+            account.pop('email', None)
+            account.pop('username', None)
+            out.pop('identity', None)
+        out['account'] = account
+        return out
+
+    def run(self, ctx: dict, harness: str = 'codex', gateway: str = 'login', model: str = '', client_script: bool = False, show_identity: bool = None):
         """Return safe normalized account/windows/credits, or the optional shared browser component."""
         if client_script:
             return {'return': 0, 'script': (Path(__file__).parent / 'files/js/account-status.js').read_text(encoding='utf-8')}
         if not all(isinstance(v, str) and len(v) <= 300 for v in (harness, gateway, model)):
             return {'return': 1, 'error': 'Harness, gateway and model must be short text values.'}
+        if show_identity is None:
+            config = self.cm.access(dict(category=self.cmeta['uses_categories']['config'], command='get',
+                arg1='task-ai-account-status', quiet=True, con=False))
+            if config.get('return'):
+                return {'return': 1, 'error': 'The account-status display configuration could not be read.'}
+            # /settings and many cMeta configs use textual yes/no values. Keep
+            # explicit task arguments strict, but accept the config convention.
+            # (The config's value has its own name: show_identity is a bool parameter.)
+            configured = config.get('config_cmeta', {}).get('show_identity', True)
+            if isinstance(configured, str):
+                text = configured.strip().lower()
+                if text in ('yes', 'true', 'on', '1'):
+                    configured = True
+                elif text in ('no', 'false', 'off', '0'):
+                    configured = False
+            show_identity = configured
+        if not isinstance(show_identity, bool):
+            return {'return': 1, 'error': 'show_identity must be true or false.'}
         harness = {'agy': 'antigravity', 'claude-code': 'claude'}.get(harness, harness)
         base = {'return': 0, 'harness': harness, 'available': False, 'windows': [], 'credits': None,
                 'checked_at': time.time(), 'usage_url': PAGES.get(harness, '')}
         if gateway not in ('', 'login'):
-            return dict(base, reason='gateway', message='A gateway is selected. Quota belongs to that gateway/provider; the server personal-login allowance does not apply.')
+            return self._display(dict(base, **dict(api_status(), reason='gateway')), show_identity)
         try:
-            identity, fetch, page = self._selection(harness, model)
+            identity, fetch, page = self._selection(harness, model, include_identity=show_identity)
             base['usage_url'] = page
             root = self.cm.access(dict(category=self.cmeta['uses_categories']['log'], command='get', arg1='local:ai-account-status', yaml=True, quiet=True, con=False))
             if root.get('return'):
                 raise StatusError('storage_unavailable', 'The local account-status cache could not be opened.')
             folder = Path(root['artifact']['path'])
-            key = hashlib.sha256((harness + '\0' + model.split('/')[0] + '\0' + identity).encode()).hexdigest()
+            key = hashlib.sha256(('v2\0' + str(show_identity) + '\0' + harness + '\0' + model.split('/')[0] + '\0' + identity).encode()).hexdigest()
             path = folder / (key + '.json')
             lock = PathLock(str(path) + '.lock')
             lock.acquire(timeout=25)
@@ -326,24 +426,28 @@ class CTask(InitCTask):
                     saved = {}
                 now = time.time()
                 if saved.get('next_check', 0) > now and isinstance(saved.get('result'), dict):
-                    return dict(base, **saved['result'], cached=True)
+                    return self._display(dict(base, **saved['result'], cached=True), show_identity)
                 try:
                     result = dict(fetch(folder), checked_at=now)
                     delay = 120
                 except StatusError as exc:
                     result = {'available': False, 'windows': [], 'message': exc.message, 'reason': exc.reason, 'checked_at': now}
+                    if exc.account:
+                        result['account'] = exc.account
                     delay = exc.retry
                     old = saved.get('result', {})
                     if old.get('available') and now - old.get('checked_at', 0) < 900:
-                        result.update(account=old.get('account', {}), windows=old.get('windows', []), credits=old.get('credits'), checked_at=old['checked_at'], stale=True)
+                        result.update(account=result.get('account') or old.get('account', {}), windows=old.get('windows', []), credits=old.get('credits'), checked_at=old['checked_at'], stale=True)
+                if not show_identity and result.get('account'):
+                    result = self._display(result, False)
                 payload = {'next_check': now + delay, 'result': result}
                 temporary = path.with_suffix('.tmp')
                 temporary.write_text(json.dumps(payload, allow_nan=False), encoding='utf-8')
                 os.replace(temporary, path)
-                return dict(base, **result, cached=False)
+                return self._display(dict(base, **result, cached=False), show_identity)
             finally:
                 lock.release()
         except StatusError as exc:
-            return dict(base, reason=exc.reason, message=exc.message)
+            return self._display(dict(base, reason=exc.reason, message=exc.message, account=exc.account), show_identity)
         except (OSError, ValueError, TypeError, TimeoutError, queue.Empty, subprocess.SubprocessError):
-            return dict(base, reason='unavailable', message='Account quota could not be read on this server. AI requests can still be tried.')
+            return self._display(dict(base, reason='unavailable', message='Account quota could not be read on this server. AI requests can still be tried.'), show_identity)

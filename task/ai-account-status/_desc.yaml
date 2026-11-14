@@ -1,2 +1,10 @@
 cache: false
 store_global: false
+configs:
+  task-ai-account-status:
+    desc: Shared AI account-status display settings for this cMeta home and its apps.
+    keys:
+      show_identity:
+        desc: Show the active login email/username or API beside quota; false suppresses identity from returned data too.
+        type: yes/no
+        default: true

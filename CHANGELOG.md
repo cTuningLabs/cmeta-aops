@@ -2,6 +2,23 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV
+- **`ai-account-status` names the account a quota belongs to.** Beside the quota, the identity of the login it was
+  read with: `Claude (you@example.com): 5h: 94% remaining`, or `Codex (API): ...` for an API credential or a selected
+  gateway; `identity` holds an allowlisted `kind` (login / api) and `label`, `account.authType` says login or api where
+  the adapter can establish it, and a missing identity is shown as unavailable or unknown - never guessed from another
+  harness or an older saved account. Claude's address comes from the read-only OAuth profile endpoint with the same
+  token as the quota request (its local `oauthAccount` cache can belong to a previous login); Codex from its
+  app-server's `account/read`; OpenCode from its selected provider's own login (an API credential shows `API`, any
+  provider of its store, no longer only openai/anthropic); OpenClaw when its status reports one. No key, prefix or
+  credential fingerprint is ever shown.
+- **`show_identity` (config `task-ai-account-status`, yes by default): identities off for every app of a cMeta home.**
+  `cx config set task-ai-account-status --meta.show_identity=no`, or on /settings; no restart. When off, addresses and
+  names are left out of the returned data and of the cache written from then on, not hidden by the page; a call can
+  still pass `show_identity=False`. The config takes yes/no as well as true/false.
+- **Codex: a login switch in the same `CODEX_HOME` refreshes the cached status** (the cache key follows its
+  `auth.json` and `config.toml`), and the app-server it starts never sees the provider variables of an API key.
+
 ## 0.70.1
 - **`cx secret settings <alias>`: the git settings of an identity as pairs.** What `cx secret use` writes into a
   clone - `user.name`, `user.email`, `core.sshCommand` (the key's path, `IdentitiesOnly`), the signing key and its
