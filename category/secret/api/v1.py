@@ -11,6 +11,7 @@ holds references, never values; the files live inside the artifact (self-contain
     cx secret import [<alias>] [--force]    # the files copied in from files.from, the private key made owner-only
     cx secret generate <alias>              # a new ed25519 key pair without a passphrase (automation, containers, hosts)
     cx secret use <alias> --repo=<clone>    # the git identity written into a clone's .git/config (or --git_global)
+    cx secret settings <alias>              # the same settings as pairs (what "cx repo pull --identity=<alias>" gives a clone)
     cx secret render <alias> --out=<file>   # the same as a git config include file, with the ssh config stanza
     cx secret store <alias> [--password_protected]   # a token typed at a hidden prompt, kept owner-only or sealed
     cx secret run <alias> --env.<NAME>={secret} -- <command>   # the value in the command's environment alone
@@ -572,6 +573,43 @@ class Category(InitCategory):
             print (f'cMeta info: {s["alias"]}: a new ed25519 key pair; the public key: {pub or path + ".pub"}')
             print (f'            {fp}')
         return {'return': 0, 'key': path, 'public_key': pub or path + '.pub', 'fingerprint': fp}
+
+    ############################################################
+    def settings_(self, ctx, arg1: str = None):
+        """
+        The git settings of a git or ssh identity as (key, value) pairs - what "use" writes into a clone and what
+        "cx repo pull --identity=<alias>" gives a clone: user.name, user.email, core.sshCommand (the key's path,
+        IdentitiesOnly), the signing key and its format, commit.gpgsign, the allowed signers. An ssh identity (a
+        key alone) gives core.sshCommand only. Paths and names are printed, never a key's content.
+
+            cx secret settings git-work-without-pass
+        """
+        r = self._one(ctx, arg1, ('git', 'ssh'), 'settings')
+        if r['return'] > 0:
+            return r
+        s = r['secret']
+        d = s['desc']
+        con = ctx['control'].get('con', False)
+        quiet = ctx['control'].get('quiet', False)
+
+        if str(d.get('kind') or '') == 'ssh':
+            key = _get(d, 'ssh.key')
+            path = self._resolve(s, key)[0] if key else None
+            if not path or not os.path.isfile(path):
+                return self.cm.error(f'{s["alias"]}: its ssh key is not there ({key}): cx secret import {s["alias"]}')
+            if quiet and str(_get(d, 'ssh.passphrase') or '') in ('ask', 'agent'):
+                return self.cm.error(f'{s["alias"]}: its key has a passphrase ({_get(d, "ssh.passphrase")}), which a quiet run cannot give')
+            pairs = [('core.sshCommand', f'ssh -i "{path.replace(os.sep, "/")}" -o IdentitiesOnly=yes')]
+        else:
+            rs = self._git_settings(s, quiet)
+            if rs['return'] > 0:
+                return rs
+            pairs = rs['pairs']
+
+        if con:
+            for k, v in pairs:
+                print (f'  {k} = {v}')
+        return {'return': 0, 'alias': s['alias'], 'kind': str(d.get('kind') or ''), 'pairs': [list(p) for p in pairs]}
 
     ############################################################
     def use_(self, ctx, arg1: str = None, repo: str = '', git_global: bool = False):

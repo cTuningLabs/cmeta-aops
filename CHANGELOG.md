@@ -2,6 +2,13 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.70.1
+- **`cx secret settings <alias>`: the git settings of an identity as pairs.** What `cx secret use` writes into a
+  clone - `user.name`, `user.email`, `core.sshCommand` (the key's path, `IdentitiesOnly`), the signing key and its
+  format, `commit.gpgsign`, the allowed signers - returned and printed as pairs, paths and names only, never a key's
+  content; an ssh identity (a key alone) gives `core.sshCommand`. It is what the engine's `cx repo pull
+  --identity=<alias>` takes to clone a repository with that identity and keep it in the clone.
+
 ## 0.70.0
 - **New task `reboot-to`: restart into another system of the firmware's boot menu, once or always, on Windows and
   Linux.** Without `--os` it lists the systems (Windows Boot Manager, ubuntu, ...) numbered and asks which one;
