@@ -1,0 +1,11 @@
+authors: Grigori Fursin
+
+# The hooks (api_v1.py) of programs converted from the Collective Knowledge format. A program uses
+# them by inheriting this template after template-c-cpu and having no api_v1.py of its own:
+#
+#   inherits:
+#     - template-c-cpu,649899ef3f004e4a
+#     - template-ck-program,f7fab3bed78041d1
+#
+# Nothing here is merged into the program's description: its _desc.yaml says everything else (the
+# hooks read its local_vars, see api_v1.py and README.md).

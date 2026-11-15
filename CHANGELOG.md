@@ -2,6 +2,27 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV
+- **A program without hooks of its own takes those of the template it inherits: `program/template-ck-program`, the
+  hooks of programs converted from the Collective Knowledge format** (cBench, PolyBench/C, PolyBench/GPU, the codelets
+  of the CK paper). `select-program` gives a program without an `api_v1.py` the hooks of the first artifact of its
+  `inherits` list that has one (`selected-program.api_from` names it), so a family of programs shares one module
+  written once. A program with hooks of its own keeps them, and `template-c-cpu`, which every program inherits, has
+  none: the programs that inherit only it are unchanged. The template does what CK's pipeline did around the command
+  line, on the host CPU, CUDA and Android: the `WINDOWS` define of a Windows build, GNU C89 for sources written before
+  C99 with GCC and clang (`ck_legacy_c`), PolyBench's sizes and array dump as compile parameters
+  (`--compile.size=mini|small|standard|large|extralarge`, `--compile.dump=yes|no`, each a build of its own), a number
+  or several files of the dataset on the command line, files of the program in the run folder (pushed to a device),
+  standard output and error into CK's `tmp-output1.tmp` and `tmp-output2.tmp`. Its README lists the `local_vars` it
+  reads.
+- **The `dataset` task returns a dataset's files in its order and the number it stands for.** Beside `path`: `files`
+  (the `files:` list of the dataset's `_desc.yaml` first, then the others by name; the first is the default file -
+  without a `files:` list the first by name, as before), `path_files`, `number` (the `number:` of its `_desc.yaml`, for
+  a dataset that is a number on a command line) and `artifact_au`. `--filename` also picks one of the files of a
+  dataset prepared by its `uses` (a capsule fetched on demand). Datasets without these keys are selected as before.
+- Tests: `test_ck_program_template.py` - the template's hooks offline; `select-program` and the `dataset` task
+  through the engine.
+
 ## 0.70.2
 - **`ai-account-status` names the account a quota belongs to.** Beside the quota, the identity of the login it was
   read with: `Claude (you@example.com): 5h: 94% remaining`, or `Codex (API): ...` for an API credential or a selected

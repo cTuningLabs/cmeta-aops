@@ -87,6 +87,16 @@ class CTask(InitCTask):
                 print ('')
                 print (f'{space}INFO: Selected dataset "{artifact_au}"')
 
+            # What the dataset says of itself in its _desc.yaml, when it has one: "files" - its files in the
+            # order a program takes them (the first is the default; they come with the result, so that a
+            # program can take several) - and "number" - the number it stands for (a dataset that is a
+            # number on a command line). Datasets without them behave as before
+            desc_data = (loaded_files.get('_desc') or {}).get('data') or {}
+            files_order = [str(f) for f in desc_data.get('files') or []] if isinstance(desc_data.get('files'), list) else []
+            number = desc_data.get('number')
+
+            result['artifact_au'] = artifact_au
+
             # Backward compatibility: datasets that ship their data inside a "files" subdirectory
             path_to_files = os.path.join(artifact_path, 'files')
 
@@ -96,13 +106,21 @@ class CTask(InitCTask):
                 if len(fs) == 0:
                     return self.cm.error(f'dataset files not found in "{path_to_files}" ("{__file__}")')
 
+                # By name, or in the dataset's own order ("files" of _desc.yaml) followed by the others
+                ordered = [f for f in files_order if f in fs] + sorted(f for f in fs if f not in files_order)
+
+                result['files'] = ordered
+                result['path_files'] = path_to_files
+                if number is not None:
+                    result['number'] = str(number)
+
                 if filename:
                     if filename not in fs:
                         return self.cm.error(f'dataset file "{filename}" not found in "{path_to_files}" ("{__file__}")')
 
                     path = os.path.join(path_to_files, filename)
                 else:
-                    fs = sorted(fs)
+                    fs = ordered
                     ifs = 0
 
                     if len(fs) > 1 and con and not quiet:
@@ -230,5 +248,20 @@ class CTask(InitCTask):
                         result = r['value']
 
                         result['return'] = 0
+
+                        # What the description adds when the prepared result lacks it: the order of the
+                        # files, the number, and a file of them asked for by name (--filename)
+                        if isinstance(result, dict):
+                            result = dict(result)       # the prepared result in the context stays as it was
+                            result['artifact_au'] = artifact_au
+                            if files_order and not result.get('files'):
+                                result['files'] = files_order
+                            if number is not None and result.get('number') is None:
+                                result['number'] = str(number)
+                            files = result.get('files')
+                            if filename and isinstance(files, list) and filename in files and result.get('path'):
+                                folder = result.get('path_entry') or os.path.dirname(result['path'])
+                                result['path'] = os.path.join(folder, filename)
+                                result['qpath'] = self.cm.q(result['path'])
 
         return result

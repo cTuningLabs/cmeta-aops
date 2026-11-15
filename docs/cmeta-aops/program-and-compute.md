@@ -45,6 +45,16 @@ A program is a data description patched onto a template:
   `customize2` / `customize_run` / `customize_pre` (and program-specific) hooks, invoked
   from the template via `internal_func … internal_func_from_local_key: selected-program`.
   Import: `from program_22788f3c30d04e6d.api.cprogram import InitCProgram`.
+  A program **without** an `api_v1.py` takes the hooks of the first artifact in its `inherits`
+  list that has one (`select-program`, added 2026-11-15): a family of programs shares one module in a
+  template - e.g. `template-ck-program`, the hooks of the programs converted from CK
+  (`inherits: [template-c-cpu, template-ck-program]`). A program with its own hooks keeps them;
+  `template-c-cpu` has none, so programs that inherit only it are unchanged.
+- **Datasets** — the `dataset` task returns, with `path`, the dataset's `files` in its own order
+  (the `files:` list of the dataset's `_desc.yaml`, else by name; the first is the default file),
+  `path_files`, `number` (the `number:` of its `_desc.yaml`, for a dataset that is a number) and
+  `artifact_au` (added 2026-11-15): a program can take several files of one dataset
+  (`{{local.dataset.files}}`) or the number on its command line (`{{local.dataset.number}}`).
 
 ### The `updates` patcher (`update_desc_`)
 

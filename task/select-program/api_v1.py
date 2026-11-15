@@ -97,6 +97,37 @@ class CTask(InitCTask):
             print ('')
             print (f'{space}INFO: Selected program "{artifact_au}"')
 
+        # A program without hooks of its own (no api_v1.py) takes the hooks of the first artifact it
+        # inherits that has some - the template of a family of programs, written once. A program with
+        # its own hooks keeps them, and the template-c-cpu every program inherits has none
+        api_from = None
+        if program_api_code is None:
+            inherits = (((loaded_files.get('_desc') or {}).get('data')) or {}).get('inherits') or []
+            for a in inherits:
+                if not a:
+                    continue
+                pa = {'category': self.cmeta['uses_categories']['utils'],
+                      'command': 'select_artifact',
+                      'select_category': self.cmeta['uses_categories']['program'],
+                      'select_artifact': a,
+                      'con': False,
+                      'quiet': True,
+                      'load_api': True,
+                      'load_api_ver': program_api_ver,
+                      'load_api_class': 'CProgram',
+                }
+                ra = self.cm.access(pa)
+                if self.cm.catch_error(ra, fail16=True):
+                    ra['return'] = 1
+                    ra['error'] = f'inherited program "{a}" of "{artifact_au}": ' + ra.get('error', '')
+                    return ra
+                if ra.get('api_code') is not None:
+                    program_api_code = ra['api_code']
+                    api_from = ra.get('artifact_au') or a
+                    if con and verbose:
+                        print (f'{space}INFO: the hooks of "{artifact_au}" come from "{api_from}"')
+                    break
+
         # Check inheritance in loaded_files (descriptions)
         for key in loaded_files:
             meta = loaded_files[key]
@@ -193,6 +224,8 @@ class CTask(InitCTask):
             'loaded_files': loaded_files, 
             'api_code':program_api_code,
         }
+        if api_from:
+            selected_program['api_from'] = api_from
 
         result['add_to_local'] = {'selected-program': selected_program}
 
