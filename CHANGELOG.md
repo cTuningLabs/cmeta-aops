@@ -2,6 +2,13 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV
+- **A reference recording names neither the machine nor its folders.** The facts a `--check_output` recording keeps
+  (`recorded` of `case.json`) no longer hold the host's name, and every absolute path of the recorded command line and
+  parameters - a Windows drive path or a POSIX one, quoted or not, after a flag such as `-I` - is reduced to its last
+  part (`recorded_facts` and `path_neutral` of compile-and-run-program): a reference is meant to be published. The key
+  and the digests of a case are unchanged, so a case recorded before still validates.
+
 ## 0.72.0
 - **`cx secret call`: a Python function called with the value of a token secret.** `cm.access({'category': 'secret',
   'command': 'call', 'arg1': <alias>, 'func': f})` opens the value (the password asked for a password-protected
