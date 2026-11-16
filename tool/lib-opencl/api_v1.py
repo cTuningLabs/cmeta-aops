@@ -86,7 +86,7 @@ def import_lib_args(compiler, def_path, out_path, machine):
     """The command that makes OpenCL.lib from OpenCL.def with the archiver of the C compiler: (args, error)."""
     path = compiler.get('path') or ''
     tool_lib = ((compiler.get('features') or {}).get('paths') or {}).get('tool_lib') or ''
-    if os.path.basename(tool_lib).lower() == 'lib.exe':
+    if re.split(r'[\\/]', tool_lib)[-1].lower() == 'lib.exe':      # a Windows path, on any OS
         archiver = tool_lib
     else:
         archiver = os.path.join(os.path.dirname(path), 'llvm-lib.exe')

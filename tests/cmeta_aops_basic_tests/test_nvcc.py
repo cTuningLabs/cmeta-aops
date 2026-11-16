@@ -340,10 +340,11 @@ def tool(nvcc_api, cm):
     return t
 
 
-def context(uname = "linux", uarch = "amd64", arch = 50, driver = "13.0"):
+def context(uname = "linux", uarch = "amd64", arch = 50, driver = "13.0", glibc = None):
+    # The host the test describes, its glibc too (None: no constraint) - not the machine that runs the test
     return {"control": {"con": False, "quiet": True, "verbose": False},
             "tasks": {"nested_call": 0,
-                      "global": {"host": {"os": {"uname": uname, "uarch": uarch}},
+                      "global": {"host": {"os": {"uname": uname, "uarch": uarch, "glibc": glibc}},
                                  "cuda": {"features": {"compute_cap_int_min": arch,
                                                        "versions": {"cuda version": driver}}}}}}
 
@@ -726,3 +727,12 @@ def test_the_newest_version_for_status_and_upgrade(nvcc_api, server):
     assert t.latest_version(context(arch = 50, driver = "13.0"), {})["version"] == "12.9.86"     # CUDA 13 has no sm_50
     assert t.latest_version(context(arch = 86, driver = "12.9"), {})["version"] == "12.9.86"     # the driver runs 12.x
     assert t.latest_version(context(arch = 30, driver = "13.0"), {})["return"] > 0               # nothing for Kepler
+
+    # Linux with glibc 2.41+: CUDA 12 cannot compile there - the newest 13 the driver runs, or the reason
+    assert t.latest_version(context(arch = 86, driver = "13.0", glibc = (2, 43)), {})["version"] == "13.0.88"
+    r = t.latest_version(context(arch = 86, driver = "12.9", glibc = (2, 43)), {})
+    assert r["return"] > 0 and "glibc 2.43" in r["error"]
+    assert t.latest_version(context(arch = 86, driver = "12.9", glibc = (2, 39)), {})["version"] == "12.9.86"
+    assert t.latest_version(context(arch = 86, driver = "12.9", glibc = (2, 43)),
+                            {"with": {"any_glibc": True}})["version"] == "12.9.86"
+    assert t.latest_version(context(uname = "windows", arch = 86, driver = "12.9", glibc = (2, 43)), {})["version"] == "12.9.86"

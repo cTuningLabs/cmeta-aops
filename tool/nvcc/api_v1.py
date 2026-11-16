@@ -66,11 +66,13 @@ class CTool(InitCTool):
     def _glibc(self, ctx, _with):
         """
         The glibc of this Linux system ((2, 43)) that a toolkit must compile against (redist.glibc_too_new), or None:
-        another OS, or --with.any_glibc (headers patched, a build for another system).
+        another OS, or --with.any_glibc (headers patched, a build for another system). A context that describes the
+        host says it (host.os.glibc, None for none); else this machine's.
         """
-        if ctx['tasks']['global']['host']['os']['uname'] != 'linux' or _with.get('any_glibc'):
+        host_os = ctx['tasks']['global']['host']['os']
+        if host_os.get('uname') != 'linux' or _with.get('any_glibc'):
             return None
-        return redist.host_glibc()
+        return host_os['glibc'] if 'glibc' in host_os else redist.host_glibc()
 
     ############################################################
     def latest_version(self, ctx, params):
