@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.72.0
 - **`cx secret call`: a Python function called with the value of a token secret.** `cm.access({'category': 'secret',
   'command': 'call', 'arg1': <alias>, 'func': f})` opens the value (the password asked for a password-protected
   secret, at a terminal), calls `f(value)` inside the command and returns the dictionary `f` returns - the value is
