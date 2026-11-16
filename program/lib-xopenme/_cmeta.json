@@ -5,9 +5,11 @@
   "constraints": {
     "supported_compute": [
       "android-cpu",
+      "android-gpu",
       "cpu",
       "cuda",
       "ios-cpu",
+      "opencl",
       "rocm"
     ]
   },

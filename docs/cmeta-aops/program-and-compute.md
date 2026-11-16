@@ -217,7 +217,10 @@ and copies headers. Its build result lands in `global['lib-xopenme']` with
 a `setup name: lib-xopenme` step (appended in `updates`), and `setup-compile`
 auto-discovers it by scanning `global['lib-*']`. Same for `lib-polybench`, `lib-milepost`,
 and OS/compute libs `lib-openssl`, `lib-openmp`, `lib-cuda`, `lib-cudnn`,
-`lib-sysroot-android`, `lib-openmp-android`.
+`lib-sysroot-android`, `lib-openmp-android`, `lib-opencl` (added 2026-11-15: the Khronos
+OpenCL headers and the library to link for the `opencl` target - Windows `OpenCL.lib` made
+from the Khronos ICD loader's export list, Linux the system's ICD loader, macOS the SDK's
+OpenCL framework; set it up with `if: '"opencl" in {{global.target.compute|$[]}}'`).
 
 ## 8. Program taxonomy (all ~31)
 

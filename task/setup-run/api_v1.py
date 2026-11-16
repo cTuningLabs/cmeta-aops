@@ -69,6 +69,10 @@ class CTask(InitCTask):
                         and not params.get('run_on_host'))
         _cuda = True if 'cuda' in target_compute else False
 
+        # An OpenCL program's host code runs on this machine, as a CUDA program's does: it finds its
+        # dynamic libraries (lib-xopenme, lib-polybench ...) the same way
+        _opencl = 'opencl' in target_compute
+
         # A program for an iPhone or iPad runs inside an app bundle on the device that target--ios-cpu
         # selected (ios-gpu and ios-npu set it up too): signed, installed and launched with devicectl (ios.py)
         _ios = (any(c in ('ios-cpu', 'ios-gpu', 'ios-npu') for c in target_compute)
@@ -245,7 +249,7 @@ class CTask(InitCTask):
             output_files.append('tmp-cmeta-python-profile.out')
             output_files.append('tmp-cmeta-python-profile.txt')
 
-        if _cpu or _cuda:
+        if _cpu or _cuda or _opencl:
             fdlp = setup_compile.get('found_dynamic_lib_paths')
             if not fdlp:
                 fdlp = []

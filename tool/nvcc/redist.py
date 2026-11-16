@@ -97,9 +97,38 @@ def exact_version(version):
     return v if re.fullmatch(r'\d+\.\d+\.\d+', v) else None
 
 
-def incompatible(release, driver_cuda = None, gpu_arch_min = None):
+# The first CUDA whose headers agree with glibc 2.41 and newer: glibc 2.41 declares the C23 functions cospi and
+# sinpi (2.42 also rsqrt) with its exception specification, the crt/math_functions.h of CUDA 12 and older without
+# it - nvcc then stops on every .cu file ("exception specification is incompatible with that of previous function
+# cospi"). CUDA 13 declares them as glibc does (__NV_GLIBC_PROVIDES_IEC_60559_FUNCS, __GLIBC_PREREQ(2,41)).
+GLIBC_MATH_C23 = (2, 41)
+GLIBC_MATH_C23_CUDA = 13
+
+
+def host_glibc():
+    """The glibc of this system: (2, 43), or None (not glibc, another OS)."""
+    try:
+        text = os.confstr('CS_GNU_LIBC_VERSION') or ''        # 'glibc 2.43'
+    except (AttributeError, ValueError, OSError):
+        text = ''
+    m = re.match(r'glibc\s+(\d+)\.(\d+)', text)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def glibc_too_new(major, glibc = None):
+    """Why a CUDA of this major version cannot compile against this glibc ((2, 43)), or None."""
+    if glibc and tuple(glibc) >= GLIBC_MATH_C23 and int(major) < GLIBC_MATH_C23_CUDA:
+        g = '.'.join(str(x) for x in glibc)
+        return (f'CUDA {major} cannot compile against the glibc {g} of this system: glibc 2.41 and newer declare '
+                f'cospi and sinpi (2.42 also rsqrt) as noexcept, CUDA {major}\'s headers without it - CUDA '
+                f'{GLIBC_MATH_C23_CUDA} can (or build in a system or container with glibc 2.40 or older)')
+    return None
+
+
+def incompatible(release, driver_cuda = None, gpu_arch_min = None, glibc = None):
     """Why programs built with this CUDA release cannot run here, or None: a newer major version than
-    the driver runs, or a GPU older than the oldest architecture of the release."""
+    the driver runs, a GPU older than the oldest architecture of the release, or (Linux) a glibc whose
+    math declarations the release's headers contradict."""
     major = key(release)[0]
     if driver_cuda and major > key(driver_cuda)[0]:
         return (f'CUDA {release} needs a driver for CUDA {major} (this driver runs CUDA {driver_cuda}): '
@@ -107,16 +136,18 @@ def incompatible(release, driver_cuda = None, gpu_arch_min = None):
     if gpu_arch_min and MIN_ARCH.get(major, 0) > int(gpu_arch_min):
         return (f'CUDA {major} builds for sm_{MIN_ARCH[major]} and newer, the GPU is sm_{gpu_arch_min}'
                 f' - an older CUDA toolkit supports it')
-    return None
+    return glibc_too_new(major, glibc)
 
 
-def choose(all_releases, wanted = None, matches = None, driver_cuda = None, gpu_arch_min = None, nvcc_of = None):
+def choose(all_releases, wanted = None, matches = None, driver_cuda = None, gpu_arch_min = None, nvcc_of = None,
+           glibc = None):
     """
     The release to install. wanted is what nvcc --version should show: an exact version (12.9.86), a
     prefix (12.9, 12) or a range (>=12.4,<12.7, checked against the release, 12.4.1, and then its
     nvcc). matches(wanted, version) checks a prefix or a range; nvcc_of(release) is the nvcc version
     of a release (its manifest). The release must run on the driver (driver_cuda: the CUDA version
-    nvidia-smi shows) and build for the GPU (gpu_arch_min: its compute capability x 10).
+    nvidia-smi shows) and build for the GPU (gpu_arch_min: its compute capability x 10), and on Linux
+    compile against the system's glibc (glibc: (2, 43); see glibc_too_new).
 
     Without a request, the newest release the driver fully runs (its major.minor at most the
     driver's). A request may get a newer minor version than the driver's, which runs through CUDA's
@@ -141,7 +172,7 @@ def choose(all_releases, wanted = None, matches = None, driver_cuda = None, gpu_
                       if all_releases else 'NVIDIA lists no CUDA release')
 
     def why_not(release, strict):
-        why = incompatible(release, driver_cuda, gpu_arch_min)
+        why = incompatible(release, driver_cuda, gpu_arch_min, glibc)
         if not why and strict and driver_cuda and major_minor(release) > major_minor(driver_cuda):
             why = f'CUDA {release} is newer than what the driver runs (CUDA {driver_cuda})'
         if not why and wanted and nvcc_of:

@@ -60,7 +60,7 @@ class CTool(InitCTool):
             else:
                 _with[key] = bool(value)
 
-        if 'android-cpu' in compute:
+        if any(str(c).startswith('android-') for c in compute):   # android-cpu, android-gpu ...
             name += '.so'
         else:
             if 'compiler' in ctx['tasks']['global']:

@@ -21,6 +21,8 @@ redirection), driven by the program's local_vars:
                     defines (CK's sizes) by the header's size macro; --compile.dump=yes|no keeps or
                     drops POLYBENCH_DUMP_ARRAYS (default: yes with CK's sizes, no with --compile.size).
                     Both are compile parameters, so each choice is a build of its own;
+  ck_cpu_check      PolyBench/GPU: CK_CPU_CHECK, the CPU reference CK commented out, unless
+                    --compile.check=no (a compile parameter too);
 - customize_ck_run (run, after the dataset step):
   ck_number_from_dataset  the dataset is a number for the command line ({{local.ck_number}}): the
                           "number" of its result, else the content of its file;
@@ -29,7 +31,10 @@ redirection), driven by the program's local_vars:
   ck_run_files            files of the program (src/) the run expects in its working folder;
   ck_dump_file            an output that exists only when the arrays are dumped (PolyBench);
   ck_redirect_stdio       standard output and error into tmp-output1.tmp and tmp-output2.tmp
-                          ({{local.ck_redirects}}; not on iOS, where an app has no redirection).
+                          ({{local.ck_redirects}}; not on iOS, where an app has no redirection);
+  ck_opencl_device        the OpenCL platform and device (CK_COMPUTE_PLATFORM_ID, CK_COMPUTE_DEVICE_ID):
+                          --opencl_platform and --opencl_device (numbers, or the device by a word of
+                          its name), else the first GPU that the opencl target found.
 """
 
 import os
@@ -79,7 +84,7 @@ class CProgram(InitCProgram):
             d = _compile['d'] = {}
 
         # Not for a device built on Windows (Android, iPhone): its C library is not Windows'
-        if uname == 'windows' and any(c in compute for c in ('cpu', 'cuda')):
+        if uname == 'windows' and any(c in compute for c in ('cpu', 'cuda', 'opencl')):
             d['WINDOWS'] = None
 
         if _local.get('ck_legacy_c'):
@@ -103,7 +108,23 @@ class CProgram(InitCProgram):
             if not self._dump(_compile):
                 d.pop('POLYBENCH_DUMP_ARRAYS', None)
 
+        # PolyBench/GPU: the CPU reference that the CK versions commented out (#ifdef CK_CPU_CHECK in the
+        # converted sources), compiled unless --compile.check=no - then the program's "Non-Matching CPU-GPU
+        # Outputs" compares the GPU's result with the CPU's
+        if _local.get('ck_cpu_check') and self._check(_compile):
+            d['CK_CPU_CHECK'] = None
+
         return {'return':0}
+
+    ############################################################
+    def _check(self, _compile):
+        """Whether the CPU reference is compiled: --compile.check, yes unless it says no."""
+        check = _compile.get('check')
+        if check is None or str(check).strip() == '':
+            return True
+        if isinstance(check, bool):
+            return check
+        return str(check).strip().lower() in ('yes', 'true', 'on', '1')
 
     ############################################################
     def _size(self, _compile):
@@ -134,7 +155,7 @@ class CProgram(InitCProgram):
 
         compute = _global['target']['compute']
         ios = 'ios-cpu' in compute
-        on_device = ios or 'android-cpu' in compute
+        on_device = ios or any(str(c).startswith('android-') for c in compute)   # android-cpu, android-gpu ...
 
         input_files = _local.get('input_files')
         if not isinstance(input_files, dict):
@@ -187,6 +208,22 @@ class CProgram(InitCProgram):
                     os.makedirs(work_path, exist_ok = True)
                     shutil.copy2(src, os.path.join(work_path, f))
 
+        # The OpenCL platform and device of the program's calls (CK: CK_COMPUTE_PLATFORM_ID and
+        # CK_COMPUTE_DEVICE_ID, indexes in the order of clGetPlatformIDs and clGetDeviceIDs)
+        if _local.get('ck_opencl_device'):
+            r = self._opencl_device(ctx)
+            if r['return'] > 0:
+                return r
+            env = _local.get('run_time_env')
+            if not isinstance(env, dict):
+                env = _local['run_time_env'] = {}
+            env['CK_COMPUTE_PLATFORM_ID'] = str(r['platform'])
+            env['CK_COMPUTE_DEVICE_ID'] = str(r['device'])
+            _local['ck_opencl'] = r
+            if (ctx.get('control') or {}).get('con', False) and r.get('name'):
+                print(f'INFO: OpenCL device: {r["name"]} (platform {r["platform"]}, device {r["device"]}; '
+                      '--opencl_device=<number or name> chooses another)')
+
         # An output that exists only when the arrays are dumped (PolyBench)
         dump_file = _local.get('ck_dump_file')
         if dump_file and self._dump((_local.get('params') or {}).get('compile') or {}) and dump_file not in output_files:
@@ -203,6 +240,46 @@ class CProgram(InitCProgram):
         _local['output_files'] = output_files
 
         return {'return':0}
+
+    ############################################################
+    def _opencl_device(self, ctx):
+        """
+        The OpenCL platform and device indexes for a run: --opencl_platform and --opencl_device (numbers),
+        or --opencl_device=<a word of the device's name, vendor or platform>, else the first GPU that the
+        opencl target found (tool/opencl lists platforms and devices in the order a program gets them).
+        """
+        params = ctx['tasks']['local'].get('params') or {}
+        features = (ctx['tasks']['global'].get('opencl') or {}).get('features') or {}
+        platforms = [p.get('name', '') for p in features.get('platforms') or []]
+
+        # (platform index, device index in its platform, device); two platforms of one name take the first's
+        listed, count = [], {}
+        for d in features.get('devices') or []:
+            name = d.get('platform', '')
+            if name not in platforms:
+                continue
+            pi = platforms.index(name)
+            listed.append((pi, count.get(pi, 0), d))
+            count[pi] = count.get(pi, 0) + 1
+
+        platform, device = params.get('opencl_platform'), params.get('opencl_device')
+        word = str(device).strip().lower() if device is not None and not str(device).strip().isdigit() else None
+        if word:
+            for pi, di, d in listed:
+                text = ' '.join(str(d.get(k) or '') for k in ('name', 'vendor', 'platform')).lower()
+                if word in text and (platform is None or str(platform) == str(pi)):
+                    return {'return': 0, 'platform': pi, 'device': di, 'name': d.get('name')}
+            return self.cm.error(f'no OpenCL device matches "{device}": ' +
+                                 '; '.join(f'{pi}/{di} {d.get("name")} ({d.get("platform")})' for pi, di, d in listed))
+        if platform is not None or device is not None:
+            pi, di = int(platform or 0), int(device or 0)
+            name = next((d.get('name') for p, i, d in listed if p == pi and i == di), None)
+            return {'return': 0, 'platform': pi, 'device': di, 'name': name}
+
+        chosen = next((x for x in listed if x[2].get('type') == 'gpu'), None) or (listed[0] if listed else None)
+        if chosen is None:
+            return {'return': 0, 'platform': 0, 'device': 0, 'name': None}
+        return {'return': 0, 'platform': chosen[0], 'device': chosen[1], 'name': chosen[2].get('name')}
 
     ############################################################
     def _dataset_files(self, folder):
