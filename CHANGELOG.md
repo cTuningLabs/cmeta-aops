@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.72.1
 - **A reference recording names neither the machine nor its folders.** The facts a `--check_output` recording keeps
   (`recorded` of `case.json`) no longer hold the host's name, and every absolute path of the recorded command line and
   parameters - a Windows drive path or a POSIX one, quoted or not, after a flag such as `-I` - is reduced to its last
