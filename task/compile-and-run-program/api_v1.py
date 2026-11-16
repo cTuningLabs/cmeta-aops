@@ -387,6 +387,46 @@ CALIBRATION_TIME = 4.0
 CALIBRATION_MAX = 10
 
 
+# An absolute path in a recorded fact (a command line, a compile flag): a Windows drive path or a POSIX one, at the start
+# of a word, after a quote, an '=' or a flag such as -I - kept as its last part, so that a reference recorded on one
+# machine names neither the machine's folders nor its user
+ABS_PATH = re.compile(r'(?:^|(?<=[\s"\'=,(\[])|(?<=-[A-Za-z]))(?:[A-Za-z]:[\\/]|/)[^\s"\';|<>]*')
+QUOTED_PATH = re.compile(r'(["\'])((?:[A-Za-z]:[\\/]|/)[^"\']*)\1')     # a quoted one may hold spaces
+
+
+def last_part(path):
+    """The last part of a path ("data.txt" of "D:\\work\\data.txt"), the path itself when it has none."""
+    return re.split(r'[\\/]', path.rstrip('\\/'))[-1] or path
+
+
+def path_neutral(value):
+    """A recorded fact without the folders of the machine: every absolute path reduced to its last part, in a text or in
+    the texts of a list or a dictionary (keys kept)."""
+    if isinstance(value, str):
+        value = QUOTED_PATH.sub(lambda m: m.group(1) + last_part(m.group(2)) + m.group(1), value)
+        return ABS_PATH.sub(lambda m: last_part(m.group(0)), value)
+    if isinstance(value, list):
+        return [path_neutral(x) for x in value]
+    if isinstance(value, dict):
+        return {k: path_neutral(v) for k, v in value.items()}
+    return value
+
+
+def recorded_facts(summary, program_alias, program_uid):
+    """
+    The facts a reference recording keeps (case.json "recorded"): when, the program, the host's system and architecture
+    (never its name), the CPU and the GPUs, the targets, the tools, the command line and the parameters without the
+    machine's folders, the calibration and the times. A reference is published: it says what it was made with, not
+    whose machine made it.
+    """
+    s = summary if isinstance(summary, dict) else {}
+    host = {k: v for k, v in (s.get('host') or {}).items() if k != 'hostname'}
+    return {'date': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'program': f'{program_alias},{program_uid}',
+            'host': host, 'cpu': s.get('cpu'), 'gpu': [g.get('name') for g in s.get('gpu') or []],
+            'compute': s.get('compute'), 'tools': s.get('tools'), 'command': path_neutral(s.get('command')),
+            'params': path_neutral(s.get('params')), 'calibration': s.get('calibration'), 'times': s.get('times')}
+
+
 def request_params(params):
     """The parameters of the request that belong to the program: all of them but the task's own switches and the empty ones."""
     return {str(k): v for k, v in (params or {}).items() if k not in CHECK_PARAMS and v is not None}
@@ -854,10 +894,7 @@ class CTask(InitCTask):
             shutil.rmtree(found['folder'], ignore_errors = True)
 
         s = run_summary_of(local, ctx['tasks'].get('global'), params, result, resolved)
-        facts = {'date': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'program': f'{program_alias},{program_uid}',
-                 'host': s.get('host'), 'cpu': s.get('cpu'), 'gpu': [g.get('name') for g in s.get('gpu') or []],
-                 'compute': s.get('compute'), 'tools': s.get('tools'), 'command': s.get('command'),
-                 'params': s.get('params'), 'calibration': s.get('calibration'), 'times': s.get('times')}
+        facts = recorded_facts(s, program_alias, program_uid)
         uid = self.cm.utils.names.generate_cmeta_uid()
         folder = os.path.join(target, uid)
         case = write_case(folder, key, facts, files, work_path, ignore = ignore, ignore_lines = rules.get('ignore_lines'))

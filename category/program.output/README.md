@@ -30,9 +30,12 @@ and the parameters the program says matter (`key_params`, dotted names read from
 values given as they are - what a hook computes: for a CK program the defines the build was made with, with
 `--compile.size`, `n`, `precision` and `dump` applied, and the kernel's `repeat`). The target is not part of it
 (a reference is meant to hold across targets; the one it was recorded on is a fact of `recorded`); a program
-that wants it lists `compute` among its key parameters. `recorded` keeps the facts: the host, the targets, the
-tools, the command, the parameters of the request (`params`), the calibration of the repeat when there was one
-(`--calibrate`: the rounds, the repeat it settled on, the time) and the times of the run.
+that wants it lists `compute` among its key parameters. `recorded` keeps the facts: the host's system and
+architecture, the CPU and the GPUs, the targets, the tools, the command, the parameters of the request (`params`),
+the calibration of the repeat when there was one (`--calibrate`: the rounds, the repeat it settled on, the time)
+and the times of the run. A reference is meant to be published, so it says what it was made with, not whose
+machine made it: never the host's name, and every absolute path of the command and the parameters reduced to its
+last part (`D:\work\in\data.txt` is recorded as `data.txt`).
 
 ## Recording and checking
 

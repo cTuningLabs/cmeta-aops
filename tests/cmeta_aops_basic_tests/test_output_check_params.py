@@ -182,3 +182,31 @@ def test_an_absolute_floor_for_numbers_printed_with_few_decimals(carp, tmp_path)
     record = carp['output_digests'](str(ref))
     assert carp['compare_output'](str(run), record, str(ref), 1e-6, None, 0.01)[0] == 'ok'
     assert carp['compare_output'](str(run), record, str(ref), 1e-6)[0] == 'differs'
+
+
+def test_a_recording_names_neither_the_machine_nor_its_folders(carp):
+    neutral = carp['path_neutral']
+    # The command lines and flags of real recordings
+    assert neutral(r'automotive-qsort1.exe  D:\Repos\hf\dataset\ctuning-cdataset-qsort\files\cdataset-qsort-0001\data.txt > tmp-output1.tmp') == \
+        'automotive-qsort1.exe  data.txt > tmp-output1.tmp'
+    assert neutral(r'"D:\Work Item\in put\data.ppm" -o x') == '"data.ppm" -o x'
+    assert neutral('bzip2 -z -k -f /home/someone/cmeta/datasets/ps-0001/data.ps') == 'bzip2 -z -k -f data.ps'
+    assert neutral('-I/home/someone/cache/task--setup--lib-xopenme--7f44/build/lib/include') == '-Iinclude'
+    assert neutral('"C:/Users/someone/My Data/x.bin" --out=D:/tmp/out.txt') == '"x.bin" --out=out.txt'
+    # What is not an absolute path stays as it is
+    for text in ('tmp-output.tmp', 'src/main.c', 'a/b/c', 'https://zenodo.org/records/1', 'NI=16', 'cpu,cuda', '-O3', ''):
+        assert neutral(text) == text, text
+    # Lists and dictionaries: their texts, keys kept; other values untouched
+    assert neutral({'compile': {'flags': ['-O3', '-I/opt/x/include'], 'n': 16}, 'repeat': 3}) == \
+        {'compile': {'flags': ['-O3', '-Iinclude'], 'n': 16}, 'repeat': 3}
+    assert neutral(None) is None
+
+    # The facts of a recording: no host name, no folder
+    summary = {'host': {'uname': 'windows', 'uarch': 'amd64', 'hostname': 'MY-LAPTOP', 'os': 'Windows-11'},
+               'cpu': 'Some CPU', 'gpu': [{'name': 'Some GPU'}], 'compute': ['cpu'], 'tools': 'msvc 19.51',
+               'command': r'prog.exe D:\work\in\data.txt', 'params': {'dataset_file': 'data.txt'},
+               'calibration': None, 'times': {'run_seconds': 0.1}}
+    facts = carp['recorded_facts'](summary, 'prog', '1234')
+    assert facts['host'] == {'uname': 'windows', 'uarch': 'amd64', 'os': 'Windows-11'}
+    assert facts['command'] == 'prog.exe data.txt' and facts['gpu'] == ['Some GPU'] and facts['program'] == 'prog,1234'
+    assert 'MY-LAPTOP' not in str(facts) and 'work' not in facts['command']
