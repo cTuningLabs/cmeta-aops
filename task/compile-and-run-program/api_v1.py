@@ -550,12 +550,14 @@ def output_digests(path, ignore = None):
     return out
 
 
-def numbers_within(path, reference, tolerance, ignore = None):
+def numbers_within(path, reference, tolerance, ignore = None, tolerance_abs = None):
     """
-    Two text files the same but for their numbers, every number within tolerance of the reference's (relative,
-    with an absolute floor of the same value): (True, note) or (False, why). With ignore, the lines that match one of
-    the patterns are left out of both.
+    Two text files the same but for their numbers, every number within tolerance of the reference's: relative, with
+    an absolute floor - tolerance_abs, else the tolerance itself (a number printed with 2 decimals moves by 0.01 when
+    a tiny difference crosses its rounding: tolerance_abs 0.01 lets that through). (True, note) or (False, why). With
+    ignore, the lines that match one of the patterns are left out of both.
     """
+    floor = tolerance if tolerance_abs is None else float(tolerance_abs)
     try:
         with open(path, 'rb') as f:
             a = without_ignored(f.read(), ignore).decode('utf-8', errors = 'replace').replace('\r\n', '\n')
@@ -579,13 +581,19 @@ def numbers_within(path, reference, tolerance, ignore = None):
         if x != y:
             diff = abs(x - y) / max(1.0, abs(y))
             worst = max(worst, diff)
-            if diff > tolerance:
-                return False, f'number {n}: {x} vs {y} ({diff:.3g} beyond {tolerance:g})'
-    return True, f'{len(nb)} numbers within {tolerance:g}' + (f' (the worst {worst:.3g})' if worst else ', all equal')
+            # within the relative tolerance, or the absolute floor (a hair above it: 1.01 - 1.00 is 0.010000000000000009)
+            if abs(x - y) > max(tolerance * abs(y), floor) * (1 + 1e-9) + 1e-12:
+                limit = f'{tolerance:g}' + (f' or {floor:g} absolute' if floor != tolerance else '')
+                return False, f'number {n}: {x} vs {y} ({diff:.3g} beyond {limit})'
+    limit = f'{tolerance:g}' + (f' (or {floor:g} absolute)' if floor != tolerance else '')
+    return True, f'{len(nb)} numbers within {limit}' + (f', the worst {worst:.3g}' if worst else ', all equal')
 
 
-def compare_output(path, record, reference_path, tolerance, ignore = None):
-    """One output of a run against its reference: ('ok' | 'differs' | 'missing', why); with ignore, without the lines that match."""
+def compare_output(path, record, reference_path, tolerance, ignore = None, tolerance_abs = None):
+    """
+    One output of a run against its reference: ('ok' | 'differs' | 'missing', why); with ignore, without the lines that
+    match; the numbers of a text file within tolerance (relative) or tolerance_abs (absolute) when a tolerance is given.
+    """
     if not os.path.isfile(path):
         return 'missing', 'the run made no such file'
     d = output_digests(path, ignore)
@@ -596,7 +604,7 @@ def compare_output(path, record, reference_path, tolerance, ignore = None):
     if record.get('sha256_nan') and d.get('sha256_nan') == record['sha256_nan']:
         return 'ok', 'the same but for the spelling of NaN'
     if reference_path and os.path.isfile(reference_path) and isinstance(tolerance, (int, float)) and tolerance >= 0:
-        ok, why = numbers_within(path, reference_path, float(tolerance), ignore)
+        ok, why = numbers_within(path, reference_path, float(tolerance), ignore, tolerance_abs)
         return ('ok' if ok else 'differs'), why
     why = f'{d["size"]} bytes against {record.get("size")} of the reference'
     if not (reference_path and os.path.isfile(reference_path)):
@@ -792,7 +800,7 @@ class CTask(InitCTask):
                         out['files'][name] = {'status': 'ok', 'why': 'not made, as in the reference'}
                     continue
                 status, why = compare_output(run_file, record, os.path.join(found['folder'], name) if record.get('kept') else None,
-                                             tolerance, ignore)
+                                             tolerance, ignore, rules.get('tolerance_abs'))
                 out['files'][name] = {'status': status, 'why': why}
                 ok = ok and status == 'ok'
             if changed:

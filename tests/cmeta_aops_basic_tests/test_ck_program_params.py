@@ -184,3 +184,12 @@ def test_the_run_parameters_of_the_environment_are_in_the_key(ck, tmp_path):
     rules = {}
     hook.customize_output_check(context({}, local = dict(base, **{'selected-program': {}})), rules)
     assert 'time' not in rules['key_values']
+
+
+def test_polybench_gets_the_absolute_floor_of_its_print_resolution(ck):
+    rules = {}
+    ck.customize_output_check(context({}), rules)
+    assert rules['tolerance'] == 1e-6 and rules['tolerance_abs'] == 0.01
+    rules = {'tolerance_abs': 0.001}
+    ck.customize_output_check(context({}), rules)
+    assert rules['tolerance_abs'] == 0.001

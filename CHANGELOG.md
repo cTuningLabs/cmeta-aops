@@ -82,9 +82,11 @@ All notable changes to cMeta AOps are documented here, newest first.
   (regular expressions): the lines of a text output that match are left out of every comparison - its digests and
   its numbers - while the file is kept whole; the case records the patterns. A file neither the reference nor the run
   made is the same; a recording restores the identity file (`_cmeta.yaml`) of a program's artifact that lost it (a
-  folder without it is found by no machine). `template-ck-program`: PolyBench's dump is compared only when the
-  arrays are dumped, within a relative `tolerance` of 1e-6 (x86 and arm64 round differently; a program's own
-  overrides it); the other run parameters of a program's environment (`{{local.params.<name>|<default>}}`, the
+  folder without it is found by no machine). `output_check.tolerance_abs`: the absolute floor of a numeric
+  comparison (default: the tolerance), one step of the last digit a program prints. `template-ck-program`:
+  PolyBench's dump is compared only when the arrays are dumped, within a relative `tolerance` of 1e-6 and a
+  `tolerance_abs` of 0.01 - the step of the 2 decimals it prints (x86 and arm64 round fused multiply-adds
+  differently; a program's own overrides them); the other run parameters of a program's environment (`{{local.params.<name>|<default>}}`, the
   codelet's `--time`) are in the key. The summary tells the files the same from the files added to a reference.
 
 ## 0.71.0

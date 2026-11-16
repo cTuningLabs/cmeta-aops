@@ -160,3 +160,25 @@ def test_a_case_keeps_its_ignore_lines_and_the_whole_file(carp, tmp_path):
 def test_ignore_lines_merge_from_the_program_and_its_command(carp):
     desc = {'output_check': {'ignore_lines': ['^a']}, 'updates_cmd': {'x': {'output_check': {'ignore_lines': ['^b', '^a']}}}}
     assert carp['output_check_rules'](desc, 'x')['ignore_lines'] == ['^a', '^b']
+
+
+def test_an_absolute_floor_for_numbers_printed_with_few_decimals(carp, tmp_path):
+    ref = tmp_path / 'ref.txt'
+    run = tmp_path / 'run.txt'
+    # A difference that crosses the rounding of the second decimal: 0.17 against 0.18, and 1.00 against 1.01
+    ref.write_text('0.17 1.00 53378910.56\n')
+    run.write_text('0.18 1.01 53378910.57\n')
+    assert carp['numbers_within'](str(run), str(ref), 1e-6)[0] is False                       # the floor is the tolerance
+    ok, why = carp['numbers_within'](str(run), str(ref), 1e-6, None, 0.01)
+    assert ok is True and '0.01 absolute' in why
+    # A real difference stays one: two steps of the last digit, or a relative one beyond the tolerance
+    run.write_text('0.19 1.00 53378910.56\n')
+    assert carp['numbers_within'](str(run), str(ref), 1e-6, None, 0.01)[0] is False
+    run.write_text('0.17 1.00 53500000.00\n')
+    assert carp['numbers_within'](str(run), str(ref), 1e-6, None, 0.01)[0] is False
+    # compare_output passes it on
+    ref.write_text('0.17\n')
+    run.write_text('0.18\n')
+    record = carp['output_digests'](str(ref))
+    assert carp['compare_output'](str(run), record, str(ref), 1e-6, None, 0.01)[0] == 'ok'
+    assert carp['compare_output'](str(run), record, str(ref), 1e-6)[0] == 'differs'

@@ -73,6 +73,10 @@ ENV_PARAM = re.compile(r'\{\{\s*local\.params\.([A-Za-z0-9_]+)\s*(?:\|([^}]*))?\
 # it with output_check.tolerance in its _desc.yaml.
 POLYBENCH_TOLERANCE = 1e-6
 
+# PolyBench/C prints every array value with 2 decimals (DATA_PRINTF_MODIFIER "%0.2lf "): one step of the last printed
+# digit is the absolute floor of a comparison (output_check.tolerance_abs overrides it)
+POLYBENCH_TOLERANCE_ABS = 0.01
+
 # Sources written before C99 (K&R declarations, functions used without a declaration, long for
 # time_t): GCC and clang compile them as GNU C89, as they did when the sources were written, with
 # what GCC 14 and clang 16 made errors kept as warnings (local_vars: ck_legacy_c). MSVC needs none.
@@ -440,6 +444,10 @@ class CProgram(InitCProgram):
             # differ by much more). The program's own output_check.tolerance (its _desc.yaml) overrides this.
             if 'tolerance' not in rules:
                 rules['tolerance'] = POLYBENCH_TOLERANCE
+            # It prints its arrays with 2 decimals (%0.2lf): a tiny difference that crosses the rounding moves the last
+            # digit by 0.01, whatever the size of the number - the absolute floor is that step
+            if 'tolerance_abs' not in rules:
+                rules['tolerance_abs'] = POLYBENCH_TOLERANCE_ABS
 
         if not rules.get('invariant_of_repeat') and self._repeats(_local):
             repeat = params.get('repeat')

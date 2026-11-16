@@ -69,7 +69,9 @@ output_check:
   invariant_of_repeat: True         # the output does not depend on the kernel's repeat: no repeat in the key (CK's output_invariant_of_repeat)
   ignore_lines: ['^GPU Device ']    # regular expressions: a line of a text output that matches one is left out of every comparison
                                     # (the device a GPU program names) - the digests are of the rest, the file is kept whole
-  tolerance: 0.001                  # of the numbers in a text file
+  tolerance: 0.001                  # of the numbers in a text file (relative)
+  tolerance_abs: 0.01               # its absolute floor (default: the tolerance) - one step of the last digit a program
+                                    # prints (a tiny difference that crosses the rounding of 0.175 moves 0.17 to 0.18)
   skip: [tmp-output.tmp]            # never compared: something of the machine or the moment in it
   artifact: shared-codelet-filter   # the program whose references these are (shared)
 updates_cmd:
