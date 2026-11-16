@@ -55,6 +55,11 @@ A program is a data description patched onto a template:
   `path_files`, `number` (the `number:` of its `_desc.yaml`, for a dataset that is a number) and
   `artifact_au` (added 2026-11-15): a program can take several files of one dataset
   (`{{local.dataset.files}}`) or the number on its command line (`{{local.dataset.number}}`).
+  A dataset can be a whole set of inputs (added 2026-11-16): `sub_datasets:` of its `_desc.yaml`
+  names them in order with their files, number, tags and a description; the files of a sub-dataset
+  are in `files/<name>/` when kept with the artifact, else in the folder the `uses:` task prepares
+  (`path_root` of its result). `--dataset=<dataset>/<name>` or `--dataset_file=<name>` takes one;
+  the result adds `sub_dataset` and `sub_datasets`. See `task/dataset/README.md`.
 
 ### The `updates` patcher (`update_desc_`)
 
@@ -305,6 +310,46 @@ build folders of the program's entries (`--all`: every program); `cx program run
 one build folder before rebuilding; `cx cache delete <entry>` removes a whole entry, with any venv
 inside it; `cx program provenance <name> --all` lists the entries with their requests and records.
 Folders that runs before 2026-06 left inside program artifacts are listed by `clean` and left alone.
+
+**The summary of a run** (added 2026-11-16). After every run, `compile-and-run-program` prints a block
+of sections set apart by a rule of `=`: the standard output of the run when the run kept it (the cmd task's
+capture, or the file a program family redirected it to), the standard error when there is one, the summary,
+and the stats the program collected - its result files as `finish-run` read them (xOpenME's
+`tmp-ck-timer.json`: `execution_time`, `execution_time_kernel_0` ...), key by key. An output longer than
+60 lines is cut, with the file that holds the whole named. The summary itself: the program and its
+command, the targets, OK / FAILED / TIMED OUT with the exit code, the run time and the kernel time, the
+host and its CPU (a CUDA run: the GPU, its driver and CUDA; an OpenCL run: the devices), the tools with
+their versions (the compilers first, then the libraries), the input (the dataset and sub-dataset, its file
+and size), the command line, the outputs with their sizes and the folder they are in, the build folder
+(built now or reused) and its scripts, the checks (the provenance record; what a program family adds), and
+on a failure the error. The same is in the result as `summary` (`--json_file`: `stdout`, `stderr`, `stats`
+included); `--summary=no` keeps the console quiet. A program's hooks add to it with
+`customize_summary(ctx, summary)` - `template-ck-program` adds the CPU comparison of PolyBench/GPU, the
+OpenCL device of the run, PolyBench's size, and the output CK redirected into `tmp-output1.tmp` and
+`tmp-output2.tmp`.
+
+**Reference outputs** (added 2026-11-16): `cx program run <name> <compute> --check_output` compares the run's
+output files with the reference case of the same command, dataset, sub-dataset, file and parameters, kept in a
+`program.output` artifact named after the program in any plugged repository, or records one when there is none
+(`--output_repo=<repo>`, `local` by default; `=validate`, `=record` with `--overwrite_output`, `=no`). The cases
+are UID folders with `case.json` (the key as data, the facts of the recording, every file with its digests) and
+the small files themselves; a file is the same by digest, or but for the line ends or NaN's spelling, or within
+the program's `tolerance` for the numbers of a text file; a difference fails the run. The rules: `output_check:`
+of the program's `_desc.yaml` (`files`, `key_params`, `key_values`, `invariant_of_repeat`, `tolerance`, `skip`,
+`artifact`) and the `customize_output_check` hook - `template-ck-program` keys the cases by the defines the
+program was built with (`compile.d.<NAME>`: PolyBench's sizes and `DATA_TYPE`, with `--compile.size`, `n`,
+`precision` and `dump` applied) and by the kernel's `repeat`; the facts of a recording keep the request's
+parameters, the calibration and the times. See `category/program.output/README.md`.
+
+**The kernel's repeat and its calibration.** A program that repeats its kernel (CK's `CT_REPEAT_MAIN` from
+`--repeat`, or what its `local_vars.repeat_param` names) takes `--calibrate[=<seconds>]`: the run is made again
+with a higher repeat until it lasts about the target (4 s, as CK's calibration_time; at most `--calibrate_max`
+rounds, 10 as CK's calibration_max; a given `--repeat` is the start) - CK's rule: under half a second the repeat
+grows tenfold, within 0.8 and 1.4 of the target it is done, else it is scaled by target / time; the time is
+`execution_time` of a result file (xOpenME's timer) when it is not zero, else the run's wall time. The summary
+prints the rounds and the repeat it settled on (`calibration:`), the result and the case recorded carry
+`calibration`, and a calibration that does not settle fails the run, as it did for CK. `params:` of the summary
+names the parameters of the request (`--repeat`, `--compile.size` ...).
 
 **The Python of a program.** A program's `setup` step for `python` (see `tool/python/README.md`)
 gets, in this order: cx's own interpreter when it is a venv with pip (extended by design), else a

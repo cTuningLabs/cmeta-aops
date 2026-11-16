@@ -18,9 +18,11 @@ redirection), driven by the program's local_vars:
   the WINDOWS define the CK sources use, for a build that runs on a Windows host (cpu, cuda);
   ck_legacy_c       GNU C89 for sources written before C99, with GCC and clang (LEGACY_C_FLAGS);
   ck_size_vars      PolyBench: --compile.size=<mini|small|standard|large|extralarge> replaces these
-                    defines (CK's sizes) by the header's size macro; --compile.dump=yes|no keeps or
-                    drops POLYBENCH_DUMP_ARRAYS (default: yes with CK's sizes, no with --compile.size).
-                    Both are compile parameters, so each choice is a build of its own;
+                    defines (CK's sizes) by the header's size macro; --compile.n=<N> makes every one
+                    of them N (square arrays); --compile.dump=yes|no keeps or drops
+                    POLYBENCH_DUMP_ARRAYS (default: yes with CK's sizes, no with a size or an N).
+                    All are compile parameters, so each choice is a build of its own;
+  DATA_TYPE         --compile.precision=float|double sets the define, where a program has it;
   ck_cpu_check      PolyBench/GPU: CK_CPU_CHECK, the CPU reference CK commented out, unless
                     --compile.check=no (a compile parameter too);
 - customize_ck_run (run, after the dataset step):
@@ -34,10 +36,21 @@ redirection), driven by the program's local_vars:
                           ({{local.ck_redirects}}; not on iOS, where an app has no redirection);
   ck_opencl_device        the OpenCL platform and device (CK_COMPUTE_PLATFORM_ID, CK_COMPUTE_DEVICE_ID):
                           --opencl_platform and --opencl_device (numbers, or the device by a word of
-                          its name), else the first GPU that the opencl target found.
+                          its name), else the first GPU that the opencl target found;
+- customize_output_check (the reference outputs, --check_output): what tells the cases of a program
+  apart besides its command and input - the defines it was built with (every one it declares but
+  XOPENME and WINDOWS, with --compile.size / n / precision / dump applied: NI, DATA_TYPE ...),
+  PolyBench's size and dump, the kernel's repeat (--repeat, CK's CT_REPEAT_MAIN; after a
+  --calibrate, the repeat it settled on) unless output_check.invariant_of_repeat says the output does
+  not depend on it, and the other parameters of the run its environment takes (the codelet's
+  --time, CK's CT_TIME); PolyBench's dump file is compared only when the arrays are dumped, and
+  within a relative tolerance (POLYBENCH_TOLERANCE) unless the program gives its own;
+- customize_summary: what the run summary says of a CK program (the defines, PolyBench's size, the
+  CPU-GPU comparison, the OpenCL device, the output CK redirected).
 """
 
 import os
+import re
 import shutil
 
 from program_22788f3c30d04e6d.api.cprogram import InitCProgram
@@ -45,6 +58,20 @@ from program_22788f3c30d04e6d.api.cprogram import InitCProgram
 # PolyBench's dataset sizes (its header's macros)
 SIZES = {'mini': 'MINI_DATASET', 'small': 'SMALL_DATASET', 'standard': 'STANDARD_DATASET',
          'large': 'LARGE_DATASET', 'extralarge': 'EXTRALARGE_DATASET'}
+
+# The precisions a PolyBench program is built with (DATA_TYPE; the printf format follows the type by token pasting)
+PRECISIONS = ('float', 'double')
+
+# The defines that say nothing of the program's result: the instrumentation and the platform
+NOT_IN_THE_KEY = ('XOPENME', 'WINDOWS')
+
+# A parameter of the run in the program's environment: {{local.params.<name>|<default>}} (CK's run_vars mapped)
+ENV_PARAM = re.compile(r'\{\{\s*local\.params\.([A-Za-z0-9_]+)\s*(?:\|([^}]*))?\}\}')
+
+# PolyBench dumps floating-point arrays as text; a reference holds across compilers and architectures within this
+# relative tolerance (an absolute floor of the same value), well under a wrong kernel's error. A program overrides
+# it with output_check.tolerance in its _desc.yaml.
+POLYBENCH_TOLERANCE = 1e-6
 
 # Sources written before C99 (K&R declarations, functions used without a declaration, long for
 # time_t): GCC and clang compile them as GNU C89, as they did when the sources were written, with
@@ -68,7 +95,7 @@ class CProgram(InitCProgram):
                    ctx: dict,
                    **misc
     ):
-        """The WINDOWS define (a build for the Windows host), GNU C89 for old sources, PolyBench's sizes and dump."""
+        """The WINDOWS define (a build for the Windows host), GNU C89 for old sources, PolyBench's sizes, precision and dump."""
 
         _local = ctx['tasks']['local']
         _global = ctx['tasks']['global']
@@ -96,17 +123,10 @@ class CProgram(InitCProgram):
                     flags = flags.split()
                 _compile['flags'] = list(flags) + [f for f in LEGACY_C_FLAGS if f not in flags]
 
-        size_vars = _local.get('ck_size_vars')
-        if size_vars:
-            size = self._size(_compile)
-            if size is False:
-                return self.cm.error(f'--compile.size must be one of {", ".join(SIZES)} (got "{_compile.get("size")}")')
-            if size:
-                for k in size_vars:
-                    d.pop(k, None)
-                d[SIZES[size]] = None
-            if not self._dump(_compile):
-                d.pop('POLYBENCH_DUMP_ARRAYS', None)
+        # PolyBench's sizes, precision and dump: the compile parameters applied to the defines
+        r = self._defines(d, _compile, _local.get('ck_size_vars') or [])
+        if r['return'] > 0:
+            return r
 
         # PolyBench/GPU: the CPU reference that the CK versions commented out (#ifdef CK_CPU_CHECK in the
         # converted sources), compiled unless --compile.check=no - then the program's "Non-Matching CPU-GPU
@@ -115,6 +135,58 @@ class CProgram(InitCProgram):
             d['CK_CPU_CHECK'] = None
 
         return {'return':0}
+
+    ############################################################
+    def _defines(self, d, _compile, size_vars):
+        """
+        The defines of a build with the compile parameters applied, in place - and the same whether they were applied
+        before or not, since a reused build brings its defines back applied: --compile.size (PolyBench's size macro
+        instead of the size defines), --compile.n (every size define = N: square arrays; not with a size),
+        --compile.precision (DATA_TYPE, where the program has it), --compile.dump (POLYBENCH_DUMP_ARRAYS kept or
+        dropped: yes with CK's sizes, no with a size or an N, unless said).
+        """
+        n = _compile.get('n')
+        if n not in (None, '') and not size_vars:
+            return self.cm.error('this program has no array sizes to set (no ck_size_vars): --compile.n does not apply')
+
+        if size_vars:
+            size = self._size(_compile)
+            if size is False:
+                return self.cm.error(f'--compile.size must be one of {", ".join(SIZES)} (got "{_compile.get("size")}")')
+
+            if n not in (None, ''):
+                if size:
+                    return self.cm.error('--compile.n and --compile.size are two ways to size the arrays: give one of them')
+                try:
+                    n = int(n)
+                except (TypeError, ValueError):
+                    n = 0
+                if n < 1:
+                    return self.cm.error(f'--compile.n takes a positive whole number, the size of every array dimension (got "{_compile.get("n")}")')
+                for k in size_vars:
+                    d[k] = str(n)
+                for macro in SIZES.values():
+                    d.pop(macro, None)
+            elif size:
+                for k in size_vars:
+                    d.pop(k, None)
+                for macro in SIZES.values():
+                    d.pop(macro, None)
+                d[SIZES[size]] = None
+
+        precision = _compile.get('precision')
+        if precision not in (None, ''):
+            if 'DATA_TYPE' not in d:
+                return self.cm.error('this program has no DATA_TYPE define: --compile.precision does not apply')
+            precision = str(precision).strip().lower()
+            if precision not in PRECISIONS:
+                return self.cm.error(f'--compile.precision must be one of {", ".join(PRECISIONS)} (got "{_compile.get("precision")}")')
+            d['DATA_TYPE'] = precision
+
+        if size_vars and not self._dump(_compile):
+            d.pop('POLYBENCH_DUMP_ARRAYS', None)
+
+        return {'return': 0, 'd': d}
 
     ############################################################
     def _check(self, _compile):
@@ -135,13 +207,46 @@ class CProgram(InitCProgram):
         return size if size in SIZES else False
 
     def _dump(self, _compile):
-        """Whether the arrays are dumped: --compile.dump, else yes with CK's sizes and no with --compile.size."""
+        """Whether the arrays are dumped: --compile.dump, else yes with CK's sizes and no with --compile.size or --compile.n."""
         dump = _compile.get('dump')
         if dump is None or str(dump).strip() == '':
-            return not self._size(_compile)
+            return not (self._size(_compile) or _compile.get('n') not in (None, ''))
         if isinstance(dump, bool):
             return dump
         return str(dump).strip().lower() in ('yes', 'true', 'on', '1')
+
+    def _env_params(self, _local):
+        """
+        The parameters of the run the program's environment takes besides the repeat - {{local.params.<name>|<default>}}
+        in run_time_env of its own _desc.yaml (the environment in the context is expanded already) - with their
+        defaults: {name: default}. Read from the program's folder; nothing when it cannot be read.
+        """
+        program = _local.get('selected-program') if isinstance(_local.get('selected-program'), dict) else {}
+        path = program.get('path')
+        reader = getattr(getattr(getattr(self, 'cm', None), 'utils', None), 'files', None)
+        if not path or reader is None or not os.path.isfile(os.path.join(path, '_desc.yaml')):
+            return {}
+        r = reader.read_file(os.path.join(path, '_desc.yaml'))
+        if r.get('return', 1) > 0 or not isinstance(r.get('data'), dict):
+            return {}
+        env = (r['data'].get('local_vars') or {}).get('run_time_env') or {}
+        repeat_param = str(_local.get('repeat_param') or 'repeat')
+        out = {}
+        for value in env.values() if isinstance(env, dict) else []:
+            for m in ENV_PARAM.finditer(str(value)):
+                name, default = m.group(1), (m.group(2) or '').strip()
+                if name != repeat_param and name not in out:
+                    out[name] = default
+        return out
+
+    def _repeats(self, _local):
+        """Whether the program repeats its kernel: repeat_param of its local_vars, or CK's CT_REPEAT_MAIN in its environment."""
+        if _local.get('repeat_param'):
+            return True
+        env = _local.get('run_time_env')
+        if not isinstance(env, dict):
+            return False
+        return 'CT_REPEAT_MAIN' in env or any('params.repeat' in str(v) for v in env.values())
 
     ############################################################
     def customize_ck_run(self,
@@ -282,16 +387,177 @@ class CProgram(InitCProgram):
         return {'return': 0, 'platform': chosen[0], 'device': chosen[1], 'name': chosen[2].get('name')}
 
     ############################################################
-    def _dataset_files(self, folder):
-        """The order of a dataset's files when its result does not give it: "files" of its _desc.yaml."""
-
-        path_desc = os.path.join(os.path.dirname(folder), '_desc.yaml')
-        if not os.path.isfile(path_desc):
-            return []
-
-        r = self.cm.utils.files.read_file(path_desc)
+    def _built_defines(self, _local):
+        """
+        The defines the program was built with: every one its parameters declare but the instrumentation and the
+        platform (NOT_IN_THE_KEY), with the compile parameters applied (size, n, precision, dump) - the same whether
+        the build was made now or reused. None for an error.
+        """
+        params = _local.get('params') if isinstance(_local.get('params'), dict) else {}
+        _compile = params.get('compile') if isinstance(params.get('compile'), dict) else {}
+        declared = _compile.get('d') if isinstance(_compile.get('d'), dict) else {}
+        size_vars = _local.get('ck_size_vars') or []
+        d = {str(k): v for k, v in declared.items() if str(k) not in NOT_IN_THE_KEY}
+        r = self._defines(d, _compile, size_vars)
         if r['return'] > 0:
-            return []
+            return r
+        return {'return': 0, 'd': d}
 
-        files = (r.get('data') or {}).get('files')
-        return files if isinstance(files, list) else []
+    ############################################################
+    def customize_output_check(self,
+                               ctx: dict,
+                               rules: dict,
+                               **misc
+    ):
+        """
+        What tells the cases of a CK program apart besides its command and input (compile-and-run-program's check
+        of the outputs against the reference, --check_output): the defines it was built with (compile.d.<NAME>,
+        a valueless define as ''), PolyBench's size and dump (--compile.size, --compile.dump) when the program has
+        sizes (ck_size_vars), and the kernel's repeat (--repeat; after a calibration, the one it settled on) when
+        the program repeats it, unless output_check.invariant_of_repeat says the output is the same whatever it is.
+        """
+
+        _local = ctx['tasks']['local']
+        params = _local.get('params') if isinstance(_local.get('params'), dict) else {}
+        values = dict(rules.get('key_values') or {})
+
+        r = self._built_defines(_local)
+        if r['return'] > 0:
+            return r
+        for k, v in r['d'].items():
+            values[f'compile.d.{k}'] = '' if v is None else str(v)
+
+        if _local.get('ck_size_vars'):
+            names = list(rules.get('key_params') or [])
+            for name in ('compile.size', 'compile.dump'):
+                if name not in names:
+                    names.append(name)
+            rules['key_params'] = names
+
+            # PolyBench dumps its arrays as floating-point text: the last digits differ between compilers and
+            # between architectures (x86 and arm64 round fused multiply-adds differently), so a reference holds
+            # across targets only within a tolerance - a relative one that still catches a wrong kernel (those
+            # differ by much more). The program's own output_check.tolerance (its _desc.yaml) overrides this.
+            if 'tolerance' not in rules:
+                rules['tolerance'] = POLYBENCH_TOLERANCE
+
+        if not rules.get('invariant_of_repeat') and self._repeats(_local):
+            repeat = params.get('repeat')
+            try:
+                values['repeat'] = int(repeat) if repeat not in (None, '') else 1
+            except (TypeError, ValueError):
+                values['repeat'] = str(repeat)
+
+        # The other parameters of the run the program's environment takes ({{local.params.<name>|<default>}}: the
+        # codelet's --time=day|night, CK's CT_TIME), with their default when not given
+        for name, default in self._env_params(_local).items():
+            given = params.get(name)
+            values[name] = str(given) if given not in (None, '') else default
+
+        # PolyBench without the dump of its arrays (--compile.dump=no, or a size): its dump file is not compared
+        dump_file = _local.get('ck_dump_file')
+        compile_params = params.get('compile') if isinstance(params.get('compile'), dict) else {}
+        if dump_file and isinstance(rules.get('files'), list) and not self._dump(compile_params):
+            rules['files'] = [f for f in rules['files'] if f != dump_file]
+
+        rules['key_values'] = values
+
+        return {'return': 0}
+
+    ############################################################
+    def customize_summary(self,
+                          ctx: dict,
+                          summary: dict,
+                          **misc
+    ):
+        """
+        What the summary of a run says of a CK program (compile-and-run-program prints it after the run): the
+        defines the program was built with, the comparison of a PolyBench/GPU result with the CPU's, the OpenCL
+        device the run used, PolyBench's size, and the standard error that CK's redirect kept, when the run failed.
+        """
+
+        _local = ctx['tasks']['local']
+        work = summary.get('work_path') or _local.get('work_path') or os.getcwd()
+
+        def text_of(name, last = None):
+            path = os.path.join(work, name)
+            if not os.path.isfile(path):
+                return None
+            try:
+                with open(path, encoding = 'utf-8', errors = 'replace') as f:
+                    text = f.read()
+            except OSError:
+                return None
+            return text if last is None else '\n'.join(text.strip().splitlines()[-last:])
+
+        # The defines of the build: the sizes, the precision, the dump (what the reference outputs are keyed by)
+        r = self._built_defines(_local)
+        if r['return'] == 0 and r['d']:
+            summary.setdefault('lines', []).append('defines:  ' + ', '.join(k if v is None else f'{k}={v}' for k, v in r['d'].items()))
+
+        # PolyBench/GPU: the GPU's result against the CPU's (CK_CPU_CHECK; the program prints the count)
+        out = text_of('tmp-output1.tmp') or ''
+        m = re.search(r'Non-Matching CPU-GPU Outputs Beyond Error Threshold of ([0-9.]+) Percent: (\d+)', out)
+        if m:
+            n = int(m.group(2))
+            summary.setdefault('checks', []).append({'what': f'GPU results against the CPU\'s (beyond {m.group(1)} %)',
+                                                     'ok': n == 0, 'detail': f'{n} values differ' if n else 'none differ'})
+        elif _local.get('ck_cpu_check') and summary.get('status') == 'ok':
+            summary.setdefault('checks', []).append({'what': 'GPU results against the CPU\'s', 'ok': None,
+                                                     'detail': 'no comparison in the output (a build with --compile.check=no?)'})
+
+        # The OpenCL device of the run (customize_ck_run chose it)
+        chosen = _local.get('ck_opencl')
+        if isinstance(chosen, dict):
+            devices = ((ctx['tasks']['global'].get('opencl') or {}).get('features') or {}).get('devices') or []
+            d = next((x for x in devices if isinstance(x, dict) and x.get('name') == chosen.get('name')), {})
+            extra = ', '.join(str(d.get(k)) for k in ('platform', 'version') if d.get(k))
+            if d.get('driver_version'):
+                extra += f', driver {d["driver_version"]}'
+            summary.setdefault('lines', []).append(f'opencl:   platform {chosen.get("platform")}, device {chosen.get("device")}: '
+                                                   f'{chosen.get("name") or "?"}' + (f' ({extra})' if extra else ''))
+
+        # PolyBench: the size of its arrays and whether they were dumped
+        if _local.get('ck_size_vars'):
+            compile_params = (_local.get('params') or {}).get('compile') or {}
+            size = self._size(compile_params) if isinstance(compile_params, dict) else None
+            n = compile_params.get('n') if isinstance(compile_params, dict) else None
+            dump = self._dump(compile_params) if isinstance(compile_params, dict) else None
+            what = f'every dimension {n} (--compile.n)' if n not in (None, '') else (size or 'of CK (the sources\' defines)')
+            summary.setdefault('lines', []).append(f'polybench: size {what}, arrays {"dumped" if dump else "not dumped"}')
+
+        # CK's redirects: what the program printed is in files - the summary shows them
+        if _local.get('ck_redirects'):
+            for stream, name in (('stdout', 'tmp-output1.tmp'), ('stderr', 'tmp-output2.tmp')):
+                text = text_of(name)
+                if text and text.strip():
+                    summary[stream] = {'source': name, 'text': text, 'path': os.path.join(work, name)}
+
+        return {'return': 0}
+
+    ############################################################
+    def _dataset_files(self, folder):
+        """
+        The order of a dataset's files when its result does not give it: "files" of its _desc.yaml, or those of
+        the sub-dataset the folder is (files/<sub-dataset>/: "sub_datasets" of the _desc.yaml one level up).
+        """
+
+        for up, sub in ((os.path.dirname(folder), None),
+                        (os.path.dirname(os.path.dirname(folder)), os.path.basename(folder))):
+            path_desc = os.path.join(up, '_desc.yaml')
+            if not os.path.isfile(path_desc):
+                continue
+
+            r = self.cm.utils.files.read_file(path_desc)
+            if r['return'] > 0:
+                continue
+
+            data = r.get('data') or {}
+            if sub is not None:
+                data = (data.get('sub_datasets') or {}).get(sub) if isinstance(data.get('sub_datasets'), dict) else None
+                data = data if isinstance(data, dict) else {}
+            files = data.get('files')
+            if isinstance(files, list):
+                return files
+
+        return []

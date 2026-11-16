@@ -1,84 +1,36 @@
-﻿https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/tree/main
+﻿# get-hf-dataset
 
-This repo contains the instruction-tuned 0.5B Qwen2.5 model in the GGUF Format, which has the following features:
+A dataset of the Hugging Face Hub downloaded once into the cache with the hf CLI (`hf download`), and the
+files of it a program takes. A dataset artifact asks for it in its `_desc.yaml`:
 
-Type: Causal Language Models
-Training Stage: Pretraining & Post-training
-Architecture: transformers with RoPE, SwiGLU, RMSNorm, Attention QKV bias and tied word embeddings
-Number of Parameters: 0.49B
-Number of Paramaters (Non-Embedding): 0.36B
-Number of Layers: 24
-Number of Attention Heads (GQA): 14 for Q and 2 for KV
-Context Length: Full 32,768 tokens and generation 8192 tokens
-Quantization: q2_K, q3_K_M, q4_0, q4_K_M, q5_0, q5_K_M, q6_K, q8_0
+```yaml
+uses:
+  - task: get-hf-dataset,9865f4ce243f4984
+    repo: ylecun/mnist
+    filename: mnist//train-00000-of-00001.parquet        # the file a program takes by default
+    filenames:                                           # the files by name ({{local.dataset.features.paths.test}})
+      train: mnist//train-00000-of-00001.parquet
+      test: mnist//test-00000-of-00001.parquet
+result_from_ctx: '{{global.get-hf-dataset}}'
+```
 
+```bash
+cx task run get-hf-dataset ctuning/OpenMLPerf -q                       # the whole repository
+cx task run get-hf-dataset ctuning/cTuning-MiDataSets "adpcm/*" -q     # one folder of it (a glob of hf download --include)
+cx task run get-hf-dataset --auth                                      # hf auth login first (a gated or private repository)
+```
 
-
-feihu.hf
-merge main
-9217f5d
-over 1 year ago
-.gitattributes
-1.56 kB
-upload weights
-over 1 year ago
-LICENSE
-11.3 kB
-update README & LICENSE
-over 1 year ago
-README.md
-4.86 kB
-Update README.md
-over 1 year ago
-qwen2.5-0.5b-instruct-fp16.gguf
-
-1.27 GB
-xet
-upload fp16 weights
-over 1 year ago
-qwen2.5-0.5b-instruct-q2_k.gguf
-
-415 MB
-xet
-upload weights
-over 1 year ago
-qwen2.5-0.5b-instruct-q3_k_m.gguf
-
-432 MB
-xet
-upload weights
-over 1 year ago
-qwen2.5-0.5b-instruct-q4_0.gguf
-
-429 MB
-xet
-upload weights
-over 1 year ago
-qwen2.5-0.5b-instruct-q4_k_m.gguf
-
-491 MB
-xet
-upload weights
-over 1 year ago
-qwen2.5-0.5b-instruct-q5_0.gguf
-
-490 MB
-xet
-upload weights
-over 1 year ago
-qwen2.5-0.5b-instruct-q5_k_m.gguf
-
-522 MB
-xet
-upload weights
-over 1 year ago
-qwen2.5-0.5b-instruct-q6_k.gguf
-
-650 MB
-xet
-upload weights
-over 1 year ago
-qwen2.5-0.5b-instruct-q8_0.gguf
-
-
-
+- `repo` (arg2): the repository, `<owner>/<name>`; `filename` (arg3): the file, or a glob (`adpcm/*`: the
+  folder `adpcm`), that `hf download --include` fetches - without it the whole repository; `filenames`: files
+  by name, fetched too; `directory`: a local folder instead of a download (`filename` relative to it).
+- The result: `path` - the file (`path_root/filename`), `path_root` - the folder of the download, `features.paths`
+  - the files of `filenames` by name. A dataset made of sub-datasets (`sub_datasets:` of its `_desc.yaml`, see
+  `task/dataset`) takes them from `path_root` - `sub_datasets_folder: adpcm` when the repository holds several
+  sets, one folder each.
+- The cache: one entry per repository and `filename` (two folders of one repository are two entries); the files
+  themselves go to the file cache (`file_cache` of the `task` config: a folder outside the cache entries, shared
+  by the entries of one repository, so a second folder of a repository adds to the same download folder) or
+  into the entry (`content/`). A data repository (`cache_repo_key: data`) keeps them inside the entry.
+- A gated or private repository needs a login once on the machine: `cx tool run hf -- auth login` (or
+  `--auth`), or the token in `HF_TOKEN` of the environment; a gated one also needs the access request
+  accepted on the Hub. Uploads go through `task/upload-to-hf`.

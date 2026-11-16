@@ -1,0 +1,13 @@
+artifact: b86c299c115771f6
+authors: Grigori Fursin
+base_category_default_api_versions:
+  '1': 1
+category: category,dd9ea50e7f76467f
+creation_timestamp: '2026-11-16T13:45:41.448943+00:00'
+desc: 'The reference outputs of a program: an artifact per program, a case per command, input and parameters (case.json with the key, the facts of the recording and every output file with its digests; the files themselves when small), recorded and compared by cx program run --check_output.'
+last_api_version: 1
+tags:
+- program
+- output
+- reference
+- validation

@@ -47,7 +47,8 @@ starting), `none` = the key has no passphrase (automation, containers, hosts). N
 
 ## A token typed in, kept with a password
 
-`cx secret store <alias>` keeps the value of a token secret that you type (paste) at a hidden prompt: it is never
+`cx secret store <alias>` keeps the value of a token secret that you type (paste) at a hidden prompt (a `*` for every
+character, Backspace takes one away, Escape starts again - cMeta 0.43+; nothing shown before): it is never
 printed, and it is written to the artifact readable by you alone (mode 600; on Windows the owner-only ACL). With
 `--password_protected` it is encrypted with a password you choose (asked twice), and every use asks for that
 password again - a copy of the file, a backup or a program that reads files gets nothing usable without it:
@@ -100,6 +101,11 @@ cx secret use <alias> --git_global             # gpg.format, user.signingkey, co
 cx secret render <alias> --out=<file>          # a standalone git config include file (+ the ssh config stanza)
 cx secret store <alias> [--password_protected] # a token typed at a hidden prompt, kept owner-only or encrypted
 cx secret run <alias> --env.<NAME>={secret} [--window] -- <command>   # the value in the command's environment alone
+cx secret settings <alias>                     # the git settings of a git or ssh identity (paths and names) - what
+                                               # cx repo pull --identity=<alias> gives a clone (since 2026-11-14)
+cm.access({'category': 'secret', 'command': 'call', 'arg1': <alias>, 'func': f})   # f(value) inside the call, its
+                                               # dictionary the result - a Python caller only (cx repo pull hf://...
+                                               # --identity=<alias> fetches a private Hub repository so; 2026-11-16)
 ```
 
 ## On another machine: a copy of the keys a host references
