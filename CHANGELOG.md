@@ -2,6 +2,13 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.72.2
+- **An interactive Claude Code session opens with its prompt again.** `run-claude` puts `--` before the trailing
+  prompt of an interactive session (or before the request to read its file). Claude Code's `--add-dir` takes several
+  values, so with the directories `run-ai` adds for each artifact of the AI context the prompt was read as one more
+  directory, and the session opened without its first message. A non-interactive run is unchanged: its prompt goes
+  through stdin.
+
 ## 0.72.1
 - **A reference recording names neither the machine nor its folders.** The facts a `--check_output` recording keeps
   (`recorded` of `case.json`) no longer hold the host's name, and every absolute path of the recorded command line and

@@ -83,3 +83,12 @@ def test_every_agent_task_uses_the_helper(repo_root):
         source = (repo_root / "task" / task / "api_v1.py").read_text(encoding="utf-8")
         assert "prompt_via_file(" in source and "prompt_via_file_done(" in source, task
         assert "long_prompt_file" in source, task
+
+
+def test_claude_ends_the_options_before_an_interactive_prompt(repo_root):
+    # 2026-11-16: run-ai gives claude "--add-dir <dir>" per AI context, and Claude Code's --add-dir takes several
+    # values (<directories...>): the trailing prompt became one more directory and the interactive session opened
+    # without its first message. "--" ends the options, so the prompt is the positional argument again
+    source = (repo_root / "task" / "run-claude" / "api_v1.py").read_text(encoding="utf-8")
+    assert "cmd += ['--', pr['text']]" in source
+    assert "cmd.append(pr['text'])" not in source

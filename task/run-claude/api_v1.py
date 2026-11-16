@@ -482,9 +482,12 @@ class CTask(InitCTask):
 
         cmd = base_cmd + flags
 
-        # In an interactive session the prompt (or the request to read its file) is the trailing positional argument
+        # In an interactive session the prompt (or the request to read its file) is the trailing positional argument,
+        # after "--" (2026-11-16): an option that takes several values before it - "--add-dir <directories...>", which
+        # run-ai gives for each artifact of the AI context - took the prompt as one more directory, and the session
+        # opened without its first message (Claude Code 2.1.325: "Input must be provided" with -p, nothing interactively)
         if interactive and full_prompt:
-            cmd.append(pr['text'])
+            cmd += ['--', pr['text']]
 
         if con:
             print ('')
