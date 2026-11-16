@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.72.2
 - **An interactive Claude Code session opens with its prompt again.** `run-claude` puts `--` before the trailing
   prompt of an interactive session (or before the request to read its file). Claude Code's `--add-dir` takes several
   values, so with the directories `run-ai` adds for each artifact of the AI context the prompt was read as one more
