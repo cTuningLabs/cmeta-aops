@@ -31,8 +31,8 @@ class CProgram(InitCProgram):
         compute = ctx['tasks']['global']['target']['compute']
         uname = ctx['tasks']['global']['host']['os']['uname']
 
-        # Should be on Windows for CPU + CUDA but not for Android, etc ...
-        if uname == 'windows' and any(c in compute for c in ('cpu', 'cuda')):
+        # On a Windows host for CPU, CUDA and OpenCL (host code), but not for Android, etc ...
+        if uname == 'windows' and any(c in compute for c in ('cpu', 'cuda', 'opencl')):
             _compile = ctx['tasks']['local']['params']['compile']
             flags_d = _compile.setdefault('d', {})
             flags_d['WINDOWS'] = None

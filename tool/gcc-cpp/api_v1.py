@@ -8,6 +8,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 import os
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
+from tool_c393ba5c6fa14f66.api.common_deb import apt_versioned_package
 
 class CTool(InitCTool):
     """
@@ -15,6 +16,24 @@ class CTool(InitCTool):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
+
+
+    ############################################################
+    def customize_install_cmd(self,
+                              ctx: dict,
+                              install_cmd: str = None,
+                              params: dict = {},
+                              env: dict = {},
+                              timeout: int = None,
+                              *misc: dict,
+    ):
+        """
+        A version that the system's g++ does not have (nvcc takes an older host compiler: CUDA 11.8 g++ < 12)
+        on Debian or Ubuntu: the newest g++-<major> package of the distribution in that version (g++-11),
+        installed beside the system's g++. Without a version or a matching package: the plain package.
+        """
+        package = apt_versioned_package(self, params.get('version'), 'g++-{major}')
+        return {'return': 0, 'package_name': package} if package else {'return': 0}
 
 
     ############################################################

@@ -5,8 +5,10 @@
   "constraints": {
     "supported_compute": [
       "android-cpu",
+      "android-gpu",
       "cpu",
-      "cuda"
+      "cuda",
+      "opencl"
     ]
   },
   "copyright": "2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.",

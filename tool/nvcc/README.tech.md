@@ -25,9 +25,13 @@ when the programs it builds could not run here:
 - **the GPU is older than the toolkit's oldest architecture.** CUDA 12 dropped Kepler (sm_35,
   sm_37), and CUDA 13 dropped Maxwell, Pascal and Volta (sm_50 to sm_70). The check uses
   `nvcc --list-gpu-arch`;
-- **the driver is for an older major CUDA version** (a CUDA 13 toolkit with a driver for CUDA 12).
+- **the driver is for an older major CUDA version** (a CUDA 13 toolkit with a driver for CUDA 12);
+- **a Linux glibc that the toolkit's headers contradict:** glibc 2.41 and newer declare the C23 functions
+  `cospi` and `sinpi` (2.42 also `rsqrt`) noexcept, CUDA 12 and older without it, so nvcc stops on every
+  `.cu` file - only CUDA 13 compiles there (Ubuntu 25.04 and newer); older CUDA needs a system or a
+  container with glibc 2.40 or older.
 
-`--with.any_arch` and `--with.any_driver` keep such toolkits, to build for other machines.
+`--with.any_arch`, `--with.any_driver` and `--with.any_glibc` keep such toolkits, to build for other machines.
 
 The cache keeps one nvcc entry per GPU architecture (`gpu_arch_min` in its parameters). A toolkit
 found for one GPU is not reused for another. Without `--version`, a run takes the newest toolkit
@@ -118,7 +122,7 @@ toolkit, the result is an error that names the older toolkit to use.
 | `--with.arch_flags` | `-gencode` flags for this GPU |
 | `--with.add_env` | `CUDA_HOME`, `CUDA_PATH` and nvcc's `bin` on `PATH` for the steps that follow |
 | `--with.cuda_libs` | libraries to install with a toolkit, or add to one made from the archives |
-| `--with.any_arch`, `--with.any_driver` | keep toolkits that do not suit this GPU or driver |
+| `--with.any_arch`, `--with.any_driver`, `--with.any_glibc` | keep toolkits that do not suit this GPU, driver or glibc |
 | `--with.any_host_compiler` | any host compiler, with `-allow-unsupported-compiler` |
 | `--with.compiler_extra_tags`, `--with.compiler_extra_match` | narrow the choice of host compiler tool |
 

@@ -10,11 +10,15 @@ else the ar archive and its data.tar (zstd through Python 3.14, the zstandard mo
 tool); nothing is installed in the system.
 
     from tool_c393ba5c6fa14f66.api.common_deb import sha256_of, ar_members, zstd_decompress, extract_deb
+
+And the package of a versioned series that an apt system has in a version range (apt_versioned_package:
+gcc-11 for gcc < 12), for tools that the distribution ships in several versions side by side.
 """
 
 import hashlib
 import io
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -83,3 +87,53 @@ def extract_deb(deb, root, use_dpkg = True):
             t.extractall(root, filter = 'data')
         except TypeError:   # Python < 3.12 (and without the backported filter)
             t.extractall(root)
+
+
+def apt_upstream_version(candidate):
+    """The upstream part of a Debian package version: 4:11.5.0-1ubuntu1~24.04.1 -> 11.5.0."""
+    v = re.sub(r'^\d+:', '', (candidate or '').strip())
+    return re.split(r'[-~+]', v, maxsplit = 1)[0]
+
+
+def apt_versioned_package(tool, version, pattern, majors = range(30, 3, -1)):
+    """
+    The newest package of a versioned series that this apt system can install in a version range or
+    with a version prefix: pattern 'gcc-{major}' and version '<12' give 'gcc-11' when the distribution
+    has gcc-11 (Ubuntu 24.04 has gcc-9 ... gcc-14). None without a version, without apt-cache, or when
+    no package of the series matches - the tool's plain package then, as before ("apt install gcc=<12"
+    means nothing to apt).
+    """
+    version = (version or '').strip()
+    if not version or not shutil.which('apt-cache'):
+        return None
+
+    names = [pattern.format(major = m) for m in majors]
+    try:
+        p = subprocess.run(['apt-cache', 'policy'] + names, capture_output = True, text = True, timeout = 120,
+                           stdin = subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    candidates, name = {}, None
+    for line in p.stdout.splitlines():
+        if line and not line[0].isspace() and line.rstrip().endswith(':'):
+            name = line.rstrip()[:-1]
+        elif name and line.strip().startswith('Candidate:'):
+            candidate = line.split(':', 1)[1].strip()
+            if candidate and candidate != '(none)':
+                candidates[name] = apt_upstream_version(candidate)
+
+    prefix = version[2:] if version.startswith('==') else version
+    plain = re.fullmatch(r'\d+(\.\d+)*', prefix) is not None
+    for n in names:
+        upstream = candidates.get(n)
+        if not upstream:
+            continue
+        if plain:
+            if upstream == prefix or upstream.startswith(prefix + '.'):
+                return n
+            continue
+        r = tool.cm.packages.match_version(version, upstream)
+        if r.get('return') == 0 and r.get('matched'):
+            return n
+    return None

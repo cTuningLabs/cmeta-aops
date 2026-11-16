@@ -1,0 +1,19 @@
+{
+  "artifact": "c209094321c94530",
+  "authors": "Grigori Fursin",
+  "category": "tool,c393ba5c6fa14f66",
+  "creation_timestamp": "2026-11-15T22:21:17.379841+00:00",
+  "desc": "What a C or C++ program needs to build against OpenCL for the opencl target: the Khronos OpenCL headers and the library to link (Windows: OpenCL.lib made from the Khronos ICD loader's export list; Linux: the system's ICD loader; macOS: the OpenCL framework).",
+  "generator": {
+    "agent": "Claude Code 2.1.322",
+    "by": "Grigori Fursin",
+    "method": "agent",
+    "via": "cmeta 0.42.0"
+  },
+  "tags": [
+    "lib",
+    "opencl",
+    "headers",
+    "icd-loader"
+  ]
+}

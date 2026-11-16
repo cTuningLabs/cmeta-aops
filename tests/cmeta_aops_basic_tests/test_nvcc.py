@@ -137,6 +137,41 @@ def test_incompatible(redist):
     assert redist.incompatible("12.9.2", "12.2", 86) is None    # a minor version: choose() decides
 
 
+def test_cuda_12_cannot_compile_against_glibc_2_41_and_newer(redist):
+    # glibc 2.41 declares cospi and sinpi noexcept, CUDA 12's math_functions.h without it (Ubuntu 26.04: 2.43)
+    why = redist.incompatible("12.9.2", "13.3", 86, (2, 43))
+    assert "glibc 2.43" in why and "CUDA 13 can" in why and "2.40 or older" in why
+    assert "glibc 2.41" in redist.incompatible("11.8.0", "13.3", 86, (2, 41))
+    assert redist.incompatible("12.9.2", "13.3", 86, (2, 40)) is None       # Ubuntu 24.04: 2.39
+    assert redist.incompatible("13.3.1", "13.3", 86, (2, 43)) is None
+    assert redist.incompatible("12.9.2", "13.3", 86, None) is None          # Windows, or --with.any_glibc
+
+    def choose(wanted, glibc):
+        return redist.choose(RELEASES, wanted, matches, "13.3", 86, NVCC.get, glibc)
+
+    assert choose(None, (2, 43)) == ("13.3.1", None)
+    release, why = choose("12.9", (2, 43))
+    assert release is None and "cospi" in why
+    assert choose("12.9", (2, 39)) == ("12.9.2", None)
+
+    # A Maxwell GPU (sm_50) on glibc 2.43: neither CUDA 13 (no sm_50) nor 12 (glibc) - the first reason first
+    release, why = redist.choose(RELEASES, None, matches, "13.0", 50, NVCC.get, (2, 43))
+    assert release is None
+
+
+def test_the_glibc_of_this_system(redist, monkeypatch):
+    monkeypatch.setattr(redist.os, "confstr", lambda name: "glibc 2.43", raising = False)
+    assert redist.host_glibc() == (2, 43)
+    monkeypatch.setattr(redist.os, "confstr", lambda name: "", raising = False)
+    assert redist.host_glibc() is None
+
+    def no_confstr(name):
+        raise ValueError(name)
+
+    monkeypatch.setattr(redist.os, "confstr", no_confstr, raising = False)
+    assert redist.host_glibc() is None
+
+
 def can_symlink(tmp_path):
     try:
         os.symlink("x", tmp_path / "link-check")
@@ -305,10 +340,11 @@ def tool(nvcc_api, cm):
     return t
 
 
-def context(uname = "linux", uarch = "amd64", arch = 50, driver = "13.0"):
+def context(uname = "linux", uarch = "amd64", arch = 50, driver = "13.0", glibc = None):
+    # The host the test describes, its glibc too (None: no constraint) - not the machine that runs the test
     return {"control": {"con": False, "quiet": True, "verbose": False},
             "tasks": {"nested_call": 0,
-                      "global": {"host": {"os": {"uname": uname, "uarch": uarch}},
+                      "global": {"host": {"os": {"uname": uname, "uarch": uarch, "glibc": glibc}},
                                  "cuda": {"features": {"compute_cap_int_min": arch,
                                                        "versions": {"cuda version": driver}}}}}}
 
@@ -691,3 +727,12 @@ def test_the_newest_version_for_status_and_upgrade(nvcc_api, server):
     assert t.latest_version(context(arch = 50, driver = "13.0"), {})["version"] == "12.9.86"     # CUDA 13 has no sm_50
     assert t.latest_version(context(arch = 86, driver = "12.9"), {})["version"] == "12.9.86"     # the driver runs 12.x
     assert t.latest_version(context(arch = 30, driver = "13.0"), {})["return"] > 0               # nothing for Kepler
+
+    # Linux with glibc 2.41+: CUDA 12 cannot compile there - the newest 13 the driver runs, or the reason
+    assert t.latest_version(context(arch = 86, driver = "13.0", glibc = (2, 43)), {})["version"] == "13.0.88"
+    r = t.latest_version(context(arch = 86, driver = "12.9", glibc = (2, 43)), {})
+    assert r["return"] > 0 and "glibc 2.43" in r["error"]
+    assert t.latest_version(context(arch = 86, driver = "12.9", glibc = (2, 39)), {})["version"] == "12.9.86"
+    assert t.latest_version(context(arch = 86, driver = "12.9", glibc = (2, 43)),
+                            {"with": {"any_glibc": True}})["version"] == "12.9.86"
+    assert t.latest_version(context(uname = "windows", arch = 86, driver = "12.9", glibc = (2, 43)), {})["version"] == "12.9.86"

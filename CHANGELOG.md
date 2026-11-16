@@ -2,6 +2,62 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.71.0
+- **A program without hooks of its own takes those of the template it inherits: `program/template-ck-program`, the
+  hooks of programs converted from the Collective Knowledge format** (cBench, PolyBench/C, PolyBench/GPU, the codelets
+  of the CK paper). `select-program` gives a program without an `api_v1.py` the hooks of the first artifact of its
+  `inherits` list that has one (`selected-program.api_from` names it), so a family of programs shares one module
+  written once. A program with hooks of its own keeps them, and `template-c-cpu`, which every program inherits, has
+  none: the programs that inherit only it are unchanged. The template does what CK's pipeline did around the command
+  line, on the host CPU, CUDA and Android: the `WINDOWS` define of a Windows build, GNU C89 for sources written before
+  C99 with GCC and clang (`ck_legacy_c`), PolyBench's sizes and array dump as compile parameters
+  (`--compile.size=mini|small|standard|large|extralarge`, `--compile.dump=yes|no`, each a build of its own), a number
+  or several files of the dataset on the command line, files of the program in the run folder (pushed to a device),
+  standard output and error into CK's `tmp-output1.tmp` and `tmp-output2.tmp`. Its README lists the `local_vars` it
+  reads.
+- **The `dataset` task returns a dataset's files in its order and the number it stands for.** Beside `path`: `files`
+  (the `files:` list of the dataset's `_desc.yaml` first, then the others by name; the first is the default file -
+  without a `files:` list the first by name, as before), `path_files`, `number` (the `number:` of its `_desc.yaml`, for
+  a dataset that is a number on a command line) and `artifact_au`. `--filename` also picks one of the files of a
+  dataset prepared by its `uses` (a capsule fetched on demand). Datasets without these keys are selected as before.
+- Tests: `test_ck_program_template.py` - the template's hooks offline; `select-program` and the `dataset` task
+  through the engine.
+- **C programs build for the `opencl` target: new `tool/lib-opencl`, the Khronos OpenCL headers and the library to
+  link.** The headers of the pinned release of KhronosGroup/OpenCL-Headers go into the tool's cache entry on every
+  OS; the library: on Windows `OpenCL.lib`, the import library of the `OpenCL.dll` the GPU drivers install, made from
+  the export list of the Khronos ICD loader of the same release (`loader/windows/OpenCL.def`) by the archiver of the
+  program's C compiler (MSVC's `lib.exe`, clang's `llvm-lib`) - the loader is not built; on Linux the system's ICD
+  loader (the one `tool/opencl` found, `cx tool setup opencl --install`); on macOS the SDK's OpenCL framework
+  (`OpenCL.tbd`); for Android (`android-gpu`) a stub `libOpenCL.so` with every function of the same export list,
+  built once per target triple by the program's NDK compiler - only to link against: the device loads its own
+  `libOpenCL.so` (the same soname) at run time. iOS is refused (no OpenCL). A program sets it up after its compiler.
+- **`opencl` is handled like `cuda` for what runs on the host:** `lib-xopenme` and `lib-polybench` take it (and
+  define `WINDOWS` for a Windows build), `setup-run` adds the run-time library paths, and `template-ck-program`
+  defines `WINDOWS` and gives a CK OpenCL program its platform and device (`ck_opencl_device`:
+  `CK_COMPUTE_PLATFORM_ID`, `CK_COMPUTE_DEVICE_ID`) - the first GPU the `opencl` target found, or
+  `--opencl_platform=<n>` and `--opencl_device=<n or a word of the device's name>` (`--opencl_device=intel`).
+- **`android-gpu` is a device target for the libraries and the CK template too:** `lib-xopenme` and `lib-polybench`
+  take it (Android library names), and `template-ck-program` pushes a program's run files (an OpenCL kernel) to the
+  device for any `android-*` target.
+- **`template-ck-program`: a real check for PolyBench/GPU (`ck_cpu_check`).** The CK versions of the CUDA and OpenCL
+  kernels had their CPU reference in a comment, so their "Non-Matching CPU-GPU Outputs" count compared the GPU's
+  result with memory never computed; the converted sources put that block under `#ifdef CK_CPU_CHECK`, which the
+  hook defines unless `--compile.check=no` (a compile parameter: CK's behaviour is a build of its own).
+- **`nvcc` refuses a CUDA before 13 on a Linux system with glibc 2.41 or newer, with the reason.** glibc 2.41 declares
+  the C23 functions `cospi` and `sinpi` (2.42 also `rsqrt`) with its exception specification, the headers of CUDA 12
+  and older without it, so nvcc stopped on every `.cu` file ("exception specification is incompatible with that of
+  previous function cospi"). Such a toolkit is now skipped when found and not installed, as a CUDA 13 on a Maxwell GPU
+  is: "CUDA 12 cannot compile against the glibc 2.43 of this system ... CUDA 13 can (or build in a system or container
+  with glibc 2.40 or older)". `--use.nvcc.with.any_glibc` keeps it (headers patched, a build for another system).
+- **`gcc` and `gcc-cpp` install an older version on Debian and Ubuntu.** A version the system's compiler does not
+  have - nvcc takes an older host compiler: CUDA 11.8 gcc < 12, 12.9 gcc < 15 - installs the newest `gcc-N` /
+  `g++-N` package of the distribution in it, beside the system's compiler (`common_deb.apt_versioned_package`);
+  before, the setup stopped with "failed to setup tool gcc with version <12" ("apt install gcc=<12" means nothing to
+  apt). Without a version, or with no package in it, the plain package as before.
+- Tests: `test_opencl_programs.py` (lib-opencl's archives, import library, loader, Android stub and refusals; the
+  OpenCL device, the CPU check and the device files of the template; the libraries on `opencl`),
+  `test_gcc_versioned_packages.py`, `test_nvcc.py` (the glibc rule).
+
 ## 0.70.2
 - **`ai-account-status` names the account a quota belongs to.** Beside the quota, the identity of the login it was
   read with: `Claude (you@example.com): 5h: 94% remaining`, or `Codex (API): ...` for an API credential or a selected

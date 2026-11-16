@@ -63,6 +63,18 @@ class CTool(InitCTool):
         return driver_cuda, gpu_arch_min
 
     ############################################################
+    def _glibc(self, ctx, _with):
+        """
+        The glibc of this Linux system ((2, 43)) that a toolkit must compile against (redist.glibc_too_new), or None:
+        another OS, or --with.any_glibc (headers patched, a build for another system). A context that describes the
+        host says it (host.os.glibc, None for none); else this machine's.
+        """
+        host_os = ctx['tasks']['global']['host']['os']
+        if host_os.get('uname') != 'linux' or _with.get('any_glibc'):
+            return None
+        return host_os['glibc'] if 'glibc' in host_os else redist.host_glibc()
+
+    ############################################################
     def latest_version(self, ctx, params):
         """
         The nvcc of the newest CUDA release this driver and GPU run - the one an install without --version
@@ -70,8 +82,9 @@ class CTool(InitCTool):
         """
 
         driver_cuda, gpu_arch_min = self._gpu(ctx, params.get('with') or {})
+        glibc = self._glibc(ctx, params.get('with') or {})
         try:
-            release, message = redist.choose(redist.releases(), None, None, driver_cuda, gpu_arch_min, None)
+            release, message = redist.choose(redist.releases(), None, None, driver_cuda, gpu_arch_min, None, glibc)
             if not release:
                 return {'return': 16, 'error': message}
             nvcc = redist.nvcc_version(redist.manifest(release))
@@ -271,14 +284,17 @@ class CTool(InitCTool):
                 features['supported_code_max'] = max(fcode)
 
                 # A toolkit whose programs cannot run here (CUDA 13 on a Maxwell GPU, or with a driver
-                # for CUDA 12) is of no use: skip it, so that a suitable one is found or installed
-                # (--with.any_arch and --with.any_driver keep it, to build for other machines)
+                # for CUDA 12) or that cannot compile against this glibc (CUDA 12 with glibc 2.41+) is of no
+                # use: skip it, so that a suitable one is found or installed (--with.any_arch,
+                # --with.any_driver and --with.any_glibc keep it, to build for other machines)
                 driver_cuda, gpu_arch_min = self._gpu(ctx, _with)
                 why = None
                 if gpu_arch_min and features['supported_arch_min'] > gpu_arch_min:
                     why = f'it builds for sm_{features["supported_arch_min"]} and newer, the GPU is sm_{gpu_arch_min}'
                 elif driver_cuda and redist.key(detected_version)[:1] > redist.key(driver_cuda)[:1]:
                     why = f'the driver runs CUDA {driver_cuda}'
+                else:
+                    why = redist.glibc_too_new(redist.key(detected_version)[0], self._glibc(ctx, _with))
                 if why:
                     if con:
                         print ('')
@@ -514,6 +530,7 @@ class CTool(InitCTool):
             return self.cm.error(f'NVIDIA publishes no CUDA toolkit archives for {uname}/{uarch}')
 
         driver_cuda, gpu_arch_min = self._gpu(ctx, _with)
+        glibc = self._glibc(ctx, _with)
         wanted = params.get('version')
 
         manifests = {}
@@ -526,7 +543,7 @@ class CTool(InitCTool):
             return self.cm.packages.match_version(spec, version).get('matched', False)
 
         try:
-            release, message = redist.choose(redist.releases(), wanted, matches, driver_cuda, gpu_arch_min, nvcc_of)
+            release, message = redist.choose(redist.releases(), wanted, matches, driver_cuda, gpu_arch_min, nvcc_of, glibc)
             if release:
                 nvcc_of(release)
         except (OSError, ValueError) as e:
