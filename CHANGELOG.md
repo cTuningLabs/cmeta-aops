@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.71.0
 - **A program without hooks of its own takes those of the template it inherits: `program/template-ck-program`, the
   hooks of programs converted from the Collective Knowledge format** (cBench, PolyBench/C, PolyBench/GPU, the codelets
   of the CK paper). `select-program` gives a program without an `api_v1.py` the hooks of the first artifact of its
