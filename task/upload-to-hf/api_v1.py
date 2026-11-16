@@ -31,7 +31,7 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             ctx: dict,                  # cMeta context
-            path: str = '',             # the folder or the file to upload
+            folder: str = '',           # the folder or the file to upload ("path" is a control word of the task category)
             repo: str = '',             # the repository: <owner>/<name> (ctuning/cTuning-MiDataSets)
             type: str = 'dataset',      # dataset, model or space
             path_in_repo: str = '',     # where in the repository (default: the root for a folder, the file's name for a file)
@@ -68,9 +68,9 @@ class CTask(InitCTask):
         con = ctx['control'].get('con', False)
         quiet = ctx['control'].get('quiet', False)
 
-        what = os.path.abspath(os.path.expanduser(path or ''))
-        if not path or not os.path.exists(what):
-            return self.cm.error(f'name the folder or the file to upload (cxt upload-to-hf <folder or file> <owner>/<name>): "{path}" is not there')
+        what = os.path.abspath(os.path.expanduser(folder or ''))
+        if not folder or not os.path.exists(what):
+            return self.cm.error(f'name the folder or the file to upload (cxt upload-to-hf <folder or file> <owner>/<name>, or --folder=): "{folder}" is not there')
         repo = (repo or '').strip()
         if not re.fullmatch(r'[\w.-]+/[\w.-]+', repo):
             return self.cm.error(f'name the repository as <owner>/<name> (ctuning/cTuning-MiDataSets): "{repo}"')

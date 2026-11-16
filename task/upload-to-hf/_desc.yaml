@@ -16,7 +16,7 @@ authors: Grigori Fursin
 cache: False
 
 params_map:
-  arg2: path
+  arg2: folder
   arg3: repo
 
 # The switches as words of the command line (--private, --create=no): run() reads its parameters through
