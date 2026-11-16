@@ -6,7 +6,9 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import importlib.util
+import json
 import os
+import re
 import shutil
 import copy
 import time
@@ -17,12 +19,892 @@ from task_c36be4b9314a45e0.api import build_stamp
 from task_c36be4b9314a45e0.api import build_identity
 from task_c36be4b9314a45e0.api import provenance
 
+
+###################################################################################################
+# The summary of a run, printed after it (--summary=no keeps it quiet) and kept in the result
+# ("summary"): what ran, on which targets with which tools, the input, the command, how long it
+# took, what it produced and where, the checks. A program's hooks add to it (customize_summary).
+
+def size_text(n):
+    """A size in bytes as text, 1000-based."""
+    if not isinstance(n, (int, float)):
+        return '?'
+    for unit, div in (('GB', 1e9), ('MB', 1e6), ('KB', 1e3)):
+        if n >= div:
+            return f'{n / div:.1f} {unit}'
+    return f'{int(n)} B'
+
+
+def seconds_text(x):
+    return f'{x:.3f} s' if isinstance(x, (int, float)) else '?'
+
+
+def cpu_name(target_features):
+    """The CPU of the target as the target task saw it, with its logical CPUs."""
+    cpu = (target_features or {}).get('cpu') or {}
+    if not isinstance(cpu, dict):
+        return None
+    name = cpu.get('model_name') or cpu.get('brand')
+    packages = cpu.get('packages')
+    if not name and isinstance(packages, list) and packages and isinstance(packages[0], dict):
+        name = packages[0].get('Name') or packages[0].get('name')
+    name = name or cpu.get('extended_identifier') or cpu.get('arch_normalized')
+    count = cpu.get('logical_cpu_count')
+    if name and count:
+        name = f'{name}, {count} logical CPUs'
+    return name
+
+
+def tools_text(resolved):
+    """The tools of the run as text - the compilers first (with their role), then the libraries - each once."""
+    shown = set()
+    out = []
+    for k in sorted(resolved or {}, key = lambda k: (0 if k.startswith('compiler-') else 1 if k.startswith('lib-') else 2, k)):
+        v = resolved[k] if isinstance(resolved[k], dict) else {}
+        name, version = v.get('name') or k, v.get('version')
+        if (name, version) in shown:
+            continue
+        shown.add((name, version))
+        text = f'{name} {version}' if version and version != 'default' else name
+        out.append(f'{k}: {text}' if k.startswith('compiler-') else text)
+    return ', '.join(out)
+
+
+def run_summary_of(local, global_ctx, params, result, resolved, error = None, built_now = None, run_skipped = False):
+    """
+    The summary of a run from its context (local and global), its parameters, its result and the tools of the
+    run (provenance.collect_resolved); error: what ended the run.
+    """
+    local = local if isinstance(local, dict) else {}
+    global_ctx = global_ctx if isinstance(global_ctx, dict) else {}
+    params = params if isinstance(params, dict) else {}
+    result = result if isinstance(result, dict) else {}
+    target = global_ctx.get('target') or {}
+    host = global_ctx.get('host') or {}
+    os_ = host.get('os') or {}
+    os_extra = host.get('os_extra') or {}
+    run = local.get('run-program') if isinstance(local.get('run-program'), dict) else {}
+
+    rc = run.get('returncode')
+    if error:
+        status = 'timeout' if run.get('timed_out') or 'timed out' in str(error) else 'failed'
+        if rc is None:                               # the cmd task's error names the program's exit code
+            m = re.search(r'return code (-?\d+)', str(error))
+            rc = int(m.group(1)) if m else None
+    elif run_skipped:
+        status = 'skipped'
+    else:
+        status = 'ok'
+
+    selected = local.get('selected-program') or {}
+    alias = ((selected.get('artifact') or {}).get('cmeta_ref_parts') or {}).get('artifact_alias') or params.get('name')
+    cmd = params.get('cmd')
+    if isinstance(cmd, list):
+        cmd = ','.join(str(c) for c in cmd)
+
+    # The OS by its distribution (ubuntu 24.04) when the host task knows one, else as Python names it (Windows-11)
+    os_name = ' '.join(str(os_extra.get(k)) for k in ('id', 'version') if os_extra.get(k))
+    if not os_name or os_name == os_.get('uname'):
+        os_name = os_.get('python_platform_terse') or os_name
+    hostname = host.get('hostname')
+    if isinstance(hostname, dict):
+        hostname = hostname.get('hostname')
+
+    summary = {'program': alias, 'cmd': cmd or 'default', 'status': status, 'return_code': rc,
+               'error': str(error) if error else None,
+               'compute': [str(c) for c in target.get('compute') or []],
+               'host': {'uname': os_.get('uname'), 'uarch': os_.get('uarch'), 'hostname': hostname, 'os': os_name or None},
+               'cpu': cpu_name(target.get('features')),
+               'gpu': [], 'opencl_devices': [],
+               'tools': tools_text(resolved),
+               'resolved': {k: {'name': v.get('name'), 'version': v.get('version')} for k, v in (resolved or {}).items()
+                            if isinstance(v, dict)},
+               'input': None, 'command': None, 'run_script': None, 'work_path': None,
+               'times': {}, 'outputs': [], 'result_files': {}, 'checks': [], 'build': {}, 'lines': []}
+
+    # The GPUs of a CUDA run (the cuda tool's probe), the OpenCL devices the target saw
+    cuda = (global_ctx.get('cuda') or {}).get('features') or {}
+    versions = cuda.get('versions') if isinstance(cuda.get('versions'), dict) else {}
+    for d in cuda.get('devices') or []:
+        if isinstance(d, dict):
+            summary['gpu'].append({'name': d.get('name'), 'compute_capability': d.get('compute_cap'),
+                                   'driver': d.get('driver_version') or versions.get('driver version'),
+                                   'cuda': versions.get('cuda version')})
+    opencl = (target.get('features') or {}).get('opencl') or {}
+    for d in opencl.get('devices') or []:
+        if isinstance(d, dict):
+            summary['opencl_devices'].append({'name': d.get('name'), 'platform': d.get('platform'), 'version': d.get('version'),
+                                              'driver': d.get('driver_version'), 'type': d.get('type')})
+
+    # The input: the dataset of the run, else the input files
+    ds = local.get('dataset')
+    if isinstance(ds, dict) and ds.get('path'):
+        path = str(ds['path'])
+        summary['input'] = {'dataset': ds.get('artifact_au'), 'sub_dataset': ds.get('sub_dataset'), 'desc': ds.get('desc'),
+                            'path': path, 'size': os.path.getsize(path) if os.path.isfile(path) else None,
+                            'files': [str(f) for f in ds.get('files') or []]}
+    elif isinstance(local.get('input_files'), dict) and local['input_files']:
+        summary['input'] = {'files': {str(k): str(v) for k, v in local['input_files'].items()}}
+
+    # The command (the program's path shortened to its name when it is in the build folder) and the scripts
+    target_path = local.get('target_path')
+    work_path = local.get('work_path') or target_path
+    cmds = local.get('run_time_cmds')
+    command = str(cmds[-1]).strip() if isinstance(cmds, list) and cmds else (cmds.strip() if isinstance(cmds, str) else '')
+    if command and target_path:
+        for prefix in (os.path.join(target_path, ''), '"' + os.path.join(target_path, '')):
+            if command.startswith(prefix):
+                command = command[len(prefix):] if not prefix.startswith('"') else '"' + command[len(prefix):]
+                break
+    summary['command'] = command or None
+    ext = (host.get('vars') or {}).get('file_ext_bat') or ('.bat' if os_.get('uname') == 'windows' else '.sh')
+    summary['work_path'] = work_path
+    if target_path:
+        summary['run_script'] = os.path.join(target_path, 'tmp-cmeta-run-program' + ext)
+
+    # Times: the program's own run, the run and the compile with cMeta, a kernel time of a result file
+    impact = result.get('_impact') if isinstance(result.get('_impact'), dict) else {}
+    times = {'run_seconds': (run.get('_impact') or {}).get('self_time'),
+             'run_with_cmeta_seconds': impact.get('self_time_run_with_cmeta'),
+             'compile_with_cmeta_seconds': impact.get('self_time_compile_with_cmeta')}
+    result_files = local.get('result_files') if isinstance(local.get('result_files'), dict) else {}
+    data = local.get('result_files_data') if isinstance(local.get('result_files_data'), dict) else {}
+    for key, content in data.items():
+        if isinstance(content, dict):
+            keys = [k for k in content if str(k).startswith('execution_time') and isinstance(content[k], (int, float))]
+            k = next((k for k in keys if str(k).startswith('execution_time_kernel')), keys[0] if keys else None)
+            if k is not None:
+                times['kernel_seconds'] = content[k]
+                times['kernel_source'] = f'{k} of {result_files.get(key, key)}'
+                break
+    summary['times'] = {k: v for k, v in times.items() if v is not None}
+    summary['result_files'] = {str(k): str(v) for k, v in result_files.items()}
+
+    # The outputs and where they are
+    names = [str(f) for f in local.get('output_files') or []]
+    names += [str(f) for f in result_files.values() if str(f) not in names]
+    for name in names:
+        p = os.path.join(work_path, name) if work_path else name
+        summary['outputs'].append({'name': name, 'path': p, 'size': os.path.getsize(p) if os.path.isfile(p) else None})
+
+    # The checks of the provenance record
+    prov = result.get('provenance') if isinstance(result.get('provenance'), dict) else {}
+    if prov:
+        errors, warnings = prov.get('errors') or 0, prov.get('warnings') or 0
+        summary['checks'].append({'what': 'provenance record', 'ok': bool(prov.get('ok', True)) and not errors,
+                                  'detail': f'{errors} errors, {warnings} warnings' + (f' - {prov["path"]}' if prov.get('path') else '')})
+
+    # The check of the outputs against the reference (--check_output), when the run made one
+    oc = result.get('output_check') if isinstance(result.get('output_check'), dict) else None
+    if oc and oc.get('status'):
+        status = oc['status']
+        files = oc.get('files') or {}
+        if status == 'validated':
+            same = sum(1 for v in files.values() if v.get('status') == 'ok')
+            added = sum(1 for v in files.values() if v.get('status') == 'added')
+            check = {'ok': True, 'detail': f'{same} file(s) the same as the reference' +
+                                           (f', {added} added to it (the reference had none)' if added else '') + f' ({oc.get("case")})'}
+        elif status == 'failed':
+            bad = [f'{n} - {v.get("why")}' for n, v in files.items() if v.get('status') != 'ok']
+            check = {'ok': False, 'detail': '; '.join(bad) + f' (the reference: {oc.get("case")})'}
+        elif status == 'recorded':
+            check = {'ok': True, 'detail': f'{sum(1 for v in files.values() if v.get("status") == "recorded")} file(s) recorded as the reference in {oc.get("repo")}: {oc.get("case")}'}
+        else:
+            check = {'ok': None if status in ('nothing', 'no_reference') else False, 'detail': oc.get('error') or oc.get('note') or status}
+        summary['checks'].append({'what': 'reference outputs', **check})
+
+    summary['build'] = {'path': target_path, 'compiled_now': built_now,
+                        'script': os.path.join(target_path, 'tmp-cmeta-compile-program' + ext) if target_path else None}
+
+    # The parameters of the request (the program's: --repeat, --compile.size ...), and the calibration of the repeat
+    summary['params'] = request_params(params)
+    summary['calibration'] = result.get('calibration') if isinstance(result.get('calibration'), dict) else None
+
+    # What the run printed, when the cmd task kept it (a program family that redirects names its files instead)
+    for stream in ('stdout', 'stderr'):
+        text = run.get(stream)
+        if isinstance(text, str) and text.strip():
+            summary[stream] = {'source': 'the run', 'text': text}
+
+    # The stats the program collected: its result files (xOpenME's timer ...), as finish-run read them
+    summary['stats'] = [{'key': str(k), 'file': str(result_files.get(k, k)), 'data': v} for k, v in data.items()]
+
+    return summary
+
+
+def summary_text(summary):
+    """The lines of a summary for the console."""
+    s = summary
+    status = {'ok': 'OK', 'failed': 'FAILED', 'timeout': 'TIMED OUT', 'skipped': 'not run (compile only)'}.get(s.get('status'), str(s.get('status')))
+    times = s.get('times') or {}
+    head = f'cMeta run summary: {s.get("program")} ({s.get("cmd")}) on {",".join(s.get("compute") or []) or "?"}: {status}'
+    if s.get('return_code') is not None:
+        head += f', exit {s["return_code"]}'
+    if 'run_seconds' in times:
+        head += f' in {seconds_text(times["run_seconds"])}'
+    if 'kernel_seconds' in times:
+        head += f' (kernel {seconds_text(times["kernel_seconds"])})'
+    lines = [head]
+
+    h = s.get('host') or {}
+    text = ' '.join(str(h.get(k)) for k in ('uname', 'uarch') if h.get(k))
+    if h.get('os'):
+        text += f' ({h["os"]})'
+    if h.get('hostname'):
+        text += f' {h["hostname"]}'
+    if s.get('cpu'):
+        text += f'; CPU {s["cpu"]}'
+    lines.append(f'  host:     {text}')
+    for g in s.get('gpu') or []:
+        extra = ', '.join(x for x in (f'compute capability {g["compute_capability"]}' if g.get('compute_capability') else '',
+                                      f'driver {g["driver"]}' if g.get('driver') else '',
+                                      f'CUDA {g["cuda"]}' if g.get('cuda') else '') if x)
+        lines.append(f'  gpu:      {g.get("name")}' + (f' ({extra})' if extra else ''))
+    if 'opencl' in (s.get('compute') or []) and s.get('opencl_devices'):
+        lines.append('  opencl:   ' + '; '.join(f'{d.get("name")} ({d.get("platform")}, {d.get("version")})' for d in s['opencl_devices']))
+    if s.get('tools'):
+        lines.append(f'  tools:    {s["tools"]}')
+
+    inp = s.get('input') or {}
+    if inp.get('dataset'):
+        name = inp['dataset'] + (f'/{inp["sub_dataset"]}' if inp.get('sub_dataset') else '')
+        lines.append(f'  input:    {name}' + (f' - {inp["desc"]}' if inp.get('desc') else ''))
+        lines.append(f'            {inp.get("path")} ({size_text(inp.get("size"))})')
+    elif inp.get('path'):
+        lines.append(f'  input:    {inp["path"]} ({size_text(inp.get("size"))})')
+    elif isinstance(inp.get('files'), dict) and inp['files']:
+        lines.append('  input:    ' + ', '.join(f'{k} = {v}' for k, v in inp['files'].items()))
+    if s.get('command'):
+        lines.append(f'  command:  {s["command"]}')
+    if s.get('params'):
+        lines.append(f'  params:   {params_text(s["params"])}')
+    c = s.get('calibration') or {}
+    if c:
+        first = (c.get('history') or [{}])[0].get('repeat', c.get('repeat'))
+        verdict = 'done' if c.get('success') else 'FAILED'
+        text = f'{c.get("param")} {first} -> {c.get("repeat")} in {c.get("rounds")} round{"s" if c.get("rounds") != 1 else ""}: {verdict}'
+        if c.get('seconds') is not None:
+            text += f', the run lasts {seconds_text(c["seconds"])} for a target of {seconds_text(c.get("target"))}'
+        if c.get('why') and not c.get('success'):
+            text += f' - {c["why"]}'
+        lines.append(f'  calibration: {text}')
+    outs = s.get('outputs') or []
+    if outs:
+        lines.append(f'  outputs:  {s.get("work_path")}')
+        lines.append('            ' + ', '.join(f'{o["name"]} ({size_text(o["size"])})' if o.get('size') is not None else f'{o["name"]} (not made)' for o in outs))
+    b = s.get('build') or {}
+    if b.get('path'):
+        how = 'built now' if b.get('compiled_now') else ('reused' if b.get('compiled_now') is False else '')
+        text = b['path'] + (f' ({how})' if how else '')
+        if 'compile_with_cmeta_seconds' in times and b.get('compiled_now'):
+            text += f', compile {seconds_text(times["compile_with_cmeta_seconds"])} with cMeta'
+        lines.append(f'  build:    {text}')
+        scripts = [os.path.basename(x) for x in (b.get('script'), s.get('run_script')) if x]
+        if scripts:
+            lines.append(f'            scripts {", ".join(scripts)}' + (', provenance.json' if any(c.get('what') == 'provenance record' for c in s.get('checks') or []) else ''))
+    for c in s.get('checks') or []:
+        mark = 'ok' if c.get('ok') is True else ('FAILED' if c.get('ok') is False else '?')
+        lines.append(f'  check:    {c.get("what")}: {mark}' + (f' - {c["detail"]}' if c.get('detail') else ''))
+    for x in s.get('lines') or []:
+        lines.append(f'  {x}')
+    if s.get('error'):
+        lines.append(f'  error:    {s["error"]}')
+    return lines
+
+
+RULE = '=' * 100
+OUTPUT_MAX_LINES = 60
+
+
+def output_section(what, out):
+    """The lines of a stream's section: a header, the text (its first OUTPUT_MAX_LINES lines), where the rest is."""
+    text = str(out.get('text') or '')
+    lines = text.rstrip('\n').splitlines()
+    source = out.get('source')
+    head = f'{what} of the run' + (f' ({source}, ' if source else ' (') + f'{len(lines)} line{"s" if len(lines) != 1 else ""}):'
+    shown = lines[:OUTPUT_MAX_LINES]
+    rest = []
+    if len(lines) > len(shown):
+        rest = [f'... {len(lines) - len(shown)} more lines' + (f' in {out["path"]}' if out.get('path') else '')]
+    return [head, ''] + shown + rest
+
+
+def stats_lines(data):
+    """The lines of a result file's data: nested keys joined with a dot, a text as it is."""
+    if isinstance(data, dict):
+        out = []
+        for k, v in data.items():
+            if isinstance(v, dict):
+                out += [f'{k}.{x}' for x in stats_lines(v)]
+            else:
+                out.append(f'{k} = {v}')
+        return out
+    if isinstance(data, list):
+        return [str(x) for x in data]
+    return str(data).rstrip('\n').splitlines() if data is not None else []
+
+
+def summary_block(summary):
+    """
+    The whole block printed after a run, its sections apart by a rule: the standard output when the run kept it,
+    the standard error when there is one, the summary, and the stats the program collected (its result files).
+    """
+    sections = []
+    if summary.get('stdout'):
+        sections.append(output_section('standard output', summary['stdout']))
+    if summary.get('stderr'):
+        sections.append(output_section('standard error', summary['stderr']))
+    sections.append(summary_text(summary))
+    stats = []
+    for s in summary.get('stats') or []:
+        if stats:
+            stats.append('')
+        stats.append(f'stats of the run: {s.get("key")} ({s.get("file")})')
+        lines = stats_lines(s.get('data'))
+        stats += [f'  {x}' for x in lines] if lines else ['  (empty)']
+    if stats:
+        sections.append(stats)
+    block = [RULE]
+    for section in sections:
+        block += section + [RULE]
+    return block
+
+
+###################################################################################################
+# The reference outputs of a program (the category program.output): an artifact per program, a case per command,
+# input and parameters - recorded by a run, compared by the next ones (cx program run <program> <target>
+# --check_output). A case is a folder named by a UID with case.json: the key of the case, the facts of the
+# recording, every output file with its size and digests; the files themselves beside it when small.
+
+OUTPUT_CATEGORY = 'program.output'
+OUTPUT_CASE = 'case.json'
+OUTPUT_STDIO = ('tmp-output1.tmp', 'tmp-output2.tmp', 'tmp-ck-timer.json')   # what the run printed and its times: not compared unless listed
+CHECK_PARAMS = ('check_output', 'output_repo', 'overwrite_output', 'summary', 'calibrate', 'calibrate_max')   # the task's switches, not the program's parameters
+
+# CK's calibration of the kernel's repeat (--calibrate): the run made to last about this many seconds, in at most
+# this many rounds (CK: calibration_time 4.0, calibration_max 10)
+CALIBRATION_TIME = 4.0
+CALIBRATION_MAX = 10
+
+
+def request_params(params):
+    """The parameters of the request that belong to the program: all of them but the task's own switches and the empty ones."""
+    return {str(k): v for k, v in (params or {}).items() if k not in CHECK_PARAMS and v is not None}
+
+
+def params_text(params):
+    """The parameters on one line: k=v, nested keys dotted (compile.size=large), a valueless define by its name."""
+    items = []
+
+    def walk(prefix, v):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                walk(f'{prefix}{k}.', x)
+        else:
+            items.append(prefix[:-1] + ('' if v is None else f'={v}'))
+
+    walk('', params if isinstance(params, dict) else {})
+    return ', '.join(items)
+
+
+def run_seconds_of(local):
+    """The time a run took: execution_time of a result file (xOpenME's timer, when it is not zero), else the run's wall time."""
+    data = local.get('result_files_data') if isinstance(local.get('result_files_data'), dict) else {}
+    for content in data.values():
+        if isinstance(content, dict) and isinstance(content.get('execution_time'), (int, float)) and content['execution_time'] > 0:
+            return float(content['execution_time'])
+    run = local.get('run-program') if isinstance(local.get('run-program'), dict) else {}
+    seconds = (run.get('_impact') or {}).get('self_time')
+    return float(seconds) if isinstance(seconds, (int, float)) else None
+
+
+def calibration_step(plan, local):
+    """
+    One round of CK's calibration after a run: the run's time against the target. Under half a second the repeat
+    grows tenfold; within 0.8 and 1.4 of the target (target / time) it is done; else the repeat is scaled by
+    target / time (one at least); a repeat that does not change is done too; past the rounds allowed, failed.
+    """
+    seconds = run_seconds_of(local)
+    plan['rounds'] += 1
+    plan['history'].append({'repeat': plan['repeat'], 'seconds': seconds})
+    plan['seconds'] = seconds
+    repeat, target = plan['repeat'], plan['target']
+    if seconds is None:
+        plan.update({'done': True, 'success': False, 'why': 'the time of the run is not known (no execution_time in a result file, no run time)'})
+        return plan
+    if seconds < 0.5:
+        new = repeat * 10
+    elif 0.8 < target / seconds < 1.4:
+        plan.update({'done': True, 'success': True})
+        return plan
+    else:
+        new = max(1, int(repeat * target / seconds))
+    new = int(new)
+    if new == repeat:
+        plan.update({'done': True, 'success': True})
+    elif plan['rounds'] >= plan['max']:
+        plan.update({'done': True, 'success': False,
+                     'why': f'calibration failed: {plan["rounds"]} rounds (--calibrate_max) and the run lasts {seconds_text(seconds)} '
+                            f'with {plan["param"]} = {repeat}, for a target of {seconds_text(target)}'})
+    else:
+        plan['next'] = new
+        plan['repeat'] = new
+    return plan
+OUTPUT_KEPT_MAX = 10 * 1000 * 1000             # a reference file is kept beside case.json up to this size; bigger: its digests alone
+NAN_WORDS = re.compile(rb'-?(?:nan\(ind\)|nan|1\.#IND|1\.#QNAN)', re.I)
+NUMBER = re.compile(r'[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?')
+
+
+def output_check_rules(desc, cmd = None):
+    """
+    The rules of a program's output check - "output_check" of its description, the command's own entry
+    (updates_cmd.<cmd>.output_check) on top: files (the outputs compared; default: the run's output files minus
+    what it printed and its times), key_params (the parameters that tell the cases apart, dotted), tolerance (of
+    the numbers in a text file: relative, with an absolute floor of the same value), skip (files never compared),
+    artifact (the program whose references these are, when shared), key_values (values of the key given as they
+    are, by a hook mostly: {name: value}), invariant_of_repeat (the output does not depend on the kernel's repeat).
+    """
+    rules = {}
+    for block in (desc.get('output_check'), ((desc.get('updates_cmd') or {}).get(cmd) or {}).get('output_check') if cmd else None):
+        if isinstance(block, dict):
+            for k, v in block.items():
+                if k in ('files', 'key_params', 'skip', 'ignore_lines') and isinstance(v, list) and isinstance(rules.get(k), list):
+                    rules[k] = rules[k] + [x for x in v if x not in rules[k]]
+                elif k == 'key_values' and isinstance(v, dict) and isinstance(rules.get(k), dict):
+                    rules[k] = {**rules[k], **v}
+                else:
+                    rules[k] = v
+    return rules
+
+
+def output_files_of(rules, local):
+    """The output files a check compares: the rules' files, else the run's output files minus the stdio captures and the times; minus skip."""
+    files = rules.get('files') if isinstance(rules.get('files'), list) else [f for f in (local.get('output_files') or []) if str(f) not in OUTPUT_STDIO]
+    skip = {str(s) for s in rules.get('skip') or []}
+    return [str(f) for f in files if str(f) not in skip]
+
+
+def output_key(rules, program, cmd, local, params):
+    """The key of a case: the program, the command, the dataset, its sub-dataset and file, the parameters that matter."""
+    dataset = local.get('dataset') if isinstance(local.get('dataset'), dict) else {}
+    alias = str(dataset.get('artifact_au') or '').split(',')[0] or None
+    key = {'program': program, 'cmd': cmd or 'default', 'dataset': alias,
+           'sub_dataset': dataset.get('sub_dataset') or None,
+           'dataset_file': os.path.basename(str(dataset['path'])) if dataset.get('path') else None,
+           'params': {}}
+    for name in rules.get('key_params') or []:
+        value = params
+        for part in str(name).split('.'):
+            value = value.get(part) if isinstance(value, dict) else None
+        key['params'][str(name)] = value if value is None or isinstance(value, (bool, int, float)) else str(value)
+    for name, value in (rules.get('key_values') or {}).items():
+        key['params'][str(name)] = value if value is None or isinstance(value, (bool, int, float)) else str(value)
+    return key
+
+
+def same_key(a, b):
+    """Two keys of cases the same: every field as text (a number written or typed), the parameters as a whole."""
+    def norm(k):
+        k = k if isinstance(k, dict) else {}
+        out = {f: (None if k.get(f) is None else str(k.get(f))) for f in ('program', 'cmd', 'dataset', 'sub_dataset', 'dataset_file')}
+        out['params'] = {str(n): (None if v is None else str(v)) for n, v in (k.get('params') or {}).items()}
+        return out
+    return norm(a) == norm(b)
+
+
+def ignore_patterns(rules):
+    """
+    The lines of the outputs left out of a comparison (output_check.ignore_lines: regular expressions, a line that
+    matches one is dropped - the device a GPU program names, a path, a time): the compiled patterns, or an error.
+    """
+    out = []
+    for p in (rules.get('ignore_lines') or []) if isinstance(rules, dict) else []:
+        try:
+            out.append(re.compile(str(p).encode('utf-8')))
+        except re.error as e:
+            return None, f'output_check.ignore_lines: "{p}" is not a regular expression ({e})'
+    return out, None
+
+
+def without_ignored(data, ignore):
+    """The bytes of a text file without the lines that match one of the patterns (a binary file - with NUL - as it is)."""
+    if not ignore or b'\0' in data:
+        return data
+    return b''.join(line for line in data.splitlines(keepends = True) if not any(p.search(line) for p in ignore))
+
+
+def output_digests(path, ignore = None):
+    """
+    {size, sha256, sha256_lf (Windows line ends read as \\n), sha256_nan (every NaN spelled nan; text files)} of a
+    file; with ignore (compiled patterns), the digests are of its text without the lines that match one of them.
+    """
+    import hashlib
+    with open(path, 'rb') as f:
+        data = f.read()
+    size = len(data)
+    data = without_ignored(data, ignore)
+    lf = data.replace(b'\r\n', b'\n')
+    out = {'size': size, 'sha256': hashlib.sha256(data).hexdigest(), 'sha256_lf': hashlib.sha256(lf).hexdigest()}
+    if b'\0' not in data:
+        out['sha256_nan'] = hashlib.sha256(NAN_WORDS.sub(b'nan', lf)).hexdigest()
+    return out
+
+
+def numbers_within(path, reference, tolerance, ignore = None, tolerance_abs = None):
+    """
+    Two text files the same but for their numbers, every number within tolerance of the reference's: relative, with
+    an absolute floor - tolerance_abs, else the tolerance itself (a number printed with 2 decimals moves by 0.01 when
+    a tiny difference crosses its rounding: tolerance_abs 0.01 lets that through). (True, note) or (False, why). With
+    ignore, the lines that match one of the patterns are left out of both.
+    """
+    floor = tolerance if tolerance_abs is None else float(tolerance_abs)
+    try:
+        with open(path, 'rb') as f:
+            a = without_ignored(f.read(), ignore).decode('utf-8', errors = 'replace').replace('\r\n', '\n')
+        with open(reference, 'rb') as f:
+            b = without_ignored(f.read(), ignore).decode('utf-8', errors = 'replace').replace('\r\n', '\n')
+    except OSError as e:
+        return False, str(e)
+    if NUMBER.sub('#', a) != NUMBER.sub('#', b):
+        return False, 'the text around the numbers differs'
+    na, nb = NUMBER.findall(a), NUMBER.findall(b)
+    if len(na) != len(nb):
+        return False, f'{len(na)} numbers, the reference {len(nb)}'
+    worst = 0.0
+    for n, (x, y) in enumerate(zip(na, nb), 1):
+        try:
+            x, y = float(x), float(y)
+        except ValueError:
+            if x != y:
+                return False, f'number {n}: {x} vs {y}'
+            continue
+        if x != y:
+            diff = abs(x - y) / max(1.0, abs(y))
+            worst = max(worst, diff)
+            # within the relative tolerance, or the absolute floor (a hair above it: 1.01 - 1.00 is 0.010000000000000009)
+            if abs(x - y) > max(tolerance * abs(y), floor) * (1 + 1e-9) + 1e-12:
+                limit = f'{tolerance:g}' + (f' or {floor:g} absolute' if floor != tolerance else '')
+                return False, f'number {n}: {x} vs {y} ({diff:.3g} beyond {limit})'
+    limit = f'{tolerance:g}' + (f' (or {floor:g} absolute)' if floor != tolerance else '')
+    return True, f'{len(nb)} numbers within {limit}' + (f', the worst {worst:.3g}' if worst else ', all equal')
+
+
+def compare_output(path, record, reference_path, tolerance, ignore = None, tolerance_abs = None):
+    """
+    One output of a run against its reference: ('ok' | 'differs' | 'missing', why); with ignore, without the lines that
+    match; the numbers of a text file within tolerance (relative) or tolerance_abs (absolute) when a tolerance is given.
+    """
+    if not os.path.isfile(path):
+        return 'missing', 'the run made no such file'
+    d = output_digests(path, ignore)
+    if d['sha256'] == record.get('sha256'):
+        return 'ok', 'the same' + (' (the lines of ignore_lines left out)' if ignore else '')
+    if record.get('sha256_lf') and d['sha256_lf'] == record['sha256_lf']:
+        return 'ok', 'the same but for the line ends'
+    if record.get('sha256_nan') and d.get('sha256_nan') == record['sha256_nan']:
+        return 'ok', 'the same but for the spelling of NaN'
+    if reference_path and os.path.isfile(reference_path) and isinstance(tolerance, (int, float)) and tolerance >= 0:
+        ok, why = numbers_within(path, reference_path, float(tolerance), ignore, tolerance_abs)
+        return ('ok' if ok else 'differs'), why
+    why = f'{d["size"]} bytes against {record.get("size")} of the reference'
+    if not (reference_path and os.path.isfile(reference_path)):
+        why += ' (the reference file was not kept: the digests alone)'
+    return 'differs', why
+
+
+def read_case(folder):
+    try:
+        with open(os.path.join(folder, OUTPUT_CASE), encoding = 'utf-8') as f:
+            case = json.load(f)
+        return case if isinstance(case, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def find_case(artifact_paths, key):
+    """The case of this key in the artifacts' folders (the first found): {'artifact', 'folder', 'case'} or None."""
+    for path in artifact_paths:
+        for name in sorted(os.listdir(path)) if os.path.isdir(path) else []:
+            folder = os.path.join(path, name)
+            case = read_case(folder) if os.path.isdir(folder) else None
+            if case and same_key(case.get('key'), key):
+                return {'artifact': path, 'folder': folder, 'case': case}
+    return None
+
+
+def write_case(folder, key, facts, files, work_path, kept_max = OUTPUT_KEPT_MAX, ignore = None, ignore_lines = None):
+    """
+    A case recorded: case.json and the output files kept beside it (up to kept_max bytes each); with ignore, the
+    digests are of the files without the lines that match (the files are kept whole), and case.json names the
+    patterns (ignore_lines).
+    """
+    os.makedirs(folder, exist_ok = True)
+    case = {'key': key, 'recorded': facts, 'files': {}}
+    if ignore_lines:
+        case['ignore_lines'] = [str(p) for p in ignore_lines]
+    for name in files:
+        src = os.path.join(work_path, name)
+        if not os.path.isfile(src):
+            case['files'][name] = None
+            continue
+        d = output_digests(src, ignore)
+        d['kept'] = d['size'] <= kept_max
+        if d['kept']:
+            dst = os.path.join(folder, name)
+            os.makedirs(os.path.dirname(dst), exist_ok = True)
+            shutil.copyfile(src, dst)
+        case['files'][name] = d
+    with open(os.path.join(folder, OUTPUT_CASE), 'w', encoding = 'utf-8', newline = '\n') as f:
+        json.dump(case, f, indent = 1, sort_keys = True)
+        f.write('\n')
+    return case
+
+
 class CTask(InitCTask):
     """
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
+
+    ############################################################
+    @staticmethod
+    def dataset_steps_take_the_programs_params(steps):
+        """
+        The dataset steps of a run (task: dataset,...) take the program's --dataset and --dataset_file when they do
+        not name their own "name" and "filename": every program answers to them, as the ones converted from CK do.
+        """
+        for step in steps if isinstance(steps, list) else []:
+            if isinstance(step, dict) and str(step.get('task') or '').split(',')[0] == 'dataset':
+                step.setdefault('name', '{{params.dataset|$None}}')
+                step.setdefault('filename', '{{params.dataset_file|$None}}')
+
+    ############################################################
+    def calibration_plan(self, params, local, desc = None):
+        """
+        The plan of CK's calibration asked for with --calibrate: nothing (None) without it; else the target in seconds
+        (--calibrate alone: CALIBRATION_TIME, as CK; --calibrate=<seconds>), the rounds allowed (--calibrate_max,
+        CALIBRATION_MAX), the parameter that repeats the kernel (repeat_param of the program's local_vars, else
+        "repeat" when its run_time_env takes {{local.params.repeat}} - CK's CT_REPEAT_MAIN) and the repeat to start
+        from (the --repeat given, else 1). A program that does not repeat its kernel is refused.
+        """
+        asked = params.get('calibrate')
+        if asked in (None, False) or str(asked).strip().lower() in ('', 'no', 'false', 'off', 'none', '0'):
+            return {'return': 0, 'plan': None}
+        if asked is True or str(asked).strip().lower() in ('yes', 'true', 'on', 'auto'):
+            target = CALIBRATION_TIME
+        else:
+            try:
+                target = float(asked)
+            except (TypeError, ValueError):
+                target = 0
+            if target <= 0:
+                return self.cm.error(f'--calibrate takes the seconds a run should last (--calibrate=10), or nothing for {CALIBRATION_TIME:g} as CK did: "{asked}"')
+        try:
+            max_rounds = int(params.get('calibrate_max') or CALIBRATION_MAX)
+        except (TypeError, ValueError):
+            max_rounds = 0
+        if max_rounds < 1:
+            return self.cm.error(f'--calibrate_max takes a number of rounds: "{params.get("calibrate_max")}"')
+
+        param = str(local.get('repeat_param') or '').strip()
+        if not param:
+            envs = [local.get('run_time_env'), ((desc or {}).get('local_vars') or {}).get('run_time_env')]
+            if any(isinstance(e, dict) and any('params.repeat' in str(v) for v in e.values()) for e in envs):
+                param = 'repeat'
+        if not param:
+            return self.cm.error('this program does not repeat its kernel (no repeat_param in its local_vars, no {{local.params.repeat}} '
+                                 'in its run_time_env): --calibrate has nothing to change')
+
+        start = params.get(param)
+        try:
+            repeat = int(start) if start not in (None, '') else 1
+        except (TypeError, ValueError):
+            return self.cm.error(f'--{param} takes a whole number to start the calibration from: "{start}"')
+        return {'return': 0, 'plan': {'param': param, 'target': target, 'max': max_rounds, 'repeat': max(1, repeat),
+                                      'rounds': 0, 'history': [], 'seconds': None, 'done': False, 'success': None, 'why': ''}}
+
+    ############################################################
+    def output_check(self, ctx, params, desc, program_alias, program_uid, result, local, resolved):
+        """
+        The outputs of this run against the program's reference outputs (category program.output), or recorded as
+        the reference: --check_output (auto: compared when a reference exists, recorded when none), =validate (an
+        error without a reference), =record (--overwrite_output records over an existing case), =no. --output_repo
+        names the repository a recording goes into (local by default, as CK did: a shared repository only when
+        asked). Returns the check: status (validated, failed, recorded, no_reference, nothing, error), the case,
+        the files with their verdicts.
+        """
+
+        mode = params.get('check_output')
+        mode = 'auto' if mode in (True, '', 'yes', 'true', 'on', 'auto') else str(mode or 'no').strip().lower()
+        if mode in ('no', 'false', 'off', 'none'):
+            return None
+        if mode not in ('auto', 'validate', 'record'):
+            return {'status': 'error', 'error': f'--check_output takes auto, validate, record or no: "{mode}"'}
+
+        cmd = params.get('cmd')
+        if isinstance(cmd, list):
+            cmd = ','.join(str(c) for c in cmd)
+        cmd = cmd or 'default'
+
+        rules = output_check_rules(desc, cmd)
+        api_code = (local.get('selected-program') or {}).get('api_code')
+        if hasattr(api_code, 'customize_output_check') and callable(getattr(api_code, 'customize_output_check')):
+            r = api_code.customize_output_check(ctx, rules)
+            if isinstance(r, dict) and r.get('return', 0) > 0:
+                return {'status': 'error', 'error': f'the program\'s output_check hook failed: {r.get("error")}'}
+
+        alias = str(rules.get('artifact') or program_alias)          # the program whose references these are
+        key = output_key(rules, alias, cmd, local, params)
+        files = output_files_of(rules, local)
+        work_path = local.get('work_path') or local.get('target_path') or os.getcwd()
+        out = {'status': 'nothing', 'mode': mode, 'artifact': alias, 'key': key, 'files': {}}
+        if not files:
+            out['note'] = 'no output file to check (output_files of the program, or output_check.files)'
+            return out
+
+        # The lines left out of every comparison (output_check.ignore_lines)
+        ignore, why = ignore_patterns(rules)
+        if why:
+            return {'status': 'error', 'error': why}
+
+        # The reference: the first case of this key in the artifacts of that name, in any repository
+        r = self.cm.access({'category': OUTPUT_CATEGORY, 'command': 'find', 'arg1': alias, 'con': False})
+        paths = [a['path'] for a in r.get('artifacts', [])] if r.get('return', 1) == 0 else []
+        found = find_case(paths, key)
+
+        if found and mode == 'record' and not params.get('overwrite_output'):
+            return {'status': 'error', 'error': f'a reference of this case exists ({found["folder"]}): --overwrite_output records over it, '
+                                                '--check_output compares with it', 'case': found['folder']}
+
+        if found and mode != 'record':
+            tolerance = rules.get('tolerance')
+            ok = True
+            records = found['case'].setdefault('files', {})
+            changed = False
+            for name in files:
+                record = records.get(name)
+                run_file = os.path.join(work_path, name)
+                if not record:
+                    # The reference has no such file (the program's outputs grew): added to it, as CK did
+                    if os.path.isfile(run_file):
+                        d = output_digests(run_file, ignore)
+                        d['kept'] = d['size'] <= OUTPUT_KEPT_MAX
+                        if d['kept']:
+                            shutil.copyfile(run_file, os.path.join(found['folder'], name))
+                        records[name] = d
+                        changed = True
+                        out['files'][name] = {'status': 'added', 'why': 'the reference had no such file: added to it'}
+                    else:
+                        # Neither the reference nor the run made it: the same
+                        out['files'][name] = {'status': 'ok', 'why': 'not made, as in the reference'}
+                    continue
+                status, why = compare_output(run_file, record, os.path.join(found['folder'], name) if record.get('kept') else None,
+                                             tolerance, ignore, rules.get('tolerance_abs'))
+                out['files'][name] = {'status': status, 'why': why}
+                ok = ok and status == 'ok'
+            if changed:
+                with open(os.path.join(found['folder'], OUTPUT_CASE), 'w', encoding = 'utf-8', newline = '\n') as f:
+                    json.dump(found['case'], f, indent = 1, sort_keys = True)
+                    f.write('\n')
+            out.update({'status': 'validated' if ok else 'failed', 'case': found['folder'], 'recorded': found['case'].get('recorded')})
+            return out
+
+        if mode == 'validate':
+            out['status'] = 'no_reference'
+            out['note'] = f'no reference of this case in {OUTPUT_CATEGORY}::{alias}: record one with --check_output (or =record)'
+            return out
+
+        # A recording: the artifact of the program in --output_repo (made when it is not there), a new case in it
+        repo = str(params.get('output_repo') or 'local')
+        r = self.cm.access({'category': 'repo', 'command': 'find', 'arg1': repo, 'con': False})
+        repo_paths = [a['path'] for a in r.get('artifacts', [])] if r.get('return', 1) == 0 else []
+        if not repo_paths:
+            return {'status': 'error', 'error': f'no repository "{repo}" to record the reference into (--output_repo)'}
+        repo_root = os.path.normcase(os.path.abspath(repo_paths[0]))
+
+        def inside(p):
+            return os.path.normcase(os.path.abspath(p)).startswith(repo_root + os.sep)
+
+        # The artifact of this program in the output repository; (re)made when it is not there or lost its identity
+        # file (a folder left without _cmeta.yaml, so no machine can find it - an artifact of a manual deletion or
+        # a stale index): "add" writes _cmeta.yaml even when the folder already holds cases
+        target = next((p for p in paths if inside(p)), None)
+        if not target or not os.path.isfile(os.path.join(target, '_cmeta.yaml')):
+            tags = ['program.output'] + [str(t) for t in ((local.get('selected-program') or {}).get('artifact') or {}).get('cmeta', {}).get('tags', []) if str(t) not in ('program.output',)]
+            r = self.cm.access({'category': OUTPUT_CATEGORY, 'command': 'add', 'arg1': f'{repo}:{alias}', 'yaml': True,
+                                'tags': ','.join(tags), 'quiet': True, 'con': False})
+            if r.get('return', 1) > 0:
+                return {'status': 'error', 'error': f'the artifact {OUTPUT_CATEGORY}::{alias} could not be made in {repo}: {r.get("error")}'}
+            r = self.cm.access({'category': OUTPUT_CATEGORY, 'command': 'find', 'arg1': alias, 'con': False})
+            target = next((a['path'] for a in r.get('artifacts', []) if inside(a['path'])), None) if r.get('return', 1) == 0 else None
+            if not target:
+                return {'status': 'error', 'error': f'the artifact {OUTPUT_CATEGORY}::{alias} was made but not found in {repo}'}
+            # What the artifact is: the program it holds the references of
+            meta_path = os.path.join(target, '_cmeta.yaml')
+            rm = self.cm.utils.files.read_file(meta_path)
+            if rm.get('return', 1) == 0 and isinstance(rm.get('data'), dict):
+                meta = rm['data']
+                meta.pop('copyright', None)
+                meta['program'] = f'{program_alias},{program_uid}'
+                meta['desc'] = f'The reference outputs of the program {program_alias}: a case per command, input and parameters (case.json), recorded by cx program run --check_output.'
+                self.cm.utils.files.safe_write_file(meta_path, meta)
+
+        if found:                                    # --check_output=record --overwrite_output
+            shutil.rmtree(found['folder'], ignore_errors = True)
+
+        s = run_summary_of(local, ctx['tasks'].get('global'), params, result, resolved)
+        facts = {'date': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'program': f'{program_alias},{program_uid}',
+                 'host': s.get('host'), 'cpu': s.get('cpu'), 'gpu': [g.get('name') for g in s.get('gpu') or []],
+                 'compute': s.get('compute'), 'tools': s.get('tools'), 'command': s.get('command'),
+                 'params': s.get('params'), 'calibration': s.get('calibration'), 'times': s.get('times')}
+        uid = self.cm.utils.names.generate_cmeta_uid()
+        folder = os.path.join(target, uid)
+        case = write_case(folder, key, facts, files, work_path, ignore = ignore, ignore_lines = rules.get('ignore_lines'))
+        out['files'] = {n: ({'status': 'recorded', 'why': f'{v["size"]} bytes' + ('' if v.get('kept') else ', the digests alone (too big to keep)')} if v else
+                            {'status': 'missing', 'why': 'the run made no such file'}) for n, v in case['files'].items()}
+        out.update({'status': 'recorded', 'case': folder, 'repo': repo, 'recorded': facts})
+        return out
+
+    ############################################################
+    def run_summary(self, ctx, params, result, error = None, built_now = None, run_skipped = False, local = None):
+        """
+        The summary of this run, with what the program's hooks add (customize_summary); printed when asked.
+        local: the run's local context when the context no longer holds it (a step that failed leaves its own).
+        """
+
+        con = ctx['control'].get('con', False)
+        ctx_tasks = ctx['tasks']
+        if isinstance(local, dict):
+            ctx_tasks['local'] = local
+        local = ctx_tasks.get('local') or {}
+
+        try:
+            resolved = provenance.collect_resolved(ctx_tasks.get('global') or {})
+        except Exception as e:                           # the summary never spoils a run
+            resolved = {}
+
+        summary = run_summary_of(local, ctx_tasks.get('global'), params, result, resolved,
+                                 error = error, built_now = built_now, run_skipped = run_skipped)
+
+        api_code = (local.get('selected-program') or {}).get('api_code')
+        if hasattr(api_code, 'customize_summary') and callable(getattr(api_code, 'customize_summary')):
+            try:
+                r = api_code.customize_summary(ctx, summary)
+                if isinstance(r, dict) and r.get('return', 0) > 0 and con:
+                    print (f'cMeta warning: the program\'s summary hook failed: {r.get("error")}')
+            except Exception as e:
+                if con:
+                    print (f'cMeta warning: the program\'s summary hook failed: {type(e).__name__}: {e}')
+
+        wanted = params.get('summary')
+        if con and (wanted is None or provenance.is_true(wanted)):
+            print ('')
+            for line in summary_block(summary):
+                print (line)
+            print ('')
+
+        return summary
 
 
 
@@ -658,6 +1540,8 @@ class CTask(InitCTask):
                 if _compiled_state_local:
                     ctx_setup_compile = _compiled_state_local.get('setup-compile')
 
+        built_now = False                        # for the summary: compiled in this run, or reused
+
         if not compile_desc.get('skip', False) and not skip_compile:
             if con and verbose:
                 print ('')
@@ -745,7 +1629,28 @@ class CTask(InitCTask):
                         if con and verbose:
                             print (f'{space}REUSING EXISTING LOCAL COMPILE CONTEXT ...')
 
+                        # The cached local carries the parameters of the request that made the build - its
+                        # --check_output, --repeat, --calibrate ... - which are not this run's: the live parameters
+                        # stay, with the compile parameters of the build (its defines and flags as customized)
+                        # over their compile section alone
+                        _live_params = copy.deepcopy(ctx['tasks']['local'].get('params') or {})
+                        _built_compile = copy.deepcopy((_compiled_state_local.get('params') or {}).get('compile') or {})
+
                         self.cm.utils.common.deep_merge(ctx['tasks']['local'], _compiled_state_local, append_lists=False)
+
+                        _local_params = ctx['tasks']['local'].get('params')
+                        if isinstance(_local_params, dict):
+                            _local_params.clear()
+                            _local_params.update(_live_params)
+                            if _built_compile:
+                                if not isinstance(_local_params.get('compile'), dict):
+                                    _local_params['compile'] = {}
+                                self.cm.utils.common.deep_merge(_local_params['compile'], _built_compile, append_lists=False)
+                            if _local_params is not params:
+                                for k in list(params):
+                                    if k not in _local_params:
+                                        del params[k]
+                                params.update({k: v for k, v in _local_params.items()})
 
                         # However, take original selected-program from the beginning of this task
                         # since it has initialized code that is not serializable!
@@ -777,6 +1682,7 @@ class CTask(InitCTask):
                 ###########################################################################################
                 compile_uses = compile_desc.get('uses')
                 if compile_uses:
+                    built_now = True
                     self_time_compile_with_cmeta = time.monotonic()
 
                     # The stamp of the build folder: a rebuild that this run implies (the targets
@@ -918,27 +1824,81 @@ class CTask(InitCTask):
 
             run_uses = run_desc.get('uses')
             if run_uses:
-                p = {'category': self.category_alias + ',' + self.category_uid,
-                     'command': 'use',
-                     'con': con,
-                     'quiet': quiet,
-                     'verbose': verbose,
-                     'ctx': ctx,
-                     'desc': run_uses,
-                     'local': ctx['tasks']['local'], # Reuse local from this task (selected-program)
-                     'task_artifact_alias': self.artifact_alias,
-                     'task_artifact_uid': self.artifact_uid,
-                     'task_artifact_path': self.artifact_path,
-                     'self_desc': desc,
-                     'uparams': params,
-                    }
+                # Every dataset step takes --dataset and --dataset_file of the program unless it names its own
+                self.dataset_steps_take_the_programs_params(run_uses)
 
-                r = self.cm.access(p)
+                run_local = ctx['tasks']['local']    # the run's context: a step that fails leaves its own behind
 
-                rx = self.cm.utils.files.write_file(path_repro_run, {'ctx':ctx, 'result':r}, safe_dump = True)
-                if self.cm.catch_error(rx): return rx
-
+                # --calibrate: the kernel's repeat raised until the run lasts about the target, as CK did - the
+                # run's steps again with the next repeat, until the plan says it is done
+                r = self.calibration_plan(params, run_local, desc)
                 if self.cm.catch_error(r): return r
+                calibration = r['plan']
+
+                # The entries of the run's environment that take the repeat ({{local.params.repeat}}): a step expands
+                # them in place, so they are expanded again at every round
+                env_templates = {}
+                if calibration:
+                    for k, v in (((desc.get('local_vars') or {}).get('run_time_env')) or {}).items():
+                        if f'params.{calibration["param"]}' in str(v):
+                            env_templates[str(k)] = v
+
+                while True:
+                    if calibration:
+                        params[calibration['param']] = calibration['repeat']
+                        if isinstance(run_local.get('params'), dict) and run_local['params'] is not params:
+                            run_local['params'][calibration['param']] = calibration['repeat']
+                        if env_templates:
+                            fresh = copy.deepcopy(env_templates)
+                            rx = self.cm.utils.common.expand_strings_in_dict(fresh, ctx_tasks)
+                            if self.cm.catch_error(rx): return rx
+                            if not isinstance(run_local.get('run_time_env'), dict):
+                                run_local['run_time_env'] = {}
+                            run_local['run_time_env'].update(fresh)
+                        if con:
+                            print ('')
+                            print (f'{space}### Calibration round {calibration["rounds"] + 1} of {calibration["max"]}: '
+                                   f'{calibration["param"]} = {calibration["repeat"]}')
+
+                    p = {'category': self.category_alias + ',' + self.category_uid,
+                         'command': 'use',
+                         'con': con,
+                         'quiet': quiet,
+                         'verbose': verbose,
+                         'ctx': ctx,
+                         'desc': run_uses,
+                         'local': run_local,              # Reuse local from this task (selected-program)
+                         'task_artifact_alias': self.artifact_alias,
+                         'task_artifact_uid': self.artifact_uid,
+                         'task_artifact_path': self.artifact_path,
+                         'self_desc': desc,
+                         'uparams': params,
+                        }
+
+                    r = self.cm.access(p)
+
+                    rx = self.cm.utils.files.write_file(path_repro_run, {'ctx':ctx, 'result':r}, safe_dump = True)
+                    if self.cm.catch_error(rx): return rx
+
+                    if self.cm.catch_error(r):
+                        # The summary of a run that failed - what ran, where, what it left - before the error
+                        if calibration:
+                            result['calibration'] = calibration
+                        self.run_summary(ctx, params, result, error = r.get('error'), built_now = built_now, local = run_local)
+                        return r
+
+                    if not calibration:
+                        break
+
+                    calibration_step(calibration, ctx['tasks']['local'])
+                    if con and not calibration['done']:
+                        last = calibration['history'][-1]
+                        print ('')
+                        print (f'{space}### Calibration: the run lasted {seconds_text(last["seconds"])} with {calibration["param"]} = '
+                               f'{last["repeat"]}; next {calibration["param"]} = {calibration["repeat"]} (target {seconds_text(calibration["target"])})')
+                    if calibration['done']:
+                        result['calibration'] = {k: v for k, v in calibration.items() if k not in ('done', 'next')}
+                        break
 
             # Check result files
             result_files_data = ctx['tasks']['local'].get('result_files_data')
@@ -963,6 +1923,34 @@ class CTask(InitCTask):
                              'self_time_run_with_cmeta': time.monotonic() - self_time_run_with_cmeta}
         if build_disk_gb is not None:
             result['_impact']['disk_gb'] = build_disk_gb
+
+        # The outputs against the program's reference outputs, or recorded as the reference (--check_output)
+        output_check = None
+        if params.get('check_output') not in (None, False, 'no', 'false', 'off') and not (run_desc.get('skip', False) or skip_run):
+            try:
+                resolved = provenance.collect_resolved(ctx_tasks.get('global') or {})
+            except Exception:
+                resolved = {}
+            output_check = self.output_check(ctx, params, desc, artifact_alias or artifact_uid, artifact_uid, result,
+                                             ctx_tasks['local'], resolved)
+            if output_check:
+                result['output_check'] = output_check
+
+        # The summary of the run: printed (--summary=no: not), and in the result
+        result['summary'] = self.run_summary(ctx, params, result, built_now = built_now,
+                                             run_skipped = bool(run_desc.get('skip', False) or skip_run))
+
+        if output_check and output_check.get('status') in ('failed', 'error', 'no_reference'):
+            status = output_check['status']
+            if status == 'failed':
+                bad = ', '.join(f'{n} ({v.get("why")})' for n, v in (output_check.get('files') or {}).items() if v.get('status') != 'ok')
+                return self.cm.error(f'the outputs of {artifact_alias or artifact_uid} differ from the reference {output_check.get("case")}: {bad}')
+            return self.cm.error(output_check.get('error') or output_check.get('note') or 'the output check failed')
+
+        # A calibration that did not settle is a failed run, as it was for CK (the outputs of the last round stay)
+        calibration = result.get('calibration') if isinstance(result.get('calibration'), dict) else None
+        if calibration and calibration.get('success') is False:
+            return self.cm.error(f'{artifact_alias or artifact_uid}: {calibration.get("why") or "the calibration failed"}')
 
         return result
 

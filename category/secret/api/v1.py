@@ -456,7 +456,7 @@ class Category(InitCategory):
             notes.append('--unlock needs a person at a terminal (not -q)')
             return 'ok'
         try:
-            value = unseal(text, getpass.getpass(f'Password of the secret {s["alias"]}: '))
+            value = unseal(text, self._hidden(f'Password of the secret {s["alias"]}: '))
         except (KeyboardInterrupt, EOFError):
             notes.append('not unlocked: cancelled')
             return 'ok'
@@ -697,6 +697,14 @@ class Category(InitCategory):
         return {'return': 0, 'path': path, 'set': dict(rs['pairs'])}
 
     ############################################################
+    def _hidden(self, prompt):
+        """
+        A password or a token typed (or pasted) at a hidden prompt: a mask for every character, Backspace and
+        Escape, when the engine has read_hidden (cmeta.utils.sys, 0.43+); getpass - nothing shown - before.
+        """
+        reader = getattr(getattr(self.cm.utils, 'sys', None), 'read_hidden', None)
+        return reader(prompt) if callable(reader) else getpass.getpass(prompt)
+
     def _interactive(self, ctx):
         """
         A person can type here: not -q (a quiet run never answers a prompt), and a terminal - on Windows a real
@@ -777,7 +785,7 @@ class Category(InitCategory):
             return self.cm.error(f'{s["alias"]} is password-protected and nobody can type the password here (no terminal, or -q)')
         for attempt in range(1, TRIES + 1):
             try:
-                value = unseal(text, getpass.getpass(f'Password of the secret {s["alias"]}: '))
+                value = unseal(text, self._hidden(f'Password of the secret {s["alias"]}: '))
             except (KeyboardInterrupt, EOFError):
                 return self.cm.error(f'{s["alias"]}: cancelled')
             except (ValueError, KeyError, RuntimeError) as e:
@@ -826,16 +834,16 @@ class Category(InitCategory):
         try:
             if ctx['control'].get('con', False):
                 print (f'cMeta info: {s["alias"]} keeps one token (an API key, the password of a service): paste it at the next '
-                       'prompt - nothing is shown as you type' + (', then choose the password that protects it' if password_protected else ''))
-            value = getpass.getpass(f'Token/secret of {s["alias"]}: ').strip()
+                       'prompt - a * for every character, Backspace takes one away, Escape all' + (', then choose the password that protects it' if password_protected else ''))
+            value = self._hidden(f'Token/secret of {s["alias"]}: ').strip()
             if not value:
                 return self.cm.error('no token typed: nothing was written')
             text = value + '\n'
             if password_protected:
-                password = getpass.getpass('A password for it (asked at each use): ')
+                password = self._hidden('A password for it (asked at each use): ')
                 if not password:
                     return self.cm.error('an empty password: nothing was written')
-                if getpass.getpass('The same password again: ') != password:
+                if self._hidden('The same password again: ') != password:
                     return self.cm.error('the two passwords differ: nothing was written')
                 text = seal(value, password)
                 # never keep what would not open again
@@ -886,6 +894,37 @@ class Category(InitCategory):
                 print ('cMeta warning: a password of fewer than 8 characters keeps the value from a casual reader, '
                        'not from someone who copies the file and tries passwords')
         return {'return': 0, 'secret': s['alias'], 'file': path, 'password_protected': bool(password_protected)}
+
+    ############################################################
+    def call_(self, ctx, arg1: str = None, func = None):
+        """
+        Call a Python function with the value of a token secret: func(value) runs in this process, inside this
+        command, and the cMeta dictionary it returns is the result of the command - the way "run" gives the value
+        to a command's environment. The value is never printed, written or returned; a password-protected secret
+        asks for its password first (a person at a terminal, never -q). For a cMeta component that needs a token
+        in its own process: the engine's "cx repo pull hf://<owner>/<name> --identity=<alias>" fetches a private
+        or gated repository of the Hugging Face Hub inside such a call. A Python caller only - from the command
+        line there is no function to call:
+
+            cm.access({'category': 'secret', 'command': 'call', 'arg1': 'my-hf-token', 'func': fetch})
+        """
+        if not callable(func):
+            return self.cm.error('cx secret call is for a Python caller: cm.access({"category": "secret", "command": "call", '
+                                 '"arg1": <alias>, "func": <a function of the value>}) - from the command line, cx secret run')
+        r = self._one(ctx, arg1, ('token',), 'call')
+        if r['return'] > 0:
+            return r
+        s = r['secret']
+        opened = self._value(ctx, s)
+        if opened['return'] > 0:
+            return opened
+        try:
+            result = func(opened['value'])
+        finally:
+            del opened
+        if not isinstance(result, dict) or 'return' not in result:
+            return self.cm.error(f'{s["alias"]}: the function called with the value must return a cMeta dictionary (return, ...)')
+        return result
 
     ############################################################
     def run_(self, ctx, arg1: str = None, env: dict = None, window: bool = False, pause: bool = False, log: str = '',

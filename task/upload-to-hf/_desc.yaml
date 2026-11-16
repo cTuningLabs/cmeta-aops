@@ -1,0 +1,39 @@
+authors: Grigori Fursin
+
+# Upload a folder or a file to a repository of the Hugging Face Hub - a dataset (the default) or a model - with the hf
+# CLI, the access token coming from a cMeta secret: the repository is made when it does not exist (--create=no
+# refuses instead), the files go up with "hf upload" (several commits for a big folder; the same command again
+# resumes an interrupted upload), and the gating of the repository is set when asked. Every hf command runs with the
+# token in its environment alone (never on a command line, in a file or in the environment of cMeta), through
+# "cx secret run". A password-protected secret asks for its password at each command; on Windows, without a terminal
+# (an AI agent) or with --window, in a console window of its own that shows SUCCESS or FAILED until Enter.
+#
+#   cxt upload-to-hf <folder> ctuning/<name>                      # the token secret whose _desc.yaml says "service: huggingface"
+#   cxt upload-to-hf <folder> ctuning/<name> --secret=<alias> --gated=manual --message="first upload"
+#   cxt upload-to-hf <folder> ctuning/<name> --type=model --private
+#   cxt upload-to-hf <folder> ctuning/<name> --dry_run           # the commands; nothing made or uploaded
+
+cache: False
+
+params_map:
+  arg2: folder
+  arg3: repo
+
+# The switches as words of the command line (--private, --create=no): run() reads its parameters through
+# **kwargs, so the task category is told here which ones are booleans
+cli_params:
+  create: bool
+  private: bool
+  window: bool
+  dry_run: bool
+
+uses:
+  - task: runner,1e48cc0c5f6041a5
+
+  - task: setup,a2f9b61079ce4333
+    name: hf,b52c8be3e69b4f41
+
+# The variables of hf's environment during the commands; {secret} is the value of the secret (the access token).
+secret_env:
+  HF_TOKEN: '{secret}'
+  HF_HUB_DISABLE_TELEMETRY: '1'

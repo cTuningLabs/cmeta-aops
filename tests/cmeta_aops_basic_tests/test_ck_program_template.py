@@ -253,3 +253,107 @@ def test_a_dataset_without_a_description_is_as_before(cm):
     r = dataset(cm, 'test-ck-dataset-plain')
     assert os.path.samefile(r['path'], root / 'files' / 'y.txt')
     assert r['files'] == ['y.txt', 'z.txt'] and 'number' not in r
+
+
+# A dataset made of sub-datasets (sub_datasets of its _desc.yaml): files/<name>/ for those kept with the artifact
+
+def make_sub_datasets(cm, name, local, desc):
+    """A dataset with sub-datasets: local = {name: [files]} kept in files/<name>/, desc = its _desc.yaml."""
+    r = cm.access({'category': 'dataset', 'command': 'create', 'arg1': name, 'con': False})
+    assert r['return'] == 0, r.get('error')
+    root = Path(r['path'])
+    for sub, files in local.items():
+        (root / 'files' / sub).mkdir(parents=True)
+        for f in files:
+            (root / 'files' / sub / f).write_text(f'{sub}/{f}')
+    (root / '_desc.yaml').write_text(yaml.safe_dump(desc, sort_keys=False))
+    return root
+
+
+def run_dataset(cm, **params):
+    return cm.access(dict({'category': 'task', 'command': 'run', 'arg1': 'dataset', 'con': False, 'quiet': True}, **params))
+
+
+def test_a_dataset_of_sub_datasets_gives_the_first_or_the_one_named(cm):
+    root = make_sub_datasets(cm, 'test-ck-dataset-subs',
+                             {'in-0001': ['a.txt', 'b.txt'], 'in-0002': ['a.txt']},
+                             {'sub_datasets': {'in-0001': {'files': ['b.txt'], 'number': 5, 'tags': ['small'], 'desc': 'the first'},
+                                               'in-0002': {'files': ['a.txt']}}})
+    r = dataset(cm, 'test-ck-dataset-subs')
+    assert r['sub_dataset'] == 'in-0001' and r['sub_datasets'] == ['in-0001', 'in-0002']
+    assert os.path.samefile(r['path'], root / 'files' / 'in-0001' / 'b.txt')
+    assert os.path.samefile(r['path_files'], root / 'files' / 'in-0001')
+    # The files are those listed (a folder may hold more: a file not listed is not taken, but can be asked for)
+    assert r['files'] == ['b.txt'] and r['number'] == '5' and r['tags'] == ['small'] and r['desc'] == 'the first'
+    assert r['artifact_au'].startswith('test-ck-dataset-subs')
+
+    # Named with the dataset, by --filename, a file of it; a file alone is one of the default sub-dataset
+    for params in ({'name': 'test-ck-dataset-subs/in-0002'}, {'name': 'test-ck-dataset-subs', 'filename': 'in-0002'},
+                   {'name': 'test-ck-dataset-subs', 'filename': 'in-0002/a.txt'}, {'name': 'test-ck-dataset-subs/in-0002/a.txt'}):
+        r = dataset(cm, **params)
+        assert r['sub_dataset'] == 'in-0002' and os.path.samefile(r['path'], root / 'files' / 'in-0002' / 'a.txt'), params
+        assert 'number' not in r and 'tags' not in r
+    r = dataset(cm, 'test-ck-dataset-subs', filename='a.txt')
+    assert r['sub_dataset'] == 'in-0001' and os.path.samefile(r['path'], root / 'files' / 'in-0001' / 'a.txt')
+
+    # Names that do not exist are refused, and a sub-dataset of a dataset that has none
+    for params in ({'name': 'test-ck-dataset-subs/in-0009'}, {'name': 'test-ck-dataset-subs', 'filename': 'in-0009/a.txt'},
+                   {'name': 'test-ck-dataset-subs', 'filename': 'in-0001/z.txt'}):
+        r = run_dataset(cm, **params)
+        assert r['return'] > 0, params
+    r = run_dataset(cm, name='test-ck-dataset-files/x')
+    assert r['return'] > 0 and 'no sub-datasets' in r['error']
+
+
+def test_a_sub_dataset_not_kept_with_the_artifact_comes_from_the_folder_its_description_prepares(cm, tmp_path):
+    # A task that stands for a download: its result names the folder that holds a folder per sub-dataset
+    r = cm.access({'category': 'task', 'command': 'create', 'arg1': 'test-ck-dataset-prepare', 'con': False})
+    assert r['return'] == 0, r.get('error')
+    task = Path(r['path'])
+    (task / '_desc.yaml').write_text('store_global: True\nstorage_key: test-ck-dataset-prepare\n')
+    (task / 'api_v1.py').write_text(
+        'from task_c36be4b9314a45e0.api.ctask import InitCTask\n'
+        'class CTask(InitCTask):\n'
+        '    def __init__(self, *args, **kwargs):\n'
+        '        super().__init__(*args, module_file_path=__file__, **kwargs)\n'
+        '    def run(self, ctx, root=None):\n'
+        '        return {"return": 0, "path_root": root, "prepared": True}\n')
+    meta = next(p for p in (task / '_cmeta.yaml', task / '_cmeta.json') if p.exists())
+    uid = yaml.safe_load(meta.read_text())['artifact']
+
+    prepared = tmp_path / 'prepared'
+    (prepared / 'in-0002').mkdir(parents=True)
+    (prepared / 'in-0002' / 'a.txt').write_text('prepared')
+    root = make_sub_datasets(cm, 'test-ck-dataset-subs-prepared', {'in-0001': ['a.txt']},
+                             {'sub_datasets': {'in-0001': {'files': ['a.txt']}, 'in-0002': {'files': ['a.txt']},
+                                               'in-0003': {'files': ['a.txt']}},
+                              'uses': [{'task': f'test-ck-dataset-prepare,{uid}', 'root': str(prepared)}],
+                              'result_from_ctx': '{{global.test-ck-dataset-prepare}}'})
+
+    # Kept with the artifact: nothing is prepared
+    r = dataset(cm, 'test-ck-dataset-subs-prepared')
+    assert os.path.samefile(r['path'], root / 'files' / 'in-0001' / 'a.txt') and 'prepared' not in r
+
+    # Not kept: from the folder the description's task names, the task's result kept
+    r = dataset(cm, 'test-ck-dataset-subs-prepared/in-0002')
+    assert os.path.samefile(r['path'], prepared / 'in-0002' / 'a.txt') and r['prepared'] is True
+    assert r['sub_dataset'] == 'in-0002' and r['files'] == ['a.txt'] and os.path.samefile(r['path_files'], prepared / 'in-0002')
+
+    # Neither kept nor prepared
+    r = run_dataset(cm, name='test-ck-dataset-subs-prepared/in-0003')
+    assert r['return'] > 0 and 'in-0003' in r['error']
+
+
+def test_run_takes_the_files_of_a_sub_dataset_in_its_order(ck, tmp_path):
+    hook = hooks(ck)
+    folder = tmp_path / 'dataset' / 'files' / 'in-0002'
+    folder.mkdir(parents=True)
+    for f in ('a.txt', 'b.txt', 'c.txt'):
+        (folder / f).write_text(f)
+    (tmp_path / 'dataset' / '_desc.yaml').write_text('sub_datasets:\n  in-0002:\n    files: [c.txt, b.txt, a.txt]\n')
+
+    # The order of the sub-dataset (the dataset task gives it; here from the _desc.yaml one level up)
+    ctx = context(['cpu'], local={'ck_dataset_more_files': True, 'dataset': {'path': str(folder / 'c.txt')}})
+    assert hook.customize_ck_run(ctx)['return'] == 0
+    assert [os.path.basename(f) for f in (ctx['tasks']['local']['input_files']['data1'],
+                                          ctx['tasks']['local']['input_files']['data2'])] == ['b.txt', 'a.txt']

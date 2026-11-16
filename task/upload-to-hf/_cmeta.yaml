@@ -1,0 +1,21 @@
+artifact: e5c9981079d34b0f
+category: task,c36be4b9314a45e0
+authors: Grigori Fursin
+creation_timestamp: '2026-11-16T11:07:41.374708+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.322
+  via: cmeta 0.42.0
+  by: Grigori Fursin
+desc: 'Upload a folder or a file to a Hugging Face Hub repository (a dataset, a model) with the hf CLI: the
+  repository made when it does not exist, its gating set, the access token of a cMeta secret in the environment
+  of hf alone - a password-protected secret asks for its password, on Windows in a console window of its own
+  when the caller has no terminal.'
+tags:
+- upload
+- huggingface
+- hf
+- dataset
+- model
+- hub
+- release

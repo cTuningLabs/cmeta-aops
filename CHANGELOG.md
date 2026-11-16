@@ -2,6 +2,93 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.72.0
+- **`cx secret call`: a Python function called with the value of a token secret.** `cm.access({'category': 'secret',
+  'command': 'call', 'arg1': <alias>, 'func': f})` opens the value (the password asked for a password-protected
+  secret, at a terminal), calls `f(value)` inside the command and returns the dictionary `f` returns - the value is
+  never printed, written or returned, as with `run`; from the command line there is no function to call. For a cMeta
+  component that needs a token in its own process: the engine's `cx repo pull hf://<owner>/<name> --identity=<alias>`
+  fetches a private or gated repository of the Hugging Face Hub inside such a call (cMeta 0.43).
+- **A dataset can be a whole set of inputs: sub-datasets.** `sub_datasets:` of a dataset's `_desc.yaml` names
+  them in order (the first is the default), each with its `files` (all of them, in the order a program takes them;
+  a file of the folder that is not listed is not taken), the `number` it stands for, its `tags` and a `desc`.
+  The files of a sub-dataset are in `files/<name>/` of the artifact when
+  they are kept with it; the others come from the folder the dataset's `uses:` task prepares (`path_root` of its
+  result, a folder per sub-dataset - one download for the whole set). The `dataset` task takes one as
+  `<dataset>/<name>` (`--dataset=ctuning-adpcm/adpcm-0007`), `<dataset>/<name>/<file>`, or as the file
+  (`--dataset_file=adpcm-0007`, `adpcm-0007/data.adpcm`, or a file of the default one); without a name the first,
+  or a choice on a console (`-q`: the first). Its result adds `sub_dataset` and `sub_datasets`; `template-ck-program`
+  reads the order of a sub-dataset's files too. Datasets without `sub_datasets:` are as before. The task has a
+  README now. Made for the cTuning MiDataSets of cmeta-ck-legacy: one dataset per kind of input (`ctuning-adpcm`
+  with its 20 inputs) instead of an artifact per input.
+- **A summary after every program run.** `compile-and-run-program` prints a block of sections set apart by a rule
+  of `=`: the standard output of the run when the run kept it, the standard error when there is one, the summary -
+  the program and its command, the targets, OK / FAILED / TIMED OUT with the exit code, the run time and the
+  kernel time, the host and its CPU (a CUDA run: the GPU, driver and CUDA; an OpenCL run: the devices), the tools
+  with their versions, the input (dataset, sub-dataset, file, size), the command line, the outputs with their sizes
+  and their folder, the build folder (built now or reused) and its scripts, the checks, and on a failure the error -
+  and the stats the program collected (its result files key by key: xOpenME's times). The same is in the result as
+  `summary`; `--summary=no` keeps the console quiet. A program's hooks add to it (`customize_summary(ctx, summary)`):
+  `template-ck-program` adds the CPU comparison of PolyBench/GPU, the OpenCL device of the run, PolyBench's size,
+  and the output CK redirected into `tmp-output1.tmp` / `tmp-output2.tmp`.
+- **`task/upload-to-hf`: a folder or a file uploaded to a Hugging Face Hub repository** (a dataset, a model) with the hf
+  CLI - the repository made when it does not exist, the files uploaded (`hf upload`, resumable), the gating set
+  (`--gated=manual|auto|no`: made private, filled, then gated and public in one step) - every command with the access
+  token of a cMeta secret in its environment alone, through `cx secret run` (`--secret=<alias>`, else the token secret
+  that declares `service: huggingface`), as `upload-to-pypi` does for PyPI. `--dry_run` prints the commands.
+- **Every program answers to `--dataset` and `--dataset_file`.** A dataset step of a run (`task: dataset,...`) that
+  does not name its own `name` and `filename` takes the program's `--dataset=<dataset>[/<sub-dataset>]` and
+  `--dataset_file=<file>` (compile-and-run-program adds them when the run's steps are assembled): `cbench-automotive-susan`
+  takes `--dataset=ctuning-image-pgm/image-pgm-0007` with no change to it; a step with its own values keeps them.
+- **`get-hf-dataset` fetches a folder of a repository** (`filename: adpcm/*`, a glob of `hf download --include`,
+  quoted so the shell leaves it alone; the result's `path` is the folder); the dataset task's `sub_datasets_folder:`
+  names where the sub-datasets are inside what `uses:` prepares, so one Hub repository with a folder per kind serves
+  many datasets, a kind at a time (`ctuning/cTuning-MiDataSets` for the 23 kinds of cmeta-ck-legacy). A README for the
+  task (it had none). A gated or private repository needs `hf auth login` once; the cache entry is per repository and
+  files, as before.
+- **`upload-to-pypi` and `upload-to-hf` with `--window` under `-q`**: a quiet run (no selection asked) that names
+  `--window` still gets the console window for the password of a password-protected secret.
+- **The reference outputs of a program: the category `program.output` and `cx program run ... --check_output`.** An
+  artifact per program (the program's alias; `output_check.artifact` names another program's when shared), a case per
+  command, dataset, sub-dataset, file and the parameters that matter - a folder named by a UID with `case.json` (the
+  key, the facts of the recording: date, host, CPU/GPU, targets, tools, the command; every output file with its size and
+  three digests) and the files themselves when they are small (10 MB). `--check_output` compares the run's outputs with
+  the case of the same key found in any repository, or records one when there is none; `=validate` (an error without a
+  reference), `=record` (with `--overwrite_output` over an existing case), `=no`; `--output_repo=<repo>` receives a
+  recording (`local` by default, as CK did). A file is the same by its digest, or but for the line ends or the spelling
+  of NaN, or - with `output_check.tolerance` - when every number of a text file is within it; a file the reference lacks
+  is added to it; a difference fails the run (the verdict in the summary's `check:` lines and the result's
+  `output_check`). `output_check:` of a program's `_desc.yaml` (and of `updates_cmd.<cmd>`): `files` (default: the
+  output files minus what the run printed and its times), `key_params` (dotted, `compile.size`), `tolerance`, `skip`,
+  `artifact`; a `customize_output_check(ctx, rules)` hook (`template-ck-program` adds PolyBench's size and dump).
+  The references of a repository on the Hugging Face Hub: `cx repo pull hf://...` (cMeta 0.43), `--output_repo` it,
+  `upload-to-hf` it back.
+- **The parameters of a run in its reference outputs and its summary; CK's calibration of the kernel's repeat.** A
+  case's key takes `key_values` too (`output_check.key_values`, or a hook's: values given as they are) and the facts
+  of a recording keep the request's parameters (`params`: `--repeat`, `--compile.*` ...), the calibration and the
+  times; `output_check.invariant_of_repeat` says the output does not depend on the repeat. `template-ck-program` puts
+  in the key the defines the program was built with (`compile.d.<NAME>`, with `--compile.size` / `n` / `precision` /
+  `dump` applied - every define it declares but XOPENME and WINDOWS: PolyBench's NI, NJ ..., DATA_TYPE) and the
+  kernel's `repeat` (CK's CT_REPEAT_MAIN; after a calibration, the one it settled on), and prints them in the summary
+  (`defines:`); `--compile.n=<N>` makes every array dimension N (square arrays, as CK's N did), `--compile.precision=
+  float|double` sets DATA_TYPE. `--calibrate[=<seconds>]` of `compile-and-run-program` raises the repeat until the run
+  lasts about the target (4 s as CK's calibration_time; `--calibrate_max`, 10 rounds as its calibration_max; a given
+  `--repeat` is the start): CK's rule - under half a second tenfold, within 0.8 and 1.4 of the target done, else
+  scaled by target / time -, the time from `execution_time` of a result file (xOpenME) else the run's wall time; the
+  summary's `calibration:` and `params:` lines, `calibration` in the result and in the case; a calibration that does
+  not settle fails the run, as it did for CK. The program's `local_vars.repeat_param` names another parameter than
+  `repeat` (9 + 5 tests).
+- **Reference outputs that hold across devices, compilers and architectures.** `output_check.ignore_lines`
+  (regular expressions): the lines of a text output that match are left out of every comparison - its digests and
+  its numbers - while the file is kept whole; the case records the patterns. A file neither the reference nor the run
+  made is the same; a recording restores the identity file (`_cmeta.yaml`) of a program's artifact that lost it (a
+  folder without it is found by no machine). `output_check.tolerance_abs`: the absolute floor of a numeric
+  comparison (default: the tolerance), one step of the last digit a program prints. `template-ck-program`:
+  PolyBench's dump is compared only when the arrays are dumped, within a relative `tolerance` of 1e-6 and a
+  `tolerance_abs` of 0.01 - the step of the 2 decimals it prints (x86 and arm64 round fused multiply-adds
+  differently; a program's own overrides them); the other run parameters of a program's environment (`{{local.params.<name>|<default>}}`, the
+  codelet's `--time`) are in the key. The summary tells the files the same from the files added to a reference.
+
 ## 0.71.0
 - **A program without hooks of its own takes those of the template it inherits: `program/template-ck-program`, the
   hooks of programs converted from the Collective Knowledge format** (cBench, PolyBench/C, PolyBench/GPU, the codelets

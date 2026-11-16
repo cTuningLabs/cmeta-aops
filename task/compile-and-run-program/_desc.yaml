@@ -29,6 +29,8 @@ cli_params:
   skip_compile: bool
   skip_run: bool
   skip_size_check: bool
+  summary: bool
+  overwrite_output: bool
 
 # The key of the config artifact "task" this task reads besides the ones its README names.
 

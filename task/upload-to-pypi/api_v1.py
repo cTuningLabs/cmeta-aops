@@ -106,8 +106,9 @@ class CTask(InitCTask):
                 print('  ' + ' '.join(cmd))
             return {'return': 0, 'files': files, 'repository': repo, 'secret': secret, 'cmd': cmd, 'dry_run': True}
 
+        # --window asks for the console window: a quiet run (-q, no selection asked) may still want it for the password
         r = self.cm.access({'category': SECRET_CATEGORY, 'command': 'run', 'arg1': secret, 'env': secret_env, 'cmd': cmd,
-                            'window': window, 'con': con, 'quiet': quiet})
+                            'window': window, 'con': con, 'quiet': False if window else quiet})
         if r['return'] > 0:
             return r
 

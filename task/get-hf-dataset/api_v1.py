@@ -105,7 +105,8 @@ class CTask(InitCTask):
             # README came); the file names of the cache entry stay as described
             if files:
                 for f in files:
-                    includes += ' --include ' + '/'.join(p for p in f.replace('\\', '/').split('/') if p)
+                    # Quoted: a glob (adpcm/*) must reach hf, not the shell of the command
+                    includes += ' --include "' + '/'.join(p for p in f.replace('\\', '/').split('/') if p) + '"'
 
             ctx['tasks']['local']['includes'] = includes
 
@@ -180,9 +181,18 @@ class CTask(InitCTask):
         features = _local.get('features')
 
         path_root = os.path.abspath(directory)
+
+        def place(name):
+            """A file of the dataset by its name, or the folder a pattern (adpcm/*) fetched; None when not there."""
+            name = name.replace('//', os.sep)
+            if any(c in name for c in '*?['):
+                folder = os.path.join(path_root, os.path.dirname(name.replace('\\', '/').replace('/', os.sep)))
+                return folder if os.path.isdir(folder) else None
+            p = os.path.join(path_root, name)
+            return p if os.path.isfile(p) else None
+
         if filename:
-            filename = filename.replace('//', os.sep)
-            path = os.path.join(path_root, filename) 
+            path = place(filename) or os.path.join(path_root, filename.replace('//', os.sep))
         else:
             path = path_root
 
@@ -191,10 +201,9 @@ class CTask(InitCTask):
 
         if filenames:
             for k in filenames:
-                f = filenames[k].replace('//', os.sep)
-                p = os.path.join(path_root, f)
-                if not os.path.isfile(p):
-                    return self.cm.error(f'Dataset sub-file "{p}" not found in "{path_root}" ("{__file__})"')
+                p = place(filenames[k])
+                if p is None:
+                    return self.cm.error(f'Dataset sub-file "{filenames[k]}" not found in "{path_root}" ("{__file__})"')
                 paths[k] = p
                 qpaths[k] = self.cm.q(p)
 

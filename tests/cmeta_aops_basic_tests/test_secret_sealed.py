@@ -92,6 +92,9 @@ def answers(monkeypatch, *typed):
 
     monkeypatch.setattr(sys, 'stdin', _TTY())
     monkeypatch.setattr('getpass.getpass', fake)
+    # cMeta 0.43+ asks with its masked prompt (cmeta.utils.sys.read_hidden), which reads the console's keys when
+    # stdin is a terminal - the same answers there, or the fake terminal would wait for a real key
+    monkeypatch.setattr('cmeta.utils.sys.read_hidden', fake, raising=False)
     return seen
 
 
