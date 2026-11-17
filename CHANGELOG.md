@@ -21,6 +21,16 @@ All notable changes to cMeta AOps are documented here, newest first.
     product details where none answers, and as a note when Mozilla is ahead (on 2026-11-17 Fedora 44 offered 157.0
     and a Windows machine's winget 159.0, Mozilla 160.0). When apt's or dnf's refreshed lists offer another version
     than the one asked for, nothing is installed and the error says to run the upgrade again.
+- **`tool/firefox`: an upgrade brings the version `--status` names, on every system.** Its newest version was
+  Mozilla's on Windows, macOS and with apt, while setup detects the tool again after an upgrade at the version it
+  asked for - so whenever winget, the cask or the distribution was behind Mozilla, the upgrade succeeded and then ended
+  "not found after the upgrade". The newest version now comes from the system's channel, as for `thunderbird`
+  (`winget show`, `brew info`, apt's candidate, dnf, the snap; Mozilla's as a note when it is ahead), and so do the
+  other lessons of that tool: winget's package of the installation's language (and ESR) from its Uninstall entry, a
+  Firefox winget does not link to its package installed over in its folder, the cask adopting an app from Mozilla's
+  disk image (`brew upgrade` failed on it), Homebrew without its own update before an install, the version on macOS
+  from `application.ini` (a quarantined app's `--version` waits for Gatekeeper), apt's refreshed lists checked against
+  the version asked for, and dnf (Fedora) beside snap and apt.
 
 ## 0.72.2
 - **An interactive Claude Code session opens with its prompt again.** `run-claude` puts `--` before the trailing

@@ -286,3 +286,54 @@ def test_thunderbird_quarantine_on_macos(tb):
     assert not tb["quarantine_waits"]("00c1;6939f0a1;Safari;6B2F4E0C-1D2E-4F3A-9B8C-7D6E5F4A3B2C")
     assert not tb["quarantine_waits"]("") and not tb["quarantine_waits"](None)
     assert tb["quarantine_waits"]("not flags")
+
+
+############################################################ tool/firefox: the newest version from the system's channel
+
+# "winget show --id Mozilla.Firefox -e --source winget" on Windows 11 (2026-11-17), its first lines
+FF_WINGET_SHOW = """Found Mozilla Firefox (en-US) [Mozilla.Firefox]
+Version: 160.0
+Publisher: Mozilla
+Publisher Url: https://www.mozilla.org/
+"""
+
+# "apt-cache policy firefox" on Ubuntu 26.04 (the P14s Gen 4, 2026-11-17): the transitional package of the snap
+FF_APT_POLICY = """firefox:
+  Installed: 1:1snap1-0ubuntu9.1
+  Candidate: 1:1snap1-0ubuntu9.1
+  Version table:
+ *** 1:1snap1-0ubuntu9.1 500
+        500 http://archive.ubuntu.com/ubuntu resolute-updates/main amd64 Packages
+        100 /var/lib/dpkg/status
+"""
+
+# "brew info --json=v2 --cask firefox" on macOS (2026-11-17), the keys the tool reads
+FF_CASK_INFO = """{"casks": [{"token": "firefox", "version": "160.0", "auto_updates": true,
+"artifacts": [{"app": ["Firefox.app"], "target": "/Applications/Firefox.app"}]}]}"""
+
+
+def test_firefox_versions_of_the_system_channels(ff):
+    assert ff["version_of_winget_show"](FF_WINGET_SHOW) == "160.0"
+    assert ff["version_of_cask_info"](FF_CASK_INFO) == "160.0" and ff["version_of_cask_info"]("") is None
+    # Ubuntu's firefox deb only installs the snap: no version of its own; Mozilla's deb and an epoch
+    assert ff["apt_versions"](FF_APT_POLICY) == (None, None)
+    assert ff["apt_versions"]("firefox:\n  Installed: (none)\n  Candidate: 1:160.0~build1\n") == (None, "160.0")
+    assert ff["plain"]("160.0~build1") == "160.0" and ff["plain"]("153.7.0esr") == "153.7.0" and ff["plain"]("") is None
+    assert ff["older"]("159.0", "160.0") and not ff["older"]("160.0.1", "160.0") and not ff["older"]("160.0", "160.0")
+    # the shape of "dnf info firefox" (the installed and the available package): the newest one
+    dnf = "Installed packages\nName : firefox\nVersion : 158.0\n\nAvailable packages\nName : firefox\nVersion : 160.0\n"
+    assert ff["newest_of_dnf_info"](dnf) == "160.0" and ff["newest_of_dnf_info"]("") is None
+
+
+def test_firefox_on_windows_and_after_a_refresh(ff):
+    assert ff["arp_name_locale"]("Mozilla Firefox (x64 en-US)") == ("release", "en-US")
+    assert ff["arp_name_locale"]("Mozilla Firefox ESR (x64 de)") == ("esr", "de")
+    assert ff["arp_name_locale"]("Mozilla Maintenance Service") == (None, None)
+    assert ff["winget_id"]("release", "en-US") == "Mozilla.Firefox" and ff["winget_id"]("release", "de") == "Mozilla.Firefox.de"
+    assert ff["winget_id"]("esr", "fr") == "Mozilla.Firefox.ESR.fr" and ff["winget_id"](None, None) == "Mozilla.Firefox"
+    assert 2316632084 & 0xFFFFFFFF == ff["WINGET_NOT_INSTALLED"] and -1978335189 & 0xFFFFFFFF == ff["WINGET_NO_UPGRADE"]
+    assert ff["moved_on"]("159.0", "160.0", "apt's refreshed package lists").startswith(
+        "apt's refreshed package lists offer Firefox 160.0 now, not 159.0")
+    assert ff["moved_on"]("160.0", "1:160.0~build1", "x") is None and ff["moved_on"](None, "160.0", "x") is None
+    assert ff["quarantine_waits"]("0081;6939f0a1;Safari;6B2F4E0C") and not ff["quarantine_waits"]("00c1;6939f0a1;Safari;6B2F4E0C")
+    assert ff["linux_channel"]("/usr/lib64/firefox/firefox", False, None, "firefox") == "rpm"
