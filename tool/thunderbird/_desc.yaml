@@ -1,0 +1,48 @@
+authors: Grigori Fursin
+
+# Mozilla Thunderbird (README.md, api_v1.py): detected where the system keeps it and upgraded through the system's own
+# channel, in the update channel it follows (the monthly release or the ESR) - never as a copy in the cMeta cache:
+#
+#   cx tool setup thunderbird --status    the installed version, the newest one of its channel, outdated or not
+#   cx tool upgrade thunderbird           Linux: snap refresh (Thunderbird closed), apt or dnf; Windows: winget;
+#                                         macOS: brew cask (thunderbird or thunderbird@esr)
+#   cx tool install thunderbird [--with.channel=esr]   where it is missing: the release, or the ESR
+
+names:
+  - thunderbird{{global.host.vars.file_ext_exe}}
+
+# detect_versions (api_v1.py) answers "THUNDERBIRD version : <x>": --version on Linux and macOS, application.ini beside
+# thunderbird.exe on Windows (which prints nothing to a console); an ESR's "esr" suffix is not kept
+match_version:
+  - regex: 'THUNDERBIRD version\s*:\s*([0-9][0-9.]*)'
+    group: 1
+  - regex: 'Thunderbird\s+([0-9][0-9.]*)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+# Installed into the system (/snap/bin, Program Files, /Applications): --status guesses no other channel from that
+installs_into_system: True
+
+requires_sudo:
+  linux: True
+  windows: True
+
+extra_paths:
+  linux:
+    - /snap/bin
+    - /usr/bin
+  windows:
+    - 'C:\Program Files\Mozilla Thunderbird'
+    - 'C:\Program Files (x86)\Mozilla Thunderbird'
+  darwin:
+    - /Applications/Thunderbird.app/Contents/MacOS
+    - '{{user_home}}/Applications/Thunderbird.app/Contents/MacOS'
+
+install_help_text: |
+  Thunderbird could not be installed automatically: https://www.thunderbird.net/
+    Linux   : sudo snap install thunderbird (Ubuntu; --channel=esr/stable for the ESR), or the distribution's package
+              (apt / dnf / pacman install thunderbird)
+    Windows : winget install --id Mozilla.Thunderbird -e (the ESR: Mozilla.Thunderbird.ESR; another language:
+              Mozilla.Thunderbird.<language>, Mozilla.Thunderbird.ESR.<language>)
+    macOS   : brew install --cask thunderbird (the ESR: thunderbird@esr)

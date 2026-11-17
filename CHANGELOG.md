@@ -2,6 +2,26 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV
+- **New tool `thunderbird`: Mozilla Thunderbird upgraded through the system's own channel, in the update channel it
+  follows (the monthly release or the ESR).** `cx tool setup thunderbird --status` tells the installed version and the
+  newest one of its channel, `cx tool upgrade thunderbird` brings it there, `cx tool install thunderbird` installs the
+  release (`--with.channel=esr`: the ESR). Nothing is copied into the cMeta cache, and an upgrade never switches the
+  channel (a profile is not opened by an older Thunderbird).
+  - **The channel** is read from the installation: `channel-prefs.js` and the Uninstall entry on Windows (which also
+    gives the language), the cask or the `esr` of `--version` on macOS (Mozilla's app keeps it in
+    `ChannelPrefs.framework`), the snap's tracked channel or the distribution's package on Linux.
+  - **Linux:** the snap (`snap refresh`, refused while Thunderbird runs; `esr/stable` for the ESR), else the
+    distribution's package with apt or dnf. **Windows:** winget, the package of the channel and the language
+    (`Mozilla.Thunderbird[.ESR][.<language>]`); a Thunderbird that winget does not link to its package (installed by
+    Mozilla's own installer) gets that package installed over it, in its folder. **macOS:** Homebrew's cask
+    `thunderbird` or `thunderbird@esr`.
+  - **The newest version** is the one the system's channel gives - the snap's channel, apt's candidate, dnf, winget's
+    package, the cask - so that an upgrade brings exactly it (setup detects the tool again at that version); Mozilla's
+    product details where none answers, and as a note when Mozilla is ahead (on 2026-11-17 Fedora 44 offered 157.0
+    and a Windows machine's winget 159.0, Mozilla 160.0). When apt's or dnf's refreshed lists offer another version
+    than the one asked for, nothing is installed and the error says to run the upgrade again.
+
 ## 0.72.2
 - **An interactive Claude Code session opens with its prompt again.** `run-claude` puts `--` before the trailing
   prompt of an interactive session (or before the request to read its file). Claude Code's `--add-dir` takes several
