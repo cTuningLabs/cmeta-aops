@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.73.0
 - **`cx host sync` looks before it changes anything: a file both sides changed stops the run, with a suggestion.**
   rclone's own rule for a file changed on both sides renames BOTH copies (`<name>.conflict1`, `<name>.conflict2`): the
   name is gone on both machines, and a run that aborts after such renames leaves it that way - with a `--resync` asked
