@@ -489,6 +489,15 @@ line argument (the agent tasks' interactive sessions, `opencode run`, `openclaw 
 writes it to a file above that length and passes a one-line request to read it
 first — see [agent-tasks.md](agent-tasks.md#flags-shared-by-run-claude--run-codex--run-opencode--run-agy--run-gemini--run-hermes).
 
+And `file_cache_folder(places, sub_folder, key, con, space)`: the folder of the file cache a task
+keeps a large download or a clone in (`global.init.file_cache`, the key `file_cache` of the
+`task` config: one place, or several separated as `PATH` is). A task never chooses the place
+itself: a place that is away - a USB drive that is not connected - is passed over for the
+next one and the run says so, what is asked for (`sub_folder`) is taken from the place that
+has it already, and no place of the list stops the run with what to do
+(`{'return': 1, 'error': ...}`). `get-hf-model`, `get-hf-dataset`, `clone-git-to-cache` and
+`tool/hf` (`hf.cache`) ask it.
+
 ## Bootstrap chain & key building-block tasks
 
 | Task | UID | Role |

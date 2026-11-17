@@ -1,0 +1,16 @@
+artifact: 45ced8ea44974a37
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-11-17T06:46:19.847938+00:00'
+desc: Mozilla Thunderbird, detected where the system keeps it and upgraded through the system's own channel - snap,
+  apt or dnf on Linux, winget on Windows, Homebrew's cask on macOS - in its own update channel (the monthly release or
+  the ESR); the newest version from Mozilla or the snap's channel.
+generator:
+  method: agent
+  agent: Claude Code 2.1.322
+  model: claude-opus-5-5
+  via: cmeta 0.42.0
+tags:
+- email
+- thunderbird
+- mozilla

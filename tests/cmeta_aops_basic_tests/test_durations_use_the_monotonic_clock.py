@@ -35,6 +35,13 @@ ALLOWED = (
     ('task/manage-cmeta-project/runtime.py', 'return time.time() - ticks() / 1000.0'),
     # the same for every task that keeps a process number (recorded_process_alive of the task base module)
     ('category/task/api/ctask.py', 'return time.time() - ticks() / 1000.0'),
+    # the two-way sync, on each side: when the machine started, compared with the time a session's marker was written
+    ('category/host/api/v1.py', 'return time.time() - ticks() / 1000.0'),
+    # the browser and mail tools: how old apt's package lists are, the wall clock against the modification time of
+    # their newest file (a time the file system wrote)
+    ('tool/firefox/api_v1.py', 'if time.time() - newest < 24 * 3600:'),
+    ('tool/google-chrome/api_v1.py', 'if time.time() - newest < 24 * 3600:'),
+    ('tool/thunderbird/api_v1.py', 'if time.time() - newest < 24 * 3600:'),
 )
 
 

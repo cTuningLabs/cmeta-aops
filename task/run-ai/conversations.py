@@ -260,11 +260,18 @@ def running_path(log_dir, stamp):
     return os.path.join(log_dir, stamp + RUNNING_SUFFIX)
 
 
-def write_running(log_dir, stamp, conv_id, harness):
-    """The marker of a run that is starting -> its path."""
+def write_running(log_dir, stamp, conv_id, harness, project='', areas=None):
+    """The marker of a run that is starting -> its path. project: the project's folder; areas: the folders this run
+    may write while it lives - its project and the !AI of the artifacts it uses. A two-way sync leaves them out while
+    the marker is there (cx host sync), so that a file half written here never meets the other side's copy."""
     path = running_path(log_dir, stamp)
-    _write_json(path, {'stamp': stamp, 'conversation': conv_id, 'harness': harness, 'host': host_name(), 'pid': os.getpid(),
-                       'started': now_iso()})
+    marker = {'stamp': stamp, 'conversation': conv_id, 'harness': harness, 'host': host_name(), 'pid': os.getpid(),
+              'started': now_iso()}
+    if project:
+        marker['project'] = project
+    if areas:
+        marker['areas'] = [a for a in areas if a]
+    _write_json(path, marker)
     return path
 
 
@@ -283,10 +290,13 @@ def _hours_since(iso):
         return None
 
 
-def other_runs(log_dir, mine=''):
+def other_runs(log_dir, mine='', recorded=None):
     """The runs of the project recorded as running, this process's own left out -> (elsewhere, here, cleared).
     A marker of this machine whose process is gone is removed (cleared); a marker of another machine cannot be
-    checked and is returned with its age in hours (None when its time cannot be read). mine: this run's marker."""
+    checked and is returned with its age in hours (None when its time cannot be read). mine: this run's marker.
+    recorded(pid, written): whether the process of that number is still the one a record written at that time names
+    (recorded_process_alive of the task API) - a number alone is not a run: after a restart of the machine, or once
+    the run is gone, the same number belongs to another program, and its marker would say "running" for good."""
     elsewhere, here, cleared = [], [], []
     me = host_name()
     for fp in sorted(_glob(log_dir, '*' + RUNNING_SUFFIX)):
@@ -299,6 +309,11 @@ def other_runs(log_dir, mine=''):
         d.setdefault('stamp', os.path.basename(fp)[:-len(RUNNING_SUFFIX)])
         if d.get('host') and d['host'] == me:
             alive = pid_alive(d.get('pid'))
+            if alive and recorded is not None:
+                try:
+                    alive = bool(recorded(d.get('pid'), os.path.getmtime(fp)))
+                except OSError:
+                    pass
             if alive is False:
                 remove_running(fp)
                 cleared.append(d)
@@ -539,13 +554,18 @@ def codex_home():
 
 
 _CODEX_SQLITE_HOME = ''
+_CODEX_EARLIER_STORE = ''
 
 
-def set_codex_sqlite_home(path):
-    """run-ai keeps Codex's SQLite state (threads, history, memories) inside the project (CODEX_SQLITE_HOME); the lookups
-    below must read the same store, before and after the run."""
-    global _CODEX_SQLITE_HOME
+def set_codex_sqlite_home(path, earlier=''):
+    """The store of Codex's SQLite state (the index of its threads, their history) that the lookups below read, before
+    and after the run: '' for Codex's own (CODEX_HOME - the default since 2026-11-17, as every harness keeps its store
+    in its home), or the folder run-ai gives Codex with --codex_state=project (CODEX_SQLITE_HOME = <project>/!AI/codex).
+    earlier: a project's !AI/codex left by the runs made while that was the default - read after the store in use, for
+    the threads and the history it alone holds; nothing writes there any more."""
+    global _CODEX_SQLITE_HOME, _CODEX_EARLIER_STORE
     _CODEX_SQLITE_HOME = path or ''
+    _CODEX_EARLIER_STORE = earlier or ''
 
 
 def codex_sqlite_home():
@@ -554,25 +574,37 @@ def codex_sqlite_home():
     return _CODEX_SQLITE_HOME or os.environ.get('CODEX_SQLITE_HOME') or codex_home()
 
 
+def codex_stores():
+    """The folders the lookups read, the store in use first: [codex_sqlite_home(), a project's earlier store]."""
+    stores = [codex_sqlite_home()]
+    if _CODEX_EARLIER_STORE and not _same_path(_CODEX_EARLIER_STORE, stores[0]):
+        stores.append(_CODEX_EARLIER_STORE)
+    return stores
+
+
 def _codex_cwd(raw):
     raw = str(raw or '')
     return raw[4:] if raw.startswith('\\\\?\\') else raw
 
 
 def codex_threads(project_path, since=0):
-    """The Codex threads of a folder from CODEX_HOME/state_*.sqlite (newest first): [(id, created, source)]."""
+    """The Codex threads of a folder from state_*.sqlite of the store in use, else of a project's earlier store (newest
+    first): [(id, created, source)]."""
     out = []
-    for db in sorted(_glob(codex_sqlite_home(), 'state_*.sqlite'), reverse=True):
-        try:
-            con = _ro_sqlite(db)
-            rows = con.execute('select id, created_at, source, cwd from threads order by created_at desc limit 200').fetchall()
-            con.close()
-        except Exception:
-            continue
-        for tid, created, source, cwd in rows:
-            if created and created >= since and _same_path(_codex_cwd(cwd), project_path):
-                out.append((tid, created, source))
-        if out or rows:
+    for store in codex_stores():
+        for db in sorted(_glob(store, 'state_*.sqlite'), reverse=True):
+            try:
+                con = _ro_sqlite(db)
+                rows = con.execute('select id, created_at, source, cwd from threads order by created_at desc limit 200').fetchall()
+                con.close()
+            except Exception:
+                continue
+            for tid, created, source, cwd in rows:
+                if created and created >= since and _same_path(_codex_cwd(cwd), project_path):
+                    out.append((tid, created, source))
+            if out or rows:
+                break
+        if out:
             break
     if not out:
         # the legacy layout: the first line of every rollout file names the cwd
@@ -591,12 +623,37 @@ def codex_threads(project_path, since=0):
 
 def codex_exists(sid):
     """Whether "codex resume <sid>" can continue the session on THIS machine: its rollout file is under CODEX_HOME here.
-    The thread's row in state_*.sqlite is not enough: run-ai keeps that store in the project's !AI, which travels to the
-    other machines, while the rollout stays in the CODEX_HOME of the machine that ran the session - a session of the
-    P14s Gen 4 continued on the laptop ended at once with "No saved session found with ID ..." (2026-11-03). Without the
-    rollout, the conversation goes on in a new native session with the transcript handed over (its segment is still
-    exported from the travelling thread_history)."""
+    The rollout is the session: with it, Codex resumes a thread its own store never listed and lists it again
+    (2026-11-17: a session made with the store in a project resumed with the store at home, history whole); a row in
+    state_*.sqlite without it is not enough - a session of the P14s Gen 4 continued on the laptop ended at once with
+    "No saved session found with ID ..." (2026-11-03, the store travelling in the project's !AI, the rollout not).
+    So the rollout travels (restore_session puts the copy of !AI/sessions back); without it the conversation goes on in
+    a new native session with the transcript handed over."""
     return bool(_glob(codex_home(), 'sessions', '*', '*', '*', 'rollout-*-%s.jsonl' % sid))
+
+
+def codex_without_memories(flags):
+    """The flags of a codex run with Codex's own memory across sessions (its feature "memories") switched off:
+    "--disable memories" in front, unless the flags name the feature themselves ("--enable memories",
+    "-c features.memories=true" - the user's word). That memory is drawn from every session of the machine, whatever
+    its project, and a run's context is what run-ai hands it. The feature is off in Codex 0.163-0.169 ("codex features
+    list"); saying so keeps a changed default out. Codex takes the flag on every sub-command and ignores a feature name
+    it does not know."""
+    flags = list(flags or [])
+    named = [k for k, x in enumerate(flags) if x in ('--enable', '--disable') and flags[k + 1:k + 2] == ['memories']]
+    named += [x for x in flags if str(x).replace(' ', '').startswith('features.memories=')]
+    return flags if named else ['--disable', 'memories'] + flags
+
+
+def codex_misplaced(sid):
+    """The session ran on this machine (its rollout is here) and the store in use is a Codex store (it has a
+    state_*.sqlite), yet no store lists the thread: Codex's shared background server ("codex app-server", one per
+    CODEX_HOME, alive for days) wrote it into the folder IT was started with - a project's !AI/codex of a run made with
+    --codex_state=project, the default until 2026-11-17. Seen on 2026-11-17: every session of any project recorded in one
+    project's folder for two days. Only an interactive session uses that server ("codex exec" does not)."""
+    if not sid or not codex_exists(sid) or not _glob(codex_sqlite_home(), 'state_*.sqlite'):
+        return False
+    return not codex_known(sid)
 
 
 # The native session files travel with the project (2026-11-03): a copy of each in !AI/sessions/<harness>/, made after a
@@ -759,30 +816,41 @@ def seen_in_session(harness, sid, project_path):
 
 
 def codex_known(sid):
-    """The thread is in the project's Codex store (state_*.sqlite): it ran here or on another machine."""
-    for db in _glob(codex_sqlite_home(), 'state_*.sqlite'):
-        try:
-            con = _ro_sqlite(db)
-            n = con.execute('select count(*) from threads where id=?', (sid,)).fetchone()[0]
-            con.close()
-            if n:
-                return True
-        except Exception:
-            pass
+    """The thread is in a Codex store the lookups read (state_*.sqlite): the store in use, or a project's earlier one,
+    which travelled with the project - it ran here or on another machine."""
+    for store in codex_stores():
+        for db in _glob(store, 'state_*.sqlite'):
+            try:
+                con = _ro_sqlite(db)
+                n = con.execute('select count(*) from threads where id=?', (sid,)).fetchone()[0]
+                con.close()
+                if n:
+                    return True
+            except Exception:
+                pass
     return False
 
 
 def codex_export(sid):
-    """The thread from CODEX_HOME/thread_history_*.sqlite (Codex >= 0.160), else from the rollout file."""
+    """The thread from thread_history_*.sqlite (Codex >= 0.160) of the store that holds the most of it - a session
+    resumed with the store at home is whole there, one that was never resumed since is only in a project's earlier
+    store - else from the rollout file."""
     out = []
-    for db in sorted(_glob(codex_sqlite_home(), 'thread_history_*.sqlite'), reverse=True):
-        try:
-            con = _ro_sqlite(db)
-            rows = con.execute('select item_type, item_json, created_at_ms from thread_items where thread_id=? order by rollout_ordinal', (sid,)).fetchall()
-            con.close()
-        except Exception:
-            continue
-        for item_type, item_json, created in rows:
+    best = []
+    for store in codex_stores():
+        for db in sorted(_glob(store, 'thread_history_*.sqlite'), reverse=True):
+            try:
+                con = _ro_sqlite(db)
+                rows = con.execute('select item_type, item_json, created_at_ms from thread_items where thread_id=? order by rollout_ordinal', (sid,)).fetchall()
+                con.close()
+            except Exception:
+                continue
+            if len(rows) > len(best):
+                best = rows
+            if rows:
+                break
+    if best:
+        for item_type, item_json, created in best:
             try:
                 d = json.loads(item_json)
             except Exception:
@@ -801,8 +869,7 @@ def codex_export(sid):
                 out.append(('assistant', ts, [('tool', 'file change ' + changes[:160])]))
             elif item_type == 'webSearch':
                 out.append(('assistant', ts, [('tool', 'web search ' + str(d.get('query') or '')[:160])]))
-        if rows:
-            return out
+        return out
     files = _glob(codex_home(), 'sessions', '*', '*', '*', 'rollout-*-%s.jsonl' % sid)
     if not files:
         return None

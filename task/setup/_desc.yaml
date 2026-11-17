@@ -95,3 +95,66 @@ add_env_path_keys:
   - LIBPATH
   - WindowsLibPath
 
+# What the words of the command line mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read it, the
+# engine never does - cli_params above alone says how a word is read (a type, its values: checked at every run). An
+# entry is a line of text, or desc (what it does), group (main: shown at once), example, conflicts (the words it
+# cannot be used with), needs, hide (the page fills it itself), artifact (its value is an artifact of that category),
+# choice (the word changes what comes out - here, which version is set up - and is shown first; the others say how).
+# These are the words of cx tool setup | install | upgrade | run <tool>.
+cli_help:
+  name: {hide: true}
+  tool_tags: {hide: true}
+  tool_path: "The path of the tool's own program, when you know where it is"
+
+  version:
+    desc: 'The version wanted: a version (13.4.92), a prefix (13.4), a range (">=12.4,<13"), latest or known'
+    choice: true
+    example: latest
+  install:
+    desc: Install it with cMeta, without looking for a copy on this machine first
+    group: main
+    conflicts: [detect, status, versions, skip_install]
+  detect:
+    desc: 'Only look for it: nothing is installed'
+    group: main
+    conflicts: [install, upgrade, build]
+  upgrade:
+    desc: Upgrade it through the way it was installed; install the newest version when it is absent
+    group: main
+    conflicts: [detect, status, versions]
+  status:
+    desc: Show the installed version against the newest one; nothing is changed
+    group: main
+    conflicts: [install, upgrade, versions, build]
+  versions:
+    desc: List the versions that can be installed; nothing is changed
+    group: main
+    conflicts: [install, upgrade, status, build]
+
+  build: Build it from its sources with cMeta, without looking for a copy or installing a release first
+  check_update:
+    desc: Compare the version cMeta installs by default with the newest one; nothing is installed
+    conflicts: [install, upgrade, build]
+  sizes: The disk space the copies of this tool take
+  refresh_versions: Ask for the list of versions again instead of using the one remembered
+  version_policy: 'Which version to take when none is asked: the one cMeta knows, the latest, or a question'
+  here: Look for it under the current folder instead of the usual places
+  skip_detect:
+    desc: 'Do not look for a copy on this machine: install it, or build it'
+    conflicts: [detect]
+  skip_install:
+    desc: 'Do not install a release: use a copy found here, or build it'
+    conflicts: [install]
+  skip_build:
+    desc: 'Do not build it from its sources: use a copy found here, or install a release'
+    conflicts: [build]
+  skip_install_uses: Do not set up first what the install needs (winget, curl, a package manager)
+  skip_build_uses: Do not set up first the tools the build needs
+  ignore_install_errors: Go on when the install fails instead of stopping
+  ignore_build_errors: Go on when the build fails instead of stopping
+  custom_install: Use the tool's own install code (its api_v1.py) instead of its install command; an error when it has none
+  custom_build: Use the tool's own build code (its api_v1.py) instead of its build command; an error when it has none
+  add_tool_path_to_env: Put the tool's folder on PATH for the commands that run after it
+  force_add_tool_path_to_env: Put the tool's folder first on PATH even when it is there already
+  skip_cache_version_check: Remember this copy as one whose version is not checked again when it is reused, even with --check_versions
+  skip_size_check: Do not check the free disk space before an install or a build

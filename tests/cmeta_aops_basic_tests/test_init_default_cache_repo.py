@@ -115,6 +115,16 @@ def test_the_file_cache_of_one_run(task):
     assert "file_cache" not in run(task, file_cache = "")
 
 
+def test_the_hugging_face_cache_of_one_run(task):
+    """--use.init.hf.cache=<folder> names the Hugging Face cache of one run (tool/hf: HF_HOME), over the key hf.cache
+    of config::task and beside its other hf keys; before, init refused it: "unexpected keyword argument 'hf'"."""
+    assert run(task, hf = {"cache": "/run"})["hf"] == {"cache": "/run"}
+    assert run(task, {"hf": {"cache": "/cfg", "other": 1}})["hf"] == {"cache": "/cfg", "other": 1}
+    assert run(task, {"hf": {"cache": "/cfg", "other": 1}}, hf = {"cache": "/run"})["hf"] == {"cache": "/run", "other": 1}
+    assert run(task, {"hf": {"cache": "/cfg"}}, hf = {"cache": ""})["hf"] == {"cache": "/cfg"}     # nothing given
+    assert "hf" not in run(task, hf = {}) and "hf" not in run(task, hf = None)
+
+
 @pytest.mark.parametrize("key, env", [("version_policy", "CMETA_VERSION_POLICY"),
                                       ("versions_ttl_hours", "CMETA_VERSIONS_TTL_HOURS")])
 def test_the_version_keys_flag_over_variable_over_config(task, monkeypatch, key, env):

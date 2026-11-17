@@ -186,18 +186,24 @@ names. This is a file sync, not a merge of JSON records or Git branches. Inspect
 conflict files before using them as application data. Quiet mode skips questions,
 but retains conflicts, backups and rclone's deletion/error checks.
 
-A conflict is a file changed on both sides since the last run, to different bytes:
-bisync keeps both versions as `<file>.conflict1` (the source's) and `<file>.conflict2`
-(the destination's), and the name itself is gone on both sides - a page served from
-such a file breaks. rclone still reports "Bisync successful"; this task does not: each
+A conflict is a file changed on both sides since the last run, to different bytes.
+The newer copy keeps the name on both sides and the other is kept beside it as
+`<file>.conflict1` (since 2026-11-17: rclone's `--conflict-resolve newer`), so a page
+served from that file goes on working. Only when both copies carry the same time is
+there no newer one: bisync then keeps them as `<file>.conflict1` (the source's) and
+`<file>.conflict2` (the destination's) and the name itself is gone on both sides -
+what every conflict did before. rclone still reports "Bisync successful"; this task does not: each
 run ends with its verdict in large letters - `STATUS: SUCCESS` or `STATUS: CONFLICTS`
 with the files moved, deleted (put aside in the backups) and, for conflicts, the file
 names, the two sides and what to do - kept in `last-result.json` (`summary`,
 `verdict`). A run with conflicts returns 1 and stops a sequence (`--names`, a chain)
 there, so the copies are not carried to the next pair. `--dry-run` says
-`WOULD CONFLICTS` with the names before anything is done. To resolve: on one side copy
-the right version back under its name and delete both conflict copies there, then run
-the sync again (it carries the name across and puts the other side's copies aside).
+`WOULD CONFLICTS` with the names before anything is done. To resolve: look at the copy
+that kept the name (the verdict says whose it is) - right: delete its `.conflict1` on one
+side; wrong: copy the `.conflict1` over the name there and delete it. With the name gone:
+on one side copy the right version back under its name and delete both conflict copies
+there. Then run the sync again (it carries the name across and puts the other side's
+copies aside).
 
 After a run that changed something, the cMeta repositories it changed are reindexed on
 each side that can have changed (both for bisync, the destination otherwise), so each

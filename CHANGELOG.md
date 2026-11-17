@@ -2,6 +2,153 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.73.0
+- **`cx host sync` looks before it changes anything: a file both sides changed stops the run, with a suggestion.**
+  rclone's own rule for a file changed on both sides renames BOTH copies (`<name>.conflict1`, `<name>.conflict2`): the
+  name is gone on both machines, and a run that aborts after such renames leaves it that way - with a `--resync` asked
+  for, which brings back every file deleted on one side since the pair's last good run. Now a two-way sync:
+  - **looks first.** Both sides are asked for the files changed since the pair's last good run (the host by its own
+    Python). A file changed on both sides and different now is a conflict. One that loses nothing is settled and
+    said: the same bytes, a copy that is the beginning of the other or holds its every line, a memory index (merged
+    memory by memory). Any other **stops the run of that repository before anything is changed**, each shown with its
+    two copies and a suggestion; the run ends with `STATUS: CONFLICTS` and exit code 1.
+  - **`--resolve`** decides and the run goes on: `suggested`, or `here | host | newer | both | later` for every
+    conflict shown, or the JSON file the stop wrote with a `choice` per file. What a choice replaces is kept first in
+    the `sync-backup--<repository>` artifact of that side; `later` leaves a file as it is on both sides and the next
+    sync asks again.
+  - **`--conflicts=ask | ask-all | newer`**, or the new key `sync_conflicts` of the config artifact `host` for a
+    machine's default: `ask` is the default; `newer` never stops - the newer copy keeps the name and the other stays
+    beside it as `<name>.conflict1` on both sides. In every mode rclone is now told that the newer copy keeps the
+    name, so a conflict the look could not see never takes the name from both sides.
+  - **leaves the folders of open run-ai sessions out**, on this machine and on the host, and says so: a session's
+    project and the `!AI` of the artifacts it may write are being written. The next sync after the session carries
+    them. `--include_sessions` leaves none out; the session that runs the sync is never left out.
+  - **leaves no name missing when a run fails.** What rclone had renamed goes back, each side its own copy; a file
+    another process holds - it cannot be renamed or deleted - is left out of a second run and synced next time; the
+    listings of the last good run stay the pair's base, also after an abort renamed them. A `--resync` is asked for
+    a new pair only. A run that was cut - rclone's process ended from outside, the machine slept - is tried again
+    by the same command.
+  - **puts aside what an interrupted run left behind**, before it would travel as new files: rclone's temporary
+    files of the transfers that were cut (`<name>.<8 hex>.partial`), and the copy such a run had carried of a file
+    that was deleted or moved away on its own side afterwards (it was there when the interrupted run began, it is
+    gone now, and the copy is unchanged) - that copy follows the file instead of coming back. Both go into the sync
+    backup of their side and are named in the verdict (`LEFTOVER: ...`).
+  - **`cx host conflicts [host] [--repos=...] [--diff=<path>]`** lists the files a sync stopped at, without
+    connecting to any host, and shows what differs in one of them. **`cx host ls`** has a SYNCED column: when a
+    host's pairs were last in step, and the repository that is apart.
+  - The task `rclone-to-ssh` takes `rules_first` (filter rules put before its two lists) and `conflict_resolve`
+    (`newer` by default for a two-way sync; `none` is rclone's own rule).
+- **The named syncs (`cx sync`): a file changed on both sides keeps its name.** A two-way pair now runs with
+  rclone's `--conflict-resolve newer`: the newer copy has the name on both sides and the other is kept beside it as
+  `<name>.conflict1`, where every conflict used to rename both copies and leave no file under the name - a page
+  served from it broke. The run still ends with `STATUS: CONFLICTS` and stops a chain, and its verdict says whose
+  copy kept each name and what to do; only two copies with the same time have no newer one and are both kept as
+  before.
+- **run-ai: a session says where it writes, and a marker is trusted only while its process is the one that wrote it.**
+  The marker of a live run (`!AI/log/<stamp>.running`) now names the folders the run may write (`areas`: the project
+  and the `!AI` of the artifacts it uses) and the session gets `CMETA_RUN_AI_MARKER`, its own marker - what the sync
+  above reads. A marker of this machine counts as a live run only when it is from after the machine's last start and
+  its process did not begin after it was written: a process number is given out again after a restart, or once a
+  run has died, and a marker left behind would otherwise say "another run of this project is running here" for
+  good - and keep its folders out of every sync.
+- **`cli_help`: what the words of a command line and the commands mean, said by the artifact that owns them.** A block
+  of a `_desc.yaml` that the engine never reads, so nothing written there changes a run: `cli_params` stays the one
+  place that says how a word is read (its type, its values, its range - checked at every run), and `cli_help` may not
+  say otherwise. A task gives a line of help per word, or an entry (`desc`, `group`, `example`, `conflicts`, `needs`,
+  `artifact` - the value is an artifact of that category ...); a program template the words its programs read; a
+  category the plain words of its commands. Read by the cMeta CLI builder (a page that writes a `cx` command step by
+  step) and meant for help. Given now by the categories program, tool and task, the tasks setup (every one of its 28
+  words, the 15 that had no description included), compile-and-run-program and run-llama-cpp-server, the templates
+  template-c-cpu and template-ck-program (`--repeat`, `--calibrate`, the sizes of PolyBench), and the programs
+  llama-cpp, build-llama-cpp, test-ollama, test-flm, test-vllm, test-sglang, test-onnxruntime, test-openvino and
+  model-cnn-ylecun-mnist-pytorch; a guard test keeps every `cli_help` readable and in agreement with `cli_params`.
+  - **`choice` and `order`: the parameters of an experiment first.** `choice: build | run | [build, run] | true` marks
+    a word that changes what is built or what is run (the target, the compiler and its flags, the input, the model,
+    the sizes, the tokens to generate ...); a page shows those at once, part by part ("What is built and run", "What
+    is built", "What is run"), before the words that say how the command proceeds (build again, skip a step, where
+    the files go). `order: <number>` moves a word inside its part; `choice: false` keeps a word a program reads itself
+    among the controls. A command's `only: build` ("Build only") leaves out the choices of the run.
+  - **The words every program takes, described:** "Which model" (`--use.model.name`, the models with the tags of the
+    program's model step), "Which compiler" (`--use.compiler-<language>.name`), `--compile.fast`, `.fastest`,
+    `.flags`, `.openmp`, `.static`, `.debug_info`. A template's word can be meant for some of its programs:
+    `programs: [<name patterns>]`, `if_read: true` (the programs that read it themselves).
+- **`cx task run model --filedesc=<file>` works** (a file of a model artifact, named as its `_desc-<file>.yaml` is,
+  with or without `.yaml`): it ended with a NameError. **`cx task run run-llama-cpp-server --filename=<file of the
+  model>`** takes that file of the model artifact, as its help says; it handed the name to the model task as the path
+  of a local file, which was refused. A GGUF file of the machine given by its path is still served as it is.
+- **The file cache with several places: a place that is away is said, never silently replaced.** `file_cache` (and
+  `hf.cache`) of the task config can name several folders - a large USB drive first, a folder of the machine's own
+  disk after it. While the first was away, a model was downloaded again into the second without a word, and a single
+  place that was away ended in a download into a folder called `None`. The rule now, one function for
+  `get-hf-model`, `get-hf-dataset`, `clone-git-to-cache` and `tool/hf` (`file_cache_folder` of the task API):
+  - a place that is there is used; one whose last folder is missing is made - that folder only, so a path of a drive
+    that is away never becomes a folder of the machine's own disk;
+  - a place that is away (its drive is not connected, its parent folder does not exist) is passed over for the next
+    one, with one line: `WARNING: the file cache X:\... is not available (the drive X: is not connected): using D:\...`;
+  - what is asked for - a model, a dataset, a clone - is taken from the place that has it already, before a second
+    copy is made in the first one;
+  - no place of the list there: the run stops and says what to do (connect the drive, or name a second place).
+  A drive that is there but does not answer yet (Windows, after a standby) is given three seconds. The key
+  `file_cache` is now described among the keys of the task config, and `--use.init.hf.cache=<folders>` names the
+  Hugging Face cache of one run, as `--use.init.file_cache` does for the file cache (the init task refused it).
+- **New tool `thunderbird`: Mozilla Thunderbird upgraded through the system's own channel, in the update channel it
+  follows (the monthly release or the ESR).** `cx tool setup thunderbird --status` tells the installed version and the
+  newest one of its channel, `cx tool upgrade thunderbird` brings it there, `cx tool install thunderbird` installs the
+  release (`--with.channel=esr`: the ESR). Nothing is copied into the cMeta cache, and an upgrade never switches the
+  channel (a profile is not opened by an older Thunderbird).
+  - **The channel** is read from the installation: `channel-prefs.js` and the Uninstall entry on Windows (which also
+    gives the language), the cask or the `esr` of `--version` on macOS (Mozilla's app keeps it in
+    `ChannelPrefs.framework`), the snap's tracked channel or the distribution's package on Linux.
+  - **Linux:** the snap (`snap refresh`, refused while Thunderbird runs; `esr/stable` for the ESR), else the
+    distribution's package with apt or dnf. **Windows:** winget, the package of the channel and the language
+    (`Mozilla.Thunderbird[.ESR][.<language>]`); a Thunderbird that winget does not link to its package (installed by
+    Mozilla's own installer) gets that package installed over it, in its folder. **macOS:** Homebrew's cask
+    `thunderbird` or `thunderbird@esr`.
+  - **The newest version** is the one the system's channel gives - the snap's channel, apt's candidate, dnf, winget's
+    package, the cask - so that an upgrade brings exactly it (setup detects the tool again at that version); Mozilla's
+    product details where none answers, and as a note when Mozilla is ahead (on 2026-11-17 Fedora 44 offered 157.0
+    and a Windows machine's winget 159.0, Mozilla 160.0). When apt's or dnf's refreshed lists offer another version
+    than the one asked for, nothing is installed and the error says to run the upgrade again.
+- **`tool/firefox`: an upgrade brings the version `--status` names, on every system.** Its newest version was
+  Mozilla's on Windows, macOS and with apt, while setup detects the tool again after an upgrade at the version it
+  asked for - so whenever winget, the cask or the distribution was behind Mozilla, the upgrade succeeded and then ended
+  "not found after the upgrade". The newest version now comes from the system's channel, as for `thunderbird`
+  (`winget show`, `brew info`, apt's candidate, dnf, the snap; Mozilla's as a note when it is ahead), and so do the
+  other lessons of that tool: winget's package of the installation's language (and ESR) from its Uninstall entry, a
+  Firefox winget does not link to its package installed over in its folder, the cask adopting an app from Mozilla's
+  disk image (`brew upgrade` failed on it), Homebrew without its own update before an install, the version on macOS
+  from `application.ini` (a quarantined app's `--version` waits for Gatekeeper), apt's refreshed lists checked against
+  the version asked for, and dnf (Fedora) beside snap and apt.
+- **`tool/google-chrome`: the same.** Its newest version was Google's version history on every system: on 2026-11-17
+  it listed 158.0.8127.37 for Windows and macOS while winget and the cask offered 157.0.8103.79, so `--status` called
+  an up-to-date Chrome outdated and the upgrade ended "not found after the upgrade". Now the system's channel answers
+  (`winget show`, `brew info`, apt's or dnf's candidate from Google's repository), Google's history for a missing
+  Chrome on Linux (its current package is installed) and as a note when it is ahead; a Chrome in Program Files that
+  winget does not link is installed over (one of the user's own folder is left to update itself); the cask adopts an
+  app from Google's disk image; Homebrew without its own update; the version on macOS from `Info.plist`; apt's
+  refreshed lists, dnf and the downloaded package checked against the version asked for.
+- **`run-ai`: Codex's own state stays in its home, as every harness's store; what travels is the session's file.**
+  Until now run-ai put Codex's SQLite state into the project by default (`CODEX_SQLITE_HOME=<project>/!AI/codex`), beside
+  the copy of each session's rollout that has travelled in `!AI/sessions/codex` since 0.63.0. The databases did not do
+  what was meant: pointed at a new folder, Codex rebuilds its index from every rollout of the machine, so each project
+  held the list of all the machine's sessions (299 threads in one project, 2 its own); Codex's shared background server
+  writes into the folder it was started with, so for days the sessions of every project were recorded in one project's
+  folder, its files open; and a fixed-name database that two machines change is a conflict in a sync (a bisync aborted
+  on one on 2026-11-17). Now:
+  - **`--codex_state` defaults to `home`.** Nothing is written into `!AI/codex`; a folder of earlier runs is still read
+    for their sessions (a thread's history comes from the store that holds the most of it) and can be deleted when its
+    conversations are over. Sessions made under the old default go on: Codex resumes a session from its rollout alone
+    and lists it in its own store again, history whole (tried: one made with the state in a project, resumed at home).
+  - **`--codex_state=project`** still gives a self-contained folder; an interactive session then runs with
+    `--no-daemon`, so that it owns the folder and lets go of it. Another value is refused.
+  - **Codex's own memory across sessions is off for a run** (`--disable memories`; `-- --enable memories` on your word):
+    it is drawn from every session of the machine, and a run's context is what run-ai hands it. Off in Codex
+    0.163-0.169 anyway; said so that a changed default cannot switch it on.
+  - **An interactive run says when its session is in no store run-ai reads** - Codex's background server filed it
+    elsewhere. Once, on a machine where interactive Codex sessions ran under the old default, with none open:
+    `codex app-server daemon stop`.
+  The other harnesses were already this way: only Codex's store was ever pointed into a project.
+
 ## 0.72.2
 - **An interactive Claude Code session opens with its prompt again.** `run-claude` puts `--` before the trailing
   prompt of an interactive session (or before the request to read its file). Claude Code's `--add-dir` takes several

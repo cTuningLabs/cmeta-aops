@@ -654,6 +654,373 @@ def _sync_leftovers(p):
     return out
 
 
+# A two-way sync that asks before it harms (2026-11-17). rclone's bisync renamed both copies of a file changed on both
+# sides while it worked through its list, and a run that aborted there (a file another process held) left four files
+# without their names on both machines; the session that ran it saw only the last error. Since then:
+#   - both sides are looked at BEFORE a run changes anything: the files both changed since the pair's last good run
+#     and that differ now - the conflicts - are found from what changed lately (_sync_side "recent"), compared (its
+#     "facts": a hash, the beginning of the longer copy, the text), and settled where nothing can be lost - one copy
+#     is the beginning of the other or holds its every line, a memory index is merged; the others stop the run with a
+#     suggestion per file (--resolve, or "sync_conflicts: newer" of the host config, decide them);
+#   - the folders of the run-ai sessions that are open on either side are left out of the run, their markers kept;
+#   - rclone itself is told that the newer copy keeps the name (task rclone-to-ssh), and what a failed run renamed
+#     is put back, each side its own.
+SIDE_MARK = 'CMETA-SYNC-SIDE '
+SIDE_TEXT_LIMIT = 2 * 1024 * 1024       # a text up to this size is read, to compare two copies line by line
+SESSION_MARKER = '.running'             # run-ai's marker of a live session: <artifact>/!AI/log/<stamp>.running
+OWN_MARKER_ENV = 'CMETA_RUN_AI_MARKER'  # set by run-ai for the session it starts: its own marker, never left out
+CONFLICTS_FILE = 'cmeta-conflicts-{}.json'   # beside the pair's listings: the conflicts that stopped its last run
+CONFLICT_MODES = ('ask', 'ask-all', 'newer')
+CONFLICT_CHOICES = ('here', 'host', 'both', 'later')
+DIFF_LINES = 2000                       # of the differences of two copies (cx host conflicts --diff), at most
+NEVER_CHANGED = 4102444800.0            # 2100-01-01: the time after which no file counts as changed (a pair without a base)
+PARTIAL_FILE = r'\.[0-9a-f]{8}\.partial$'   # rclone's name of a file while it is transferred: <name>.<8 hex>.partial
+CONFIG_ARTIFACT = 'host'                # config::host - sync_conflicts: ask (default) | ask-all | newer
+
+
+def _sync_side(p):
+    """
+    One side of a two-way sync, looked at or changed before and after a run - this machine, or the host, whose Python
+    runs this function's own source (so it imports what it needs and uses nothing else of this file). p['do']:
+
+    'recent'  the files under 'root' that the sync carries ('rules': rclone's filter rules in their order, "+ x" or
+              "- x", the first that matches a file decides; 'ignore_case') and that changed after 'since' (a time of
+              day in seconds) -> 'files': {name: [size, time]}. With 'sessions': the sessions of run-ai that are open
+              on this machine, from their markers in the repositories beside the root ('match': only the names a
+              regular expression finds) -> 'sessions': [{'marker',
+              'project', 'areas' (where it may write, as it says, else its own folder), 'under' (those of them under
+              the root, relative), 'started', 'harness', 'pid'}]; 'own_marker': this command's own session, left out.
+    'facts'   of the files 'names': size, time, the SHA-1 of the whole file and of its first 'head'[name] bytes when
+              asked (is the other side's copy the beginning of this one?), its text when it is one of at most
+              'text_limit' bytes -> 'facts': {name: {...} or {'error', 'missing': the file is not there}}. With
+              'stat': size and time alone, nothing is read.
+    'apply'   'steps' in their order: {'op': 'copy' | 'move', 'from', 'to'} or {'op': 'remove', 'from'} - a path
+              relative to the root, or absolute (a backup folder); 'copy' keeps the file's time. After a failed run:
+              'restore' ('from' a file's own conflict copy back 'to' its name; the copy removed where the name is
+              there) and 'drop' ('from' a copy the other side gave, removed when the name 'to' is there); 'aside'
+              ('from' a file 'to' a folder outside the repository, another disk allowed; nothing when it is gone)
+              -> 'done': the steps, 'changed': those that changed something.
+    -> a dict with what was asked, or {'error': ...}.
+    """
+    import glob
+    import hashlib
+    import json
+    import os
+    import re
+    import shutil
+    import socket
+    import subprocess
+    import sys
+    import time
+
+    root = os.path.expanduser(str(p['root']))
+    flags = re.IGNORECASE if p.get('ignore_case') else 0
+
+    def glob_re(pattern):
+        # rclone's filter glob (fs/filter/glob.go), as in _sync_leftovers: a "/" in front anchors it at the root, else
+        # it matches whole path elements at the end of a path; * is [^/]*, ** is .*, ? is [^/], [...] a class,
+        # {a,b} alternatives, \c a c
+        anchored = pattern.startswith('/')
+        s, i, out, braces = pattern[1:] if anchored else pattern, 0, [], False
+        while i < len(s):
+            c = s[i]
+            if c == '\\' and i + 1 < len(s):
+                out.append(re.escape(s[i + 1]))
+                i += 2
+                continue
+            if c == '*':
+                two = s[i:i + 2] == '**'
+                out.append('.*' if two else '[^/]*')
+                i += 2 if two else 1
+                continue
+            if c == '[':
+                j = s.find(']', i + 1)
+                if j < 0:
+                    raise ValueError(pattern)
+                body = s[i + 1:j]
+                out.append('[' + ('^' + body[1:] if body.startswith('!') else body) + ']')
+                i = j + 1
+                continue
+            if c == '?':
+                out.append('[^/]')
+            elif c == '{' and not braces:
+                braces = True
+                out.append('(?:')
+            elif c == '}' and braces:
+                braces = False
+                out.append(')')
+            elif c == ',' and braces:
+                out.append('|')
+            else:
+                out.append(re.escape(c))
+            i += 1
+        return re.compile(('^' if anchored else '(?:^|/)') + ''.join(out) + '$', flags)
+
+    def inside(path):
+        # a path of a step: relative to the root (no ".."), or absolute
+        path = str(path)
+        if os.path.isabs(os.path.expanduser(path)):
+            return os.path.expanduser(path)
+        parts = [x for x in path.replace('\\', '/').split('/') if x]
+        if not parts or '..' in parts:
+            raise ValueError('not a path inside the repository: ' + path)
+        return os.path.join(root, *parts)
+
+    def boot():
+        # when this machine started (seconds since the epoch); 0 when the system does not say
+        try:
+            if sys.platform.startswith('linux'):
+                with open('/proc/stat', encoding='ascii', errors='replace') as f:
+                    for line in f:
+                        if line.startswith('btime '):
+                            return float(line.split()[1])
+            elif os.name == 'nt':
+                import ctypes
+                ticks = ctypes.windll.kernel32.GetTickCount64
+                ticks.restype = ctypes.c_ulonglong
+                return time.time() - ticks() / 1000.0
+            else:                                          # macOS: "{ sec = 1794470153, usec = 0 } ..."
+                said = subprocess.run(['sysctl', '-n', 'kern.boottime'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                      stdin=subprocess.DEVNULL, timeout=10).stdout.decode('ascii', 'replace')
+                return float(said.split('sec =')[1].split(',')[0])
+        except Exception:
+            pass
+        return 0.0
+
+    def started_at(pid):
+        # when a process of this machine started; None when the system does not say
+        try:
+            if sys.platform.startswith('linux'):
+                with open('/proc/%d/stat' % pid, encoding='ascii', errors='replace') as f:
+                    fields = f.read().rsplit(')', 1)[-1].split()
+                up = boot()
+                return up + int(fields[19]) / os.sysconf('SC_CLK_TCK') if up else None
+            if os.name == 'nt':
+                import ctypes
+                from ctypes import wintypes
+                k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+                handle = k32.OpenProcess(0x1000, 0, pid)
+                if not handle:
+                    return None
+                try:
+                    times = [wintypes.FILETIME() for _ in range(4)]
+                    if not k32.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
+                        return None
+                    return ((times[0].dwHighDateTime << 32) | times[0].dwLowDateTime) / 1e7 - 11644473600.0
+                finally:
+                    k32.CloseHandle(handle)
+            said = subprocess.run(['ps', '-o', 'lstart=', '-p', str(pid)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                  stdin=subprocess.DEVNULL, timeout=10,
+                                  env=dict(os.environ, LC_ALL='C')).stdout.decode('ascii', 'replace').strip()
+            if said:
+                return time.mktime(time.strptime(said, '%a %b %d %H:%M:%S %Y'))
+        except Exception:
+            pass
+        return None
+
+    def alive(pid, written=None):
+        # whether the process a marker names is alive on THIS machine (as run-ai asks it) and, with the time the
+        # marker was written, still the one that wrote it: the marker is from after the machine's last start and the
+        # process did not start after it. A number is given out again - soon on Windows, after a restart everywhere -
+        # and a marker that outlived its process would keep a folder out of every sync (the rule of
+        # recorded_process_alive in the task API)
+        try:
+            pid = int(pid)
+        except (TypeError, ValueError):
+            return False
+        if pid <= 0:
+            return False
+        if not running(pid):
+            return False
+        if written is None:
+            return True
+        up = boot()
+        if up and written < up - 2:
+            return False
+        began = started_at(pid)
+        return not (began is not None and began > written + 5)
+
+    def running(pid):
+        if os.name == 'nt':
+            import ctypes
+            k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+            handle = k32.OpenProcess(0x1000, 0, pid)
+            if not handle:
+                return ctypes.get_last_error() == 5
+            try:
+                code = ctypes.c_ulong()
+                return bool(k32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259
+            finally:
+                k32.CloseHandle(handle)
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except OSError:
+            return True
+        return True
+
+    do = p.get('do')
+    try:
+        if do == 'recent':
+            rules, skip_dirs = [], []
+            for rule in p.get('rules') or []:
+                rule = str(rule)
+                rules.append((rule[:1] == '+', glob_re(rule[2:])))
+                # a folder name the sync leaves out wherever it is ("- tmp*/**"): such a folder is not walked
+                m = re.match(r'^- ([^/]+)/\*\*$', rule)
+                if m:
+                    skip_dirs.append(glob_re(m.group(1)))
+
+            def carried(name):
+                for keep, rx in rules:
+                    if rx.search(name):
+                        return keep
+                return True
+
+            since = float(p.get('since') or 0)
+            only = re.compile(str(p['match'])) if p.get('match') else None
+            files, stack = {}, ['']
+            while stack:
+                rel = stack.pop()
+                try:
+                    entries = list(os.scandir(os.path.join(root, *rel.split('/')) if rel else root))
+                except OSError:
+                    continue
+                for e in entries:
+                    name = (rel + '/' if rel else '') + e.name
+                    try:
+                        if e.is_symlink():
+                            continue
+                        if e.is_dir(follow_symlinks=False):
+                            if not any(rx.search(e.name) for rx in skip_dirs):
+                                stack.append(name)
+                            continue
+                        st = e.stat(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    if st.st_mtime > since and carried(name) and (only is None or only.search(name)):
+                        files[name] = [st.st_size, st.st_mtime]
+            out = {'files': files}
+
+            if p.get('sessions'):
+                me = socket.gethostname().split('.')[0].lower()
+                own = os.path.normcase(os.path.abspath(str(p.get('own_marker') or ''))) if p.get('own_marker') else ''
+                here = os.path.normcase(os.path.realpath(root)).rstrip('/\\')
+                top = os.path.dirname(os.path.abspath(root).rstrip('/\\'))
+                found = []
+                for marker in sorted(glob.glob(os.path.join(glob.escape(top), '*', '*', '*', '!AI', 'log', '*.running'))):
+                    if own and os.path.normcase(os.path.abspath(marker)) == own:
+                        continue
+                    try:
+                        with open(marker, encoding='utf-8') as f:
+                            d = json.load(f)
+                    except (OSError, ValueError):
+                        continue
+                    if not isinstance(d, dict) or str(d.get('host') or '').lower() != me or not alive(d.get('pid'), os.path.getmtime(marker)):
+                        continue
+                    project = os.path.dirname(os.path.dirname(os.path.dirname(marker)))
+                    areas = [str(a) for a in (d.get('areas') or []) if a] or [project]
+                    # those of them under the root, relative, written as they are on this side (the comparison alone
+                    # ignores the case where the system does)
+                    under = []
+                    for a in areas:
+                        full = os.path.realpath(os.path.expanduser(a)).rstrip('/\\')
+                        low = os.path.normcase(full)
+                        if low == here:
+                            under.append('')
+                        elif low.startswith(here + os.sep):
+                            under.append(full[len(here) + 1:].replace(os.sep, '/'))
+                    found.append({'marker': marker, 'project': project, 'areas': areas, 'under': under,
+                                  'started': d.get('started'), 'harness': d.get('harness'), 'pid': d.get('pid')})
+                out['sessions'] = found
+            return out
+
+        if do == 'facts':
+            limit = int(p.get('text_limit') or 0)
+            heads = p.get('head') or {}
+            facts = {}
+            for name in p.get('names') or []:
+                try:
+                    path = inside(name)
+                    st = os.stat(path)
+                    if p.get('stat'):
+                        facts[name] = {'size': st.st_size, 'mtime': st.st_mtime}
+                        continue
+                    whole, head, n, done = hashlib.sha1(), None, int(heads.get(name) or 0), 0
+                    with open(path, 'rb') as f:
+                        while True:
+                            chunk = f.read(1 << 20)
+                            if not chunk:
+                                break
+                            if n and head is None and done + len(chunk) >= n:
+                                first = whole.copy()
+                                first.update(chunk[:n - done])
+                                head = first.hexdigest()
+                            whole.update(chunk)
+                            done += len(chunk)
+                    fact = {'size': done, 'mtime': st.st_mtime, 'sha1': whole.hexdigest()}
+                    if n:
+                        fact['head'] = head
+                    if limit and done <= limit:
+                        with open(path, 'rb') as f:
+                            data = f.read()
+                        if b'\x00' not in data:
+                            try:
+                                fact['text'] = data.decode('utf-8')
+                            except UnicodeDecodeError:
+                                pass
+                    facts[name] = fact
+                except (OSError, ValueError) as e:
+                    facts[name] = {'error': str(e), 'missing': isinstance(e, FileNotFoundError)}
+            return {'facts': facts}
+
+        if do == 'apply':
+            done = changed = 0
+            for step in p.get('steps') or []:
+                op, src = step.get('op'), inside(step['from'])
+                if op == 'remove':
+                    if os.path.lexists(src):
+                        os.remove(src)
+                        changed += 1
+                elif op in ('copy', 'move'):
+                    dst = inside(step['to'])
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    if op == 'copy':
+                        shutil.copy2(src, dst)
+                    else:
+                        os.replace(src, dst)
+                    changed += 1
+                elif op == 'restore':
+                    # a file's own copy back under its name; where the name is still there the copy was a copy: it goes
+                    dst = inside(step['to'])
+                    if os.path.lexists(src):
+                        if os.path.lexists(dst):
+                            os.remove(src)
+                        else:
+                            os.replace(src, dst)
+                        changed += 1
+                elif op == 'aside':
+                    # out of the repository, into a folder that keeps it (another disk allowed)
+                    if os.path.lexists(src):
+                        dst = inside(step['to'])
+                        os.makedirs(os.path.dirname(dst), exist_ok=True)
+                        shutil.move(src, dst)
+                        changed += 1
+                elif op == 'drop':
+                    # a copy the other side gave, when the name itself is there
+                    if os.path.lexists(src) and os.path.lexists(inside(step['to'])):
+                        os.remove(src)
+                        changed += 1
+                else:
+                    raise ValueError('unknown step: ' + str(op))
+                done += 1
+            return {'done': done, 'changed': changed}
+    except Exception as e:                  # the caller reads one line: what went wrong, and where
+        return {'error': type(e).__name__ + ': ' + str(e)}
+    return {'error': 'nothing asked: ' + str(do)}
+
+
 # A partial repository (a sync entry with "artifacts:"): only the artifacts its cRef patterns select travel. The
 # rclone rules they give are kept beside the bisync listings (a bisync whose rules changed needs --resync), and
 # PARTIAL.md in the host's copy says what it holds.
@@ -674,7 +1041,8 @@ SYNC_RECORD = 'cmeta-sync.json'
 
 # Columns of the fleet table (list); DOCKER and PODMAN = the client versions the probe saw ("-" = not
 # installed, "(daemon down)" when the Docker client is there but no daemon answers)
-LIST_COLUMNS = ['HOST', 'TYPE', 'MACHINE', 'STATUS', 'OS', 'SUDO', 'DOCKER', 'PODMAN', 'CMETA', 'AOPS', 'PYTHON', 'PROBED']
+LIST_COLUMNS = ['HOST', 'TYPE', 'MACHINE', 'STATUS', 'OS', 'SUDO', 'DOCKER', 'PODMAN', 'CMETA', 'AOPS', 'PYTHON', 'PROBED',
+                'SYNCED']
 
 # The cMeta AOPS repository (ctuninglabs@cmeta-aops), known by the UID in its _cmr.yaml "artifact:" -
 # its folder name differs between hosts (cTuningLabs@cmeta-aops on the Mac); the name is the fallback
@@ -889,6 +1257,26 @@ def local_system_id():
 
     _LOCAL_SYSTEM_ID = system_id_of(raw)
     return _LOCAL_SYSTEM_ID
+
+
+# The source of the functions a host's own Python runs, read once when this file is loaded: a sync that started
+# with one version of this file never sends a host a later one (the file replaced by an upgrade while a run is under
+# way - inspect reads a changed file again, and the lines of a function move).
+_HOST_SOURCE = {}
+try:
+    import inspect as _inspect
+    for _function in (_sync_leftovers, _sync_side):
+        _HOST_SOURCE[_function.__name__] = _inspect.getsource(_function)
+except (OSError, TypeError):
+    pass
+
+
+def _host_source(function):
+    """The source of a function of this file for a host's Python: as it was when this file was loaded."""
+    if function.__name__ not in _HOST_SOURCE:
+        import inspect
+        _HOST_SOURCE[function.__name__] = inspect.getsource(function)
+    return _HOST_SOURCE[function.__name__]
 
 
 class Category(InitCategory):
@@ -1904,6 +2292,9 @@ class Category(InitCategory):
         pause=True,         # on problems, wait for Enter at the end when a person is at the terminal (never with -q; --pause- turns it off)
         transfers=None,     # files copied at once: the host's "sync: transfers" or 4; 8-16 for many small files, 4 for big files or a slow link
         progress=False,     # a line every 10 s while a repository syncs: files and bytes moved of those to move, %, speed, time left
+        conflicts=None,     # a file both sides changed: ask (the run stops before it changes anything; the ones that lose nothing are settled) | ask-all (those wait too) | newer (the newer copy keeps the name) - else sync_conflicts of config::host, else ask
+        resolve=None,       # the conflicts a run stopped at, decided: suggested | newer | here | host | both | later (every one it showed, that way), or the JSON file the stopped run wrote with "choice" filled in
+        include_sessions=False,  # also sync the folders of the run-ai sessions open on either side (left out by default: their files are being written)
     ):
         """
         Bring a host's repositories up to date, the way its _desc.yaml declares: "bisync" (two-way, rclone
@@ -1925,6 +2316,34 @@ class Category(InitCategory):
         Each run that is not a dry run keeps the host's verdict beside its bisync listings (cmeta-sync.json: the last
         run - when, SUCCESS or not, all its repositories or a part - and the last full one that succeeded); a page reads
         it to tell whether the host was synced after something happened there.
+
+        A two-way sync looks at both sides before it changes anything:
+
+          - a file BOTH sides changed since the pair's last good run, and different now, is a conflict. One that
+            loses nothing is settled and said: a copy that is the beginning of the other or holds its every line
+            (the other is an earlier state), a memory index (merged memory by memory). Any other stops the run of
+            that repository BEFORE anything is changed, each with a suggestion:
+
+                cx host sync my-host --resolve=suggested           # every conflict as suggested
+                cx host sync my-host --resolve=here | host | newer | both | later      # every one the stop showed
+                cx host sync my-host --resolve=<the JSON file the stop named, "choice" filled in per file>
+
+            "cx host conflicts" lists them again and shows what differs in one (--diff). here / host put that side's
+            copy on both sides, both keeps the newer under the name and the other beside it, later leaves the file as
+            it is on each side (the next sync asks again). A word decides the conflicts the stop showed; the ones that
+            lose nothing are settled as before. What a choice replaces is kept first in the sync-backup artifact of
+            that side.
+
+            --conflicts=newer (or "cx config set host --meta.sync_conflicts=newer") never stops: the newer copy keeps
+            the name and the other stays beside it as <name>.conflict1; --conflicts=ask-all asks about the safe ones
+            too.
+          - the folders of the run-ai sessions that are open on this machine or on the host (a session's own project,
+            the !AI of the artifacts it may write) are left out and said - their files are being written; the next
+            sync after a session has ended carries them. The session that runs the sync is never left out
+            (--include_sessions: none is).
+          - a run that fails leaves no name missing: what rclone had renamed goes back, a file another process holds
+            is left out and synced next time, and the listings of the pair's last good run stay its base - a --resync
+            (which brings back every file deleted on one side since) is asked for a new pair only.
         """
 
         con = ctx['control'].get('con', False)
@@ -1950,12 +2369,26 @@ class Category(InitCategory):
             if not 1 <= transfers <= MAX_TRANSFERS:
                 return self.cm.error(f'--transfers is how many files are copied at once: 1 to {MAX_TRANSFERS} (4 by default; 8-16 for many small files)')
 
+        mode = self._sync_conflicts_mode(conflicts)
+        if mode not in CONFLICT_MODES:
+            return self.cm.error(f'--conflicts (or sync_conflicts of the host config) is one of {", ".join(CONFLICT_MODES)}: got "{mode}"')
+        resolve_word, resolve_per, wrong = self._resolve_choices(resolve)
+        if wrong:
+            return self.cm.error(wrong)
+
         self._status_all(ctx, hosts)
 
         report = []
         problems = []            # what a person must look at: a failed repository, a check that found differences
         skipped_all = []         # the files another process held, left out of a run and synced next time (not a problem)
         long_all = []            # the files whose names a host cannot hold, left out of their pair for good (not a problem)
+        waiting = []             # the conflicts that stopped a repository: [{'host', 'repository', 'file', 'conflicts'}]
+        decided = []             # the files rclone met changed on both sides during a run that asks: the newer kept the name
+        decided_in = set()       # ... and their repositories (one problem each)
+        left_all = []            # the folders of open sessions left out of a run (not a problem)
+        settled_all = []         # the conflicts settled before a run (not a problem)
+        later_all = []           # the conflicts left for later, by a choice or because a decision could not be put (asked again)
+        leftover_all = []        # what an interrupted run had left behind, put aside before a run (not a problem)
         for h in hosts:
             alias = h['alias']
             sync = h['desc'].get('sync') or {}
@@ -2017,10 +2450,80 @@ class Category(InitCategory):
                     retries_n = max(0, int(retries))
                 except (TypeError, ValueError):
                     retries_n = 2
+
+                # the look before a two-way run: the conflicts, the sessions that are open (see the help above)
+                first, later, areas, settled, not_put = [], [], [], [], {}
+                if entry['method'] == 'bisync' and not resync:
+                    white = []
+                    if entry.get('artifacts'):
+                        rs = self._selection_rules(entry['local'], entry['artifacts'])
+                        white = rs['rules'] if rs.get('return', 1) == 0 else []
+                    pre = self._conflicts_before(ctx, h, name, entry, self._filter_list(white, entry['blacklist']), bool(white),
+                                                 mode, resolve_word, resolve_per, dry_run, include_sessions, con, verbose)
+                    if pre.get('note') and con:
+                        print(f'    NOTE: {pre["note"]}')
+                    for s in pre['sessions']:
+                        text = (f'{alias} / {name}: {", ".join(u or "the whole repository" for u in s["under"])} - a session of '
+                                f'{s.get("harness") or "run-ai"} is open {"here" if s["where"] == "here" else "on " + s["where"]}'
+                                + (f' since {str(s["started"])[:16].replace("T", " ")}' if s.get('started') else ''))
+                        left_all.append(text)
+                        if con: print(f'    LEFT OUT: {text}')
+                    first = pre['rules_first']
+                    areas = sorted({u for s in pre['sessions'] for u in s['under']})
+                    later = list(pre['later'])
+                    if pre['conflicts']:
+                        # nothing is changed: the run of this repository waits for a person
+                        total = len(pre['conflicts'])
+                        kept = '' if dry_run else self._remember_conflicts(h, name, entry, pre['conflicts'])
+                        if con:
+                            print('')
+                            for i, c in enumerate(pre['conflicts'][:30]):
+                                print('\n'.join(self._conflict_text(c, i + 1, total, f'{alias} / {name}')))
+                            if total > 30:
+                                print(f'... and {total - 30} more' + (f': {kept}' if kept else ''))
+                            print('')
+                            print(f'*** STOPPED before the run: {alias} / {name} - {total} file(s) changed on both sides wait for a '
+                                  f'decision; NOTHING was changed there. Decide and run again:')
+                            print(f'      cx host sync {alias} --repos={name} --resolve=suggested      (every one as suggested)')
+                            print('      --resolve=here | host | newer | both | later                  (every one that way)')
+                            if kept:
+                                print(f'      --resolve="{kept}"   (per file: fill in "choice" there)')
+                        waiting.append({'host': alias, 'repository': name, 'file': kept,
+                                        'conflicts': [{k: v for k, v in c.items() if k != 'texts'} for c in pre['conflicts']]})
+                        report.append([alias, name, entry['method'], f'CONFLICTS: {total} file(s) changed on both sides - nothing changed',
+                                       '-', _dur_text(time.monotonic() - t0)])
+                        problems.append(f'{alias} / {name}: {total} file(s) changed on both sides and different now - nothing was '
+                                        f'changed; decide (--resolve) and run again: ' + ', '.join(c['path'] for c in pre['conflicts'][:3])
+                                        + (' ...' if total > 3 else ''))
+                        continue
+                    if dry_run:
+                        for c, choice in pre['plan']:
+                            if con: print(f'    WOULD SETTLE: {c["path"]}: {choice} ({c["why"]})')
+                        for s in pre['leftovers']:
+                            if con: print(f'    WOULD PUT ASIDE: {s["path"]} ({s["why"]})')
+                    else:
+                        self._remember_conflicts(h, name, entry, [])
+                        settled, not_put = self._settle_conflicts(ctx, h, name, entry, pre['plan'], con, verbose)
+                        later += [f for f in not_put if f not in later]
+                        settled_all += [f'{alias} / {name}: {s}' for s in settled]
+                        # what an interrupted run left behind: put aside, or the run would carry it as new files
+                        leftover_all += [f'{alias} / {name}: {s}'
+                                         for s in self._drop_leftovers(ctx, h, name, entry, pre['leftovers'], con, verbose)]
+                    if pre['to_rclone'] and con:
+                        print(f'    {pre["to_rclone"]} file(s) changed on both sides: the newer copy keeps the name (sync_conflicts: newer)')
+
                 r = self._sync_repo_robust(ctx, h, name, entry, resync=resync, resync_mode=resync_mode, unlock=unlock,
                                            dry_run=dry_run, con=con, verbose=verbose, backup=backup, retries=retries_n,
-                                           transfers=n_transfers, progress=progress)
+                                           transfers=n_transfers, progress=progress, rules_first=first, later=later, areas=areas)
                 notes = r.get('notes') or []
+                if settled:
+                    notes.append(f'{len(settled)} conflict(s) settled before the run')
+                if areas:
+                    notes.append(f'{len(areas)} folder(s) of open sessions left out')
+                if later:
+                    notes.append(f'{len(later)} file(s) left for later')
+                    later_all += [f'{alias} / {name}: {f}' + (f' - the decision could not be put: {not_put[f]}' if f in not_put else '')
+                                  for f in later]
                 if r['return'] > 0:
                     elapsed = _dur_text(time.monotonic() - t0)
                     report.append([alias, name, entry['method'], 'FAILED: ' + str(r['error'])[:300], '-', elapsed])
@@ -2039,13 +2542,14 @@ class Category(InitCategory):
                     if not any('left out for good' in n for n in notes):
                         result += f' ({len(long_names)} left out: the name is too long there)'
                 skipped += long_names               # the check counts them as skipped, not as a difference
+                skipped += [f for f in later if f not in skipped]
 
                 # the check: both sides compared; a difference right after a good sync is a file that changed during
                 # the run (the other side at work) - synced once more and compared again
                 check = '-'
                 both_sides = list(r.get('both_sides') or [])
                 if not dry_run and not skip_check and entry['method'] != 'git':
-                    c = self._check_repo(ctx, h, name, entry, con, verbose, ignore=skipped)
+                    c = self._check_repo(ctx, h, name, entry, con, verbose, ignore=skipped, rules_first=first)
                     once_more = ''
                     if c.get('conflicts'):
                         merged = self._settle_index_conflicts(ctx, h, name, entry, c['conflicts'], con, verbose)
@@ -2059,7 +2563,8 @@ class Category(InitCategory):
                         if con: print(f'    {once_more}: synced once more')
                         r2 = self._sync_repo_robust(ctx, h, name, entry, resync=False, resync_mode=resync_mode, unlock=unlock,
                                                     dry_run=False, con=con, verbose=verbose, backup=backup, retries=retries_n,
-                                                    transfers=n_transfers, progress=progress)
+                                                    transfers=n_transfers, progress=progress, rules_first=first, later=later,
+                                                    areas=areas)
                         if r2.get('return', 0) == 0:
                             again = self._moved_text(r2.get('moved') or {})
                             if again != 'nothing to move': result += f' + {again}'
@@ -2069,7 +2574,7 @@ class Category(InitCategory):
                                 if s not in skipped:
                                     skipped.append(s)
                                     skipped_all.append(f'{alias} / {name}: {s}')
-                        c = self._check_repo(ctx, h, name, entry, con, verbose, ignore=skipped)
+                        c = self._check_repo(ctx, h, name, entry, con, verbose, ignore=skipped, rules_first=first)
                     check = self._check_text(c) if c.get('errors', 0) >= 0 else 'not checked: ' + str(c.get('error', ''))[:120]
                     if not c.get('ok'):
                         problems.append(f'{alias} / {name}: the check: {check}' + (f' - the list: {c["file"]}' if c.get('file') else ''))
@@ -2078,10 +2583,22 @@ class Category(InitCategory):
                         self._remember_index_bases(h, name, entry)
                     if con: print(f'CHECK ({alias} / {name}): {check}')
                 if both_sides:
-                    # the run itself made conflict copies: a person merges them (an index was merged by the run)
-                    problems.append(f'{alias} / {name}: {len(both_sides)} file(s) changed on both sides since the last sync - kept as '
-                                    f'.conflict1/.conflict2 on both sides, the name itself gone: ' + ', '.join(both_sides[:3]))
-                    result += f' ({len(both_sides)} changed on both sides: conflict copies)'
+                    # rclone itself met files both sides changed (they changed after the look, or sync_conflicts is
+                    # newer): the newer copy keeps the name, the other is beside it as <name>.conflict<n> on both sides
+                    text = (f'{alias} / {name}: {len(both_sides)} file(s) changed on both sides - the newer copy keeps the name, '
+                            f'the other is beside it as <name>.conflict<n> on both sides: ' + ', '.join(both_sides[:3])
+                            + (' ...' if len(both_sides) > 3 else ''))
+                    if mode == 'newer':
+                        same = r.get('equal_times') or []
+                        settled_all += [f'{alias} / {name}: {f}: ' + (
+                            "two copies with equal times - this machine's copy keeps the name, both are beside it as "
+                            if f in same else 'the newer copy keeps the name, the other is beside it as ')
+                            + f'{f.rsplit("/", 1)[-1]}.conflict<n> on both sides' for f in both_sides]
+                    else:
+                        problems.append(text + ' - look at them')
+                        decided += [f'{alias} / {name}: {f}' for f in both_sides]
+                        decided_in.add((alias, name))
+                    result += f' ({len(both_sides)} changed on both sides: the newer keeps the name)'
                 elif entry['method'] == 'git':
                     check = 'git: the pull is the check'
                 elif skip_check and not dry_run:
@@ -2112,6 +2629,7 @@ class Category(InitCategory):
 
         synced = [row for row in report if str(row[3]).startswith('ok')]
         ok = not problems
+        n_waiting = sum(len(w['conflicts']) for w in waiting)
         n_repos = f'{len(synced)} repositor' + ('y' if len(synced) == 1 else 'ies')
         if dry_run:
             summary = f'DRY RUN: {n_repos} looked at, nothing changed' + (f'; {len(problems)} problem(s)' if problems else '')
@@ -2123,11 +2641,37 @@ class Category(InitCategory):
                 summary += f'; {len(skipped_all)} file(s) another process holds skipped, synced next time'
             if long_all:
                 summary += f'; {len(long_all)} file(s) left out: the name is longer than the host holds'
+            if left_all:
+                summary += f'; {len(left_all)} open session(s): their folders left for the next sync'
+            if settled_all:
+                summary += f'; {len(settled_all)} conflict(s) settled'
+            if later_all:
+                summary += f'; {len(later_all)} file(s) left for later (asked again at the next sync)'
+            if leftover_all:
+                summary += f'; leftovers of an interrupted run put aside ({len(leftover_all)} line(s) below)'
+        # only files both sides changed in the way: the word says so - they wait for a decision (the run of their
+        # repository has not started), or rclone met them during a run and the newer copy kept the name
+        asked = bool(problems) and len(problems) == len(waiting) + len(decided_in)
         if con:
             print('')
             self._print_table(['HOST', 'REPOSITORY', 'METHOD', 'RESULT', 'CHECK', 'TIME'], report)
             print('')
-            print(self._banner(ok, 'STATUS: ' + ('SUCCESS - ' if ok else 'FAILED - ') + summary))
+            if asked and waiting:
+                print(self._banner(False, f'STATUS: CONFLICTS - {n_waiting} file(s) changed on both sides wait for a decision; nothing '
+                                          f'was changed in their repositories (--resolve) | ' + summary, word='CONFLICTS!'))
+            elif asked:
+                print(self._banner(False, f'STATUS: CONFLICTS - {len(decided)} file(s) changed on both sides were met during the run: '
+                                          f'both sides are in step, the copy that lost is beside each | ' + summary, word='CONFLICTS!'))
+            else:
+                print(self._banner(ok, 'STATUS: ' + ('SUCCESS - ' if ok else 'FAILED - ') + summary))
+            for s in settled_all[:20]:
+                print(f'SETTLED: {s}')
+            for s in later_all[:20]:
+                print(f'LATER (changed on both sides, left as it is on each; the next sync asks again): {s}')
+            for s in leftover_all[:20]:
+                print(f'LEFTOVER (of a run that did not end well; kept in the sync backup of its side): {s}')
+            for s in left_all[:20]:
+                print(f'LEFT OUT (a run-ai session is open there; the next sync after it has ended carries it): {s}')
             for s in skipped_all[:20]:
                 print(f'SKIPPED (another process holds it, synced next time): {s}')
             for s in long_all[:20]:
@@ -2140,10 +2684,122 @@ class Category(InitCategory):
                 except (EOFError, OSError):
                     pass
 
-        out = {'return': 0 if ok else 1, 'report': report, 'problems': problems, 'summary': summary}
+        out = {'return': 0 if ok else 1, 'report': report, 'problems': problems, 'summary': summary,
+               'conflicts': waiting, 'decided': decided, 'left_out': left_all, 'settled': settled_all, 'later': later_all,
+               'leftovers': leftover_all,
+               'status': 'ok' if ok else ('conflicts' if asked else 'failed')}
         if not ok:
             out['error'] = summary
         return out
+
+    ############################################################
+    def conflicts_(
+        self,
+        ctx,
+        arg1=None,          # host alias, UID or wildcard (default: every host that declares a sync)
+        tags=None,          # or a selection
+        machine=None,
+        type=None,
+        repos=None,         # only these repositories (comma-separated names from the host's sync list)
+        diff=None,          # the differences of one of the files: its path as the list shows it (connects to the host)
+        project=None,      # named environment; omitted: the host's global environment
+    ):
+        """
+        The files a two-way sync stopped at: changed on both sides since the pair's last good run and different now.
+        "cx host sync" stops before it changes anything there and keeps them beside the pair's listings; this lists
+        them again, each with its suggestion, without connecting to any host:
+
+            cx host conflicts                               # of every host
+            cx host conflicts my-host
+            cx host conflicts my-host --repos=my-repo --diff=work/item/notes.md      # what differs in one of them
+
+        Decide, and sync again:
+
+            cx host sync my-host --repos=my-repo --resolve=suggested | here | host | newer | both | later
+            cx host sync my-host --repos=my-repo --resolve=<the JSON file named here, "choice" filled in per file>
+
+        --diff connects to the host, reads both copies (texts of at most 2 MB) and prints what differs: a line with
+        "-" is the host's, a line with "+" this machine's.
+        """
+
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        r = self._select(ctx, arg1, tags, machine, type, project=project)
+        if self.cm.catch_error(r): return r
+        only = self._csv(repos)
+
+        waiting, pairs = [], {}
+        for h in r['hosts']:
+            for name, entry in self._sync_entries(h).items():
+                if (only and name not in only) or entry.get('method') != 'bisync':
+                    continue
+                path = self._conflicts_file(h, name, entry)
+                try:
+                    with open(path, encoding='utf-8') as f:
+                        kept = json.load(f)
+                except (OSError, ValueError):
+                    continue
+                rows = kept.get('conflicts') if isinstance(kept, dict) else None
+                rows = [c for c in rows or [] if isinstance(c, dict) and c.get('path')]
+                if rows:
+                    waiting.append({'host': h['alias'], 'repository': name, 'file': path, 'time': str(kept.get('time') or ''),
+                                    'conflicts': rows})
+                    pairs[(h['alias'], name)] = (h, entry)
+
+        if diff:
+            path = str(diff).replace('\\', '/').strip('/')
+            found = [w for w in waiting if any(c['path'] == path for c in w['conflicts'])]
+            if len(found) != 1:
+                return self.cm.error(f'--diff shows one file that waits for a decision: "{path}" is in {len(found)} of the lists '
+                                     f'(name the host and --repos, and write the path as "cx host conflicts" shows it)')
+            w = found[0]
+            h, entry = pairs[(w['host'], w['repository'])]
+            ask = {'do': 'facts', 'names': [path], 'text_limit': SIDE_TEXT_LIMIT}
+            here = self._on_side(ctx, None, dict(ask, root=entry['local']), verbose)
+            there = self._on_side(ctx, h, dict(ask, root=entry['remote']), verbose)
+            for side, res in (('this machine', here), (h['alias'], there)):
+                if res.get('error'):
+                    return self.cm.error(f'{side} could not be read: {str(res["error"])[:200]}')
+            a, b = (here.get('facts') or {}).get(path) or {}, (there.get('facts') or {}).get(path) or {}
+            out = {'return': 0, 'host': h['alias'], 'repository': w['repository'], 'path': path, 'diff': [], 'note': '',
+                   'here': {k: a.get(k) for k in ('size', 'mtime', 'error') if a.get(k) is not None},
+                   'there': {k: b.get(k) for k in ('size', 'mtime', 'error') if b.get(k) is not None}}
+            if a.get('error') or b.get('error'):
+                out['note'] = 'a copy is gone or cannot be read: ' + str(a.get('error') or b.get('error'))[:160]
+            elif a.get('text') is None or b.get('text') is None:
+                out['note'] = 'not a text, or larger than 2 MB: the two copies cannot be shown line by line'
+            else:
+                import difflib
+                lines = list(difflib.unified_diff(b['text'].splitlines(), a['text'].splitlines(), lineterm='', n=3,
+                                                  fromfile=f'{h["alias"]} ({self._when(b.get("mtime"))})',
+                                                  tofile=f'this machine ({self._when(a.get("mtime"))})'))
+                out['diff'] = lines[:DIFF_LINES]
+                if not lines:
+                    out['note'] = 'the two copies hold the same text now'
+                elif len(lines) > DIFF_LINES:
+                    out['note'] = f'the first {DIFF_LINES} of {len(lines)} lines'
+            if con:
+                print(f'{h["alias"]} / {w["repository"]}: {path}')
+                for l in out['diff']:
+                    print(l)
+                if out['note']:
+                    print(f'NOTE: {out["note"]}')
+            return out
+
+        if con:
+            if not waiting:
+                print('No file waits for a decision.')
+            for w in waiting:
+                total = len(w['conflicts'])
+                print('')
+                for i, c in enumerate(w['conflicts']):
+                    print('\n'.join(self._conflict_text(c, i + 1, total, f'{w["host"]} / {w["repository"]}')))
+                print(f'    since {w["time"]}; decide and sync again:')
+                print(f'      cx host sync {w["host"]} --repos={w["repository"]} --resolve=suggested      (every one as suggested)')
+                print('      --resolve=here | host | newer | both | later                  (every one that way)')
+                print(f'      --resolve="{w["file"]}"   (per file: fill in "choice" there)')
+        return {'return': 0, 'waiting': waiting}
 
     ############################################################
     def push_(
@@ -7081,7 +7737,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         return os.path.join(base, 'bisync-' + h['alias'])
 
     def _sync_repo(self, ctx, h, name, entry, resync, resync_mode, unlock, dry_run, con, verbose, backup=False,
-                   force=False, capture=False, exclude=None, transfers=None, progress=False):
+                   force=False, capture=False, exclude=None, transfers=None, progress=False, rules_first=None):
         """One run of the declared method; force: rclone's --force past its delete guard (bisync); capture: rclone's
         output kept in the result ('output') for the verdicts, with -v so that what moved can be counted; exclude:
         filter patterns of files left out of this bisync run (the files another process holds, _exclude_rule)."""
@@ -7194,7 +7850,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         r = self._rclone(ctx, h, 'resync' if resync else 'bisync', local, entry['remote'], whitelist=rules,
                          blacklist=list(entry['blacklist']) + list(exclude or []), extra=extra, con=con, verbose=verbose,
                          workdir=self._bisync_workdir(h, entry), unlock=unlock, capture=capture, progress=progress,
-                         label=name)
+                         label=name, rules_first=rules_first)
         if r['return'] > 0: return r
         if not dry_run and not resync:
             # the folders this run emptied that stay on a side with files the sync leaves out: moved aside there; a
@@ -7296,6 +7952,23 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             if m and not line.startswith('#') and os.path.basename(m.group(1)).startswith(('_cmeta.', '_cmr.')):
                 if m.group(1) not in changed: changed.append(m.group(1))
         return changed
+
+    def _bisync_base(self, h, entry):
+        """The listings of the pair's last good run - what both sides held then, the base of the next one:
+        {1: <...path1.lst>, 2: <...path2.lst>}, or {} when one is missing (a new pair, or an abort renamed them to
+        .lst-err: _listings_back puts those back)."""
+        workdir, prefix = self._bisync_workdir(h, entry), self._bisync_pair_prefix(entry)
+        try:
+            names = os.listdir(workdir)
+        except OSError:
+            return {}
+        out = {}
+        for side in (1, 2):
+            found = [f for f in names if f.startswith(prefix) and f.endswith(f'.path{side}.lst')]
+            if len(found) != 1:
+                return {}
+            out[side] = os.path.join(workdir, found[0])
+        return out
 
     @staticmethod
     def _bisync_pair_prefix(entry):
@@ -7438,8 +8111,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
     def _sync_leftovers_on_host(self, ctx, h, params, verbose):
         """_sync_leftovers run by the host's Python - its own source and the parameters sent in a script -> its result,
         or {'error': ...}."""
-        import inspect
-        code = (inspect.getsource(_sync_leftovers) + '\n\nimport json\n'
+        code = (_host_source(_sync_leftovers) + '\n\nimport json\n'
                 f'print({LEFTOVERS_MARK!r} + json.dumps(_sync_leftovers(json.loads({json.dumps(params)!r}))))\n')
         powershell = self._shell(h).strip() in ('powershell', 'pwsh')
         if powershell:
@@ -7572,6 +8244,635 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
 
     ############################################################
+    # The look before a two-way run: the conflicts found and settled or asked about, the open sessions left out
+    ############################################################
+
+    def _python_on_host(self, ctx, h, func, params, mark, verbose=False, timeout=600):
+        """A function of this file run by the host's Python - its own source and the parameters sent in a script (as
+        _sync_leftovers_on_host does) -> its result (the JSON after "mark" on a line of its own), or {'error': ...}."""
+        code = (_host_source(func) + '\n\nimport json\n'
+                f'print({mark!r} + json.dumps({func.__name__}(json.loads({json.dumps(params)!r}))))\n')
+        powershell = self._shell(h).strip() in ('powershell', 'pwsh')
+        tag = 'CMETA_' + re.sub(r'[^A-Z]', '_', mark.strip().upper())
+        if powershell:
+            # the Python cMeta runs on there, else the py launcher; the code into a file there and run (see
+            # _sync_leftovers_on_host: a command line has a limit, "python" can be the Store's stub)
+            script = ("$py = ((& cx --version 2>$null) | Where-Object { $_ -match 'cMeta python path' } | "
+                      "Select-Object -First 1) -replace '^[^:]*:\\s*', ''\n"
+                      "$pa = @()\n"
+                      "if (-not ($py -and (Test-Path -LiteralPath $py))) { if (Get-Command py -ErrorAction SilentlyContinue) "
+                      "{ $py = 'py'; $pa = @('-3') } else { $py = 'python' } }\n"
+                      "$f = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'cmeta-sync-side-' + [guid]::NewGuid() + '.py')\n"
+                      "[IO.File]::WriteAllText($f, @'\n" + code + "'@)\n"
+                      "& $py @pa $f; $rc = $LASTEXITCODE; Remove-Item -Force $f; exit $rc\n")
+        else:
+            script = ("P=$(command -v python3 2>/dev/null)\n"
+                      "[ -n \"$P\" ] || P=$(cx --version 2>/dev/null | grep -m1 'cMeta python path' | sed 's/^[^:]*: *//')\n"
+                      f"\"${{P:-python}}\" - <<'{tag}'\n" + code + f'{tag}\n')
+        r = self._temp_script(script, suffix='.ps1' if powershell else '.sh')
+        if r['return'] == 0:
+            r = self._cmd_stdin(ctx, h, r['path'])
+        if r['return'] > 0:
+            return {'error': str(r.get('error'))}
+        rr = self._run_local(r['cmd'], capture=True, timeout=timeout, con=False, verbose=verbose)
+        for line in (rr.get('stdout') or '').splitlines():
+            if line.startswith(mark):
+                try:
+                    return json.loads(line[len(mark):])
+                except ValueError:
+                    break
+        said = [l.strip() for l in ((rr.get('stdout') or '') + '\n' + (rr.get('stderr') or '')).splitlines() if l.strip()]
+        return {'error': f'its Python returned {rr.get("returncode")}' + (': ' + said[-1][:200] if said else '')}
+
+    def _on_side(self, ctx, h, params, verbose=False, timeout=600):
+        """_sync_side on one side: this machine (h: None), or the host by its own Python -> its result or {'error'}."""
+        if h is None:
+            return _sync_side(params)
+        return self._python_on_host(ctx, h, _sync_side, params, SIDE_MARK, verbose, timeout)
+
+    @staticmethod
+    def _filter_list(whitelist, blacklist):
+        """The rules a run gives rclone, in rclone's order, from the two lists as the task rclone-to-ssh reads them
+        (a test compares the two): the blacklist first ("- x"), then the whitelist ("+ x") closed by "- **"; an entry
+        that ends with "/" is that folder with all it holds."""
+        def patterns(entries):
+            out = []
+            for e in entries or []:
+                e = str(e).strip()
+                if e and not e.startswith('#'):
+                    out.append(e + '**' if e.endswith('/') else e)
+            return out
+
+        black, white = patterns(blacklist), patterns(whitelist)
+        return ['- ' + x for x in black] + ['+ ' + x for x in white] + (['- **'] if white else [])
+
+    @staticmethod
+    def _listing_time(text):
+        """A time of rclone's listings ("2026-11-17T13:17:28.597684600+0000") as seconds, or None."""
+        m = re.match(r'^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d+))?(Z|[+-]\d\d:?\d\d)?$', str(text).strip())
+        if not m:
+            return None
+        try:
+            at = datetime.datetime.strptime(m.group(1), '%Y-%m-%dT%H:%M:%S').replace(tzinfo=datetime.timezone.utc).timestamp()
+        except ValueError:
+            return None
+        zone = m.group(3) or 'Z'
+        if zone != 'Z':
+            digits = zone[1:].replace(':', '')
+            at -= (1 if zone[0] == '+' else -1) * (int(digits[:2]) * 3600 + int(digits[2:]) * 60)
+        return at + (float('0.' + m.group(2)) if m.group(2) else 0.0)
+
+    @staticmethod
+    def _base_entries(path, wanted):
+        """Of a listing of the pair's last good run, the entries of the names asked for -> {name: (size, time)}."""
+        out = {}
+        if not wanted:
+            return out
+        with open(path, encoding='utf-8', errors='replace') as f:
+            for line in f:
+                if line.startswith('#'):
+                    continue
+                m = re.match(r'^\S+\s+(-?\d+)\s+\S+\s+\S+\s+(\S+)\s+"(.*)"\s*$', line)
+                if not m:
+                    continue
+                name = _go_unquote(m.group(3))
+                if name in wanted:
+                    out[name] = (int(m.group(1)), Category._listing_time(m.group(2)))
+        return out
+
+    @staticmethod
+    def _area_rules(areas, markers=True):
+        """The rules that leave the folders of open sessions out of a run, their markers kept (a session elsewhere
+        must still be seen): "+ /<area>/!AI/log/*.running" before "- /<area>/**". An area that is a whole repository
+        ('') leaves everything out but the markers."""
+        rules = []
+        for a in areas:
+            a = str(a).strip('/')
+            head = ('/' + re.sub(r'([\\*?\[\]{}])', r'\\\1', a)) if a else ''
+            if markers and not a.endswith('!AI'):
+                rules.append('+ ' + head + ('/!AI/log/*' if a.count('/') >= 1 else '/**/!AI/log/*') + SESSION_MARKER)
+            rules.append('- ' + head + '/**')
+        return rules
+
+    @staticmethod
+    def _when(seconds):
+        return time.strftime('%Y-%m-%d %H:%M', time.localtime(seconds)) if seconds else '?'
+
+    @staticmethod
+    def _compare_copies(name, here, host):
+        """Two copies of a file both sides changed (their facts, _sync_side) -> what they are to each other, the copy
+        suggested and why: {'kind', 'safe' (nothing of the other copy is lost), 'suggested', 'why'}. kind: 'equal'
+        (the same bytes), 'index' (a memory index: merged by line), 'here-extends' / 'host-extends' (the other copy
+        is the beginning of this one), 'here-holds' / 'host-holds' (every line of the other copy is in this one),
+        'differ'."""
+        if here.get('sha1') and here.get('sha1') == host.get('sha1'):
+            return {'kind': 'equal', 'safe': True, 'suggested': '', 'why': 'the same bytes on both sides'}
+        if os.path.basename(name) == 'MEMORY.md' and 'text' in here and 'text' in host:
+            return {'kind': 'index', 'safe': True, 'suggested': 'merge',
+                    'why': 'a memory index: its lines are merged, memory by memory'}
+        if host.get('size', 0) < here.get('size', 0) and here.get('head') and here['head'] == host.get('sha1'):
+            return {'kind': 'here-extends', 'safe': True, 'suggested': 'here',
+                    'why': "the host's copy is the beginning of this machine's: an earlier state of the same file"}
+        if here.get('size', 0) < host.get('size', 0) and host.get('head') and host['head'] == here.get('sha1'):
+            return {'kind': 'host-extends', 'safe': True, 'suggested': 'host',
+                    'why': "this machine's copy is the beginning of the host's: an earlier state of the same file"}
+        newer = 'here' if (here.get('mtime') or 0) >= (host.get('mtime') or 0) else 'host'
+        apart = _dur_text(abs((here.get('mtime') or 0) - (host.get('mtime') or 0)))
+        who = {'here': "this machine's", 'host': "the host's"}
+        if 'text' in here and 'text' in host:
+            a = {l.rstrip() for l in here['text'].splitlines() if l.strip()}
+            b = {l.rstrip() for l in host['text'].splitlines() if l.strip()}
+            if b <= a:
+                return {'kind': 'here-holds', 'safe': True, 'suggested': 'here',
+                        'why': f"this machine's copy holds every line of the host's (and {len(a - b)} more)"}
+            if a <= b:
+                return {'kind': 'host-holds', 'safe': True, 'suggested': 'host',
+                        'why': f"the host's copy holds every line of this machine's (and {len(b - a)} more)"}
+            return {'kind': 'differ', 'safe': False, 'suggested': newer, 'only_here': len(a - b), 'only_host': len(b - a),
+                    'why': f"{who[newer]} copy is newer by {apart}; {len(a - b)} line(s) only here, {len(b - a)} only on the host"}
+        return {'kind': 'differ', 'safe': False, 'suggested': newer,
+                'why': f"{who[newer]} copy is newer by {apart} (not a text, or too large to compare by line)"}
+
+    def _sync_conflicts_mode(self, given=None):
+        """How a conflict is met: --conflicts, else sync_conflicts of config::host, else ask."""
+        mode = str(given or '').strip().lower()
+        if not mode:
+            try:
+                r = self.cm.access({'category': 'config,cc6bfe174be847ed', 'command': 'read', 'arg1': CONFIG_ARTIFACT, 'con': False})
+                cfg = r.get('config_cmeta', {}) if r.get('return', 1) == 0 else {}
+                mode = str((cfg or {}).get('sync_conflicts') or '').strip().lower()
+            except Exception:
+                mode = ''
+        return mode or 'ask'
+
+    @staticmethod
+    def _resolve_choices(resolve):
+        """--resolve read: (a word for every conflict or '', {path: choice}) or an error text. A word: suggested, newer,
+        here, host, both, later; a JSON file - the list a stopped run wrote, "choice" filled in, or {path: choice}; a
+        dict."""
+        words = ('suggested', 'newer') + CONFLICT_CHOICES
+        if resolve in (None, '', False):
+            return '', {}, ''
+        if isinstance(resolve, dict):
+            data = resolve
+        elif str(resolve).strip().lower() in words:
+            return str(resolve).strip().lower(), {}, ''
+        elif os.path.isfile(str(resolve)):
+            try:
+                with open(str(resolve), encoding='utf-8-sig') as f:
+                    data = json.load(f)
+            except (OSError, ValueError) as e:
+                return '', {}, f'--resolve: {resolve} cannot be read ({e})'
+        else:
+            return '', {}, (f'--resolve is {" | ".join(words)}, or a JSON file of choices (the list a stopped run wrote, '
+                            f'with "choice" filled in): "{resolve}" is neither')
+        if isinstance(data, dict) and isinstance(data.get('conflicts'), list):
+            data = {c.get('path'): c.get('choice') for c in data['conflicts'] if isinstance(c, dict)}
+        if not isinstance(data, dict):
+            return '', {}, '--resolve: a JSON object {path: choice} or the list a stopped run wrote is expected'
+        per = {}
+        for path, choice in data.items():
+            choice = str(choice or '').strip().lower()
+            if not choice:
+                continue
+            if choice not in words + ('merge',):
+                return '', {}, f'--resolve: "{choice}" for {path} is not one of {", ".join(words)}'
+            per[str(path)] = choice
+        return '', per, ''
+
+    def _conflicts_before(self, ctx, h, name, entry, rules, ignore_case, mode, resolve_word, resolve_per, dry_run,
+                          include_sessions, con, verbose):
+        """
+        Both sides of a pair looked at before a two-way run (see _sync_side). -> {'return': 0,
+          'sessions': [{'where', 'project', 'under', 'started', 'harness'}]  the sessions open on a side, with their
+                                        folders under this repository (left out of the run),
+          'rules_first': [...]          the rules that leave them out,
+          'conflicts': [...]            the files both sides changed that wait for a person (the run must not start),
+          'plan': [(conflict, choice)]  the ones settled before the run: safe, or decided by --resolve,
+          'later': [names]              left out of this run (--resolve ... later),
+          'to_rclone': n                left to rclone's own rule (sync_conflicts: newer),
+          'leftovers': [{'side', 'path', 'kind', 'why'}]  what an interrupted run left behind, to put aside before
+                                        this one (see _interrupted_leftovers),
+          'note': ''}                   why nothing was looked at (no listings of a last good run yet)
+        Nothing is changed here: _settle_conflicts applies the plan when the run goes on.
+        """
+        out = {'return': 0, 'sessions': [], 'rules_first': [], 'conflicts': [], 'plan': [], 'later': [], 'to_rclone': 0,
+               'note': '', 'leftovers': []}
+        self._listings_back(self._bisync_workdir(h, entry), name)      # the base an aborted run renamed to .lst-err
+        base = self._bisync_base(h, entry)
+        since = None
+        if len(base) == 2:
+            since = min(os.path.getmtime(base[1]), os.path.getmtime(base[2])) - 3600
+        else:
+            out['note'] = 'no listings of a last good run of this pair: nothing to compare with'
+
+        ask = {'do': 'recent', 'rules': rules, 'ignore_case': bool(ignore_case),
+               # without a base only the sessions are asked for
+               'since': since if since is not None else NEVER_CHANGED,
+               'sessions': not include_sessions, 'own_marker': os.environ.get(OWN_MARKER_ENV, '')}
+        here = self._on_side(ctx, None, dict(ask, root=entry['local']), verbose)
+        there = self._on_side(ctx, h, dict(ask, root=entry['remote'], own_marker=''), verbose)
+        for side, res in (('this machine', here), (h['alias'], there)):
+            if res.get('error'):
+                out['note'] = f'{side} could not be looked at before the run ({str(res["error"])[:160]})'
+                return out
+
+        # the folders of the sessions that are open, on either side
+        areas = []
+        for where, res in (('here', here), (h['alias'], there)):
+            for s in res.get('sessions') or []:
+                under = [u for u in s.get('under') or []]
+                if not under:
+                    continue
+                out['sessions'].append({'where': where, 'project': s.get('project'), 'under': under,
+                                        'started': s.get('started'), 'harness': s.get('harness')})
+                areas += [u for u in under if u not in areas]
+        out['rules_first'] = self._area_rules(areas)
+
+        def left_out(path):
+            return any(a == '' or path == a or path.startswith(a + '/') for a in areas)
+
+        if since is None:
+            return out
+
+        # changed on both sides lately, and not the same size and time now
+        a, b = here.get('files') or {}, there.get('files') or {}
+        out['leftovers'] = self._interrupted_leftovers(ctx, h, entry, base, a, b, left_out, verbose)
+        for step in out['leftovers']:
+            (a if step['side'] == 1 else b).pop(step['path'], None)
+        both = [n for n in a if n in b and not left_out(n) and not n.endswith(SESSION_MARKER)
+                and not (a[n][0] == b[n][0] and abs(a[n][1] - b[n][1]) <= 2)]
+        if not both:
+            return out
+        # each against its entry of the last good run: changed on this side too?
+        wanted = set(both)
+        was1, was2 = self._base_entries(base[1], wanted), self._base_entries(base[2], wanted)
+
+        def changed(now, was):
+            return was is None or was[0] != now[0] or was[1] is None or abs(was[1] - now[1]) > 2
+
+        both = sorted(n for n in both if changed(a[n], was1.get(n)) and changed(b[n], was2.get(n)))
+        if not both:
+            return out
+
+        f1 = self._on_side(ctx, None, {'do': 'facts', 'root': entry['local'], 'names': both, 'text_limit': SIDE_TEXT_LIMIT,
+                                       'head': {n: b[n][0] for n in both if b[n][0] < a[n][0]}}, verbose)
+        f2 = self._on_side(ctx, h, {'do': 'facts', 'root': entry['remote'], 'names': both, 'text_limit': SIDE_TEXT_LIMIT,
+                                    'head': {n: a[n][0] for n in both if a[n][0] < b[n][0]}}, verbose)
+        if f1.get('error') or f2.get('error'):
+            out['note'] = f'the files both sides changed could not be compared ({str(f1.get("error") or f2.get("error"))[:160]})'
+            return out
+
+        for n in both:
+            x, y = (f1.get('facts') or {}).get(n) or {}, (f2.get('facts') or {}).get(n) or {}
+            if x.get('error') or y.get('error'):
+                c = {'kind': 'differ', 'safe': False, 'suggested': 'later',
+                     'why': 'one copy could not be read: ' + str(x.get('error') or y.get('error'))[:120]}
+            else:
+                c = self._compare_copies(n, x, y)
+            if c['kind'] == 'equal':
+                continue                            # rclone finds them equal too: no conflict
+            c.update(path=n, here={'size': x.get('size'), 'mtime': x.get('mtime')},
+                     host={'size': y.get('size'), 'mtime': y.get('mtime')})
+            if c['kind'] == 'index':
+                c['texts'] = (x.get('text'), y.get('text'))
+            # a file's own choice first; a word for every conflict decides the ones that wait - one that loses nothing
+            # is settled as it would be without the word (the word was given for the conflicts the stop showed)
+            choice = resolve_per.get(n) or ''
+            if not choice and resolve_word and (not c['safe'] or mode == 'ask-all'):
+                choice = c['suggested'] if resolve_word == 'suggested' else resolve_word
+            if choice == 'newer':
+                choice = 'here' if (x.get('mtime') or 0) >= (y.get('mtime') or 0) else 'host'
+            if choice == 'merge' and c['kind'] != 'index':
+                choice = ''
+            if not choice and c['safe'] and mode != 'ask-all':
+                choice = c['suggested']
+            if choice == 'later':
+                out['later'].append(n)
+            elif choice:
+                out['plan'].append((c, choice))
+            elif mode == 'newer':
+                out['to_rclone'] += 1
+            else:
+                out['conflicts'].append(c)
+        return out
+
+    def _bisync_interrupted(self, h, entry):
+        """The listings rclone made at the start of a run that did not end well (<pair>.path<n>.lst-new: they stay
+        beside the base until a run that ends well replaces them) -> {1: path, 2: path}, or {} when there is none
+        newer than the base."""
+        base = self._bisync_base(h, entry)
+        if len(base) != 2:
+            return {}
+        out = {}
+        for side in (1, 2):
+            new = base[side] + '-new'
+            try:
+                if os.path.getmtime(new) <= os.path.getmtime(base[side]):
+                    return {}
+            except OSError:
+                return {}
+            out[side] = new
+        return out
+
+    def _interrupted_leftovers(self, ctx, h, entry, base, here, there, left_out, verbose):
+        """What a run that did not end well left behind, found among the files the two sides changed lately (here,
+        there: {name: [size, time]}) - neither is in the pair's base, so the next run would take each for a new file
+        and carry it to the other side (2026-11-17: four temporary files and a work item that had been moved away
+        came back that way):
+
+          'partial'  a temporary file of an interrupted transfer (rclone's <name>.<8 hex>.partial) that the last good
+                     run did not know;
+          'gone'     a file that was on the OTHER side when the interrupted run began (its listing of that side,
+                     .lst-new), is gone from there now, and whose copy on this side is exactly what was there then
+                     (size and time) while the last good run did not know it so: the run carried it across before
+                     it stopped, and it was deleted on its own side since. Its copy follows it.
+
+        -> [{'side': 1 (this machine) | 2 (the host), 'path', 'kind', 'why'}]; nothing is changed here
+        (_drop_leftovers puts them aside, into the sync backup of their side)."""
+        steps, files = [], {1: here, 2: there}
+        partial = re.compile(PARTIAL_FILE)
+        where = {1: 'this machine', 2: h['alias']}
+
+        def as_then(entry_then, now):
+            return entry_then[0] == now[0] and abs((entry_then[1] or 0) - now[1]) <= 2
+
+        for side in (1, 2):
+            names = [n for n in files[side] if partial.search(n) and not left_out(n)]
+            known = self._base_entries(base[side], set(names)) if names else {}
+            steps += [{'side': side, 'path': n, 'kind': 'partial',
+                       'why': f'a temporary file an interrupted transfer left on {where[side]}'}
+                      for n in sorted(names) if n not in known]
+
+        new = self._bisync_interrupted(h, entry)
+        for gone, kept in (((1, 2), (2, 1)) if new else ()):
+            names = [n for n in files[kept] if n not in files[gone] and not left_out(n) and not partial.search(n)
+                     and not n.endswith(SESSION_MARKER)]
+            if not names:
+                continue
+            then = self._base_entries(new[gone], set(names))            # what the other side held when that run began
+            names = [n for n in names if n in then and as_then(then[n], files[kept][n])]
+            if not names:
+                continue
+            was = self._base_entries(base[kept], set(names))            # ... and the last good run did not know it so here
+            names = [n for n in names if not (n in was and as_then(was[n], files[kept][n]))]
+            if not names:
+                continue
+            res = self._on_side(ctx, None if gone == 1 else h, {'do': 'facts', 'stat': True, 'names': names,
+                                                                 'root': entry['local'] if gone == 1 else entry['remote']}, verbose)
+            facts = res.get('facts') or {}
+            for n in sorted(names):
+                if (facts.get(n) or {}).get('missing'):
+                    steps.append({'side': kept, 'path': n, 'kind': 'gone',
+                                  'why': f'deleted on {where[gone]} after an interrupted run had carried it to {where[kept]}'})
+        return steps
+
+    def _drop_leftovers(self, ctx, h, name, entry, steps, con, verbose):
+        """The leftovers of an interrupted run put aside, each into the run's folder of the sync backup of its own
+        side (nothing is deleted: a file can be taken back from there) -> the notes for the verdict."""
+        notes = []
+        if not steps:
+            return notes
+        dirs = self._backup_dirs(h, name, entry)
+        if dirs.get('return', 0) > 0:
+            return [f'what an interrupted run left behind could not be put aside ({dirs.get("error")}): it travels as new files']
+        for side, root, target, where, on in ((1, entry['local'], dirs['local'], None, 'this machine'),
+                                              (2, entry['remote'], dirs['remote'], h, h['alias'])):
+            mine = [s for s in steps if s['side'] == side]
+            if not mine:
+                continue
+            sep = os.sep if side == 1 else '/'
+            moves = [{'op': 'aside', 'from': s['path'], 'to': target + sep + s['path'].replace('/', sep)} for s in mine]
+            r = self._on_side(ctx, where, {'do': 'apply', 'root': root, 'steps': moves}, verbose)
+            if r.get('error'):
+                notes.append(f'what an interrupted run left on {on} could not be put aside ({str(r["error"])[:160]})')
+                continue
+            n = len([s for s in mine if s['kind'] == 'partial'])
+            if n:
+                notes.append(f'{n} temporary file(s) an interrupted transfer left on {on} put aside')
+            notes += [f'{s["path"]}: {s["why"]} - its copy put aside too' for s in mine if s['kind'] == 'gone']
+            if side == 2:
+                self._backup_mark_remote(ctx, h, dirs, con, verbose)
+        if con:
+            for note in notes:
+                print(f'    LEFTOVER: {note}')
+        return notes
+
+    def _sweep_partials(self, ctx, h, name, entry, since, con, verbose):
+        """After an attempt that failed: the temporary files its own interrupted transfers left on either side
+        (changed after `since`) put aside, so that the next attempt does not carry them as new files -> how many."""
+        steps = []
+        for side, root, where in ((1, entry['local'], None), (2, entry['remote'], h)):
+            res = self._on_side(ctx, where, {'do': 'recent', 'root': root, 'since': since, 'match': PARTIAL_FILE,
+                                             'rules': self._filter_list([], entry.get('blacklist') or [])}, verbose)
+            steps += [{'side': side, 'path': n, 'kind': 'partial', 'why': 'a temporary file of the transfer that stopped'}
+                      for n in sorted(res.get('files') or {})]
+        self._drop_leftovers(ctx, h, name, entry, steps, False, verbose)
+        return len(steps)
+
+    def _settle_conflicts(self, ctx, h, name, entry, plan, con, verbose):
+        """The plan of _conflicts_before applied before the run: the copy chosen is put on the other side with its
+        time (so the run finds one equal file), what it replaces kept first in the run's folder of the sync-backup
+        artifact of that side. choice: here | host (that side's copy), merge (a memory index, by line), both (the
+        newer keeps the name, the other beside it as <name>.conflict<n> on both sides).
+        -> (the notes of the ones settled, for the verdict; {name: why} of those whose decision could not be put - a
+        file another process holds, say: left out of this run and asked again at the next one)"""
+        notes, failed = [], {}
+        if not plan:
+            return notes, failed
+        dirs = self._backup_dirs(h, name, entry)
+        if dirs.get('return', 0) > 0:
+            return notes, {c['path']: f'the copies to replace could not be kept ({dirs.get("error")})' for c, _ in plan}
+        local, remote = entry['local'], entry['remote']
+        marked = False
+
+        def to_host(rel, target=None):
+            return self._rclone(ctx, h, 'copyto', os.path.join(local, *rel.split('/')), remote + '/' + (target or rel),
+                                con=False, verbose=verbose, capture=True)
+
+        def to_here(rel, target=None):
+            return self._rclone(ctx, h, 'copyto', os.path.join(local, *(target or rel).split('/')), remote + '/' + rel,
+                                con=False, verbose=verbose, capture=True, from_remote=True)
+
+        for c, choice in plan:
+            rel = c['path']
+            keep_here = {'do': 'apply', 'root': local, 'steps': [{'op': 'copy', 'from': rel, 'to': os.path.join(dirs['local'], *rel.split('/'))}]}
+            keep_host = {'do': 'apply', 'root': remote, 'steps': [{'op': 'copy', 'from': rel, 'to': dirs['remote'] + '/' + rel}]}
+            error = ''
+            try:
+                if choice == 'merge':
+                    kept = self._index_base_file(h, entry, name, rel)
+                    start = None
+                    if os.path.isfile(kept):
+                        with open(kept, encoding='utf-8', errors='replace') as f:
+                            start = f.read()
+                    text = self._merge_index_lines(c['texts'][0], c['texts'][1], base=start,
+                                                   a_newer=(c['here']['mtime'] or 0) >= (c['host']['mtime'] or 0))
+                    for side, ask in ((None, keep_here), (h, keep_host)):
+                        r = self._on_side(ctx, side, ask, verbose)
+                        error = error or r.get('error', '')
+                    if not error:
+                        with open(os.path.join(local, *rel.split('/')), 'w', encoding='utf-8', newline='\n') as f:
+                            f.write(text)
+                        r = to_host(rel)
+                        error = r.get('error', '') if r.get('return', 0) > 0 else ''
+                        marked = True
+                    what = 'merged by line'
+                elif choice in ('here', 'host'):
+                    r = self._on_side(ctx, h if choice == 'here' else None, keep_host if choice == 'here' else keep_here, verbose)
+                    error = r.get('error', '')
+                    if not error:
+                        r = to_host(rel) if choice == 'here' else to_here(rel)
+                        error = r.get('error', '') if r.get('return', 0) > 0 else ''
+                        marked = marked or choice == 'here'
+                    what = "this machine's copy kept" if choice == 'here' else "the host's copy kept"
+                elif choice == 'both':
+                    newer_here = (c['here']['mtime'] or 0) >= (c['host']['mtime'] or 0)
+                    copy = rel + '.conflict1'
+                    if newer_here:
+                        # the host's copy beside the name on both sides, this machine's under the name
+                        r = self._on_side(ctx, h, {'do': 'apply', 'root': remote, 'steps': [{'op': 'move', 'from': rel, 'to': copy}]}, verbose)
+                        error = r.get('error', '')
+                        for step in ((lambda: to_host(rel)), (lambda: to_here(copy))):
+                            if not error:
+                                r = step()
+                                error = r.get('error', '') if r.get('return', 0) > 0 else ''
+                    else:
+                        r = self._on_side(ctx, None, {'do': 'apply', 'root': local, 'steps': [{'op': 'move', 'from': rel, 'to': copy}]}, verbose)
+                        error = r.get('error', '')
+                        for step in ((lambda: to_here(rel)), (lambda: to_host(copy))):
+                            if not error:
+                                r = step()
+                                error = r.get('error', '') if r.get('return', 0) > 0 else ''
+                    what = f'both kept: the newer under the name, the other as {os.path.basename(copy)}'
+                else:
+                    error = f'unknown choice "{choice}"'
+                    what = ''
+            except OSError as e:
+                error = str(e)
+            if error:
+                error = str(error)
+                held = 'used by another process' in error or 'cannot access the file' in error
+                failed[rel] = ('another process holds the file' if held else
+                               ('... ' + error[-200:] if len(error) > 200 else error))
+                if con: print(f'    NOT SETTLED: {rel}: {failed[rel]} - left out of this run, asked again at the next sync')
+                continue
+            notes.append(f'{rel}: {what} ({c["why"]})')
+            if con: print(f'    SETTLED: {notes[-1]}')
+        if marked:
+            self._backup_mark_remote(ctx, h, dirs, con, verbose)
+        return notes, failed
+
+    @staticmethod
+    def _conflict_text(c, n, total, where):
+        """A conflict for a person: the two copies and the suggestion, a few lines."""
+        def copy(d):
+            return f'{d.get("size")} bytes, {Category._when(d.get("mtime"))}'
+        words = {'here': "keep this machine's", 'host': "keep the host's", 'both': 'keep both', 'later': 'decide later',
+                 'merge': 'merge them'}
+        return [f'CONFLICT {n} of {total} ({where}): {c["path"]}',
+                f'    this machine: {copy(c["here"])}',
+                f'    the host:     {copy(c["host"])}',
+                f'    suggested:    {words.get(c["suggested"], c["suggested"])} - {c["why"]}']
+
+    def _conflicts_file(self, h, name, entry):
+        return os.path.join(self._bisync_workdir(h, entry), CONFLICTS_FILE.format(re.sub(r'[^A-Za-z0-9_.@-]+', '_', name)))
+
+    def _remember_conflicts(self, h, name, entry, conflicts):
+        """The conflicts that stopped a run, kept beside the pair's listings for a page and for --resolve=<this file>
+        ("choice" to fill in: here | host | both | later); removed when a run finds none."""
+        path = self._conflicts_file(h, name, entry)
+        try:
+            if not conflicts:
+                if os.path.isfile(path):
+                    os.remove(path)
+                return ''
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            rows = [{'path': c['path'], 'here': c['here'], 'host': c['host'], 'kind': c['kind'], 'suggested': c['suggested'],
+                     'why': c['why'], 'choice': ''} for c in conflicts]
+            with open(path + '.tmp', 'w', encoding='utf-8', newline='\n') as f:
+                json.dump({'host': h['alias'], 'repository': name, 'time': time.strftime('%Y-%m-%d %H:%M:%S'),
+                           'choices': list(CONFLICT_CHOICES), 'conflicts': rows}, f, indent=1)
+            os.replace(path + '.tmp', path)
+            return path
+        except OSError:
+            return ''
+
+    @staticmethod
+    def _renamed(entry, text):
+        """What a run renamed while it worked through the files both sides changed, from rclone's own lines ("- Path1
+        Renaming Path1 copy - <path>.conflict<n>": this machine's file became that copy; Path2: the host's)
+        -> [(side, the copy, the name)], paths relative to the repository."""
+        local = os.path.normcase(os.path.abspath(entry['local'])).replace('\\', '/').rstrip('/') + '/'
+        remote = str(entry['remote']).rstrip('/') + '/'
+        out = []
+        for l in (text or '').splitlines():
+            m = re.search(r'Renaming Path([12]) copy\s+- (.+?\.conflict\d+)\s*$', l)
+            if not m:
+                continue
+            side, path = int(m.group(1)), m.group(2).strip()
+            if side == 1:
+                low = os.path.normcase(path).replace('\\', '/')
+                if not low.startswith(local):
+                    continue
+                rel = path.replace('\\', '/')[len(local):]
+            else:
+                path = re.sub(r'^:sftp[^:]*:', '', path)
+                if not path.startswith(remote):
+                    continue
+                rel = path[len(remote):]
+            out.append((side, rel, re.sub(r'\.conflict\d+$', '', rel)))
+        return out
+
+    def _names_back(self, ctx, h, entry, text, con, verbose):
+        """After a run that SUCCEEDED: a file both sides changed to different bytes at the same time has no newer copy
+        - rclone renamed both and the name is gone on both sides. This machine's copy takes the name back, here and on
+        the host with the same time (the two copies stay beside it). -> the names put back."""
+        mine, sides = {}, {}
+        for side, rel, name in self._renamed(entry, text):
+            sides.setdefault(name, set()).add(side)
+            if side == 1:
+                mine[name] = rel
+        back = []
+        for name in sorted(n for n, s in sides.items() if s == {1, 2} and n in mine):
+            r = self._on_side(ctx, None, {'do': 'apply', 'root': entry['local'],
+                                          'steps': [{'op': 'copy', 'from': mine[name], 'to': name}]}, verbose)
+            if not r.get('error'):
+                r = self._rclone(ctx, h, 'copyto', os.path.join(entry['local'], *name.split('/')), entry['remote'] + '/' + name,
+                                 con=False, verbose=verbose, capture=True)
+            if r.get('error'):
+                if con: print(f'    WARNING: {name} is without its name on both sides (two copies with equal times) and was not '
+                              f'put back: {r["error"]}')
+                continue
+            back.append(name)
+            if con: print(f'    {name}: two copies with equal times and different bytes - this machine\'s copy keeps the name, '
+                          f'both stay beside it as .conflict<n>')
+        return back
+
+    def _undo_renames(self, ctx, h, entry, text, con, verbose):
+        """After a run that FAILED: what rclone renamed while it worked through the files both sides changed is put
+        back, each side its own copy - "Renaming Path1 copy - <path>.conflict<n>" is this machine's file, renamed (or,
+        where a rename is a copy and a delete, copied: then the copy goes). The copies the run had already carried to
+        the other side go too. -> how many names were put back or cleaned."""
+        steps = {1: [], 2: []}
+        for side, rel, name in self._renamed(entry, text):
+            steps[side].append({'op': 'restore', 'from': rel, 'to': name})          # its own copy, back under its name
+            steps[3 - side].append({'op': 'drop', 'from': rel, 'to': name})         # the copy it was given, when its name is there
+        done = 0
+        for side, root, where in ((1, entry['local'], None), (2, entry['remote'], h)):
+            if not steps[side]:
+                continue
+            # the restores first: a name is back before the copy of it on the other side goes
+            ordered = sorted(steps[side], key=lambda s: s['op'] != 'restore')
+            r = self._on_side(ctx, where, {'do': 'apply', 'root': root, 'steps': ordered}, verbose)
+            if r.get('error'):
+                if con: print(f'    WARNING: what the failed run renamed on {"this machine" if where is None else h["alias"]} '
+                              f'was not put back: {r["error"]}')
+            else:
+                done += int(r.get('changed') or 0)
+        return done
+
+    ############################################################
     # The sync that finishes and proves it: repairs, retries, the check of both sides, the verdict
     ############################################################
 
@@ -7579,7 +8880,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
     def _bisync_failure(text):
         """What rclone's bisync said when it failed -> (kind, detail): 'lock' (a stale lock file), 'too-many-deletes'
         ((side, gone, total): its >50% delete guard), 'needs-resync' (no usable listings: a new pair, a side replaced),
-        'transient' (worth another try), 'other'."""
+        'transient' (worth another try), 'cut' (the run had begun and ended without rclone's own last word: its process
+        was ended from outside, the machine slept, the link fell), 'other'."""
         s = text or ''
         if 'prior lock file found' in s:
             return 'lock', None
@@ -7591,10 +8893,20 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         files = Category._unreadable_files(s)
         if files:
             return 'unreadable', files
+        # a file another process holds so that rclone could not delete or rename it (Windows; 2026-11-17: a SQLite
+        # database of a daemon, met while rclone renamed the two copies of a conflict) - critical too, with the same
+        # "Must run --resync": the pair has not lost its base, the file is left out of the run instead
+        files = Category._held_files(s)
+        if files:
+            return 'held', files
         if re.search(r'Must run --resync|all files were changed|cannot find prior Path1 or Path2 listings|listing.*not found', s):
             return 'needs-resync', None
         if re.search(r'retrying may help|Please try again|Error is retryable|connection reset|broken pipe|timed out|i/o timeout|EOF', s):
             return 'transient', None
+        # the run had begun (rclone names its settings, then lists both sides) and nothing closes it
+        if re.search(r'Bisyncing with Comparison Settings|Building Path1 and Path2 listings', s) and not re.search(
+                r'Bisync successful|Bisync aborted|Bisync critical error|Failed to bisync', s):
+            return 'cut', None
         return 'other', None
 
     @staticmethod
@@ -7604,6 +8916,18 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         out = []
         for l in (text or '').splitlines():
             m = re.search(r'ERROR : (.+?): Failed to (?:copy|calculate src hash|read|open|hash)\b', l)
+            if m and not m.group(1).startswith('Local file system at') and m.group(1) not in out:
+                out.append(m.group(1))
+        return out
+
+    @staticmethod
+    def _held_files(text):
+        """The files a run could not delete or rename because another process holds them, from rclone's own lines
+        ("ERROR : <path>: Couldn't delete: remove ...: The process cannot access the file because it is being used by
+        another process."), relative to their side's root, in order, once each."""
+        out = []
+        for l in (text or '').splitlines():
+            m = re.search(r"ERROR : (.+?): Couldn't (?:delete|move|rename|remove)\b", l)
             if m and not m.group(1).startswith('Local file system at') and m.group(1) not in out:
                 out.append(m.group(1))
         return out
@@ -7685,13 +9009,16 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         return now
 
     @staticmethod
-    def _entries_back(listings, files):
+    def _entries_back(listings, files, prefixes=()):
         """After a run that left "files" out, their pre-run entries (the listings _listings_back saved) go back into
         the new .lst files: an excluded file is not listed, and would be new on both sides at the next run - a
-        conflict with the name gone on both sides. Binary: rclone's lines end in LF (a text-mode append on Windows
-        writes CRLF and the name grows a CR). -> how many entries were put back."""
+        conflict with the name gone on both sides. prefixes: whole folders left out (the folders of open sessions) -
+        every entry under one of them goes back, but the ones the new listing has (a session's marker travels).
+        Binary: rclone's lines end in LF (a text-mode append on Windows writes CRLF and the name grows a CR).
+        -> how many entries were put back."""
         n = 0
         names = [f'"{rel}"'.encode('utf-8') for rel in files]
+        heads = [b' "' + ((str(a).strip('/') + '/').encode('utf-8') if str(a).strip('/') else b'') for a in prefixes]
         for lst, old in listings.items():
             try:
                 with open(lst, 'rb') as f:
@@ -7700,6 +9027,20 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 continue
             missing = [nm for nm in names if nm not in new]
             add = [l.rstrip(b'\r') for l in old.split(b'\n') if any(l.rstrip(b'\r').endswith(nm) for nm in missing)]
+            if heads:
+                # the names the new listing holds already (the quoted name is the end of a line)
+                listed = set()
+                for l in new.split(b'\n'):
+                    i = l.find(b' "')
+                    if i >= 0 and not l.startswith(b'#'):
+                        listed.add(l[i + 1:].rstrip(b'\r'))
+                for l in old.split(b'\n'):
+                    l = l.rstrip(b'\r')
+                    i = l.find(b' "')
+                    if i < 0 or l.startswith(b'#') or l in add:
+                        continue
+                    if any(l[i:].startswith(hd) for hd in heads) and l[i + 1:] not in listed:
+                        add.append(l)
             if not add:
                 continue
             with open(lst, 'ab') as f:
@@ -7779,7 +9120,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         return rr.get('returncode', 1) == 0 and not (rr.get('stdout') or '').strip()
 
     def _sync_repo_robust(self, ctx, h, name, entry, resync, resync_mode, unlock, dry_run, con, verbose, backup, retries,
-                          transfers=None, progress=False):
+                          transfers=None, progress=False, rules_first=None, later=None, areas=None):
         """The declared sync of one repository, run until it finishes or until nothing known cures it: a stale lock is
         dropped, rclone's delete guard is passed with --force when the side that lost the files is still a repository
         (the deleted files kept in the host's sync-backup artifact), a new pair is seeded from this machine, a transient
@@ -7787,14 +9128,23 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         last run, with 'notes' (what was done), 'moved' and 'long_names' (the files left out for their names)."""
         notes, force, attempt = [], False, 0
         exclude, fix = [], None             # a run without the files another process holds, and their listing entries to put back
+        # the files left out of this run on purpose - a conflict to decide later (later), the folders of the sessions
+        # that are open (areas, left out by rules_first): their entries of the last good run go back into the new
+        # listings after the run, so that each is one ordinary change at the next one (not new on both sides)
+        later, areas = list(later or []), list(areas or [])
+        kept = {}
+        if (later or areas) and entry['method'] == 'bisync' and not dry_run and not resync:
+            kept = self._listings_now(self._bisync_workdir(h, entry))
+            exclude = [self._exclude_rule(f) for f in later]
         # the names the host cannot hold, found by an earlier run of this pair: left out from the start, named in the verdict
         long_names = self._long_names(h, name, entry) if entry['method'] == 'bisync' else []
         while True:
             attempt += 1
+            began = time.time()                 # a time of day: the files an attempt leaves are newer than it
             r = self._sync_repo(ctx, h, name, entry, resync=resync, resync_mode=resync_mode, unlock=unlock, dry_run=dry_run,
                                 con=con, verbose=verbose, backup=backup, force=force, capture=not dry_run,
                                 exclude=[self._exclude_rule(f) for f in long_names] + list(exclude),
-                                transfers=transfers, progress=progress)
+                                transfers=transfers, progress=progress, rules_first=rules_first)
             r['notes'] = notes
             r['long_names'] = list(long_names)
             if r.get('return', 0) == 0:
@@ -7804,6 +9154,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                         listings, skipped = fix
                         self._entries_back(listings, skipped)
                         r['skipped'] = list(skipped)
+                    if kept:
+                        self._entries_back(kept, later, prefixes=areas)
                     r['moved'] = {'git': r['git']} if r.get('git') else self._moved(r.get('output', ''))
                     # a file changed on both sides since the last run: rclone keeps both copies as .conflict1/2 and
                     # the name itself is gone on both sides - the paths, for the verdict (from its renames: its warning
@@ -7814,12 +9166,44 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                         if m and m.group(1) == m.group(2) and m.group(1) not in seen:
                             seen.append(m.group(1))
                     r['both_sides'] = seen
+                    back = self._names_back(ctx, h, entry, r.get('output') or '', con, verbose) if seen else []
+                    r['equal_times'] = back
+                    if back:
+                        notes.append(f'{len(back)} name(s) rclone took from both sides (equal times) put back')
                     if verbose and r.get('output'):
                         print(r['output'])
                 return r
             if dry_run or entry['method'] != 'bisync' or attempt > retries + 3:
                 return r
-            kind, detail = self._bisync_failure((r.get('output') or '') + (r.get('error') or ''))
+            said = (r.get('output') or '') + (r.get('error') or '')
+            # the temporary files its interrupted transfers left go aside: the next attempt - or the next run - would
+            # carry each to the other side as a new file (the two clocks may differ: two minutes of margin)
+            margin = 120
+            swept = self._sweep_partials(ctx, h, name, entry, began - margin, con, verbose)
+            if swept:
+                notes.append(f'{swept} temporary file(s) the stopped transfer left put aside')
+                if con: print(f'    {notes[-1]}')
+            # what the stopped run renamed while it worked through the files both sides changed goes back, each side
+            # its own copy: no name stays missing because a run failed (2026-11-17)
+            undone = self._undo_renames(ctx, h, entry, said, con, verbose)
+            if undone:
+                notes.append(f'{undone} name(s) the stopped run had renamed put back')
+                if con: print(f'    {notes[-1]}')
+            kind, detail = self._bisync_failure(said)
+            if kind == 'held':
+                # the run goes again without the file: its entries of the last good run stay, so it is one ordinary
+                # change (or a conflict to decide) at the next run, when its process has let it go
+                workdir = self._bisync_workdir(h, entry)
+                listings = self._listings_back(workdir, name) or self._listings_now(workdir)
+                new = [f for f in detail if self._exclude_rule(f) not in exclude]
+                if listings and new:
+                    exclude = list(exclude) + [self._exclude_rule(f) for f in new]
+                    fix = (fix[0] if fix else listings, (list(fix[1]) if fix else []) + new)
+                    notes.append(f'{len(new)} file(s) another process holds (it cannot be renamed or deleted) skipped this run, '
+                                 f'synced next time: ' + ', '.join(new[:3]) + (' ...' if len(new) > 3 else ''))
+                    if con: print(f'    {notes[-1]}')
+                    continue
+                kind = 'needs-resync'
             if kind == 'unreadable':
                 # a file the host refused to make because its name is too long there reads as a failed copy too - no
                 # process holds it, and no retry will ever cure it
@@ -7893,11 +9277,21 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                     notes.append('a new pair: seeded from this machine (--resync --resync_mode=path1)')
                     if con: print(f'    {notes[-1]}')
                     continue
-                r['error'] = (f'{r.get("error", "")} - the pair needs a new baseline: read "cx host sync {h["alias"]} --repos={name} '
-                              f'--resync --resync_mode=path1 --dry_run" (path1 = this machine wins, path2 = the host) and run it')
+                # A run that rclone stopped renamed the pair's listings to .lst-err: they ARE the listings of its last
+                # good run and go back - the pair has its base, and a resync is not what it needs (a resync brings
+                # back every file deleted on one side since, and one side wins wherever the two differ)
+                workdir = self._bisync_workdir(h, entry)
+                if self._listings_back(workdir, name) or self._bisync_base(h, entry):
+                    r['error'] = (f'{r.get("error", "")} - rclone stopped this run; the listings of the pair\'s last good run are '
+                                  f'back in place and nothing needs a --resync: look at the cause above, then run the sync again')
+                    return r
+                r['error'] = (f'{r.get("error", "")} - the pair has no listings of a good run: read "cx host sync {h["alias"]} '
+                              f'--repos={name} --resync --resync_mode=path1 --dry_run" (path1 = this machine wins, path2 = the '
+                              f'host; a resync brings back the files deleted on one side) and run it')
                 return r
-            if kind == 'transient' and attempt <= retries:
-                notes.append('tried again')
+            if kind in ('transient', 'cut') and attempt <= retries:
+                notes.append('tried again' if kind == 'transient' else
+                             'the run was cut before its end (rclone ended without a last word): tried again')
                 time.sleep(5)
                 continue
             return r
@@ -7943,7 +9337,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if n['errors']: parts.append(f'{n["errors"]} unreadable')
         return 'DIFFERENCES: ' + ', '.join(parts) + note
 
-    def _check_repo(self, ctx, h, name, entry, con, verbose, ignore=None):
+    def _check_repo(self, ctx, h, name, entry, con, verbose, ignore=None, rules_first=None):
         """The two sides compared name by name and size by size (rclone check --size-only, the sync's own filters;
         one way for a copy): the proof that the repository is in step, independent of rclone's listings. -> the
         summary of _check_summary plus 'file' (the combined listing kept in the bisync workdir). "ignore": the files
@@ -7964,7 +9358,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if method == 'copy': extra.append('--one-way')
         for attempt in (1, 2):                      # a check that fails to run (a connection hiccup) is tried once more
             r = self._rclone(ctx, h, 'check', local, entry['remote'], whitelist=rules or None, blacklist=entry['blacklist'],
-                             extra=extra, con=con, verbose=verbose, capture=True, accept=(0, 1))
+                             extra=extra, con=con, verbose=verbose, capture=True, accept=(0, 1), rules_first=rules_first)
             if r.get('return', 0) == 0:
                 break
             time.sleep(3)
@@ -8085,12 +9479,71 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                        'problems': [str(p)[:300] for p in problems[:6]]}
         if not problems and full:
             rec['last_ok'] = {'at': now, 'time': stamp}
+        # each repository's own state (2026-11-17: one pair of a host had failed for four days while the runs of its
+        # other repositories said SUCCESS): when it last ran, when it last ran well, what was in the way
+        state = rec.get('repos') if isinstance(rec.get('repos'), dict) else {}
+        for n, _ in selected:
+            mine = [str(p) for p in problems if str(p).startswith(f'{h["alias"]} / {n}:')]
+            was = state.get(n) if isinstance(state.get(n), dict) else {}
+            state[n] = {'at': now, 'time': stamp, 'ok': not mine,
+                        'ok_at': now if not mine else was.get('ok_at'), 'ok_time': stamp if not mine else was.get('ok_time'),
+                        'problem': mine[0][len(h['alias']) + len(n) + 5:][:200] if mine else ''}
+        rec['repos'] = state
         try:
             with open(path + '.tmp', 'w', encoding='utf-8') as f:
                 json.dump(rec, f, indent=1)
             os.replace(path + '.tmp', path)
         except OSError:
             pass
+
+    def _sync_state(self, h):
+        """How a host's repositories were last synced with this machine, from the record a sync keeps beside the
+        pair's listings (SYNC_RECORD) -> (a few words for the list, the facts for a page):
+          '-'                                   nothing of it was synced from here (or it declares no sync);
+          'ok 11-17 12:39'                      every repository went well at its last run - the time of the one synced
+                                                longest ago;
+          '! my-repo (ok 11-13 20:09)'              the last run of that repository failed or stopped at conflicts: the two
+                                                sides are apart since the time in brackets ("never": no good run kept).
+        The facts: {'ok': bool, 'failed': [{'repository', 'ok_time', 'problem'}], 'time': the time shown}."""
+        try:
+            entries = self._sync_entries(h)
+        except Exception:
+            entries = {}
+        if not entries:
+            return '-', {}
+        try:
+            with open(os.path.join(self._bisync_workdir(h, next(iter(entries.values()))), SYNC_RECORD), encoding='utf-8') as f:
+                rec = json.load(f)
+        except (OSError, ValueError):
+            return '-', {}
+        if not isinstance(rec, dict):
+            return '-', {}
+
+        def short(stamp):
+            return str(stamp or '')[5:16] if stamp else 'never'
+
+        repos = rec.get('repos') if isinstance(rec.get('repos'), dict) else {}
+        known = {n: r for n, r in repos.items() if n in entries and isinstance(r, dict)}
+        if known:
+            failed = [{'repository': n, 'ok_time': r.get('ok_time') or '', 'problem': r.get('problem') or ''}
+                      for n, r in sorted(known.items()) if not r.get('ok')]
+            if failed:
+                text = '! ' + ', '.join(f'{x["repository"]} (ok {short(x["ok_time"])})' for x in failed[:2])
+                return text + (' ...' if len(failed) > 2 else ''), {'ok': False, 'failed': failed, 'time': failed[0]['ok_time']}
+            oldest = min((r.get('ok_time') or r.get('time') or '' for r in known.values()), default='')
+            return 'ok ' + short(oldest), {'ok': True, 'failed': [], 'time': oldest}
+        # a record of before 2026-11-17: the host's last run as a whole
+        last = rec.get('last') if isinstance(rec.get('last'), dict) else {}
+        if not last:
+            return '-', {}
+        if last.get('ok'):
+            return 'ok ' + short(last.get('time')), {'ok': True, 'failed': [], 'time': last.get('time') or ''}
+        when = (rec.get('last_ok') or {}).get('time') if isinstance(rec.get('last_ok'), dict) else ''
+        names = [n for n in (last.get('repos') or []) if n in entries] or list(last.get('repos') or [])
+        failed = [{'repository': n, 'ok_time': when or '', 'problem': '; '.join(str(p) for p in (last.get('problems') or [])[:1])}
+                  for n in names]
+        return ('! ' + ', '.join(names[:2]) + (' ...' if len(names) > 2 else '') + f' (ok {short(when)})',
+                {'ok': False, 'failed': failed, 'time': when or ''})
 
     def _remember_index_bases(self, h, name, entry):
         """After a good sync (both sides checked equal): a copy of every memory index of the repository, the base of
@@ -8187,14 +9640,16 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         return merged
 
     @staticmethod
-    def _banner(ok, summary):
-        """STATUS: SUCCESS or STATUS: FAILED in large letters, with the summary under it."""
+    def _banner(ok, summary, word=None):
+        """STATUS: SUCCESS or STATUS: FAILED in large letters (or another word: CONFLICTS!), with the summary under it."""
         font = {'S': (' ###', '#   ', ' ## ', '   #', '### '), 'U': ('#  #', '#  #', '#  #', '#  #', ' ## '),
                 'C': (' ###', '#   ', '#   ', '#   ', ' ###'), 'E': ('####', '#   ', '### ', '#   ', '####'),
                 'F': ('####', '#   ', '### ', '#   ', '#   '), 'A': (' ## ', '#  #', '####', '#  #', '#  #'),
                 'I': ('###', ' # ', ' # ', ' # ', '###'), 'L': ('#   ', '#   ', '#   ', '#   ', '####'),
-                'D': ('### ', '#  #', '#  #', '#  #', '### '), '!': ('#', '#', '#', ' ', '#')}
-        word = 'SUCCESS!' if ok else 'FAILED!'
+                'D': ('### ', '#  #', '#  #', '#  #', '### '), '!': ('#', '#', '#', ' ', '#'),
+                'O': (' ## ', '#  #', '#  #', '#  #', ' ## '), 'N': ('#  #', '## #', '# ##', '#  #', '#  #'),
+                'T': ('###', ' # ', ' # ', ' # ', ' # ')}
+        word = word or ('SUCCESS!' if ok else 'FAILED!')
         rows = ['  '.join(font[c][i] for c in word) for i in range(5)]
         line = '=' * 100
         # the summary wrapped at the line's width, a problem per line
@@ -8214,7 +9669,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
     def _rclone(self, ctx, h, command, local, remote_path, whitelist=None, blacklist=None, extra=None,
                 con=True, verbose=False, workdir=None, unlock=False, from_remote=False, capture=False, accept=(0,),
-                progress=False, label='', _log=None):
+                progress=False, label='', _log=None, rules_first=None):
         """rclone <command> local -> host (host -> local with from_remote), through the task rclone-to-ssh (which
         sets rclone up if needed). capture: rclone's output comes back in 'output' instead of the console; accept:
         the return codes that are not an error (rclone check answers 1 when the sides differ); progress: rclone logs
@@ -8233,7 +9688,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                     return self._rclone(ctx, h, command, local, remote_path, whitelist=whitelist, blacklist=blacklist,
                                         extra=extra, con=con, verbose=verbose, workdir=workdir, unlock=unlock,
                                         from_remote=from_remote, capture=capture, accept=accept, progress=False,
-                                        label=label, _log=log)
+                                        label=label, _log=log, rules_first=rules_first)
             finally:
                 try:
                     os.remove(log)
@@ -8260,6 +9715,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if workdir: ii['workdir'] = workdir
         if unlock: ii['unlock'] = True
         if from_remote: ii['from_remote'] = True
+        if rules_first: ii['rules_first'] = list(rules_first)   # before the two lists: the folders of open sessions
         if capture:
             ii['capture'] = True
             ii['unparsed'] = list(ii['unparsed']) + ['--color', 'never']      # the paths it names, read as they are
@@ -8379,6 +9835,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             'python': st.get('cmeta_python') or '-',
             'probed': probed,
         }
+        # how its repositories were last synced with this machine: "ok <when>", or "! <repository> ..." for one whose
+        # last run failed or stopped (the record of the sync, _remember_sync)
+        row['synced'], row['sync'] = self._sync_state(h)
         row['projects'] = self._project_rows(h)
         if h.get('project'): row['project'] = h['project']
         # for programs that show the fleet (a web page): what the console prints in ADDRESS, and the artifact itself

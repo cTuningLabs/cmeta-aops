@@ -73,3 +73,43 @@ updates:
              {run_flags_after_exe}
              {{params.run_flags|}}
              {run_src_file_names_str_with_path}
+
+###################################################################################################
+# What the program's own words mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read this block,
+# the engine never does. The page finds the words read above ({{local.params.size|1024}} ...) with their usual
+# values and shows them as parameters of the run; group: more keeps a rare one with the other options.
+cli_help:
+  size:
+    title: Size of the matrix
+    type: int
+    min: 1
+    desc: 'The size n of the test: (batch x n) multiplied by (n x n)'
+  batch:
+    title: Rows of the input
+    type: int
+    min: 1
+    desc: The rows of the input - 1 is a matrix-vector product
+  iterations:
+    title: Iterations
+    type: int
+    min: 1
+    desc: How many timed inferences each device runs
+  seconds:
+    title: Run for (seconds)
+    type: int
+    min: 1
+    desc: Run each device this long instead of a number of iterations, printing its progress
+    example: '30'
+    group: main
+  precision:
+    title: Precision
+    values: [f16, f32]
+    desc: The precision of the inference (the device's own when you choose none)
+    group: main
+  devices:
+    title: Devices
+    desc: The devices of OpenVINO, instead of the ones of the targets
+    example: NPU,CPU
+  openvino_version:
+    title: Which OpenVINO
+    desc: The release of OpenVINO to install (the newest when you give none)

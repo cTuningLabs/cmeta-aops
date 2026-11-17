@@ -55,6 +55,11 @@ class CTask(InitCTask):
             whitelist_from: str = None,   # the same whitelist read from a file, one pattern per line
             blacklist: list = None,       # these dirs/files are never transferred (--blacklist=.venv/,.git/,build/)
             blacklist_from: str = None,   # the same blacklist read from a file, one pattern per line
+            rules_first: list = None,     # rclone filter rules as they are ("+ /a/b/*.running", "- /a/**"), put before the
+                                          # blacklist and the whitelist: the first rule that matches a file decides
+            conflict_resolve: str = 'newer',  # bisync, a file changed on both sides: the newer copy keeps the name and the
+                                          # other is kept beside it as <name>.conflict1 (rclone's own default, "none",
+                                          # renames BOTH copies: the name is gone on both sides)
             progress: bool = True,        # append --progress (on by default; turn off with --no-progress)
             resync: bool = None,          # append --resync (the first "bisync" run needs it);
                                           # implied by the "resync" command spelling
@@ -258,7 +263,14 @@ class CTask(InitCTask):
         r = self._filter_rules(whitelist, whitelist_from, blacklist, blacklist_from)
         if self.cm.catch_error(r): return r
 
-        for rule in r['rules']:
+        # rules_first: rules of the caller that must be seen before every other one - a file kept in a folder that
+        # is left out ("+ /work/x/!AI/log/*.running" before "- /work/x/**"); taken as they are, one rule per entry
+        first = [str(x).strip() for x in ([rules_first] if isinstance(rules_first, str) else (rules_first or []))]
+        for rule in first:
+            if rule[:2] not in ('+ ', '- ') or '"' in rule:
+                return self.cm.error(f'rules_first: "{rule}" is not a filter rule ("+ <pattern>" or "- <pattern>", no double quote)')
+
+        for rule in first + r['rules']:
             cmd_parts.append(f'--filter "{rule}"')
 
         # Passed through when set so that rclone and --unlock look in the SAME
@@ -283,6 +295,20 @@ class CTask(InitCTask):
         if rclone_command == 'bisync' and not self._flag_is_on(resync, False) \
                 and self._flag_is_on(recover, True):
             cmd_parts += ['--resilient', '--recover']
+
+        # A file changed on both sides since the last run. rclone's own default renames BOTH copies
+        # (<name>.conflict1, <name>.conflict2) and the name itself is gone on both sides - a page lost its file that
+        # way, and a run that aborted after the renames left the names missing on both machines. With a winner the
+        # name stays: the newer copy keeps it, the other is kept beside it as <name>.conflict1, on both sides.
+        # (Equal times and different bytes: rclone finds no winner and renames both - the caller puts a name back.)
+        # Not with --resync, which has its own --resync-mode; a --conflict-resolve after "--" wins.
+        choice = str(conflict_resolve or 'newer').strip().lower()
+        if choice not in ('none', 'newer', 'older', 'larger', 'smaller', 'path1', 'path2'):
+            return self.cm.error(f'conflict_resolve must be none, newer, older, larger, smaller, path1 or path2 (got "{choice}")')
+        given = ' '.join(str(u) for u in (unparsed or []))
+        if rclone_command == 'bisync' and not self._flag_is_on(resync, False) and choice != 'none' \
+                and '--conflict-resolve' not in given:
+            cmd_parts += ['--conflict-resolve', choice, '--conflict-loser', 'num']
 
         cmd = ' '.join(cmd_parts)
 

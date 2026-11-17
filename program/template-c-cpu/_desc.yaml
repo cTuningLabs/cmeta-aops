@@ -151,4 +151,99 @@ run:
       print_files: '{{local.print_files|$None}}'
       print_line: True
 
+###################################################################################################
+# What the words of the command line mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read this
+# block, the engine never does. The words every program takes are described by the task compile-and-run-program. A
+# program's own - every {{params.<name>|<usual value>}} of its description - are found by the page with their usual
+# values (a word read under "compile" changes what is built, one read under "run" what is run) and described by the
+# program in a block like this one. Here: the words this template reads, the words many of its programs read
+# (if_read: shown for a program that reads the word itself) and the words of a family of its programs (programs:
+# the names they have).
+cli_help:
+  timeout:
+    title: Time limit of the run
+    type: int
+    min: 1
+    desc: Stop each command of the run, with everything it started, after this many seconds
+    example: '600'
+  compile_timeout:
+    title: Time limit of the build
+    type: int
+    min: 1
+    desc: Stop each command of the build, with everything it started, after this many seconds
+    example: '600'
 
+  run_flags:
+    title: More for its command line
+    desc: More words for the program's own command line, as you would type them
+    choice: run
+    group: more
+    if_read: true
+  python_version:
+    title: Which Python
+    desc: 'The Python it runs with: a version (3.12) or a range (">=3.11,<3.14")'
+    example: '3.12'
+    choice: run
+    group: more
+    if_read: true
+  profile_python:
+    title: Python profiler
+    type: bool
+    desc: Run it under Python's profiler (cProfile); the profile is kept in tmp-cmeta-python-profile.out
+    choice: false                 # how it runs, not what: a control
+    if_read: true
+
+  # The matrix multiplication written in every language (test-nmm-*): (M x N) * (N x K)
+  precision:
+    title: Type of the numbers
+    values: [float32, float64, int64, int32, int16, int8]
+    desc: The type of the elements of the matrices
+    choice: run
+    programs: ['test-nmm-*']
+    if_read: true
+  dim_m:
+    title: Size M
+    type: int
+    min: 1
+    desc: 'The rows of the first matrix: the program multiplies (M x N) by (N x K)'
+    choice: run
+    programs: ['test-nmm-*']
+    if_read: true
+  dim_n:
+    title: Size N
+    type: int
+    min: 1
+    desc: The columns of the first matrix and the rows of the second
+    choice: run
+    programs: ['test-nmm-*']
+    if_read: true
+  dim_k:
+    title: Size K
+    type: int
+    min: 1
+    desc: The columns of the second matrix
+    choice: run
+    programs: ['test-nmm-*']
+    if_read: true
+  repeat:
+    title: Repetitions
+    type: int
+    min: 1
+    desc: How many times the multiplication runs
+    choice: run
+    programs: ['test-nmm-*']
+    if_read: true
+  clean:
+    title: Fresh inputs
+    values: ['1', '0']
+    desc: '1 fills the matrices with new random values before each repetition, 0 keeps them'
+    choice: run
+    programs: ['test-nmm-*']
+    if_read: true
+  seed:
+    title: Seed
+    type: int
+    desc: The seed of the random values of the matrices
+    choice: run
+    programs: ['test-nmm-*']
+    if_read: true

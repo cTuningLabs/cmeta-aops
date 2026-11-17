@@ -43,3 +43,132 @@ configs:
           choices and its targets - gets a build entry of its own in the cache and comes back to it'
         type: yes/no
         default: 'false'
+
+# What the words of the command line mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read it, the
+# engine never does - cli_params above alone says how a word is read. These are the words of cx program run | compile
+# <program> that every program takes; the words a program reads itself ({{params.<name>|<usual value>}} in its
+# description) are found by the page and described by the program or by the template it inherits (template-c-cpu,
+# template-ck-program). values_from: a list the page asks for (the targets of the machine that the program supports,
+# its commands, its inputs, the models with the tags of its model step, the compilers of its language); position: its
+# place after the program, not a flag.
+#
+# choice: the word changes what is built (build), what is run (run) or both - the parameters of an experiment, shown
+# first; a word without it is a control: how the command proceeds (build again, skip a step, where the files go),
+# shown with the other options unless it says "group: main". "group: more" keeps a rare choice with the other
+# options. order: a number that moves a word among the others of its part - the lines of this block count 10, 20,
+# 30 ..., the words of the first template that gives help start at 1000 (the next at 2000), the words the page finds
+# in the program at 3000 and its defines at 5000; so 6000 and more puts a word after everything a program says.
+cli_help:
+  name: {hide: true}
+
+  compute:
+    title: Where it runs
+    desc: The target - the CPU, a GPU, a phone. Several targets together when a program needs them
+    choice: [build, run]
+    position: 1
+    values_from: targets
+    multiple: true
+    refresh: true
+  cmd:
+    title: Which command
+    desc: A program with several commands - encode and decode, for example - runs the first one unless you choose
+    choice: run
+    position: 0
+    values_from: cmds
+    refresh: true
+  dataset:
+    title: Which input
+    desc: The input it works on. When you choose none, cMeta asks which one - with -q it takes the first of this list
+    choice: run
+    values_from: datasets
+  use.model.name:
+    title: Which model
+    desc: The model it runs, for a program that takes one. When you choose none, cMeta asks which one - with -q it
+      takes the first of this list
+    choice: run
+    values_from: models
+
+  # What is built, for a program that is compiled: the compiler and its flags, after the program's own sizes
+  use.compiler-c.name:
+    title: Which compiler
+    type: str
+    desc: Another compiler than the one this system takes by itself
+    example: clang
+    choice: build
+    order: 6000
+    values_from: compilers        # the tools of the program's language; the word is then --use.compiler-<language>.name
+    artifact: tool                # without a program: any compiler tool of C
+    artifact_tags: lang-c
+  compile.fast:
+    title: Optimized
+    type: bool
+    desc: Ask the compiler for fast code (-O3; /O2 with MSVC)
+    choice: build
+    order: 6010
+  compile.fastest:
+    title: Most optimized
+    type: bool
+    desc: 'Ask for the fastest code for this processor (-Ofast -march=native with GCC): the results may differ in
+      the last digits, and the program may not run on another processor'
+    choice: build
+    order: 6020
+  compile.flags:
+    title: Compiler flags
+    type: str
+    desc: Your own flags for the compiler, as you would type them; they come before the ones cMeta gives
+    example: -O2 -funroll-loops
+    choice: build
+    order: 6030
+  compile.openmp:
+    title: OpenMP
+    type: bool
+    desc: Build with OpenMP, for a program that runs its loops on several cores
+    choice: build
+    order: 6040
+  compile.static:
+    title: Static build
+    type: bool
+    desc: Link the libraries into the program instead of loading them when it runs
+    choice: build
+    group: more
+  compile.debug_info:
+    title: Debug information
+    type: bool
+    desc: Keep the debug information in the program, for a debugger or a profiler
+    choice: build
+    group: more
+
+  check_output:
+    title: Check the outputs
+    bare: true
+    values: [auto, validate, record]
+    desc: 'Compare the outputs with the reference ones: validate fails on a difference, record keeps new ones, auto does what fits'
+    group: main
+
+  output_repo:
+    title: Where new outputs go
+    type: str
+    desc: The repository new reference outputs are recorded into (local when you give none)
+    needs: [check_output]
+    artifact: repo
+  overwrite_output:
+    title: Record them again
+    desc: Record the reference outputs again when they exist already
+    needs: [check_output]
+  recompile:
+    desc: Build again even when a build is there
+    conflicts: [skip_compile]
+  skip_compile:
+    desc: Run the build that is there, without building
+    conflicts: [recompile]
+  skip_run:
+    desc: Build only, without running
+    conflicts: [repeat, calibrate, check_output]
+  here: Run it in the current folder instead of the build folder
+  summary: {default: true, desc: 'Print the summary of the run at the end (switch it off for a quiet console)'}
+  skip_size_check: Do not check the free disk space before the build
+  target_tmp:
+    title: Build folder
+    type: str
+    desc: The name of the build folder - another name keeps another build beside the first
+    example: tmp-clang

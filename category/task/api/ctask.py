@@ -9,6 +9,7 @@ from pathlib import Path
 import os
 import logging
 import tempfile
+import time
 
 # The longest prompt that travels as a command line argument. An interactive agent session preloads its
 # first prompt that way (the terminal UI owns stdin), and some CLIs have no stdin mode at all. An OS caps a
@@ -412,6 +413,107 @@ def recorded_file_alive(pid_file, pid=None, alive=None):
     except (OSError, ValueError):
         return False
     return recorded_process_alive(pid, written, alive)
+
+
+# The file cache: the folders outside the cache entries that keep large downloads and clones (the keys file_cache and
+# hf.cache of config::task - one place, or several separated as PATH is, the first one first). The rule (2026-11-17:
+# a model was downloaded a second time to another drive while the USB drive of the cache was away, and nothing said so):
+#   - a place that is there is used; one whose folder is missing where its parent folder is there is made - its last
+#     folder only, so that a path of a drive that is away never becomes a folder of the machine's own disk;
+#   - a place that is away (its drive is not connected, its parent folder does not exist, it cannot be made) is passed
+#     over for the next one of the list, and the run says so in one line;
+#   - what is asked for (a model, a clone) is taken from the place that has it already, whichever it is, before a new
+#     copy is made in the first one;
+#   - no place of the list is there: the run stops and says what to do - never a silent download somewhere else.
+# A drive that is there but does not answer yet (Windows: "the device is not ready", after a standby) is given a
+# moment; a drive letter that does not exist is not waited for.
+FILE_CACHE_WAIT = 3.0                 # seconds
+FILE_CACHE_NOT_READY = (21, 31, 55, 1167)      # Windows: not ready, not functioning, no longer available, not connected
+_FILE_CACHE_SAID = set()              # the lines said already in this process (a run asks for the cache several times)
+
+
+def file_cache_place(place):
+    """A place of the file cache now: ('there', '') | ('to make', '') - its last folder is missing, its parent is
+    there | ('not ready', why) - its drive is there but does not answer | ('away', why)."""
+    if os.path.isdir(place):
+        return 'there', ''
+
+    full = os.path.abspath(place)
+    drive = os.path.splitdrive(full)[0]
+    if drive:
+        try:
+            os.stat(drive + os.sep)
+        except OSError as e:
+            name = 'the drive %s' % drive if len(drive) == 2 else drive
+            if getattr(e, 'winerror', None) in FILE_CACHE_NOT_READY:
+                return 'not ready', '%s does not answer' % name
+            return 'away', '%s is not connected' % name
+
+    if os.path.exists(full):
+        return 'away', 'it is a file, not a folder'
+    parent = os.path.dirname(full)
+    if not os.path.isdir(parent):
+        return 'away', 'its folder %s does not exist' % parent
+    return 'to make', ''
+
+
+def file_cache_folder(places, sub_folder='', key='file_cache', con=False, space='', wait=FILE_CACHE_WAIT):
+    """The folder of the file cache to use now, by the rule above.
+
+    places: the value of the config key (one place, or several separated as PATH is); sub_folder: what the caller
+    keeps there (get-hf-model/<repository>) - a place that has it already is taken first; key: the key of
+    config::task the places come from, for the messages; con: say on the console that a place was passed over.
+
+    Returns {'return': 0, 'path': the folder (made when its last folder was missing), 'away': {place: why},
+    'note': the line about a place passed over, or ''} - 'path' is '' when no place is given - or
+    {'return': 1, 'error': ..., 'away': ...} when no place of the list can be used."""
+    listed = [p.strip() for p in str(places or '').split(os.pathsep) if p.strip()]
+    if not listed:
+        return {'return': 0, 'path': '', 'away': {}, 'note': ''}
+
+    states, away = {}, {}
+    deadline = time.monotonic() + wait
+    for place in listed:
+        state, why = file_cache_place(place)
+        while state == 'not ready' and time.monotonic() < deadline:
+            time.sleep(0.25)
+            state, why = file_cache_place(place)
+        states[place] = state
+        if why:
+            away[place] = why
+
+    # what is asked for is taken where it is already; else the first place that is there or can be made
+    usable = [p for p in listed if p not in away]
+    having = [p for p in usable if sub_folder and os.path.isdir(os.path.join(p, sub_folder))]
+    path = ''
+    for place in having + [p for p in usable if p not in having]:
+        if states[place] == 'to make':
+            try:
+                os.mkdir(place)
+            except OSError as e:
+                away[place] = 'it cannot be made (%s)' % (e.strerror or e)
+                continue
+        path = place
+        break
+
+    change = 'cx config set task "--meta.%s=<a folder>%s<another folder>"' % (key, os.pathsep)
+    if not path:
+        if len(listed) == 1:
+            text = 'the file cache %s is not available: %s. Connect its drive, or name a second place for such a ' \
+                   'day (%s)' % (listed[0], away[listed[0]], change)
+        else:
+            text = 'no place of the file cache is available: %s. Connect one of the drives, or change the key %s ' \
+                   'of the task config (%s)' % ('; '.join('%s - %s' % (p, away[p]) for p in listed), key, change)
+        return {'return': 1, 'error': text, 'away': away}
+
+    note = ''
+    before = [p for p in listed[:listed.index(path)] if p in away]
+    if before:
+        note = 'the file cache %s is not available (%s): using %s' % (before[0], away[before[0]], path)
+        if con and note not in _FILE_CACHE_SAID:
+            _FILE_CACHE_SAID.add(note)
+            print('%sWARNING: %s' % (space, note))
+    return {'return': 0, 'path': path, 'away': away, 'note': note}
 
 
 class InitCTask:

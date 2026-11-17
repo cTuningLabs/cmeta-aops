@@ -9,7 +9,7 @@ import os
 import platform
 import shutil
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, file_cache_folder
 
 class CTask(InitCTask):
     """
@@ -113,23 +113,14 @@ class CTask(InitCTask):
             if (ctx['tasks'].get('local') or {}).get('in_data_repository'):
                 path_file_cache_list = None       # a data repository keeps the files inside the entry (portable, shared)
             if path_file_cache_list:
-                path_file_cache = None
-
-                for x in path_file_cache_list.split(os.pathsep):
-                    if os.path.isdir(x):
-                        path_file_cache = x
-                        break
-                    else:
-                        try:
-                           os.makedirs(x, exist_ok=True)
-                           path_file_cache = x
-                           break
-                        except:
-                           pass
-
-                if path_file_cache:
-                    sub_directory = os.path.join('get-hf-model', xrepo)
-                    directory = os.path.join(path_file_cache, sub_directory)
+                # The place of the file cache that has these files already, else the first one that is there: a
+                # drive that is away is passed over and the run says so; none there stops it (file_cache_folder)
+                sub_directory = os.path.join('get-hf-model', xrepo)
+                r = file_cache_folder(path_file_cache_list, sub_directory,
+                                      con = ctx.get('control', {}).get('con', False))
+                if r['return'] > 0:
+                    return self.cm.error(r['error'])
+                directory = os.path.join(r['path'], sub_directory)
             else:
                 if not directory:
                     directory = 'content'

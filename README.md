@@ -229,6 +229,17 @@ cx config set task --meta.file_cache=x:\cmeta-file-cache-windows
 cx config set default --meta.default_git=git@github.com:
 ```
 
+The file cache keeps large downloads and clones (models, datasets, sources) outside the cache entries. It can name
+several places, the first one first - a large USB drive, then a folder of the machine's own disk for the days the
+drive is away (`;` between them on Windows, `:` elsewhere):
+
+```
+cx config set task "--meta.file_cache=x:\cmeta-file-cache-windows;d:\cmeta-file-cache-windows"
+```
+
+A place that is away is passed over for the next one and the run says so; what is asked for is taken from the place
+that has it already; when no place of the list is there the run stops and says what to do.
+
 
 ## Contributing
 

@@ -8,21 +8,13 @@ Offline test of task/clone-git-to-cache: every git parameter of its cache identi
 new_branch, update_submodules, checkout, fetch) and the clone options reach task/clone-git.
 """
 
-import pathlib
-
 import pytest
-
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(scope = "module")
-def task():
-    path = REPO_ROOT / "task" / "clone-git-to-cache" / "api_v1.py"
-    src = path.read_text(encoding = "utf-8")
-    src = src.replace("from task_c36be4b9314a45e0.api.ctask import InitCTask", "class InitCTask:\n    pass")
-    ns = {"__name__": "clone_git_to_cache", "__file__": str(path)}
-    exec(compile(src, str(path), "exec"), ns)
-    return ns
+def task(task_namespace):
+    # the hook file with a stand-in for the engine's base class and the real helpers of the task API
+    return task_namespace("clone-git-to-cache")
 
 
 class FakeCM:

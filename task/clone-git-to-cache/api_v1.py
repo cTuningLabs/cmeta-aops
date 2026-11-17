@@ -7,7 +7,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 
 import os
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, file_cache_folder
 
 class CTask(InitCTask):
     """
@@ -41,48 +41,39 @@ class CTask(InitCTask):
         if (ctx_tasks.get('local') or {}).get('in_data_repository'):
             path_file_cache_list = None           # a data repository keeps the clone inside the entry (portable, shared)
         if path_file_cache_list:
-            path_file_cache = None
+            version_to_dir = params.get('version_to_dir', False)
+            skip_checkout_dir = params.get('skip_checkout_dir', False)
 
-            for x in path_file_cache_list.split(os.pathsep):
-                if os.path.isdir(x):
-                    path_file_cache = x
-                    break
-                else:
-                    try:
-                       os.makedirs(x, exist_ok=True)
-                       path_file_cache = x
-                       break
-                    except:
-                       pass
+            root_dir = ''
 
-            if path_file_cache:
-                path = os.path.join(path_file_cache, 'git-' + params['name'])
-                version_to_dir = params.get('version_to_dir', False)
-                skip_checkout_dir = params.get('skip_checkout_dir', False)
+            if params.get('root_dir'):
+                root_dir = params['root_dir']
+            else:
+                if version_to_dir:
+                    if not params.get('version'):
+                        return self.cm.error(f'version_to_dir is True but version is not defined in "{__file__}" ')
 
-                root_dir = ''
+                    root_dir += params['version']
 
-                if params.get('root_dir'):
-                    root_dir = params['root_dir']
-                else:
-                    if version_to_dir:
-                        if not params.get('version'):
-                            return self.cm.error(f'version_to_dir is True but version is not defined in "{__file__}" ')
+                if not skip_checkout_dir:
+                    checkout = params.get('checkout')
+                    if not checkout:
+                        checkout = 'current'
 
-                        root_dir += params['version']
+                    if root_dir != '':
+                        root_dir += '-'
 
-                    if not skip_checkout_dir:
-                        checkout = params.get('checkout')
-                        if not checkout:
-                            checkout = 'current'
+                    root_dir += checkout
 
-                        if root_dir != '':
-                            root_dir += '-'
+            # The place of the file cache that has this clone already, else the first one that is there: a drive
+            # that is away is passed over and the run says so; none there stops it (file_cache_folder)
+            sub_directory = os.path.join('git-' + params['name'], root_dir)
+            r = file_cache_folder(path_file_cache_list, sub_directory, con = con, space = space)
+            if r['return'] > 0:
+                return self.cm.error(r['error'])
 
-                        root_dir += checkout
-
-                path = os.path.join(path, root_dir)
-                os.makedirs(path, exist_ok=True)
+            path = os.path.join(r['path'], sub_directory)
+            os.makedirs(path, exist_ok=True)
 
         run_control = ctx_tasks['run_control']
 

@@ -13,3 +13,15 @@ usage: |
 
   The server's record and log: the state artifact local:llama-cpp-server-<port> (cx state ls).
   The gateway artifact that points harnesses at it: ai.gateway::llama-cpp-local (fgg-hosts) - cxai --gateway=llama-cpp-local
+
+# Which of its words are the choices of a run, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read it,
+# the engine never does. A choice changes what is served (the model, the device, the context) and is shown first;
+# the other words say how the server is run. What each word means is the comment of its line in run() (api_v1.py).
+cli_help:
+  model: {choice: run, artifact: model}
+  filename: {choice: run}
+  compute: {choice: run}
+  ctx_size: {choice: run}
+  gpu_layers: {choice: run}
+  parallel: {choice: run}
+  action: {group: main}

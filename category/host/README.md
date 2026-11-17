@@ -72,6 +72,8 @@ cx host restore <instance> [--name=<snapshot>]                    the instance b
 cx host restart <host> [--yes] [--no-wait] [--timeout=600] [--skip_after] [--skip_check] [--check_timeout=300] [--dry_run]   (also: reboot)
 cx host sync [host|selection] [--repos=a,b] [--resync [--resync_mode=newer|path1|path2]] [--unlock] [--dry_run] [--skip_after] [--backup]
              [--progress] [--transfers=N]   a line every 10 s (files and bytes moved, %, speed, time left); N files at once (4, or the host's sync: transfers)
+             [--conflicts=ask|ask-all|newer] [--resolve=suggested|here|host|newer|both|later|<file>] [--include_sessions]   a file both sides changed: see below
+cx host conflicts [host|selection] [--repos=a] [--diff=<path>]    the files a sync stopped at, each with its suggestion; --diff: what differs in one
 cx host push <host> <repo> --dirs=task/x/,tool/y/ [--dry_run] [--delete] [--index-]   then "cx repo reindex <repo>" on the host, so a new artifact is found there
 cx host push <host> <local path> --to=<remote path>      a folder goes under --to, a single file lands AT --to (rclone copyto)
 cx host pull <host> <remote file or folder> [--to=<local folder>] [--files=*.jsonl,steps.txt] [--dry_run]   the other way: host -> here (rclone copy --from_remote of rclone-to-ssh); nothing here is deleted
@@ -417,13 +419,75 @@ host yet) is seeded from this machine; a transient error is tried again (`--retr
 gone while both sides hold files is reported with the `--resync --resync_mode=path1|path2 --dry_run` to read and
 run: which side wins is a person's call.
 
+**A file both sides changed** (since 2026-11-17). A two-way sync looks at both sides before it changes anything:
+the files changed since the pair's last good run, here and on the host (the host's by its own Python, without
+rclone's full listing of both sides). A file changed on BOTH sides and different now is a conflict:
+
+- one that loses nothing is settled and said (`SETTLED: ...`): the same bytes, a copy that is the beginning of the
+  other or holds its every line (the other is an earlier state of the same file), a memory index (`MEMORY.md`, merged
+  memory by memory);
+- any other stops the run of that repository BEFORE anything is changed there, each shown with its two copies and a
+  suggestion; the run ends with `STATUS: CONFLICTS`, exit code 1, and keeps the list beside the pair's listings
+  (`cmeta-conflicts-<repository>.json`). `cx host conflicts` shows it again, `--diff=<path>` what differs in one file.
+
+Decide, and sync again:
+
+```
+cx host sync my-host --repos=my-repo --resolve=suggested            # every one as suggested
+cx host sync my-host --repos=my-repo --resolve=here                 # or host | newer | both | later, for every one shown
+cx host sync my-host --repos=my-repo --resolve=<the JSON file>      # per file: "choice" filled in there
+```
+
+`here` / `host` put that side's copy on both sides, `both` keeps the newer under the name and the other beside it as
+`<name>.conflict1`, `later` leaves the file as it is on each side (the next sync asks again). What a choice replaces
+is kept first in the `sync-backup--<repository>` artifact of that side. A word decides the conflicts the stop showed;
+the ones that lose nothing are settled as before.
+
+`--conflicts` says how a conflict is met - `ask` (the default, above), `ask-all` (the ones that lose nothing wait
+too), `newer` (the run never stops: the newer copy keeps the name and the other stays beside it as
+`<name>.conflict1` on both sides). A machine's own default is the key `sync_conflicts` of the config artifact
+`host`: `cx config set host --meta.sync_conflicts=newer`. Whatever the mode, rclone is told that the newer copy
+keeps the name (`--conflict-resolve newer --conflict-loser num`), so a conflict the look could not see - a file
+written with an old time - never loses its name on both sides, as rclone's own default does; in the asking modes
+such a file is reported after the run (`STATUS: CONFLICTS`, both sides in step, the copy that lost beside it).
+
+**Open sessions.** The folders of the run-ai sessions that are open on this machine or on the host are left out of
+a run and said (`LEFT OUT: ...`): a session's own project and the `!AI` of the artifacts it may write - their files
+are being written. The next sync after the session has ended carries them, each as one ordinary change. A session
+says where it writes in its marker (`<project>/!AI/log/<stamp>.running`: host, process, `areas`); a marker counts
+only while it is from after the machine's last start and its process did not begin after it was written, so a
+marker a killed session left behind keeps nothing out. The session that runs the sync is never left out (run-ai
+gives it `CMETA_RUN_AI_MARKER`); `--include_sessions` leaves none out.
+
+**A run that fails leaves no name missing.** What rclone had renamed while it worked through the conflicts goes
+back, each side its own copy; a file another process holds (it cannot be renamed or deleted: a database a program
+keeps open) is left out of a second run and synced next time; the listings of the pair's last good run stay its
+base (an abort renames them to `.lst-err`: they are put back). A `--resync` - which brings back every file deleted
+on one side since the last good run - is asked for a new pair only. A run that was cut - rclone's process ended
+from outside, the machine slept - is tried again by the same command.
+
+**What an interrupted run leaves behind does not travel later.** Two things a run that did not end well leaves are
+unknown to the pair's base, so the next run would carry each to the other side as a new file; the look finds them and
+puts them aside first, into the sync backup of their own side (`LEFTOVER: ...`; nothing is deleted):
+
+- rclone's temporary files of the transfers that were cut (`<name>.<8 hex>.partial`) - also between two attempts of
+  one command;
+- the copy the run had carried of a file that was deleted (or moved away) on its own side afterwards: it was on the
+  other side when the interrupted run began (rclone's listings of that run, kept beside the base), it is gone from
+  there now, and the copy is still exactly what was there then - so it follows the file it was copied from, instead
+  of coming back. A copy that was changed since is that side's own work and stays.
+
+`cx host ls` says in its SYNCED column when a
+host's pairs were last in step (`ok 11-17 16:23`) and names a repository that is apart (`! my-repo (ok 11-13 20:09)`).
+
 **The check.** After every sync the two sides are compared name by name and size by size (`rclone check
 --size-only` with the sync's own filters, one way for a `copy`): `identical (2384)` in the CHECK column, or
 `DIFFERENCES: 3 missing there, 1 differ` with the listing kept in the bisync workdir (`check-<repository>.txt`).
 A difference right after a good sync is a file that changed during the run (the other side at work): the
-repository is synced once more and compared again. Conflict copies rclone left (`<name>.conflict1/2`, a file
-changed on both sides between two syncs) are reported; the ones of a memory index (`MEMORY.md`, two sessions each
-adding a line) are merged by line union and settled on both sides by the run itself. `--skip_check` turns the
+repository is synced once more and compared again. Conflict copies (`<name>.conflict<n>`, the copy that lost of a
+file changed on both sides) are counted (`3 conflict copies to look at`) until they are removed; the ones of a memory
+index (`MEMORY.md`, two sessions each adding a line) are merged and settled on both sides by the run itself.
+`--skip_check` turns the
 check off (a few seconds per repository: one listing of both sides); a dry run never checks; `git` has no check
 beyond its pull. On problems the run waits for Enter when a person is at the terminal, never with `-q` or
 `--pause-`.

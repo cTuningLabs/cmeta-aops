@@ -98,11 +98,15 @@ class CTask(InitCTask):
                 return self.cm.error(f'model descriptions not found in "{artifact_path}" ("{__file__}")')
 
             if filedesc:
+                # A file of the model, named as its description is (_desc-<file>.yaml) with or without ".yaml":
+                # --filedesc=model-q8_0.gguf
                 filedesc = '_desc-' + filedesc
+                if filedesc not in files and filedesc + '.yaml' in files:
+                    filedesc += '.yaml'
                 if filedesc not in files:
                     return self.cm.error(f'model file "{filedesc}" not found in "{artifact_path}" ("{__file__}")')
-    
-                path_desc = os.path.join(path_to_files, filedesc)
+
+                path_desc = os.path.join(artifact_path, filedesc)
             else:
                 fs = sorted(files)
                 ifs = 0
