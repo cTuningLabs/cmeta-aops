@@ -7,3 +7,46 @@ configs:
         desc: 'extra flags at the end of every "winget install" of a tool on Windows (the install commands of the tools
           take them as global.init.winget_install_flags; empty by default) - for installs that ask no question'
         example: --silent --accept-source-agreements --accept-package-agreements
+
+# What the commands of the tool category mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read
+# it, the engine never does. The words of setup, install, upgrade and run are those of the task setup: described there.
+
+cli_help:
+  category:
+    title: Tools
+    one: tool
+    desc: Find a compiler, a library or any other tool on this machine, install it, run it
+    order: [setup, install, upgrade, run, check_updates]
+    hide: [find_path, test, test2]
+
+  setup:
+    title: Find or install
+    desc: Look for a tool on this machine and install it when it is not there
+    artifact: tool
+    task: setup
+
+  install:
+    title: Install
+    desc: Install a tool with cMeta, without looking for a copy first
+    artifact: tool
+    task: setup
+    without: [install, detect, status, versions, upgrade]
+
+  upgrade:
+    title: Upgrade
+    desc: Upgrade a tool to its newest version
+    artifact: tool
+    task: setup
+    without: [install, detect, status, versions, upgrade]
+
+  run:
+    title: Run
+    desc: Set a tool up and run it with your own words
+    artifact: tool
+    task: setup
+    passthrough: The words for the tool itself, as you would type them after its name
+    main: [version]
+
+  check_updates:
+    title: Check for updates
+    desc: The tools that are behind their newest version

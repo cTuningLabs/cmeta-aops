@@ -168,3 +168,32 @@ updates_cmd:
                --mode=run
                --output-model={{params.output-model|mnist_cnn.pt}}
                --image={{params.image}}
+
+###################################################################################################
+# What the program's own words mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read this block,
+# the engine never does. The page finds the words read above ({{params.epochs|3}} ...) with their usual values and
+# shows them as parameters of the run.
+cli_help:
+  epochs:
+    title: Epochs
+    type: int
+    min: 1
+    desc: How many times the training goes through the whole training set
+  train-batch:
+    title: Training batch
+    type: int
+    min: 1
+    desc: How many images the training takes at once
+  test-batch:
+    title: Test batch
+    type: int
+    min: 1
+    desc: How many images the test takes at once
+  output-model:
+    title: File of the model
+    desc: The file the trained model is written to, and read from by the test and by a run
+  image:
+    title: A picture of a digit
+    desc: 'The picture of a digit to recognize, for the command run_local_image: the path of a file of this machine'
+    example: my-digit.png
+    group: main

@@ -204,6 +204,96 @@ def test_cli_params_are_readable(path):
             assert isinstance(desc['values'], list) and desc['values'], f'{name}: values is a non-empty list'
 
 
+# cli_help: what the words and the commands MEAN, for people (the cMeta CLI builder, help) - never read by the engine,
+# so a mistake there changes no run; this guard keeps it readable. The keys of a word's entry and of a command's:
+HELP_WORD_KEYS = {'desc', 'title', 'group', 'example', 'default', 'conflicts', 'needs', 'multiple', 'values_from', 'bare',
+                  'refresh', 'position', 'tags', 'inherits', 'programs', 'if_read', 'hide', 'artifact', 'artifact_tags',
+                  'type', 'values', 'min', 'max', 'choice', 'order'}
+# choice: what the word changes - what is built, what is run, both, or true for a choice without a stage; false: a
+# control, for a word a program reads itself (the page would take it for a choice of the stage that reads it)
+CHOICE_STAGES = ('build', 'run')
+# the lists a page asks for: the targets a program supports, its commands, its inputs, its models, its compilers
+VALUES_FROM = ('targets', 'cmds', 'datasets', 'models', 'compilers')
+HELP_COMMAND_KEYS = {'title', 'desc', 'artifact', 'task', 'passthrough', 'arg1', 'main', 'without', 'only', 'params'}
+HELP_CATEGORY_KEYS = {'title', 'one', 'desc', 'order', 'hide'}
+HELP_DESCS = sorted(TASK_DESCS + list(REPO_ROOT.glob('program/*/_desc.yaml')))
+CATEGORY_DESCS = sorted(REPO_ROOT.glob('category/*/_desc.yaml'))
+
+
+def check_help_word(where, name, entry):
+    if isinstance(entry, str):
+        assert entry.strip(), f'{where} {name}: an empty line of help'
+        return
+    assert isinstance(entry, dict) and entry, f'{where} {name}: a line of text or a dict'
+    assert set(entry) <= HELP_WORD_KEYS, f'{where} {name}: unknown keys {set(entry) - HELP_WORD_KEYS}'
+    if 'desc' in entry:
+        assert isinstance(entry['desc'], str) and entry['desc'].strip(), f'{where} {name}: desc is a text'
+    if 'type' in entry:
+        assert entry['type'] in CLI_TYPES, f'{where} {name}: the type {entry["type"]!r} is not one of {CLI_TYPES}'
+    for key in ('conflicts', 'needs', 'tags', 'values', 'inherits', 'programs'):
+        if key in entry:
+            assert isinstance(entry[key], list) and entry[key], f'{where} {name}: {key} is a non-empty list'
+    if 'if_read' in entry:
+        assert isinstance(entry['if_read'], bool), f'{where} {name}: if_read is true or false'
+    if 'group' in entry:
+        assert entry['group'] in ('main', 'more'), f'{where} {name}: group is main or more'
+    if 'values_from' in entry:
+        assert entry['values_from'] in VALUES_FROM, f'{where} {name}: values_from is one of {VALUES_FROM}'
+    if 'choice' in entry and entry['choice'] is not False:
+        stages = entry['choice'] if isinstance(entry['choice'], list) else [entry['choice']]
+        ok = bool(stages) and all(s is True or s in CHOICE_STAGES for s in stages)
+        assert ok, f'{where} {name}: choice is true, false, build, run or [build, run]'
+    if 'order' in entry:
+        number = isinstance(entry['order'], (int, float)) and not isinstance(entry['order'], bool)
+        assert number, f'{where} {name}: order is a number'
+
+
+@pytest.mark.parametrize('path', HELP_DESCS, ids = lambda p: p.parent.parent.name + '/' + p.parent.name)
+def test_cli_help_of_tasks_and_programs_is_readable(path):
+    described = load_yaml(path).get('cli_help')
+    if described is None:
+        return
+    assert isinstance(described, dict), 'cli_help is a dict: word -> a line of text, or a dict'
+    params = load_yaml(path).get('cli_params') or {}
+    for name, entry in described.items():
+        check_help_word(path.parent.name, name, entry)
+        # what the engine reads stays in cli_params: the help may not say otherwise
+        own = params.get(name)
+        if isinstance(entry, dict) and isinstance(own, (str, dict)):
+            own = {'type': own} if isinstance(own, str) else own
+            for key in ('type', 'values', 'min', 'max'):
+                if key in entry and key in own:
+                    assert entry[key] == own[key], f'{path.parent.name} {name}: cli_help says {key} differently from cli_params'
+
+
+@pytest.mark.parametrize('path', CATEGORY_DESCS, ids = lambda p: p.parent.name)
+def test_cli_help_of_categories_is_readable(path):
+    described = load_yaml(path).get('cli_help')
+    if described is None:
+        return
+    assert isinstance(described, dict), 'cli_help is a dict: category -> its words, <command> -> its help'
+    for name, entry in described.items():
+        if name == 'category':
+            assert isinstance(entry, dict) and set(entry) <= HELP_CATEGORY_KEYS, f'category: keys {set(entry) - HELP_CATEGORY_KEYS}'
+            continue
+        if isinstance(entry, str):
+            assert entry.strip(), f'{name}: an empty line of help'
+            continue
+        assert isinstance(entry, dict), f'{name}: a line of text or a dict'
+        assert set(entry) <= HELP_COMMAND_KEYS, f'{name}: unknown keys {set(entry) - HELP_COMMAND_KEYS}'
+        if 'only' in entry:
+            assert entry['only'] in CHOICE_STAGES, f'{name}: only is build or run (the one stage the command does)'
+        for word, help_entry in (entry.get('params') or {}).items():
+            check_help_word(name, word, help_entry)
+
+
+def test_the_switches_of_setup_say_what_they_do():
+    """Every word of task::setup (the words of cx tool setup | install | upgrade | run) has its line of help."""
+    desc = load_yaml(REPO_ROOT / 'task' / 'setup' / '_desc.yaml')
+    missing = sorted(set(desc.get('cli_params') or {}) - set(desc.get('cli_help') or {}))
+    assert not missing, f'words of task::setup without cli_help: {missing}'
+
+
 def test_cli_params_match_the_engine():
     """The types this guard allows are those the engine converts (when the engine has the reading)."""
     cli = pytest.importorskip('cmeta.utils.cli')

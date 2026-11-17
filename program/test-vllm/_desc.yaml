@@ -122,3 +122,58 @@ updates:
              {{params.run_flags|}} 
              {run_src_file_names_str_with_path}
  
+
+###################################################################################################
+# What the program's own words mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read this block,
+# the engine never does. The page finds the words read above ({{local.params.model|...}} ...) with their usual
+# values and shows them as parameters of the run; group: more keeps a rare one with the other options.
+cli_help:
+  model:
+    title: Which model
+    desc: The model, by its name on the Hugging Face Hub; it is downloaded on first use
+  n:
+    title: How many tokens
+    type: int
+    min: 1
+    desc: The number of tokens to generate
+  gpu_mem:
+    title: Share of the GPU memory
+    type: float
+    min: 0
+    max: 1
+    desc: The share of the GPU's memory vLLM takes (its gpu_memory_utilization); a small GPU needs room for the display
+  max_len:
+    title: Context size
+    type: int
+    min: 1
+    desc: The longest prompt and answer together, in tokens (vLLM's max_model_len)
+  enforce_eager:
+    title: Without CUDA graphs
+    values: ['1', '0']
+    desc: '1 starts sooner; 0 lets vLLM capture CUDA graphs - a longer start, faster decoding'
+  cpu_kv_cache_gib:
+    title: Cache on the CPU
+    type: int
+    min: 1
+    desc: The memory of the key-value cache of a run on the CPU, in GiB
+    group: more
+  cpu_offload_gb:
+    title: Weights on the CPU (GB)
+    type: float
+    min: 0
+    desc: How many GB of the weights stay in the CPU's memory (vLLM's cpu_offload_gb)
+    example: '4'
+  dtype:
+    title: Type of the weights
+    values: [auto, bfloat16, float16, float32]
+    desc: The type of the weights (vLLM's dtype)
+  tp:
+    title: GPUs
+    type: int
+    min: 1
+    desc: How many GPUs share the model (vLLM's tensor_parallel_size)
+    example: '2'
+  vllm_version:
+    title: Which vLLM
+    desc: The release of vLLM to install (the newest when you give none)
+    example: 0.30.0

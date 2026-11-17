@@ -94,3 +94,91 @@ updates:
            - internal_func: finish_llama_run
              internal_func_from_local_key: selected-program
              internal_func_safe: True
+
+###################################################################################################
+# What the program's own words mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read this block,
+# the engine never does. The page finds the words read above ({{params.n|500}} ...) with their usual values; the
+# others are read by the program's code (api_v1.py, category/program/api/common_llama_cpp.py). choice: run - a
+# parameter of the run, shown first; group: more keeps a rare one with the other options.
+cli_help:
+  n:
+    title: How many tokens
+    type: int
+    min: 1
+    desc: The number of tokens to generate
+  temp:
+    title: Temperature
+    type: float
+    min: 0
+    desc: 'How much the answer varies: 0 always takes the most likely token, a higher value chooses more freely'
+  c:
+    title: Context size
+    type: int
+    min: 1
+    desc: The context window in tokens - the prompt and the answer together
+  seed:
+    title: Seed
+    type: int
+    desc: The seed of the random choices - the same seed, model and prompt give the same answer
+  threads:
+    title: CPU threads
+    type: int
+    min: 1
+    desc: The number of CPU threads (llama.cpp's -t); its own choice when you give none
+    example: '8'
+    choice: run
+  ngl:
+    title: Layers on the GPU
+    type: int
+    min: 0
+    desc: How many layers of the model go to the GPU, the rest staying on the CPU (llama.cpp's -ngl)
+    example: '12'
+    choice: run
+
+  devices:
+    title: Devices
+    desc: The devices to use, by llama.cpp's names (its --device)
+    example: CUDA0,Vulkan0
+    choice: run
+    group: more
+  split_mode:
+    title: Split over GPUs
+    values: [layer, row, none]
+    desc: How the model is split over several GPUs (llama.cpp's -sm)
+    choice: run
+    group: more
+  tensor_split:
+    title: Share of each GPU
+    desc: The share of the model each GPU takes (llama.cpp's -ts)
+    example: '3,1'
+    choice: run
+    group: more
+  main_gpu:
+    title: Main GPU
+    type: int
+    min: 0
+    desc: The number of the GPU that does the rest of the work (llama.cpp's -mg)
+    example: '1'
+    choice: run
+    group: more
+  model:
+    title: A model file of this machine
+    desc: The path of a GGUF file to run instead of a model of cMeta
+    example: my-model.gguf
+    choice: run
+    group: more
+    conflicts: [use.model.name]
+  prompt:
+    title: A prompt file of this machine
+    desc: The path of a text file with the prompt, instead of an input of cMeta
+    example: my-prompt.txt
+    choice: run
+    group: more
+    conflicts: [dataset]
+  run_flags:
+    desc: More flags for llama.cpp's own program (llama-completion), as you would type them
+    group: more
+  log_flags:
+    title: Log flags
+    desc: The flags of llama.cpp's log; the usual -v writes everything into llama.log
+    group: more

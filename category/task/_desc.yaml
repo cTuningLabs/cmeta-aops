@@ -27,3 +27,20 @@ configs:
         desc: 'the repository of the data tasks (get-hf-model, get-hf-dataset: cache_repo_key data) - their entries and
           files stay together there; get-host--docker mounts it into the instances it makes'
         example: my-data
+
+# What the commands of the task category mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read it,
+# the engine never does. The words of "cx task run <task>" are described by each task, in the cli_help of its _desc.yaml
+# (beside cli_params, which alone says how the engine reads a word).
+
+cli_help:
+  category:
+    title: Tasks
+    one: task
+    desc: Run a ready automation - download a model, start a server, run an AI agent ...
+    order: [run]
+    hide: [use]
+
+  run:
+    title: Run
+    desc: Run a task
+    artifact: task

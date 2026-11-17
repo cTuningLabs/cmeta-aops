@@ -3,6 +3,27 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV
+- **`cli_help`: what the words of a command line and the commands mean, said by the artifact that owns them.** A block
+  of a `_desc.yaml` that the engine never reads, so nothing written there changes a run: `cli_params` stays the one
+  place that says how a word is read (its type, its values, its range - checked at every run), and `cli_help` may not
+  say otherwise. A task gives a line of help per word, or an entry (`desc`, `group`, `example`, `conflicts`, `needs`,
+  `artifact` - the value is an artifact of that category ...); a program template the words its programs read; a
+  category the plain words of its commands. Read by the cMeta CLI builder (a page that writes a `cx` command step by
+  step) and meant for help. Given now by the categories program, tool and task, the tasks setup (every one of its 28
+  words, the 15 that had no description included), compile-and-run-program and run-llama-cpp-server, the templates
+  template-c-cpu and template-ck-program (`--repeat`, `--calibrate`, the sizes of PolyBench), and the programs
+  llama-cpp, build-llama-cpp, test-ollama, test-flm, test-vllm, test-sglang, test-onnxruntime, test-openvino and
+  model-cnn-ylecun-mnist-pytorch; a guard test keeps every `cli_help` readable and in agreement with `cli_params`.
+  - **`choice` and `order`: the parameters of an experiment first.** `choice: build | run | [build, run] | true` marks
+    a word that changes what is built or what is run (the target, the compiler and its flags, the input, the model,
+    the sizes, the tokens to generate ...); a page shows those at once, part by part ("What is built and run", "What
+    is built", "What is run"), before the words that say how the command proceeds (build again, skip a step, where
+    the files go). `order: <number>` moves a word inside its part; `choice: false` keeps a word a program reads itself
+    among the controls. A command's `only: build` ("Build only") leaves out the choices of the run.
+  - **The words every program takes, described:** "Which model" (`--use.model.name`, the models with the tags of the
+    program's model step), "Which compiler" (`--use.compiler-<language>.name`), `--compile.fast`, `.fastest`,
+    `.flags`, `.openmp`, `.static`, `.debug_info`. A template's word can be meant for some of its programs:
+    `programs: [<name patterns>]`, `if_read: true` (the programs that read it themselves).
 - **New tool `thunderbird`: Mozilla Thunderbird upgraded through the system's own channel, in the update channel it
   follows (the monthly release or the ESR).** `cx tool setup thunderbird --status` tells the installed version and the
   newest one of its channel, `cx tool upgrade thunderbird` brings it there, `cx tool install thunderbird` installs the

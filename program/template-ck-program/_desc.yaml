@@ -9,3 +9,46 @@ authors: Grigori Fursin
 #
 # Nothing here is merged into the program's description: its _desc.yaml says everything else (the
 # hooks read its local_vars, see api_v1.py and README.md).
+
+# What the words these hooks read mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read it, the
+# engine never does. They are offered for the programs that inherit this template; tags: for some of them only.
+# choice: the word changes what is built (build) or what is run (run) - shown first, with the choices of the task.
+cli_help:
+  repeat:
+    title: Repetitions
+    type: int
+    min: 1
+    desc: How many times the main part of the program runs, to make a short run long enough to measure
+    choice: run
+    example: '10'
+    conflicts: [calibrate]
+  calibrate:
+    title: Run for about (seconds)
+    type: float
+    bare: true
+    desc: Raise the repeat count by itself until a run lasts about this many seconds (4 when you give none)
+    choice: run
+    example: '4'
+    conflicts: [repeat]
+  compile.size:
+    title: Size of the arrays
+    values: [mini, small, standard, large, extralarge]
+    desc: The size of the arrays of a PolyBench program
+    choice: build
+    conflicts: [compile.n]
+    tags: [polybench]
+  compile.n:
+    title: One size for all
+    type: int
+    min: 1
+    desc: One number for every dimension of the arrays of a PolyBench program
+    choice: build
+    example: '512'
+    conflicts: [compile.size]
+    tags: [polybench]
+  compile.precision:
+    title: Type of the numbers
+    values: [float, double]
+    desc: The type of the numbers of a PolyBench program
+    choice: build
+    tags: [polybench]

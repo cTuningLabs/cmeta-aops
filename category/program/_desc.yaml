@@ -1,0 +1,42 @@
+# What the commands of the program category mean, for people: the cMeta CLI builder (cserver.cmeta.cli of
+# cmeta-aops-ext2) and help read it, the engine never does. The words of "cx program run <program>" are described
+# where they are read: the task compile-and-run-program, the templates a program inherits and the program itself.
+#
+# only: build - the command does that stage alone, so the words that change only what is run (choice: run - the
+# input, the model, a program's own run parameters) are left out; without: the other words that make no sense for it.
+
+cli_help:
+  category:
+    title: Programs
+    one: program
+    desc: Build and run a benchmark or an application on this machine or on a device
+    order: [run, compile, targets, clean, provenance]
+    hide: [update_desc]
+
+  run:
+    title: Run
+    desc: Build a program and run it
+    artifact: program
+    task: compile-and-run-program
+
+  compile:
+    title: Build only
+    desc: Build a program without running it
+    artifact: program
+    task: compile-and-run-program
+    only: build
+    without: [skip_run, skip_compile, check_output, output_repo, overwrite_output]
+
+  targets:
+    title: List the targets
+    desc: Where programs can run - the CPU, a GPU, a phone ...
+
+  clean:
+    title: Clean
+    desc: Remove the build folders of a program
+    artifact: program
+
+  provenance:
+    title: Show the last run
+    desc: What the last run of a program asked for, used and produced
+    artifact: program

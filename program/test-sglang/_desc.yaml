@@ -105,3 +105,47 @@ updates:
              {run_flags_after_exe}
              {{params.run_flags|}}
              {run_src_file_names_str_with_path}
+
+###################################################################################################
+# What the program's own words mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read this block,
+# the engine never does. The page finds the words read above ({{local.params.model|...}} ...) with their usual
+# values and shows them as parameters of the run; group: more keeps a rare one with the other options. The README
+# has the same words as a table.
+cli_help:
+  model:
+    title: Which model
+    desc: The model, by its name on the Hugging Face Hub; it is downloaded on first use
+  n:
+    title: How many tokens
+    type: int
+    min: 1
+    desc: The number of tokens to generate
+  gpu_mem:
+    title: Share of the GPU memory
+    type: float
+    min: 0
+    max: 1
+    desc: The share of the GPU's memory for the weights and the key-value cache (SGLang's mem_fraction_static)
+  max_len:
+    title: Context size
+    type: int
+    min: 1
+    desc: The longest prompt and answer together, in tokens (SGLang's context_length)
+  cuda_graph:
+    title: CUDA graphs
+    values: ['1', '0']
+    desc: '0 runs without CUDA or HIP graphs - a shorter start'
+  tp:
+    title: GPUs
+    type: int
+    min: 1
+    desc: How many GPUs share the model (SGLang's tp_size)
+    example: '2'
+  attention_backend:
+    title: Attention kernels
+    desc: 'The attention kernels: flashinfer, triton, torch_native, aiter ... (SGLang''s own choice when you give none)'
+    example: triton
+  sglang_version:
+    title: Which SGLang
+    desc: The release of SGLang to install (the newest when you give none)
+    example: 0.5.21
