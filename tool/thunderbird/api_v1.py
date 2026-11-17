@@ -13,6 +13,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 import configparser
 import datetime
 import json
+import ntpath
 import os
 import re
 import shutil
@@ -273,7 +274,9 @@ def install_folder(path, uname):
         return None
     if uname == 'darwin':
         return os.path.join(os.path.dirname(os.path.dirname(path)), 'Resources')
-    return os.path.dirname(os.path.realpath(path) if uname != 'windows' else path)
+    if uname == 'windows':
+        return ntpath.dirname(path)                 # a Windows path, read as one on any system
+    return os.path.dirname(os.path.realpath(path))
 
 
 class CTool(InitCTool):
