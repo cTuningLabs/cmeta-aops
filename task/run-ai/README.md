@@ -125,7 +125,10 @@ asking, preserving unattended usage. A closed input without `-q` gives an error 
     log/<stamp>.apply_pending.md       what --apply_pending applied to the artifacts this project uses
     log/<stamp>.applied.json           what was applied to THIS artifact from a project that uses it (or kept by the guard)
     pending/<alias>--<UID>/            changes proposed for an artifact this project uses, until --apply_pending (below)
-    codex/                             Codex's own state for this project: its threads, their history, its memories (CODEX_SQLITE_HOME)
+    sessions/<harness>/                a copy of each native session of Claude Code and Codex, under the unique name the harness
+                                       gave it: made after a run, put back where the harness looks before a resume elsewhere
+    codex/                             only with --codex_state=project, or left by runs before 2026-11-17: Codex's SQLite state
+                                       (read for those sessions, not written by default - "Codex's own state" below)
 ```
 
 The folders are created on the first real run; `--dry_run` creates nothing. `--no_log` leaves `log/` out (the
@@ -147,7 +150,7 @@ Each harness keeps its own **native session** for a conversation, and `run-ai` r
 | Harness | New session | Continue | The id comes from |
 |---|---|---|---|
 | `claude` | `--session-id <uuid>` (run-ai chooses it) and `--name "run-ai <id> <project>"` | `--resume <uuid>` | run-ai |
-| `codex` | - | `run-codex --resume=<id>` -> `codex resume <id>` (interactive) / `codex exec resume <id> -` (one prompt) | the `thread.started` event, else `state_*.sqlite` (the newest thread of the folder) in the project's `!AI/codex` - Codex's SQLite state lives there (`CODEX_SQLITE_HOME`; `--codex_state=home` keeps it in `CODEX_HOME`); the rollout files stay in `CODEX_HOME` |
+| `codex` | - | `run-codex --resume=<id>` -> `codex resume <id>` (interactive) / `codex exec resume <id> -` (one prompt) | the `thread.started` event, else `state_*.sqlite` (the newest thread of the folder) in Codex's store - `CODEX_HOME`, as every harness keeps its own (`--codex_state=project`: the project's `!AI/codex`, `CODEX_SQLITE_HOME`); the rollout file is in `CODEX_HOME` and, as a copy, in `!AI/sessions/codex` |
 | `antigravity` (`agy`) | - | `--conversation <id>` | the `result` event's `conversation_id`, else `~/.gemini/antigravity-cli/cache/last_conversations.json` (the folder's entry), else the newest `conversations/*.db` |
 | `opencode` | - | `--session <id>` | `~/.local/share/opencode/opencode.db` (the newest session of the folder) |
 | `openclaw` | `--session-id <uuid>` (run-ai chooses it); the terminal UI: `--session agent:main:explicit:<uuid>` | `--session-id <uuid>`; the UI: `--session <key>` | run-ai; for a new session of the UI, OpenClaw's `sessions.json` (the id it filed the key under) |
@@ -253,8 +256,8 @@ stays in the harness's store).
 Claude's memory goes into the project by **mechanism**: `autoMemoryDirectory` points at `!AI/memory` for the run, so
 whatever Claude decides to remember lands there, and nothing is written to `~/.claude/projects/<slug>/memory` (that
 folder then holds the session transcript only). The other harnesses have no memory of their own that run-ai could
-redirect (agy and OpenCode have none; OpenClaw and Gemini keep theirs in their homes; Codex's store is in the
-project's `!AI/codex`); for them, and for **skills** with every harness, it is a **convention stated in the orientation**: a new
+redirect (agy and OpenCode have none; OpenClaw and Gemini keep theirs in their homes; Codex's own memory across
+sessions is switched off for a run); for them, and for **skills** with every harness, it is a **convention stated in the orientation**: a new
 memory is a Markdown file in `!AI/memory/` plus a line in `MEMORY.md`, a new skill is `!AI/skills/<name>/SKILL.md`,
 never `~/.claude/skills` or `.claude/skills`. A skill made during a session is loaded on the next run (plugins are read
 at start). Outside run-ai's reach: Claude Code's own `#` shortcut and `/init`, which write `CLAUDE.md` files, and a
@@ -281,7 +284,7 @@ renews the copy), the copy (a note: carry the change over to the source if it sh
 |---|---|---|
 | `claude` | a settings file per run, `--settings <!AI/log/<stamp>.claude.settings.json>`: `autoMemoryDirectory = <project>/!AI/memory`; `--plugin-dir <project>/!AI` for the skills; `--session-id` / `--resume` for the conversation; `--append-system-prompt-file` and `--add-dir` for the context | **read and written** there |
 | `opencode` | `OPENCODE_CONFIG_CONTENT = {"instructions": ["!AI/memory/MEMORY.md", "!AI/memory/*.md", the context file]}` - the variable is merged with the user's config | read only: OpenCode has no memory of its own |
-| `codex` | the `!AI/memory` index and the skills are prepended to the prompt; one-prompt runs get `--skip-git-repo-check`, because `codex exec` refuses a folder that is neither a git repository nor a trusted project; `CODEX_SQLITE_HOME=<project>/!AI/codex` keeps Codex's threads, their history and its memories inside the project (`--codex_state=home` keeps `CODEX_HOME`) | read only through the prompt; Codex's own memory store lives in the project's `!AI/codex` |
+| `codex` | the `!AI/memory` index and the skills are prepended to the prompt; one-prompt runs get `--skip-git-repo-check`, because `codex exec` refuses a folder that is neither a git repository nor a trusted project; `--disable memories`: Codex's own memory across sessions, drawn from every session of the machine, stays off (`-- --enable memories` on your word); its SQLite state stays in `CODEX_HOME` (`--codex_state=project`: `CODEX_SQLITE_HOME=<project>/!AI/codex`, an interactive session then with `--no-daemon`) | read only through the prompt; Codex's own memory is off |
 | `antigravity` (also `agy`) | `task/run-agy` with `tool/agy`: the index and the skills are prepended to the prompt; context folders join the workspace with `--add-dir`. agy is Google's successor of Gemini CLI for personal Google accounts. The `stream-json` events give the answer, the token counters and the conversation id, and `--conversation <id>` resumes it. Without a login agy prints the login URL and waits; `run-agy` then fails with a sign-in hint - sign in once with `cx tool run agy` | read only; agy has no memory of its own, only conversations (`~/.gemini/antigravity-cli`) |
 | `gemini` | `task/run-gemini` with `tool/gemini`: the index and the skills are prepended to the prompt; context folders join the workspace with `--include-directories`; headless runs get `--skip-trust` and never open a browser (`NO_BROWSER`). Gemini CLI serves Gemini Code Assist Standard/Enterprise licences, paid API keys (`GEMINI_API_KEY`) and Vertex AI; a personal Google account is refused, and the run then fails with a hint that says so - use `--harness=antigravity` for those | read only; Gemini's own memory is its global `GEMINI.md` |
 | `openclaw` | `task/run-openclaw` (`openclaw agent --local --json`): the index and the skills are prepended to the prompt; `--session-id` names the session and resumes it. OpenClaw works in its own workspace (`~/.openclaw/workspace`, from its config, with its persona files `AGENTS.md`, `SOUL.md`, ...) whatever the current directory is, so the orientation tells it the project folder and it uses absolute paths there. Its default model (`openai/gpt-5.5`) needs an OpenAI key; `--model=claude-cli/<model>` runs through the local Claude Code login, and the token counts of such a turn are read from Claude Code's own session (OpenClaw reports only the last model call). The terminal UI (`--interactive`) takes the session's key, `--session agent:main:explicit:<id>`, and no `--model`: run-ai leaves it out and says so - type `/model <provider/model>` in the UI, or set the default once with `cx tool run openclaw -- models set <provider/model>` (drive OpenClaw through the tool: cMeta installs it when missing, a bare `openclaw` may be another copy or none). The UI files a new session under an id of its own; run-ai reads it from OpenClaw's index afterwards, so that the next turn continues that session | read only; OpenClaw's own memory lives in its workspace |
@@ -593,7 +596,7 @@ or of one PC is involved (a harness's own permission rule covers one harness, it
 
 Why it is needed. A project that uses another artifact (`ai_uses`, `--context`) is given that artifact's memory and
 skills to read. Nothing writes there by itself - run-ai writes only into the project's own `!AI`, Claude's memory goes
-to the project's `!AI/memory`, Codex keeps its state in the project's `!AI/codex`, OpenCode has no memory - but the
+to the project's `!AI/memory`, Codex's own memory is off and its state is in its home, OpenCode has no memory - but the
 session can decide to edit a file there, and what stands in its way depends on the harness and on how it was started:
 
 | Harness | How it gets the used artifacts | What stops a direct edit there, without the guard |
@@ -817,7 +820,8 @@ there `cx tool run codex -- login`, and open the URL it prints in this machine's
 
 `!AI` travels with the project (a bisync between two machines, a copy to another): run-ai resolves the project and
 its `ai_uses` by cRef on every run, the per-run files that name paths are rewritten by every run, and a
-conversation continues on any machine (the native session of a harness exists on the machine that made it;
+conversation continues on any machine (the native sessions of Claude Code and Codex travel as copies in
+`!AI/sessions` and are resumed natively; a session of another harness exists on the machine that made it, and
 elsewhere the transcript is handed over). What run-ai does about two machines on one project:
 
 - **The host in every record.** Each run of a conversation says on which machine it was made (`runs[].host`, the
@@ -855,6 +859,40 @@ elsewhere the transcript is handed over). What run-ai does about two machines on
   stand for that artifact's folder on whichever machine reads the text (`cx utils find_by_cid` resolves them; a
   repository root is `{{{repo::<alias>,<UID>}}}`) - and a path outside cMeta as a full path that names its machine.
 
+### Codex's own state: at home
+
+The rule for every harness: **a synced `!AI` holds files with unique names that one run writes; a harness's live
+databases stay in its own store on each machine.** Codex keeps two things. Its sessions are the *rollout* files of
+`CODEX_HOME/sessions/<year>/<month>/<day>/`, one per session, uniquely named - run-ai copies a session's rollout to
+`!AI/sessions/codex/` after each run and puts it back before a resume on another machine, which is all
+`codex resume` needs: Codex resumes a session its store never listed and lists it again, history whole. On top of
+them Codex builds an index and working state in SQLite, under fixed names (`state_5.sqlite`, `thread_history_1.sqlite`,
+`logs_2.sqlite` ...). That state stays in `CODEX_HOME`.
+
+Until 2026-11-17 run-ai put it into the project by default (`CODEX_SQLITE_HOME=<project>/!AI/codex`). It did not do
+what was meant:
+
+- Pointed at a new folder, Codex rebuilds the index from every rollout of the machine: each project got the list of
+  all the machine's sessions, with folder, title and first message (299 threads in one project, 2 of them its own).
+- Codex's shared background server (`codex app-server`, one per `CODEX_HOME`, alive for days, used by interactive
+  sessions) keeps the folder it was started with: the sessions of every project were then recorded in one project's
+  folder, and its files stayed open.
+- A database of a fixed name that two machines change is a conflict in a sync, and on Windows an open one cannot be
+  moved.
+
+What is left of it and what to do once:
+
+- An `!AI/codex` folder of those runs is read for their sessions (the transcript of one never resumed since) and no
+  longer written. It can be deleted when its conversations are over: the rollouts and the transcripts hold them.
+- On a machine where interactive Codex sessions ran under the old default, stop the background server once, with no
+  Codex session open: `codex app-server daemon stop`. An interactive run says so when it finds its session in no store
+  run-ai reads ("its background server keeps its state in another folder").
+- `--codex_state=project` still keeps the state in the project - a self-contained folder for a test; an interactive
+  session then runs with `--no-daemon`, so that it owns that folder and lets go of it.
+
+Codex's own memory across sessions (its feature `memories`) is drawn from every session of the machine: run-ai's
+runs pass `--disable memories` (`-- --enable memories` switches it on, on your word).
+
 ### Interactive sessions that survive an SSH disconnect
 
 ```console
@@ -885,8 +923,9 @@ required; native Windows targets are refused. Do not combine `--on_screen` with 
 - **One memory folder per run.** With the memory in the project, the memories of `~/.claude/projects/<slug>/` are not
   loaded for that run (except through the seed). A shared set (who you are, how you work, the rules of a codebase) is
   what `ai_uses` gives.
-- **Native sessions** stay in the harnesses' own stores on this machine (Codex's in the project's `!AI/codex`, the rest
-  in the home); the conversation file names them and the transcript is the portable copy.
+- **Native sessions** stay in the harnesses' own stores on this machine, in the home - Codex's too since 2026-11-17;
+  Claude Code's and Codex's are also copied into `!AI/sessions`, so they travel; the conversation file names them and
+  the transcript is the portable copy.
 
 ## Git
 

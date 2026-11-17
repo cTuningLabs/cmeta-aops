@@ -79,6 +79,27 @@ All notable changes to cMeta AOps are documented here, newest first.
   winget does not link is installed over (one of the user's own folder is left to update itself); the cask adopts an
   app from Google's disk image; Homebrew without its own update; the version on macOS from `Info.plist`; apt's
   refreshed lists, dnf and the downloaded package checked against the version asked for.
+- **`run-ai`: Codex's own state stays in its home, as every harness's store; what travels is the session's file.**
+  Until now run-ai put Codex's SQLite state into the project by default (`CODEX_SQLITE_HOME=<project>/!AI/codex`), beside
+  the copy of each session's rollout that has travelled in `!AI/sessions/codex` since 0.63.0. The databases did not do
+  what was meant: pointed at a new folder, Codex rebuilds its index from every rollout of the machine, so each project
+  held the list of all the machine's sessions (299 threads in one project, 2 its own); Codex's shared background server
+  writes into the folder it was started with, so for days the sessions of every project were recorded in one project's
+  folder, its files open; and a fixed-name database that two machines change is a conflict in a sync (a bisync aborted
+  on one on 2026-11-17). Now:
+  - **`--codex_state` defaults to `home`.** Nothing is written into `!AI/codex`; a folder of earlier runs is still read
+    for their sessions (a thread's history comes from the store that holds the most of it) and can be deleted when its
+    conversations are over. Sessions made under the old default go on: Codex resumes a session from its rollout alone
+    and lists it in its own store again, history whole (tried: one made with the state in a project, resumed at home).
+  - **`--codex_state=project`** still gives a self-contained folder; an interactive session then runs with
+    `--no-daemon`, so that it owns the folder and lets go of it. Another value is refused.
+  - **Codex's own memory across sessions is off for a run** (`--disable memories`; `-- --enable memories` on your word):
+    it is drawn from every session of the machine, and a run's context is what run-ai hands it. Off in Codex
+    0.163-0.169 anyway; said so that a changed default cannot switch it on.
+  - **An interactive run says when its session is in no store run-ai reads** - Codex's background server filed it
+    elsewhere. Once, on a machine where interactive Codex sessions ran under the old default, with none open:
+    `codex app-server daemon stop`.
+  The other harnesses were already this way: only Codex's store was ever pointed into a project.
 
 ## 0.72.2
 - **An interactive Claude Code session opens with its prompt again.** `run-claude` puts `--` before the trailing

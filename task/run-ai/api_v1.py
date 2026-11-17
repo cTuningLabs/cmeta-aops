@@ -65,8 +65,10 @@ How each harness is pointed at !AI - the tool's own settings, no API keys:
                --plugin-dir <project>/!AI for the skills; --add-dir and --append-system-prompt-file for the context
     opencode   OPENCODE_CONFIG_CONTENT = {"instructions": [!AI/MEMORY.md, !AI/memory/*.md, the context file]}  (read only);
                context folders allowed by the permission external_directory; one-prompt runs continue after a refusal
-    codex      the !AI index, the skills and the context are prepended to the prompt (read only); its SQLite state
-               (threads, history, memories) lives in <project>/!AI/codex (CODEX_SQLITE_HOME; --codex_state=home: CODEX_HOME)
+    codex      the !AI index, the skills and the context are prepended to the prompt (read only); its own memory across
+               sessions is switched off (--disable memories); its SQLite state (the index of its threads, their
+               history) stays in its home, as every harness's store - the session's own file travels in !AI/sessions
+               (--codex_state=project: that state in <project>/!AI/codex, CODEX_SQLITE_HOME - a self-contained folder)
     antigravity (agy)  as codex; context folders are mounted with --add-dir  (read only; agy has conversations, no memory)
     gemini     as codex; context folders join the workspace with --include-directories  (read only). Gemini CLI serves
                Code Assist Standard/Enterprise licences and API keys; personal Google accounts use antigravity
@@ -1669,6 +1671,8 @@ class CTask(InitCTask):
             flags = ['--model', SUMMARY_CLAUDE_MODEL] + flags
         if hk == 'codex' and '--skip-git-repo-check' not in flags:
             flags = ['--skip-git-repo-check'] + flags
+        if hk == 'codex':
+            flags = CONV.codex_without_memories(flags)
         ask = ('Summarize conversation %s of this project for whoever continues it - a person or another agent. Its '
                'transcript was written by cMeta run-ai. Write Markdown with these sections: Goal; Done (the decisions and '
                'results, with the file paths and commands that matter); State now; Open items and next steps; Facts to keep '
@@ -1736,7 +1740,7 @@ class CTask(InitCTask):
             no_log: bool = False,           # do not write the output, the stats, the run record and the conversation into !AI/log
             record_prompt: bool = False,    # keep the submitted text prompt in !AI/log and return prompt_file, without adding it to the result
             add_repos: str = '',            # claude only: cMeta repos to add to the context ("alias,alias"; "none")
-            codex_state: str = 'project',   # codex only: where its threads, history and memories live - "project" (<project>/!AI/codex, CODEX_SQLITE_HOME) or "home" (CODEX_HOME)
+            codex_state: str = 'home',      # codex only: where its SQLite state (the index of its threads, their history) lives - "home" (CODEX_HOME, as every harness's store) or "project" (<project>/!AI/codex, CODEX_SQLITE_HOME: a self-contained folder)
             context: str = '',              # read-only memory and skills of more sources, ";"-separated: "category::artifact;claude:<folder>;..."
             skip_ai_uses: bool = False,     # do not follow ai_uses: the project's list, its repository's default, this machine's mapping
             no_seed: bool = False,          # claude: do not copy Claude Code's own memory of the folder into an empty !AI/memory
@@ -1981,19 +1985,28 @@ class CTask(InitCTask):
         elif write_from != 'default':
             notes.append('write: ask (%s) - %s asks before it edits or runs a command' % (write_from, harness))
 
-        # codex keeps its SQLite state (threads, thread history, memories) INSIDE the project: CODEX_SQLITE_HOME, which
-        # Codex 0.160 honours (the thread lands there and "codex exec resume" finds it; the rollout
-        # files stay in CODEX_HOME). The lookups of conversations.py read the same store, before and after the run.
+        # Codex's SQLite state (the index of its threads, their history) stays in its own home, as every harness's store
+        # does; what travels with the project is the session's own file under its unique name (!AI/sessions,
+        # CONV.NATIVE_COPIED), which is all "codex resume" needs. Until 2026-11-17 that state was put INSIDE the project
+        # by default (CODEX_SQLITE_HOME = !AI/codex, honoured since Codex 0.160). It did not work as meant: in every new
+        # folder Codex rebuilds the index from ALL the rollouts of the machine (each project got the list of every
+        # session, 300 of them); its shared background server writes into the folder it was started with, for days and
+        # for every project; and a fixed-name database that two machines change is a conflict in a sync.
+        # --codex_state=project still gives a self-contained folder. The lookups of conversations.py read the store in
+        # use, before and after the run, and after it the folder those earlier runs left in the project.
         codex_dir = ''
         project_codex = os.path.join(ai_root, 'codex')
-        if str(codex_state or 'project').lower() != 'home':
+        codex_state = str(codex_state or 'home').strip().lower()
+        if codex_state not in ('home', 'project'):
+            return self.cm.error('--codex_state is "home" (Codex\'s own store, the default) or "project" (%s/codex), not "%s"' % (AI_DIR, codex_state))
+        if codex_state == 'project':
             if hk == 'codex':
                 codex_dir = project_codex
 
             # the transcript of a run with another harness re-exports the codex segments of the conversation from there too
             CONV.set_codex_sqlite_home(project_codex if (codex_dir or os.path.isdir(project_codex)) else '')
         else:
-            CONV.set_codex_sqlite_home('')
+            CONV.set_codex_sqlite_home('', earlier=project_codex if os.path.isdir(project_codex) else '')
 
         # 1a. the conversation: continue the latest (default), a given one, or start a new one
         conv, conv_how, native_sid, new_sid, handover = None, '', '', '', ''
@@ -2232,7 +2245,17 @@ class CTask(InitCTask):
                         'resume scripts or session summaries into the project folder.\n' % (AI_DIR, LOG_DIR))
                 if codex_dir:
                     env['CODEX_SQLITE_HOME'] = codex_dir
-                    notes.append('codex state: threads, thread history and memories in %s (CODEX_SQLITE_HOME; --codex_state=home keeps them in CODEX_HOME)' % codex_dir)
+                    notes.append('codex state: the index of its threads and their history in %s (CODEX_SQLITE_HOME, --codex_state=project)' % codex_dir)
+                    if interactive and '--no-daemon' not in extra:
+                        # the session itself owns that folder and lets go of it at its end: Codex's shared background
+                        # server would keep the folder of the session that started it, for every later session of
+                        # every project ("codex exec" does not use that server)
+                        extra = ['--no-daemon'] + extra
+                        notes.append('codex: --no-daemon - this session keeps its state in the project, so it runs without Codex\'s shared background server')
+                elif os.path.isdir(project_codex):
+                    notes.append('codex state: in its own home (CODEX_HOME); %s, left by earlier runs, is read for their sessions and no longer written' % project_codex)
+                # a run's context is what run-ai hands it: Codex's own memory across sessions stays off
+                extra = CONV.codex_without_memories(extra)
             if hk == 'gemini':
                 # gemini's equivalent of --add-dir: the context folders join the workspace, so a memory can be read.
                 # Gemini CLI splits each value at its commas, so a folder with a comma in its path cannot be mounted:
@@ -2272,11 +2295,14 @@ class CTask(InitCTask):
                 text = own.replace(memory_text, '')     # the memory, the orientation and the context go through the instructions
             else:
                 text = context_text + own
+                # codex: its own memory across sessions is switched off above; the others keep theirs in their home
+                its_own = ('%s\'s own memory across sessions is off (--disable memories)' % harness) if (hk == 'codex' and '--disable' in extra) \
+                    else ('%s keeps its own memory in its home (v1)' % harness)
                 if memory_text.strip():
-                    notes.append('memory: the index of %s%s is prepended to the prompt (%d chars); %s keeps its own memory in its home (v1)' % (
-                        mem_dir, ' and the context' if context_text else '', len(text), harness))
+                    notes.append('memory: the index of %s%s is prepended to the prompt (%d chars); %s' % (
+                        mem_dir, ' and the context' if context_text else '', len(text), its_own))
                 else:
-                    notes.append('memory: %s has nothing yet; %s keeps its own memory in its home (v1)' % (mem_dir, harness))
+                    notes.append('memory: %s has nothing yet; %s' % (mem_dir, its_own))
             if text.strip():
                 params['prompt'] = text + '\n' + CONV.REQUEST_MARK + '\n' + (prompt or '')
         if handover:
@@ -2563,6 +2589,18 @@ class CTask(InitCTask):
             # a copy of the native session's files in !AI/sessions: the conversation goes on natively on any machine
             # the project is synced to (restore_session before the next resume there)
             current = run_entry.get('session') or (conv['sessions'].get(hk) or {}).get('id')
+            if current and hk == 'codex' and interactive and not codex_dir:
+                # the session is in no store run-ai reads: Codex's background server filed it in the folder it was
+                # started with (a project's !AI/codex of an earlier run). The rollout is in CODEX_HOME all the same, so
+                # nothing is lost and the next run resumes it; the server is the user's to stop
+                try:
+                    if CONV.codex_misplaced(current):
+                        after_notes.append('codex: this session is not listed in Codex\'s own store - its background server keeps its state in '
+                                           'another folder (it was started by a run that kept Codex\'s state in a project, the default until '
+                                           '2026-11-17). Nothing is lost (the session\'s file is in CODEX_HOME and in %s/%s). With no Codex '
+                                           'session open, stop that server once: codex app-server daemon stop' % (AI_DIR, CONV.SESSIONS_DIR))
+                except Exception:
+                    pass
             if current and hk in CONV.NATIVE_COPIED:
                 try:
                     CONV.stash_session(ai_root, harness, current, project_path)

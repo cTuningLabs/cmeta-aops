@@ -113,9 +113,9 @@ def test_how_each_harness_starts_and_resumes_a_session():
 
 
 def test_a_codex_session_resumes_only_where_its_rollout_is(tmp_path, monkeypatch):
-    """The project's Codex store (state_*.sqlite in !AI) travels between machines, the session's rollout file stays in
-    the CODEX_HOME of the machine that ran it: "codex resume <id>" there and only there (2026-11-03: a session of the
-    P14s Gen 4 continued on the laptop ended with "No saved session found with ID ...")."""
+    """A row in a Codex store (state_*.sqlite) is not the session: "codex resume <id>" works where the rollout file is,
+    in the CODEX_HOME of that machine, and only there (2026-11-03, the store then travelling in the project's !AI: a
+    session of the P14s Gen 4 continued on the laptop ended with "No saved session found with ID ...")."""
     import sqlite3
     home, store = tmp_path / "codex-home", tmp_path / "project" / "!AI" / "codex"
     store.mkdir(parents = True)
@@ -182,6 +182,100 @@ def test_a_codex_session_travels_with_the_project(tmp_path, monkeypatch):
     assert C.restore_session(str(ai), "codex", SID, ".") == (1, "")
     assert C.session_exists("codex", SID, ".")
     assert C.stash_session(str(ai), "gemini", SID, ".") == 0 and C.restore_session(str(ai), "gemini", SID, ".") == (0, "")
+
+
+def codex_store(folder, threads = (), items = ()):
+    """A Codex store as Codex >= 0.160 writes it: state_5.sqlite (threads: id, created, cwd) and
+    thread_history_1.sqlite (items: thread, type, json)."""
+    import sqlite3
+    folder = pathlib.Path(folder)
+    folder.mkdir(parents = True, exist_ok = True)
+    con = sqlite3.connect(str(folder / "state_5.sqlite"))
+    con.execute("create table threads (id text, created_at integer, source text, cwd text)")
+    con.executemany("insert into threads values (?, ?, 'cli', ?)", threads)
+    con.commit()
+    con.close()
+    con = sqlite3.connect(str(folder / "thread_history_1.sqlite"))
+    con.execute("create table thread_items (thread_id text, item_type text, item_json text, created_at_ms integer, rollout_ordinal integer)")
+    con.executemany("insert into thread_items values (?, ?, ?, 0, ?)",
+                    [(t, kind, json.dumps(body), n) for n, (t, kind, body) in enumerate(items)])
+    con.commit()
+    con.close()
+    return folder
+
+
+def test_codex_keeps_its_store_at_home_and_an_earlier_project_store_is_still_read(tmp_path, monkeypatch):
+    """Since 2026-11-17 Codex's SQLite state stays in CODEX_HOME, as every harness's store (until then run-ai put it
+    into <project>/!AI/codex, where every project got the list of all the machine's sessions and a sync a fixed-name
+    database changed on two machines). The lookups read the store in use, then the folder those runs left: a thread
+    only it lists is known, and a thread's history comes from the store that holds the most of it."""
+    project = tmp_path / "project"
+    home = tmp_path / "codex-home"
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    monkeypatch.delenv("CODEX_SQLITE_HOME", raising = False)
+    said = lambda t, text: (t, "agentMessage", {"text": text})
+    asked = lambda t, text: (t, "userMessage", {"content": [{"text": text}]})
+    codex_store(home, threads = [("resumed", 30, str(project)), ("elsewhere", 40, str(tmp_path / "other"))],
+                items = [asked("resumed", "one"), said("resumed", "alpha"), asked("resumed", "two"), said("resumed", "alpha")])
+    earlier = codex_store(project / "!AI" / "codex", threads = [("old", 10, str(project)), ("resumed", 20, str(project))],
+                          items = [asked("old", "then"), said("old", "so"), asked("resumed", "one"), said("resumed", "alpha")])
+    try:
+        C.set_codex_sqlite_home("")                              # the default: Codex's own home
+        assert C.codex_sqlite_home() == str(home) and C.codex_stores() == [str(home)]
+        assert C.codex_known("resumed") and not C.codex_known("old")
+        assert [t[0] for t in C.codex_threads(str(project))] == ["resumed"]
+
+        C.set_codex_sqlite_home("", earlier = str(earlier))      # a project that has a folder of earlier runs
+        assert C.codex_stores() == [str(home), str(earlier)]
+        assert C.codex_known("old") and C.codex_known("resumed") and not C.codex_known("never")
+        assert [text for _, _, ((_, text),) in C.codex_export("old")] == ["then", "so"]
+        assert len(C.codex_export("resumed")) == 4, "resumed at home: whole there, half in the earlier store"
+        assert [t[0] for t in C.codex_threads(str(project))] == ["resumed"], "the store in use answers first"
+        assert [t[0] for t in C.codex_threads(str(project), since = 5)] == ["resumed"]
+
+        C.set_codex_sqlite_home(str(earlier))                    # --codex_state=project: that folder is the store
+        assert C.codex_stores() == [str(earlier)]
+        assert [t[0] for t in C.codex_threads(str(project))] == ["resumed", "old"]
+        C.set_codex_sqlite_home(str(earlier), earlier = str(earlier))
+        assert C.codex_stores() == [str(earlier)], "not read twice"
+    finally:
+        C.set_codex_sqlite_home("")
+    assert C.codex_stores() == [str(home)], "a run's end resets both"
+
+
+def test_a_codex_session_filed_elsewhere_by_its_background_server_is_noticed(tmp_path, monkeypatch):
+    """Codex's shared background server keeps the folder it was started with: a session whose rollout is here and that
+    no store lists was written into another project's folder (2026-11-17: two days of sessions of every project in
+    one project's !AI/codex). A machine whose Codex keeps no state database (the rollouts alone) is not in that case."""
+    home = tmp_path / "codex-home"
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    monkeypatch.delenv("CODEX_SQLITE_HOME", raising = False)
+    C.set_codex_sqlite_home("")
+    put(home / "sessions" / "2026" / "11" / "17" / ("rollout-2026-11-17T10-21-39-%s.jsonl" % SID), [{"type": "session_meta"}])
+    assert not C.codex_misplaced(SID), "no state database at home: nothing to be listed in"
+    codex_store(home, threads = [("another", 1, "/x")])
+    assert C.codex_misplaced(SID)
+    assert not C.codex_misplaced("another"), "no rollout here: it did not run on this machine"
+    assert not C.codex_misplaced("")
+    import sqlite3
+    con = sqlite3.connect(str(home / "state_5.sqlite"))
+    con.execute("insert into threads values (?, 2, 'cli', '/x')", (SID,))
+    con.commit()
+    con.close()
+    assert not C.codex_misplaced(SID)
+
+
+def test_codex_runs_without_its_own_memory_across_sessions():
+    """A run's context is what run-ai hands it: Codex's feature "memories" (drawn from every session of the machine)
+    is switched off, unless the flags after "--" name it."""
+    assert C.codex_without_memories([]) == ["--disable", "memories"]
+    assert C.codex_without_memories(None) == ["--disable", "memories"]
+    assert C.codex_without_memories(["--json", "-c", 'sandbox_mode="read-only"']) == \
+        ["--disable", "memories", "--json", "-c", 'sandbox_mode="read-only"']
+    for own in (["--enable", "memories"], ["--disable", "memories"], ["-c", "features.memories=true"],
+                ["-c", "features.memories = false"]):
+        assert C.codex_without_memories(["--json"] + own) == ["--json"] + own
+    assert C.codex_without_memories(["--disable", "other"]) == ["--disable", "memories", "--disable", "other"]
 
 
 def test_claude_sessions_are_found_and_exported(tmp_path, monkeypatch):
