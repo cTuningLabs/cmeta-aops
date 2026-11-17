@@ -109,8 +109,11 @@ def stats_text(block):
 
 STATS_START = re.compile(r'^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d (?:INFO|NOTICE)\s*:\s*$')
 
-# bisync's lines for a file changed on both sides (rclone 1.66+, --conflict-resolve none --conflict-loser num):
+# bisync's lines for a file changed on both sides (rclone 1.66+, --conflict-resolve newer --conflict-loser num: the
+# newer copy keeps the name and the other is renamed; with the same time on both sides there is no winner and BOTH are
+# renamed, as with --conflict-resolve none, the rule of the runs before 2026-11-17):
 #   - WARNING   New or changed in both paths   - <name>                  (every such file, real and dry runs)
+#   <name>: The winner is: Path1                                          (a newer copy: it keeps the name)
 #   <name>: Files are equal but will copy anyway ...  |  Files are equal! Skipping: <name>     (the same bytes: no conflict)
 #   - Path1   Renaming Path1 copy   - <absolute name>.conflict1          (real runs)
 #   <name>: Moved (server-side) to: <name>.conflict1                      (real runs)
@@ -119,6 +122,7 @@ BOTH_CHANGED = re.compile(r'New or changed in both paths\s+- (.+?)\s*$')
 FILES_EQUAL = (re.compile(r'^(.+?): Files are equal'), re.compile(r'Files are equal! Skipping: (.+?)\s*$'))
 CONFLICT_RENAME = re.compile(r'(?:Renaming Path\d copy|Queue copy to Path\d)\s+- (.+?\.conflict\d+)\s*$')
 CONFLICT_MOVE = re.compile(r'^(.+?): Moved \(server-side\) to: (.+?\.conflict\d+)\s*$')
+CONFLICT_WINNER = re.compile(r'^(.+?): The winner is: Path([12])\s*$')
 LOG_PREFIX = re.compile(r'^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d [A-Z]+\s*: ')
 
 
@@ -141,11 +145,13 @@ def _relative(name, roots):
 def run_summary(text, roots=()):
     """What a run did, read from its rclone log (2026-11-11, after a conflict reached a production site unnoticed):
     the last statistics block - files moved, bytes, deleted (put aside in the sync backups), errors - and the files
-    changed on BOTH sides since the last run, which bisync keeps as <file>.conflict1 (Path1's) and <file>.conflict2
-    (Path2's) while the name itself disappears on both sides - a page served from such a file breaks, so a run with
-    conflicts is reported as one. -> {files, bytes, deleted, errors, conflicts: [{file, copies}]}."""
+    changed on BOTH sides since the last run. The newer copy keeps the name and the other is kept beside it as
+    <file>.conflict1 ('kept': source | destination); with the same time on both sides bisync has no winner and keeps
+    them as <file>.conflict1 (Path1's) and <file>.conflict2 (Path2's) while the name itself disappears on both sides -
+    a page served from such a file breaks. Either way a person must look, so a run with conflicts is reported as
+    one. -> {files, bytes, deleted, errors, conflicts: [{file, copies, kept?}]}."""
     out = {'files': 0, 'bytes': '', 'deleted': 0, 'errors': 0, 'conflicts': []}
-    block, seen, both, equal = None, {}, [], set()
+    block, seen, both, equal, winner = None, {}, [], set(), {}
     for line in text.splitlines():
         line = line.rstrip('\r')
         if STATS_START.match(line):
@@ -181,6 +187,10 @@ def run_summary(text, roots=()):
         if m:
             equal.add(_relative(m.group(1), roots))
             continue
+        m = CONFLICT_WINNER.search(bare)
+        if m:
+            winner[_relative(m.group(1), roots)] = 'source' if m.group(2) == '1' else 'destination'
+            continue
         m = CONFLICT_MOVE.search(bare)
         if m:
             name, copy = _relative(m.group(1), roots), _relative(m.group(2), roots)
@@ -194,8 +204,14 @@ def run_summary(text, roots=()):
         if copy not in copies:
             copies.append(copy)
     # a conflict: changed on both sides and not to the same bytes (an older .conflict copy carried on is none)
-    out['conflicts'] = [{'file': n, 'copies': sorted(seen.get(n) or [n + '.conflict1', n + '.conflict2'])}
-                        for n in both if n not in equal]
+    for n in both:
+        if n in equal:
+            continue
+        default = [n + '.conflict1'] if n in winner else [n + '.conflict1', n + '.conflict2']
+        conflict = {'file': n, 'copies': sorted(seen.get(n) or default)}
+        if n in winner:
+            conflict['kept'] = winner[n]
+        out['conflicts'].append(conflict)
     return out
 
 
@@ -273,13 +289,33 @@ def banner(word, summary):
 def conflicts_text(summary, sides):
     """What the conflicts of a run are and what to do, a part per ' | ' (sides: the two sides' names)."""
     n = len(summary['conflicts'])
-    parts = [f'CONFLICTS: {n} file{"s" if n > 1 else ""} changed on BOTH sides since the last run - kept as .conflict1 '
-             f'({sides[0]}) and .conflict2 ({sides[1]}); the name itself is gone on both sides until one is put back']
-    parts += ['    ' + c['file'] for c in summary['conflicts'][:20]]
-    if n > 20:
-        parts.append(f'    ... and {n - 20} more (the run log names them all)')
-    parts.append('resolve: on ONE side copy the right version back under its name and delete the conflict copies, '
-                 'then run the sync again (it carries the name to the other side and puts the copies aside)')
+    kept = [c for c in summary['conflicts'] if c.get('kept')]            # a newer copy: it has the name on both sides
+    lost = [c for c in summary['conflicts'] if not c.get('kept')]        # the same time on both sides: the name is gone
+    head = f'CONFLICTS: {n} file{"s" if n > 1 else ""} changed on BOTH sides since the last run'
+    gone = f'kept as .conflict1 ({sides[0]}) and .conflict2 ({sides[1]}); the name itself is gone on both sides until one is put back'
+    if not lost:
+        parts = [head + ' - the newer copy keeps the name on both sides, the other is kept beside it as <name>.conflict1']
+    elif not kept:
+        parts = [head + ' - ' + gone]
+    else:
+        parts = [head]
+    who = {'source': sides[0], 'destination': sides[1]}
+    if kept:
+        if lost:
+            parts.append(f'{len(kept)} with a newer copy - it keeps the name on both sides, the other is beside it as <name>.conflict1:')
+        parts += [f'    {c["file"]}  (kept: the copy of {who[c["kept"]]})' for c in kept[:20]]
+    if lost:
+        if kept:
+            parts.append(f'{len(lost)} with the same time on both sides, no newer copy - ' + gone + ':')
+        parts += ['    ' + c['file'] for c in lost[:20]]
+    if len(kept) > 20 or len(lost) > 20:
+        parts.append(f'    ... and {max(len(kept) - 20, 0) + max(len(lost) - 20, 0)} more (the run log names them all)')
+    if kept:
+        parts.append('look at each kept copy: when it is the right one delete its .conflict1 on ONE side, when it is not copy '
+                     'the .conflict1 over the name there and delete it - then run the sync again')
+    if lost:
+        parts.append('resolve: on ONE side copy the right version back under its name and delete the conflict copies, '
+                     'then run the sync again (it carries the name to the other side and puts the copies aside)')
     return ' | '.join(parts)
 
 
@@ -598,7 +634,7 @@ class CTask(InitCTask):
             argv += ['--filter', rule]
         if plan['mode'] == 'bisync':
             argv += ['--workdir', str(workdir), '--max-delete', str(plan['max_delete']),
-                     '--resilient', '--recover', '--conflict-resolve', 'none', '--conflict-loser', 'num']
+                     '--resilient', '--recover', '--conflict-resolve', 'newer', '--conflict-loser', 'num']
             if plan.get('remove_empty_dirs', False):
                 argv += ['--remove-empty-dirs']
             if initial:

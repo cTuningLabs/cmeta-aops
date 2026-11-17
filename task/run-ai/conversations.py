@@ -260,11 +260,18 @@ def running_path(log_dir, stamp):
     return os.path.join(log_dir, stamp + RUNNING_SUFFIX)
 
 
-def write_running(log_dir, stamp, conv_id, harness):
-    """The marker of a run that is starting -> its path."""
+def write_running(log_dir, stamp, conv_id, harness, project='', areas=None):
+    """The marker of a run that is starting -> its path. project: the project's folder; areas: the folders this run
+    may write while it lives - its project and the !AI of the artifacts it uses. A two-way sync leaves them out while
+    the marker is there (cx host sync), so that a file half written here never meets the other side's copy."""
     path = running_path(log_dir, stamp)
-    _write_json(path, {'stamp': stamp, 'conversation': conv_id, 'harness': harness, 'host': host_name(), 'pid': os.getpid(),
-                       'started': now_iso()})
+    marker = {'stamp': stamp, 'conversation': conv_id, 'harness': harness, 'host': host_name(), 'pid': os.getpid(),
+              'started': now_iso()}
+    if project:
+        marker['project'] = project
+    if areas:
+        marker['areas'] = [a for a in areas if a]
+    _write_json(path, marker)
     return path
 
 
@@ -283,10 +290,13 @@ def _hours_since(iso):
         return None
 
 
-def other_runs(log_dir, mine=''):
+def other_runs(log_dir, mine='', recorded=None):
     """The runs of the project recorded as running, this process's own left out -> (elsewhere, here, cleared).
     A marker of this machine whose process is gone is removed (cleared); a marker of another machine cannot be
-    checked and is returned with its age in hours (None when its time cannot be read). mine: this run's marker."""
+    checked and is returned with its age in hours (None when its time cannot be read). mine: this run's marker.
+    recorded(pid, written): whether the process of that number is still the one a record written at that time names
+    (recorded_process_alive of the task API) - a number alone is not a run: after a restart of the machine, or once
+    the run is gone, the same number belongs to another program, and its marker would say "running" for good."""
     elsewhere, here, cleared = [], [], []
     me = host_name()
     for fp in sorted(_glob(log_dir, '*' + RUNNING_SUFFIX)):
@@ -299,6 +309,11 @@ def other_runs(log_dir, mine=''):
         d.setdefault('stamp', os.path.basename(fp)[:-len(RUNNING_SUFFIX)])
         if d.get('host') and d['host'] == me:
             alive = pid_alive(d.get('pid'))
+            if alive and recorded is not None:
+                try:
+                    alive = bool(recorded(d.get('pid'), os.path.getmtime(fp)))
+                except OSError:
+                    pass
             if alive is False:
                 remove_running(fp)
                 cleared.append(d)

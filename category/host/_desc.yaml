@@ -1,0 +1,17 @@
+# The keys of the config artifact "host" that the host category reads (cx host sync ...).
+#
+#   cx config set host --meta.sync_conflicts=newer
+
+configs:
+  host:
+    desc: 'how this machine syncs repositories with the hosts of its fleet (cx host sync)'
+    keys:
+      sync_conflicts:
+        desc: 'what a two-way sync does with a file that both sides changed since their last good sync. ask - the run
+          looks before it changes anything: the files that lose nothing either way are settled (the same bytes, a
+          memory index merged line by line, a copy that only continues the other one) and for the others it stops,
+          shows both copies with a suggestion and waits for --resolve (the sync page asks in a window); ask-all - the
+          same, and the safe ones wait too; newer - the run never stops: the newer copy keeps the name and the other
+          one is kept beside it as <name>.conflict1. --conflicts=<word> for one run'
+        default: ask
+        example: newer

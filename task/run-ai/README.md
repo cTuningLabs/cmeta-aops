@@ -119,8 +119,9 @@ asking, preserving unattended usage. A closed input without `-q` gives an error 
     log/<id>.conversation.json         a conversation: its runs and, per harness, the native session it continues
     log/<id>.transcript.md             the whole conversation, re-exported from the harnesses' own stores after every run
     log/<id>.summary.md                its summary, written on request (--summarize) and read first at a hand-over
-    log/<stamp>.running                while a run lives: its conversation, harness, host and pid - a run of the project on another
-                                       machine sees it once the sync carried it (the section "Several machines")
+    log/<stamp>.running                while a run lives: its conversation, harness, host and pid, and the folders it may write
+                                       (areas) - a run of the project on another machine sees it once the sync carried it, and a
+                                       two-way sync leaves those folders out meanwhile (the section "Several machines")
     log/<stamp>.import.md              what import-ai brought in, from where
     log/<stamp>.apply_pending.md       what --apply_pending applied to the artifacts this project uses
     log/<stamp>.applied.json           what was applied to THIS artifact from a project that uses it (or kept by the guard)
@@ -827,8 +828,15 @@ elsewhere the transcript is handed over). What run-ai does about two machines on
 - **The host in every record.** Each run of a conversation says on which machine it was made (`runs[].host`, the
   hostname; `--conversations` shows `on <host>`); the run record has a `host` row.
 - **A marker while a run lives.** `log/<stamp>.running` (the conversation, the harness, the host, the pid) exists
-  from the moment the records are written to the end of the run, also when the harness dies. The next run of the
-  project looks at the markers: one of this machine whose process is gone is removed; one of another machine is
+  from the moment the records are written to the end of the run, also when the harness dies. It also says where the
+  run writes: `project` and `areas`, the project's folder and the `!AI` of the artifacts it uses. `cx host sync` leaves
+  those folders out of a two-way sync while the run lives, on this machine and on the host, and says so; the next
+  sync after the run carries them. The session itself gets `CMETA_RUN_AI_MARKER`, the path of its own marker, so a
+  sync started inside it does not leave its own folders out. A marker of this machine is a live run only while its
+  process is the one that wrote it - the marker is from after the machine's last start, and the process did not begin
+  after the marker was written: a process number is given out again, and a marker left by a run that was killed
+  would otherwise say "running" for good. The next run of the
+  project looks at the markers: one of this machine whose run is gone is removed; one of another machine is
   reported - "a run of this project is recorded as running on <host> since ..." - in the console, the run record and
   the orientation (the agent is told to add to the memories rather than rewrite them). No question by default:
   `--other_runs=ask` asks (`-q` or no terminal: refuses; `--yes` goes on), `--other_runs=refuse` refuses; the config

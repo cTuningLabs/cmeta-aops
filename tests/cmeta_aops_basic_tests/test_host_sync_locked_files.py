@@ -59,6 +59,9 @@ def host(tmp_path, monkeypatch):
     h._key_cache, h._host_cache, h._adb_batch, h._adb_locks = {}, {}, None, {}
     h._adb_lock = threading.Lock()
     h.calls = []
+    # after an attempt that failed the two sides are asked for the temporary files it left (test_host_sync_conflicts):
+    # the host of these tests does not exist, nothing asks it
+    h._sweep_partials = lambda *a, **k: 0
     return h
 
 
@@ -210,7 +213,9 @@ def test_without_listings_to_put_back_the_pair_goes_to_a_person(host, tmp_path):
     work.mkdir()
     answers = [{'return': 1, 'error': 'rclone bisync returned 7', 'output': UNREADABLE}]
     r, seen = robust(host, answers, work, tmp_path, still=['logs/x.sqlite-maintenance.lock'])
-    assert r['return'] == 1 and len(seen) == 1 and 'needs a new baseline' in r['error']
+    # no listings of a good run at all: the one case a person is asked about a resync (and told what it brings back)
+    assert r['return'] == 1 and len(seen) == 1 and 'has no listings of a good run' in r['error']
+    assert '--resync --resync_mode=path1 --dry_run' in r['error'] and 'brings back the files deleted' in r['error']
 
 
 def test_the_check_does_not_count_a_skipped_file_as_a_difference(host, tmp_path):

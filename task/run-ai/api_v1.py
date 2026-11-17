@@ -126,7 +126,7 @@ import time
 
 import yaml
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive
 
 TASK_CATEGORY = 'task,c36be4b9314a45e0'
 TOOL_CATEGORY = 'tool,c393ba5c6fa14f66'
@@ -183,6 +183,8 @@ CONFIG_TOKENS_KEY = 'max_context_tokens'
 CONFIG_TRIM_KEY = 'trim_context'        # true: --trim_context on every run of this machine
 CONFIG_OTHER_RUNS_KEY = 'other_runs'    # report (default) | ask | refuse: a run of this project recorded as running on another machine
 OTHER_RUNS_MODES = ('report', 'ask', 'refuse')
+RUNNING_MARKER_ENV = 'CMETA_RUN_AI_MARKER'      # the session's own marker (<stamp>.running), for the commands it runs: a
+                                                # sync of its own never leaves out its own folders (cx host sync)
 SUMMARY_CLAUDE_MODEL = 'haiku'          # --summarize with claude and no --model: Claude Code's alias of its current Haiku
 SUMMARY_INLINE_CHARS = 120000           # a longer transcript is read by the agent from its file instead of in the prompt
 
@@ -1899,7 +1901,8 @@ class CTask(InitCTask):
         sync_notes = CONV.consolidate_log(log_dir)
         conflicts = [(os.path.relpath(o, ai_root).replace('\\', '/'), [os.path.basename(c) for c in cs])
                      for o, cs in CONV.conflict_copies(ai_root)] if os.path.isdir(ai_root) else []
-        elsewhere, here, cleared = CONV.other_runs(log_dir) if os.path.isdir(log_dir) else ([], [], [])
+        elsewhere, here, cleared = (CONV.other_runs(log_dir, recorded=recorded_process_alive) if os.path.isdir(log_dir)
+                                    else ([], [], []))
         for d in cleared:
             sync_notes.append('the marker of run %s (%s) was left by a run of this machine that is gone - removed' % (d.get('stamp'), d.get('harness') or '?'))
         for d in here:
@@ -2500,8 +2503,15 @@ class CTask(InitCTask):
         self._release_stamp(stamp_lock)     # the stamp is taken by the records now
 
         # the marker of this run while it lives (<stamp>.running: the conversation, the harness, this host, the pid): a
-        # run of the same project on this machine sees it, a run on another machine sees it once the sync carried it
-        running = CONV.write_running(log_dir, stamp, conv['id'], harness) if (conv is not None and record) else ''
+        # run of the same project on this machine sees it, a run on another machine sees it once the sync carried it.
+        # It also names the folders the run may write - the project and the !AI of the artifacts it uses - which a
+        # two-way sync leaves out while the run lives (cx host sync); the session's own commands know the marker by
+        # CMETA_RUN_AI_MARKER, so a sync the session itself runs carries its own folders
+        running = (CONV.write_running(log_dir, stamp, conv['id'], harness, project=project_path,
+                                      areas=[project_path] + [g['ai'] for g in guarded])
+                   if (conv is not None and record) else '')
+        if running:
+            env[RUNNING_MARKER_ENV] = running
 
         # 5. run the harness's task inside the project folder (the engine's "path" control: cd there, back afterwards)
         before = CONV.capture_before(harness, project_path)

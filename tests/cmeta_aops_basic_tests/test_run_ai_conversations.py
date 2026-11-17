@@ -557,6 +557,20 @@ def test_markers_of_this_machine_are_checked_by_pid_and_those_of_others_reported
     C.remove_running("")                                               # nothing to remove: no error
 
 
+def test_a_marker_names_the_folders_its_run_may_write(tmp_path):
+    """The project and the !AI of the artifacts the run uses: a two-way sync leaves them out while the run lives
+    (cx host sync reads "areas"; a marker without them, of an older run-ai, stands for its own project)."""
+    log = tmp_path / "work" / "item" / "!AI" / "log"
+    project, used = str(tmp_path / "work" / "item"), str(tmp_path / "fgg.project" / "cmeta-aops" / "!AI")
+    mine = C.write_running(str(log), "20261117-144547", "20261117-144547", "claude", project = project, areas = [project, used, ""])
+    data = json.loads(pathlib.Path(mine).read_text(encoding = "utf-8"))
+    assert data["project"] == project and data["areas"] == [project, used]
+    assert data["host"] == C.host_name() and data["pid"] == os.getpid()
+    # as before without them
+    plain = json.loads(pathlib.Path(C.write_running(str(log), "20261117-150000", "x", "codex")).read_text(encoding = "utf-8"))
+    assert "areas" not in plain and "project" not in plain
+
+
 def test_two_versions_of_a_conversation_record_are_merged_into_one(tmp_path):
     log = tmp_path / "log"
     a = C.new_conversation(str(log), "20261022-100000", "D:/p", "work::p", "a title")
@@ -640,3 +654,27 @@ def test_what_a_session_ran_with_is_read_from_its_end(tmp_path, monkeypatch):
          {"type": "event_msg", "payload": {}}])
     assert C.seen_in_session("codex", SID, ".") == {"model": "gpt-6.1-sol", "effort": "xhigh", "since": "2026-11-02T16:56:42Z"}
     assert C.seen_in_session("codex", "no-such-session", ".") == {} and C.seen_in_files("gemini", [str(f)]) == {}
+
+
+def test_a_marker_whose_number_went_to_another_process_is_a_run_that_is_gone(tmp_path):
+    """The number alone is not the run: a marker written before the process that has its number now began - the
+    machine restarted, or the run died and its number was given out again - is cleared, never reported as running
+    (recorded_process_alive of the task API, which run-ai hands to other_runs)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ctask_for_markers", str(REPO_ROOT / "category" / "task" / "api" / "ctask.py"))
+    ctask = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ctask)
+
+    log = tmp_path / "log"
+    old = C.write_running(str(log), "20261022-100000", "20261022-100000", "claude")       # this process's number ...
+    day_ago = pathlib.Path(old).stat().st_mtime - 86400
+    os.utime(old, (day_ago, day_ago))                                                     # ... on a marker a day older than it
+    new = C.write_running(str(log), "20261023-100000", "20261023-100000", "claude")       # the marker it wrote itself
+
+    # the number alone: both look alive (what an older caller sees)
+    elsewhere, here, cleared = C.other_runs(str(log))
+    assert [d["stamp"] for d in here] == ["20261022-100000", "20261023-100000"] and cleared == []
+
+    elsewhere, here, cleared = C.other_runs(str(log), recorded = ctask.recorded_process_alive)
+    assert [d["stamp"] for d in here] == ["20261023-100000"] and [d["stamp"] for d in cleared] == ["20261022-100000"]
+    assert not pathlib.Path(old).exists() and pathlib.Path(new).exists()

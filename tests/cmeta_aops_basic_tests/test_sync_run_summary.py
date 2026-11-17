@@ -159,3 +159,48 @@ def test_the_homes_and_repositories_to_reindex(sync, tmp_path):
     assert sync.reindex_targets(plan, {'local'})[0]['home'] == '/srv/home-x'
     assert sync.reindex_targets(plan, set()) == []
     assert sync.reindex_targets(dict(plan, reindex=False), {'local'}) == []
+
+
+# a real run of 2026-11-17 with --conflict-resolve newer (the names made generic): one file whose newer copy is the
+# source's, one whose newer copy is the destination's
+NEWER_RUN = r"""2026/11/17 17:09:54 NOTICE: - WARNING           New or changed in both paths                - notes/n1.md
+2026/11/17 17:09:54 INFO  : notes/n1.md: Path1 is newer. Path1: 2026-11-17 17:05:26 +0100 CET, Path2: 2026-11-17 16:43:26 +0100 CET, Difference: 22m0s
+2026/11/17 17:09:54 INFO  : notes/n1.md: The winner is: Path1
+2026/11/17 17:09:54 NOTICE: - Path1             Not renaming Path1 copy, as it was determined the winner - D:\work\repos\personal\notes/n1.md
+2026/11/17 17:09:54 NOTICE: - Path1             Queue copy to Path2                         - :sftp{-4u0A}:HOME/repos/personal/notes/n1.md
+2026/11/17 17:09:54 NOTICE: - Path2             Renaming Path2 copy                         - :sftp{-4u0A}:HOME/repos/personal/notes/n1.md.conflict1
+2026/11/17 17:09:54 INFO  : notes/n1.md: Moved (server-side) to: notes/n1.md.conflict1
+2026/11/17 17:09:54 NOTICE: - Path2             Queue copy to Path1                         - D:\work\repos\personal\notes/n1.md.conflict1
+2026/11/17 17:09:54 NOTICE: - WARNING           New or changed in both paths                - notes/n2.md
+2026/11/17 17:09:54 INFO  : notes/n2.md: Path2 is newer. Path1: 2026-11-17 16:38:26 +0100 CET, Path2: 2026-11-17 17:06:26 +0100 CET, Difference: 28m0s
+2026/11/17 17:09:54 INFO  : notes/n2.md: The winner is: Path2
+2026/11/17 17:09:54 NOTICE: - Path1             Renaming Path1 copy                         - D:\work\repos\personal\notes/n2.md.conflict1
+2026/11/17 17:09:54 INFO  : notes/n2.md: Moved (server-side) to: notes/n2.md.conflict1
+2026/11/17 17:09:54 NOTICE: - Path1             Queue copy to Path2                         - :sftp{-4u0A}:HOME/repos/personal/notes/n2.md.conflict1
+2026/11/17 17:09:54 NOTICE: - Path2             Not renaming Path2 copy, as it was determined the winner - :sftp{-4u0A}:HOME/repos/personal/notes/n2.md
+2026/11/17 17:09:55 INFO  : notes/n1.md.conflict1: Copied (new)
+2026/11/17 17:09:55 INFO  : notes/n1.md: Copied (new)
+2026/11/17 17:09:55 INFO  : notes/n2.md.conflict1: Copied (new)
+2026/11/17 17:09:55 INFO  : notes/n2.md: Copied (replaced existing)
+"""
+
+
+def test_the_newer_copy_keeps_the_name_and_the_verdict_says_whose_it_is(sync):
+    """Since 2026-11-17 a two-way sync tells rclone that the newer copy keeps the name: the file is there on both
+    sides, the other copy beside it - still a conflict for a person to look at, no longer a missing file."""
+    s = sync.run_summary(NEWER_RUN, ROOTS)
+    assert s['conflicts'] == [{'file': 'notes/n1.md', 'copies': ['notes/n1.md.conflict1'], 'kept': 'source'},
+                              {'file': 'notes/n2.md', 'copies': ['notes/n2.md.conflict1'], 'kept': 'destination'}]
+    t = sync.conflicts_text(s, ('the source ...work/repos/personal', 'the destination on my-vm')).split(' | ')
+    assert t[0] == ('CONFLICTS: 2 files changed on BOTH sides since the last run - the newer copy keeps the name on both '
+                    'sides, the other is kept beside it as <name>.conflict1')
+    assert t[1] == '    notes/n1.md  (kept: the copy of the source ...work/repos/personal)'
+    assert t[2] == '    notes/n2.md  (kept: the copy of the destination on my-vm)'
+    assert t[3].startswith('look at each kept copy') and 'the name itself is gone' not in ' | '.join(t)
+
+    # the same time on both sides: no newer copy, both renamed as before - said apart when a run has both kinds
+    both = sync.run_summary(NEWER_RUN + REAL_RUN, ROOTS)
+    t = sync.conflicts_text(both, ('here', 'there'))
+    assert t.startswith('CONFLICTS: 3 files changed on BOTH sides since the last run | 2 with a newer copy')
+    assert '1 with the same time on both sides, no newer copy - kept as .conflict1 (here) and .conflict2 (there)' in t
+    assert 'look at each kept copy' in t and 'resolve: on ONE side copy the right version back' in t

@@ -3,6 +3,54 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV
+- **`cx host sync` looks before it changes anything: a file both sides changed stops the run, with a suggestion.**
+  rclone's own rule for a file changed on both sides renames BOTH copies (`<name>.conflict1`, `<name>.conflict2`): the
+  name is gone on both machines, and a run that aborts after such renames leaves it that way - with a `--resync` asked
+  for, which brings back every file deleted on one side since the pair's last good run. Now a two-way sync:
+  - **looks first.** Both sides are asked for the files changed since the pair's last good run (the host by its own
+    Python). A file changed on both sides and different now is a conflict. One that loses nothing is settled and
+    said: the same bytes, a copy that is the beginning of the other or holds its every line, a memory index (merged
+    memory by memory). Any other **stops the run of that repository before anything is changed**, each shown with its
+    two copies and a suggestion; the run ends with `STATUS: CONFLICTS` and exit code 1.
+  - **`--resolve`** decides and the run goes on: `suggested`, or `here | host | newer | both | later` for every
+    conflict shown, or the JSON file the stop wrote with a `choice` per file. What a choice replaces is kept first in
+    the `sync-backup--<repository>` artifact of that side; `later` leaves a file as it is on both sides and the next
+    sync asks again.
+  - **`--conflicts=ask | ask-all | newer`**, or the new key `sync_conflicts` of the config artifact `host` for a
+    machine's default: `ask` is the default; `newer` never stops - the newer copy keeps the name and the other stays
+    beside it as `<name>.conflict1` on both sides. In every mode rclone is now told that the newer copy keeps the
+    name, so a conflict the look could not see never takes the name from both sides.
+  - **leaves the folders of open run-ai sessions out**, on this machine and on the host, and says so: a session's
+    project and the `!AI` of the artifacts it may write are being written. The next sync after the session carries
+    them. `--include_sessions` leaves none out; the session that runs the sync is never left out.
+  - **leaves no name missing when a run fails.** What rclone had renamed goes back, each side its own copy; a file
+    another process holds - it cannot be renamed or deleted - is left out of a second run and synced next time; the
+    listings of the last good run stay the pair's base, also after an abort renamed them. A `--resync` is asked for
+    a new pair only. A run that was cut - rclone's process ended from outside, the machine slept - is tried again
+    by the same command.
+  - **puts aside what an interrupted run left behind**, before it would travel as new files: rclone's temporary
+    files of the transfers that were cut (`<name>.<8 hex>.partial`), and the copy such a run had carried of a file
+    that was deleted or moved away on its own side afterwards (it was there when the interrupted run began, it is
+    gone now, and the copy is unchanged) - that copy follows the file instead of coming back. Both go into the sync
+    backup of their side and are named in the verdict (`LEFTOVER: ...`).
+  - **`cx host conflicts [host] [--repos=...] [--diff=<path>]`** lists the files a sync stopped at, without
+    connecting to any host, and shows what differs in one of them. **`cx host ls`** has a SYNCED column: when a
+    host's pairs were last in step, and the repository that is apart.
+  - The task `rclone-to-ssh` takes `rules_first` (filter rules put before its two lists) and `conflict_resolve`
+    (`newer` by default for a two-way sync; `none` is rclone's own rule).
+- **The named syncs (`cx sync`): a file changed on both sides keeps its name.** A two-way pair now runs with
+  rclone's `--conflict-resolve newer`: the newer copy has the name on both sides and the other is kept beside it as
+  `<name>.conflict1`, where every conflict used to rename both copies and leave no file under the name - a page
+  served from it broke. The run still ends with `STATUS: CONFLICTS` and stops a chain, and its verdict says whose
+  copy kept each name and what to do; only two copies with the same time have no newer one and are both kept as
+  before.
+- **run-ai: a session says where it writes, and a marker is trusted only while its process is the one that wrote it.**
+  The marker of a live run (`!AI/log/<stamp>.running`) now names the folders the run may write (`areas`: the project
+  and the `!AI` of the artifacts it uses) and the session gets `CMETA_RUN_AI_MARKER`, its own marker - what the sync
+  above reads. A marker of this machine counts as a live run only when it is from after the machine's last start and
+  its process did not begin after it was written: a process number is given out again after a restart, or once a
+  run has died, and a marker left behind would otherwise say "another run of this project is running here" for
+  good - and keep its folders out of every sync.
 - **`cli_help`: what the words of a command line and the commands mean, said by the artifact that owns them.** A block
   of a `_desc.yaml` that the engine never reads, so nothing written there changes a run: `cli_params` stays the one
   place that says how a word is read (its type, its values, its range - checked at every run), and `cli_help` may not

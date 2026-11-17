@@ -92,6 +92,23 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 #   there the unanchored form is the useful one, since "__pycache__/" should
 #   match at every depth.
 #
+#   --rules_first=<rules> puts filter rules of the caller before both lists,
+#   as they are ("+ <pattern>" or "- <pattern>"): the first rule that matches a
+#   file decides, so a file can be kept inside a folder that is left out -
+#
+#       --rules_first "+ /work/x/!AI/log/*.running" "- /work/x/**"
+#
+#   (cx host sync leaves the folders of open sessions out that way).
+#
+# A two-way sync (bisync) and a file changed on both sides:
+#   rclone's own rule renames BOTH copies (<name>.conflict1, <name>.conflict2)
+#   and the name itself is gone on both sides. This task tells it that the
+#   newer copy keeps the name and the other stays beside it as
+#   <name>.conflict1 (--conflict-resolve newer --conflict-loser num), unless
+#   --conflict_resolve names another rule (older, larger, smaller, path1,
+#   path2; none is rclone's own) or one is given after "--". Not with
+#   --resync, which has its own --resync-mode.
+#
 #   Filters make the run FASTER, not just smaller: rclone prunes whole
 #   directories out of the walk rather than listing them and rejecting the
 #   contents. On that checkout a whitelisted run listed 339 objects where an
