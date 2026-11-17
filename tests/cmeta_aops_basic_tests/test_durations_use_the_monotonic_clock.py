@@ -38,6 +38,7 @@ ALLOWED = (
     # the browser and mail tools: how old apt's package lists are, the wall clock against the modification time of
     # their newest file (a time the file system wrote)
     ('tool/firefox/api_v1.py', 'if time.time() - newest < 24 * 3600:'),
+    ('tool/google-chrome/api_v1.py', 'if time.time() - newest < 24 * 3600:'),
     ('tool/thunderbird/api_v1.py', 'if time.time() - newest < 24 * 3600:'),
 )
 

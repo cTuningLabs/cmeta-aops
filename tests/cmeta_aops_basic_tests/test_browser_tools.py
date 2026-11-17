@@ -337,3 +337,43 @@ def test_firefox_on_windows_and_after_a_refresh(ff):
     assert ff["moved_on"]("160.0", "1:160.0~build1", "x") is None and ff["moved_on"](None, "160.0", "x") is None
     assert ff["quarantine_waits"]("0081;6939f0a1;Safari;6B2F4E0C") and not ff["quarantine_waits"]("00c1;6939f0a1;Safari;6B2F4E0C")
     assert ff["linux_channel"]("/usr/lib64/firefox/firefox", False, None, "firefox") == "rpm"
+
+
+############################################################ tool/google-chrome: the newest version from the system's channel
+
+# "winget show --id Google.Chrome -e --source winget" on Windows 11 (2026-11-17), its first lines
+GC_WINGET_SHOW = """Found Google Chrome [Google.Chrome]
+Version: 157.0.8103.79
+Publisher: Google LLC
+"""
+
+# "brew info --json=v2 --cask google-chrome" on macOS (2026-11-17), the keys the tool reads
+GC_CASK_INFO = """{"casks": [{"token": "google-chrome", "version": "157.0.8103.79", "auto_updates": true,
+"artifacts": [{"app": ["Google Chrome.app"], "target": "/Applications/Google Chrome.app"}]}]}"""
+
+
+def test_chrome_versions_of_the_system_channels(gc):
+    import plistlib
+    assert gc["version_of_winget_show"](GC_WINGET_SHOW) == "157.0.8103.79"
+    assert gc["version_of_winget_show"]("No package found matching input criteria.") is None
+    assert gc["version_of_cask_info"](GC_CASK_INFO) == "157.0.8103.79" and gc["version_of_cask_info"]("") is None
+    # Google's repository: 157.0.8103.78-1
+    policy = "google-chrome-stable:\n  Installed: 157.0.8103.51-1\n  Candidate: 157.0.8103.78-1\n"
+    assert gc["apt_versions"](policy) == ("157.0.8103.51", "157.0.8103.78")
+    assert gc["apt_versions"]("google-chrome-stable:\n  Installed: (none)\n  Candidate: (none)\n") == (None, None)
+    dnf = "Installed packages\nVersion : 157.0.8103.51\n\nAvailable packages\nVersion : 157.0.8103.78\n"
+    assert gc["newest_of_dnf_info"](dnf) == "157.0.8103.78"
+    assert gc["older"]("157.0.8103.51", "157.0.8103.78") and not gc["older"]("157.0.8103.100", "157.0.8103.78")
+    # macOS: the version of Info.plist, XML or binary, read without starting the program
+    info = {"CFBundleShortVersionString": "157.0.8103.79", "CFBundleName": "Google Chrome"}
+    assert gc["version_of_info_plist"](plistlib.dumps(info)) == "157.0.8103.79"
+    assert gc["version_of_info_plist"](plistlib.dumps(info, fmt = plistlib.FMT_BINARY)) == "157.0.8103.79"
+    assert gc["version_of_info_plist"](b"not a plist") is None and gc["version_of_info_plist"](None) is None
+
+
+def test_chrome_after_a_refresh(gc):
+    error = gc["moved_on"]("157.0.8103.78", "157.0.8103.79-1", "Google's current package")
+    assert error.startswith("Google's current package offers Chrome 157.0.8103.79 now, not 157.0.8103.78")
+    assert gc["moved_on"]("157.0.8103.78", "157.0.8103.78-1", "x") is None and gc["moved_on"](None, "1.2.3.4", "x") is None
+    assert 2316632084 & 0xFFFFFFFF == gc["WINGET_NOT_INSTALLED"] and -1978335189 & 0xFFFFFFFF == gc["WINGET_NO_UPGRADE"]
+    assert gc["quarantine_waits"]("0081;6939f0a1;Safari;6B2F4E0C") and not gc["quarantine_waits"]("")

@@ -31,6 +31,14 @@ All notable changes to cMeta AOps are documented here, newest first.
   disk image (`brew upgrade` failed on it), Homebrew without its own update before an install, the version on macOS
   from `application.ini` (a quarantined app's `--version` waits for Gatekeeper), apt's refreshed lists checked against
   the version asked for, and dnf (Fedora) beside snap and apt.
+- **`tool/google-chrome`: the same.** Its newest version was Google's version history on every system: on 2026-11-17
+  it listed 158.0.8127.37 for Windows and macOS while winget and the cask offered 157.0.8103.79, so `--status` called
+  an up-to-date Chrome outdated and the upgrade ended "not found after the upgrade". Now the system's channel answers
+  (`winget show`, `brew info`, apt's or dnf's candidate from Google's repository), Google's history for a missing
+  Chrome on Linux (its current package is installed) and as a note when it is ahead; a Chrome in Program Files that
+  winget does not link is installed over (one of the user's own folder is left to update itself); the cask adopts an
+  app from Google's disk image; Homebrew without its own update; the version on macOS from `Info.plist`; apt's
+  refreshed lists, dnf and the downloaded package checked against the version asked for.
 
 ## 0.72.2
 - **An interactive Claude Code session opens with its prompt again.** `run-claude` puts `--` before the trailing
