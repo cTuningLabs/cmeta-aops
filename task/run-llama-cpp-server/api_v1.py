@@ -206,7 +206,9 @@ class CTask(InitCTask):
             return self.cm.error('no llama-server beside %s' % tool_path)
         mp = {'category': TASK_CATEGORY, 'command': 'run', 'arg1': MODEL_TASK, 'name': model, 'ctx': ctx, 'con': con, 'quiet': quiet}
         if filename:
-            mp['filename'] = filename
+            # a file of the model artifact, named as its description is (_desc-<file>.yaml: the model task's
+            # "filedesc"); a GGUF file of this machine, given by its path, is served as it is (its "filename")
+            mp['filename' if os.path.isfile(filename) else 'filedesc'] = filename
         r = self.cm.access(mp)
         if r.get('return', 1) > 0:
             return r

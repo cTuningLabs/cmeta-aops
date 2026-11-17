@@ -24,6 +24,10 @@ All notable changes to cMeta AOps are documented here, newest first.
     program's model step), "Which compiler" (`--use.compiler-<language>.name`), `--compile.fast`, `.fastest`,
     `.flags`, `.openmp`, `.static`, `.debug_info`. A template's word can be meant for some of its programs:
     `programs: [<name patterns>]`, `if_read: true` (the programs that read it themselves).
+- **`cx task run model --filedesc=<file>` works** (a file of a model artifact, named as its `_desc-<file>.yaml` is,
+  with or without `.yaml`): it ended with a NameError. **`cx task run run-llama-cpp-server --filename=<file of the
+  model>`** takes that file of the model artifact, as its help says; it handed the name to the model task as the path
+  of a local file, which was refused. A GGUF file of the machine given by its path is still served as it is.
 - **New tool `thunderbird`: Mozilla Thunderbird upgraded through the system's own channel, in the update channel it
   follows (the monthly release or the ESR).** `cx tool setup thunderbird --status` tells the installed version and the
   newest one of its channel, `cx tool upgrade thunderbird` brings it there, `cx tool install thunderbird` installs the
