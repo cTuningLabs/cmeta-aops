@@ -268,7 +268,7 @@ The config category holds one artifact per task family (`cx config set <artifact
 | Artifact | Key | Read by | Meaning |
 |---|---|---|---|
 | `task` | `default_cache_repo` | the task engine | the repository that holds the cache entries of every run (`--use.init.default_cache_repo` for one run) |
-| `task` | `file_cache` | `clone-git-to-cache`, `get-hf-model`, `get-hf-dataset`, `tool/hf` | folders (`os.pathsep`-separated) that keep large downloads and clones outside the cache entries, the first that exists or can be made |
+| `task` | `file_cache` | `clone-git-to-cache`, `get-hf-model`, `get-hf-dataset`, `tool/hf` | folders (`os.pathsep`-separated, the first one first) that keep large downloads and clones outside the cache entries. A place that is there is used (its last folder is made when missing); one that is away - a USB drive that is not connected - is passed over for the next and the run says so; what is asked for is taken from the place that has it already; no place there stops the run with what to do (`tool/hf`: the key `hf.cache`, the same rule) |
 | `task` | `version_policy` | `task/init` for `task/setup` | the policy of a request without a version (section 3) |
 | `task` | `versions_ttl_hours` | `task/init` for `task/setup` | how long a cached lookup of a newest version is trusted (section 5) |
 | `task` | `min_free_gb` | `task/setup`, `compile-and-run-program` | the free disk space an install or build must leave ([tool-sizes.md](tool-sizes.md)) |

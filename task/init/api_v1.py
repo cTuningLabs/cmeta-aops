@@ -37,6 +37,7 @@ class CTask(InitCTask):
             default_cache_repo: str = None,
             cache_repos: dict = None,        # --use.init.cache_repos.<key>=<repo>: the repositories of the data tasks' entries for this run (else the key cache_repos of config::task)
             file_cache: str = None,          # the folder(s) of large downloads and clones for this run (else the key file_cache of config::task)
+            hf: dict = None,                 # --use.init.hf.cache=<folder(s)>: the Hugging Face cache of this run (else the key hf.cache of config::task)
             version_policy: str = None,      # known | latest | ask for every tool of the run (else CMETA_VERSION_POLICY, else config::task)
             versions_ttl_hours: str = None,  # hours a cached lookup of a newest version is trusted (else CMETA_VERSIONS_TTL_HOURS, else config::task; 24)
     ):
@@ -76,6 +77,10 @@ class CTask(InitCTask):
         # --use.init.file_cache=<folder>: the file cache of this run (clone-git-to-cache, get-hf-model, ...)
         if file_cache:
             result['file_cache'] = file_cache
+
+        # --use.init.hf.cache=<folder>: the Hugging Face cache of this run (tool/hf: HF_HOME), over the config's key
+        if isinstance(hf, dict) and hf:
+            result['hf'] = dict(result.get('hf') or {}, **{str(k): v for k, v in hf.items() if v not in (None, '')})
 
         # The versions of tools: the flag, else the environment, else the config (already in result)
         given = {'version_policy': version_policy, 'versions_ttl_hours': versions_ttl_hours}

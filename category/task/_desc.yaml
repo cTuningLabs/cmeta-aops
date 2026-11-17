@@ -27,6 +27,15 @@ configs:
         desc: 'the repository of the data tasks (get-hf-model, get-hf-dataset: cache_repo_key data) - their entries and
           files stay together there; get-host--docker mounts it into the instances it makes'
         example: my-data
+      file_cache:
+        desc: 'the file cache: where large downloads and clones are kept outside the cache entries (clone-git-to-cache,
+          get-hf-model, get-hf-dataset) - one folder, or several separated by ; on Windows (: elsewhere), the first one
+          first. A place that is there is used (its last folder is made when it is missing); a place that is away - a
+          USB drive that is not connected - is passed over for the next one and the run says so; what is asked for is
+          taken from the place that has it already; when no place of the list is there the run stops and says what to
+          do. --use.init.file_cache=<folders> for one run'
+        type: path
+        example: X:\cmeta-file-cache;D:\cmeta-file-cache
 
 # What the commands of the task category mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read it,
 # the engine never does. The words of "cx task run <task>" are described by each task, in the cli_help of its _desc.yaml

@@ -28,6 +28,21 @@ All notable changes to cMeta AOps are documented here, newest first.
   with or without `.yaml`): it ended with a NameError. **`cx task run run-llama-cpp-server --filename=<file of the
   model>`** takes that file of the model artifact, as its help says; it handed the name to the model task as the path
   of a local file, which was refused. A GGUF file of the machine given by its path is still served as it is.
+- **The file cache with several places: a place that is away is said, never silently replaced.** `file_cache` (and
+  `hf.cache`) of the task config can name several folders - a large USB drive first, a folder of the machine's own
+  disk after it. While the first was away, a model was downloaded again into the second without a word, and a single
+  place that was away ended in a download into a folder called `None`. The rule now, one function for
+  `get-hf-model`, `get-hf-dataset`, `clone-git-to-cache` and `tool/hf` (`file_cache_folder` of the task API):
+  - a place that is there is used; one whose last folder is missing is made - that folder only, so a path of a drive
+    that is away never becomes a folder of the machine's own disk;
+  - a place that is away (its drive is not connected, its parent folder does not exist) is passed over for the next
+    one, with one line: `WARNING: the file cache X:\... is not available (the drive X: is not connected): using D:\...`;
+  - what is asked for - a model, a dataset, a clone - is taken from the place that has it already, before a second
+    copy is made in the first one;
+  - no place of the list there: the run stops and says what to do (connect the drive, or name a second place).
+  A drive that is there but does not answer yet (Windows, after a standby) is given three seconds. The key
+  `file_cache` is now described among the keys of the task config, and `--use.init.hf.cache=<folders>` names the
+  Hugging Face cache of one run, as `--use.init.file_cache` does for the file cache (the init task refused it).
 - **New tool `thunderbird`: Mozilla Thunderbird upgraded through the system's own channel, in the update channel it
   follows (the monthly release or the ESR).** `cx tool setup thunderbird --status` tells the installed version and the
   newest one of its channel, `cx tool upgrade thunderbird` brings it there, `cx tool install thunderbird` installs the

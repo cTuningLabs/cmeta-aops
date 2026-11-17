@@ -29,6 +29,7 @@ configs:
     keys:
       hf.cache:
         desc: 'the Hugging Face cache (HF_HOME of the hf tool and of what runs with it): one folder, or several separated
-          by ; on Windows (: elsewhere) - the first one that exists or can be made'
+          by ; on Windows (: elsewhere) - the first one that is there, by the rule of file_cache: a place that is away
+          (a USB drive that is not connected) is passed over and the run says so, and no place there stops the run'
         type: path
         example: D:\hf-cache

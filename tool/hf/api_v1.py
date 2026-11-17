@@ -52,26 +52,20 @@ class CTool(InitCTool):
 
         path_file_cache_list = ctx['tasks'].get('global', {}).get('init', {}).get('hf',{}).get('cache')
         if path_file_cache_list:
-            path_file_cache = None
+            # The first place of the Hugging Face cache that is there, by the rule of the file cache: a drive that is
+            # away is passed over and the run says so; none there stops it (file_cache_folder of the task category)
+            from task_c36be4b9314a45e0.api.ctask import file_cache_folder
 
-            for x in path_file_cache_list.split(os.pathsep):
-                if os.path.isdir(x):
-                    path_file_cache = x
-                    break
-                else:
-                    try:
-                       os.makedirs(x, exist_ok=True)
-                       path_file_cache = x
-                       break
-                    except:
-                       pass
+            r = file_cache_folder(path_file_cache_list, key = 'hf.cache',
+                                  con = ctx.get('control', {}).get('con', False))
+            if r['return'] > 0:
+                return self.cm.error(r['error'])
 
-            if path_file_cache:
-                _aggregate = result.setdefault('_aggregate', {})
-                _aggregate_env = _aggregate.setdefault('env',{})
+            _aggregate = result.setdefault('_aggregate', {})
+            _aggregate_env = _aggregate.setdefault('env',{})
 
-                _aggregate_env['HF_HOME'] = path_file_cache
+            _aggregate_env['HF_HOME'] = r['path']
 
-                _result['result'] = result
+            _result['result'] = result
 
         return _result
