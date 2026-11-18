@@ -2,6 +2,20 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV
+- **A terminal that keeps its history asks the harnesses for their inline modes: `CMETA_NO_ALT_SCREEN`.** A harness
+  on the terminal's alternate screen redraws its window in place, so nothing it shows reaches the history one scrolls
+  back to: Claude Code's fullscreen renderer (its setting `"tui": "fullscreen"`, which Claude Code may save by itself
+  after offering it) and Codex's TUI (on the alternate screen by default) left only the lines printed before them in a
+  terminal that keeps a session's history - the AI sessions page records a session and replays it in every browser
+  that attaches. Such a terminal sets `CMETA_NO_ALT_SCREEN=1`, and the interactive runs ask their harness for its
+  inline mode: run-claude `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` (the classic renderer, whatever its settings say),
+  run-codex `--no-alt-screen` (also on `codex resume`), run-hermes `--native` with `--tui` (its REPL is inline
+  already) - never against what the run was given (`-c tui.alternate_screen=...`, `CLAUDE_CODE_NO_FLICKER`), and each
+  run says it ("INFO: the main screen, as this terminal asks"). How, for each harness, is in one place: `main_screen()`
+  of the task category's API; a harness without an inline mode (OpenCode) keeps its history inside itself. The same
+  on every OS: `export CMETA_NO_ALT_SCREEN=1` in any terminal whose history should keep everything.
+
 ## 0.73.0
 - **`cx host sync` looks before it changes anything: a file both sides changed stops the run, with a suggestion.**
   rclone's own rule for a file changed on both sides renames BOTH copies (`<name>.conflict1`, `<name>.conflict2`): the

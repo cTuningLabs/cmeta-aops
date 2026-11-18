@@ -8,7 +8,7 @@ import os
 import subprocess
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done, drop_provider_variables, gateway_into_environment
+from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done, drop_provider_variables, gateway_into_environment, main_screen, NO_ALT_SCREEN
 
 # Suffix appended to the prompt file name (without extension) when
 # --output_file is not given
@@ -556,6 +556,15 @@ class CTask(InitCTask):
 
                     if reproducible:
                         print (f'{space}      (--reproducible therefore has no effect here)')
+
+            # A terminal that keeps its history (CMETA_NO_ALT_SCREEN - the sessions of /ai.sessions, 2026-11-18): the
+            # TUI inline - on its alternate screen (codex's default) it redraws its window in place and nothing it
+            # shows reaches the history one scrolls back to
+            more, how = main_screen('codex', flags)
+            flags += more
+            if how and con:
+                print ('')
+                print (f'{space}INFO: the main screen, as this terminal asks ({NO_ALT_SCREEN}): {how}')
 
         cmd = base_cmd + flags
 

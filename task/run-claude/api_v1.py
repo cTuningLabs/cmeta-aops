@@ -9,7 +9,7 @@ import re
 import subprocess
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done, drop_provider_variables, gateway_into_environment
+from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done, drop_provider_variables, gateway_into_environment, main_screen, NO_ALT_SCREEN
 
 # Suffix appended to the prompt file name (without extension) when
 # --output_file is not given
@@ -479,6 +479,15 @@ class CTask(InitCTask):
                 parse_stream = True
 
         flags += extra_flags
+
+        # A terminal that keeps its history (CMETA_NO_ALT_SCREEN - the sessions of /ai.sessions, 2026-11-18): claude
+        # on the main screen, so that what the session shows stays in the history one scrolls back to
+        if interactive:
+            more, how = main_screen('claude', flags)
+            flags += more
+            if how and con:
+                print ('')
+                print (f'{space}INFO: the main screen, as this terminal asks ({NO_ALT_SCREEN}): {how}')
 
         cmd = base_cmd + flags
 
