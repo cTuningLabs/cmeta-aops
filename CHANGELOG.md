@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.74.0
 - **A terminal that keeps its history asks the harnesses for their inline modes: `CMETA_NO_ALT_SCREEN`.** A harness
   on the terminal's alternate screen redraws its window in place, so nothing it shows reaches the history one scrolls
   back to: Claude Code's fullscreen renderer (its setting `"tui": "fullscreen"`, which Claude Code may save by itself
