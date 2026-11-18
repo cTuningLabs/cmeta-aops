@@ -1,0 +1,30 @@
+artifact: ea6daa44a00c4e8d
+category: category,dd9ea50e7f76467f
+authors: Grigori Fursin
+creation_timestamp: '2026-11-18T14:56:46.253653+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.327
+  via: cmeta 0.43.0
+  by: Grigori Fursin
+last_api_version: 1
+base_category_default_api_versions:
+  '1': 1
+
+name: Sensitivity and access - cMeta for organisations, a short course
+short: Sensitivity and access
+desc: 'Who may read and change what when a cMeta server lets people in (a website with users, an API, an MCP server,
+  an agent''s key): the sensitivity labels of repositories and artifacts (Public, General, Confidential, Highly
+  Confidential, personal), the scope a server passes with every request it makes for a person, the records of people,
+  writes under a scope, how to organise repositories - and, live, what you yourself can read here. Eight short
+  lessons and a check. Needs cMeta 0.44 or newer for the live lesson.'
+tags:
+- cserver
+- web
+- course
+- sensitivity
+- access
+- organisations
+
+uses_categories:
+  repo: repo,f4f792ab40c7498f
