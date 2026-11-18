@@ -42,7 +42,7 @@ import re
 import subprocess
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, MAX_PROMPT_ARG_CHARS, prompt_via_file, prompt_via_file_done, drop_provider_variables
+from task_c36be4b9314a45e0.api.ctask import InitCTask, MAX_PROMPT_ARG_CHARS, prompt_via_file, prompt_via_file_done, drop_provider_variables, main_screen, NO_ALT_SCREEN
 
 OUTPUT_FILE_SUFFIX = '-output.txt'
 DEFAULT_OUTPUT_FILE = 'run-hermes-output.txt'
@@ -277,6 +277,13 @@ class CTask(InitCTask):
                 if con:
                     print('')
                     print(f'{space}INFO: hermes takes these in headless mode only, so they are dropped from the session: {" ".join(dropped)}')
+            # A terminal that keeps its history (CMETA_NO_ALT_SCREEN - the sessions of /ai.sessions, 2026-11-18): the
+            # classic REPL is inline already; the TUI (--tui) on the terminal's scrollback
+            more, how = main_screen('hermes', flags)
+            flags += more
+            if how and con:
+                print('')
+                print(f'{space}INFO: the main screen, as this terminal asks ({NO_ALT_SCREEN}): {how}')
             cmd = base_cmd + flags + (['-q', pr['text']] if full_prompt else [])
         elif prompt_on_stdin:
             cmd = base_cmd + flags + STDIN_FLAGS

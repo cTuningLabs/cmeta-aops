@@ -72,6 +72,59 @@ def gateway_into_environment(variables, env=None):
         env[GATEWAY_VARS] = ','.join(sorted(variables))
 
 
+# A terminal that keeps the history of what runs in it (2026-11-18). A program on the terminal's alternate screen
+# redraws its window in place, so nothing it shows ever reaches the history one scrolls back to: Claude Code's
+# fullscreen renderer (its setting "tui": "fullscreen", which Claude Code may save by itself) and Codex's TUI (on the
+# alternate screen by default) left only the lines printed before them. A terminal that wants the whole history - the
+# sessions of /ai.sessions, recorded and replayed in every browser that attaches, on any OS - sets
+# CMETA_NO_ALT_SCREEN=1, and a harness run asks its harness for the inline mode (main_screen below). A harness not in
+# main_screen has no known inline mode: it keeps its history inside itself (the page passes it the wheel).
+NO_ALT_SCREEN = 'CMETA_NO_ALT_SCREEN'
+
+
+def main_screen_asked(env=None):
+    """Whether the terminal of this run asked its programs to keep the main screen (CMETA_NO_ALT_SCREEN = 1, yes,
+    true or on)."""
+    env = os.environ if env is None else env
+    return str(env.get(NO_ALT_SCREEN) or '').strip().lower() in ('1', 'yes', 'true', 'on')
+
+
+def main_screen(harness, flags=(), env=None):
+    """
+    The main screen for an interactive run of "harness" when its terminal asked for it (CMETA_NO_ALT_SCREEN): the
+    harness's own variable set in "env" (this process's environment by default, which the harness inherits), or the
+    flags to add to its command - never one the run was given already, nor against a choice made there.
+    Returns (flags to add, what was done in a few words; '' when nothing was).
+    """
+    env = os.environ if env is None else env
+    if not main_screen_asked(env):
+        return [], ''
+    given = [str(f) for f in (flags or [])]
+    names = [f.split('=')[0] for f in given]
+    h = str(harness or '').lower()
+    if h == 'claude':
+        # Claude Code: the classic renderer, whatever its settings say (its own words: "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1
+        # forces that any time"), set here unless the terminal set it already; not against CLAUDE_CODE_NO_FLICKER, the
+        # renderer chosen in the run's environment
+        if env.get('CLAUDE_CODE_NO_FLICKER') and not env.get('CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN'):
+            return [], ''
+        if not env.get('CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN'):
+            env['CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN'] = '1'
+        return [], 'CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1 (the classic renderer)'
+    if h == 'codex':
+        # Codex: "--no-alt-screen - runs the TUI in inline mode, preserving terminal scrollback history" (also on
+        # "codex resume"); not when the run sets the mode itself (-c tui.alternate_screen=...)
+        if '--no-alt-screen' in names or any('tui.alternate_screen' in f for f in given):
+            return [], ''
+        return ['--no-alt-screen'], '--no-alt-screen (the TUI inline)'
+    if h == 'hermes':
+        # Hermes Agent: its classic REPL is inline; its TUI (--tui) keeps the terminal's scrollback with --native
+        if '--tui' in names and not ({'--native', '--tui-native'} & set(names)):
+            return ['--native'], '--native (the TUI on the terminal\'s scrollback)'
+        return [], ''
+    return [], ''
+
+
 def prompt_via_file(prompt, tool, when=True, path='', prompt_file='', force=False, why='',
                     limit=MAX_PROMPT_ARG_CHARS, con=False, space=''):
     """
