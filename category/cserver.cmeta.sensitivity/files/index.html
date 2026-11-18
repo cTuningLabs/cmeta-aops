@@ -1,0 +1,227 @@
+<!-- Licensed under the Apache License, Version 2.0. See the COPYRIGHT and LICENSE files in the project root for details.
+     cserver.cmeta.sensitivity: Sensitivity and access - cMeta for organisations, a short course. The lessons are the
+     sections below (one shown at a time by js/sensitivity.js); the labels and the check come from files/sensitivity.yaml
+     (%%DATA%%), lesson 6 from the engine, live (?native_action=scope). -->
+<script>var CMS_DATA = %%DATA%%; var CMS_CONFIG = %%CONFIG%%;</script>
+<div id="cms" class="cms">
+
+  <header class="cms-head">
+    <div class="cms-titles">
+      <h1>%%TITLE%%</h1>
+      <p class="cms-sub">%%SUBTITLE%%</p>
+    </div>
+    <div class="cms-tools">
+      <button type="button" class="cms-tool" id="cms-all" title="Every lesson on one page (to read or print)" aria-pressed="false">One page</button>
+      <button type="button" class="cms-tool" id="cms-smaller" title="Smaller (kept in this browser)" aria-label="Smaller">A&#8722;</button>
+      <button type="button" class="cms-tool" id="cms-bigger" title="Bigger (kept in this browser)" aria-label="Bigger">A+</button>
+      <button type="button" class="cms-tool" id="cms-theme" title="Dark / light - for every page of this server" aria-label="Dark or light">&#9680;</button>
+    </div>
+  </header>
+
+  <div class="cms-wrap" id="cms-body">
+    <nav class="cms-toc" id="cms-toc" aria-label="Lessons"></nav>
+
+    <main class="cms-main">
+      <div class="cms-steps" id="cms-steps" aria-hidden="true"></div>
+
+      <!-- 1 ---------------------------------------------------------------------------------------------------- -->
+      <section class="cms-lesson" id="cms-l1" data-title="Why labels">
+        <h2><span class="cms-n">1</span> Why labels</h2>
+        <p>cMeta reads and writes whatever its machine holds - one interface over every repository plugged into it. That
+          stays true for a shell, a script and everything that worked before. When a server lets <em>people</em> in - a
+          website with users, an API, an MCP server, an agent's key - each person should get only part of it. A
+          <strong>sensitivity label</strong> on a repository says how sensitive its information is; a person's
+          <strong>clearance</strong> says up to which label they read.</p>
+        <p>The labels are the four of Microsoft 365, which most organisations use under these or similar words, plus
+          <code>personal</code>:</p>
+        <div class="cms-scroll"><table class="cms-labels" id="cms-labels"></table></div>
+        <ul class="cms-points">
+          <li><strong>No label = public.</strong> Labels are added repository by repository, where an organisation needs
+            them; nothing changes for a repository that carries none. A server chooses another default for the
+            unlabelled repositories it serves (<code>default_sensitivity</code> - <code>general</code> on a site of an
+            organisation).</li>
+          <li><strong>Ranked with personal without saying so:</strong> a word that is no label (a typing mistake hides,
+            never shows), a repository of secrets (<code>secrets: true</code>), and the machine's own
+            <code>local</code> repository - its logs, caches and settings. The engine's <code>internal</code> repository
+            is public: the categories live there.</li>
+          <li><strong>If unsure, the more protective label.</strong> Raising a label later is easy; information read by
+            the wrong people cannot be taken back.</li>
+        </ul>
+      </section>
+
+      <!-- 2 ---------------------------------------------------------------------------------------------------- -->
+      <section class="cms-lesson" id="cms-l2" data-title="Labelling">
+        <h2><span class="cms-n">2</span> Labelling a repository and an artifact</h2>
+        <p>A repository declares its label in its <code>_cmr.yaml</code> - every artifact in it carries that label:</p>
+        <pre><code>alias: deals
+uid: 4f0c2b9e1a7d4c3e
+sensitivity: confidential</code></pre>
+        <p>One artifact can <strong>raise</strong> its own label with <code>sensitivity:</code> in its
+          <code>_cmeta</code> - one sensitive note in a general repository. It never lowers it:</p>
+        <pre><code>sensitivity: highly-confidential</code></pre>
+        <ul class="cms-points">
+          <li>An edit of <code>_cmr.yaml</code> counts at the next call: no reindex, no restart.</li>
+          <li>The synonyms are read too: <code>internal</code> and <code>private</code> mean general, <code>conf</code>
+            confidential, <code>conf-high</code> and <code>restricted</code> highly-confidential.</li>
+          <li><strong>Reclassifying</strong> is moving the artifact to the repository of the right label
+            (<code>cx &lt;category&gt; move &lt;artifact&gt; &lt;repository&gt;:&lt;artifact&gt;</code>). Through a
+            door a move never lowers a label: lowering is a decision taken from a shell.</li>
+          <li>Never add <code>sensitivity: public</code> just to be explicit: a repository without a label is public
+            already, and stays as it was for everyone.</li>
+        </ul>
+      </section>
+
+      <!-- 3 ---------------------------------------------------------------------------------------------------- -->
+      <section class="cms-lesson" id="cms-l3" data-title="The scope of a call">
+        <h2><span class="cms-n">3</span> The scope of a call</h2>
+        <p>A server passes a few keys with every request it makes for a person - control keys of <code>cm.access</code>,
+          and flags of every command:</p>
+        <div class="cms-scroll"><table class="cms-keys">
+          <thead><tr><th>key</th><th>what it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>clearance</code></td><td>the highest label the call reads: <code>public</code>, <code>general</code>,
+              <code>confidential</code>, <code>highly-confidential</code>, or <code>personal</code> - the server owner's,
+              which reads everything</td></tr>
+            <tr><td><code>allow_repos</code></td><td>repositories read whatever their label: a grant by name (aliases, UIDs,
+              patterns)</td></tr>
+            <tr><td><code>hide_repos</code></td><td>repositories never read, whatever the clearance or the grants</td></tr>
+            <tr><td><code>write_repos</code></td><td>the only repositories the call may write into; <code>none</code>: no
+              write at all</td></tr>
+            <tr><td><code>default_sensitivity</code></td><td>the label of the repositories that declare none</td></tr>
+          </tbody>
+        </table></div>
+        <pre><code>r = cm.access({'category': 'note', 'command': 'find', 'arg1': '*',
+               'clearance': 'general', 'allow_repos': 'deals',
+               'write_repos': 'inbox', 'default_sensitivity': 'general'})</code></pre>
+        <pre><code>cx note find '*' --clearance=general --allow_repos=deals --write_repos=inbox</code></pre>
+        <ul class="cms-points">
+          <li>What is above the clearance is not found, listed, searched, drawn or read - by alias, by UID, by tag, by a
+            page - and never written into.</li>
+          <li>The scope holds for every call the request makes. <strong>A nested call only narrows it</strong>: a wider
+            clearance, a grant or a lower default asked again inside a cleared call count for nothing.</li>
+          <li>A shell passes none of the keys and sees what the machine holds: the scope is for the doors, the machine's
+            own access control is for the machine.</li>
+        </ul>
+      </section>
+
+      <!-- 4 ---------------------------------------------------------------------------------------------------- -->
+      <section class="cms-lesson" id="cms-l4" data-title="People and records">
+        <h2><span class="cms-n">4</span> People and their records</h2>
+        <p>A server keeps a record per person and turns it into the keys with <code>scope_for</code>, for every request
+          it makes for them - pages, API, MCP:</p>
+        <pre><code>from cmeta.repos import scope_for
+
+record = {'clearance': 'general',
+          'repos': {'deals': 'read', 'inbox': 'write', 'drafts': 'none'}}
+
+scope = scope_for(record, default_sensitivity='general')
+# {'clearance': 'general', 'hide_repos': ['drafts'], 'allow_repos': ['deals', 'inbox'],
+#  'write_repos': ['inbox'], 'default_sensitivity': 'general'}
+
+r = cm.access(dict(request, **scope))</code></pre>
+        <ul class="cms-points">
+          <li>A record without a clearance reads <code>general</code>; one with no write grant writes nowhere.</li>
+          <li><strong>The clearance <code>personal</code> is the server owner's</strong>: it reads everything on the
+            server, every person's personal repositories included - give it to the owner alone. Another person reads a
+            personal repository by a grant of that repository.</li>
+          <li>Take the scope from the record on the server, <strong>never from the request</strong>: a caller must not
+            send its own clearance. A key never exceeds its owner - its own narrower scope is applied inside the
+            owner's.</li>
+          <li>Name repositories by their UIDs in records: a denial by an alias that changed on a rename no longer
+            denies.</li>
+          <li>What a person gets, every repository with its label, read, write and why:
+            <code>cx repo scope --clearance=general --allow_repos=deals --write_repos=inbox</code>
+            (<code>cm.repos.scope_table(scope)</code> from Python) - for administrators; a person sees their own
+            rows (lesson 6).</li>
+        </ul>
+      </section>
+
+      <!-- 5 ---------------------------------------------------------------------------------------------------- -->
+      <section class="cms-lesson" id="cms-l5" data-title="Writes under a scope">
+        <h2><span class="cms-n">5</span> Writes under a scope</h2>
+        <div class="cms-scroll"><table class="cms-keys">
+          <thead><tr><th>what</th><th>the rule</th></tr></thead>
+          <tbody>
+            <tr><td>create, update, delete, move, copy</td><td>only into <code>write_repos</code>, never into a repository
+              the call does not read - refused before anything is touched</td></tr>
+            <tr><td>a connection (<code>--connect</code>)</td><td>a write on both sides (<code>--ct</code>: this side
+              only); under a clearance written on the higher label's side only - the name of a confidential artifact never
+              lands in a general one</td></tr>
+            <tr><td>move, copy</td><td>under a clearance never to a lower label; lowering is done from a shell</td></tr>
+            <tr><td>repositories</td><td>a call with a write scope pulls, creates, unzips, unplugs and deletes none</td></tr>
+            <tr><td>the machine's settings</td><td>read by the code that serves a request (a <code>config</code> call
+              made by code carries no scope keys and is not scoped); the request a server forwards for a person is</td></tr>
+          </tbody>
+        </table></div>
+        <ul class="cms-points">
+          <li><strong>A scope is no sandbox.</strong> A repository that defines categories, tasks or pages holds code the
+            server runs: a write grant there lets a person run code. Keep what people write through a door in
+            repositories of data - an inbox.</li>
+          <li>A server's own bookkeeping inside a request - a cache built for every viewer, its state in
+            <code>local</code> - goes between <code>cm.repos.suspend_scope()</code> and <code>pop_scope()</code>; a page
+            that writes files itself asks <code>cm.repos.write_refused(alias, uid)</code> first.</li>
+        </ul>
+      </section>
+
+      <!-- 6 ---------------------------------------------------------------------------------------------------- -->
+      <section class="cms-lesson" id="cms-l6" data-title="What you can see">
+        <h2><span class="cms-n">6</span> What <em>you</em> can see here</h2>
+        <p>This lesson asks the engine of this server, inside your request, what your scope means for its repositories -
+          the scope this site passed for you (<code>cx repo scope</code>).</p>
+        <div class="cms-live" id="cms-live"><p class="cms-muted">Asking the engine ...</p></div>
+        <p class="cms-muted cms-small"><button type="button" class="cms-tool" id="cms-refresh">Ask again</button>
+          <em>Write</em> is what the engine allows for this call; a site may allow fewer writes by its own rules.</p>
+      </section>
+
+      <!-- 7 ---------------------------------------------------------------------------------------------------- -->
+      <section class="cms-lesson" id="cms-l7" data-title="Organising repositories">
+        <h2><span class="cms-n">7</span> Organising repositories</h2>
+        <ul class="cms-points">
+          <li><strong>One repository per label and audience</strong> - <code>general</code>, <code>confidential</code>,
+            <code>highly-confidential</code>; one per customer or topic where the audience differs. A label belongs to a
+            repository; people belong to records.</li>
+          <li><strong>One writing machine per repository.</strong> Curated repositories are written where they are
+            curated; what people write through a server goes to an inbox repository written only on that server,
+            curated and moved from there. Two-way syncs then never meet a file changed on both sides.</li>
+          <li><strong>Git access must agree with the labels.</strong> A repository cloned to people's machines has a
+            second access list - the git server's teams. Confidential and highly-confidential repositories can stay off
+            git entirely and be reached through the server only.</li>
+          <li><strong>A label is not encryption.</strong> Whoever has a shell on a machine reads its disk. Put a repository
+            only on machines whose administrators may read it; keep a personal repository off shared servers unless that
+            is acceptable.</li>
+          <li><strong>Names are data too.</strong> The list of every repository with its label is for administrators; a
+            person sees what they read.</li>
+        </ul>
+        <div class="cms-checklist">
+          <h3>A checklist for a server</h3>
+          <ol>
+            <li>Label the repositories it serves; set its <code>default_sensitivity</code>.</li>
+            <li>Keep a record per person: a clearance, grants by repository UID, write grants to inbox repositories.</li>
+            <li>Pass <code>scope_for(record, default_sensitivity=...)</code> with every request - pages, API, MCP.</li>
+            <li>The owner's <code>personal</code> clearance for the owner alone; administrators see the rights of everyone
+              with <code>cx repo scope</code>.</li>
+            <li>Check which repositories each machine holds.</li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- 8 ---------------------------------------------------------------------------------------------------- -->
+      <section class="cms-lesson" id="cms-l8" data-title="Check">
+        <h2><span class="cms-n">8</span> Check</h2>
+        <p>A few questions - answered here in the page, nothing is sent anywhere.</p>
+        <ol class="cms-quiz" id="cms-quiz"></ol>
+        <p class="cms-score" id="cms-score"></p>
+        <p class="cms-muted cms-small">The rules in full: <code>docs/sensitivity.md</code> of the cMeta engine (0.44 and
+          newer), and the agent skill <code>sensitivity-and-access</code>.</p>
+      </section>
+
+      <div class="cms-nav" id="cms-nav">
+        <button type="button" class="cms-btn" id="cms-prev">&#8592; Back</button>
+        <span class="cms-where" id="cms-where"></span>
+        <button type="button" class="cms-btn primary" id="cms-next">Next &#8594;</button>
+      </div>
+    </main>
+  </div>
+
+  <p class="cms-err" id="cms-err" hidden></p>
+</div>

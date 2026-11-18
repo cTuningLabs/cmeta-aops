@@ -1,0 +1,107 @@
+# The words of the course page cserver.cmeta.sensitivity that are data rather than text: the title, the labels (their
+# order, what they are for, the synonyms the engine reads, their colours light and dark) and the questions of the
+# check. The lessons themselves are files/index.html. Read on every request: an edit shows without a restart.
+
+title: Sensitivity and access
+subtitle: 'cMeta for organisations - who may read and change what when a cMeta server lets people in, in eight short
+  lessons. Nothing changes for a call that passes none of this.'
+
+# the labels, lowest first, as the engine ranks them (cmeta/repos.py); "personal" is above the four
+labels:
+  - id: public
+    name: Public
+    for: approved for anyone, inside and outside the organisation
+    examples: published content, marketing material, open-source code
+    synonyms: []
+    light: '#2f7d32'
+    dark: '#7cc47f'
+
+  - id: general
+    name: General
+    for: day-to-day internal work, fine to share inside the organisation
+    examples: notes, plans of a team, internal how-tos
+    synonyms: [internal, private]
+    light: '#2a78d6'
+    dark: '#6da7ec'
+
+  - id: confidential
+    name: Confidential
+    for: sensitive business data, for the people who need it
+    examples: contracts, finances, customer data, HR
+    synonyms: [conf]
+    light: '#b26a00'
+    dark: '#f0b154'
+
+  - id: highly-confidential
+    name: Highly Confidential
+    for: the most sensitive information - strict access, never shared outside
+    examples: strategy, legal matters, personal data
+    synonyms: [conf-high, restricted]
+    light: '#c0392b'
+    dark: '#f08072'
+
+  - id: personal
+    name: personal
+    for: what belongs to one person - read by a named grant, or by the server owner's clearance
+    examples: a person's own notes, settings, drafts
+    synonyms: []
+    light: '#7b3fb0'
+    dark: '#c39be8'
+
+# the check (lesson 8): answered in the page, nothing is sent anywhere; answer = the index of the right option
+quiz:
+  - q: 'A repository has no "sensitivity:" in its _cmr.yaml, and the server sets no default. Who reads it?'
+    options:
+      - 'Nobody but the owner'
+      - 'Everyone the server lets in, whatever their clearance - no label is public'
+      - 'Only people with the clearance general or higher'
+    answer: 1
+    why: 'Labels are an extra layer. A repository without one is public, unless the server sets default_sensitivity
+      (general on a site of an organisation).'
+
+  - q: 'A repository says "sensitivity: confidental" - a typing mistake. What happens?'
+    options:
+      - 'It is read as confidential'
+      - 'The engine refuses to start'
+      - 'It is ranked with personal - hidden from every clearance but the owner''s'
+    answer: 2
+    why: 'A word that is no label hides, never shows ("if unsure, the more protective one"); fix the word and it counts
+      at the next call.'
+
+  - q: 'Someone has the clearance general and a read grant on the confidential repository "deals". One artifact in it
+      raised its own label to highly-confidential. Do they read that artifact?'
+    options:
+      - 'Yes - the grant opens the whole repository'
+      - 'No - a grant lifts a repository, never an artifact that raised its own label above the clearance'
+    answer: 1
+    why: 'An artifact''s own label counts when it is above the clearance and above its repository''s label.'
+
+  - q: 'A page called with the clearance general makes a nested call that asks for highly-confidential. What does the
+      nested call read?'
+    options:
+      - 'Up to highly-confidential'
+      - 'Up to general - a nested call only narrows the scope'
+    answer: 1
+    why: 'Inside a cleared call a wider clearance, a grant or a lower default asked again counts for nothing.'
+
+  - q: 'Under a clearance, you connect a confidential artifact both ways (--connect) with a general one. What happens?'
+    options:
+      - 'Both get the other''s name'
+      - 'Refused - a link between labels is written on the higher side only (--ct from the confidential artifact)'
+    answer: 1
+    why: 'The name of an artifact never lands in one labelled below it through a door.'
+
+  - q: 'Who should get the clearance personal?'
+    options:
+      - 'Every administrator'
+      - 'The server''s owner alone - it reads everything, every person''s personal repositories included'
+      - 'Anyone who has a personal repository'
+    answer: 1
+    why: 'Another person reads a personal repository through a grant of that repository, never through the clearance.'
+
+  - q: 'Is a label encryption?'
+    options:
+      - 'Yes - a confidential repository is encrypted on disk'
+      - 'No - whoever has a shell on a machine reads its disk; labels are for the doors (sites, APIs, MCP, keys)'
+    answer: 1
+    why: 'Put a repository only on machines whose administrators may read it.'

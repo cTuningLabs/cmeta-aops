@@ -2,6 +2,17 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV
+- **Sensitivity and access: a short course page, `cserver.cmeta.sensitivity`.** Eight lessons with Back / Next: why
+  labels, labelling a repository and an artifact, the scope of a call, people and their records, writes under a scope,
+  what you can see here, organising repositories, and a check. Lesson 6 is live: it asks the engine, inside the
+  request, what the scope the host passed for the reader means for every repository (`cx repo scope`). A reader sees
+  the repositories they read and never the names of the others; an administrator of the host
+  (`misc.sensitivity_admin`) sees all of them; without a scope the list is shown only to the server's own machine, a
+  browser past its password, or an administrator; the write column only where the engine limits writes (a site that
+  keeps its own write rules passes none). It follows the shared theme and the cPlatform shell. Needs cMeta 0.44 for
+  the live lesson; older engines get a sentence.
+
 ## 0.74.0
 - **A terminal that keeps its history asks the harnesses for their inline modes: `CMETA_NO_ALT_SCREEN`.** A harness
   on the terminal's alternate screen redraws its window in place, so nothing it shows reaches the history one scrolls
