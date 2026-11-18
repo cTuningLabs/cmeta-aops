@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV
+## 0.75.0
 - **Sensitivity and access: a short course page, `cserver.cmeta.sensitivity`.** Eight lessons with Back / Next: why
   labels, labelling a repository and an artifact, the scope of a call, people and their records, writes under a scope,
   what you can see here, organising repositories, and a check. Lesson 6 is live: it asks the engine, inside the
