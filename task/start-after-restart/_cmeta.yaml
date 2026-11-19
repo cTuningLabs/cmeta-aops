@@ -2,8 +2,9 @@ artifact: 9bfa8da390e84d16
 authors: Grigori Fursin
 category: task,c36be4b9314a45e0
 creation_timestamp: '2026-11-13T12:47:23.383452+00:00'
-desc: Start a cserver and an ssh server of this machine after every restart, before anyone logs in (a Windows
-  startup task as the user, crontab @reboot elsewhere) - enable, disable, status, start, stop.
+desc: Keep the servers of this machine - the cserver, the ssh server, any server its host artifact declares - start
+  them after every restart, before anyone logs in (a Windows startup task as the user, crontab @reboot elsewhere),
+  and start or stop them now - enable, disable, on, off, status, start (also in a window), stop.
 generator:
   agent: Claude Code 2.1.322
   by: Grigori Fursin

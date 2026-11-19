@@ -7,19 +7,35 @@ llama.cpp or vLLM server here or on a host. The artifact (_desc.yaml) names the 
 (anthropic: the Messages API; openai: chat completions and the Responses API), the catalog of its models, how the key
 travels (auth.header) and which secret artifact holds it (auth.secret) - never a value. "connect" gives a harness the
 environment and the arguments it needs, "models" lists what a harness can use there, "test" says hello on every wire.
+
+A pass-through - a server that sits between a harness and the place its requests go to, to log or to forward them -
+is an artifact too: "upstream" names where its traffic goes (another gateway's alias: its wires, catalog, key and
+models are taken from there unless the artifact says otherwise), and auth.header "login" says the harness keeps its
+own account and only the address changes.
 """
 
 import json
 import os
+import re
+import socket
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from cmeta.category import InitCategory
 
 CATEGORY = 'ai.gateway,ae1ae632e0ec4f75'
 SECRET_CATEGORY = 'secret,9d63451ea1f14010'
+CONFIG_CATEGORY = 'config,cc6bfe174be847ed'
+
+# This machine's default for the harness runs, in config::default (the task set-ai-gateway reads it): the general
+# switch, the gateway it means, and a key per harness that goes before them (login | <alias>)
+CONFIG_ARTIFACT = 'default'
+CONFIG_ON = 'run_ai_gateway'
+CONFIG_NAME = 'run_ai_gateway_name'
+CONFIG_HARNESS = 'run_ai_gateway_'
 
 # the wire each harness speaks (opencode and openclaw take both, through their provider packages)
 HARNESS_WIRES = {'claude': ('anthropic',), 'codex': ('openai',), 'opencode': ('anthropic', 'openai'),
@@ -29,7 +45,21 @@ HARNESS_WIRES = {'claude': ('anthropic',), 'codex': ('openai',), 'opencode': ('a
 # Code's apiKeyHelper
 KEY_VAR = 'CMETA_AI_GATEWAY_KEY'
 
+# The run a request belongs to: run-ai puts the cMeta artifact it runs from, its conversation and its run into this
+# variable ("project=<cRef>;conversation=<id>;run=<stamp>", each value percent-encoded). A gateway that asks for it -
+# its run_header names the header, a gateway server of one's own that keeps a line per request - is sent it by the
+# harness; no other gateway ever is.
+RUN_VAR = 'CMETA_AI_RUN'
+
 ANTHROPIC_VERSION = '2023-06-01'
+
+# auth.header "login": the harness keeps its own account (a subscription), the artifact changes only the address its
+# requests go to - a pass-through in front of the vendor's own address. The harnesses with a recipe for it:
+LOGIN = 'login'
+LOGIN_HARNESSES = ('claude', 'codex')
+
+# what a pass-through takes from the gateway its "upstream" names, when it does not say it itself
+INHERITED = ('wires', 'catalog', 'catalogs', 'auth', 'models', 'codex_wire', 'opencode_openai_npm')
 
 
 def key_helper():
@@ -64,7 +94,25 @@ class Category(InitCategory):
         desc = (rd.get('data') or {}) if rd['return'] == 0 else {}
         parts = a['cmeta_ref_parts']
         return {'return': 0, 'alias': parts['artifact_alias'], 'uid': parts['artifact_uid'], 'path': a['path'],
-                'repo': parts.get('repo_alias') or parts.get('artifact_repo_alias', ''), 'desc': desc if isinstance(desc, dict) else {}}
+                'repo': parts.get('repo_alias') or parts.get('artifact_repo_alias', ''),
+                'desc': self._inherit(desc if isinstance(desc, dict) else {})}
+
+    def _inherit(self, desc):
+        """A pass-through that names another gateway as its upstream (upstream: <alias>) takes from it what it does
+        not say itself - the wires, the catalog, how the key travels, the models: one place to change them. An
+        upstream given as an address, or per wire, brings nothing; an upstream's own upstream is not followed."""
+        up = desc.get('upstream')
+        if not isinstance(up, str) or not up.strip() or '://' in up:
+            return desc
+        r = self.cm.access({'category': CATEGORY, 'command': 'find', 'arg1': up.strip(), 'con': False})
+        arts = r.get('artifacts', []) if r.get('return', 1) == 0 else []
+        if len(arts) != 1:
+            return desc
+        rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(arts[0]['path'], '_desc'))
+        parent = (rd.get('data') or {}) if rd['return'] == 0 else {}
+        if not isinstance(parent, dict):
+            return desc
+        return dict({k: parent[k] for k in INHERITED if k in parent}, **desc)
 
     @staticmethod
     def _wires(desc):
@@ -86,6 +134,9 @@ class Category(InitCategory):
         header = str(auth.get('header') or 'none').strip().lower()
         if header == 'none':
             return '', 'none', ''
+        if header == LOGIN:
+            # the harness's own account: there is no key to find, and none is ever read
+            return '', LOGIN, ''
         name = str(auth.get('secret') or '').strip()
         if not name:
             return '', header, 'auth.header is "%s" but auth.secret names no secret' % header
@@ -171,10 +222,20 @@ class Category(InitCategory):
 
     def _reachable(self, desc, wire, header, key):
         """The catalog of the wire answers -> ''; else what went wrong, with the start command of a local gateway.
-        A gateway without a catalog is not probed."""
+        A gateway without a catalog is not asked anything - but one that names the task providing it must at least
+        accept a connection (a pass-through for a login has no catalog to read without that login)."""
         cats = desc.get('catalogs') if isinstance(desc.get('catalogs'), dict) else {}
-        if not (cats.get(wire) or desc.get('catalog')):
-            return ''
+        if not (cats.get(wire) or desc.get('catalog')) or header == LOGIN:
+            hint = self._start_hint(desc)
+            u = urllib.parse.urlsplit(str(desc.get('base_url') or ''))
+            if not hint or not u.hostname:
+                return ''
+            port = u.port or (443 if u.scheme == 'https' else 80)
+            try:
+                with socket.create_connection((u.hostname, port), timeout = 2):
+                    return ''
+            except OSError:
+                return 'the gateway does not answer (nothing listens on %s:%d); start it: %s' % (u.hostname, port, hint)
         names, url, e = self._catalog(desc, wire, header, key)
         if not e:
             return ''
@@ -204,12 +265,15 @@ class Category(InitCategory):
         for a in sorted(r.get('artifacts', []), key = lambda a: a['cmeta_ref_parts']['artifact_alias']):
             rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(a['path'], '_desc'))
             desc = (rd.get('data') or {}) if rd['return'] == 0 else {}
-            desc = desc if isinstance(desc, dict) else {}
+            desc = self._inherit(desc if isinstance(desc, dict) else {})
             auth = desc.get('auth') or {}
+            # where a pass-through sends its traffic: a gateway's alias, an address, or one address per wire
+            up = desc.get('upstream')
+            up = ', '.join('%s: %s' % (k, v) for k, v in sorted(up.items())) if isinstance(up, dict) else str(up or '')
             rows.append({'alias': a['cmeta_ref_parts']['artifact_alias'], 'uid': a['cmeta_ref_parts']['artifact_uid'],
                          'base_url': str(desc.get('base_url') or ''), 'wires': ','.join(sorted(self._wires(desc))),
                          'auth': str(auth.get('header') or 'none') + (' (' + str(auth['secret']) + ')' if auth.get('secret') else ''),
-                         'provided_by': str((desc.get('provided_by') or {}).get('task') or ''),
+                         'provided_by': str((desc.get('provided_by') or {}).get('task') or ''), 'upstream': up,
                          'repo': a['cmeta_ref_parts'].get('repo_alias') or a['cmeta_ref_parts'].get('artifact_repo_alias', '')})
         if ctx['control'].get('con', False):
             if not rows:
@@ -220,6 +284,147 @@ class Category(InitCategory):
                 for x in rows:
                     print('%-*s  %-44s  %-17s  %-30s  %s' % (w, x['alias'], x['base_url'][:44], x['wires'], x['auth'][:30], x['repo']))
         return {'return': 0, 'gateways': rows}
+
+    ############################################################ this machine's default, and the choice of one
+    def _machine_default(self):
+        """What config::default says of the harness runs -> {'on', 'name', 'harness': {<harness>: login | <alias>}}."""
+        try:
+            r = self.cm.access({'category': CONFIG_CATEGORY, 'command': 'read', 'arg1': CONFIG_ARTIFACT, 'con': False})
+            cfg = r.get('config_cmeta', {}) if r.get('return', 1) == 0 else {}
+        except Exception:
+            cfg = {}
+        cfg = cfg if isinstance(cfg, dict) else {}
+        on = cfg.get(CONFIG_ON) is True or str(cfg.get(CONFIG_ON) or '').strip().lower() in ('true', 'yes', 'on', '1')
+        return {'on': on, 'name': str(cfg.get(CONFIG_NAME) or '').strip(),
+                'harness': {k[len(CONFIG_HARNESS):]: str(v).strip() for k, v in cfg.items()
+                            if k.startswith(CONFIG_HARNESS) and k != CONFIG_NAME and v not in (None, '')}}
+
+    def default_(self, ctx, arg1: str = None, harness: str = '', unset: bool = False):
+        """
+        This machine's default gateway for the harness runs (config::default): shown, set, or removed. A run takes it
+        when nothing closer says otherwise - a flag, what its project ran with last, what its project declares.
+
+            cx ai.gateway default                        # what the runs take here
+            cx ai.gateway default acme                   # acme becomes the default
+            cx ai.gateway default acme --harness=codex   # ... the default of Codex, where Codex has a key of its own
+            cx ai.gateway default --unset                # no default gateway: the tools run on their own logins
+        """
+        con = ctx['control'].get('con', False)
+        harness = str(harness or '').strip().lower()
+        alias = str(arg1 or '').strip()
+        before = self._machine_default()
+        out = {'return': 0}
+
+        def write(command, meta):
+            r = self.cm.access({'category': CONFIG_CATEGORY, 'command': command, 'arg1': CONFIG_ARTIFACT, 'meta': meta, 'con': False})
+            return r if r.get('return', 1) > 0 else None
+
+        if unset:
+            if alias:
+                return self.cm.error('--unset removes the default gateway of this machine: it takes no gateway (got "%s")' % alias)
+            # a harness's own key goes too when it names a gateway; one that pins the harness to its login stays
+            gone = [k for k in (CONFIG_ON, CONFIG_NAME) if before['on'] or before['name']]
+            own = before['harness'].get(harness, '')
+            if harness and own and own.lower() != LOGIN:
+                gone.append(CONFIG_HARNESS + harness)
+            if gone:
+                err = write('unset', {k: '' for k in gone})
+                if err:
+                    return err
+            out['removed'] = gone
+            if con:
+                print('default gateway of this machine: %s' % ('removed (%s of config::%s)' % (', '.join(gone), CONFIG_ARTIFACT)
+                                                             if gone else 'there was none'))
+
+        elif alias:
+            if alias.lower() == LOGIN:
+                return self.cm.error('"login" is no gateway: cx ai.gateway default --unset removes the default gateway, and the tools run on their own logins')
+            g = self._one(ctx, alias)
+            if g['return'] > 0:
+                return self.cm.error(g.get('error') or 'gateway "%s" not found' % alias)
+            alias = g['alias']
+            # where a harness has a key of its own, that key decides for it: it is the one to change
+            if harness and harness in before['harness']:
+                meta = {CONFIG_HARNESS + harness: alias}
+            else:
+                meta = {CONFIG_ON: True, CONFIG_NAME: alias}
+            err = write('set', meta)
+            if err:
+                return err
+            out['written'] = meta
+            if con:
+                print('default gateway of this machine: %s (%s of config::%s)' % (alias, ', '.join(sorted(meta)), CONFIG_ARTIFACT))
+
+        now = self._machine_default()
+        out.update({'default': now['name'] if now['on'] else '', 'name': now['name'], 'on': now['on'], 'harness': now['harness']})
+        if con:
+            if not unset and not alias:
+                print('default gateway of this machine: %s' % (now['name'] if now['on'] and now['name'] else 'none - the tools run on their own logins'))
+                if now['name'] and not now['on']:
+                    print('  %s names %s, but %s is off: used by a bare -gw only' % (CONFIG_NAME, now['name'], CONFIG_ON))
+            for h in sorted(now['harness']):
+                print('  %s: %s (%s%s - it goes before the default)' % (h, now['harness'][h], CONFIG_HARNESS, h))
+            if not unset and not alias:
+                print('  a run takes it when nothing closer says otherwise: a flag (-gw=<alias>, -ln), what its project ran with last, what its project declares')
+        return out
+
+    def pick_(self, ctx, arg1: str = None, harness: str = ''):
+        """
+        The gateways of this machine as a numbered list, and a question: which one. For a person at a terminal - a
+        run that nobody watches names its gateway (-gw=<alias>) or takes the default.
+
+            cx ai.gateway pick
+            cx ai.gateway pick --harness=codex           # those Codex can use
+        """
+        harness = str(harness or '').strip().lower()
+        r = self.list_({'control': {'con': False}}, arg1)
+        if r['return'] > 0:
+            return r
+        need = HARNESS_WIRES.get(harness)
+        rows = []
+        for x in r['gateways']:
+            wires = [w for w in x['wires'].split(',') if w]
+            login = x['auth'].split(' ')[0] == LOGIN
+            if need and (not [w for w in need if w in wires] or (login and harness not in LOGIN_HARNESSES)):
+                continue
+            rows.append(dict(x, pays='the harness\'s own login' if login else ('no key' if x['auth'] == 'none' else 'a key: ' + x['auth'])))
+        if not rows:
+            return self.cm.error('no gateway of this machine%s (cx ai.gateway ls)' % ((' that %s can use' % harness) if harness else ''))
+
+        default = self._machine_default()
+        default = default['harness'].get(harness) or default['name']
+        default = default if default in [x['alias'] for x in rows] else ''
+
+        w = max(len(x['alias']) for x in rows)
+        print('')
+        print('The gateways of this machine%s:' % ((' for ' + harness) if harness else ''))
+        for i, x in enumerate(rows, 1):
+            print('  %2d  %-*s  %-46s  %s%s' % (i, w, x['alias'], x['base_url'][:46], x['pays'],
+                                              '   <- the default here' if x['alias'] == default else ''))
+        # an empty line between the list and its question (the user, 2026-11-19), as the other selections of cMeta
+        print('')
+        try:
+            answer = input('Which one? [1-%d or its name%s]: ' % (len(rows), (', Enter = ' + default) if default else '')).strip()
+        except EOFError:
+            # the input closed at once: nobody to ask after all (on Windows a NUL input looks like a terminal) - the
+            # default, as for a run with -q
+            print('')
+            if default:
+                print('nobody to answer: the default, %s' % default)
+                return {'return': 0, 'gateway': default, 'gateways': [x['alias'] for x in rows], 'default': default, 'unasked': True}
+            return self.cm.error('no gateway chosen (nobody to ask, and no default: name one, -gw=<alias>)')
+        except KeyboardInterrupt:
+            return self.cm.error('no gateway chosen')
+        if not answer:
+            answer = default
+        chosen = ''
+        if answer.isdigit() and 1 <= int(answer) <= len(rows):
+            chosen = rows[int(answer) - 1]['alias']
+        elif answer in [x['alias'] for x in rows]:
+            chosen = answer
+        if not chosen:
+            return self.cm.error('no gateway chosen%s' % ((' ("%s" is none of the list)' % answer) if answer else ''))
+        return {'return': 0, 'gateway': chosen, 'gateways': [x['alias'] for x in rows], 'default': default}
 
     ############################################################ models
     def models_(self, ctx, arg1: str = None, harness: str = ''):
@@ -292,6 +497,12 @@ class Category(InitCategory):
         key, header, err = self._key(ctx, desc)
         if err:
             return self.cm.error(err)
+        # the harness's own account through another address (auth.header: login): a recipe per harness, and nothing
+        # of a key - no variable, no helper, no catalog asked on its behalf
+        own_login = header == LOGIN
+        if own_login and harness not in LOGIN_HARNESSES:
+            return self.cm.error('the gateway "%s" passes a harness\'s own login on: %s have a recipe for that, %s has none' % (
+                alias, ' and '.join(LOGIN_HARNESSES), harness))
         # a gateway that does not answer is an error here, with the command that starts a local one - never a harness
         # started without a model, which could fall back to a provider it is logged into
         err = self._reachable(desc, avail[0], header, key)
@@ -301,6 +512,9 @@ class Category(InitCategory):
         chosen = str(model or mine.get('default') or top or '')
         env, args, notes, occ, ccs = {}, [], [], None, None
         wire = avail[0]
+        if own_login:
+            notes.append('%s on its own login (the account that pays is the harness\'s own), through %s' % (
+                harness, str(desc.get('base_url') or '')))
         if harness == 'claude':
             env['ANTHROPIC_BASE_URL'] = self._url(desc, wires['anthropic'])
 
@@ -309,38 +523,46 @@ class Category(InitCategory):
             # "Both claude.ai and ANTHROPIC_API_KEY set" at every start (and asked once whether to use the key); a key
             # from apiKeyHelper is neither (Claude Code 2.1.310, 2026-11-01). The settings go into the run's --settings
             # (run-claude); the claude.ai connectors, unavailable on a key, are switched off there, so that no notice
-            # says so at the start either.
-            if header == 'bearer':
+            # says so at the start either. A login stays a login: the address above is all that is set.
+            if own_login:
+                ccs = None
+            elif header == 'bearer':
                 env['ANTHROPIC_AUTH_TOKEN'] = key or 'local'
                 ccs = {}
             else:
                 env[KEY_VAR] = key or 'local'
                 ccs = {'apiKeyHelper': key_helper()}
-            ccs['disableClaudeAiConnectors'] = True
+            if ccs is not None:
+                ccs['disableClaudeAiConnectors'] = True
 
             for a, var in (('opus', 'ANTHROPIC_DEFAULT_OPUS_MODEL'), ('sonnet', 'ANTHROPIC_DEFAULT_SONNET_MODEL'),
                            ('haiku', 'ANTHROPIC_DEFAULT_HAIKU_MODEL')):
                 if mine.get(a):
                     env[var] = str(mine[a])
-            env['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'] = '1'
-            if not chosen:
+            if not own_login:
+                env['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'] = '1'
+            if not chosen and not own_login:
                 # no default declared (a local server): the loaded model's name, so that Claude Code names it
                 names, _, e = self._catalog(desc, 'anthropic', header, key)
                 chosen = names[0] if names else ''
-            notes.append('Claude Code on a key: the claude.ai connectors (HubSpot, Microsoft 365, ...) are unavailable in '
-                         'this session (switched off in its settings); -ln for a session that needs them')
+            if not own_login:
+                notes.append('Claude Code on a key: the claude.ai connectors (HubSpot, Microsoft 365, ...) are unavailable in '
+                             'this session (switched off in its settings); -ln for a session that needs them')
         elif harness == 'codex':
             p = 'model_providers.' + alias
             args = ['-c', 'model_provider="%s"' % alias,
                     '-c', '%s.name="%s"' % (p, str(desc.get('description') or alias).replace('"', "'")),
                     '-c', '%s.base_url="%s"' % (p, self._url(desc, wires['openai'])),
                     '-c', '%s.wire_api="%s"' % (p, str(desc.get('codex_wire') or 'responses'))]
-            if key:
+            if own_login:
+                # Codex sends its own ChatGPT login to a provider that asks for it (the token and the account's id)
+                args += ['-c', '%s.requires_openai_auth=true' % p]
+            elif key:
                 args += ['-c', '%s.env_key="%s"' % (p, KEY_VAR)]
                 if header != 'bearer':
                     args += ['-c', '%s.env_http_headers.%s="%s"' % (p, header, KEY_VAR)]
                 env[KEY_VAR] = key
-            if not chosen:
+            if not chosen and not own_login:
                 names, _, e = self._catalog(desc, 'openai', header, key)
                 chosen = names[0] if names else ''
                 if e:
@@ -380,12 +602,28 @@ class Category(InitCategory):
                         chosen = prov + '/' + lists[w][0]
                         break
             wire = ','.join(avail)
+        # the run this session belongs to, for a gateway that asks for it (run_header): Claude Code sends custom
+        # headers from ANTHROPIC_CUSTOM_HEADERS, Codex a provider's env_http_headers, OpenCode a provider's headers
+        run_header = str(desc.get('run_header') or '').strip().lower()
+        run = os.environ.get(RUN_VAR, '').strip()
+        if run_header and run and re.fullmatch(r'[a-z0-9-]{1,64}', run_header):
+            if harness == 'claude':
+                env['ANTHROPIC_CUSTOM_HEADERS'] = '%s: %s' % (run_header, run)
+            elif harness == 'codex':
+                args += ['-c', 'model_providers.%s.env_http_headers.%s="%s"' % (alias, run_header, RUN_VAR)]
+                env[RUN_VAR] = run
+            elif harness == 'opencode':
+                for prov in occ['provider'].values():
+                    prov['options'].setdefault('headers', {})[run_header] = run
         out = {'return': 0, 'gateway': alias, 'harness': harness, 'wire': wire, 'model': chosen, 'env': env, 'args': args,
                'notes': notes, 'base_url': str(desc.get('base_url') or ''), 'provided_by': desc.get('provided_by') or {}}
         if occ:
             out['opencode_config'] = occ
         if ccs is not None:
             out['claude_settings'] = ccs
+        if own_login:
+            # for the task that starts the harness: this run is a login run in everything but its address
+            out['own_login'] = True
         if ctx['control'].get('con', False):
             print('%s for %s: the %s wire of %s' % (alias, harness, wire, out['base_url']))
             print('  environment: ' + (', '.join(sorted(env)) or 'nothing'))
@@ -415,6 +653,9 @@ class Category(InitCategory):
         key, header, err = self._key(ctx, desc)
         if err:
             return self.cm.error(err)
+        if header == LOGIN:
+            return self.cm.error('the gateway "%s" passes a harness\'s own login on, and this command has none to send: '
+                                 'test it with a harness (cx task run run-claude --gateway=%s -- -p hello)' % (alias, alias))
         con = ctx['control'].get('con', False)
         out = {'return': 0, 'gateway': alias, 'wires': {}}
         prompt = 'Say hello in five words.'

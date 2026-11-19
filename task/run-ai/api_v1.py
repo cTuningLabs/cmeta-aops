@@ -126,7 +126,7 @@ import time
 
 import yaml
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive
+from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive, gateways_here, gateway_asked, NO_GATEWAYS
 
 TASK_CATEGORY = 'task,c36be4b9314a45e0'
 TOOL_CATEGORY = 'tool,c393ba5c6fa14f66'
@@ -167,7 +167,7 @@ PLUGIN_FILE = 'plugin.json'
 # artifacts; the machine-local mapping (below) adds entries on one machine only.
 AI_USES_KEY = 'ai_uses'
 AI_GATEWAY_KEY = 'ai_gateway'           # the project's _desc.yaml: an ai.gateway alias, or "login", for its runs
-RUN_AI_CONFIG_KEY = 'run_ai_config'     # the project's _desc.yaml: the harness, model and effort its runs take without flags (its last run's)
+RUN_AI_CONFIG_KEY = 'run_ai_config'     # the project's _desc.yaml: the harness, model, effort and gateway (or login) its runs take without flags (its last run's)
 SET_AI_GATEWAY = 'set-ai-gateway,e10aa0a00edd4a2c'
 GATEWAY_HARNESSES = ('claude', 'codex', 'opencode')   # the run-<harness> tasks that take --gateway
 NO_GATEWAY_SUPPORT = 'the harness "%s" has no gateway support (claude, codex, opencode have): -ln for its own login'
@@ -183,6 +183,7 @@ CONFIG_TOKENS_KEY = 'max_context_tokens'
 CONFIG_TRIM_KEY = 'trim_context'        # true: --trim_context on every run of this machine
 CONFIG_OTHER_RUNS_KEY = 'other_runs'    # report (default) | ask | refuse: a run of this project recorded as running on another machine
 OTHER_RUNS_MODES = ('report', 'ask', 'refuse')
+RUN_REF_ENV = 'CMETA_AI_RUN'                    # the run a request belongs to, for a gateway that asks for it (ai.gateway RUN_VAR)
 RUNNING_MARKER_ENV = 'CMETA_RUN_AI_MARKER'      # the session's own marker (<stamp>.running), for the commands it runs: a
                                                 # sync of its own never leaves out its own folders (cx host sync)
 SUMMARY_CLAUDE_MODEL = 'haiku'          # --summarize with claude and no --model: Claude Code's alias of its current Haiku
@@ -205,6 +206,19 @@ CACHE_TTL_MINUTES = {'claude': 5, 'codex': 10}
 def _truthy(value):
     """A flag or a config value as it arrives (True, "true", "1", "yes", "on"; a missing value is False)."""
     return value is True or str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def run_reference(project, conversation, stamp):
+    """The run a request belongs to, for a gateway that asks for it: "project=<cRef>;conversation=<id>;run=<stamp>",
+    each value percent-encoded (a header carries no spaces or other letters than ASCII safely)."""
+    import urllib.parse
+    parts = [('project', project), ('conversation', conversation), ('run', stamp)]
+    return ';'.join('%s=%s' % (k, urllib.parse.quote(str(v), safe=':,@./_-')) for k, v in parts if v)
+
+
+def _bare_flag(value):
+    """A flag that takes a word, given without one (-gw): True from the command line, or the word made of it."""
+    return value is True or str(value).strip().lower() == 'true'
 
 
 def _glob(directory, *pattern):
@@ -276,9 +290,10 @@ def harness_choice(harness, agent, cx = False):
 
 def run_ai_config_text(text, values):
     """
-    The text of a _desc.yaml with its run_ai_config block set to `values` (harness, model, effort; the empty ones left
-    out): the block replaced where it is (its indented lines, or a one-line value), else appended after an empty line.
-    Every other line of the file - its comments too - stays as it was, and so do its line endings.
+    The text of a _desc.yaml with its run_ai_config block set to `values` (harness, model, effort, gateway - the last
+    an ai.gateway alias, or "login"; the empty ones left out): the block replaced where it is (its indented lines, or a
+    one-line value), else appended after an empty line. Every other line of the file - its comments too - stays as it
+    was, and so do its line endings.
     """
     def word(v):
         # bare only when YAML reads it back as the same text: "on", "no", "3.5" or "null" would come back as
@@ -292,7 +307,7 @@ def run_ai_config_text(text, values):
 
     nl = '\r\n' if '\r\n' in text else '\n'
     block = ['%s:                     # what cxai / run-ai takes without flags: its last run\'s (a flag changes it)' % RUN_AI_CONFIG_KEY]
-    block += ['  %s: %s' % (k, word(values[k])) for k in ('harness', 'model', 'effort') if values.get(k)]
+    block += ['  %s: %s' % (k, word(values[k])) for k in ('harness', 'model', 'effort', 'gateway') if values.get(k)]
     # what the last run's session says it ran with (2026-11-03): the harness's own choice when no model was given -
     # shown by the next run, never passed to the harness
     seen = values.get('last_seen')
@@ -1410,8 +1425,94 @@ class CTask(InitCTask):
             out += [t.replace('{{effort}}', effort) for t in effort_t]
         return out, model_t, effort_t
 
-    def _gateway_choice(self, ctx, harness, gateway, gw, ln, project_path = ''):
-        """Login or a gateway for a run (set-ai-gateway: the flag, the project's _desc.yaml, this machine's config)
+    def _gateway_row(self, alias):
+        """The gateway artifact of this machine with this alias, as ai.gateway lists it, or None when there is none."""
+        r = self.cm.access({'category': GATEWAY_CATEGORY, 'command': 'list', 'arg1': alias, 'con': False})
+        rows = (r.get('gateways') or []) if r.get('return', 1) == 0 else []
+        return rows[0] if len(rows) == 1 else None
+
+    def _gateway_line(self, harness, alias, how):
+        """What a run talks to, in one line: the tool's own login, or a gateway - its address, where a pass-through
+        sends the traffic on, and whose account pays - with where the choice came from."""
+        if alias == 'login':
+            return 'none - %s on its own login, its own account pays (%s)' % (harness, how)
+        row = self._gateway_row(alias) or {}
+        auth = str(row.get('auth') or 'none')
+        if auth.split(' ')[0] == 'login':
+            pays = 'the harness\'s own login, its own account pays'
+        elif auth == 'none':
+            pays = 'no key'
+        else:
+            pays = 'a key: ' + auth
+        return '%s (%s) - %s%s; %s' % (alias, how, row.get('base_url') or '?',
+                                       (' -> ' + row['upstream']) if row.get('upstream') else '', pays)
+
+    def _gateway_own_login(self, alias):
+        """A gateway that passes the harness's own login on (its auth.header "login"): a login session in all but
+        its address - what a key's gateway takes away (the claude.ai connectors) is not said of it."""
+        row = self._gateway_row(alias)
+        return bool(row) and str(row.get('auth') or '').split(' ')[0] == 'login'
+
+    def _gateway_flags(self, ctx, harness, gateway, gw, ln, gw_default, gw_unset, con, dry_run = False):
+        """The flags of a run that say which gateway, before the choice is made: --gw_unset (this machine's default
+        is removed), --gw_default (the gateway becomes this machine's default), a bare -gw or --gw_default (the
+        gateways of this machine are shown and one is chosen - by a person at a terminal; else the default is
+        taken, as it always was). A dry run changes nothing and says what would change.
+        -> (gateway, gw, notes, an error dict or None)."""
+        notes = []
+        hk = CONV.harness_key(harness)
+        given = lambda v: v not in (None, False, '', 'False', 'false')
+        asked_default, asked_gw = given(gw_default), given(gw)
+
+        if gw_unset and asked_default:
+            return gateway, gw, notes, self.cm.error('--gw_unset (no default gateway) and --gw_default (a default gateway) were both given: one of them')
+        if asked_default and (asked_gw or str(gateway or '').strip()):
+            return gateway, gw, notes, self.cm.error('--gw_default is -gw and "make it the default" in one: not together with -gw / --gateway')
+        if _truthy(ln) and (asked_default or asked_gw):
+            return gateway, gw, notes, self.cm.error('-ln (the tool\'s own login) and a gateway flag (-gw, --gw_default) were both given: one of them')
+        if (gw_unset or asked_default or asked_gw) and not gateways_here(self.cm):
+            # the AI gateways are not found here (a trimmed copy of cmeta-aops): these flags need them
+            return gateway, gw, notes, self.cm.error(NO_GATEWAYS)
+
+        if gw_unset:
+            if dry_run:
+                notes.append('default gateway of this machine: --gw_unset would remove it (a dry run changes nothing)')
+            else:
+                r = self.cm.access({'category': GATEWAY_CATEGORY, 'command': 'default', 'unset': True, 'harness': hk, 'con': False})
+                if r.get('return', 1) > 0:
+                    return gateway, gw, notes, r
+                notes.append('default gateway of this machine: %s' % ('removed (%s)' % ', '.join(r['removed']) if r.get('removed') else 'there was none'))
+
+        asked = gw_default if asked_default else gw
+        named = '' if (not given(asked) or _bare_flag(asked)) else str(asked).strip()
+
+        # nothing named: a person at a terminal chooses from the list; a run nobody watches takes this machine's
+        # default (set-ai-gateway), as a bare -gw always did
+        if given(asked) and not named:
+            terminal = con and not ctx['control'].get('quiet', False) and bool(getattr(sys.stdin, 'isatty', lambda: False)())
+            if terminal:
+                r = self.cm.access({'category': GATEWAY_CATEGORY, 'command': 'pick', 'harness': hk, 'con': True})
+                if r.get('return', 1) > 0:
+                    return gateway, gw, notes, r
+                named = r['gateway']
+            elif asked_default:
+                return gateway, gw, notes, self.cm.error('--gw_default with nobody to ask needs its gateway: --gw_default=<alias> (cx ai.gateway ls shows them)')
+
+        if asked_default:
+            if dry_run:
+                notes.append('default gateway of this machine: --gw_default would make it %s (a dry run changes nothing)' % named)
+            else:
+                r = self.cm.access({'category': GATEWAY_CATEGORY, 'command': 'default', 'arg1': named, 'harness': hk, 'con': False})
+                if r.get('return', 1) > 0:
+                    return gateway, gw, notes, r
+                notes.append('default gateway of this machine: %s (%s)' % (named, ', '.join(sorted(r.get('written') or {}))))
+        if named:
+            gateway, gw = named, ''
+        return gateway, gw, notes, None
+
+    def _gateway_choice(self, ctx, harness, gateway, gw, ln, project_path = '', recorded = ''):
+        """Login or a gateway for a run (set-ai-gateway: the flag, what the project ran with last, what its
+        _desc.yaml declares, this machine's config)
         -> (the alias or 'login', how, an error dict or None, a note or ''). This machine's general default (config
         run_ai_gateway) is for the harnesses that take a gateway: another one runs on its own login, with the note;
         a gateway chosen for the run, the project or the harness stays its choice (and the run says it cannot)."""
@@ -1419,13 +1520,37 @@ class CTask(InitCTask):
         if project_path:
             v = self._read_desc(project_path).get(AI_GATEWAY_KEY)
             project = str(v).strip() if isinstance(v, str) else ''
+        if not gateways_here(self.cm):
+            if _truthy(ln):
+                return 'login', 'the flag -ln', None, ''
+            # the AI gateways are not found here (a trimmed copy of cmeta-aops): a login run - unless a gateway was
+            # named for this run, by the project or by its last run (never the login in a gateway's place without a word)
+            named = [(w, v) for w, v in (('the flag', gateway if gateway_asked(gateway, '') else ''), ('the flag -gw', gw if gateway_asked('', gw) else ''),
+                                         ("the project's " + AI_GATEWAY_KEY, project if gateway_asked(project, '') else ''),
+                                         ('its last run (%s.gateway of its _desc.yaml)' % RUN_AI_CONFIG_KEY, recorded if gateway_asked(recorded, '') else '')) if v]
+            if named:
+                return '', '', self.cm.error('%s (the gateway "%s", %s)' % (NO_GATEWAYS, named[0][1], named[0][0])), ''
+            return 'login', 'no AI gateways on this machine', None, ''
         r = self.cm.access({'category': TASK_CATEGORY, 'command': 'run', 'arg1': SET_AI_GATEWAY, 'ctx': ctx, 'harness': harness,
-                            'gateway': gateway, 'gw': gw, 'ln': ln, 'project': project, 'connect': False, 'con': False, 'quiet': True})
+                            'gateway': gateway, 'gw': gw, 'ln': ln, 'project': project, 'recorded': recorded,
+                            'connect': False, 'con': False, 'quiet': True})
         if r.get('return', 1) > 0:
             return '', '', r, ''
+
         if r['gateway'] != 'login' and r.get('general') and harness and CONV.harness_key(harness) not in GATEWAY_HARNESSES:
             return 'login', 'its own login: %s takes no gateway' % harness, None, \
                 'AI gateway: none for %s - the default gateway %s (%s) is for %s' % (harness, r['gateway'], r['how'], ', '.join(GATEWAY_HARNESSES))
+
+        # A gateway that is not on this machine is said here, before anything is started - and never replaced by
+        # another one: the account that pays would change without a word. One the project ran with last names its record.
+        if r['gateway'] != 'login' and not self._gateway_row(r['gateway']):
+            if recorded and r['gateway'] == str(recorded).strip():
+                return '', '', self.cm.error(
+                    'the gateway "%s" this project ran with last (%s.gateway of its _desc.yaml) is not on this machine - '
+                    'cx ai.gateway ls shows those that are. -ln runs on the tool\'s own login, -gw=<alias> through another '
+                    'gateway; the choice is recorded again' % (r['gateway'], RUN_AI_CONFIG_KEY)), ''
+            return '', '', self.cm.error('the gateway "%s" (%s) is not on this machine - cx ai.gateway ls shows those that are' % (
+                r['gateway'], r['how'])), ''
         return r['gateway'], r['how'], None, ''
 
     def _list_models(self, harness, con, gateways = None):
@@ -1442,13 +1567,20 @@ class CTask(InitCTask):
                 lines += ['RUN-AI: harness "%s" (task %s): %s' % (h, task_ref, why), '']
                 continue
             gateway = (gateways or {}).get(h, '')
-            if gateway and gateway != 'login':
+            catalog_why = []
+            if gateway and gateway != 'login' and self._gateway_own_login(gateway):
+                # a gateway that passes the harness's own login on (local-login): the login's models, its address
+                # only changes - the same list as without it (the user, 2026-11-19: "it's a pass through")
+                fp = '%s - through the gateway %s, which passes the login on' % (fp, gateway)
+            elif gateway and gateway != 'login':
                 # the gateway's catalog instead of the tool's list: what this harness can use there, now
                 g = self.cm.access({'category': GATEWAY_CATEGORY, 'command': 'models', 'arg1': gateway, 'harness': h, 'con': False})
                 if g.get('return', 1) > 0:
                     lines += ['RUN-AI: gateway "%s" for %s: %s' % (gateway, h, g.get('error', 'no models')), '']
                     continue
                 found = g.get('models') or {}
+                # a catalog that did not answer says why (a model server that is down: its start command)
+                catalog_why = ['%s wire: %s' % (w, e) for w, e in sorted((g.get('errors') or {}).items()) if e]
                 names = []
                 for wire in sorted(found):
                     prefix = ''
@@ -1472,6 +1604,9 @@ class CTask(InitCTask):
                                                            ('; checked with %s' % models['checked_with']) if models.get('checked_with') else ''))
             if models.get('list_cmd'):
                 lines.append('  the harness itself: %s' % models['list_cmd'])
+            if catalog_why and not [m for m in (models.get('models') or []) if isinstance(m, dict)]:
+                for why in catalog_why:
+                    lines.append('  no models: the catalog of the %s' % why)
             lines.append('  flags:   %s%s' % (model_t, ('; ' + effort_t) if effort_t else '; no effort flag'))
             if efforts:
                 lines.append('  efforts: ' + ', '.join(('%s (%s)' % (e.get('name'), e['desc'])) if e.get('desc') else str(e.get('name')) for e in efforts))
@@ -1715,9 +1850,11 @@ class CTask(InitCTask):
             harness: str = '',              # claude (default) | codex | opencode | openclaw | antigravity (agy) | gemini | hermes | vibe | <x> (then the task run-<x>)
             agent: str = '',                # the old name of --harness (still accepted)
             cx: bool = False,               # --harness=codex in short
-            gateway: str = '',              # an ai.gateway alias (a company's gateway, a llama.cpp server, ...) or "login"; empty: the project's _desc.yaml (ai_gateway), this machine's config, else login
-            gw: str = '',                   # the short form of --gateway: bare = the configured gateway, -gw=<alias>
+            gateway: str = '',              # an ai.gateway alias (a company's gateway, a llama.cpp server, ...) or "login"; empty: what the project ran with last (run_ai_config), what its _desc.yaml declares (ai_gateway), this machine's config, else login
+            gw: str = '',                   # the short form of --gateway: -gw=<alias>; bare = the gateways of this machine to choose from (nobody to ask: this machine's default)
             ln: bool = False,               # the tool's own login, whatever the project or the config says
+            gw_default: str = '',           # as -gw, and the gateway becomes this machine's default (cx ai.gateway default): --gw_default=<alias>, bare = choose
+            gw_unset: bool = False,         # this machine's default gateway is removed (cx ai.gateway default --unset); the run goes on with what then applies
             project: str = '',              # explicit cRef; default: nearest existing !AI, then the cMeta artifact, else cwd
             log_project = None,             # a dated scratch project under log::local:task-run-ai; optional label after =
             l = None,                       # short form: -l or -l="quick question" (the label names the workspace)
@@ -2142,14 +2279,24 @@ class CTask(InitCTask):
         # 2. the sub-task's parameters: everything the user gave, plus the records in !AI/log
         # login or a gateway for this run: the flag, the project's _desc.yaml (ai_gateway), this machine's config; the
         # harness task connects (or runs as before with login)
-        gateway_name, gateway_how, g_err, g_note = self._gateway_choice(ctx, hk, gateway, gw, ln, project_path)
+        # ... and, before them all, what the project ran with last (run_ai_config.gateway, with its harness): a run
+        # keeps its login or its gateway until a flag says otherwise - never moved to another account by a config
+        # that changed meanwhile
+        gateway, gw, g_notes, g_err = self._gateway_flags(ctx, harness, gateway, gw, ln, gw_default, gw_unset, con, dry_run)
+        if g_err:
+            return g_err
+        notes += g_notes
+        recorded = saved.get('gateway', '') if saved.get('harness', '').lower() == harness else ''
+        gateway_name, gateway_how, g_err, g_note = self._gateway_choice(ctx, hk, gateway, gw, ln, project_path, recorded)
         if g_err:
             return g_err
         if g_note:
             notes.append(g_note)
-        if gateway_name != 'login':
-            notes.append('AI gateway: %s (%s)%s' % (gateway_name, gateway_how,
-                         '; the claude.ai connectors (HubSpot, Microsoft 365, ...) are unavailable in a gateway session - -ln for a login session' if hk == 'claude' else ''))
+        # what the run talks to, always said (the user, 2026-11-19: "print a line when we start run-ai, what is
+        # actually used"): the tool's own login, or a gateway - its address, where it passes the traffic on, who pays
+        gateway_line = self._gateway_line(hk, gateway_name, gateway_how)
+        if gateway_name != 'login' and hk == 'claude' and not self._gateway_own_login(gateway_name):
+            notes.append('the claude.ai connectors (HubSpot, Microsoft 365, ...) are unavailable in a gateway session - -ln for a login session')
 
         params = {'prompt': prompt, 'prompt_file': prompt_file, 'interactive': interactive, 'stats': stats}
         if hk in GATEWAY_HARNESSES:
@@ -2374,6 +2521,7 @@ class CTask(InitCTask):
             print('%s        !AI:     %s' % (space, ai_root))
             if model_name or effort_name:
                 print('%s        model:   %s%s' % (space, model_name or '(the harness default)', (', effort ' + effort_name) if effort_name else ''))
+            print('%s        gateway: %s' % (space, gateway_line))
             if conv_line:
                 print('%s        %s' % (space, conv_line))
             for n in notes:
@@ -2429,7 +2577,8 @@ class CTask(InitCTask):
         # 3c. the project remembers what this run is made with (run_ai_config of its _desc.yaml) for the next run
         #     without flags - a cMeta artifact only: a plain folder or a scratch workspace has no _desc.yaml to keep it
         if cref and not scratch and not no_log:
-            saved_note = self._record_run_config(project_path, {'harness': harness, 'model': model_name, 'effort': effort_name})
+            saved_note = self._record_run_config(project_path, {'harness': harness, 'model': model_name, 'effort': effort_name,
+                                                                'gateway': gateway_name})
             if saved_note:
                 notes.append(saved_note)
                 if con:
@@ -2512,6 +2661,11 @@ class CTask(InitCTask):
                    if (conv is not None and record) else '')
         if running:
             env[RUNNING_MARKER_ENV] = running
+
+        # which cMeta artifact and conversation this run is: a gateway of one's own that asks for it (its run_header)
+        # is sent it with every request of the harness, so that its lines name the session they belong to (the user,
+        # 2026-11-19: "record which working cMeta artifact the run-ai ran from in stats of gateway")
+        env[RUN_REF_ENV] = run_reference(cref or project_path, conv['id'] if conv else '', stamp)
 
         # 5. run the harness's task inside the project folder (the engine's "path" control: cd there, back afterwards)
         before = CONV.capture_before(harness, project_path)

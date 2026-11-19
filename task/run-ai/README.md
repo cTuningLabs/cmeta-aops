@@ -304,16 +304,23 @@ Without a prompt the run is interactive; with one it is a single turn unless `-i
 
 ## The project remembers its harness: `run_ai_config`
 
-A project that is a cMeta artifact keeps the harness, the model and the effort of its last run in its `_desc.yaml`, and
-a run without those flags takes them again - a plain `cxai` goes on with Codex in a project that works with Codex:
+A project that is a cMeta artifact keeps the harness, the model, the effort and the gateway of its last run in its
+`_desc.yaml`, and a run without those flags takes them again - a plain `cxai` goes on with Codex in a project that
+works with Codex, and through the gateway (or on the login) its last run went through:
 
 ```yaml
 run_ai_config:                     # what cxai / run-ai takes without flags: its last run's (a flag changes it)
   harness: codex
   model: gpt-6.1-sol
   effort: high
+  gateway: acme                    # an ai.gateway alias, or "login" (the tool's own account)
 ```
 
+- **The gateway is kept with its harness** (since 2026-11-18): a session started with `-gw=acme` or with `-ln` goes on
+  that way when it is started again without a flag - whatever this machine's config says by then. It is never moved
+  to another account by itself. A flag changes it and is recorded in turn. A recorded gateway that is not on this
+  machine stops the run with its name and the two ways out (`-ln`, `-gw=<another>`): the record travels with the
+  project, and another machine may not have that gateway.
 - A flag wins, and the run records what it was made with: `cxai --harness=claude` once, and the project is a Claude
   project from then on. The model and the effort travel together and only with their harness - a recorded Codex model
   is never handed to Claude; `--harness=claude` alone records `harness: claude` without a model.
@@ -335,7 +342,8 @@ run_ai_config:                     # what cxai / run-ai takes without flags: its
 - Only the `run_ai_config` block is written (replaced where it is, else appended): the rest of the `_desc.yaml`,
   comments included, stays as it was. A project whose description is a `_desc.json` is not converted - the run says so.
 - Nothing is recorded by `--dry_run`, the listing views, `--no_log`, a scratch workspace (`-l`) or a plain folder (no
-  `_desc.yaml` to keep it). The gateway keeps its own key, `ai_gateway` (below).
+  `_desc.yaml` to keep it). `ai_gateway`, the key a project declares its gateway with by hand (below), is what its
+  first run takes; from then on the record goes before it.
 
 ## The model and the effort: `--model`, `--effort`, `--list_models`
 
@@ -745,13 +753,36 @@ through an `ai.gateway` artifact - a company's gateway (Azure API Management in 
 vendor's API key, a llama.cpp or vLLM server here or on a host (`cx ai.gateway ls`). The same Claude Code, Codex or
 OpenCode; the bill moves, or the model is local. The choice for a run, in order:
 
-1. the flag: `--gateway=<alias>` (`-gw=<alias>`), a bare `-gw` = the configured gateway, `-ln` = login;
-2. the project's `_desc.yaml`: `ai_gateway: <alias> | login` - a company's work item says its gateway, a task that
-   needs the claude.ai connectors (HubSpot, Microsoft 365) says `login`;
-3. this machine's `config::default`: `run_ai_gateway_<harness>: login | <alias>` per harness, else `run_ai_gateway:
-   true` with `run_ai_gateway_name: <alias>` (`cx config set default --meta.run_ai_gateway=true
-   --meta.run_ai_gateway_name=acme --meta.run_ai_gateway_codex=login`);
-4. `login`.
+1. the flag: `--gateway=<alias>` (`-gw=<alias>`), `-ln` = login. A bare `-gw` shows the gateways of this machine
+   and asks which one (Enter = this machine's default); where nobody can be asked (`-q`, no terminal) it takes this
+   machine's default. `-ln` together with a gateway flag is an error;
+2. what the project ran with last: `run_ai_config.gateway` of its `_desc.yaml` (above), with its harness;
+3. what the project declares: `ai_gateway: <alias> | login` in its `_desc.yaml` - a company's work item says its
+   gateway, a task that needs the claude.ai connectors (HubSpot, Microsoft 365) says `login`;
+4. this machine's `config::default`: `run_ai_gateway_<harness>: login | <alias>` per harness, else `run_ai_gateway:
+   true` with `run_ai_gateway_name: <alias>`;
+5. `login`.
+
+This machine's default is set and removed from the command line (`cx ai.gateway default` shows it):
+
+```
+cxai --gw_default=acme "..."      # through acme, and acme becomes this machine's default (bare: choose from the list)
+cxai --gw_unset "..."             # this machine has no default gateway any more; the run goes on with what then applies
+cx ai.gateway default acme        # the same without a run;  cx ai.gateway default --unset
+```
+
+A gateway that is not on this machine - named by a flag, recorded or configured - stops the run before anything is
+started; it is never replaced by another one or by the login.
+
+Every run says what it talks to, and why, in its header before the harness starts (since 2026-11-19):
+
+```
+        gateway: none - codex on its own login, its own account pays (config run_ai_gateway_codex)
+        gateway: local-acme (the flag --gateway) - http://127.0.0.1:8401/local-acme -> acme; a key: x-api-key
+```
+
+A pass-through shows where it sends the traffic (`-> <upstream>`) and who pays: a key's gateway, or the harness's own
+login through it (`auth.header: login`).
 
 Only Claude Code, Codex and OpenCode take a gateway. The general default (`run_ai_gateway`) is for them: another
 harness (vibe, gemini, agy, hermes, openclaw) runs on its own login then, with a note, and `--list_models` shows its
@@ -762,7 +793,7 @@ the provider switches `CLAUDE_CODE_USE_*`), which would compete with the gateway
 user's keys in a gateway run (they name the gateway's provider, where those keys do not compete).
 
 ```
-cxai -gw "..."                                   # the configured gateway, whatever the project says
+cxai -gw "..."                                   # the gateways of this machine to choose from (nobody to ask: its default)
 cxai -ln "..."                                   # the tool's own account, whatever the config says
 cxai --gateway=llama-cpp-local "..."             # a local model (cx task run run-llama-cpp-server starts the server)
 cxai --harness=codex --gateway=acme --list_models   # what Codex can use through that gateway, every model of its catalog
@@ -775,6 +806,12 @@ effort. Claude Code takes a gateway's key through an `apiKeyHelper` in its `--se
 which beside a claude.ai login made it warn at every start), and has no claude.ai connectors on a key: they are
 switched off in the same settings and a gateway session says so in its notes - `-ln` for a session that needs them. Claude Code speaks the Anthropic wire only, Codex the Responses wire, OpenCode both; a
 gateway's catalog is filtered by the wire the harness speaks.
+
+**Which run a request comes from (since 2026-11-19).** run-ai puts the cMeta artifact it runs from, its conversation
+and its run into `CMETA_AI_RUN` (`project=<cRef>;conversation=<id>;run=<stamp>`). A gateway that asks for it with
+`run_header` - a server of one's own that keeps a line per request - is sent it by the harness with every request, so
+that each line names the session it belongs to ([ai.gateway](../../category/ai.gateway/README.md)); no other gateway
+ever is.
 
 **What a run inherits (since 2026-10-30).** A session that runs through a gateway and starts another agent no longer
 hands it the gateway. A gateway run names the variables it puts into its process (`CMETA_AI_GATEWAY_VARS`), and every

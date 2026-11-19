@@ -5,13 +5,17 @@ tool's own account (a Claude subscription, a ChatGPT login: `login`) or an `ai.g
 a vendor's API key, a llama.cpp or vLLM server) - and, for a gateway, what the harness needs: the environment, the
 extra command-line words, the model to pass when the user named none. The choice, in order:
 
-1. the flag: `--gateway=<alias>` (`-gw=<alias>`), a bare `-gw` = the configured gateway, `-ln` = login;
-2. the project's `_desc.yaml`: `ai_gateway: <alias> | login` (run-ai reads it: a work item of a company says its gateway, a task
-   that needs the claude.ai connectors says `login`);
-3. this machine's `config::default`: `run_ai_gateway_<harness>: login | <alias>` (per harness), else `run_ai_gateway:
+1. the flag: `--gateway=<alias>` (`-gw=<alias>`), a bare `-gw` = this machine's default gateway, `-ln` = login;
+   `-ln` together with a gateway flag is an error (two flags that say opposite things are not guessed at);
+2. what the project ran with last: `--recorded=<alias> | login` (run-ai passes `run_ai_config.gateway` of the project's
+   `_desc.yaml`: a run keeps its login or its gateway until a flag says otherwise);
+3. what the project declares: `--project=<alias> | login` (run-ai passes `ai_gateway` of its `_desc.yaml`: a work item
+   of a company says its gateway, a task that needs the claude.ai connectors says `login`);
+4. this machine's `config::default`: `run_ai_gateway_<harness>: login | <alias>` (per harness), else `run_ai_gateway:
    true` with `run_ai_gateway_name: <alias>` - the general default, which the result marks `general: true`: it is for
-   the harnesses that take a gateway (claude, codex, opencode), and run-ai runs another harness on its own login then;
-4. `login`.
+   the harnesses that take a gateway (claude, codex, opencode), and run-ai runs another harness on its own login then
+   (`cx ai.gateway default` shows, sets and removes these keys);
+5. `login`.
 
 ```
 cx task run set-ai-gateway --harness=claude                       # the choice, and the environment it means

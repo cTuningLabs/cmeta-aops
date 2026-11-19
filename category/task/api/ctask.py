@@ -72,6 +72,41 @@ def gateway_into_environment(variables, env=None):
         env[GATEWAY_VARS] = ','.join(sorted(variables))
 
 
+# The AI gateways - the category ai.gateway and the task set-ai-gateway (cmeta-aops) - in one place for the harness
+# tasks: where the task is not found (a trimmed copy of cmeta-aops) a run is a login run, and a gateway asked for is
+# an error that says why - never the login in a gateway's place without a word.
+GATEWAY_TASK = 'set-ai-gateway,e10aa0a00edd4a2c'
+NO_GATEWAYS = ('no AI gateway can be used here: no plugged repository provides the task set-ai-gateway and the category '
+               'ai.gateway (cx repo list) - -ln, or no gateway flag, runs on the tool\'s own login')
+
+
+def gateways_here(cm):
+    """Whether a repository that provides the AI gateways (the task set-ai-gateway) is plugged on this machine."""
+    try:
+        r = cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'find', 'arg1': GATEWAY_TASK, 'con': False})
+    except Exception:
+        return False
+    return r.get('return', 1) == 0 and bool(r.get('artifacts'))
+
+
+def gateway_asked(gateway='', gw=''):
+    """Whether a gateway was named for a run: --gateway=<alias> (not "login"), or -gw bare or with an alias."""
+    named = str(gateway or '').strip().lower()
+    return (bool(named) and named != 'login') or gw not in (None, False, '', 'False', 'false')
+
+
+def choose_gateway(cm, ctx, harness, gateway='', gw='', ln=False):
+    """Login or a gateway for a harness run (run-claude, run-codex, run-opencode): what set-ai-gateway decides where
+    a repository provides it; else a login run - and a gateway asked for is an error (NO_GATEWAYS)."""
+    if not gateways_here(cm):
+        if gateway_asked(gateway, gw):
+            return {'return': 1, 'error': NO_GATEWAYS}
+        return {'return': 0, 'gateway': 'login', 'how': 'no AI gateways on this machine'}
+    return cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': GATEWAY_TASK, 'ctx': ctx,
+                      'harness': harness, 'gateway': gateway, 'gw': gw, 'ln': ln, 'con': False,
+                      'quiet': ctx['control'].get('quiet', False)})
+
+
 # A terminal that keeps the history of what runs in it (2026-11-18). A program on the terminal's alternate screen
 # redraws its window in place, so nothing it shows ever reaches the history one scrolls back to: Claude Code's
 # fullscreen renderer (its setting "tui": "fullscreen", which Claude Code may save by itself) and Codex's TUI (on the
@@ -466,6 +501,42 @@ def recorded_file_alive(pid_file, pid=None, alive=None):
     except (OSError, ValueError):
         return False
     return recorded_process_alive(pid, written, alive)
+
+
+# A server started on Windows by a command that is run with a time limit dies with that command: the engine's run()
+# puts a timed command in a job that ends everything it started when it returns (KILL_ON_JOB_CLOSE), and "cx host up
+# <host> --project=..." - the Start button of the hosts page - runs a server's start command that way (2026-11-18: a
+# server came up and was gone a second later). Breaking away from the job does not help: for a direct child the
+# engine's job refuses it, and from a cx command it "succeeds" out of the launcher's inner job only. So the system
+# itself starts the process (Win32_Process.Create): it belongs to no job of the caller. Such a process gets the user's
+# own environment (what Windows keeps for the account), not the caller's - a server does not inherit the keys of the
+# session that asked for it - and no stream of the caller: it writes its own log, or shows its own console window.
+
+def start_by_system(line, cwd='', window=False, timeout=60):
+    """Windows: start a command line as a process of its own, by the system, outside every job of this process ->
+    (its process number, '') or (0, why not). window: a console window of its own on the desktop of this session
+    (False: no window at all). The line travels in a variable: no quoting of PowerShell touches it."""
+    import subprocess
+    if os.name != 'nt':
+        return 0, 'Windows only'
+    script = ('$s = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]%d }; '
+              '$a = @{ CommandLine = $env:CMETA_START_LINE; ProcessStartupInformation = $s }; '
+              'if ($env:CMETA_START_DIR) { $a.CurrentDirectory = $env:CMETA_START_DIR }; '
+              '$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments $a; '
+              "if ($r.ReturnValue -ne 0) { Write-Output ('failed ' + $r.ReturnValue); exit 1 }; "
+              "Write-Output ('started ' + $r.ProcessId)") % (1 if window else 0)       # SW_SHOWNORMAL | SW_HIDE
+    env = dict(os.environ, CMETA_START_LINE=str(line), CMETA_START_DIR=str(cwd or ''))
+    try:
+        r = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], stdin=subprocess.DEVNULL,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, env=env)
+    except (OSError, subprocess.SubprocessError) as e:
+        return 0, 'PowerShell could not ask the system: %s' % e
+    words = r.stdout.decode('utf-8', 'replace').split()
+    if r.returncode == 0 and len(words) >= 2 and words[-2] == 'started' and words[-1].isdigit():
+        return int(words[-1]), ''
+    said = (r.stdout + b' ' + r.stderr).decode('utf-8', 'replace').strip()
+    # Win32_Process.Create's own codes: 2 access denied, 3 insufficient privilege, 8 unknown failure, 9 path not found
+    return 0, 'Win32_Process.Create did not start it: %s' % (' '.join(said.split())[-300:] or 'no answer')
 
 
 # The file cache: the folders outside the cache entries that keep large downloads and clones (the keys file_cache and

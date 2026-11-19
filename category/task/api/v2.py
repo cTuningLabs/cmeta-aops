@@ -87,6 +87,9 @@ def value_params_of(func, described):
         d = {'type': desc} if isinstance(desc, str) else (desc if isinstance(desc, dict) else {})
         if str(d.get('type', '')).strip().lower() in VALUE_TYPES or d.get('values') is not None:
             out[name] = d
+        if d.get('bare'):
+            # the task says what the bare flag means ("bare: choose from a list"): it takes a value or none
+            out.pop(name, None)
 
     return out
 

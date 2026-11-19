@@ -1,0 +1,16 @@
+artifact: 09a4ba31d6b94610
+category: task,c36be4b9314a45e0
+authors: Grigori Fursin
+creation_timestamp: '2026-11-19T12:03:54.352733+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.327
+  via: cmeta 0.44.1
+  by: Grigori Fursin
+desc: 'a vLLM server on this machine, in vLLM''s own container: start (detached or in the foreground), stop, status,
+  logs; the OpenAI wires'
+tags:
+- task
+- ai
+- vllm
+- server

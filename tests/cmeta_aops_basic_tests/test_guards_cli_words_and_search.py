@@ -193,11 +193,13 @@ def test_cli_params_are_readable(path):
             continue
 
         assert isinstance(desc, dict) and desc, f'{name}: a type name or a dict'
-        # hint: what the message of a value option given without its value says it takes (category/task/api/v2.py)
-        keys = {'type', 'values', 'min', 'max', 'hint'}
+        # hint: what the message of a value option given without its value says it takes (category/task/api/v2.py);
+        # bare: what the option means given without a value - it may come bare (run-ai's -gw: choose from a list)
+        keys = {'type', 'values', 'min', 'max', 'hint', 'bare'}
         assert set(desc) <= keys, f'{name}: unknown keys {set(desc) - keys}'
-        if 'hint' in desc:
-            assert isinstance(desc['hint'], str) and desc['hint'].strip(), f'{name}: hint is a text'
+        for text in ('hint', 'bare'):
+            if text in desc:
+                assert isinstance(desc[text], str) and desc[text].strip(), f'{name}: {text} is a text'
         if 'type' in desc:
             assert desc['type'] in CLI_TYPES, f'{name}: the type {desc["type"]!r} is not one of {CLI_TYPES}'
         if 'values' in desc:

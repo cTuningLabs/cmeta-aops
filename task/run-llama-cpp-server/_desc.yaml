@@ -12,7 +12,39 @@ usage: |
   cx task run run-llama-cpp-server --action=stop
 
   The server's record and log: the state artifact local:llama-cpp-server-<port> (cx state ls).
-  The gateway artifact that points harnesses at it: ai.gateway::llama-cpp-local (fgg-hosts) - cxai --gateway=llama-cpp-local
+  What a start takes when its command line does not say: config::task-run-llama-cpp-server (below).
+  A gateway artifact that points harnesses at it (where the AI gateways are plugged): cxai --gateway=<its alias>
+
+# The defaults of a start on this machine (a word on the command line wins): a page of the server sets them, and a
+# server kept by its host (server: run: cxt run-llama-cpp-server --foreground) takes them at its next start.
+
+configs:
+  task-run-llama-cpp-server:
+    desc: What a llama.cpp server of this machine starts with when its command line does not say (task run-llama-cpp-server); a server that runs takes a change at its next start.
+    keys:
+      model:
+        desc: The model artifact, a GGUF one (cx model ls).
+        example: hf-Qwen@Qwen3-8B-GGUF
+        default: hf-Qwen@Qwen3-8B-GGUF
+      filename:
+        desc: Which file of the model artifact (its _desc-<file>.yaml); empty - its first.
+      compute:
+        desc: "The llama.cpp build, which is the hardware it runs on: cuda (an NVIDIA GPU), cpu, metal (Apple silicon)."
+        values: [cuda, cpu, metal]
+        default: cuda
+      ctx_size:
+        desc: The context window in tokens (Claude Code's first request alone is about 17k tokens).
+        type: int
+        default: 32768
+      gpu_layers:
+        desc: "Layers on the GPU: auto - as many as its memory takes (llama.cpp's --fit), the rest on the CPU; or a number."
+        default: auto
+      alias:
+        desc: The model's name in /v1/models and in the harnesses; empty - the file's name.
+      parallel:
+        desc: Requests served at once (each takes its share of the context).
+        type: int
+        default: 1
 
 # Which of its words are the choices of a run, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read it,
 # the engine never does. A choice changes what is served (the model, the device, the context) and is shown first;

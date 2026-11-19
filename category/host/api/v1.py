@@ -109,6 +109,33 @@ DEFAULT_STATUS_CMD_TIMEOUT = 20  # seconds, a "status" check that runs a command
 DEFAULT_PROBE_TIMEOUT = 120      # seconds, the whole probe script
 RESTART_DOWN_WAIT = 120          # seconds a restarted ssh host without a boot stamp may stay "up" before it counts as back
 START_RETURN_TIMEOUT = 60        # seconds a project's "server: start" may take to return (it detaches: a launcher returns at once)
+
+# A server whose project declares its command in the foreground ("server: run") is kept by the task start-after-restart
+# under the project's name: that task starts it (without a window, or in one), stops it, and starts it after every
+# restart of the host, before anyone logs in - no "server: start" or "server: stop" of its own is needed. The ssh
+# server of a host is kept the same way when its "access" says "server: start-after-restart" (the portable server).
+KEEPER = 'start-after-restart'
+AUTOSTART_TIMEOUT = 180          # seconds a switch of the start after a restart may take (Windows may ask for an administrator)
+
+
+def kept_server(name, server):
+    """How the task start-after-restart keeps the server of a project that declares "server: run": its name there
+    and the commands that start and stop it on the host. None for a server started another way (server: start)."""
+    if not isinstance(server, dict) or not str(server.get('run') or '').strip():
+        return None
+    return {'what': str(name), 'start': f'cxt {KEEPER} start --what={name}', 'stop': f'cxt {KEEPER} stop --what={name}'}
+
+
+def json_after_dashes(text):
+    """The result a "cx ... -j" prints after its line of dashes, or None."""
+    lines = str(text or '').splitlines()
+    for i in range(len(lines) - 1, -1, -1):
+        if re.fullmatch(r'-{20,}', lines[i].strip()):
+            try:
+                return json.loads('\n'.join(lines[i + 1:]))
+            except ValueError:
+                return None
+    return None
 DEFAULT_SHELL = 'bash -l'        # a login shell, so ~/.local/bin (cx, uv) and brew are on PATH
 
 # What never leaves this machine when a repository is synced (the user's bisync scripts, 2026-10)
@@ -2148,10 +2175,12 @@ class Category(InitCategory):
                           + note(('url', p['alias'], x['url']), x.get('status', '')))
         return failed
 
-    def _start_server(self, ctx, arg1, name, check_timeout):
+    def _start_server(self, ctx, arg1, name, check_timeout, window=False):
         """cx host up <host> --project=<name>: run the project's "server: start" on the host unless its server
         already answers, then check its server URL every 5 s until it answers or check_timeout runs out. A start
-        command must detach (setsid nohup ... &), as an after_restart command does, or ssh waits for the server."""
+        command must detach (setsid nohup ... &), as an after_restart command does, or ssh waits for the server.
+        A project that declares "server: run" is started by the task start-after-restart there (window: in a
+        console window of its own)."""
         con = ctx['control'].get('con', False)
         verbose = ctx['control'].get('verbose', False)
 
@@ -2167,12 +2196,17 @@ class Category(InitCategory):
             return self.cm.error(f'host "{alias}" has no project "{name}"' +
                                  (f' (its projects: {", ".join(projects)})' if projects else ''))
         server = project.get('server') or {}
-        start = server.get('start')
+        kept = kept_server(name, server)
+        start = kept['start'] + (' --window' if window else '') if kept else server.get('start')
         if not server.get('url'):
             return self.cm.error(f'project "{name}" of host "{alias}" declares no server (server: url)')
         if not start:
             return self.cm.error(f'project "{name}" of host "{alias}" declares no "server: start" - the command '
-                                 f'that starts its server on the host')
+                                 f'that starts its server on the host - and no "server: run", its command in the '
+                                 f'foreground for the task {KEEPER} to keep')
+        if window and not kept:
+            return self.cm.error(f'--window is for a server the task {KEEPER} keeps: project "{name}" of host '
+                                 f'"{alias}" declares "server: start", not "server: run"')
         if self._retired(h):
             return self.cm.error(f'host "{alias}" is retired')
 
@@ -2223,6 +2257,92 @@ class Category(InitCategory):
             print(f'{alias}: {name} {result["result"]}' + (f' - {url} answers HTTP {now.get("http_status")}' if now.get('http_status') else ''))
         return result
 
+    def _stop_server(self, ctx, arg1, name, check_timeout):
+        """cx host down <host> --project=<name>: run the project's "server: stop" on the host unless nothing
+        answers at its server URL already, then check that URL every 2 s until nothing answers or check_timeout
+        runs out. The host itself is not touched."""
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        if not arg1:
+            return self.cm.error(f'which host? cx host down <host> --project={name}')
+        r = self._get_host(ctx, arg1)
+        if self.cm.catch_error(r): return r
+        h = r['host']
+        alias = h['alias']
+        projects = h['desc'].get('projects') or {}
+        project = projects.get(name)
+        if not isinstance(project, dict):
+            return self.cm.error(f'host "{alias}" has no project "{name}"' +
+                                 (f' (its projects: {", ".join(projects)})' if projects else ''))
+        server = project.get('server') or {}
+        kept = kept_server(name, server)
+        # a kept server is stopped by the task that keeps it; one that still answers then was started another way:
+        # its own "server: stop", when it declares one, follows (not when it is that same command: an artifact that
+        # also serves a cmeta-aops from before "server: run" spells it out)
+        stops = list(dict.fromkeys(str(c).strip() for c in ((kept or {}).get('stop'), server.get('stop')) if c))
+        if not server.get('url'):
+            return self.cm.error(f'project "{name}" of host "{alias}" declares no server (server: url)')
+        if not stops:
+            return self.cm.error(f'project "{name}" of host "{alias}" declares no "server: stop" - the command '
+                                 f'that stops its server on the host - and no "server: run" for the task {KEEPER}')
+        if self._retired(h):
+            return self.cm.error(f'host "{alias}" is retired')
+
+        h['status'] = self._status(ctx, h)
+        if not self._usable(h):
+            return self.cm.error(f'host "{alias}" is {h["status"]} - its servers cannot be reached from here')
+
+        # Checks of this one project only: a copy that selects it, so that the host itself stays global
+        one = dict(h, project=name, host_desc=h['desc'])
+
+        def check():
+            self._project_status_all(ctx, [one])
+            return dict((one.get('project_status') or {}).get(name) or {})
+
+        url = server['url']
+        now = check()
+        if now.get('status') == 'down':
+            if not kept:
+                if con: print(f'{alias}: nothing answers at {url} - {name} is stopped already')
+                return {'return': 0, 'result': 'already down', 'server': now}
+            # a kept server that does not answer may still have its supervisor, starting it again and again (a server
+            # that ends at once): the task that keeps it is told to stop all the same - its own stop alone
+            stops = stops[:1]
+
+        for i, stop in enumerate(stops):
+            if i:
+                time.sleep(2)
+                now = check()
+                if now.get('status') == 'down':
+                    break
+            r = self._cmd_run(ctx, h, stop)
+            if self.cm.catch_error(r): return r
+            if con: print(f'{alias}: {stop}')
+            rr = self._run_local(r['cmd'], capture=True, con=False, verbose=verbose, timeout=START_RETURN_TIMEOUT)
+            rc = rr.get('returncode', 0)
+            if rr.get('timed_out'):
+                return self.cm.error(f'"{stop}" on {alias} did not return within {START_RETURN_TIMEOUT} s')
+            if rc != 0:
+                return self.cm.error(f'"{stop}" on {alias} returned {rc}: {(rr.get("stderr") or rr.get("stdout") or "").strip()[-300:]}')
+
+        result = {'return': 0, 'result': 'stopped', 'stop': stops[0], 'server': now}
+        t_end = time.monotonic() + max(0, int(check_timeout))
+        while time.monotonic() < t_end:
+            time.sleep(2)
+            now = check()
+            if now.get('status') == 'down':
+                result.update(result='stopped and down', server=now)
+                break
+            if con: print(f'{alias}: {url} still answers ({now.get("status", "?")}) ...')
+        else:
+            if int(check_timeout) > 0:
+                result.update(server=now, **{'return': 1, 'error': f'{name} on {alias} was told to stop but {url} still answers '
+                                             f'after {int(check_timeout)} s ({now.get("status", "?")})'})
+        if con and result['return'] == 0:
+            print(f'{alias}: {name} {result["result"]}')
+        return result
+
     ############################################################
     def up_(
         self,
@@ -2233,6 +2353,7 @@ class Category(InitCategory):
         type=None,
         project=None,       # start the server of this project instead: its "server: start" on the host (one host)
         check_timeout=120,  # with --project: seconds to wait until the server answers (0: do not wait)
+        window: bool = False,   # with --project, for a server that declares "server: run": in a console window of its own (a Windows host)
     ):
         """
         Start a host that can be started from here: a WSL distro, a container (created from its image on
@@ -2241,14 +2362,17 @@ class Category(InitCategory):
 
         With --project, start the web server of one declared project on a running host: its "server: start"
         command runs there (unless the server already answers), then its server URL is checked until it answers
-        or --check_timeout runs out. The host page of the cserver offers it as "Start".
+        or --check_timeout runs out. The host page of the cserver offers it as "Start". A project that declares
+        "server: run" - its command in the foreground - needs no start command: the task start-after-restart
+        starts it there, without a window, or with --window in a console window of its own (Windows).
 
             cx host up my-pc-wsl2       (also: cx host start)
             cx host up lab-laptop-ubuntu --project=cserver
+            cx host up my-pc --project=my-server --window
         """
 
         if project:
-            return self._start_server(ctx, arg1, str(project), check_timeout)
+            return self._start_server(ctx, arg1, str(project), check_timeout, window=bool(window))
         return self._up_down(ctx, 'up', arg1, tags, machine, type)
 
     ############################################################
@@ -2260,16 +2384,140 @@ class Category(InitCategory):
         machine=None,
         type=None,
         force=False,        # stop a WSL distro even when a shell is open in it (the stop ends every process of the distro)
+        project=None,       # stop the server of this project instead: its "server: stop" on the host (one host); the host stays up
+        check_timeout=30,   # with --project: seconds to wait until nothing answers at its URL (0: do not wait)
     ):
         """
         Stop a host that can be stopped from here: a WSL distro (wsl -t), a container (docker stop), or
         anything with a declared "commands: down". A WSL distro with a shell open in it (a terminal of the
         user) is not stopped without --force: the stop would end that shell too.
 
+        With --project, stop the web server of one declared project and leave the host as it is: its "server:
+        stop" command runs there (unless nothing answers already), then its server URL is checked until nothing
+        answers or --check_timeout runs out. The host page of the cserver offers it as "Stop".
+
             cx host down my-pc-wsl2     (also: cx host stop)
+            cx host down lab-laptop-ubuntu --project=cserver
         """
 
+        if project:
+            return self._stop_server(ctx, arg1, str(project), check_timeout)
         return self._up_down(ctx, 'down', arg1, tags, machine, type, force=force)
+
+    ############################################################
+    def autostart_(
+        self,
+        ctx,
+        arg1=None,          # the host
+        arg2=None,          # on | login | off: switch how one server starts by itself (omitted: say what is switched on)
+        project=None,       # the server of this project (one that declares "server: run")
+        ssh: bool = False,  # the ssh server of the host (its access says "server: start-after-restart")
+    ):
+        """
+        The start after a restart of a host's servers: those the task start-after-restart keeps there - a project
+        that declares "server: run" (its command in the foreground), and the ssh server of a host whose "access"
+        says "server: start-after-restart". Such a server starts after every restart of the host, before anyone
+        logs in, when it is switched on - or, on a Windows host, when its user logs in, in a window of its own (what
+        the server opens then shows on that desktop: Far from a page of a cserver).
+
+            cx host autostart my-pc                              # each kept server: on, at login, off, not registered; running?
+            cx host autostart my-pc on --project=my-server       # it starts after every restart
+            cx host autostart my-pc login --project=my-server    # ... when the user logs in, in a window (Windows)
+            cx host autostart my-pc off --project=my-server      # ... no longer; a server that runs keeps running
+            cx host autostart my-pc on --ssh
+
+        One or the other: "login" switches the start after a restart off, "on" removes the start at login. The first
+        "on" of a server registers its start on the host: on Windows that needs an administrator there (Windows
+        asks). After that, on and off need none, and "login" never does. The host page of the cserver offers them as
+        buttons.
+        """
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
+
+        if not arg1:
+            return self.cm.error('which host? cx host autostart <host> [on|login|off --project=<name> | --ssh]')
+        r = self._get_host(ctx, arg1)
+        if self.cm.catch_error(r): return r
+        h = r['host']
+        alias = h['alias']
+        if self._retired(h):
+            return self.cm.error(f'host "{alias}" is retired')
+
+        projects = h['desc'].get('projects') or {}
+        kept = [name for name, p in projects.items() if isinstance(p, dict) and kept_server(name, p.get('server'))]
+        ssh_kept = h['type'] == 'ssh' and str((h['desc'].get('access') or {}).get('server') or '') == KEEPER
+        whats = kept + (['ssh'] if ssh_kept and 'ssh' not in kept else [])
+
+        switch = str(arg2 or '').strip().lower()
+        what = ''
+        if switch:
+            if switch not in ('on', 'login', 'off'):
+                return self.cm.error(f'cx host autostart {alias} on|login|off ... (got "{arg2}")')
+            if switch == 'login' and str(h['desc'].get('os') or '').lower() != 'windows':
+                return self.cm.error(f'a start at login, in a window, is for a Windows host; "{alias}" starts its servers '
+                                     f'after a restart (cx host autostart {alias} on ...)')
+            if bool(project) == bool(ssh):
+                return self.cm.error(f'which server? cx host autostart {alias} {switch} --project=<name>, or --ssh')
+            what = 'ssh' if ssh else str(project)
+            if ssh and not ssh_kept:
+                return self.cm.error(f'the ssh server of host "{alias}" is not kept by the task {KEEPER} (access: server: '
+                                     f'{KEEPER} in its _desc.yaml says so for the portable server)')
+            if project and what not in kept:
+                return self.cm.error(f'project "{what}" of host "{alias}" declares no "server: run" - its command in the '
+                                     f'foreground, which the task {KEEPER} keeps' if what in projects else
+                                     f'host "{alias}" has no project "{what}"' +
+                                     (f' (kept by the task: {", ".join(kept)})' if kept else ''))
+        if not whats:
+            if con: print(f'{alias}: no server here is kept by the task {KEEPER} (a project with "server: run")')
+            return {'return': 0, 'host': alias, 'servers': {}}
+
+        h['status'] = self._status(ctx, h)
+        if not self._usable(h):
+            return self.cm.error(f'host "{alias}" is {h["status"]} - its servers cannot be reached from here')
+
+        if switch:
+            cmd = f'cxt {KEEPER} on --what={what} --at=login' if switch == 'login' else f'cxt {KEEPER} {switch} --what={what}'
+            r = self._cmd_run(ctx, h, cmd)
+            if self.cm.catch_error(r): return r
+            if con: print(f'{alias}: {cmd}')
+            rr = self._run_local(r['cmd'], capture=True, con=False, verbose=verbose, timeout=AUTOSTART_TIMEOUT)
+            if rr.get('timed_out'):
+                return self.cm.error(f'"{cmd}" on {alias} did not return within {AUTOSTART_TIMEOUT} s (a question of '
+                                     f'Windows for an administrator left unanswered there?)')
+            if rr.get('returncode', 0) != 0:
+                said = [l.strip() for l in ((rr.get('stdout') or '') + '\n' + (rr.get('stderr') or '')).splitlines() if l.strip()]
+                return self.cm.error(f'"{cmd}" on {alias} returned {rr.get("returncode")}: ' + ' '.join(said[-3:])[-500:])
+
+        # what is switched on there now: one command for all the kept servers of the host
+        cmd = f'cx task run {KEEPER} status --what={",".join(whats)} --quick -j'
+        r = self._cmd_run(ctx, h, cmd)
+        if self.cm.catch_error(r): return r
+        rr = self._run_local(r['cmd'], capture=True, con=False, verbose=verbose, timeout=START_RETURN_TIMEOUT)
+        answer = json_after_dashes(rr.get('stdout')) if rr.get('returncode', 0) == 0 else None
+        servers = (answer or {}).get('servers') if isinstance(answer, dict) else None
+        if not isinstance(servers, dict):
+            # an older cmeta-aops there knows neither the switch nor the quick status
+            said = [l.strip() for l in ((rr.get('stdout') or '') + '\n' + (rr.get('stderr') or '')).splitlines() if l.strip()]
+            why = (f'the task {KEEPER} on {alias} did not say (' + (said[-1][:200] if said else f'it returned {rr.get("returncode")}')
+                   + ') - an older cmeta-aops there?')
+            if switch:
+                return self.cm.error(why)
+            if con: print(f'{alias}: {why}')
+            return {'return': 0, 'host': alias, 'servers': {}, 'unknown': why}
+
+        out = {}
+        for name in whats:
+            st = servers.get(name) if isinstance(servers.get(name), dict) else {}
+            out[name] = {'enabled': bool(st.get('enabled')), 'on': bool(st.get('on')), 'login': bool(st.get('login')),
+                         'running': bool(st.get('running')), 'window': bool(st.get('window')), 'session': st.get('session')}
+            if con:
+                print(f'{alias}: {name:24} ' + ('at login' if out[name]['login'] else 'on' if out[name]['on'] else
+                                               'off (registered)' if out[name]['enabled'] else 'not registered')
+                      + ('; running' + (' in a window' if out[name]['window'] else '') if out[name]['running'] else ''))
+        result = {'return': 0, 'host': alias, 'servers': out}
+        if switch:
+            result.update(switched=what, to=switch)
+        return result
 
     ############################################################
     def sync_(
@@ -5832,11 +6080,17 @@ class Category(InitCategory):
             server = (h.get('project_status') or {}).get(name) or st.get('server') or {}
             if self._retired(h):
                 server = {'status': 'retired', 'url': (p.get('server') or {}).get('url')}
+            # a server the task start-after-restart keeps (server: run): its start and stop are that task's
+            kept = kept_server(name, p.get('server'))
             rows.append({'alias': name, 'path': p.get('path'), 'cmeta': st.get('cmeta_version', '-'),
                          'aops': st.get('aops_version', '-'), 'python': st.get('cmeta_python') or '-', 'server': server,
                          'status': server.get('status', 'not checked'), 'probed': st.get('probed_at'),
                          # the command that starts the server on the host (cx host up <host> --project=<name>)
-                         'start': str((p.get('server') or {}).get('start') or ''),
+                         'start': kept['start'] if kept else str((p.get('server') or {}).get('start') or ''),
+                         # ... and the one that stops it (cx host down <host> --project=<name>)
+                         'stop': kept['stop'] if kept else str((p.get('server') or {}).get('stop') or ''),
+                         # kept: it can start in a window and after every restart (cx host autostart)
+                         'kept': bool(kept), 'run': str((p.get('server') or {}).get('run') or ''),
                          # the public URLs of the server checked from this machine (status: _public_status_all)
                          'public': list((h.get('public_status') or {}).get(name) or []),
                          # the address a browser opens for it (the links of the /host page)
@@ -9839,6 +10093,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         # last run failed or stopped (the record of the sync, _remember_sync)
         row['synced'], row['sync'] = self._sync_state(h)
         row['projects'] = self._project_rows(h)
+        # its ssh server is the portable one the task start-after-restart keeps (cx host autostart <host> on --ssh)
+        row['ssh_kept'] = h['type'] == 'ssh' and str((h['desc'].get('access') or {}).get('server') or '') == KEEPER
         if h.get('project'): row['project'] = h['project']
         # for programs that show the fleet (a web page): what the console prints in ADDRESS, and the artifact itself
         row['address'] = self._address_text(h)

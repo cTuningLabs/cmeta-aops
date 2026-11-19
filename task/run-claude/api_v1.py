@@ -9,7 +9,7 @@ import re
 import subprocess
 import time
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done, drop_provider_variables, gateway_into_environment, main_screen, NO_ALT_SCREEN
+from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done, drop_provider_variables, gateway_into_environment, choose_gateway, main_screen, NO_ALT_SCREEN
 
 # Suffix appended to the prompt file name (without extension) when
 # --output_file is not given
@@ -142,9 +142,8 @@ class CTask(InitCTask):
     def _gateway(self, ctx, harness, gateway, gw, ln):
         """Login or a gateway for this run (the task set-ai-gateway: the flag, this machine's config): with a gateway,
         its environment goes into this process - the tool inherits it - and its command-line words are returned."""
-        r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'set-ai-gateway,e10aa0a00edd4a2c',
-                            'ctx': ctx, 'harness': harness, 'gateway': gateway, 'gw': gw, 'ln': ln, 'con': False,
-                            'quiet': ctx['control'].get('quiet', False)})
+        # set-ai-gateway where a repository provides it; else a login run (a gateway asked for: an error)
+        r = choose_gateway(self.cm, ctx, harness, gateway, gw, ln)
         if r.get('return', 1) > 0:
             return r
         # What a parent's gateway put into the environment never reaches this run; a login run also starts without
@@ -152,8 +151,11 @@ class CTask(InitCTask):
         # that runs through a company gateway starts an import whose fetch needs the claude.ai connectors (2026-10-27),
         # and its variables took precedence over the claude.ai login. They leave this process's environment, which the
         # tool inherits (ctask.drop_provider_variables). A gateway run also starts without the user's own Anthropic key,
-        # token, URL and model names, which would compete with the gateway's key (its apiKeyHelper).
-        dropped = drop_provider_variables('claude', login=r['gateway'] == 'login', gateway=r['gateway'] != 'login')
+        # token, URL and model names, which would compete with the gateway's key (its apiKeyHelper). A gateway that
+        # passes the harness's own login on (own_login) is a login run in all but its address: the login's drops, and
+        # a login kept as a token (CLAUDE_CODE_OAUTH_TOKEN) stays.
+        own = bool(r.get('own_login'))
+        dropped = drop_provider_variables('claude', login=r['gateway'] == 'login' or own, gateway=r['gateway'] != 'login' and not own)
         if dropped and ctx['control'].get('con', False):
             print('')
             print('AI gateway: %s - %s left the environment of this run' % (r['gateway'], ', '.join(dropped)))
