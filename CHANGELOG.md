@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.76.0.1)
+## 0.77.0
 - **`cx host status` brings this machine's versions up to date.** A sync or an upgrade through `cx host` probes the
   host again afterwards, but none ever runs on the machine that runs them: the cMeta and AOps versions of this machine
   in `cx host ls` and on the hosts page stayed those of its last `cx host probe`, whatever was upgraded since. A live
