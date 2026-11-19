@@ -30,8 +30,33 @@ configs:
         desc: "The data sources it loads: prometheus - that one alone (the boards read it; each other built-in data source is a program of its own); all - every built-in one."
         values: [prometheus, all]
         default: prometheus
+      datasources:
+        desc: "More Prometheus servers it may draw from, each <name>=<URL>, separated by commas (e.g. another machine's); every board has a Prometheus selector. The first source is always 'Prometheus' (the key prometheus)."
+        example: Other machine=http://100.64.0.7:9090
+      sub_path:
+        desc: "The path Grafana is served under: /grafana/ui by default, so that a cMeta server's page (cserver.grafana) can pass it through behind the server's sign-in; empty - at the root (http://127.0.0.1:3000/)."
+        default: /grafana/ui
+      vllm_boards:
+        desc: "vLLM's official boards too (upstream_boards below: checked against their SHA-256), in a folder vLLM: yes or no."
+        values: ['yes', 'no']
+        default: 'yes'
+
+# The boards of a server's makers, by the version of the server they were made for: downloaded once into the state
+# artifact and checked against these digests (a new version of them is a new entry here, never a different file).
+upstream_boards:
+  vllm:
+    version: 0.31.0
+    folder: vLLM
+    files:
+      - url: https://raw.githubusercontent.com/vllm-project/vllm/v0.31.0/examples/observability/dashboards/grafana/performance_statistics.json
+        sha256: 507f481a47ed3606826aa373704dd84b28dfc311456398fed73dc992d649c637
+      - url: https://raw.githubusercontent.com/vllm-project/vllm/v0.31.0/examples/observability/dashboards/grafana/query_statistics.json
+        sha256: 459de6707d482b462fc3922b5964a743bd5b2cc1f45365661eb04d7b7fd1faaa
 
 cli_help:
   prometheus: {choice: run}
+  datasources: {choice: run}
+  sub_path: {choice: run}
+  vllm_boards: {choice: run}
   anonymous: {choice: run}
   action: {group: main}

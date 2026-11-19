@@ -8,8 +8,11 @@ server's, llama.cpp's and vLLM's - are written from the panels below at every st
 data, record, log and the password of its admin: the state artifact local:grafana-server-<port>.
 """
 
+import base64
+import hashlib
 import json
 import os
+import re
 import secrets
 import signal
 import socket
@@ -27,7 +30,39 @@ SETUP_TASK = 'setup,a2f9b61079ce4333'
 DEFAULT_PORT = 3000
 
 CONFIG = 'task-run-grafana-server'
-BUILT_IN = {'prometheus': 'http://127.0.0.1:9090', 'anonymous': 'auto', 'plugins': 'prometheus'}
+BUILT_IN = {'prometheus': 'http://127.0.0.1:9090', 'datasources': '', 'anonymous': 'auto', 'plugins': 'prometheus',
+            'sub_path': '/grafana/ui', 'vllm_boards': 'yes'}
+DEFAULT_SOURCE = 'cmeta-prometheus'
+
+
+def parse_sources(prometheus, extra):
+    """The data sources: "Prometheus" (uid cmeta-prometheus, the default) at the given address, then the named ones of
+    "<name>=<URL>,..." (a list, or text separated by commas), each uid cmeta-ds-<its name>. Raises ValueError."""
+    out = [{'name': 'Prometheus', 'uid': DEFAULT_SOURCE, 'url': str(prometheus).rstrip('/')}]
+    items = extra if isinstance(extra, (list, tuple)) else str(extra or '').split(',')
+    for item in items:
+        item = str(item).strip()
+        if not item:
+            continue
+        name, sep, url = item.partition('=')
+        name, url = name.strip(), url.strip().rstrip('/')
+        if not sep or not name or not re.match(r'^https?://[^/\s]+', url):
+            raise ValueError('a data source is <name>=<http(s) URL of a Prometheus>: "%s"' % item)
+        uid = 'cmeta-ds-' + (re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-') or 'source')
+        if uid in {x['uid'] for x in out} or name in {x['name'] for x in out}:
+            raise ValueError('two data sources are named "%s"' % name)
+        out.append({'name': name, 'uid': uid, 'url': url})
+    return out
+
+
+def clean_sub_path(value):
+    """'/grafana/ui' from 'grafana/ui/', '' for none; letters, digits, - _ . / only."""
+    v = '/' + str(value or '').strip().strip('/')
+    if v == '/':
+        return ''
+    if not re.match(r'^(/[A-Za-z0-9._-]+)+$', v):
+        raise ValueError('a sub-path is like /grafana/ui (got "%s")' % value)
+    return v
 
 # The data sources built into Grafana that run as programs of their own (gpx_*): not loaded unless plugins is "all" -
 # the boards read Prometheus only, and each would be a process (14 of them, 2026-11-19)
@@ -79,14 +114,19 @@ def http_json(url, timeout=5):
         return 0, str(e)
 
 
-def ini_text(folder, host, port, password, anonymous, home_board, disabled=()):
+def ini_text(folder, host, port, password, anonymous, home_board, disabled=(), sub_path=''):
     """grafana.ini: its folders in the state artifact, 127.0.0.1 by default, no sign-up, no calls home, embedding
     allowed (a cMeta page may show a board), a viewer without sign-in only when asked or on 127.0.0.1 alone."""
     p = lambda *x: os.path.join(folder, *x).replace('\\', '/')
     return '\n'.join([
         '# written by run-grafana-server at every start: change the config task-run-grafana-server, not this file', '',
         '[paths]', 'data = ' + p('data'), 'logs = ' + p('logs'), 'plugins = ' + p('plugins'), 'provisioning = ' + p('provisioning'), '',
-        '[server]', 'http_addr = ' + host, 'http_port = %d' % port, '',
+        '[server]', 'http_addr = ' + host, 'http_port = %d' % port] + (
+        # served under a sub-path: a cMeta server's page (cserver.grafana) passes it through at that path
+        ['root_url = %%(protocol)s://%%(domain)s:%%(http_port)s%s/' % sub_path, 'serve_from_sub_path = true'] if sub_path else []) + [
+        '',
+        # no websocket (Grafana Live): a page passing Grafana through answers plain requests only
+        '[live]', 'max_connections = 0', '',
         '[security]', 'admin_user = admin', 'admin_password = ' + password, 'allow_embedding = true', 'cookie_samesite = lax',
         'disable_gravatar = true', '',
         '[auth.anonymous]', 'enabled = ' + ('true' if anonymous else 'false'), 'org_role = Viewer', '',
@@ -103,7 +143,11 @@ def ini_text(folder, host, port, password, anonymous, home_board, disabled=()):
 # The AI gateway server's (cmeta_ai_gateway_*), llama.cpp's (llamacpp:*) and vLLM's (vllm:*), each written from a
 # short list of panels; a panel's series are PromQL over the names the servers publish at /metrics.
 
-DS = {'type': 'prometheus', 'uid': 'cmeta-prometheus'}
+# every board draws from the source its "Prometheus" selector names (DEFAULT_SOURCE first)
+DS = {'type': 'prometheus', 'uid': '${datasource}'}
+SOURCE_VARIABLE = {'name': 'datasource', 'label': 'Prometheus', 'type': 'datasource', 'query': 'prometheus',
+                   'current': {'text': 'Prometheus', 'value': DEFAULT_SOURCE}, 'hide': 0, 'refresh': 1, 'regex': '',
+                   'includeAll': False, 'multi': False}
 
 
 def _panel(pid, title, exprs, unit, x, y, w=12, h=8, kind='timeseries', desc=''):
@@ -127,7 +171,7 @@ def _board(uid, title, variable, metric, panels, desc):
     return {'uid': uid, 'title': title, 'description': desc, 'tags': ['cmeta'], 'timezone': 'browser',
             'schemaVersion': 39, 'version': 1, 'editable': True, 'refresh': '30s',
             'time': {'from': 'now-24h', 'to': 'now'},
-            'templating': {'list': [{'name': variable[0], 'label': variable[1], 'type': 'query', 'datasource': DS,
+            'templating': {'list': [dict(SOURCE_VARIABLE), {'name': variable[0], 'label': variable[1], 'type': 'query', 'datasource': DS,
                                      'query': {'query': 'label_values(%s, %s)' % (metric, variable[2]), 'refId': 'v'},
                                      'definition': 'label_values(%s, %s)' % (metric, variable[2]),
                                      'includeAll': True, 'multi': True, 'allValue': '.*', 'refresh': 2,
@@ -269,11 +313,12 @@ class CTask(InitCTask):
         except Exception:
             return {}
 
-    def _status(self, host, port, rec):
+    def _status(self, host, port, rec, sub_path=''):
         """Running (its /api/health says the database is ok), whether it is the recorded process."""
         pid = int(rec.get('pid') or 0)
         up = listening(host, port)
-        status, health = http_json('http://%s:%d/api/health' % (host, port)) if up else (0, '')
+        sub = rec.get('sub_path', sub_path) if rec else sub_path
+        status, health = http_json('http://%s:%d%s/api/health' % (host, port, sub)) if up else (0, '')
         ok = status == 200 and isinstance(health, dict) and health.get('database') == 'ok'
         pid_alive = recorded_process_alive(pid, rec.get('_written', 0), alive) if pid else False
         return {'running': ok, 'listening': up, 'version': health.get('version', '') if ok else '', 'pid': pid,
@@ -298,9 +343,41 @@ class CTask(InitCTask):
             pass
         return value, fp
 
-    @staticmethod
-    def _provision(folder, prometheus):
-        """The data source (Prometheus, uid cmeta-prometheus) and the boards (folder cMeta), written again."""
+    def _upstream_boards(self, folder, which):
+        """The boards of a server's makers declared in _desc.yaml (upstream_boards: <which>: version, folder, files with
+        url and sha256), each downloaded once into the state artifact (upstream-boards/<sha256>.json) and checked:
+        {'folder', 'files': [paths], 'notes': [what could not be had]}."""
+        try:
+            import yaml
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml'), encoding='utf-8') as f:
+                decl = ((yaml.safe_load(f) or {}).get('upstream_boards') or {}).get(which) or {}
+        except Exception as e:
+            return {'folder': '', 'files': [], 'notes': ['the declaration of the %s boards cannot be read: %s' % (which, e)]}
+        cache = os.path.join(folder, 'upstream-boards')
+        os.makedirs(cache, exist_ok=True)
+        out, notes = [], []
+        for item in decl.get('files') or []:
+            url, want = str(item.get('url') or ''), str(item.get('sha256') or '').lower()
+            fp = os.path.join(cache, want + '.json')
+            if not os.path.isfile(fp):
+                try:
+                    with urllib.request.urlopen(url, timeout=30) as r:
+                        raw = r.read()
+                except Exception as e:
+                    notes.append('%s: not downloaded (%s)' % (url, e))
+                    continue
+                got = hashlib.sha256(raw).hexdigest()
+                if got != want:
+                    notes.append('%s: SHA-256 %s, declared %s - not used' % (url, got, want))
+                    continue
+                with open(fp, 'wb') as f:
+                    f.write(raw)
+            out.append(fp)
+        return {'folder': str(decl.get('folder') or which), 'files': out, 'notes': notes}
+
+    def _provision(self, folder, sources, vllm=False):
+        """The data sources (the first the default) and the boards - ours in the folder cMeta, vLLM's in its own -
+        written again; {'home', 'notes'}."""
         prov = os.path.join(folder, 'provisioning')
         boards = os.path.join(prov, 'boards')
         for d in ('datasources', 'dashboards', 'plugins', 'alerting', 'notifiers'):
@@ -308,24 +385,88 @@ class CTask(InitCTask):
         os.makedirs(boards, exist_ok=True)
         # JSON is YAML: Grafana reads these files without a YAML writer here
         with open(os.path.join(prov, 'datasources', 'cmeta.yaml'), 'w', encoding='utf-8') as f:
-            json.dump({'apiVersion': 1, 'datasources': [{'name': 'Prometheus', 'type': 'prometheus', 'uid': DS['uid'],
-                       'access': 'proxy', 'url': prometheus, 'isDefault': True, 'editable': False,
-                       'jsonData': {'timeInterval': '10s'}}]}, f, indent=1)
-        with open(os.path.join(prov, 'dashboards', 'cmeta.yaml'), 'w', encoding='utf-8') as f:
-            json.dump({'apiVersion': 1, 'providers': [{'name': 'cmeta', 'folder': 'cMeta', 'type': 'file',
-                       'disableDeletion': True, 'allowUiUpdates': False, 'updateIntervalSeconds': 60,
-                       'options': {'path': boards.replace('\\', '/')}}]}, f, indent=1)
+            json.dump({'apiVersion': 1,
+                       'deleteDatasources': [],
+                       'prune': True,              # a source taken out of the list leaves Grafana too
+                       'datasources': [{'name': x['name'], 'type': 'prometheus', 'uid': x['uid'], 'access': 'proxy',
+                                        'url': x['url'], 'isDefault': i == 0, 'editable': False,
+                                        'jsonData': {'timeInterval': '10s'}} for i, x in enumerate(sources)]}, f, indent=1)
+        providers = [{'name': 'cmeta', 'folder': 'cMeta', 'type': 'file', 'disableDeletion': True, 'allowUiUpdates': False,
+                      'updateIntervalSeconds': 60, 'options': {'path': boards.replace('\\', '/')}}]
         for name, make in BOARDS.items():
             with open(os.path.join(boards, name), 'w', encoding='utf-8') as f:
                 json.dump(make(), f, indent=1)
-        return os.path.join(boards, 'cmeta-ai-gateway.json').replace('\\', '/')
+        notes = []
+        upstream = os.path.join(prov, 'boards-vllm')
+        if os.path.isdir(upstream):
+            for n in os.listdir(upstream):
+                os.remove(os.path.join(upstream, n))
+        if vllm:
+            u = self._upstream_boards(folder, 'vllm')
+            notes += u['notes']
+            if u['files']:
+                os.makedirs(upstream, exist_ok=True)
+                for fp in u['files']:
+                    with open(fp, 'rb') as src, open(os.path.join(upstream, os.path.basename(fp)), 'wb') as dst:
+                        dst.write(src.read())
+                providers.append({'name': 'vllm', 'folder': u['folder'], 'type': 'file', 'disableDeletion': True,
+                                  'allowUiUpdates': False, 'updateIntervalSeconds': 60,
+                                  'options': {'path': upstream.replace('\\', '/')}})
+        with open(os.path.join(prov, 'dashboards', 'cmeta.yaml'), 'w', encoding='utf-8') as f:
+            json.dump({'apiVersion': 1, 'providers': providers}, f, indent=1)
+        return {'home': os.path.join(boards, 'cmeta-ai-gateway.json').replace('\\', '/'), 'notes': notes}
+
+    def _choices(self, prometheus, datasources, sub_path, vllm_boards):
+        """What the command line and the config of this machine say: the sources, the sub-path, vLLM's boards."""
+        d = self._defaults()
+        sources = parse_sources(str(prometheus or d['prometheus']), datasources or d['datasources'])
+        sub = clean_sub_path(d['sub_path'] if sub_path in (None, '') else sub_path)
+        vllm = str(vllm_boards or d['vllm_boards']).strip().lower() in ('yes', 'true', '1', 'on')
+        return d, sources, sub, vllm
+
+    def _reload(self, folder, host, port, rec, status, prometheus, datasources, vllm_boards, con):
+        """The data sources and the boards as the config says now, written and - while Grafana runs - read again by it
+        (its provisioning API, as its admin: the password from the state artifact). Nothing else changes; a new port,
+        sub-path or sign-in rule needs a restart."""
+        try:
+            d, sources, _, vllm = self._choices(prometheus, datasources, '', vllm_boards)
+        except ValueError as e:
+            return self.cm.error(str(e))
+        prov = self._provision(folder, sources, vllm)
+        reloaded = []
+        if status['running']:
+            password, _ = self._password(folder)
+            auth = 'Basic ' + base64.b64encode(('admin:' + password).encode('utf-8')).decode('ascii')
+            base = 'http://%s:%d%s' % (host, port, rec.get('sub_path', '') if rec else '')
+            for what in ('datasources', 'dashboards'):
+                req = urllib.request.Request(base + '/api/admin/provisioning/%s/reload' % what, data=b'', method='POST',
+                                             headers={'Authorization': auth})
+                try:
+                    with urllib.request.urlopen(req, timeout=30) as r:
+                        if r.status == 200:
+                            reloaded.append(what)
+                except Exception as e:
+                    return self.cm.error('Grafana on port %d did not read its %s again: %s' % (port, what, e))
+            if rec:
+                rec = {k: v for k, v in rec.items() if k != '_written'}
+                rec['sources'] = sources
+                self._write_record(folder, rec)
+        if con:
+            print('Grafana on port %d: %d data source(s) (%s)%s - %s' % (port, len(sources), ', '.join(x['name'] for x in sources),
+                  ', vLLM\'s boards' if vllm else '', 'read again by the running server' if reloaded else 'written for its next start'))
+            for n in prov['notes']:
+                print('  note: ' + n)
+        return {'return': 0, 'port': port, 'sources': sources, 'vllm_boards': vllm, 'reloaded': reloaded, 'notes': prov['notes']}
 
     def run(self,
             ctx: dict,
-            action: str = 'start',          # start | status | stop | restart
+            action: str = 'start',          # start | status | stop | restart | reload
             port: int = DEFAULT_PORT,       # 3000 by default (Grafana's own)
             host: str = '127.0.0.1',        # the address to listen on (another than 127.0.0.1: others reach its sign-in page)
             prometheus: str = '',           # the Prometheus it draws from (default: the config's, else http://127.0.0.1:9090)
+            datasources: str = '',          # more Prometheus servers it may draw from: <name>=<URL>,... (default: the config's)
+            sub_path: str = '',             # the path it is served under (default: the config's, else /grafana/ui - for cserver.grafana)
+            vllm_boards: str = '',          # vLLM's official boards too: yes | no (default: the config's, else yes)
             anonymous: str = '',            # a viewer without sign-in: auto (only on 127.0.0.1) | yes | no (default: the config's, else auto)
             timeout: int = 120,             # seconds to wait for it to be ready before "start" gives up (its first start sets up its database)
             foreground: bool = False,       # keep the server attached to this console (its log on the screen; Ctrl-C ends it)
@@ -348,8 +489,12 @@ class CTask(InitCTask):
             return st
         folder = st['path']
         rec = self._read_record(folder)
-        status = self._status(host, port, rec)
-        url = 'http://%s:%d' % (host, port)
+        try:
+            sub = clean_sub_path(rec['sub_path']) if rec.get('sub_path') is not None else clean_sub_path(self._defaults()['sub_path'])
+        except ValueError as e:
+            return self.cm.error(str(e))
+        status = self._status(host, port, rec, sub)
+        url = 'http://%s:%d%s' % (host, port, sub)
 
         if action == 'status':
             if con:
@@ -385,8 +530,11 @@ class CTask(InitCTask):
                 return {'return': 0, 'port': port, 'stopped': bool(pid)}
             status = self._status(host, port, {})
 
+        if action == 'reload':
+            return self._reload(folder, host, port, rec, status, prometheus, datasources, vllm_boards, con)
+
         if action not in ('start', 'restart'):
-            return self.cm.error('--action must be start, status, stop or restart (got "%s")' % action)
+            return self.cm.error('--action must be start, status, stop, restart or reload (got "%s")' % action)
 
         if status['running']:
             if con:
@@ -395,8 +543,12 @@ class CTask(InitCTask):
         if status['listening']:
             return self.cm.error('port %d is taken by another process; --port=<another> or stop it' % port)
 
-        d = self._defaults()
-        prometheus = str(prometheus or d['prometheus']).rstrip('/')
+        try:
+            d, sources, sub, vllm = self._choices(prometheus, datasources, sub_path, vllm_boards)
+        except ValueError as e:
+            return self.cm.error(str(e))
+        url = 'http://%s:%d%s' % (host, port, sub)
+        prometheus = sources[0]['url']
         anon = str(anonymous or d['anonymous']).strip().lower()
         if anon not in ('auto', 'yes', 'no', 'true', 'false', '1', '0', 'on', 'off'):
             return self.cm.error('--anonymous must be auto, yes or no (got "%s")' % anon)
@@ -414,12 +566,13 @@ class CTask(InitCTask):
 
         for d2 in ('data', 'logs', 'plugins'):
             os.makedirs(os.path.join(folder, d2), exist_ok=True)
-        home_board = self._provision(folder, prometheus)
+        prov = self._provision(folder, sources, vllm)
+        home_board = prov['home']
         password, password_file = self._password(folder)
         ini = os.path.join(folder, 'grafana.ini')
         with open(ini, 'w', encoding='utf-8') as f:
             plugins = str(d['plugins'] or 'prometheus').strip().lower()
-            f.write(ini_text(folder, host, port, password, anon_on, home_board, [] if plugins == 'all' else OTHER_SOURCES))
+            f.write(ini_text(folder, host, port, password, anon_on, home_board, [] if plugins == 'all' else OTHER_SOURCES, sub))
         try:
             os.chmod(ini, 0o600)
         except OSError:
@@ -428,7 +581,8 @@ class CTask(InitCTask):
         command = [binary, 'server', '--homepath', home, '--config', ini]
         command += [str(u) for u in unparsed] if unparsed else []
         log = os.path.join(folder, 'server.log')
-        rec = {'port': port, 'host': host, 'url': url, 'prometheus': prometheus, 'anonymous': anon_on, 'home': home,
+        rec = {'port': port, 'host': host, 'url': url, 'sub_path': sub, 'sources': sources, 'vllm_boards': vllm,
+               'prometheus': prometheus, 'anonymous': anon_on, 'home': home,
                'config': ini, 'command': command, 'started': time.strftime('%Y-%m-%dT%H:%M:%S')}
         if con:
             print('')

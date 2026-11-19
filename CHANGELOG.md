@@ -2,6 +2,19 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.78.0
+- **Prometheus reads a changed list without a restart: `run-prometheus-server --action=reload`.** The targets and the
+  interval as the config says now: prometheus.yml written beside the one in use, checked with promtool, put in its
+  place and read again by the running server (`/-/reload`); a list promtool refuses leaves the one in use as it was.
+- **Grafana: data sources by name, a selector on every board, a sub-path, vLLM's official boards, a reload.**
+  `run-grafana-server` draws from the Prometheus of `prometheus` (the default source) and the others of the new key
+  `datasources` (`<name>=<URL>,...`: another machine's Prometheus); every board has a "Prometheus" selector over them.
+  It is served under `sub_path` (`/grafana/ui` by default: `root_url` + `serve_from_sub_path`; live updates off), so a
+  cMeta server can pass it through (cMeta 0.45: `cserver_proxy`). vLLM's own boards ("Performance Statistics", "Query
+  Statistics" of vLLM 0.31.0) are declared in its `_desc.yaml` (`upstream_boards`: URL and SHA-256), downloaded once
+  into the state artifact, checked and provisioned in a folder vLLM (`vllm_boards: yes|no`). `--action=reload` writes
+  the provisioning again and has the running Grafana read it (its admin API; the password from the state artifact).
+
 ## 0.77.0
 - **`cx host status` brings this machine's versions up to date.** A sync or an upgrade through `cx host` probes the
   host again afterwards, but none ever runs on the machine that runs them: the cMeta and AOps versions of this machine

@@ -56,22 +56,43 @@ def test_grafana_settings_load_prometheus_alone_and_call_nobody(task_namespace, 
     assert lines[lines.index('[auth.anonymous]') + 1] == 'enabled = false' and 'disable_plugins = ' in lines
 
 
-def test_grafana_provisions_its_source_and_three_boards(task_namespace, tmp_path):
+def test_grafana_sources_by_name_and_the_sub_path(task_namespace):
     ns = task_namespace('run-grafana-server')
-    cls = ns['CTask']
-    home = cls._provision(str(tmp_path), 'http://127.0.0.1:9090')
+    sources = {x['name']: x for x in ns['parse_sources']('http://127.0.0.1:9090/', 'Other machine=http://100.64.0.7:9090, Lab=https://lab.example/prom')}
+    assert sources['Prometheus'] == {'name': 'Prometheus', 'uid': 'cmeta-prometheus', 'url': 'http://127.0.0.1:9090'}
+    assert sources['Other machine']['uid'] == 'cmeta-ds-other-machine' and sources['Lab']['url'] == 'https://lab.example/prom'
+    for bad in ('no-equals', 'x=ftp://a', 'Prometheus=http://a:1'):
+        with pytest.raises(ValueError):
+            ns['parse_sources']('http://127.0.0.1:9090', bad)
+    assert ns['clean_sub_path']('grafana/ui/') == '/grafana/ui' and ns['clean_sub_path']('') == '' and ns['clean_sub_path']('/') == ''
+    with pytest.raises(ValueError):
+        ns['clean_sub_path']('/a b')
+    ini = ns['ini_text']('f', '127.0.0.1', 3000, 'pw', True, 'h', [], '/grafana/ui').splitlines()
+    assert 'serve_from_sub_path = true' in ini and 'root_url = %(protocol)s://%(domain)s:%(http_port)s/grafana/ui/' in ini
+    assert ini[ini.index('[live]') + 1] == 'max_connections = 0'
+
+
+def test_grafana_provisions_its_sources_and_three_boards(task_namespace, tmp_path):
+    ns = task_namespace('run-grafana-server')
+    task = ns['CTask'].__new__(ns['CTask'])
+    sources = ns['parse_sources']('http://127.0.0.1:9090', 'Other=http://100.64.0.7:9090')
+    home = task._provision(str(tmp_path), sources, vllm=False)['home']
     prov = tmp_path / 'provisioning'
-    source = json.loads((prov / 'datasources' / 'cmeta.yaml').read_text(encoding='utf-8'))['datasources'][0]
-    assert source['uid'] == 'cmeta-prometheus' and source['url'] == 'http://127.0.0.1:9090' and source['isDefault']
-    provider = json.loads((prov / 'dashboards' / 'cmeta.yaml').read_text(encoding='utf-8'))['providers'][0]
-    assert provider['folder'] == 'cMeta' and Path(provider['options']['path']) == prov / 'boards'
+    written = {x['uid']: x for x in json.loads((prov / 'datasources' / 'cmeta.yaml').read_text(encoding='utf-8'))['datasources']}
+    assert written['cmeta-prometheus']['url'] == 'http://127.0.0.1:9090' and written['cmeta-prometheus']['isDefault']
+    assert written['cmeta-ds-other']['url'] == 'http://100.64.0.7:9090' and not written['cmeta-ds-other']['isDefault']
+    providers = {p['folder']: p for p in json.loads((prov / 'dashboards' / 'cmeta.yaml').read_text(encoding='utf-8'))['providers']}
+    assert set(providers) == {'cMeta'} and Path(providers['cMeta']['options']['path']) == prov / 'boards'
     boards = {b['uid']: b for b in (json.loads(p.read_text(encoding='utf-8')) for p in (prov / 'boards').glob('*.json'))}
     assert set(boards) == {'cmeta-ai-gateway', 'cmeta-llama-cpp', 'cmeta-vllm'} and home.endswith('cmeta-ai-gateway.json')
     names = {'cmeta-ai-gateway': 'cmeta_ai_gateway_', 'cmeta-llama-cpp': 'llamacpp:', 'cmeta-vllm': 'vllm:'}
     for uid, b in boards.items():
         exprs = [t['expr'] for p in b['panels'] for t in p['targets']]
         assert exprs and all(names[uid] in e for e in exprs), uid
-        assert all(p['datasource']['uid'] == 'cmeta-prometheus' for p in b['panels'])
+        # every panel draws from the board's "Prometheus" selector, the default source first
+        variables = {v['name']: v for v in b['templating']['list']}
+        assert variables['datasource']['type'] == 'datasource' and variables['datasource']['current']['value'] == 'cmeta-prometheus'
+        assert all(p['datasource']['uid'] == '${datasource}' for p in b['panels'])
         cells = set()                                   # no two panels on one cell of the grid
         for p in b['panels']:
             g = p['gridPos']
