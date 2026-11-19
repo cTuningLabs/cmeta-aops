@@ -4,8 +4,8 @@ Starts `llama-server` detached with a GGUF model from a model artifact, waits un
 its record (`server.json`: pid, port, model, command) and its log in the state artifact `local:llama-cpp-server-<port>`.
 The server speaks three wires on one port - the Anthropic Messages API (`/v1/messages`), chat completions
 (`/v1/chat/completions`) and the Responses API (`/v1/responses`, the builds since 2026-10-16) - so Claude Code, Codex
-and OpenCode can all use it through an `ai.gateway` artifact (`ai.gateway::llama-cpp-local`: `base_url
-http://127.0.0.1:8686`, both wires, no key, `provided_by: this task`).
+and OpenCode can all use it through an `ai.gateway` artifact where a repository provides the AI gateways (one
+named `llama-cpp-local`, say: `base_url http://127.0.0.1:8686`, both wires, no key, `provided_by: this task`).
 
 ```
 cx task run run-llama-cpp-server                                      # Qwen3-8B Q4_K_M (about 5 GB) on CUDA, port 8686
@@ -34,3 +34,20 @@ cxai --gateway=llama-cpp-local "..."                                  # Claude C
   one. The matrix of 2026-10-25 is in the fgg work item of the AI gateway.
 - `--host=0.0.0.0` serves other machines (a remote gateway artifact then names this host's address); there is no key,
   so only on a private network.
+
+**Its defaults: `config::task-run-llama-cpp-server`** (since 2026-11-19). What a start takes when its command line does
+not say - the model, the file, the build (`compute`: the hardware it runs on), the context, the GPU layers, the alias,
+the requests at once - comes from this config of the machine, else from the values above:
+
+```
+cx config set task-run-llama-cpp-server --meta.model=hf-ggml-org@gpt-oss-20b-GGUF --meta.ctx_size=65536
+cx config read task-run-llama-cpp-server
+```
+
+A word on the command line wins. A server a host keeps (`server: run: cxt run-llama-cpp-server --foreground` in a
+project of its host artifact) takes a change at its next start; a page of the server can set the keys and restart it.
+
+**Its numbers.** The server starts with `--metrics`: llama.cpp's own counters at `http://127.0.0.1:<port>/metrics`
+(Prometheus' format, `llamacpp:` names - tokens in and out, their speeds, requests being served and waiting), beside
+`/health`, `/props` (the model, the context, the build) and `/slots` (what each slot is doing). A server in the
+foreground keeps its record too (`server.json` of its state, gone when it ends), so `--action=status` knows what runs.

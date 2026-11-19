@@ -364,6 +364,215 @@ class Projects(unittest.TestCase):
         self.host['desc']['projects']['web']['server']['start'] = 'sh ~/start.sh &'
         self.assertEqual(self.cat._project_rows(self.host)[0]['start'], 'sh ~/start.sh &')
 
+    # cx host down <host> --project=<name>: the declared "server: stop" of one project (2026-11-18: every server of a
+    # host on the hosts page with Start, Stop and Status); the host itself is not touched
+
+    def stop_server(self, statuses, stop='sh ~/stop.sh', host_status='up', **kwargs):
+        """Run down_ --project=web on the stub host; its server answers the next of statuses at each check."""
+        server = self.host['desc']['projects']['web']['server']
+        if stop:
+            server['stop'] = stop
+        checks, ran, hosts_stopped = [], [], []
+        def project_status(ctx, hosts):
+            checks.append(hosts[0].get('project'))
+            hosts[0]['project_status'] = {'web': {'status': statuses[min(len(checks), len(statuses)) - 1], 'url': server['url']}}
+        self.cat._project_status_all = project_status
+        self.cat.cm.catch_error = lambda r: r.get('return', 0) > 0
+        self.cat._get_host = lambda ctx, alias: {'return': 0, 'host': self.host}
+        self.cat._status = lambda ctx, h, *a, **k: host_status
+        self.cat._cmd_run = lambda ctx, h, cmd, **k: {'return': 0, 'cmd': 'ssh vm ' + cmd}
+        self.cat._run_local = lambda cmd, **k: ran.append(cmd) or {'returncode': 0}
+        self.cat._up_down = lambda *a, **k: hosts_stopped.append(a) or {'return': 0}
+        with mock.patch.object(module.time, 'sleep') as sleep:
+            r = self.cat.down_({'control': {}}, arg1='vm', project='web', **kwargs)
+        self.assertEqual(hosts_stopped, [])                          # never the host: only its server
+        return r, checks, ran, sleep.call_count
+
+    def test_down_project_runs_its_stop_command_and_waits_until_nothing_answers(self):
+        r, checks, ran, sleeps = self.stop_server(['up', 'up', 'down'])
+        self.assertEqual((r['return'], r['result']), (0, 'stopped and down'), r.get('error'))
+        self.assertEqual(ran, ['ssh vm sh ~/stop.sh'])
+        self.assertEqual((checks, sleeps), (['web', 'web', 'web'], 2))
+        self.assertNotIn('project', self.host)                     # the host itself stays global
+        # a server that answers with an error, or does not answer in time, is running all the same: it is stopped
+        for status in ('unhealthy', 'timeout'):
+            r, _, ran, _ = self.stop_server([status, 'down'])
+            self.assertEqual((r['result'], len(ran)), ('stopped and down', 1), status)
+
+    def test_down_project_stops_nothing_when_nothing_answers(self):
+        r, checks, ran, _ = self.stop_server(['down'])
+        self.assertEqual((r['return'], r['result'], ran, len(checks)), (0, 'already down', [], 1))
+
+    def test_down_project_fails_when_the_server_still_answers(self):
+        clock = iter(range(0, 10000, 20))
+        with mock.patch.object(module.time, 'monotonic', lambda: next(clock)):
+            r, _, ran, _ = self.stop_server(['up'], check_timeout=30)
+        self.assertEqual((r['return'], len(ran)), (1, 1))
+        self.assertIn('still answers', r['error'])
+        r, _, ran, sleeps = self.stop_server(['up'], check_timeout=0)          # no wait: stopped is the answer
+        self.assertEqual((r['return'], r['result'], sleeps), (0, 'stopped', 0))
+
+    def test_down_project_needs_a_stop_command_a_project_and_a_reachable_host(self):
+        r, _, ran, _ = self.stop_server(['up'], stop=None)
+        self.assertIn('declares no "server: stop"', r['error'])
+        self.assertEqual(ran, [])
+        r = self.cat.down_({'control': {}}, arg1='vm', project='nothing')
+        self.assertIn('has no project "nothing"', r['error'])
+        r, _, ran, _ = self.stop_server(['up'], host_status='down')
+        self.assertIn('cannot be reached', r['error'])
+        self.assertEqual(ran, [])
+        # a stop command that fails says so with what it printed
+        self.stop_server(['up'])
+        self.cat._run_local = lambda cmd, **k: {'returncode': 3, 'stderr': 'no such process'}
+        r = self.cat.down_({'control': {}}, arg1='vm', project='web')
+        self.assertEqual(r['return'], 1)
+        self.assertIn('returned 3: no such process', r['error'])
+
+    def test_project_rows_carry_the_stop_command(self):
+        self.assertEqual(self.cat._project_rows(self.host)[0]['stop'], '')
+        self.host['desc']['projects']['web']['server']['stop'] = 'sh ~/stop.sh'
+        self.assertEqual(self.cat._project_rows(self.host)[0]['stop'], 'sh ~/stop.sh')
+
+    def test_down_without_a_project_stops_the_host_as_before(self):
+        called = []
+        self.cat._up_down = lambda ctx, what, *a, **k: called.append((what, k)) or {'return': 0}
+        self.assertEqual(self.cat.down_({'control': {}}, arg1='vm')['return'], 0)
+        self.assertEqual(called, [('down', {'force': False})])
+
+    # "server: run" - the server's command in the foreground - makes it a server the task start-after-restart keeps
+    # (2026-11-18): started (without a window, or in one) and stopped by that task under the project's name, and
+    # started after every restart when its switch is on (cx host autostart)
+
+    def test_a_server_that_declares_run_is_started_and_stopped_by_the_task_that_keeps_it(self):
+        server = self.host['desc']['projects']['web']['server']
+        server['run'] = 'cxt run-some-server --port=8401 --foreground'
+        r, _, ran, _ = self.start_server(['down', 'up'], start=None)
+        self.assertEqual((r['return'], r['result']), (0, 'started and up'), r.get('error'))
+        self.assertEqual(ran, ['ssh vm cxt start-after-restart start --what=web'])
+        r, _, ran, _ = self.start_server(['down', 'up'], start=None, window=True)
+        self.assertEqual(ran, ['ssh vm cxt start-after-restart start --what=web --window'])
+
+        r, _, ran, _ = self.stop_server(['up', 'down'], stop=None)
+        self.assertEqual((r['result'], ran), ('stopped and down', ['ssh vm cxt start-after-restart stop --what=web']))
+
+        rows = self.cat._project_rows(self.host)
+        self.assertEqual((rows[0]['kept'], rows[0]['run']), (True, 'cxt run-some-server --port=8401 --foreground'))
+        self.assertEqual((rows[0]['start'], rows[0]['stop']),
+                         ('cxt start-after-restart start --what=web', 'cxt start-after-restart stop --what=web'))
+
+    def test_a_kept_server_started_another_way_is_stopped_by_its_own_stop_too(self):
+        server = self.host['desc']['projects']['web']['server']
+        server['run'] = 'cxt run-some-server --foreground'
+        # the task's stop first; it still answers (someone started it by hand): its declared stop follows
+        r, _, ran, _ = self.stop_server(['up', 'up', 'down'], stop='cxt run-some-server --action=stop')
+        self.assertEqual(r['result'], 'stopped and down', r.get('error'))
+        self.assertEqual(ran, ['ssh vm cxt start-after-restart stop --what=web', 'ssh vm cxt run-some-server --action=stop'])
+        # the task's stop was enough: the other one is not run
+        r, _, ran, _ = self.stop_server(['up', 'down'], stop='cxt run-some-server --action=stop')
+        self.assertEqual(ran, ['ssh vm cxt start-after-restart stop --what=web'])
+
+    def test_a_kept_server_that_is_down_has_its_keeper_stopped_all_the_same(self):
+        # a supervisor may be starting a server that ends at once, again and again: down stops it
+        self.host['desc']['projects']['web']['server']['run'] = 'cxt run-some-server --foreground'
+        r, _, ran, _ = self.stop_server(['down', 'down'], stop='cxt run-some-server --action=stop')
+        self.assertEqual(ran, ['ssh vm cxt start-after-restart stop --what=web'])          # the keeper's stop only
+        self.assertEqual(r['return'], 0, r.get('error'))
+
+    def test_a_window_is_for_a_kept_server_only(self):
+        r, _, ran, _ = self.start_server(['down'], window=True)                 # "server: start", no "run"
+        self.assertEqual((r['return'], ran), (1, []))
+        self.assertIn('--window is for a server the task start-after-restart keeps', r['error'])
+        self.assertEqual(self.cat._project_rows(self.host)[0]['kept'], False)
+        self.assertIsNone(module.kept_server('web', {'url': 'http://127.0.0.1:1/', 'start': 'x'}))
+        self.assertIsNone(module.kept_server('web', None))
+
+    def autostart(self, answer, access=None, host_status='up', returncode=0, **kwargs):
+        """Run autostart_ on the stub host: the task there answers "answer" (the servers of its -j result)."""
+        self.host['desc']['projects']['web']['server']['run'] = 'cxt run-some-server --foreground'
+        self.host['desc']['projects']['site'] = {'server': {'url': 'http://127.0.0.1:2/', 'start': 'start-site.sh'}}
+        if access:
+            self.host['desc']['access'].update(access)
+        ran = []
+        text = 'TASK: start-after-restart\nweb: on\n' + '-' * 60 + '\n' + json.dumps({'return': 0, 'servers': answer}, indent=2)
+        self.cat.cm.catch_error = lambda r: r.get('return', 0) > 0
+        self.cat._get_host = lambda ctx, alias: {'return': 0, 'host': self.host}
+        self.cat._status = lambda ctx, h, *a, **k: host_status
+        self.cat._cmd_run = lambda ctx, h, cmd, **k: {'return': 0, 'cmd': 'ssh vm ' + cmd}
+        self.cat._run_local = lambda cmd, **k: ran.append(cmd) or (
+            {'returncode': returncode, 'stdout': text if answer is not None else 'cMeta error: unknown action "on"'})
+        return self.cat.autostart_({'control': {}}, arg1='vm', **kwargs), ran
+
+    def test_autostart_says_what_starts_after_a_restart(self):
+        r, ran = self.autostart({'web': {'enabled': True, 'on': True, 'running': True, 'window': False, 'session': 0}})
+        self.assertEqual(r['return'], 0, r.get('error'))
+        self.assertEqual(ran, ['ssh vm cx task run start-after-restart status --what=web --quick -j'])
+        self.assertEqual(r['servers'], {'web': {'enabled': True, 'on': True, 'login': False, 'running': True, 'window': False,
+                                                'session': 0}})
+        self.assertNotIn('site', r['servers'])                         # started another way: not the task's
+
+        # the ssh server of a host whose access says the task keeps it
+        r, ran = self.autostart({'web': {}, 'ssh': {'enabled': True, 'on': False}}, access={'server': 'start-after-restart'})
+        self.assertEqual(ran, ['ssh vm cx task run start-after-restart status --what=web,ssh --quick -j'])
+        self.assertEqual((r['servers']['ssh']['enabled'], r['servers']['ssh']['on'], r['servers']['web']['on']), (True, False, False))
+
+    def test_autostart_switches_one_server_then_says_what_is_on(self):
+        r, ran = self.autostart({'web': {'enabled': True, 'on': True}}, arg2='on', project='web')
+        self.assertEqual(r['return'], 0, r.get('error'))
+        self.assertEqual(ran, ['ssh vm cxt start-after-restart on --what=web',
+                               'ssh vm cx task run start-after-restart status --what=web --quick -j'])
+        self.assertEqual((r['switched'], r['to'], r['servers']['web']['on']), ('web', 'on', True))
+        r, ran = self.autostart({'web': {}, 'ssh': {'enabled': True}}, access={'server': 'start-after-restart'}, arg2='off', ssh=True)
+        self.assertEqual(ran[0], 'ssh vm cxt start-after-restart off --what=ssh')
+
+    def test_autostart_at_login_on_a_windows_host(self):
+        self.host['desc']['os'] = 'windows'
+        r, ran = self.autostart({'web': {'enabled': True, 'on': False, 'login': True}}, arg2='login', project='web')
+        self.assertEqual(r['return'], 0, r.get('error'))
+        self.assertEqual(ran[0], 'ssh vm cxt start-after-restart on --what=web --at=login')
+        self.assertEqual((r['servers']['web']['login'], r['servers']['web']['on'], r['to']), (True, False, 'login'))
+        # a host of another system starts its servers after a restart only
+        self.host['desc']['os'] = 'ubuntu 24.04'
+        r, ran = self.autostart({}, arg2='login', project='web')
+        self.assertEqual((r['return'], ran), (1, []))
+        self.assertIn('for a Windows host', r['error'])
+
+    def test_autostart_refuses_what_the_task_does_not_keep(self):
+        for kwargs, said in (({'arg2': 'on', 'project': 'site'}, 'declares no "server: run"'),
+                             ({'arg2': 'on', 'project': 'nothing'}, 'has no project "nothing"'),
+                             ({'arg2': 'on', 'ssh': True}, 'is not kept by the task'),
+                             ({'arg2': 'on'}, 'which server?'),
+                             ({'arg2': 'on', 'project': 'web', 'ssh': True}, 'which server?'),
+                             ({'arg2': 'maybe', 'project': 'web'}, 'on|login|off')):
+            r, ran = self.autostart({}, **kwargs)
+            self.assertEqual((r['return'], ran), (1, []), kwargs)
+            self.assertIn(said, r['error'], kwargs)
+        r, ran = self.autostart({}, host_status='down')
+        self.assertIn('cannot be reached', r['error'])
+        self.assertEqual(ran, [])
+
+    def test_autostart_on_a_host_with_an_older_task_says_so(self):
+        r, ran = self.autostart(None, returncode=1)                       # asked what is on: no answer, no failure
+        self.assertEqual((r['return'], r['servers']), (0, {}))
+        self.assertIn('an older cmeta-aops there?', r['unknown'])
+        r, ran = self.autostart(None, returncode=1, arg2='on', project='web')
+        self.assertEqual(r['return'], 1)
+        self.assertIn('returned 1', r['error'])
+
+    def test_a_host_without_kept_servers_has_nothing_to_switch(self):
+        self.cat.cm.catch_error = lambda r: r.get('return', 0) > 0
+        self.cat._get_host = lambda ctx, alias: {'return': 0, 'host': self.host}
+        ran = []
+        self.cat._run_local = lambda cmd, **k: ran.append(cmd) or {'returncode': 0}
+        r = self.cat.autostart_({'control': {}}, arg1='vm')
+        self.assertEqual((r['return'], r['servers'], ran), (0, {}, []))
+
+    def test_the_result_after_the_dashes(self):
+        text = 'a line\n' + '-' * 60 + '\n{\n  "return": 0,\n  "servers": {"x": {"on": true}}\n}\n'
+        self.assertEqual(module.json_after_dashes(text), {'return': 0, 'servers': {'x': {'on': True}}})
+        self.assertIsNone(module.json_after_dashes('no dashes here'))
+        self.assertIsNone(module.json_after_dashes('-' * 60 + '\nnot json'))
+        self.assertIsNone(module.json_after_dashes(None))
+
     def test_probe_skips_a_server_of_the_global_environment(self):
         """A project with no venv of its own (a cserver of the host's global cMeta) is probed with the host; before,
         the probe stopped on "project ... needs venv"."""

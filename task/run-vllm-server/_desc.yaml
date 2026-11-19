@@ -1,0 +1,54 @@
+authors: Grigori Fursin
+
+# A server is a live thing: never cached, nothing stored.
+cache: false
+store_global: false
+
+usage: |
+  cx task run run-vllm-server                                     Qwen3-0.6B in vLLM's container on the GPU, port 8868, detached
+  cx task run run-vllm-server --model=Qwen/Qwen3-4B --max_model_len=16384
+  cx task run run-vllm-server --action=status
+  cx task run run-vllm-server --action=logs --lines=100
+  cx task run run-vllm-server --action=stop
+
+  The container: cmeta-vllm-<port> (docker); the record: the state artifact local:vllm-server-<port>; the models,
+  downloaded once by vLLM: the state artifact local:vllm-cache (mounted as its /root/.cache).
+  What a start takes when its command line does not say: config::task-run-vllm-server (below).
+
+# The defaults of a start on this machine (a word on the command line wins): a page of the server sets them, and a
+# server kept by its host (server: run: cxt run-vllm-server --foreground) takes them at its next start.
+
+configs:
+  task-run-vllm-server:
+    desc: What a vLLM server of this machine starts with when its command line does not say (task run-vllm-server); a server that runs takes a change at its next start.
+    keys:
+      model:
+        desc: The model, as Hugging Face names it (<organisation>/<name>); vLLM downloads it once into local:vllm-cache.
+        example: Qwen/Qwen3-0.6B
+        default: Qwen/Qwen3-0.6B
+      image:
+        desc: vLLM's container image, which is the vLLM release (vllm/vllm-openai:v<release>).
+        default: vllm/vllm-openai:v0.31.0
+      max_model_len:
+        desc: The context window in tokens (it must fit in the GPU's memory beside the model).
+        type: int
+        default: 8192
+      gpu_memory_utilization:
+        desc: The share of the GPU's memory vLLM takes for the model and its KV cache, 0.1 to 0.98.
+        type: float
+        default: 0.85
+      served_name:
+        desc: The model's name in /v1/models and in the harnesses; empty - the model's own.
+      max_num_seqs:
+        desc: Requests served at once (vLLM's --max-num-seqs); 0 - vLLM's default.
+        type: int
+        default: 0
+
+# Which of its words are the choices of a run, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read it,
+# the engine never does. What each word means is the comment of its line in run() (api_v1.py).
+cli_help:
+  model: {choice: run}
+  image: {choice: run}
+  max_model_len: {choice: run}
+  gpu_memory_utilization: {choice: run}
+  action: {group: main}

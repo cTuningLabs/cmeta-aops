@@ -5,6 +5,10 @@ authors: Grigori Fursin
 cache: false
 store_global: false
 
+# -gw takes an alias, and also comes bare (the configured gateway): the task category lets it
+cli_params:
+  gw: {type: str, bare: 'the configured gateway (config::default run_ai_gateway_name)'}
+
 usage: |
   cx task run set-ai-gateway --harness=claude                        the choice this machine makes (flag > project > config > login)
   cx task run set-ai-gateway --harness=codex -gw                     the configured gateway (config::default run_ai_gateway_name)

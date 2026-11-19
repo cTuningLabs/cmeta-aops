@@ -29,6 +29,13 @@ MODEL_TASK = 'model,86f0effd07ad454d'
 DEFAULT_MODEL = 'hf-Qwen@Qwen3-8B-GGUF'
 DEFAULT_PORT = 8686
 
+# What a start takes when its command line does not say: the keys of this config (in the local repository: this
+# machine's), else these. A page of the server (or cx config set task-run-llama-cpp-server --meta.<key>=<value>) sets
+# them; a server kept by its host (server: run: cxt run-llama-cpp-server --foreground) takes them at its next start.
+CONFIG = 'task-run-llama-cpp-server'
+BUILT_IN = {'model': DEFAULT_MODEL, 'filename': '', 'compute': 'cuda', 'ctx_size': 32768, 'gpu_layers': 'auto',
+            'alias': '', 'parallel': 1}
+
 
 def listening(host, port, timeout = 1.0):
     """Something accepts connections on host:port."""
@@ -86,6 +93,24 @@ class CTask(InitCTask):
             return r
         return {'return': 0, 'path': r['artifact']['path']}
 
+    def _defaults(self):
+        """The defaults of a start: config::task-run-llama-cpp-server over BUILT_IN (a key empty or absent: built in)."""
+        out = dict(BUILT_IN)
+        try:
+            r = self.cm.access({'category': 'config', 'command': 'read', 'arg1': CONFIG, 'con': False})
+            cfg = r.get('config_cmeta') if r.get('return', 1) == 0 else None
+        except Exception:
+            cfg = None
+        for k in BUILT_IN:
+            if isinstance(cfg, dict) and cfg.get(k) not in (None, ''):
+                out[k] = cfg[k]
+        return out
+
+    @staticmethod
+    def _write_record(folder, rec):
+        with open(os.path.join(folder, 'server.json'), 'w', encoding = 'utf-8') as f:
+            json.dump(rec, f, indent = 1)
+
     @staticmethod
     def _read_record(folder):
         fp = os.path.join(folder, 'server.json')
@@ -116,15 +141,15 @@ class CTask(InitCTask):
     def run(self,
             ctx: dict,
             action: str = 'start',          # start | status | stop | restart
-            model: str = DEFAULT_MODEL,     # the model artifact (cx model ls), a GGUF one
+            model: str = '',                # the model artifact (cx model ls), a GGUF one (default: the config's, else Qwen3-8B)
             filename: str = '',             # which file of the model artifact (its _desc-<file>.yaml); the artifact's first by default
             port: int = DEFAULT_PORT,       # 8686 by default (not llama.cpp's 8080: the busiest port of a developer's machine)
             host: str = '127.0.0.1',        # the address to listen on (0.0.0.0 for other machines - then the key is their only protection: none)
-            compute: str = 'cuda',          # the llama.cpp build: cuda | cpu | metal (the tool is built or installed for it)
-            ctx_size: int = 32768,          # the context window in tokens (Claude Code's first request alone is about 17k: below 24k it fails)
-            gpu_layers: str = 'auto',       # layers on the GPU: auto = llama.cpp fits them to the device memory (its --fit), else a number (-ngl)
-            alias: str = '',                # the model's name in /v1/models and in the harnesses (the file's name by default)
-            parallel: int = 1,              # concurrent requests the server takes
+            compute: str = '',              # the llama.cpp build: cuda | cpu | metal (the tool is built or installed for it; default: the config's, else cuda)
+            ctx_size: int = 0,              # the context window in tokens (default: the config's, else 32768 - Claude Code's first request alone is about 17k: below 24k it fails)
+            gpu_layers: str = '',           # layers on the GPU: auto = llama.cpp fits them to the device memory (its --fit), else a number (-ngl); default: the config's, else auto
+            alias: str = '',                # the model's name in /v1/models and in the harnesses (default: the config's, else the file's name)
+            parallel: int = 0,              # concurrent requests the server takes (default: the config's, else 1)
             timeout: int = 300,             # seconds to wait for the model to load before "start" gives up
             foreground: bool = False,       # keep the server attached to this console (its log on the screen; Ctrl-C ends it)
             unparsed: list = None,          # extra words for llama-server (everything after "--")
@@ -188,6 +213,12 @@ class CTask(InitCTask):
         if action != 'start' and action != 'restart':
             return self.cm.error('--action must be start, status, stop or restart (got "%s")' % action)
 
+        # what the command line does not say: the config of this machine (the server's page sets it), else built in
+        d = self._defaults()
+        model, filename, compute = model or d['model'], filename or d['filename'], compute or d['compute']
+        gpu_layers, alias = gpu_layers or d['gpu_layers'], alias or d['alias']
+        ctx_size, parallel = int(ctx_size or 0) or int(d['ctx_size']), int(parallel or 0) or int(d['parallel'])
+
         if status['running']:
             if con:
                 print('llama.cpp server on %s:%d is up already (pid %s), models: %s' % (host, port, rec.get('pid', '?'), ', '.join(status['models'])))
@@ -226,7 +257,8 @@ class CTask(InitCTask):
         # layers are left to --fit unless a number is given (-ngl): a model larger than the GPU's memory then loads
         # as many layers as fit and keeps the rest on the CPU
         command = [server, '-m', model_path, '--host', host, '--port', str(port), '-c', str(int(ctx_size)),
-                   '--jinja', '--alias', name, '-np', str(int(parallel))]
+                   '--jinja', '--alias', name, '-np', str(int(parallel)),
+                   '--metrics']             # its numbers at /metrics (Prometheus' format): for its page and any scraper
         if str(gpu_layers).strip().lower() not in ('', 'auto'):
             command += ['-ngl', str(int(gpu_layers))]
         command += [str(u) for u in unparsed] if unparsed else []
@@ -236,10 +268,22 @@ class CTask(InitCTask):
             print('RUN: %s' % ' '.join(command))
             print('     (log: %s)' % log)
         if foreground:
+            # in this console, its log on the screen (a host keeps the server so: server: run); its record all the
+            # same, so that the status and the server's page know what runs, and gone when it ends
+            p = subprocess.Popen(command)
+            self._write_record(folder, {'pid': p.pid, 'port': port, 'host': host, 'model': model, 'model_path': model_path,
+                                        'alias': name, 'compute': compute, 'ctx_size': int(ctx_size), 'gpu_layers': str(gpu_layers),
+                                        'parallel': int(parallel), 'command': command, 'foreground': True,
+                                        'started': time.strftime('%Y-%m-%dT%H:%M:%S'), 'log': ''})
             try:
-                rc = subprocess.call(command)
+                rc = p.wait()
             except KeyboardInterrupt:
+                p.terminate()
                 rc = 0
+            try:
+                os.remove(os.path.join(folder, 'server.json'))
+            except OSError:
+                pass
             return {'return': 0, 'port': port, 'returncode': rc, 'foreground': True}
 
         with open(log, 'ab') as out:
@@ -250,9 +294,9 @@ class CTask(InitCTask):
                 p = subprocess.Popen(command, stdout = out, stderr = subprocess.STDOUT, stdin = subprocess.DEVNULL,
                                      start_new_session = True)
         rec = {'pid': p.pid, 'port': port, 'host': host, 'model': model, 'model_path': model_path, 'alias': name,
-               'compute': compute, 'command': command, 'started': time.strftime('%Y-%m-%dT%H:%M:%S'), 'log': log}
-        with open(os.path.join(folder, 'server.json'), 'w', encoding = 'utf-8') as f:
-            json.dump(rec, f, indent = 1)
+               'compute': compute, 'ctx_size': int(ctx_size), 'gpu_layers': str(gpu_layers), 'parallel': int(parallel),
+               'command': command, 'started': time.strftime('%Y-%m-%dT%H:%M:%S'), 'log': log}
+        self._write_record(folder, rec)
 
         # the model loads: /health answers 503 meanwhile, 200 when ready
         started = time.monotonic()

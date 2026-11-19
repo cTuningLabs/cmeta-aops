@@ -302,6 +302,8 @@ projects:
       #   - https://my-site.example/healthz
       # start: setsid nohup ~/projects/my-server/start.sh > ~/cmeta-tests/my-server.log 2>&1 < /dev/null &
       #                               # optional: run ON THE HOST by "cx host up <host> --project=my-server"
+      # stop: ~/projects/my-server/stop.sh
+      #                               # optional: run ON THE HOST by "cx host down <host> --project=my-server"
     # sync: {repos_path: ..., default: copy, repos: [...], after: [...]}
 
   cserver:                       # a server of the host's GLOBAL cMeta: no venv; path and home are the host's
@@ -319,8 +321,71 @@ there unless the server already answers, then checks `server.url` every 5 s unti
 (120 s; 0 = no wait) runs out; the host page of the cserver shows a Start button and the command for a server
 that does not answer. Like an `after_restart` line, it must detach (`setsid nohup ... &` with its output
 redirected), or ssh waits for the server. A project without a `venv` is a server of the host's global
-environment: `probe` probes it with the host, and `--project` selects it only for `up` (it has no environment of
-its own).
+environment: `probe` probes it with the host, and `--project` selects it only for `up` and `down` (it has no
+environment of its own).
+
+`server.stop` is the command that stops the server on the host. `cx host down <host> --project=<name>` runs it
+there unless nothing answers at `server.url` already, then checks that URL every 2 s until nothing answers or
+`--check_timeout` (30 s; 0 = no wait) runs out. The host itself is not touched: without `--project`, `down` stops
+the host, as before. A server that answers with an error, or not in time, counts as running and is stopped. The
+host page offers it as a Stop button beside Start.
+
+### A server the host keeps: `server.run`
+
+A server can declare its command **in the foreground** instead of a start and a stop command:
+
+```yaml
+projects:
+  my-server:
+    path: /home/user/projects/my-server
+    cmeta:
+      home: /home/user/CMETA
+    server:
+      url: http://127.0.0.1:8401/health
+      run: cxt run-my-server --foreground      # its command in the foreground: the task start-after-restart keeps it
+      # workdir: /home/user/work               # optional: the folder it starts in (default: the user's)
+      # stop: cxt run-my-server --action=stop  # optional: also stops one that was started another way
+```
+
+The task [`start-after-restart`](../../task/start-after-restart/README.md) on the host then keeps that server under
+the project's name: it starts it without a window, starts it again when it ends, stops it, and starts it after
+every restart of the host, before anyone logs in, when that is switched on. No `start` or `stop` command is needed:
+
+```bash
+cx host up my-host --project=my-server              # cxt start-after-restart start --what=my-server, on the host
+cx host up my-pc --project=my-server --window       # a Windows host: in a console window of its own, its output in it
+cx host down my-host --project=my-server            # cxt start-after-restart stop --what=my-server
+cx host autostart my-host                           # each kept server: on, off (registered) or not registered; running?
+cx host autostart my-host on --project=my-server    # it starts after every restart
+cx host autostart my-pc login --project=my-server   # a Windows host: when you log in there, in a window of its own
+cx host autostart my-host off --project=my-server   # ... no longer (neither); a server that runs keeps running
+```
+
+- `down` runs the task's stop first. A server that still answers was started another way (by hand, by its own
+  task): its `server.stop`, when it declares one, follows. A kept server that is down already has its supervisor
+  stopped all the same: one that waits to start it again (a server that ends at once) would go on trying.
+- `login` (a Windows host) starts the server when the user logs in there, in a console window of its own, in that
+  user's session: what it opens shows on the desktop (a page that opens Far or a shell needs that). It is the user's
+  own Run key, so no administrator is asked; it switches the start after a restart off, and `on` removes it: one or
+  the other.
+- The first `autostart ... on` of a server registers its start on the host. On Windows that needs an administrator
+  there: Windows asks (UAC). After that `on` and `off` ask nothing. In the session without a login Windows cannot
+  ask: the command then says what to run once in a terminal of that machine.
+- A project that declares both `run` and `start` is a kept server: `start` is for a cmeta-aops from before 0.75.1
+  that reads the same artifact.
+- The ssh server of a host is kept the same way when its access says so (the portable OpenSSH server of
+  `run-openssh`, not the system's own):
+
+  ```yaml
+  access:
+    port: 2222
+    server: start-after-restart      # cx host autostart my-host on|off --ssh
+  ```
+
+The host page of the cserver shows a kept server with the button **AutoStart on Boot** (or **Turn off autostart on
+boot**) and, on a Windows host, **AutoStart at Login (window)** (or **Turn off autostart at login**) and a
+**window** tick beside Start (Start, and its tick, show only while the server does not answer). The rows of `cx host
+ls` carry `kept` and `run` for such a project, and `ssh_kept` for such a host.
 
 `server.url` is checked on the host (through its ssh: a local address stays local); `server.public` lists the
 URLs of the same server as the world sees them - a site behind a tunnel or a proxy - checked from this machine

@@ -1,12 +1,16 @@
 authors: Grigori Fursin
 
-# A cserver and an ssh server of this machine started after every restart, before anyone logs in (api_v1.py, README.md):
-# a Windows startup task as the user (S4U, no stored password), crontab @reboot on Linux and macOS.
+# The servers of this machine kept: the cserver, the ssh server, any server its host artifact declares (projects:
+# <name>: server: run) - started after every restart, before anyone logs in, and started or stopped now (api_v1.py,
+# README.md): a Windows startup task as the user (S4U, no stored password), crontab @reboot on Linux and macOS.
 #
 #   cx task run start-after-restart                                          status: enabled? running? its log
 #   cx task run start-after-restart enable --what=cserver,ssh --workdir=<folder>     ssh: the fleet's key (cx host whoami)
 #   cx task run start-after-restart disable --what=cserver,ssh
+#   cx task run start-after-restart off|on --what=cserver                     the switch: no administrator needed
+#   cx task run start-after-restart on|off --what=cserver --at=login          Windows: when the user logs in, in a window
 #   cx task run start-after-restart start|stop --what=cserver,ssh             now, as a restart starts it
+#   cx task run start-after-restart start --what=<name> --window              in a console window of its own (Windows)
 
 cache: False
 

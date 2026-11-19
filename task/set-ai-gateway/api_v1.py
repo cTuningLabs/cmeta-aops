@@ -46,13 +46,19 @@ class CTask(InitCTask):
         except Exception:
             return {}
 
-    def choose(self, harness, gateway = '', gw = '', ln = False, project = ''):
-        """-> (the gateway alias or 'login', how it was chosen, an error or '')."""
+    def choose(self, harness, gateway = '', gw = '', ln = False, project = '', recorded = ''):
+        """-> (the gateway alias or 'login', how it was chosen, an error or ''). The order: a flag, what the project
+        ran with last ("recorded": run-ai keeps it in the project's run_ai_config), what the project declares
+        ("project": its ai_gateway), this machine's config, else the tool's own login."""
         harness = str(harness or '').strip().lower()
-        if ln:
-            return LOGIN, 'the flag -ln', ''
         named = str(gateway or '').strip()
-        if not named and gw not in (None, False, '', 'False', 'false'):
+        asked = gw not in (None, False, '', 'False', 'false')
+        if ln:
+            # two flags that say opposite things are not guessed at: -ln used to win without a word
+            if asked or (named and named.lower() != LOGIN):
+                return '', '', '-ln (the tool\'s own login) and -gw / --gateway (a gateway) were both given: one of them'
+            return LOGIN, 'the flag -ln', ''
+        if not named and asked:
             named = '' if _bare(gw) else str(gw).strip()
             if not named:
                 cfg = self._config()
@@ -62,6 +68,10 @@ class CTask(InitCTask):
                 return named, 'the flag -gw (config %s)' % CONFIG_NAME, ''
         if named:
             return (LOGIN if named.lower() == LOGIN else named), 'the flag --gateway', ''
+        if str(recorded or '').strip():
+            # what this project ran with last: kept until a flag says otherwise, whatever the config says by now
+            r = str(recorded).strip()
+            return (LOGIN if r.lower() == LOGIN else r), "the project's run_ai_config (its last run; -ln or -gw=<alias> changes it)", ''
         if str(project or '').strip():
             p = str(project).strip()
             return (LOGIN if p.lower() == LOGIN else p), "the project's _desc.yaml (ai_gateway)", ''
@@ -83,13 +93,14 @@ class CTask(InitCTask):
             gw: str = '',           # the configured gateway (bare -gw), or an alias (-gw=<alias>)
             ln: bool = False,       # the tool's own login, whatever the config says (-ln)
             project: str = '',      # what the project's _desc.yaml says (ai_gateway: <alias> | login) - run-ai passes it
+            recorded: str = '',     # what the project ran with last (run_ai_config.gateway of its _desc.yaml: <alias> | login) - run-ai passes it
             model: str = '',        # the model the caller wants (empty: the gateway's default for this harness)
             connect: bool = True,   # for a gateway: also what the harness needs (environment, words, model); off = the choice only
     ):
         """
-        Login or a gateway for an AI harness: the choice (flag > the project's _desc.yaml > config::default
-        run_ai_gateway_<harness> > run_ai_gateway + run_ai_gateway_name > login), then, for a gateway, what the
-        harness needs from the ai.gateway category.
+        Login or a gateway for an AI harness: the choice (flag > what the project ran with last > what its
+        _desc.yaml declares > config::default run_ai_gateway_<harness> > run_ai_gateway + run_ai_gateway_name >
+        login), then, for a gateway, what the harness needs from the ai.gateway category.
 
             cx task run set-ai-gateway --harness=claude                    # the choice this machine makes, and the environment it means
             cx task run set-ai-gateway --harness=codex -gw                 # the configured gateway
@@ -97,7 +108,7 @@ class CTask(InitCTask):
         """
         con = ctx['control'].get('con', False)
         harness = str(harness or '').strip().lower()
-        choice, how, err = self.choose(harness, gateway, gw, ln, project)
+        choice, how, err = self.choose(harness, gateway, gw, ln, project, recorded)
         if err:
             return self.cm.error(err)
         out = {'return': 0, 'harness': harness, 'gateway': choice, 'how': how}
@@ -116,7 +127,9 @@ class CTask(InitCTask):
                             'model': model, 'con': False})
         if r.get('return', 1) > 0:
             return self.cm.error('gateway "%s" for %s: %s' % (choice, harness, r.get('error', 'cannot connect')))
-        for k in ('env', 'args', 'model', 'wire', 'notes', 'opencode_config', 'claude_settings', 'base_url', 'provided_by'):
+        # own_login: the gateway is a pass-through for the harness's own account - a login run in all but its address
+        for k in ('env', 'args', 'model', 'wire', 'notes', 'opencode_config', 'claude_settings', 'base_url', 'provided_by',
+                  'own_login'):
             if k in r:
                 out[k] = r[k]
         if con:

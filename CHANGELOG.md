@@ -2,6 +2,120 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.76.0
+- **A gateway that passes a harness's own login on: `auth.header: login`, and `upstream`.** An `ai.gateway` artifact
+  named a place with a key of its own; it can now also name a pass-through - a server between a harness and the
+  address its requests go to, one that logs or forwards them. `auth: {header: login}` says the harness keeps its own
+  account and only the address changes: `connect` reads no secret, gives Claude Code the address alone (no key
+  variable, no helper, no settings - the session stays a login session) and Codex a provider that asks for its own
+  login (`requires_openai_auth`), and marks the run `own_login`; `set-ai-gateway` hands the mark on, and run-claude
+  and run-codex then clean the environment as for a login run (a key of the user's own would go in the login's
+  place; a login kept as a token stays). OpenCode has no recipe for it and is told so; `test` says it has no login
+  to send. `upstream: <alias>` names the gateway a pass-through sends its traffic to: what the artifact does not say
+  itself - the wires, the catalog, the secret's name, the models - it takes from that gateway, so they change in one
+  place. A pass-through that names the task providing it (`provided_by`) and has no catalog to read must at least
+  accept a connection: `connect` fails with the start command when nothing listens there. run-ai's note of a
+  gateway session no longer says the claude.ai connectors are unavailable when the gateway passes the login on.
+- **A run keeps its login or its gateway: `run_ai_config.gateway`.** A project recorded the harness, the model and
+  the effort of its last run, and chose the gateway afresh each time: a session started with `-gw=<alias>` or `-ln`
+  and started again without a flag went to this machine's default - another account, without a word. The choice of a
+  run (an alias, or `login`) is now recorded with its harness and taken by the next run without a flag, before what
+  the project declares (`ai_gateway`) and before the config; a flag changes it and is recorded in turn. A gateway
+  that is not on this machine - recorded, named or configured - stops the run before anything is started, with its
+  name and, for a recorded one, the two ways out (`-ln`, `-gw=<another>`): never another gateway or the login in its
+  place. `-ln` together with a gateway flag is an error (it used to win silently). A bare `-gw` shows the gateways
+  the harness can use and asks which one (Enter = this machine's default; `-q`, no console or no terminal: the
+  default, as before). `--gw_default[=<alias>]` runs through the gateway and makes it this machine's default,
+  `--gw_unset` removes the default; the same without a run: `cx ai.gateway default [<alias>] [--harness=<h>]
+  [--unset]`, and `cx ai.gateway pick`. A dry run changes neither the config nor the record.
+- **A declared server is stopped as it is started: `server: stop`, `cx host down <host> --project=<name>`.** A
+  project of a host declared the command that starts its server (`server: start`, `cx host up <host>
+  --project=<name>`); it may now declare the one that stops it. `cx host down <host> --project=<name>` runs it on the
+  host unless nothing answers at `server.url` already, then checks that URL every 2 s until nothing answers or
+  `--check_timeout` (30 s; 0 = no wait) runs out. The host itself is not touched - without `--project`, `down` stops
+  a host, as before. A server that answers with an error, or not in time, counts as running. The rows of `cx host
+  ls` / `status` carry `stop` beside `start`.
+- **A host keeps the servers it declares: `server: run`, `cx host autostart`, and start-after-restart for any
+  server.** The task start-after-restart kept two servers, the cserver and the ssh server. A project of a host
+  artifact may now declare its server's command in the foreground - `server: run: <command>` (and `workdir`) - and the
+  task keeps that server under the project's name on the machine the artifact is (`cx host whoami`): `--what=<name>`
+  starts it, starts it again when it ends, stops it, and starts it after every restart, before anyone logs in. `cx
+  host up|down <host> --project=<name>` go through the task for such a server (no `start` or `stop` command; a
+  declared `stop` still ends one that was started another way), and `cx host autostart <host> [on|off
+  --project=<name> | --ssh]` says and switches what starts after a restart there (`--ssh`: a host whose `access` says
+  `server: start-after-restart`). The task has three new things for it:
+  - **`off` and `on`, a switch that needs no administrator.** `enable` and `disable` register and remove a startup
+    task, which on Windows asks for an administrator each time. `off` keeps the registered start and makes a restart
+    pass it over; `on` makes it a restart's again, as registered (and registers what is not registered yet). A start
+    that is asked for runs whatever the switch says. `enable` says what to do where Windows cannot ask (the session
+    without a login).
+  - **A stop the supervisor obeys.** The supervisor now ends its own server when `stop` asks, and goes. Whoever asks
+    needs no right over those processes: a console that is not an administrator's, or a page served from another
+    session, stops a server that was started without a login - no question for an administrator. A supervisor that
+    does not go in 15 s, or one from before this version, is ended as before.
+  - **A start by the system, without a window or in one: `start --window`.** On Windows a server that is not
+    registered was started as a child of the command, and a command that is run with a time limit (`cx host up
+    --project`, the Start of the hosts page) ends its children when it returns: the server was gone a second later.
+    It is now started by the system as a process of its own (`start_by_system` in `ctask.py`, for any task that
+    starts a server), without a window, with the account's own environment as after a restart. `--window` (`cx host
+    up <host> --project=<name> --window`) starts it in a console window of its own, its output in it; closing the
+    window stops it.
+  `status --quick` says what is registered and runs without asking a port; `status` of a declared server asks it at
+  its own URL.
+- **A server at login, in a window: `--at=login` (Windows), `cx host autostart <host> login --project=<name>`.** A
+  start after a restart runs in the session without a login, where a server has no desktop: what it opens (Far, a
+  shell, a folder - from the cserver's pages) shows nowhere. `start-after-restart on|enable --what=<server>
+  --at=login` starts the server when the user logs in instead, in a console window of its own in the user's session: a
+  value of the user's own Run key (`cMeta <server> at login`) runs `<server>.login.cmd` beside the logs, so no
+  administrator is asked, also from a page served in the session without a login. One or the other: the start at
+  login switches the start after a restart off, `on` without `--at` removes the start at login, `off --at=login`
+  removes only it, `off` both. `status` says `at login: ON`; the rows of `cx host autostart` say `at login`. Linux and
+  macOS start a server at the boot (crontab) and refuse `--at=login`.
+- **A kept server's cMeta command runs with `-q`, and `down` stops the supervisor of one that is down.** A supervisor
+  has no terminal: a declared `run: cxt <task> ...` that asked which of several tools or models to take waited for an
+  answer, ended, and was started again every 30 s. The supervisor now adds `-q` to a command that begins with `cx`,
+  `cxt` or `cmeta` (not twice). And `cx host down <host> --project=<name>` of a kept server that does not answer still
+  stops its supervisor, which may be waiting to start it again; a declared `stop` is then not run.
+- **Which run a request comes from: `run_header` and `CMETA_AI_RUN`.** run-ai puts the cMeta artifact it runs from,
+  its conversation and its run into `CMETA_AI_RUN` (`project=<cRef>;conversation=<id>;run=<stamp>`, percent-encoded).
+  An `ai.gateway` artifact that names a header for it (`run_header: x-cmeta-run`) - a server of one's own that keeps
+  a line per request - is sent it with every request: `connect` gives Claude Code `ANTHROPIC_CUSTOM_HEADERS`, Codex
+  its provider's `env_http_headers` (the variable's name on the command line, never the value), OpenCode its
+  provider's `headers`. A gateway without `run_header` is never sent it. The rows of `cx ai.gateway ls` carry
+  `upstream`. The harness tasks ask for their gateway through one helper (`ctask.choose_gateway`): where the task
+  set-ai-gateway is not found (a trimmed copy of cmeta-aops) a run is a login run, and a gateway asked for an error.
+- **run-ai says what a run talks to.** Every run prints a `gateway:` line in its header before the harness starts:
+  `none - <harness> on its own login, its own account pays` or the gateway's alias, its address, where a pass-through
+  sends the traffic on (`-> <upstream>`) and who pays - with where the choice came from (a flag, the project's last
+  run, its `_desc.yaml`, the config, the default).
+- **A bare `-gw` works from the command line: an option may say what it means without a value (`bare`).** Since
+  2026-10-30 an option that takes a value stops the run when it comes without one (`--version` instead of
+  `--version=13.4`). run-ai's `-gw` and `--gw_default` take an alias and, bare, show the gateways to choose from -
+  and stopped with "needs a value" (the tests called run-ai directly, not through the command line); a bare
+  `--write` (all) too. A task now describes such an option with what its
+  bare form means (`cli_params: {gw: {type: str, bare: "the gateways of this machine to choose from"}}`), and the
+  task category lets it come bare: run-ai declares `gw`, `gw_default` and `write`, set-ai-gateway `gw`. And a list of
+  gateways that finds its input closed (on Windows a `NUL` input looks like a terminal) takes this machine's default,
+  as a run with `-q` does, instead of stopping; an empty line now stands between the list and its question.
+- **run-ai's list of models through a gateway (`--list_models`, what the pages' AI context reads).** A gateway that
+  passes the harness's own login on (`auth.header: login`) has no catalog of its own: it now lists the harness's own
+  models, as the login does, instead of none. A gateway whose catalog does not answer - a model server that is down -
+  says why ("no models: the catalog of the anthropic wire: ...") instead of an empty list.
+- **A vLLM server on this machine: the task `run-vllm-server`.** vLLM's own container image (`vllm/vllm-openai`,
+  v0.31.0 by default) with the GPU passed in (`--gpus all`, through `container-run`), its port published on this
+  machine (8868; vLLM's 8000 stays inside), the models and vLLM's compiled kernels kept in the state artifact
+  `local:vllm-cache` (mounted as the container's `/root/.cache`), `HF_TOKEN` passed through a temporary env file:
+  `--action=start|status|logs|stop|restart`, detached or `--foreground` (a host keeps it so: `server: run`), a start
+  that waits for `/health` and shows the container's last line meanwhile, a container of an earlier start that ended
+  removed by its name. Its defaults - model, image, context, the share of the GPU's memory, served name, requests at
+  once - in `config::task-run-vllm-server` (its `configs:` block).
+- **run-llama-cpp-server: its defaults in a config, its numbers, its record in the foreground.** What a start takes
+  when its command line does not say - the model, the file, the build (`compute`: the hardware), the context, the GPU
+  layers, the alias, the requests at once - comes from `config::task-run-llama-cpp-server` (declared in its `configs:`
+  block), else as before: a page of the server, or `cx config set`, changes what the next start serves, also for a
+  server a host keeps. The server starts with `--metrics` (llama.cpp's own counters at `/metrics`). A server in the
+  foreground writes its record too (`server.json`, gone when it ends), so `--action=status` knows what runs.
+
 ## 0.75.0
 - **Sensitivity and access: a short course page, `cserver.cmeta.sensitivity`.** Eight lessons with Back / Next: why
   labels, labelling a repository and an artifact, the scope of a call, people and their records, writes under a scope,

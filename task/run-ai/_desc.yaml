@@ -46,6 +46,13 @@ cache: False
 params_map:
   arg2: prompt       # cxt run-ai [--project=...] "the prompt" -- <harness flags>
 
+# The switches that take a word and also mean something without one: the task category lets them come bare
+# ("bare" says what a bare one means)
+cli_params:
+  gw: {type: str, bare: 'the gateways of this machine to choose from (nobody to ask - its default)'}
+  gw_default: {type: str, bare: 'a gateway chosen from the list becomes the default'}
+  write: {type: str, bare: 'all'}
+
 uses:
   - task: runner,1e48cc0c5f6041a5
 

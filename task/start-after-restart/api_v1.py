@@ -1,23 +1,32 @@
 """
-start-after-restart - start a cserver and an ssh server of this machine after every restart, before anyone logs in
-(README.md):
+start-after-restart - keep the servers of this machine: start them after every restart, before anyone logs in, and
+start or stop them now (README.md). A server is the cserver, the ssh server, or any server the host artifact of this
+machine declares with its command in the foreground (projects: <name>: server: run):
 
   cx task run start-after-restart                                   status: what is enabled here, what runs, its log
   cx task run start-after-restart enable --what=cserver,ssh         ssh: the fleet's key for this machine (cx host whoami)
   cx task run start-after-restart enable --what=cserver             only the cserver
+  cx task run start-after-restart enable --what=<declared server>   a server of the host artifact (server: run)
   cx task run start-after-restart disable --what=cserver,ssh        no start after a restart any more (those running keep running)
+  cx task run start-after-restart off|on --what=cserver             the switch: the registered start kept, a restart passes it over (no administrator)
+  cx task run start-after-restart enable --what=cserver --at=login  Windows: started when the user logs in, in a window (no administrator)
   cx task run start-after-restart start|stop --what=cserver,ssh     now, as a restart would start it (and stop it)
+  cx task run start-after-restart start --what=cserver --window     ... in a console window of its own (Windows)
   cx task run start-after-restart run --what=cserver                what a restart runs (waits for Tailscale, keeps it up)
   --workdir=<folder>                                                the folder the servers start in (default: the user's)
 
 Windows: a task of the Task Scheduler per server (folder \\cMeta\\), at startup, as the user who enabled it, with no
 login and no stored password (S4U), on battery too, with no time limit; registering and removing one needs an
-administrator - enable and disable ask Windows for one (UAC) when this console is not one. Linux and macOS: a line in
-the user's crontab, @reboot - cron starts it as the user at the boot. The server runs under a supervisor of this
-task (`run`): it waits until the Tailscale address exists, starts the server in the foreground and starts it again
-when it ends, until `stop`; its log and records in log::local:start-after-restart. The supervisor
-starts in the user's folder (always there) and moves into --workdir: a folder gone since the enable is logged and the
-servers start in the user's folder - a restart never fails over it.
+administrator - enable and disable ask Windows for one (UAC) when this console is not one; off and on need none.
+At login (Windows, --at=login): a value of the user's Run key and a .cmd beside the logs - the server starts when the
+user logs in, in a window of its own, in the user's session (what it opens shows on the desktop); one or the other:
+the login start switches the boot start off, and the other way round.
+Linux and macOS: a line in the user's crontab, @reboot - cron starts it as the user at the boot. The server runs under
+a supervisor of this task (`run`): it waits until the Tailscale address exists, starts the server in the foreground
+and starts it again when it ends, until `stop` - which it obeys itself: it ends its server and goes. Its log and
+records are in log::local:start-after-restart. The supervisor starts in the user's folder (always there) and moves
+into --workdir: a folder gone since the enable is logged and the servers start in the user's folder - a restart never
+fails over it.
 
 Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
@@ -32,18 +41,23 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.parse
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive
+from task_c36be4b9314a45e0.api.ctask import InitCTask, boot_time, recorded_process_alive, start_by_system
 
 TASK = 'start-after-restart,9bfa8da390e84d16'
 LOG_ARTIFACT = 'start-after-restart'
-WHAT = ('cserver', 'ssh')
+WHAT = ('cserver', 'ssh')      # the servers the task knows by itself; any other name is one the host artifact declares
+ACTIONS = ('status', 'enable', 'disable', 'on', 'off', 'start', 'stop', 'run')
 WIN_FOLDER = '\\cMeta\\'
 CRON_MARK = '# cmeta start-after-restart '
 TAILSCALE_CLI = ['C:\\Program Files\\Tailscale\\tailscale.exe', '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
                  '/opt/homebrew/bin/tailscale', '/usr/local/bin/tailscale', '/usr/bin/tailscale']
 RETRY_SECONDS = 30             # a server that ended is started again after this
 LOG_KEEP_BYTES = 5_000_000     # a log above this is renamed to <name>.log.old at the next start
+STOP_SECONDS = 15              # stop waits this long for a supervisor to end its server and go, before it ends them itself
+RUN_KEY = 'Software\\Microsoft\\Windows\\CurrentVersion\\Run'      # HKEY_CURRENT_USER: what starts when this user logs in
+ATS = ('boot', 'login')        # when a server starts by itself: at the boot (before any login), or when the user logs in
 
 
 def tailscale_cli():
@@ -63,11 +77,12 @@ def tailscale_address():
     return next((l.strip() for l in out.splitlines() if re.fullmatch(r'100\.\d+\.\d+\.\d+', l.strip())), '')
 
 
-def probe(address, port, what, timeout=5.0):
+def probe(address, port, what, timeout=5.0, path='/'):
     """Whether the server answers as such a server does: 'answers' (the cserver's HTTP status line, an ssh server's
     banner), 'silent' (the connection is taken and nothing comes back - a server that hangs, or on macOS a third-party
     Python the system keeps off the network: the kernel takes the connection, the program never gets it), or
-    'closed'. A connection alone says too little."""
+    'closed'. A connection alone says too little. path: what an HTTP server is asked for (a declared server: the
+    path of its own URL, its health check)."""
     import socket
     try:
         s = socket.create_connection((address or '127.0.0.1', int(port)), timeout=timeout)
@@ -76,7 +91,8 @@ def probe(address, port, what, timeout=5.0):
     try:
         s.settimeout(timeout)
         if what == 'cserver':
-            s.sendall(b'GET / HTTP/1.0\r\nHost: start-after-restart\r\n\r\n')
+            asked = re.sub(r'[^\x21-\x7e]', '', str(path or '/')) or '/'
+            s.sendall(b'GET ' + asked.encode('ascii') + b' HTTP/1.0\r\nHost: start-after-restart\r\n\r\n')
         data = s.recv(16)
         return 'answers' if data.startswith(b'HTTP/' if what == 'cserver' else b'SSH-') else 'silent'
     except OSError:
@@ -118,6 +134,21 @@ def kill_group(pid):
             except OSError:
                 return
         time.sleep(2)
+
+
+def end_group(pgid):
+    """Ends what is left of a process group whose leader has gone (POSIX: a supervisor that ended its server and
+    went - a process of that server's own may remain). The group only, never a process by its number: the leader's
+    number may be another program's by now."""
+    if os.name == 'nt':
+        return
+    import signal
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(int(pgid), sig)
+        except (OSError, TypeError, ValueError):
+            return
+        time.sleep(1)
 
 
 def can_terminate(pid):
@@ -179,6 +210,41 @@ def windows_session():
     return None
 
 
+def command_words(line):
+    """What runs a declared command (server: run) without this console's PATH. One that begins with cx, cxt or cmeta
+    is run by the Python cMeta runs on (python -m cmeta ...: a restart has no PATH to find the launchers with), as a
+    list of words, with -q; any other command goes to the system's shell as it is written (Windows: one line for
+    cmd.exe)."""
+    line = str(line or '').strip()
+    try:
+        words = shlex.split(line, posix=os.name != 'nt')
+    except ValueError:
+        words = []
+    if os.name == 'nt':
+        # the quotes around a part of a word are the shell's, not the program's: "--x=a b" and --x="a b" are --x=a b
+        words = [re.sub(r'"([^"]*)"|\'([^\']*)\'', lambda m: m.group(1) if m.group(1) is not None else m.group(2), w)
+                 for w in words]
+    head = os.path.basename(words[0]).lower() if words else ''
+    head = head[:-4] if head.endswith('.exe') else head
+    # a server kept by this task has no one to answer a question (2026-11-19: a llama.cpp start asked which cached
+    # Python to take, and ended): a cMeta command runs with -q, its defaults taken
+    quiet = [] if ('-q' in words or '--quiet' in words) else ['-q']
+    if head in ('cx', 'cmeta'):
+        return [sys.executable, '-m', 'cmeta'] + words[1:] + quiet
+    if head == 'cxt':
+        return [sys.executable, '-m', 'cmeta', 'task', 'run'] + words[1:] + quiet
+    return 'cmd.exe /d /c ' + line if os.name == 'nt' else ['/bin/sh', '-c', line]
+
+
+def url_endpoint(url):
+    """(the host, the port) a server's URL names (http://host:port/...), or ('', 0)."""
+    try:
+        u = urllib.parse.urlsplit(str(url or ''))
+        return u.hostname or '', int(u.port or (443 if u.scheme == 'https' else 80)) if u.hostname else 0
+    except ValueError:
+        return '', 0
+
+
 class CTask(InitCTask):
     """
     """
@@ -189,8 +255,8 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             ctx: dict,
-            action: str = 'status',          # status, enable, disable, start, stop, run (what a restart runs)
-            what: str = 'cserver',           # cserver, ssh or both: cserver,ssh
+            action: str = 'status',          # status, enable, disable, on, off, start, stop, run (what a restart runs)
+            what: str = 'cserver',           # cserver, ssh, a server the host artifact of this machine declares (server: run), or several: cserver,ssh
             cserver_host: str = 'tailscale', # the address the cserver listens on: tailscale (its address), 127.0.0.1 ...
             cserver_port: int = 8004,        # the cserver's port
             ssh_host: str = '',              # the host artifact this machine is: the key the fleet reaches it with (run-openssh --host); default: cx host whoami
@@ -199,19 +265,19 @@ class CTask(InitCTask):
             wait: int = 600,                 # seconds a restart waits for the Tailscale address before it starts anyway
             delay: int = 30,                 # seconds after the boot before the start (the network, Tailscale)
             workdir: str = '',               # the folder the servers start in (their current folder); empty: the user's folder
+            window: bool = False,            # start: in a console window of its own, the server's output in it (Windows; closing the window stops it)
+            quick: bool = False,             # status: what is registered and what runs only - no port is asked, the machine is not looked at
+            at: str = '',                    # enable, on: boot (the default) or login (Windows: when the user logs in, in a window); off, disable: that one only (default: both)
     ):
         """
-        Start a cserver and an ssh server of this machine after every restart, before anyone logs in (see the module
-        docstring): status (the default), enable, disable, start, stop, run.
+        Keep the servers of this machine - the cserver, the ssh server, any server its host artifact declares: start
+        them after every restart, before anyone logs in, and start or stop them now (see the module docstring):
+        status (the default), enable, disable, on, off, start, stop, run.
         """
         self.con = ctx['control'].get('con', False)
         action = str(action or 'status').lower()
-        if action not in ('status', 'enable', 'disable', 'start', 'stop', 'run'):
-            return self.cm.error(f'unknown action "{action}": use status, enable, disable, start, stop or run')
-        whats = [w.strip().lower() for w in str(what or 'cserver').split(',') if w.strip()]
-        unknown = [w for w in whats if w not in WHAT]
-        if unknown or not whats:
-            return self.cm.error(f'--what takes cserver, ssh or cserver,ssh (got "{what}")')
+        if action not in ACTIONS:
+            return self.cm.error(f'unknown action "{action}": use {", ".join(ACTIONS[:-1])} or {ACTIONS[-1]}')
         name = str(name or '')
         if name and not re.fullmatch(r'[A-Za-z0-9_-]+', name):
             return self.cm.error('--name may have letters, digits, "_" and "-" only')
@@ -221,11 +287,42 @@ class CTask(InitCTask):
                          'wait': int(wait), 'delay': int(delay)}
         except (TypeError, ValueError):
             return self.cm.error('--cserver_port, --ssh_port, --wait and --delay are numbers')
+        self.window = bool(window)
+        self._host = None
+        self.at = str(at or '').strip().lower()
+        if self.at and self.at not in ATS:
+            return self.cm.error(f'--at takes boot (after a restart, before any login) or login (when the user logs in, '
+                                 f'in a window) - got "{at}"')
+        if self.at == 'login' and os.name != 'nt' and action in ('enable', 'on'):
+            return self.cm.error('--at=login (a start when the user logs in, in a window) is a Windows thing here: on '
+                                 'Linux and macOS a server starts at the boot (crontab @reboot)')
+        if self.at == 'login' and action == 'run':
+            # the login start: in the user's session, in the window the .cmd opened
+            self.window = True
+
+        # the servers: the two the task knows by itself, or ones the host artifact of this machine declares
+        whats = [w.lower() if w.lower() in WHAT else w for w in (x.strip() for x in str(what or 'cserver').split(',')) if w]
+        if not whats or [w for w in whats if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', w)]:
+            return self.cm.error(f'--what takes cserver, ssh, a server the host artifact of this machine declares, or '
+                                 f'several with commas (got "{what}")')
+        unknown = [w for w in whats if w not in WHAT and not self._declared(w)]
+        if unknown and name:
+            return self.cm.error('--name makes a second set of the task\'s own cserver and ssh: not of a declared '
+                                 f'server ({",".join(unknown)})')
+        if unknown:
+            host = self._this_host().get('alias')
+            return self.cm.error(
+                f'--what={",".join(unknown)}: not cserver or ssh, and ' +
+                (f'the host artifact of this machine ({host}) declares no such server - projects: {unknown[0]}: server: '
+                 f'run: <its command in the foreground>' if host else
+                 'no host artifact is this machine (cx host whoami) to declare such a server'))
+
         # the folder the servers start in: given, or the user's (what cron gives its jobs); a path as the user typed
         # it is kept absolute, for the restart has no current folder of this console
         workdir = str(workdir or '').strip()
+        self.workdir_given = bool(workdir)
         self.opts['workdir'] = os.path.abspath(os.path.expanduser(workdir)) if workdir else os.path.expanduser('~')
-        if action in ('enable', 'start') and not os.path.isdir(self.opts['workdir']):
+        if action in ('enable', 'on', 'start') and not os.path.isdir(self.opts['workdir']):
             return self.cm.error(f'--workdir: the folder "{self.opts["workdir"]}" does not exist')
 
         r = self._folder()
@@ -235,15 +332,18 @@ class CTask(InitCTask):
 
         if action == 'run':
             if len(whats) != 1:
-                return self.cm.error('run takes one server: --what=cserver or --what=ssh')
+                return self.cm.error('run takes one server: --what=cserver, --what=ssh or one declared server')
             return self._supervise(whats[0])
 
         if action == 'disable':
             # the start after a restart only: servers running now keep running (the user, 2026-11-13: "sometimes I
             # just want to disable them for the next restart but not stop them") - stop ends them
-            r = self._disable_all(whats)
+            r = self._disable_all(whats) if self.at != 'login' else {'return': 0}
             if r['return'] > 0:
                 return r
+            if self.at != 'boot':
+                for w in whats:
+                    self._login_remove(w)
             running = [w for w in whats if self._running(w)[1]]
             if running and self.con:
                 print(f'{" and ".join(running)}: still running now, as before - '
@@ -263,11 +363,11 @@ class CTask(InitCTask):
 
         results = {}
         for w in whats:
-            r = getattr(self, '_' + action)(w)
+            r = self._status(w, quick=bool(quick)) if action == 'status' else getattr(self, '_' + action)(w)
             if r['return'] > 0:
                 return r
             results[w] = r
-        if action == 'status' and self.con:
+        if action == 'status' and self.con and not quick:
             self._print_prerequisites(whats)
         return {'return': 0, 'action': action, 'servers': results}
 
@@ -284,7 +384,66 @@ class CTask(InitCTask):
         k = self._key(what)
         f = self.folder
         return {'log': os.path.join(f, k + '.log'), 'boot_log': os.path.join(f, k + '.boot.log'),
-                'record': os.path.join(f, k + '.json'), 'stop': os.path.join(f, k + '.stop')}
+                'record': os.path.join(f, k + '.json'), 'stop': os.path.join(f, k + '.stop'),
+                # the switch (off: a restart passes the registered start over) and the note of a start that was asked for
+                'off': os.path.join(f, k + '.off'), 'asked': os.path.join(f, k + '.asked'),
+                # what the user's Run key starts at login (a .cmd: a Run value is kept short)
+                'login': os.path.join(f, k + '.login.cmd')}
+
+    def _login_name(self, what):
+        return f'cMeta {self._key(what)} at login'
+
+    def _this_host(self):
+        """The host artifact this machine is (cx host whoami, then its _desc): {'alias', 'uid', 'desc'}, or {} when
+        none is. Asked once per run."""
+        if getattr(self, '_host', None) is None:
+            self._host = {}
+            cat = self.cmeta['uses_categories']['host']
+            r = self.cm.access({'category': cat, 'command': 'whoami', 'con': False})
+            if r.get('return') == 0 and r.get('host'):
+                ref = f'{r["host"]},{r["uid"]}' if r.get('uid') else r['host']
+                rr = self.cm.access({'category': cat, 'command': 'show', 'arg1': ref, 'con': False})
+                desc = (rr.get('host') or {}).get('desc') if rr.get('return') == 0 else None
+                self._host = {'alias': r['host'], 'uid': r.get('uid') or '', 'desc': desc if isinstance(desc, dict) else {}}
+        return self._host
+
+    def _declared(self, what):
+        """A server the host artifact of this machine declares for the task to keep - projects: <what>: server: run:
+        <its command in the foreground> - as its server block, or {}. A declaration comes before the task's own
+        cserver and ssh of the same name; a second set (--name) is always the task's own."""
+        if self.opts.get('name'):
+            return {}
+        project = ((self._this_host().get('desc') or {}).get('projects') or {}).get(what)
+        server = project.get('server') if isinstance(project, dict) else None
+        return server if isinstance(server, dict) and str(server.get('run') or '').strip() else {}
+
+    def _workdir(self, what):
+        """The folder a server starts in: --workdir when given; else the one its declaration names (server:
+        workdir); else the user's folder."""
+        declared = str(self._declared(what).get('workdir') or '').strip()
+        if declared and not getattr(self, 'workdir_given', True):
+            return os.path.abspath(os.path.expanduser(declared))
+        return self.opts['workdir']
+
+    def _endpoint(self, what, o=None):
+        """(the address, the port, how it answers: 'cserver' = HTTP, 'ssh' = a banner) of a server, by the settings o
+        (those of a running supervisor, or this command line's)."""
+        o = o or self.opts
+        declared = self._declared(what)
+        if declared:
+            host, port = url_endpoint(declared.get('url'))
+            return host or '127.0.0.1', port, 'cserver'
+        if what == 'ssh':
+            return tailscale_address(), o['ssh_port'], 'ssh'
+        return (tailscale_address() if o['cserver_host'] == 'tailscale' else o['cserver_host']), o['cserver_port'], 'cserver'
+
+    def _waits_for_tailscale(self, what):
+        """A server that listens on the Tailscale address is started when that address exists."""
+        declared = self._declared(what)
+        if declared:
+            return bool(re.match(r'100\.', url_endpoint(declared.get('url'))[0]) or
+                        re.search(r'\btailscale\b', str(declared.get('run'))))
+        return what == 'ssh' or self.opts['cserver_host'] == 'tailscale'
 
     def _folder(self):
         """The log artifact (local repository) that keeps the logs and records, made on first use."""
@@ -327,6 +486,9 @@ class CTask(InitCTask):
         words = [sys.executable, '-m', 'cmeta', 'task', 'run', TASK, 'run', f'--what={what}',
                  f'--cserver_host={o["cserver_host"]}', f'--cserver_port={o["cserver_port"]}',
                  f'--ssh_port={o["ssh_port"]}', f'--wait={o["wait"]}', f'--workdir={o["workdir"]}', '-q']
+        if self._workdir(what) != o['workdir']:
+            # the folder its declaration names: read again at each start, so that the host artifact decides
+            words.remove(f'--workdir={o["workdir"]}')
         if o['ssh_host']:
             words.append(f'--ssh_host={o["ssh_host"]}')
         if o['name']:
@@ -334,8 +496,11 @@ class CTask(InitCTask):
         return words
 
     def _server_words(self, what):
-        """The server itself, in the foreground."""
+        """The server itself, in the foreground: the command its host artifact declares, else the task's own."""
         o = self.opts
+        declared = self._declared(what)
+        if declared:
+            return command_words(declared['run'])
         if what == 'cserver':
             return [sys.executable, '-m', 'cmeta', 'app', 'run', 'cserver', f'--param.host={o["cserver_host"]}',
                     f'--param.port={o["cserver_port"]}', '--param.flags=--no-use-colors']
@@ -354,8 +519,27 @@ class CTask(InitCTask):
     # what a restart runs: the supervisor
 
     def _log(self, path, text):
+        line = time.strftime('%Y-%m-%d %H:%M:%S ') + text
         with open(path, 'a', encoding='utf-8') as f:
-            f.write(time.strftime('%Y-%m-%d %H:%M:%S ') + text + '\n')
+            f.write(line + '\n')
+        if getattr(self, 'window', False):
+            # a start in a window: the supervisor's lines are on its screen too
+            try:
+                print(line, flush=True)
+            except (OSError, ValueError):
+                pass
+
+    def _was_asked(self, p):
+        """Whether this start was asked for - start leaves a note just before it - and is not a restart's: such a
+        start runs whatever the switch says. The note is read once; one written before the machine's last boot (a
+        start that never came up) is no one's - what runs first after a boot is the restart's."""
+        try:
+            written = os.path.getmtime(p['asked'])
+            os.remove(p['asked'])
+        except OSError:
+            return False
+        boot = boot_time()
+        return not (boot and written < boot - 2)
 
     def _supervise(self, what):
         p = self._paths(what)
@@ -367,6 +551,13 @@ class CTask(InitCTask):
             self._log(p['log'], f'start-after-restart {what}: supervisor {rec.get("pid")} runs already - '
                                 f'this one ({os.getpid()}) ends')
             return {'return': 0, 'already': True, 'supervisor': rec.get('pid')}
+        # the switch: off keeps the registered start and lets a restart pass it over (on and off need no
+        # administrator, where registering and removing a startup task do); a start that was asked for runs anyway
+        asked = self._was_asked(p)
+        if os.path.isfile(p['off']) and not asked and getattr(self, 'at', '') != 'login':
+            self._log(p['log'], f'start-after-restart {what}: switched off - not started '
+                                f'(cx task run start-after-restart on --what={what})')
+            return {'return': 0, 'off': True}
         if os.path.isfile(p['log']) and os.path.getsize(p['log']) > LOG_KEEP_BYTES:
             os.replace(p['log'], p['log'] + '.old')
         if os.name != 'nt':
@@ -378,19 +569,23 @@ class CTask(InitCTask):
             os.remove(p['stop'])
         # the folder the servers start in: one gone since the enable (renamed, a drive not there) must not keep the
         # machine unreachable - the folder this process was started in instead (the user's), said in the log
-        work = self.opts['workdir']
+        work = self._workdir(what)
         if not os.path.isdir(work):
             self._log(p['log'], f'WARNING: the folder {work} (--workdir) does not exist: the servers start in {os.getcwd()}')
             work = os.getcwd()
         os.chdir(work)
-        record = {'pid': os.getpid(), 'started': time.time(), 'what': what, 'opts': self.opts, 'cwd': work, 'child': 0}
+        window = bool(getattr(self, 'window', False))
+        # obeys_stop: this supervisor ends its server itself when stop asks (one from before 0.75.1 does not: stop
+        # then ends the processes at once, as it always did)
+        record = {'pid': os.getpid(), 'started': time.time(), 'what': what, 'opts': self.opts, 'cwd': work, 'child': 0,
+                  'obeys_stop': True, 'window': window, 'session': windows_session() if os.name == 'nt' else None}
         with open(p['record'], 'w', encoding='utf-8') as f:
             json.dump(record, f, indent=1)
         self._log(p['log'], f'start-after-restart {what}: supervisor {os.getpid()}, home {self.cm.home_path}, '
-                            f'python {sys.executable}, in {work}')
+                            f'python {sys.executable}, in {work}' + (' - in a window: closing it, or Ctrl-C, stops the server' if window else ''))
 
         # the Tailscale address first: a server started before it listens on 127.0.0.1 only (or not at all)
-        if what == 'ssh' or self.opts['cserver_host'] == 'tailscale':
+        if self._waits_for_tailscale(what):
             deadline = time.monotonic() + max(0, self.opts['wait'])
             address = tailscale_address()
             while not address and time.monotonic() < deadline and not os.path.isfile(p['stop']):
@@ -398,22 +593,56 @@ class CTask(InitCTask):
                 address = tailscale_address()
             self._log(p['log'], f'Tailscale address: {address or "none after " + str(self.opts["wait"]) + " s - starting anyway"}')
 
-        while not os.path.isfile(p['stop']):
-            words = self._server_words(what)
-            self._log(p['log'], 'starting: ' + ' '.join(words))
-            with open(p['log'], 'a', encoding='utf-8') as out:
-                child = subprocess.Popen(words, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, cwd=work)
-            record.update(child=child.pid, child_started=time.time())
-            with open(p['record'], 'w', encoding='utf-8') as f:
-                json.dump(record, f, indent=1)
-            code = child.wait()
-            self._log(p['log'], f'ended (exit code {code})')
-            for _ in range(RETRY_SECONDS):
-                if os.path.isfile(p['stop']):
-                    break
-                time.sleep(1)
+        child = None
+        try:
+            while not os.path.isfile(p['stop']):
+                words = self._server_words(what)
+                self._log(p['log'], 'starting: ' + (words if isinstance(words, str) else ' '.join(words)))
+                if window:
+                    # the server writes to the window itself (its console), not to the log
+                    child = subprocess.Popen(words, stdin=subprocess.DEVNULL, cwd=work)
+                else:
+                    with open(p['log'], 'a', encoding='utf-8') as out:
+                        child = subprocess.Popen(words, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, cwd=work)
+                record.update(child=child.pid, child_started=time.time())
+                with open(p['record'], 'w', encoding='utf-8') as f:
+                    json.dump(record, f, indent=1)
+                code = self._wait(child, p)
+                self._log(p['log'], f'ended (exit code {code})')
+                for _ in range(RETRY_SECONDS):
+                    if os.path.isfile(p['stop']):
+                        break
+                    time.sleep(1)
+        except KeyboardInterrupt:
+            # Ctrl-C in its window: the server got it too; what is left of it ends with the supervisor
+            if child is not None and child.poll() is None:
+                kill_group(child.pid)
+            self._log(p['log'], 'stopped (Ctrl-C)')
+            return {'return': 0, 'stopped': True}
         self._log(p['log'], 'stopped (asked)')
         return {'return': 0, 'stopped': True}
+
+    def _wait(self, child, p):
+        """Waits for the server to end -> its exit code (None: it did not end). A stop asked for meanwhile is obeyed
+        here: the supervisor ends its own server and everything that one started. Whoever asks then needs no right
+        over these processes - which a console that is not an administrator's does not have over the session
+        without a login (Windows), nor a page served from another session."""
+        while True:
+            try:
+                return child.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
+            if os.path.isfile(p['stop']):
+                try:
+                    return child.wait(timeout=0.3)         # a server that is ending by itself right now
+                except subprocess.TimeoutExpired:
+                    pass
+                self._log(p['log'], 'stop asked: ending the server')
+                kill_group(child.pid)
+                try:
+                    return child.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    return None
 
     def _running(self, what):
         """(the supervisor's record, whether it is that process still - not a number given to another one since)."""
@@ -428,39 +657,68 @@ class CTask(InitCTask):
     ############################################################
     # status, start, stop
 
-    def _status(self, what):
+    def _registered(self, what):
+        """(registered to start after a restart, a line about it, the command line it runs)."""
+        return self._win_query(what) if os.name == 'nt' else self._cron_has(what)
+
+    def _status(self, what, quick=False):
         p = self._paths(what)
-        enabled, detail, command = (self._win_query(what) if os.name == 'nt' else self._cron_has(what))
+        enabled, detail, command = self._registered(what)
+        off = enabled and os.path.isfile(p['off'])
         rec, running = self._running(what)
+        login = self._login_query(what)
+        out = {'return': 0, 'enabled': enabled, 'on': enabled and not off, 'login': bool(login), 'detail': detail,
+               'running': running, 'supervisor': rec.get('pid') if running else 0,
+               'window': bool(rec.get('window')) if running else False,
+               'session': rec.get('session') if running else None, 'declared': bool(self._declared(what)), 'log': p['log']}
+        if quick:
+            # what is registered and what runs: no port asked, no log read (the hosts page asks this for every server)
+            if self.con:
+                print(f'{what}: ' + ('at login' if login else 'on' if out['on'] else 'off (registered)' if enabled else 'not registered') +
+                      (f'; running (supervisor {rec.get("pid")})' if running else '; not started by this task'))
+            return out
+
         # the settings of the running supervisor when there is one (its address and port), else this command line's
         o = dict(self.opts, **(rec.get('opts') or {})) if running else self.opts
-        address = tailscale_address() if (what == 'ssh' or o['cserver_host'] == 'tailscale') else o['cserver_host']
-        port = o['cserver_port'] if what == 'cserver' else o['ssh_port']
-        state = probe(address or '127.0.0.1', port, what)
+        address, port, kind = self._endpoint(what, o)
+        asked = urllib.parse.urlsplit(str(self._declared(what).get('url') or ''))
+        state = probe(address or '127.0.0.1', port, kind,
+                      path=(asked.path or '/') + ('?' + asked.query if asked.query else ''))
         answers = state == 'answers'
-        workdir = workdir_of(command) if enabled else ''
+        workdir = (workdir_of(command) or (self._workdir(what) if self._declared(what).get('workdir') else '')) if enabled else ''
         tail = ''
         if os.path.isfile(p['log']):
             with open(p['log'], encoding='utf-8', errors='replace') as f:
                 tail = ''.join(f.readlines()[-5:])
-        out = {'return': 0, 'enabled': enabled, 'detail': detail, 'workdir': workdir, 'running': running,
-               'supervisor': rec.get('pid') if running else 0, 'cwd': rec.get('cwd', '') if running else '',
-               'address': address, 'port': port, 'answers': answers, 'probe': state, 'log': p['log']}
+        out.update(workdir=workdir, cwd=rec.get('cwd', '') if running else '', address=address, port=port,
+                   answers=answers, probe=state)
         if self.con:
             starts = ''
             if workdir:
                 starts = f'; starts in {workdir}' + ('' if os.path.isdir(workdir) else
                                                      ' - a folder that does NOT exist: it would start in the user\'s folder')
-            print(f'{what}{" (" + self.opts["name"] + ")" if self.opts["name"] else ""}: '
-                  f'{"ENABLED after a restart" if enabled else "not enabled after a restart"}'
-                  f'{" - " + detail if detail else ""}{starts}')
-            now = (f'running (supervisor {rec.get("pid")}{", in " + rec["cwd"] if rec.get("cwd") else ""})' if running
+            named = f'{what}{" (" + self.opts["name"] + ")" if self.opts["name"] else ""}'
+            if off:
+                print(f'{named}: registered, but SWITCHED OFF - a restart does not start it '
+                      f'(cx task run start-after-restart on --what={what}){" - " + detail if detail else ""}{starts}')
+            else:
+                print(f'{named}: {"ENABLED after a restart" if enabled else "not enabled after a restart"}'
+                      f'{" - " + detail if detail else ""}{starts}')
+            where = ''
+            if running:
+                where = ', in a window' if rec.get('window') else ', in the session without a login' if rec.get('session') == 0 else ''
+            now = (f'running (supervisor {rec.get("pid")}{", in " + rec["cwd"] if rec.get("cwd") else ""}{where})' if running
                    else 'not started by this task')
             said = {'answers': 'answers',
                     'silent': 'takes the connection but answers nothing (a server that hangs - or, on macOS, a '
                               'third-party Python the system keeps off the network: Apple\'s own programs answer there)',
                     'closed': 'does not answer'}[state]
+            if login:
+                print(f'  at login: ON - it starts when {os.environ.get("USERNAME") or "the user"} logs in, in a window '
+                      f'(the Run key value "{self._login_name(what)}")')
             print(f'  now: {now}; {address or "127.0.0.1"}:{port} {said}')
+            if self._declared(what):
+                print(f'  runs: {self._declared(what)["run"]}  (the host artifact {self._this_host().get("alias")})')
             print(f'  log: {p["log"]}')
             if tail:
                 print('  ' + tail.rstrip().replace('\n', '\n  '))
@@ -475,18 +733,60 @@ class CTask(InitCTask):
         p = self._paths(what)
         if os.path.isfile(p['stop']):
             os.remove(p['stop'])
-        if os.name == 'nt' and self._win_query(what)[0]:
-            # the scheduled task itself: the same account, session and environment as after a restart
-            r = self._powershell(f'Start-ScheduledTask -TaskPath {ps_quote(WIN_FOLDER)} -TaskName {ps_quote(self._win_name(what))}',
-                                 admin=False)
-            if r['return'] > 0:
-                r = self._powershell(f'Start-ScheduledTask -TaskPath {ps_quote(WIN_FOLDER)} -TaskName {ps_quote(self._win_name(what))}',
-                                     admin=True)
-            if r['return'] > 0:
-                return r
-            how = 'the scheduled task'
+        window = bool(getattr(self, 'window', False))
+        if window and os.name != 'nt':
+            if self.con:
+                print(f'cMeta warning: --window is for Windows - {what} starts as usual; its output: tail -f {p["log"]}')
+            window = False
+        # the note of a start that was asked for: the supervisor reads it, and runs whatever the switch says
+        with open(p['asked'], 'w', encoding='utf-8') as f:
+            f.write(time.strftime('%Y-%m-%d %H:%M:%S'))
+
+        # the scheduled task runs in the session without a login: only while the boot start is on - a server whose boot
+        # start is switched off (its user starts it at login, in a window, to see what it opens) starts in this session
+        how = ''
+        if os.name == 'nt' and not window and self._win_query(what)[0] and not os.path.isfile(p['off']):
+            # the scheduled task itself: the same account, session and environment as after a restart. Where Windows
+            # refuses it to this console, an administrator is asked - but not in the session without a login, which
+            # has no desktop to ask on: there the server starts as a process of its own, as one not registered does
+            script = f'Start-ScheduledTask -TaskPath {ps_quote(WIN_FOLDER)} -TaskName {ps_quote(self._win_name(what))}'
+            r = self._powershell(script, admin=False)
+            if r['return'] > 0 and windows_session() != 0:
+                r = self._powershell(script, admin=True)
+                if r['return'] > 0:
+                    return r
+            if r['return'] == 0:
+                how = 'the scheduled task'
+
+        if how:
+            pass
+        elif os.name == 'nt':
+            # by the system, as a process of its own: one started as a child would end with a command that is run
+            # with a time limit (cx host up --project, the Start of the hosts page) - and it gets the account's own
+            # environment, as after a restart, not this console's. Without a window, or in one of its own.
+            if what == 'ssh':
+                self._find_ssh_host()
+            var, home = self._home_env()
+            command = ' '.join(cmd_quote(w) for w in self._run_words(what))
+            if window:
+                line = (f'cmd.exe /d /v:off /c title cMeta {self._key(what)} - closing this window stops it && '
+                        f'set "{var}={home}" && {command} --window')
+            else:
+                line = f'cmd.exe /d /v:off /c set "{var}={home}" && {command} >> "{p["boot_log"]}" 2>&1'
+            pid, why = start_by_system(line, cwd=self.opts['workdir'] if os.path.isdir(self.opts['workdir']) else os.path.expanduser('~'),
+                                       window=window)
+            how = 'a window of its own' if window else 'a process of its own, without a window'
+            if not pid:
+                # the system could not be asked: the plain way (a command with a time limit ends it when it returns)
+                if self.con:
+                    print(f'cMeta warning: {why} - started as a process of this command instead')
+                with open(p['boot_log'], 'a', encoding='utf-8') as out:
+                    subprocess.Popen(self._run_words(what), stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                                     cwd=self.opts['workdir'], env=dict(os.environ, **{var: home}),
+                                     creationflags=0x00000200 | 0x08000000)
+                how = 'a process of this command'
         else:
-            enabled, _, line = (False, '', '') if os.name == 'nt' else self._cron_has(what)
+            enabled, _, line = self._cron_has(what)
             m = re.match(r'@reboot\s+(?:sleep\s+\d+;\s*)?(.*)$', line.strip()) if enabled else None
             with open(p['boot_log'], 'a', encoding='utf-8') as out:
                 if m:
@@ -502,9 +802,8 @@ class CTask(InitCTask):
                     if what == 'ssh':
                         self._find_ssh_host()
                     var, home = self._home_env()
-                    kw = {'creationflags': 0x00000200 | 0x08000000} if os.name == 'nt' else {'start_new_session': True}
                     subprocess.Popen(self._run_words(what), stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
-                                     cwd=self.opts['workdir'], env=dict(os.environ, **{var: home}), **kw)
+                                     cwd=self.opts['workdir'], env=dict(os.environ, **{var: home}), start_new_session=True)
                     how = 'a process of its own'
         for _ in range(20):
             time.sleep(1)
@@ -513,7 +812,8 @@ class CTask(InitCTask):
                 break
         if self.con:
             print(f'{what}: {"started by " + how + " (supervisor " + str(rec.get("pid")) + ")" if running else "did not start - see " + p["log"] + " and " + p["boot_log"]}')
-        return {'return': 0 if running else 1, 'started': running, **({} if running else {'error': f'{what} did not start'})}
+        return {'return': 0 if running else 1, 'started': running, 'how': how,
+                **({} if running else {'error': f'{what} did not start - see {p["log"]} and {p["boot_log"]}'})}
 
     def _end_processes(self, pids, windows=None):
         """Ends processes and everything they started. On Windows the servers of a start without a login run in a
@@ -533,31 +833,50 @@ class CTask(InitCTask):
         return {'return': 0}
 
     def _stop_all(self, whats):
-        """stop for the servers named: their stop files (no new start by their supervisors), their startup tasks
-        stopped (the user's own right), the processes ended - on Windows with one question for an administrator at
-        most - and a check that they are gone (10 s). {what: {'stopped', 'still_running'}}."""
-        found, pids = {}, []
+        """stop for the servers named: their stop files - a supervisor that obeys them ends its server and goes, so
+        that no right over its processes is needed (STOP_SECONDS) -, their startup tasks stopped (the user's own
+        right), what still runs ended by this command - on Windows with one question for an administrator at most -
+        and a check that they are gone (10 s). {what: {'stopped', 'still_running'}}."""
+        found = {}
         for what in whats:
             with open(self._paths(what)['stop'], 'w', encoding='utf-8') as f:
                 f.write(time.strftime('%Y-%m-%d %H:%M:%S'))
-            rec, running = self._running(what)
-            found[what] = (rec, running)
+            found[what] = self._running(what)
             if os.name == 'nt' and self._win_query(what)[0]:
                 self._powershell(f'Stop-ScheduledTask -TaskPath {ps_quote(WIN_FOLDER)} -TaskName {ps_quote(self._win_name(what))}',
                                  admin=False)
-            if running:
-                child = rec.get('child')
-                if child and recorded_process_alive(child, rec.get('child_started', 0)):
-                    pids.append(child)
-                pids.append(rec.get('pid'))
+
+        # the supervisors that obey the stop file: time to end their servers and go
+        obeying = [w for w in whats if found[w][1] and found[w][0].get('obeys_stop')]
+        deadline = time.monotonic() + STOP_SECONDS
+        while obeying and time.monotonic() < deadline:
+            time.sleep(0.5)
+            obeying = [w for w in obeying if self._running(w)[1]]
+
+        # what still runs (a supervisor that did not go in that time, or one from before it could obey), ended from
+        # here; of one that went, what its server may have left behind
+        pids, groups = [], []
+        for what in whats:
+            rec, running = found[what]
+            if not running:
+                continue
+            if rec.get('obeys_stop') and what not in obeying:
+                groups.append(rec.get('pid'))
+                continue
+            child = rec.get('child')
+            if child and recorded_process_alive(child, rec.get('child_started', 0)):
+                pids.append(child)
+            pids.append(rec.get('pid'))
         r = self._end_processes(pids)
         if r['return'] > 0 and self.con:
             print('cMeta warning: ' + str(r.get('error') or 'the servers could not be ended'))
+        for pid in groups:
+            end_group(pid)
 
         results = {}
         for what in whats:
             rec, running = found[what]
-            if what == 'ssh':
+            if what == 'ssh' and not self._declared(what):
                 # the server run-openssh started (its own record, its own stop): never an sshd of another run; the
                 # port of the running supervisor when there was one
                 port = (rec.get('opts') or {}).get('ssh_port', self.opts['ssh_port']) if running else self.opts['ssh_port']
@@ -581,24 +900,147 @@ class CTask(InitCTask):
         return results
 
     ############################################################
-    # enable, disable
+    # enable, disable; the switch: on, off
 
     def _enable(self, what):
         o = self.opts
-        if what == 'ssh':
+        if getattr(self, 'at', '') == 'login':
+            # the user's own Run key: no administrator, so also from the session without a login (a page served there)
+            return self._login_enable(what)
+        if what == 'ssh' and not self._declared(what):
             self._find_ssh_host()
-        if what == 'ssh' and not o['ssh_host']:
-            if self.con:
+            if not o['ssh_host'] and self.con:
                 print('ssh: no host artifact for this machine (--ssh_host, cx host whoami) - the keys of '
                       '~/.ssh/authorized_keys are allowed (run-openssh\'s default)')
+        if os.name == 'nt' and not elevated() and windows_session() == 0:
+            # the session without a login has no desktop for Windows to ask on: say how, do not wait for an answer
+            return self.cm.error(f'registering {what} to start after a restart needs an administrator, and this command '
+                                 f'runs in the session without a login, where Windows cannot ask for one: run once, in a '
+                                 f'terminal of this machine, "cx task run start-after-restart enable --what={what}"')
         r = self._win_enable(what) if os.name == 'nt' else self._cron_enable(what)
         if r['return'] > 0:
             return r
+        off = self._paths(what)['off']
+        if os.path.isfile(off):
+            os.remove(off)
+        gone = self._login_remove(what)
         if self.con:
             print(f'{what}: ENABLED - it starts after every restart of this machine, before anyone logs in '
                   f'({"the Task Scheduler" if os.name == "nt" else "crontab @reboot"}); now: '
-                  f'cx task run start-after-restart start --what={what}{" --name=" + o["name"] if o["name"] else ""}')
-        return r
+                  f'cx task run start-after-restart start --what={what}{" --name=" + o["name"] if o["name"] else ""}' +
+                  ('; its start at login is removed (one or the other)' if gone else ''))
+        return dict(r, on=True, login=False)
+
+    def _on(self, what):
+        """The switch on: a registered start is a restart's again - as it was registered, whatever this command line
+        says, and without an administrator. Nothing registered yet: enable, with this command line's settings."""
+        if getattr(self, 'at', '') == 'login':
+            return self._login_enable(what)
+        enabled = self._registered(what)[0]
+        if not enabled:
+            return self._enable(what)
+        off = self._paths(what)['off']
+        was_off = os.path.isfile(off)
+        if was_off:
+            os.remove(off)
+        gone = self._login_remove(what)
+        if self.con:
+            print(f'{what}: ON - it starts after every restart of this machine' + ('' if was_off else ' (it was on already)') +
+                  ('; its start at login is removed (one or the other)' if gone else ''))
+        return {'return': 0, 'enabled': True, 'on': True, 'login': False}
+
+    def _off(self, what):
+        """The switch off: the registered start stays, a restart passes it over. A server that runs keeps running;
+        start starts it whatever the switch says. No administrator: disable removes the registration and needs one.
+        --at=login: the start at login only; --at=boot: the boot start only; neither: both."""
+        at = getattr(self, 'at', '')
+        gone = self._login_remove(what) if at != 'boot' else False
+        if gone and self.con:
+            print(f'{what}: no longer started at login')
+        enabled = self._registered(what)[0]
+        if at == 'login' or not enabled:
+            if self.con and not enabled and not gone:
+                print(f'{what}: not enabled after a restart - nothing to switch off')
+            return {'return': 0, 'enabled': enabled, 'on': enabled and not os.path.isfile(self._paths(what)['off']),
+                    'login': False}
+        with open(self._paths(what)['off'], 'w', encoding='utf-8') as f:
+            f.write(time.strftime('%Y-%m-%d %H:%M:%S'))
+        if self.con:
+            print(f'{what}: OFF - a restart no longer starts it; its registered start is kept '
+                  f'(on: cx task run start-after-restart on --what={what}; disable removes it)')
+        return {'return': 0, 'enabled': True, 'on': False, 'login': False}
+
+    ############################################################
+    # at login (Windows): a value of the user's Run key that runs a .cmd beside the logs, in a window of its own
+
+    def _login_query(self, what):
+        """The command the user's Run key holds for this server, or '' (none, or not Windows)."""
+        if os.name != 'nt':
+            return ''
+        import winreg
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+                value, _ = winreg.QueryValueEx(k, self._login_name(what))
+                return str(value or '')
+        except OSError:
+            return ''
+
+    def _login_lines(self, what):
+        """The .cmd the login start runs: in a window titled after the server, this home named, the supervisor told
+        it is the login start (its window, no switch to obey)."""
+        var, home = self._home_env()
+        words = self._run_words(what) + ['--window', '--at=login']
+        # in a .cmd a % starts a variable: a path that has one keeps it doubled
+        command = ' '.join(cmd_quote(w) for w in words).replace('%', '%%')
+        return ['@echo off', 'setlocal DisableDelayedExpansion',
+                f'rem cMeta start-after-restart: {what} when {os.environ.get("USERNAME") or "the user"} logs in, in this '
+                f'window - "cx task run start-after-restart off --what={what} --at=login" removes it',
+                f'title cMeta {self._key(what)} - closing this window stops it',
+                f'set "{var}={home.replace("%", "%%")}"', f'cd /d "{os.path.expanduser("~")}"', command, '']
+
+    def _login_enable(self, what):
+        """The server starts when the user logs in, in a window: the .cmd written, the Run key's value set (both the
+        user's own: no administrator). A boot start that is on is switched off - one or the other."""
+        if os.name != 'nt':
+            return self.cm.error('--at=login is a Windows thing here: on Linux and macOS a server starts at the boot')
+        import winreg
+        if what == 'ssh' and not self._declared(what):
+            self._find_ssh_host()
+        p = self._paths(what)
+        with open(p['login'], 'w', encoding='utf-8', newline='\r\n') as f:
+            f.write('\n'.join(self._login_lines(what)))
+        value = 'cmd.exe /d /v:off /c ""%s""' % p['login']
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+            winreg.SetValueEx(k, self._login_name(what), 0, winreg.REG_SZ, value)
+        switched = False
+        if self._registered(what)[0] and not os.path.isfile(p['off']):
+            with open(p['off'], 'w', encoding='utf-8') as f:
+                f.write(time.strftime('%Y-%m-%d %H:%M:%S'))
+            switched = True
+        if self.con:
+            print(f'{what}: AT LOGIN - it starts when {os.environ.get("USERNAME") or "the user"} logs in, in a window of '
+                  f'its own (the Run key value "{self._login_name(what)}" runs {p["login"]})' +
+                  ('; its start after a restart is switched off (one or the other)' if switched else ''))
+        return {'return': 0, 'login': True, 'on': False, 'enabled': self._registered(what)[0], 'cmd': p['login'],
+                'value': value, 'boot_switched_off': switched}
+
+    def _login_remove(self, what):
+        """No start at login any more: the Run key's value and the .cmd removed -> whether there was one."""
+        if os.name != 'nt':
+            return False
+        import winreg
+        had = False
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+                winreg.DeleteValue(k, self._login_name(what))
+                had = True
+        except OSError:
+            pass
+        try:
+            os.remove(self._paths(what)['login'])
+        except OSError:
+            pass
+        return had
 
     def _disable_all(self, whats):
         """No start after a restart any more for the servers named (those running keep running): on Windows their
@@ -615,8 +1057,11 @@ class CTask(InitCTask):
                 r = self._cron_disable(w)
                 if r['return'] > 0:
                     return r
-        if self.con:
-            for w in whats:
+        for w in whats:
+            off = self._paths(w)['off']
+            if os.path.isfile(off):
+                os.remove(off)
+            if self.con:
                 print(f'{w}: DISABLED - nothing starts it after a restart any more')
         return {'return': 0}
 

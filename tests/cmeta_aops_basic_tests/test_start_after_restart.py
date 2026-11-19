@@ -18,11 +18,13 @@ import pytest
 
 
 class StubCM:
-    """The few things of the engine the task asks for: its home, its errors, "cx host whoami"."""
+    """The few things of the engine the task asks for: its home, its errors, "cx host whoami" and the _desc of the
+    host artifact it names ("cx host show")."""
 
-    def __init__(self, home, whoami=None):
+    def __init__(self, home, whoami=None, desc=None):
         self.home_path = home                   # a pathlib.Path, as the engine's (a str() of it where text is needed)
         self.whoami = whoami or {'return': 0, 'host': ''}
+        self.desc = desc or {}
         self.calls = []
 
     def error(self, text):
@@ -32,7 +34,22 @@ class StubCM:
         self.calls.append(params)
         if params.get('command') == 'whoami':
             return self.whoami
+        if params.get('command') == 'show':
+            return {'return': 0, 'host': {'alias': self.whoami.get('host'), 'desc': self.desc, 'state': {}}}
         return {'return': 0}
+
+
+# a machine whose host artifact declares a server for the task to keep, beside one that it starts another way
+DECLARED = {'projects': {'gateway': {'server': {'url': 'http://127.0.0.1:8401/health',
+                                                 'run': 'cxt run-some-server --port=8401 --foreground'}},
+                         'site': {'server': {'url': 'http://127.0.0.1:8188/', 'start': 'start-site.sh'}}}}
+
+
+def declared_task(ns, tmp_path, desc=None, **opts):
+    task = make_task(ns, tmp_path, **opts)
+    task.cm.whoami = {'return': 0, 'host': 'worker', 'uid': '5a3c9e0b7d214f68', 'by': 'system_id'}
+    task.cm.desc = DECLARED if desc is None else desc
+    return task
 
 
 def make_task(ns, tmp_path, **opts):
@@ -411,9 +428,429 @@ def test_the_command_line_is_checked_before_anything_is_done(ns, tmp_path):
     task.cm = StubCM(tmp_path)
     ctx = {'control': {'con': False}}
     assert 'unknown action' in task.run(ctx, action='restart')['error']
-    assert '--what takes' in task.run(ctx, what='cserver,web')['error']
+    assert '--what takes' in task.run(ctx, what='cserver,we/b')['error']
+    assert '--what takes' in task.run(ctx, what=' , ')['error']
     assert '--name may have' in task.run(ctx, name='a b')['error']
     assert 'are numbers' in task.run(ctx, cserver_port='eighty')['error']
     r = task.run(ctx, action='enable', workdir=str(tmp_path / 'no-such-folder'))
     assert r['return'] == 1 and 'does not exist' in r['error']
     assert task.cm.calls == []                        # nothing asked of the engine (no log artifact made)
+
+    # a name that is not the task's own is looked for in the host artifact of this machine - and nothing else is done
+    task.cmeta = {'uses_categories': {'host': 'host', 'log': 'log', 'config': 'config'}}
+    r = task.run(ctx, what='cserver,web')
+    assert r['return'] == 1 and '--what=web: not cserver or ssh' in r['error'] and 'cx host whoami' in r['error']
+    assert [c['command'] for c in task.cm.calls] == ['whoami']
+
+
+############################################################
+# a server the host artifact of this machine declares (projects: <name>: server: run)
+
+def test_the_words_of_a_declared_command(ns):
+    words = ns['command_words']
+    py = sys.executable
+    # the launchers of cMeta become this Python: a restart has no PATH to find them with
+    # ... with -q: no one is there to answer a question (2026-11-19: a llama.cpp start asked one and ended)
+    assert words('cxt run-some-server --port=8401 --foreground') == [py, '-m', 'cmeta', 'task', 'run', 'run-some-server',
+                                                                       '--port=8401', '--foreground', '-q']
+    assert words('cx app run cserver --param.port=8004') == [py, '-m', 'cmeta', 'app', 'run', 'cserver', '--param.port=8004', '-q']
+    assert words('cmeta task run x -q') == [py, '-m', 'cmeta', 'task', 'run', 'x', '-q']
+    assert words('cxt x --quiet')[-1] == '--quiet' and '-q' not in words('cxt x --quiet')
+    assert words('cxt x "--note=two words"')[-2] == '--note=two words'
+    # any other command goes to the system's shell as it is written
+    other = words('my-server --listen 127.0.0.1:9000 > out.log')
+    if os.name == 'nt':
+        assert other == 'cmd.exe /d /c my-server --listen 127.0.0.1:9000 > out.log'
+        assert words(r'cxt x --dir=D:\Work\a')[-2] == r'--dir=D:\Work\a'        # a Windows path keeps its backslashes
+    else:
+        assert other == ['/bin/sh', '-c', 'my-server --listen 127.0.0.1:9000 > out.log']
+
+
+def test_the_address_of_a_url(ns):
+    endpoint = ns['url_endpoint']
+    assert endpoint('http://127.0.0.1:8401/health') == ('127.0.0.1', 8401)
+    assert endpoint('http://100.64.1.2/') == ('100.64.1.2', 80) and endpoint('https://site.example/x') == ('site.example', 443)
+    assert endpoint('') == ('', 0) and endpoint(None) == ('', 0)
+
+
+def test_a_declared_server_is_kept_by_its_own_command(ns, tmp_path, monkeypatch):
+    task = declared_task(ns, tmp_path)
+    assert task._declared('gateway')['run'] == 'cxt run-some-server --port=8401 --foreground'
+    assert task._declared('site') == {} and task._declared('cserver') == {} and task._declared('nothing') == {}
+    assert task._server_words('gateway') == [sys.executable, '-m', 'cmeta', 'task', 'run', 'run-some-server',
+                                             '--port=8401', '--foreground', '-q']
+    assert task._endpoint('gateway') == ('127.0.0.1', 8401, 'cserver')
+    assert task._waits_for_tailscale('gateway') is False                 # it listens on this machine only
+    assert task._win_name('gateway') == 'cMeta gateway after restart'
+    assert os.path.basename(task._paths('gateway')['off']) == 'gateway.off'
+    # the host artifact is asked once per run
+    assert [c['command'] for c in task.cm.calls] == ['whoami', 'show']
+    assert task.cm.calls[1]['arg1'] == 'worker,5a3c9e0b7d214f68'
+
+    # the task's own cserver stays its own unless the artifact declares one under that name
+    assert task._server_words('cserver')[:6] == [sys.executable, '-m', 'cmeta', 'app', 'run', 'cserver']
+    desc = {'projects': {'cserver': {'server': {'url': 'http://100.64.1.2:8004/',
+                                                 'run': 'cx app run cserver --param.host=tailscale --param.port=8004'}}}}
+    task = declared_task(ns, tmp_path, desc=desc)
+    assert task._server_words('cserver') == [sys.executable, '-m', 'cmeta', 'app', 'run', 'cserver',
+                                             '--param.host=tailscale', '--param.port=8004', '-q']
+    assert task._endpoint('cserver') == ('100.64.1.2', 8004, 'cserver') and task._waits_for_tailscale('cserver') is True
+    # a second set (--name) is of the task's own servers, whatever the artifact declares
+    task = declared_task(ns, tmp_path, desc=desc, name='test', cserver_port=8997)
+    assert task._declared('cserver') == {} and '--param.port=8997' in task._server_words('cserver')
+
+
+def test_a_declared_server_starts_in_the_folder_its_declaration_names(ns, tmp_path):
+    there = tmp_path / 'there'
+    there.mkdir()
+    desc = {'projects': {'gateway': {'server': {'url': 'http://127.0.0.1:8401/', 'run': 'cxt x --foreground',
+                                                 'workdir': str(there)}}}}
+    task = declared_task(ns, tmp_path, desc=desc)
+    task.workdir_given = False                              # no --workdir on the command line: the declaration decides
+    assert task._workdir('gateway') == str(there) and task._workdir('ssh') == task.opts['workdir']
+    # ... and it is read at each start: the registered command line does not keep it
+    assert not [w for w in task._run_words('gateway') if w.startswith('--workdir=')]
+    assert '--workdir=' + task.opts['workdir'] in task._run_words('ssh')
+
+    task.workdir_given = True                               # --workdir given: that one, kept in the command line
+    assert task._workdir('gateway') == task.opts['workdir']
+    assert '--workdir=' + task.opts['workdir'] in task._run_words('gateway')
+
+
+def test_a_name_no_artifact_declares_is_refused_with_the_way_to_declare_it(ns, tmp_path):
+    task = declared_task(ns, tmp_path)
+    task._folder = lambda: {'return': 0, 'path': str(tmp_path)}
+    ctx = {'control': {'con': False}}
+    r = task.run(ctx, what='site')                      # declared, but started another way: no "run"
+    assert r['return'] == 1 and 'the host artifact of this machine (worker) declares no such server' in r['error']
+    assert 'projects: site: server: run:' in r['error']
+    r = task.run(ctx, what='gateway', name='second')
+    assert r['return'] == 1 and 'a second set' in r['error']
+
+
+############################################################
+# the switch: off keeps the registered start, a restart passes it over
+
+def test_off_and_on_switch_a_registered_start_without_registering_anything(ns, tmp_path, capsys, monkeypatch):
+    monkeypatch.setitem(sys.modules, 'winreg', FakeWinreg())        # never the real Run key of the user
+    task = make_task(ns, tmp_path)
+    task.con = True
+    task._win_query = task._cron_has = lambda what: (True, 'registered', '')
+
+    def no_enable(what):
+        raise AssertionError('a registered start is switched, never registered again')
+    task._win_enable = task._cron_enable = no_enable
+    off = task._paths('cserver')['off']
+
+    assert task._off('cserver') == {'return': 0, 'enabled': True, 'on': False, 'login': False} and os.path.isfile(off)
+    assert 'cserver: OFF - a restart no longer starts it' in capsys.readouterr().out
+    status = task._status('cserver', quick=True)
+    assert status['enabled'] is True and status['on'] is False
+    assert 'cserver: off (registered)' in capsys.readouterr().out
+
+    assert task._on('cserver') == {'return': 0, 'enabled': True, 'on': True, 'login': False} and not os.path.exists(off)
+    assert task._status('cserver', quick=True)['on'] is True
+    assert task._on('cserver')['on'] is True            # on again: nothing to do
+    assert 'it was on already' in capsys.readouterr().out
+
+
+def test_on_registers_what_is_not_registered_and_off_has_nothing_to_switch(ns, tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, 'winreg', FakeWinreg())        # never the real Run key of the user
+    task = make_task(ns, tmp_path)
+    task._win_query = task._cron_has = lambda what: (False, '', '')
+    registered = []
+    task._win_enable = task._cron_enable = lambda what: registered.append(what) or {'return': 0, 'enabled': True}
+    monkeypatch.setitem(ns, 'windows_session', lambda: 1)
+
+    assert task._off('cserver') == {'return': 0, 'enabled': False, 'on': False, 'login': False}
+    assert not os.path.exists(task._paths('cserver')['off'])
+    r = task._on('cserver')
+    assert r['return'] == 0 and r['on'] is True and registered == ['cserver']
+
+    # enable switches on too: a start that was off is a restart's again
+    open(task._paths('cserver')['off'], 'w').close()
+    assert task._enable('cserver')['on'] is True and not os.path.exists(task._paths('cserver')['off'])
+
+
+def test_a_restart_passes_over_a_server_that_is_switched_off_and_a_start_asked_for_runs(ns, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(os, 'setsid', lambda: None, raising=False)
+    task = make_task(ns, tmp_path)
+    p = task._paths('cserver')
+    open(p['off'], 'w').close()
+
+    def no_server(what):
+        raise AssertionError('a server that is switched off is not started by a restart')
+    task._server_words = no_server
+    assert task._supervise('cserver') == {'return': 0, 'off': True}
+    assert 'switched off - not started' in open(p['log'], encoding='utf-8').read()
+    assert not os.path.exists(p['record'])              # no supervisor is recorded: nothing runs
+
+    # start leaves a note: the same command then runs whatever the switch says, and the note is used once
+    open(p['asked'], 'w').close()
+    task._server_words = lambda what: [sys.executable, '-c', 'open(%r, "w").write("stop")' % p['stop']]
+    assert task._supervise('cserver') == {'return': 0, 'stopped': True}
+    assert not os.path.exists(p['asked']) and os.path.isfile(p['off'])
+
+    # a note left before the machine's last boot (a start that never came up) is not this start's
+    open(p['asked'], 'w').close()
+    monkeypatch.setitem(ns, 'boot_time', lambda: os.path.getmtime(p['off']) + 3600)
+    os.remove(p['stop'])
+    task._server_words = no_server
+    assert task._supervise('cserver') == {'return': 0, 'off': True}
+
+
+############################################################
+# stop: the supervisor ends its server itself
+
+def test_the_supervisor_obeys_a_stop_while_its_server_runs(ns, tmp_path, monkeypatch):
+    import threading
+    import time
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(os, 'setsid', lambda: None, raising=False)
+    task = make_task(ns, tmp_path)
+    p = task._paths('cserver')
+    ready = str(tmp_path / 'server-runs')
+    # a server that runs until it is ended; it leaves its number so that the test can see it gone
+    code = 'import os, time; open(%r, "w").write(str(os.getpid())); time.sleep(120)' % ready
+    task._server_words = lambda what: [sys.executable, '-c', code]
+
+    def ask():
+        for _ in range(100):
+            if os.path.isfile(ready):
+                break
+            time.sleep(0.1)
+        open(p['stop'], 'w').close()
+    threading.Thread(target=ask, daemon=True).start()
+
+    started = time.monotonic()
+    assert task._supervise('cserver') == {'return': 0, 'stopped': True}
+    assert time.monotonic() - started < 60
+    log = open(p['log'], encoding='utf-8').read()
+    assert 'stop asked: ending the server' in log and 'stopped (asked)' in log
+    with open(p['record'], encoding='utf-8') as f:
+        record = json.load(f)
+    assert record['obeys_stop'] is True and record['window'] is False
+    server = int(open(ready).read())
+    assert ns['recorded_process_alive'](server, time.time()) is False
+
+
+def test_stop_waits_for_a_supervisor_that_obeys_and_ends_nothing_itself(ns, tmp_path, monkeypatch):
+    task = make_task(ns, tmp_path)
+    monkeypatch.setattr(ns['time'], 'sleep', lambda seconds: None)
+    task._win_query = task._cron_has = lambda what: (False, '', '')
+    ended, groups = [], []
+    task._end_processes = lambda pids, windows=None: ended.append(list(pids)) or {'return': 0}
+    monkeypatch.setitem(ns, 'end_group', lambda pid: groups.append(pid))
+    states = [True, True, False]                            # running at the stop and once more, then gone by itself
+
+    def running(what):
+        return {'pid': 41, 'child': 42, 'obeys_stop': True}, (states.pop(0) if len(states) > 1 else states[0])
+    task._running = running
+
+    r = task._stop_all(['cserver'])
+    assert r['cserver'] == {'return': 0, 'stopped': True, 'still_running': False}
+    assert ended == [[]]                                    # no process ended from here: no right over them is needed
+    assert groups == [41]                                   # what its server may have left in its group (POSIX)
+
+    # one that does not go in time is ended as before
+    states[:] = [True]
+    monkeypatch.setitem(ns, 'recorded_process_alive', lambda pid, written, alive=None: False)
+    clock = iter(range(0, 10000, 5))
+    monkeypatch.setattr(ns['time'], 'monotonic', lambda: next(clock))
+    ended.clear()
+    r = task._stop_all(['cserver'])
+    assert ended == [[41]] and r['cserver']['still_running'] is True
+
+
+############################################################
+# start: by the system, without a window or in one of its own (Windows)
+
+@pytest.mark.skipif(os.name != 'nt', reason='the start by the system is a Windows thing')
+def test_a_start_goes_to_the_system_and_leaves_its_note(ns, tmp_path, monkeypatch):
+    task = declared_task(ns, tmp_path)
+    task.window = False
+    monkeypatch.setenv('CMETA_HOME', str(task.cm.home_path))
+    monkeypatch.setattr(ns['time'], 'sleep', lambda seconds: None)
+    task._win_query = lambda what: (False, '', '')
+    task._running = lambda what: ({}, False)
+    lines = []
+    monkeypatch.setitem(ns, 'start_by_system', lambda line, cwd='', window=False: lines.append((line, cwd, window)) or (4242, ''))
+    p = task._paths('gateway')
+
+    r = task._start('gateway')
+    line, cwd, window = lines[0]
+    assert window is False and cwd == task.opts['workdir'] and r['how'] == 'a process of its own, without a window'
+    assert line.startswith('cmd.exe /d /v:off /c set "CMETA_HOME=' + str(task.cm.home_path) + '" && ')
+    assert ' run --what=gateway ' in line and line.endswith('>> "' + p['boot_log'] + '" 2>&1')
+    assert os.path.isfile(p['asked'])                       # this start is not a restart's: the switch does not apply
+
+    # in a window of its own: a title, the supervisor told so, no log to redirect to
+    task.window = True
+    task._start('gateway')
+    line, cwd, window = lines[1]
+    assert window is True and 'title cMeta gateway - closing this window stops it && ' in line
+    assert line.endswith(' --window') and '>>' not in line
+
+    # a registered server is started by its scheduled task - unless a window is asked for
+    task._win_query = lambda what: (True, 'registered', '')
+    scripts = []
+    task._powershell = lambda script, admin=False: scripts.append((script, admin)) or {'return': 0}
+    task._start('gateway')
+    assert len(lines) == 3 and lines[2][2] is True and scripts == []
+    task.window = False
+    assert task._start('gateway')['how'] == 'the scheduled task'
+    assert "Start-ScheduledTask -TaskPath '\\cMeta\\' -TaskName 'cMeta gateway after restart'" in scripts[0][0]
+    assert scripts[0][1] is False and len(lines) == 3
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='the session without a login is a Windows thing')
+def test_registering_is_not_tried_where_windows_cannot_ask_for_an_administrator(ns, tmp_path, monkeypatch):
+    task = make_task(ns, tmp_path)
+    monkeypatch.setitem(ns, 'windows_session', lambda: 0)
+    monkeypatch.setitem(ns, 'elevated', lambda: False)
+
+    def no_register(what):
+        raise AssertionError('no startup task is registered from the session without a login')
+    task._win_enable = no_register
+    r = task._enable('cserver')
+    assert r['return'] == 1 and 'in the session without a login' in r['error']
+    assert 'cx task run start-after-restart enable --what=cserver' in r['error']
+
+    # a start at login is the user's own Run key: no administrator, so it is made from there all the same
+    task.at = 'login'
+    task._login_enable = lambda what: {'return': 0, 'login': True}
+    assert task._enable('cserver') == {'return': 0, 'login': True}
+
+
+def test_the_quick_status_asks_no_port(ns, tmp_path, monkeypatch):
+    task = make_task(ns, tmp_path)
+    task._win_query = task._cron_has = lambda what: (False, '', '')
+
+    def no_probe(*args, **kwargs):
+        raise AssertionError('the quick status asks no port')
+    monkeypatch.setitem(ns, 'probe', no_probe)
+    monkeypatch.setitem(ns, 'tailscale_address', no_probe)
+    task._login_query = lambda what: ''
+    out = task._status('ssh', quick=True)
+    assert out == {'return': 0, 'enabled': False, 'on': False, 'login': False, 'detail': '', 'running': False,
+                   'supervisor': 0, 'window': False, 'session': None, 'declared': False, 'log': task._paths('ssh')['log']}
+
+
+############################################################
+# at login (Windows): the user's Run key starts the server in a window when the user logs in
+
+class FakeWinreg:
+    """The few calls of winreg the task makes, on a dict: no test touches the real Run key of the user."""
+    HKEY_CURRENT_USER = 'HKCU'
+    KEY_SET_VALUE = 2
+    REG_SZ = 1
+
+    def __init__(self):
+        self.values = {}
+
+    class _Key:
+        def __init__(self, reg):
+            self.reg = reg
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def OpenKey(self, root, path, reserved=0, access=0):
+        assert (root, path) == ('HKCU', 'Software\\Microsoft\\Windows\\CurrentVersion\\Run')
+        return self._Key(self)
+
+    CreateKey = OpenKey
+
+    def QueryValueEx(self, key, name):
+        if name not in self.values:
+            raise FileNotFoundError(name)
+        return self.values[name], self.REG_SZ
+
+    def SetValueEx(self, key, name, reserved, kind, value):
+        self.values[name] = value
+
+    def DeleteValue(self, key, name):
+        if name not in self.values:
+            raise FileNotFoundError(name)
+        del self.values[name]
+
+
+@pytest.fixture
+def fake_winreg(monkeypatch):
+    reg = FakeWinreg()
+    monkeypatch.setitem(sys.modules, 'winreg', reg)
+    return reg
+
+
+@pytest.fixture(autouse=True)
+def no_real_run_key(monkeypatch):
+    # every test of this file: the task's winreg is a fake one (a test that looks at it asks for fake_winreg)
+    monkeypatch.setitem(sys.modules, 'winreg', FakeWinreg())
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='the start at login is a Windows thing')
+def test_at_login_the_run_key_starts_a_cmd_in_a_window_and_the_boot_start_is_switched_off(ns, tmp_path, monkeypatch, fake_winreg):
+    task = make_task(ns, tmp_path)
+    task.at = 'login'
+    monkeypatch.setenv('CMETA_HOME', str(task.cm.home_path))
+    task._win_query = lambda what: (True, 'registered', '')          # the boot start is registered and on
+    p = task._paths('cserver')
+
+    r = task._enable('cserver')
+    assert r['return'] == 0 and r['login'] is True and r['boot_switched_off'] is True and os.path.isfile(p['off'])
+    assert fake_winreg.values == {'cMeta cserver at login': 'cmd.exe /d /v:off /c ""%s""' % p['login']}
+    cmd = open(p['login'], encoding='utf-8').read().splitlines()
+    assert cmd[0] == '@echo off' and 'setlocal DisableDelayedExpansion' in cmd
+    assert 'title cMeta cserver - closing this window stops it' in cmd
+    assert 'set "CMETA_HOME=' + str(task.cm.home_path) + '"' in cmd
+    run = cmd[-1]
+    assert ' run --what=cserver ' in run and run.endswith(' -q --window --at=login')
+    assert open(p['login'], 'rb').read().count(b'\r\n') == len(cmd)             # a .cmd with Windows line ends
+    status = task._status('cserver', quick=True)
+    assert status['login'] is True and status['on'] is False and status['enabled'] is True
+
+    # the boot start back on: the login start goes (one or the other)
+    task.at = ''
+    r = task._on('cserver')
+    assert r['on'] is True and r['login'] is False and fake_winreg.values == {} and not os.path.exists(p['login'])
+    assert not os.path.exists(p['off'])
+
+    # off --at=login removes only the login start; off with neither removes both
+    task.at = 'login'
+    task._on('cserver')
+    assert fake_winreg.values and os.path.isfile(p['off'])
+    task.at = 'login'
+    r = task._off('cserver')
+    assert fake_winreg.values == {} and r['login'] is False and os.path.isfile(p['off'])       # the boot start stays off
+    task._on('cserver')
+    task.at = ''
+    r = task._off('cserver')
+    assert fake_winreg.values == {} and os.path.isfile(p['off']) and r == {'return': 0, 'enabled': True, 'on': False, 'login': False}
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='the start at login is a Windows thing')
+def test_a_login_start_is_never_switched_off_and_a_percent_is_kept(ns, tmp_path, monkeypatch, fake_winreg):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(os, 'setsid', lambda: None, raising=False)
+    task = make_task(ns, tmp_path, workdir=str(tmp_path / '100%work'))
+    os.makedirs(task.opts['workdir'])
+    p = task._paths('cserver')
+    open(p['off'], 'w').close()                    # the boot start switched off: a login start runs all the same
+    task.at = 'login'
+    task._server_words = lambda what: [sys.executable, '-c', 'open(%r, "w").write("stop")' % p['stop']]
+    assert task._supervise('cserver') == {'return': 0, 'stopped': True}
+    # in a .cmd a % starts a variable: the folder keeps its % doubled
+    assert '100%%work' in task._login_lines('cserver')[-2]
+
+
+def test_at_login_is_refused_where_it_is_not_built(ns, tmp_path):
+    task = ns['CTask'].__new__(ns['CTask'])
+    task.cm = StubCM(tmp_path)
+    ctx = {'control': {'con': False}}
+    assert '--at takes boot' in task.run(ctx, action='enable', at='lunch')['error']
+    if os.name != 'nt':
+        assert 'a Windows thing' in task.run(ctx, action='enable', at='login')['error']

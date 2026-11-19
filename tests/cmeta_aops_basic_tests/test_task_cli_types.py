@@ -246,6 +246,10 @@ def test_the_value_options_of_a_task(cm):
     assert sorted(values) == ['a', 'b', 'd', 'f', 'h', 'i', 'k']
     assert module.value_params_of(None, None) == {}
 
+    # a switch that takes a word and also means something bare (run-ai's -gw: choose from a list) says so: "bare"
+    values = module.value_params_of(run_, {'a': {'type': 'str', 'bare': 'choose from a list'}, 'h': {'type': 'str', 'bare': 'x'}})
+    assert sorted(values) == ['b', 'd', 'f']
+
     ctx = {'origin': {'cli': {'cmd': ['tool', 'setup', 'nvcc', '--version', '-q', '--a-b', '--x=1', '--l,', '--', '--z']}}}
     assert module.cli_flags(ctx) == {'version', 'q', 'a_b'}
 

@@ -130,6 +130,118 @@ def test_the_choice_in_order(cm, tmp_path, task_namespace, monkeypatch):
     cfg.update({'run_ai_gateway': True})
     assert task.choose('claude')[2].startswith('config::default has run_ai_gateway on but no run_ai_gateway_name')
 
+    # What the project ran with last (run-ai's record) goes before what it declares and before this machine's config -
+    # a gateway or the login alike - and after a flag
+    cfg.clear()
+    cfg.update({'run_ai_gateway': 'true', 'run_ai_gateway_name': 'acme', 'run_ai_gateway_codex': 'login'})
+    how = "the project's run_ai_config (its last run; -ln or -gw=<alias> changes it)"
+    assert task.choose('claude', recorded='other') == ('other', how, '')
+    assert task.choose('claude', recorded='login') == ('login', how, '')
+    assert task.choose('codex', recorded='other', project='acme') == ('other', how, '')
+    assert task.choose('claude', gateway='third', recorded='other') == ('third', 'the flag --gateway', '')
+    assert task.choose('claude', ln=True, recorded='other') == ('login', 'the flag -ln', '')
+    assert task.choose('claude', gw=True, recorded='other') == ('acme', 'the flag -gw (config run_ai_gateway_name)', '')
+
+    # -ln and a gateway flag together say opposite things: an error, where -ln used to win without a word
+    for both in (dict(gateway='acme'), dict(gw='acme'), dict(gw=True)):
+        choice, _, err = task.choose('claude', ln=True, **both)
+        assert choice == '' and err.startswith('-ln (the tool\'s own login) and -gw / --gateway'), both
+    assert task.choose('claude', ln=True, gateway='login') == ('login', 'the flag -ln', '')
+
+
+def test_this_machine_default_is_shown_set_and_removed(cm, tmp_path):
+    """cx ai.gateway default: the keys of config::default the harness runs read - set for a gateway of this machine,
+    removed with --unset; where a harness has a key of its own, that key is the one a default for it changes, and a
+    key that pins a harness to its login is never removed."""
+    def config():
+        r = cm.access({'category': 'config', 'command': 'read', 'arg1': 'default', 'con': False})
+        data = r.get('config_cmeta', {}) if r['return'] == 0 else {}
+        return {k: v for k, v in data.items() if k.startswith('run_ai_gateway')}
+
+    def default(**p):
+        return cm.access(dict({'category': 'ai.gateway', 'command': 'default', 'con': False}, **p))
+
+    before = config()
+    try:
+        cm.access({'category': 'config', 'command': 'unset', 'arg1': 'default', 'con': False,
+                   'meta': {k: '' for k in before}}) if before else None
+        name = gateway(cm, tmp_path, 'gw-' + uuid.uuid4().hex[:8])
+        other = gateway(cm, tmp_path, 'gw-' + uuid.uuid4().hex[:8])
+
+        r = default()
+        assert r['return'] == 0 and r['default'] == '' and r['harness'] == {} and config() == {}
+
+        r = default(arg1=name)
+        assert r['return'] == 0 and r['default'] == name and r['written'] == {'run_ai_gateway': True, 'run_ai_gateway_name': name}
+        assert config() == {'run_ai_gateway': True, 'run_ai_gateway_name': name}
+        # the task that chooses reads the same keys
+        r = cm.access({'category': 'task', 'command': 'run', 'arg1': 'set-ai-gateway', 'harness': 'claude', 'connect': False, 'con': False, 'quiet': True})
+        assert r['return'] == 0 and r['gateway'] == name and r['how'] == 'config run_ai_gateway'
+
+        # a harness without a key of its own: the general default changes; with one: that key
+        r = default(arg1=other, harness='codex')
+        assert r['written'] == {'run_ai_gateway': True, 'run_ai_gateway_name': other}
+        cm.access({'category': 'config', 'command': 'set', 'arg1': 'default', 'meta': {'run_ai_gateway_codex': 'login'}, 'con': False})
+        r = default(arg1=name, harness='codex')
+        assert r['written'] == {'run_ai_gateway_codex': name} and r['harness'] == {'codex': name} and r['default'] == other
+
+        # what is no gateway of this machine is refused, and "login" is no gateway
+        assert default(arg1='no-such-gateway-' + uuid.uuid4().hex[:6])['return'] > 0
+        r = default(arg1='login')
+        assert r['return'] > 0 and '--unset' in r['error']
+        assert default(arg1=name, unset=True)['return'] > 0
+        assert config()['run_ai_gateway_name'] == other
+
+        # --unset: the default goes, and the harness's own key when it names a gateway ...
+        r = default(unset=True, harness='codex')
+        assert r['return'] == 0 and sorted(r['removed']) == ['run_ai_gateway', 'run_ai_gateway_codex', 'run_ai_gateway_name']
+        assert config() == {} and r['default'] == ''
+        # ... never one that pins the harness to its login
+        cm.access({'category': 'config', 'command': 'set', 'arg1': 'default', 'con': False,
+                   'meta': {'run_ai_gateway': True, 'run_ai_gateway_name': name, 'run_ai_gateway_codex': 'login'}})
+        r = default(unset=True, harness='codex')
+        assert sorted(r['removed']) == ['run_ai_gateway', 'run_ai_gateway_name'] and config() == {'run_ai_gateway_codex': 'login'}
+        assert default(unset=True)['removed'] == []
+    finally:
+        left = config()
+        if left:
+            cm.access({'category': 'config', 'command': 'unset', 'arg1': 'default', 'meta': {k: '' for k in left}, 'con': False})
+        if before:
+            cm.access({'category': 'config', 'command': 'set', 'arg1': 'default', 'meta': before, 'con': False})
+
+
+def test_the_gateways_to_choose_from(cm, tmp_path, monkeypatch, capsys):
+    """cx ai.gateway pick: a numbered list of the gateways a harness can use, the default marked, one question -
+    a number, a name or Enter for the default."""
+    import builtins
+    name = gateway(cm, tmp_path, 'gw-pick-a-' + uuid.uuid4().hex[:6])
+    openai_only = gateway(cm, tmp_path, 'gw-pick-b-' + uuid.uuid4().hex[:6], wires={'openai': '/v1'})
+    own = passthrough(cm, 'gw-pick-c-' + uuid.uuid4().hex[:6], base_url='http://127.0.0.1:9/pass',
+                      wires={'anthropic': '/anthropic', 'openai': '/openai'}, auth={'header': 'login'})
+    answers = []
+    monkeypatch.setattr(builtins, 'input', lambda prompt='': answers.pop(0))
+
+    def pick(answer, **p):
+        answers.append(answer)
+        return cm.access(dict({'category': 'ai.gateway', 'command': 'pick', 'arg1': 'gw-pick-*', 'con': True}, **p))
+
+    r = pick('1', harness='claude')
+    assert r['return'] == 0 and r['gateways'] == sorted([name, own]) and r['gateway'] == sorted([name, own])[0]
+    shown = capsys.readouterr().out
+    assert name in shown and own in shown and openai_only not in shown and 'own login' in shown and 'sk-test' not in shown
+
+    # by its name; every wire for a harness that takes both; a login only for the harnesses with a recipe
+    assert pick(own, harness='codex')['gateway'] == own
+    assert pick('2', harness='opencode')['gateways'] == sorted([name, openai_only])
+    assert sorted(pick('1')['gateways']) == sorted([name, openai_only, own])
+
+    # what is none of the list, and nothing without a default: no gateway is guessed
+    assert pick('99', harness='claude')['return'] > 0
+    assert pick('', harness='claude')['return'] > 0
+    monkeypatch.setattr(builtins, 'input', lambda prompt='': (_ for _ in ()).throw(EOFError()))
+    r = cm.access({'category': 'ai.gateway', 'command': 'pick', 'arg1': 'gw-pick-*', 'harness': 'claude', 'con': True})
+    assert r['return'] > 0 and 'nobody to ask' in r['error']
+
 
 def test_the_task_with_login_returns_the_choice_only(cm, tmp_path, task_namespace):
     r = cm.access({'category': 'task', 'command': 'run', 'arg1': 'set-ai-gateway', 'harness': 'claude', 'ln': True, 'con': False, 'quiet': True})
@@ -141,25 +253,6 @@ def test_the_task_with_login_returns_the_choice_only(cm, tmp_path, task_namespac
     assert r['return'] == 0 and r['gateway'] == name and 'env' not in r
     r = cm.access({'category': 'task', 'command': 'run', 'arg1': 'set-ai-gateway', 'harness': 'claude', 'gateway': name, 'con': False, 'quiet': True})
     assert r['return'] == 0 and 'apiKeyHelper' in r['claude_settings'] and r['env']['CMETA_AI_GATEWAY_KEY'] == 'sk-test-' + name
-
-
-def test_run_claude_merges_the_gateway_settings_into_one_settings_flag(tmp_path, task_namespace):
-    """Claude Code reads one --settings: the gateway's go into run-ai's file or the user's JSON, or come alone."""
-    import json
-    merge = task_namespace('run-claude')['_with_settings']
-    add = {'apiKeyHelper': 'helper', 'disableClaudeAiConnectors': True}
-    flags, err = merge(['--add-dir', 'x'], add)
-    assert err == '' and flags[0] == '--settings' and json.loads(flags[1]) == add and flags[2:] == ['--add-dir', 'x']
-    path = tmp_path / 'run.claude.settings.json'
-    path.write_text(json.dumps({'autoMemoryDirectory': 'D:/p/!AI/memory'}), encoding='utf-8')
-    flags, err = merge(['--settings', str(path), '--session-id', 's'], add)
-    assert err == '' and json.loads(flags[1]) == dict(add, autoMemoryDirectory='D:/p/!AI/memory') and flags[2:] == ['--session-id', 's']
-    assert json.loads(path.read_text(encoding='utf-8')) == {'autoMemoryDirectory': 'D:/p/!AI/memory'}      # the file stays as it was
-    flags, err = merge(['--settings={"model": "m", "apiKeyHelper": "old"}'], add)
-    assert err == '' and json.loads(flags[1]) == dict(add, model='m') and len(flags) == 2
-    flags, err = merge(['--settings', '{not json'], add)
-    assert 'cannot be read' in err and flags == ['--settings', '{not json']
-    assert 'not a JSON object' in merge(['--settings', '[1]'], add)[1]
 
 
 def test_the_general_default_is_marked(cm, task_namespace):
@@ -179,28 +272,134 @@ def test_the_general_default_is_marked(cm, task_namespace):
     assert 'general' not in task.run(ctx, harness='vibe', connect=False)
 
 
-def test_run_ai_runs_a_harness_without_gateway_support_on_its_login_under_the_general_default(task_namespace):
-    """On a machine with the gateway on by default (config run_ai_gateway), "cxai --harness=vibe" stopped with "no
-    gateway support" (2026-11-01): the default is for claude, codex and opencode - another harness runs on its own
-    login, with a note. A gateway chosen for it (a flag, the project, config run_ai_gateway_<harness>) stays an error."""
-    cls = task_namespace('run-ai')['CTask']
-    task = cls.__new__(cls)
-    answer = {}
+def passthrough(cm, name, **desc):
+    """A gateway artifact of the test home with this _desc.yaml and nothing else: a pass-through names no secret."""
+    r = cm.access({'category': 'ai.gateway', 'command': 'get', 'arg1': 'local:' + name})
+    assert r['return'] == 0, r
+    cm.utils.files.safe_write_file(os.path.join(r['artifact']['path'], '_desc.yaml'), desc)
+    return name
 
-    class CM:
-        def access(self, p):
-            return dict(answer)
 
-        def error(self, text):
-            return {'return': 1, 'error': text}
+def test_a_gateway_that_passes_the_harness_own_login_on(cm, tmp_path):
+    """auth.header "login": the harness keeps its own account, the artifact changes only the address - no key is read,
+    no variable or setting of a key is made, and the run is marked a login run (own_login) for the task that starts it."""
+    name = passthrough(cm, 'gw-' + uuid.uuid4().hex[:8], base_url='http://127.0.0.1:9/pass',
+                       wires={'anthropic': '/anthropic', 'openai': '/openai'}, auth={'header': 'login'})
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': 'claude', 'con': False})
+    assert r['return'] == 0, r
+    assert r['env'] == {'ANTHROPIC_BASE_URL': 'http://127.0.0.1:9/pass/anthropic'} and r['args'] == [] and r['model'] == ''
+    assert 'claude_settings' not in r and r['own_login'] is True
+    assert any('own login' in n for n in r['notes']) and not any('connectors' in n for n in r['notes'])
 
-    task.cm = CM()
-    answer.update({'return': 0, 'gateway': 'acme', 'how': 'config run_ai_gateway', 'general': True})
-    name, how, err, note = task._gateway_choice({}, 'vibe', '', '', False)
-    assert (name, err) == ('login', None) and 'vibe takes no gateway' in how and 'acme' in note and 'vibe' in note
-    assert task._gateway_choice({}, 'claude', '', '', False) == ('acme', 'config run_ai_gateway', None, '')
-    assert task._gateway_choice({}, 'codex', '', '', False)[0] == 'acme'
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': 'codex', 'con': False})
+    assert r['return'] == 0, r
+    words = ' '.join(r['args'])
+    assert 'base_url="http://127.0.0.1:9/pass/openai"' in words and 'requires_openai_auth=true' in words
+    assert 'env_key' not in words and 'env_http_headers' not in words and r['env'] == {} and r['own_login'] is True and r['model'] == ''
 
-    answer.update({'how': 'the flag --gateway'})
-    del answer['general']
-    assert task._gateway_choice({}, 'vibe', 'acme', '', False) == ('acme', 'the flag --gateway', None, '')   # the run refuses it
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': 'opencode', 'con': False})
+    assert r['return'] > 0 and 'own login' in r['error'] and 'opencode has none' in r['error']
+
+    # the hello of "test" has no login to send
+    r = cm.access({'category': 'ai.gateway', 'command': 'test', 'arg1': name, 'con': False})
+    assert r['return'] > 0 and 'own login' in r['error']
+
+    # the task that chooses hands the mark on; a key's gateway has none
+    r = cm.access({'category': 'task', 'command': 'run', 'arg1': 'set-ai-gateway', 'harness': 'claude', 'gateway': name, 'con': False, 'quiet': True})
+    assert r['return'] == 0 and r['own_login'] is True and r['env'] == {'ANTHROPIC_BASE_URL': 'http://127.0.0.1:9/pass/anthropic'}
+    other = gateway(cm, tmp_path, 'gw-' + uuid.uuid4().hex[:8])
+    r = cm.access({'category': 'task', 'command': 'run', 'arg1': 'set-ai-gateway', 'harness': 'claude', 'gateway': other, 'con': False, 'quiet': True})
+    assert r['return'] == 0 and 'own_login' not in r
+
+    # the listing says what it is
+    r = cm.access({'category': 'ai.gateway', 'command': 'list', 'arg1': name, 'con': False})
+    assert r['return'] == 0 and r['gateways'][0]['auth'] == 'login'
+
+
+def test_a_local_pass_through_that_is_down_names_its_start_command(cm, tmp_path):
+    """A pass-through for a login has no catalog to read: when it names the task that provides it, its address must at
+    least accept a connection - else the error says how to start it. Without provided_by nothing is asked."""
+    name = passthrough(cm, 'gw-' + uuid.uuid4().hex[:8], base_url='http://127.0.0.1:9/pass', wires={'anthropic': '/anthropic', 'openai': '/openai'},
+                       auth={'header': 'login'}, provided_by={'task': 'run-some-server', 'params': {'port': 9}})
+    for harness in ('claude', 'codex'):
+        r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': harness, 'con': False})
+        assert r['return'] > 0 and 'nothing listens on 127.0.0.1:9' in r['error'], r
+        assert 'start it: cx task run run-some-server --port=9' in r['error']
+
+    # the same kind of address answering: a listener of the test
+    import socket
+    with socket.socket() as s:
+        s.bind(('127.0.0.1', 0))
+        s.listen(1)
+        up = passthrough(cm, 'gw-' + uuid.uuid4().hex[:8], base_url='http://127.0.0.1:%d/pass' % s.getsockname()[1],
+                         wires={'anthropic': ''}, auth={'header': 'login'}, provided_by={'task': 'run-some-server'})
+        r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': up, 'harness': 'claude', 'con': False})
+        assert r['return'] == 0 and r['own_login'] is True, r
+
+
+def test_a_pass_through_takes_what_it_does_not_say_from_its_upstream(cm, tmp_path):
+    """upstream: <alias> - the wires, the key and the models of that gateway, under the pass-through's own address: one
+    place to change them. What the pass-through says itself wins; an address as upstream brings nothing."""
+    parent = gateway(cm, tmp_path, 'gw-' + uuid.uuid4().hex[:8])
+    name = passthrough(cm, 'gw-' + uuid.uuid4().hex[:8], base_url='http://127.0.0.1:9/through', upstream=parent)
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': 'claude', 'con': False})
+    assert r['return'] == 0, r
+    assert r['env']['ANTHROPIC_BASE_URL'] == 'http://127.0.0.1:9/through/anthropic' and r['env']['CMETA_AI_GATEWAY_KEY'] == 'sk-test-' + parent
+    assert r['model'] == 'claude-opus-x' and 'apiKeyHelper' in r['claude_settings'] and 'own_login' not in r
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': 'codex', 'con': False})
+    assert r['return'] == 0 and 'base_url="http://127.0.0.1:9/through/openai/v1"' in ' '.join(r['args']) and r['model'] == 'gpt-x'
+    r = cm.access({'category': 'ai.gateway', 'command': 'list', 'arg1': name, 'con': False})
+    assert r['gateways'][0]['wires'] == 'anthropic,openai' and r['gateways'][0]['auth'] == 'x-api-key (%s-key)' % parent
+
+    own = passthrough(cm, 'gw-' + uuid.uuid4().hex[:8], base_url='http://127.0.0.1:9/own', upstream=parent, wires={'anthropic': ''},
+                      models={'claude': {'default': 'claude-own'}})
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': own, 'harness': 'claude', 'con': False})
+    assert r['return'] == 0 and r['env']['ANTHROPIC_BASE_URL'] == 'http://127.0.0.1:9/own' and r['model'] == 'claude-own'
+    assert 'ANTHROPIC_DEFAULT_OPUS_MODEL' not in r['env'] and r['env']['CMETA_AI_GATEWAY_KEY'] == 'sk-test-' + parent
+
+    for upstream in ('https://example.org/api', {'anthropic': 'https://example.org'}, 'no-such-gateway-' + uuid.uuid4().hex[:6]):
+        bare = passthrough(cm, 'gw-' + uuid.uuid4().hex[:8], base_url='http://127.0.0.1:9/bare', upstream=upstream)
+        r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': bare, 'harness': 'claude', 'con': False})
+        assert r['return'] > 0 and 'needs the anthropic wire' in r['error'], r
+
+
+RUN = 'project=work::my%20work,0123456789abcdef;conversation=20261119-1200;run=20261119-120000'
+
+
+def test_a_gateway_that_asks_is_told_which_run_a_request_comes_from(cm, tmp_path, monkeypatch):
+    """run_header: the harness sends run-ai's CMETA_AI_RUN in that header with every request - Claude Code through
+    ANTHROPIC_CUSTOM_HEADERS, Codex through its provider's env_http_headers (the variable's name on the command line,
+    never its value), OpenCode through its providers' headers. Nothing without the header, the variable, or with a
+    header name that is not one word."""
+    monkeypatch.setenv('CMETA_AI_RUN', RUN)
+    name = gateway(cm, tmp_path, 'gw-' + uuid.uuid4().hex[:8], run_header='X-Cmeta-Run')
+
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': 'claude', 'con': False})
+    assert r['return'] == 0, r
+    assert r['env']['ANTHROPIC_CUSTOM_HEADERS'] == 'x-cmeta-run: ' + RUN
+
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': 'codex', 'con': False})
+    assert r['return'] == 0, r
+    words = ' '.join(r['args'])
+    assert 'model_providers.%s.env_http_headers.x-cmeta-run="CMETA_AI_RUN"' % name in words and RUN not in words
+    assert 'env_http_headers.x-api-key="CMETA_AI_GATEWAY_KEY"' in words and r['env']['CMETA_AI_RUN'] == RUN
+
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': 'opencode', 'con': False})
+    assert r['return'] == 0, r
+    providers = r['opencode_config']['provider']
+    assert len(providers) == 2 and all(p['options']['headers']['x-cmeta-run'] == RUN for p in providers.values())
+
+    # outside run-ai (no CMETA_AI_RUN): nothing is sent
+    monkeypatch.delenv('CMETA_AI_RUN')
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': 'claude', 'con': False})
+    assert r['return'] == 0 and 'ANTHROPIC_CUSTOM_HEADERS' not in r['env']
+
+    # a gateway that does not ask (a company's, a vendor's), or a name that is not one header word: never sent
+    monkeypatch.setenv('CMETA_AI_RUN', RUN)
+    for extra in ({}, {'run_header': 'x-cmeta-run: injected'}, {'run_header': 'x cmeta'}):
+        other = gateway(cm, tmp_path, 'gw-' + uuid.uuid4().hex[:8], **extra)
+        for harness in ('claude', 'codex', 'opencode'):
+            r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': other, 'harness': harness, 'con': False})
+            assert r['return'] == 0, r
+            assert 'ANTHROPIC_CUSTOM_HEADERS' not in r['env'] and 'CMETA_AI_RUN' not in r['env'] and 'CMETA_AI_RUN' not in ' '.join(r['args'])
+            assert RUN not in str(r.get('opencode_config'))
