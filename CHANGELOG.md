@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.77.0.1)
+## 0.78.0
 - **Prometheus reads a changed list without a restart: `run-prometheus-server --action=reload`.** The targets and the
   interval as the config says now: prometheus.yml written beside the one in use, checked with promtool, put in its
   place and read again by the running server (`/-/reload`); a list promtool refuses leaves the one in use as it was.
