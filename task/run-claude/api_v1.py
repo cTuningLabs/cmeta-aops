@@ -127,6 +127,9 @@ def _agent_generator(claude_path, flags):
         rec['effort'] = effort
     elif os.environ.get('MAX_THINKING_TOKENS'):
         rec['thinking_budget'] = os.environ['MAX_THINKING_TOKENS']
+    # started by run-ai (cxai): say so, with the run it belongs to
+    from task_c36be4b9314a45e0.api.ctask import ai_run_record
+    rec.update(ai_run_record('claude'))
     return rec
 
 

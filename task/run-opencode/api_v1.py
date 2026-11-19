@@ -93,6 +93,9 @@ def _agent_generator(opencode_path, flags):
     effort = _flag_value(flags, ['--variant'])
     if effort:
         rec['effort'] = effort
+    # started by run-ai (cxai): say so, with the run it belongs to
+    from task_c36be4b9314a45e0.api.ctask import ai_run_record
+    rec.update(ai_run_record('opencode'))
     return rec
 
 

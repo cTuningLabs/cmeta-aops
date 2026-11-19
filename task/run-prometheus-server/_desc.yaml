@@ -1,0 +1,41 @@
+authors: Grigori Fursin
+
+# A server is a live thing: never cached, nothing stored.
+cache: false
+store_global: false
+
+usage: |
+  cx task run run-prometheus-server                       Prometheus on 127.0.0.1:9090, detached, reading the targets below
+  cx task run run-prometheus-server --action=status       up or down, and every target: up, down and why
+  cx task run run-prometheus-server --action=stop
+  cx task run run-prometheus-server --targets=ai-gateway=127.0.0.1:8401,other-machine=100.64.0.7:8686
+
+  Its configuration, its data (the time series), its record and its log: the state artifact
+  local:prometheus-server-<port> (cx state ls). What a start reads when its command line does not say:
+  config::task-run-prometheus-server (below). Its boards: the task run-grafana-server.
+
+# The defaults of a start on this machine (a word on the command line wins); a server kept by its host
+# (server: run: cxt run-prometheus-server --foreground) takes them at its next start.
+
+configs:
+  task-run-prometheus-server:
+    desc: What a Prometheus server of this machine reads and keeps when its command line does not say (task run-prometheus-server); a server that runs takes a change at its next start.
+    keys:
+      targets:
+        desc: "The servers it reads, each <name>=<host:port> or <name>=<URL of its metrics>, separated by commas: the job name of their series in Prometheus and Grafana. A server that does not answer is shown down, nothing else."
+        example: ai-gateway=127.0.0.1:8401,llama-cpp=127.0.0.1:8686,vllm=127.0.0.1:8868
+        default: ai-gateway=127.0.0.1:8401,llama-cpp=127.0.0.1:8686,vllm=127.0.0.1:8868
+      scrape_interval:
+        desc: How often it reads every target (Prometheus' duration, 5s, 15s, 1m).
+        default: 10s
+      retention:
+        desc: How long it keeps what it read (a duration, 90d, 1y); older data is removed.
+        default: 365d
+
+# Which of its words are the choices of a run, for people (the cMeta CLI builder and help read it, the engine never
+# does); what each word means is the comment of its line in run() (api_v1.py).
+cli_help:
+  targets: {choice: run}
+  scrape_interval: {choice: run}
+  retention: {choice: run}
+  action: {group: main}

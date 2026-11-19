@@ -1,0 +1,23 @@
+artifact: e8a7edde99fa4ae6
+category: task,c36be4b9314a45e0
+authors: Grigori Fursin
+creation_timestamp: '2026-11-19T15:02:04.553865+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.327
+  via: cmeta 0.44.1
+  by: Grigori Fursin
+desc: 'a Grafana server on this machine: start, stop, status; Prometheus as its data source and the boards of the AI gateway, llama.cpp and vLLM'
+tags:
+- task
+- metrics
+- grafana
+- dashboards
+- server
+last_update_timestamp: '2026-11-19T15:03:05.372863+00:00'
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.327
+  via: cmeta 0.44.1
+  by: Grigori Fursin
+  date: '2026-11-19'

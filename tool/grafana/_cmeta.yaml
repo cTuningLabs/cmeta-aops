@@ -1,0 +1,21 @@
+artifact: eb0e686ca9224b82
+category: tool,c393ba5c6fa14f66
+authors: Grigori Fursin
+creation_timestamp: '2026-11-19T14:54:06.812100+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.327
+  via: cmeta 0.44.1
+  by: Grigori Fursin
+tags:
+- metrics
+- dashboards
+- monitoring
+- grafana
+last_update_timestamp: '2026-11-19T15:03:04.410715+00:00'
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.327
+  via: cmeta 0.44.1
+  by: Grigori Fursin
+  date: '2026-11-19'
