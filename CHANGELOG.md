@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.75.0.1)
+## 0.76.0
 - **A gateway that passes a harness's own login on: `auth.header: login`, and `upstream`.** An `ai.gateway` artifact
   named a place with a key of its own; it can now also name a pass-through - a server between a harness and the
   address its requests go to, one that logs or forwards them. `auth: {header: login}` says the harness keeps its own
