@@ -11,6 +11,7 @@ cx task run run-prometheus-server --action=status          # the server and ever
 cx task run run-prometheus-server --action=stop
 cx task run run-prometheus-server --targets=ai-gateway=127.0.0.1:8401,other-machine=100.64.0.7:8686
 cx task run run-prometheus-server --foreground             # in this console (a host keeps it so: server: run)
+cx task run run-prometheus-server --action=reload           # the targets of the config read again by the running server
 ```
 
 What a start takes when its command line does not say - the targets, how often it reads them, how long it keeps

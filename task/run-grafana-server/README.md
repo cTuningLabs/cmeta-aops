@@ -5,10 +5,11 @@ in its folder **cMeta**: the AI gateway server (requests, tokens, the provider's
 llama.cpp (tokens, speeds, its cache, requests) and vLLM (tokens, requests, its caches, times).
 
 ```bash
-cx task run run-grafana-server                       # 127.0.0.1:3000, detached; the boards at /dashboards/f/cmeta
+cx task run run-grafana-server                       # 127.0.0.1:3000/grafana/ui, detached; the boards at /grafana/ui/dashboards/f/cmeta
 cx task run run-grafana-server --action=status
 cx task run run-grafana-server --action=stop
 cx task run run-grafana-server --foreground          # in this console (a host keeps it so: server: run)
+cx task run run-grafana-server --action=reload       # the data sources and boards read again by the running server
 ```
 
 Grafana stores no measurements: it draws from Prometheus, so it can run only when someone looks.
@@ -23,6 +24,12 @@ Grafana stores no measurements: it draws from Prometheus, so it can run only whe
   update checks, no news).
 - **On Windows** it starts without a window and so do the programs it starts.
 - **Embedding**: allowed, so that a cMeta page can show a board.
+- **Data sources**: the Prometheus of `prometheus` (the default) and the others named in `datasources`
+  (`<name>=<URL>,...`); every board has a "Prometheus" selector over them.
+- **A sub-path**: served under `sub_path` (`/grafana/ui` by default), so that a cMeta server passes it through behind
+  its sign-in (cMeta 0.45's `cserver_proxy`, the page cserver.grafana); its live updates (websockets) are off.
+- **vLLM's boards**: those vLLM publishes for its release, declared in `_desc.yaml` (`upstream_boards`: URL and
+  SHA-256), downloaded once into the state artifact, checked, in a folder vLLM (`vllm_boards: yes|no`).
 
 Its settings (`grafana.ini`, written at every start), data, provisioning, record and log are in the state artifact
 `local:grafana-server-<port>`; what a start takes when its command line does not say is the config

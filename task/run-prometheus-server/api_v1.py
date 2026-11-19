@@ -232,7 +232,7 @@ class CTask(InitCTask):
 
     def run(self,
             ctx: dict,
-            action: str = 'start',          # start | status | stop | restart | import
+            action: str = 'start',          # start | status | stop | restart | reload | import
             port: int = DEFAULT_PORT,       # 9090 by default (Prometheus' own)
             host: str = '127.0.0.1',        # the address to listen on (another than 127.0.0.1: anyone who reaches it reads every series - Prometheus has no sign-in)
             targets: str = '',              # the servers it reads, <name>=<host:port> or <name>=<URL>, separated by commas (default: the config's, else the AI gateway, llama.cpp and vLLM of this machine)
@@ -305,8 +305,11 @@ class CTask(InitCTask):
                 return {'return': 0, 'port': port, 'stopped': bool(pid)}
             status = self._status(host, port, {})
 
+        if action == 'reload':
+            return self._reload(ctx, folder, host, port, rec, status, targets, scrape_interval, con)
+
         if action not in ('start', 'restart'):
-            return self.cm.error('--action must be start, status, stop, restart or import (got "%s")' % action)
+            return self.cm.error('--action must be start, status, stop, restart, reload or import (got "%s")' % action)
 
         if status['running']:
             if con:
@@ -468,3 +471,50 @@ class CTask(InitCTask):
         elif was and con:
             print('  its host keeps it: its supervisor starts it again')
         return {'return': 0, 'port': port, 'imported': entry, 'restarted': was}
+
+    def _reload(self, ctx, folder, host, port, rec, status, targets, scrape_interval, con):
+        """
+        The targets and the interval as the config says now (or the command line): prometheus.yml written beside the one
+        in use, checked with promtool, put in its place and - while the server runs - read again by it (POST /-/reload:
+        no restart, nothing lost). A server that is down takes it at its next start. The retention is a flag of the
+        process: a change of it needs a restart.
+        """
+        d = self._defaults()
+        try:
+            chosen = parse_targets(targets or d['targets'])
+        except ValueError as e:
+            return self.cm.error(str(e))
+        interval = str(scrape_interval or d['scrape_interval'])
+        r = self.cm.access({'category': TASK_CATEGORY, 'command': 'run', 'arg1': SETUP_TASK, 'name': TOOL, 'ctx': ctx,
+                            'con': False, 'quiet': True})
+        if r.get('return', 1) > 0:
+            return r
+        promtool = os.path.join(os.path.dirname(str(r.get('path') or '')), 'promtool' + ('.exe' if os.name == 'nt' else ''))
+        cfg = os.path.join(folder, 'prometheus.yml')
+        new = cfg + '.new'
+        with open(new, 'w', encoding='utf-8') as f:
+            f.write(config_text(chosen, interval))
+        if os.path.isfile(promtool):
+            c = subprocess.run([promtool, 'check', 'config', new], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+            if c.returncode:
+                os.remove(new)
+                return self.cm.error('promtool finds the new configuration wrong - the one in use is kept:\n%s' % (c.stdout + c.stderr).strip()[-1500:])
+        os.replace(new, cfg)
+        reloaded = False
+        if status['running']:
+            try:
+                req = urllib.request.Request('http://%s:%d/-/reload' % (host, port), data=b'', method='POST')
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    reloaded = resp.status == 200
+            except Exception as e:
+                return self.cm.error('Prometheus on port %d did not read the new configuration again: %s' % (port, e))
+            if rec:
+                rec = {k: v for k, v in rec.items() if k != '_written'}
+                rec['targets'] = [t['name'] + '=' + t['address'] + (t['path'] if t['path'] != '/metrics' else '') for t in chosen]
+                rec['scrape_interval'] = interval
+                self._write_record(folder, rec)
+        if con:
+            print('Prometheus on port %d: %d target(s) %s - %s' % (port, len(chosen), 'read again by the running server' if reloaded
+                  else 'written for its next start', ', '.join(t['name'] for t in chosen)))
+        return {'return': 0, 'port': port, 'reloaded': reloaded, 'config': cfg,
+                'targets': [{'name': t['name'], 'address': t['address'], 'path': t['path'], 'scheme': t['scheme']} for t in chosen]}
