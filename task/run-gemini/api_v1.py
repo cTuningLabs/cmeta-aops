@@ -147,6 +147,9 @@ def _agent_generator(gemini_path, flags):
     model = _flag_value(flags, MODEL_FLAGS)
     if model:
         rec['model'] = model
+    # started by run-ai (cxai): say so, with the run it belongs to
+    from task_c36be4b9314a45e0.api.ctask import ai_run_record
+    rec.update(ai_run_record('gemini'))
     return rec
 
 

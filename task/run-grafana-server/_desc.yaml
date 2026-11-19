@@ -1,0 +1,37 @@
+authors: Grigori Fursin
+
+# A server is a live thing: never cached, nothing stored.
+cache: false
+store_global: false
+
+usage: |
+  cx task run run-grafana-server                       Grafana on 127.0.0.1:3000, detached, its boards ready
+  cx task run run-grafana-server --action=status
+  cx task run run-grafana-server --action=stop
+  cx task run run-grafana-server --prometheus=http://127.0.0.1:9090
+
+  Its settings (grafana.ini), data, record, log and the password of its admin: the state artifact
+  local:grafana-server-<port> (cx state ls). Its data source: the Prometheus of the task run-prometheus-server. Its
+  boards: the AI gateway, llama.cpp and vLLM (folder cMeta) - written again at every start.
+
+configs:
+  task-run-grafana-server:
+    desc: What a Grafana server of this machine starts with when its command line does not say (task run-grafana-server); a server that runs takes a change at its next start.
+    keys:
+      prometheus:
+        desc: The address of the Prometheus it draws from (the task run-prometheus-server).
+        example: http://127.0.0.1:9090
+        default: http://127.0.0.1:9090
+      anonymous:
+        desc: "Whoever reaches it may look at the boards without signing in (a viewer, never an editor): auto - only when it listens on 127.0.0.1 (this machine alone reaches it); yes; no."
+        values: [auto, 'yes', 'no']
+        default: auto
+      plugins:
+        desc: "The data sources it loads: prometheus - that one alone (the boards read it; each other built-in data source is a program of its own); all - every built-in one."
+        values: [prometheus, all]
+        default: prometheus
+
+cli_help:
+  prometheus: {choice: run}
+  anonymous: {choice: run}
+  action: {group: main}

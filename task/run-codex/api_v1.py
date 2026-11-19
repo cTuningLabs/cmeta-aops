@@ -108,6 +108,9 @@ def _agent_generator(codex_path, flags):
     effort = _config_value(flags, 'model_reasoning_effort')
     if effort:
         rec['effort'] = effort
+    # started by run-ai (cxai): say so, with the run it belongs to
+    from task_c36be4b9314a45e0.api.ctask import ai_run_record
+    rec.update(ai_run_record('codex'))
     return rec
 
 

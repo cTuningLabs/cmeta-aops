@@ -1,0 +1,22 @@
+artifact: b5a8d82acb814894
+category: task,c36be4b9314a45e0
+authors: Grigori Fursin
+creation_timestamp: '2026-11-19T15:02:04.153524+00:00'
+generator:
+  method: agent
+  agent: Claude Code 2.1.327
+  via: cmeta 0.44.1
+  by: Grigori Fursin
+desc: 'a Prometheus server on this machine: start (detached or in the foreground), stop, status; it reads the /metrics of the AI gateway and the model servers'
+tags:
+- task
+- metrics
+- prometheus
+- server
+last_update_timestamp: '2026-11-19T15:03:04.872205+00:00'
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.327
+  via: cmeta 0.44.1
+  by: Grigori Fursin
+  date: '2026-11-19'

@@ -115,6 +115,9 @@ def _agent_generator(hermes_path, flags, env):
     effort = _flag_value(flags, EFFORT_FLAGS)
     if effort:
         rec['effort'] = effort
+    # started by run-ai (cxai): say so, with the run it belongs to
+    from task_c36be4b9314a45e0.api.ctask import ai_run_record
+    rec.update(ai_run_record('hermes'))
     return rec
 
 

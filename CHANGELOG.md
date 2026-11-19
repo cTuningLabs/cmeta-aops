@@ -2,6 +2,41 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.76.0.1)
+- **`cx host status` brings this machine's versions up to date.** A sync or an upgrade through `cx host` probes the
+  host again afterwards, but none ever runs on the machine that runs them: the cMeta and AOps versions of this machine
+  in `cx host ls` and on the hosts page stayed those of its last `cx host probe`, whatever was upgraded since. A live
+  check now reads the engine and cmeta-aops installed here from their files (not from the running process, nor from
+  an editable install's metadata) and probes this machine again - locally, a few seconds - only when they differ from
+  what it recorded.
+
+- **An agent that run-ai started says so in the artifacts it makes: `cmeta_task: run-ai`.** The generator record of
+  a harness (`CMETA_GENERATOR`: the agent, its version, its model) now also holds, in a run of run-ai (cxai),
+  `cmeta_task: run-ai`, the `harness`, and `ai_run`: the project the run started from, its conversation and the run.
+  The project is named by its UIDs alone (`<category UID>::<artifact UID>`: `cx utils cref` finds it on any machine
+  that has it) - an artifact that carries the record may be public while the project's name is not; a project that
+  is a plain folder is left out. One helper (`ai_run_record` in `ctask.py`) for the seven harness tasks.
+- **Prometheus and Grafana as tools: `tool/prometheus`, `tool/grafana`.** Each from its official release archive,
+  checked (Prometheus against the release's `sha256sums.txt`, Grafana - the open-source edition - against the
+  archive's `.sha256`), the whole distribution kept (prometheus and promtool side by side; Grafana's bin/, conf/,
+  public/), Windows, Linux and macOS on amd64 and arm64. Nothing is started.
+- **The numbers over time: the tasks `run-prometheus-server` and `run-grafana-server`.** Prometheus reads the
+  `/metrics` of the servers it is given every few seconds (`--targets=<name>=<host:port>,...`; by default the AI
+  gateway server, llama.cpp and vLLM of this machine) and keeps the readings (365 days by default); its configuration
+  is written at every start and checked with promtool; `--action=status` shows every target up, or down and why.
+  Grafana draws from it: Prometheus is provisioned as its data source and three boards in its folder cMeta - the AI
+  gateway server (requests, tokens, the provider's cache, times, by route and model), llama.cpp and vLLM - written
+  again at every start. It loads the Prometheus data source alone (each built-in data source is a program of its
+  own), fetches no plugin and reports nothing home; on 127.0.0.1 anyone on the machine may look at the boards
+  without signing in, the admin's password is made once and kept in the state artifact. Both: 127.0.0.1 by default,
+  start / status / stop / restart, `--foreground` for a host that keeps them (`server: run`), their defaults in
+  `config::task-run-prometheus-server` and `config::task-run-grafana-server`, everything in a state artifact; on
+  Windows they start without a window, and so do the programs they start. `run-prometheus-server --action=import
+  --file=<OpenMetrics with timestamps>` adds the past (promtool's blocks joined to its data, the server restarted, the
+  import recorded); its status says since when it reads live (`scraped_since`), where an import must end.
+- **A release kept whole may name its launcher in several places** (`common_release`: `member` as a list, the one
+  under the archive's top folder taken): Grafana's folder was `grafana-v<version>/` and is `grafana-<version>/`.
+
 ## 0.76.0
 - **A gateway that passes a harness's own login on: `auth.header: login`, and `upstream`.** An `ai.gateway` artifact
   named a place with a key of its own; it can now also name a pass-through - a server between a harness and the

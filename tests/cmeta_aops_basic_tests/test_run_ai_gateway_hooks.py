@@ -238,3 +238,36 @@ def test_the_models_a_run_can_take_through_a_gateway(task_namespace):
     text = task._list_models('claude', False, {'claude': 'down'})['text']
     assert 'no models: the catalog of the anthropic wire: http 0 from http://127.0.0.1:9/v1/models: refused' in text
     assert 'cxt run-ai --harness=claude --model=' not in text
+
+
+def test_an_agent_that_run_ai_started_says_so_in_its_generator_record(task_namespace, monkeypatch):
+    """cmeta_task: run-ai, the harness and the run in CMETA_GENERATOR - the project by its UIDs alone (its name may be
+    private while the artifacts that carry the record are public); nothing of it outside run-ai."""
+    import importlib.util
+    import json
+    from pathlib import Path
+    import sys
+    import types
+    # the record is built inside the function, which imports the task category's helpers by the package name the
+    # engine gives them: the real ctask.py under that name, for this test only
+    spec = importlib.util.spec_from_file_location('ctask_for_generator', str(Path(__file__).parents[2] / 'category' / 'task' / 'api' / 'ctask.py'))
+    ctask = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ctask)
+    for name, module in (('task_c36be4b9314a45e0', types.ModuleType('task_c36be4b9314a45e0')),
+                         ('task_c36be4b9314a45e0.api', types.ModuleType('task_c36be4b9314a45e0.api')),
+                         ('task_c36be4b9314a45e0.api.ctask', ctask)):
+        monkeypatch.setitem(sys.modules, name, module)
+    run = 'project=work,0123456789abcdef::my%20private%20work,fedcba9876543210;conversation=20261119-1200;run=20261119-120000'
+    for harness in ('claude', 'codex'):
+        gen = task_namespace('run-' + harness)['_agent_generator']
+        monkeypatch.setenv('CMETA_AI_RUN', run)
+        rec = gen('no-such-harness-binary', ['--model', 'm'])
+        assert rec['method'] == 'agent' and rec['cmeta_task'] == 'run-ai' and rec['harness'] == harness, rec
+        assert rec['ai_run'] == {'project': '0123456789abcdef::fedcba9876543210', 'conversation': '20261119-1200',
+                                 'run': '20261119-120000'}, rec
+        assert 'private' not in json.dumps(rec)
+        monkeypatch.setenv('CMETA_AI_RUN', 'project=D:/some/folder;run=20261119-120000')
+        assert gen('no-such-harness-binary', [])['ai_run'] == {'run': '20261119-120000'}
+        monkeypatch.delenv('CMETA_AI_RUN')
+        rec = gen('no-such-harness-binary', [])
+        assert 'cmeta_task' not in rec and 'ai_run' not in rec and 'harness' not in rec, rec

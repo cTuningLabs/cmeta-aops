@@ -1430,6 +1430,14 @@ class Category(InitCategory):
         self._project_status_all(ctx, hosts, timeout=int(timeout), cmd_timeout=int(cmd_timeout))
         self._public_status_all(hosts, timeout=int(timeout))
 
+        # this machine's versions: a sync or an upgrade through cx host probes its host again afterwards, but none ever
+        # runs on the machine that runs them - its saved probe went stale (the user, 2026-11-19: "only this laptop still
+        # shows outdated cmeta and cmeta-aops"). Probed again here (locally, a few seconds) only when what is installed
+        # differs from what it recorded.
+        for h in hosts:
+            if h.get('status') == 'here' and self._here_versions_changed(h):
+                self._refresh_state(ctx, h, con)
+
         rows = [self._row(h, True) for h in hosts]
         if con:
             columns = ['HOST', 'TYPE', 'OS', 'STATUS', 'ADDRESS'] + (['TIME'] if verbose else [])
@@ -7552,6 +7560,35 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if check:
             cmd += ' --check'
         return cmd
+
+    def _installed_versions(self):
+        """The cMeta engine and the cMeta AOPS repository installed on this machine, read from their files (the engine's
+        version.py, this repository's _cmr.yaml) - not from this process, which may have started before an upgrade, and
+        not from the package metadata, which an editable install keeps at the version it was installed with."""
+        out = {}
+        try:
+            import cmeta
+            with open(os.path.join(os.path.dirname(cmeta.__file__), 'version.py'), encoding='utf-8') as f:
+                m = re.search(r'__version__\s*=\s*[\'"]([^\'"]+)[\'"]', f.read())
+            if m:
+                out['cmeta'] = m.group(1)
+        except Exception:
+            pass
+        try:
+            with open(os.path.join(os.path.dirname(os.path.dirname(self.path)), '_cmr.yaml'), encoding='utf-8') as f:
+                m = re.search(r'(?m)^version:\s*[\'"]?([^\s\'"]+)', f.read())
+            if m:
+                out['aops'] = m.group(1)
+        except Exception:
+            pass
+        return out
+
+    def _here_versions_changed(self, h):
+        """Whether this machine's engine or cmeta-aops is another version than its host's saved probe says; False when a
+        version cannot be read (nothing is probed on a guess)."""
+        st = h.get('state') or {}
+        now = self._installed_versions()
+        return any(now.get(k) and now[k] != str(st.get(key) or '') for k, key in (('cmeta', 'cmeta_version'), ('aops', 'aops_version')))
 
     def _refresh_state(self, ctx, h, con):
         """

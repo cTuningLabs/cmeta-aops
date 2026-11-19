@@ -7,6 +7,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 
 from pathlib import Path
 import os
+import re
 import logging
 import tempfile
 import time
@@ -317,6 +318,45 @@ def folder_as_named(named, base=None):
 # A record {"method": "agent", "agent": "Claude Code 2.1.292", "by": ..., "model": ...} then says that the agent ran
 # through a cMeta task (run-ai, run-claude, ...) rather than by hand. One constant, so the word can change in one place.
 GENERATOR_VIA_KEY = 'via'
+
+
+AI_RUN_ENV = 'CMETA_AI_RUN'      # set by run-ai for the harness it starts: the run it belongs to (run-ai's RUN_REF_ENV)
+UID16 = re.compile(r'^[0-9a-f]{16}$')
+
+
+def ai_run_record(harness=''):
+    """
+    What the generator record of an agent that run-ai (cxai) started adds (the user, 2026-11-19: "can we add
+    cmeta_task: run-ai along with harness"): {'cmeta_task': 'run-ai', 'harness': <name>, 'ai_run': {'project':
+    '<category UID>::<artifact UID>', 'conversation': <id>, 'run': <stamp>}}, from CMETA_AI_RUN. The project is named
+    by its UIDs alone - it resolves on any machine that has it (cx utils cref), while the artifacts that carry the
+    record may be public and its name private; a project without a cRef (a plain folder) is left out. {} outside
+    run-ai.
+    """
+    import urllib.parse
+    ref = os.environ.get(AI_RUN_ENV, '')
+    if not ref:
+        return {}
+    fields = {}
+    for part in ref.split(';'):
+        k, _, v = part.partition('=')
+        if k.strip() and v:
+            fields[k.strip()] = urllib.parse.unquote(v)
+    run = {}
+    cat, sep, art = fields.get('project', '').partition('::')
+    if sep:
+        cu, au = cat.split(',')[-1].strip(), art.split(',')[-1].strip()
+        if UID16.match(cu) and UID16.match(au):
+            run['project'] = cu + '::' + au
+    for k in ('conversation', 'run'):
+        if fields.get(k):
+            run[k] = fields[k]
+    out = {'cmeta_task': 'run-ai'}
+    if harness:
+        out['harness'] = harness
+    if run:
+        out['ai_run'] = run
+    return out
 
 
 def generator_via():

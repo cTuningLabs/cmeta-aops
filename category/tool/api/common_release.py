@@ -48,7 +48,9 @@ SPEC keys:
   unsupported      [[uname, uarch], ...] pairs upstream publishes nothing for (e.g. ['windows', 'arm64'])
   extra            list of {'name', 'url', 'checksum', 'member', 'ext'} fetched into the same folder
   tree             True: retain the entire distribution, including JDK/libraries/configuration;
-                   requires member, the relative path to the launcher inside the archive
+                   requires member, the relative path to the launcher inside the archive - or a list of
+                   candidates, of which the one whose top folder is the archive's is taken (a distribution
+                   folder that changed its name between versions: grafana-v<version>/, grafana-<version>/)
   checksum.algorithm  'sha256' (default) or 'sha512' for a per-asset checksum file
 
 The version is not a SPEC key: default_version in the tool's _desc.yaml is the one place that says which
@@ -180,6 +182,28 @@ def _unpack(archive, member, name, dest):
     return False
 
 
+def _archive_root(archive):
+    """The top folder of a .zip/.tar.gz (its first member's first part), or '' when it cannot be read."""
+    try:
+        if archive.endswith('.zip'):
+            with zipfile.ZipFile(archive) as source:
+                names = source.namelist()[:1]
+        else:
+            with tarfile.open(archive, 'r:*') as source:
+                first = source.next()
+                names = [first.name] if first else []
+    except (OSError, tarfile.TarError, zipfile.BadZipFile):
+        return ''
+    parts = PurePosixPath(names[0].replace('\\', '/')).parts if names else ()
+    return parts[0] if parts else ''
+
+
+def _tree_member(archive, members):
+    """The launcher of a tree release among its candidates: the one under the archive's top folder, else the first."""
+    root = _archive_root(archive)
+    return next((m for m in members if m.replace('\\', '/').split('/')[0] == root), members[0])
+
+
 def _unpack_tree(archive, member, directory):
     """Retain a checked distribution. Reject traversal, special files and escaping links."""
     root = Path(directory).resolve()
@@ -281,7 +305,8 @@ def _fetch_one(tool, ctx, params, item, v, directory, con, space):
     target = os.path.join(os.getcwd(), directory, item['name'] + v['host_exe'])
     if item.get('tree'):
         try:
-            member = item['member'].format(**vv)
+            members = item['member'] if isinstance(item['member'], (list, tuple)) else [item['member']]
+            member = _tree_member(r['path'], [m.format(**vv) for m in members])
             target = _unpack_tree(r['path'], member, os.path.join(os.getcwd(), directory))
         except (KeyError, ValueError, OSError, tarfile.TarError, zipfile.BadZipFile) as error:
             return tool.cm.error(str(error))
