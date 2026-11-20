@@ -24,6 +24,7 @@ targets together across OSes (Linux / Windows / macOS / Android; CPU / CUDA / �
 | Doc | Topic |
 |-----|-------|
 | [python-api.md](python-api.md) | **The cMeta Python API in artifacts** — the single `access()` dispatch, what hook code is handed (`self.cm`, `ctx`), the `CTask` hook signatures, the dict **return contract**, and **error handling** (`catch_error`, soft error `16`, `fail16`). Start here before writing any `api_v1.py`. |
+| [compatibility.md](compatibility.md) | **What every tool, task, program and page keeps**: a connector and adaptor (never a replacement), backwards compatible by extension, following the version of what is wrapped (a worked case: `task/ai-account-status`), working on old and unseen systems (reduced functionality rather than a failure), never guessing. Read it before writing or changing an artifact. |
 | [task-engine.md](task-engine.md) | The `task` category — the workflow engine: `run()` lifecycle, `uses` pipelines, `ctx`, `store_global`/cache, `CTask` hooks. |
 | [tool-abstraction.md](tool-abstraction.md) | The `tool` category — detect / install / build / run an external CLI portably; version listing; `install_cmd_version`. |
 | [tool-sizes.md](tool-sizes.md) | Disk sizes of tools: `_desc_sizes.yaml` rules, the free-space check before an install or build, `min_free_gb`, `cx tool setup <tool> --sizes`. |

@@ -29,6 +29,10 @@ explain the outcome. `account` contains allowlisted display fields only.
 `windowDurationMins`, `resetsAt` (Unix seconds), and `label`.
 `credits` is separate from subscription allowance; token counts and dollar costs
 of an individual run are not remaining account quota.
+`harness_version` (as cMeta's tool detection gives it; empty when the harness is not
+found on the machine), `mechanism` (the way the account was read) and
+`mechanism_note` say how the answer was obtained - see "Harness versions" below.
+These keys were added on 2026-11-20; every key of before is as it was.
 
 Account identity is shown by default, for example `Claude (you@example.com): 5h:
 94% remaining` or `Codex (API): API usage…`. The same bracket is used in compact
@@ -68,7 +72,7 @@ the local Codex credentials/config invalidates the status cache. OpenCode uses
 its own selected provider's OAuth profile/token claims or reports `API` for an
 API credential in its supported store. OpenClaw displays an email only when its
 provider status reports one. A selected cMeta gateway is labelled `API` and does
-not read a personal login. Unsupported identity adapters show `Account unknown`;
+not read a personal login, except one that passes that login on (see Gateways). Unsupported identity adapters show `Account unknown`;
 quota support is unchanged. No API key, prefix or credential fingerprint is shown.
 
 | Harness | Automatic account quota | Source / limitation |
@@ -100,15 +104,68 @@ not a promise of a stable public billing API.
 
 For browsers, `client_script=True` returns the optional component in
 `files/js/account-status.js`. Embed it before the app controller, then use
-`window.CMetaAIAccountStatus.mount({get, query, values, onChange})`.
+`window.CMetaAIAccountStatus.mount({get, query, values, onChange})`. An app whose AI runs on
+another machine adds `where: () => '<machine>'`: the line then says which machine it checked.
 It shares formatting, refresh handling, stale-selection protection, reset times,
 usage-page links and run-usage display across all apps.
 The hosting app remains responsible for authentication/access checks.
 
+## Harness versions: the ways an account is read
+
+A harness changes over time: where it keeps its login, how its usage is asked. The task does not follow the newest
+harness alone. `_desc.yaml` declares, per harness (`harnesses:`), the cMeta tool that finds it and the **ways** its
+account is read, the newest first, each with the harness version it starts at (`since`):
+
+1. The installed harness's version is asked from cMeta's own tool detection (the `setup` task of the harness's tool
+   artifact; nothing is installed). It is kept in `harness/<harness>.json` of `log::local:ai-account-status` and asked
+   again when the program's file changed, else after an hour (the detection starts the program: seconds).
+2. The first way whose `since` is not above that version is taken (no `since`: every version).
+3. The answer says what was used: `harness_version`, `mechanism` (the way's name) and, when there is something to
+   say, `mechanism_note`. `source` is unchanged.
+
+| Case | What happens |
+| --- | --- |
+| The version is known | the way declared for it |
+| The harness is not found by cMeta on this machine, or its version is not one the engine compares | the newest way; `mechanism_note` says so |
+| The version is below every `since` | `available: false`, `reason: harness_version`, the message names both versions; `return` stays 0 and AI runs are not stopped |
+| A way that starts the program (`codex-app-server`, `openclaw-status`) | starts the program cMeta found - the one whose version chose the way |
+
+**When a harness changes, a way is added - none is replaced.** Add an entry above the others in `_desc.yaml` with
+`since: <the first version that needs it>`, a reader for its name in `_selection` of `api_v1.py`, and a line under
+`verified` once it was really read (harness version, system, day). The entries below it stay as they are, for the
+machines that still run an older harness. `tests/cmeta_aops_basic_tests/test_ai_account_status_ways.py` holds the
+rules: every way has its reader, the ways are the newest first, each harness names its tool by `alias,UID`.
+
+Today each harness has one way, read on Windows on 2026-11-20: `claude-oauth-usage` (Claude Code 2.1.327),
+`codex-app-server` (Codex 0.170.0), `opencode-auth-file` (OpenCode 1.19.5); `openclaw-status` is declared but
+not yet read with success (its `verified` list is empty).
+
+## Gateways
+
+`gateway` is `login` (the harness's own login, the default) or an `ai.gateway` alias:
+
+- A gateway that passes the harness's own login on (`auth: {header: login}`, such as `local-login`) reads that
+  login, as `login` does: the run spends the login's allowance, only its address changes. Claude and Codex only
+  (the harnesses such a gateway serves); the answer has `own_login: true`.
+- A gateway with a key, one without a key (a local model server) and one this machine does not have are named in
+  the message (`Through the AI gateway team-gateway with its key: ...`) and labelled `API`; no personal login is read,
+  and no secret or its name is returned.
+
+`machine_default=True` with an empty gateway checks the account of the gateway a run-ai run without a gateway flag
+takes on this machine (set-ai-gateway: `run_ai_gateway_<harness>`, then the general `run_ai_gateway` for claude,
+codex and opencode, else the login). `gateway` and `gateway_how` in the answer say which one and why. Without
+`machine_default`, an empty gateway is the login, as before. A project's own choice (`ai_gateway`, the
+`run_ai_config.gateway` of its last run) is not read: the caller passes that gateway when it knows it.
+
+```sh
+cx task run ai-account-status --harness=claude --gateway=local-login --json
+cx task run ai-account-status --harness=codex --gateway= --machine_default --json
+```
+
 Offline regression tests (no credentials, network or model calls):
 
 ```sh
-python -m pytest tests/cmeta_aops_basic_tests/test_ai_account_status.py -q
+python -m pytest tests/cmeta_aops_basic_tests/test_ai_account_status.py tests/cmeta_aops_basic_tests/test_ai_account_status_ways.py -q
 ```
 
 Provider references checked 2026-11-13:
