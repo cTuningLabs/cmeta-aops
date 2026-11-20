@@ -35,10 +35,18 @@ class Tests(unittest.TestCase):
  def setUp(self):
   self.directory=tempfile.TemporaryDirectory();self.root=Path(self.directory.name)
   self.task=object.__new__(m.CTask);self.task.cmeta={'uses_categories':{'task':'task','log':'log','config':'config'}}
-  self.config={}
+  self.config={};self.gateways={};self.machine={'return':0,'gateway':'login','how':'no default'}
+  self.tools={}  # what cMeta's tool detection finds: <tool cRef> -> the setup task's answer (none: the harness is not found)
   class FakeCM:
    def access(_,params):
     if params['category']=='config':return {'return':0,'config_cmeta':self.config}
+    if params['category']==m.GATEWAY_CATEGORY:
+     assert params['command']=='list',params
+     return {'return':0,'gateways':[dict(alias=params['arg1'],auth=self.gateways[params['arg1']])] if params['arg1'] in self.gateways else []}
+    if params['category']=='task':
+     if params['arg1']==m.SETUP_TASK:return dict(self.tools.get(params['name'],{'return':16,'error':'not found'}))
+     assert params['arg1']==m.SET_AI_GATEWAY and params['connect'] is False,params
+     return dict(self.machine)
     assert params['category']=='log',params
     return {'return':0,'artifact':{'path':str(self.root)}}
   self.task.cm=FakeCM()
@@ -161,7 +169,8 @@ class Tests(unittest.TestCase):
   fetch=unittest.mock.Mock(return_value={'available':True,'account':{'authType':'login','email':'hide@example.test','username':'Hide'},'windows':[]})
   with patch.object(self.task,'_selection',return_value=('secret',fetch,'')) as selection:
    first=self.run_task(harness='claude');second=self.run_task(harness='claude')
-  selection.assert_called_with('claude','',include_identity=False)
+  # (since 2026-11-20 the call also names the way chosen for the harness's version and the program cMeta found)
+  selection.assert_called_with('claude','',include_identity=False,way='claude-oauth-usage',executable='')
   for out in (first,second):
    self.assertFalse(out['identity_visible']);self.assertNotIn('identity',out);self.assertNotIn('hide@example.test',json.dumps(out));self.assertNotIn('username',out['account'])
   self.assertNotIn('hide@example.test',''.join(p.read_text() for p in self.root.glob('*.json')))
@@ -229,5 +238,49 @@ class Tests(unittest.TestCase):
   self.assertEqual(error.exception.account['email'],'own@example.test');self.assertNotIn('secret',error.exception.message)
  def test_display_rejects_control_characters(self):
   for text in ('x\n@example.test','x'*255,{},None):self.assertEqual(m.display_text(text),'')
+
+ # Gateways: one that passes the harness's own login on (local-login) reads that login; the machine's default
+ # gateway, as a run-ai run without a gateway flag takes it, with machine_default (2026-11-19)
+ def login_read(self):
+  return patch.object(self.task,'_selection',return_value=('id',lambda folder:{'available':True,'account':{'authType':'login','email':'own@example.test'},'windows':[{'usedPercent':10}]},'page'))
+ def test_pass_through_gateway_reads_own_login(self):
+  self.gateways={'local-login':'login'}
+  with self.login_read():out=self.run_task(harness='claude',gateway='local-login')
+  self.assertTrue(out['available']);self.assertTrue(out['own_login']);self.assertEqual(out['gateway'],'local-login');self.assertEqual(out['identity']['label'],'own@example.test')
+ def test_pass_through_gateway_only_for_login_harnesses(self):
+  self.gateways={'local-login':'login'}
+  with patch.object(self.task,'_selection',side_effect=AssertionError('no login read')):out=self.run_task(harness='opencode',model='openai/x',gateway='local-login')
+  self.assertEqual(out['reason'],'gateway');self.assertIn('claude and codex',out['message']);self.assertNotIn('own_login',out)
+ def test_key_gateway_named_without_secret(self):
+  self.gateways={'company':'x-api-key (company-secret)','local':'none'}
+  with patch.object(self.task,'_selection',side_effect=AssertionError('no login read')):
+   key=self.run_task(harness='claude',gateway='company');free=self.run_task(harness='claude',gateway='local')
+  self.assertIn('company with its key',key['message']);self.assertNotIn('company-secret',json.dumps(key));self.assertEqual(key['identity']['label'],'API')
+  self.assertIn('without a key',free['message']);self.assertEqual(free['gateway'],'local')
+ def test_unknown_gateway_said(self):
+  with patch.object(self.task,'_selection',side_effect=AssertionError('no login read')):out=self.run_task(harness='claude',gateway='gone')
+  self.assertEqual(out['reason'],'gateway');self.assertIn('not on this machine',out['message'])
+ def test_machine_default_gateway(self):
+  self.gateways={'company':'x-api-key (company-secret)','local-login':'login'}
+  self.machine={'return':0,'gateway':'company','how':'config run_ai_gateway','general':True}
+  with patch.object(self.task,'_selection',side_effect=AssertionError('no login read')):out=self.run_task(harness='claude',gateway='',machine_default=True)
+  self.assertEqual((out['gateway'],out['gateway_how'],out['reason']),('company','config run_ai_gateway','gateway'))
+  # The general default is not for a harness without gateway support: its own login, as run-ai
+  with self.login_read():out=self.run_task(harness='vibe',gateway='',machine_default=True)
+  self.assertEqual(out['gateway'],'login');self.assertIn('takes no gateway',out['gateway_how']);self.assertTrue(out['available'])
+  self.machine={'return':0,'gateway':'local-login','how':'config run_ai_gateway_claude'}
+  with self.login_read():out=self.run_task(harness='claude',gateway='',machine_default=True)
+  self.assertTrue(out['own_login']);self.assertTrue(out['available'])
+  self.machine={'return':16,'error':'not found'}
+  with self.login_read():out=self.run_task(harness='claude',gateway='',machine_default=True)
+  self.assertEqual(out['gateway'],'login');self.assertTrue(out['available'])
+  self.machine={'return':1,'error':'broken config'}
+  out=self.run_task(harness='claude',gateway='',machine_default=True)
+  self.assertEqual(out['reason'],'gateway_unavailable');self.assertFalse(out['available'])
+ def test_empty_gateway_stays_login_without_machine_default(self):
+  self.machine={'return':0,'gateway':'company','how':'config run_ai_gateway'}
+  with self.login_read():out=self.run_task(harness='claude',gateway='')
+  self.assertEqual(out['gateway'],'login');self.assertNotIn('gateway_how',out);self.assertTrue(out['available'])
+  self.assertEqual(self.run_task(harness='claude',machine_default='yes')['return'],1)
 
 if __name__=='__main__':unittest.main(verbosity=2)

@@ -20,31 +20,37 @@
     if(out.message)parts.push(out.message);
     if(out.stale)parts.unshift('Last known quota (refresh pending)');
     else if(out.cached&&!compact)parts.push('Cached for up to 2 minutes');
-    return harnessName(out.harness)+(label?' ('+label+')':'')+': '+(parts.join(' · ')||'Quota not reported');
+    // The gateway a run takes when it is not the harness's own login (local-login passes that login on)
+    const via=out.gateway&&out.gateway!=='login'?' via '+out.gateway:'';
+    return harnessName(out.harness)+(label?' ('+label+')':'')+via+': '+(parts.join(' · ')||'Quota not reported');
   }
   function details(out) {
     return [out.message||'',out.checked_at?'Checked '+new Date(out.checked_at*1000).toLocaleString()+'.':'',
       out.stale?'Last known values; the latest refresh failed.':'',
+      out.gateway&&out.gateway!=='login'?'AI gateway: '+out.gateway+(out.gateway_how?' ('+out.gateway_how+')':'')+(out.own_login?', which passes this login on: its allowance is the one used.':'.'):
+        out.gateway_how?'No AI gateway: the login of the harness ('+out.gateway_how+').':'',
       'Server account allowance, shared with other sessions using this account. Percentages are usage allowances, not a numeric credit balance.',
       out.usage_url?'Usage page: '+out.usage_url:''].filter(Boolean).join(' ');
   }
-  function mount({get,query,values,onChange=()=>{},isDisabled=()=>false}) {
+  // where(): the machine checked, said while checking and before the result (default: this server)
+  function mount({get,query,values,onChange=()=>{},isDisabled=()=>false,where=null}) {
     let checking=false,pending=false;
     async function refresh() {
       if(checking){pending=true;return;}checking=true;get('usage-refresh').disabled=true;
       const selection=values(), key=JSON.stringify(selection);
-      get('account-status').textContent='Checking the AI account on this server…';
+      const place=where?where():'';
+      get('account-status').textContent='Checking the AI account on '+(place||'this server')+'…';
       try {
         const out=await query('account_status',selection);
         if(key!==JSON.stringify(values())){pending=true;return;}
-        const element=get('account-status');element.textContent=describe(out,{includeAccount:true});element.title=details(out);
+        const element=get('account-status');element.textContent=(place?place+': ':'')+describe(out,{includeAccount:true});element.title=details(out);
         if(/^https:\/\//.test(out.usage_url||'')) {
           const link=document.createElement('a');link.href=out.usage_url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Open usage page';
           element.append(document.createTextNode(' · '),link);
         }
         onChange(out);
       } catch(e) {
-        if(key===JSON.stringify(values())){const out={harness:selection.harness,available:false,message:e.message};get('account-status').textContent=describe(out);onChange(out);}
+        if(key===JSON.stringify(values())){const out={harness:selection.harness,available:false,message:e.message};get('account-status').textContent=(place?place+': ':'')+describe(out);onChange(out);}
         else pending=true;
       } finally {checking=false;get('usage-refresh').disabled=isDisabled();if(pending){pending=false;refresh();}}
     }

@@ -18,6 +18,9 @@ from datetime import datetime
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+import yaml
+
+from cmeta.utils.common import compare_versions
 from cmeta.utils.files import PathLock
 from task_c36be4b9314a45e0.api.ctask import InitCTask, drop_provider_variables
 
@@ -31,6 +34,50 @@ PAGES = {'claude': 'https://claude.ai/settings/usage', 'openai': 'https://chatgp
          'antigravity': 'https://antigravity.google/docs/plans',
          'openclaw': 'https://docs.openclaw.ai/concepts/usage-tracking',
          'hermes': 'https://hermes-agent.nousresearch.com/docs/'}
+
+# As run-ai: a machine's general default gateway (config run_ai_gateway) is for these harnesses; others run on their
+# login. A gateway that passes the harness's own login on (ai.gateway auth.header "login") serves only LOGIN_HARNESSES.
+GATEWAY_HARNESSES = ('claude', 'codex', 'opencode')
+LOGIN_HARNESSES = ('claude', 'codex')
+SET_AI_GATEWAY = 'set-ai-gateway,e10aa0a00edd4a2c'
+GATEWAY_CATEGORY = 'ai.gateway,ae1ae632e0ec4f75'
+SETUP_TASK = 'setup,a2f9b61079ce4333'
+
+# A harness's version comes from cMeta's tool detection, which starts the program (seconds): it is asked again when
+# the program's file changed, else after this many seconds; a harness that was not found is looked for again then.
+VERSION_RECHECK = 3600
+
+
+def harness_ways():
+    """The `harnesses` of this task's _desc.yaml: per harness, the cMeta tool that finds it and the ways its account
+    is read, the newest first. A harness that changes gets a way ADDED there (and its reader in _selection); the
+    ways that exist stay, for the machines that still run an older harness."""
+    with open(Path(__file__).parent / '_desc.yaml', encoding='utf-8') as f:
+        declared = (yaml.safe_load(f) or {}).get('harnesses')
+    return declared if isinstance(declared, dict) else {}
+
+
+def choose_way(ways, version):
+    """The way an account is read for a harness's version -> (the way, a note for the reader). `ways`: the harness's
+    entries of _desc.yaml, the newest first; the first whose `since` is not above the version is taken (no `since`:
+    every version). A version that is not known (the harness is not found on this machine) or that the engine does
+    not compare takes the newest way, and the note says so. A version below every `since`: (None, why) - the account
+    is not read, the run is not stopped."""
+    if not ways:
+        return None, ''
+    if not version:
+        return ways[0], 'The version of this harness is not known on this machine: the newest way of reading its account is used.'
+    for way in ways:
+        since = str(way.get('since') or '')
+        if not since:
+            return way, ''
+        r = compare_versions(str(version), since)
+        if r.get('return'):
+            return ways[0], 'The version of this harness (%s) is not one cMeta compares: the newest way of reading its account is used.' % str(version)[:40]
+        if r['comparison'] in ('>', '='):
+            return way, ''
+    return None, ('This harness is version %s; its account can be read from version %s on. AI requests can still be tried.' %
+                  (str(version)[:40], str(ways[-1].get('since'))[:40]))
 
 
 def read_json(path):
@@ -195,8 +242,46 @@ class CTask(InitCTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path=__file__, **kwargs)
 
-    def _codex(self, folder):
-        executable = shutil.which('codex')
+    def _harness_version(self, harness, tool, folder, now):
+        """The installed harness's version and program as cMeta's own tool detection gives them (the setup task of
+        its tool artifact; nothing is installed) -> (version or '', program or ''). Kept per harness in the folder
+        harness/ of the task's log artifact (no credential is in it: the tool, the program's path, its file's
+        identity, the version); asked again when the program's file changed, or after VERSION_RECHECK."""
+        record = folder / 'harness' / (harness + '.json')
+        try:
+            saved = json.loads(record.read_text(encoding='utf-8')) if record.is_file() and record.stat().st_size <= 65536 else {}
+        except (OSError, ValueError):
+            saved = {}
+        saved = saved if isinstance(saved, dict) else {}
+        if saved.get('tool') == tool and number(saved.get('next_check')) and saved['next_check'] > now:
+            program = saved.get('path') if isinstance(saved.get('path'), str) else ''
+            if not program:
+                return '', ''
+            try:
+                stat = os.stat(program)
+                if saved.get('file') == [os.path.realpath(program), stat.st_mtime_ns, stat.st_size]:
+                    return (saved['version'] if isinstance(saved.get('version'), str) else ''), program
+            except OSError:
+                pass
+        found = self.cm.access(dict(category=self.cmeta['uses_categories']['task'], command='run', arg1=SETUP_TASK,
+            name=tool, skip_install=True, cache=False, store_global=False, quiet=True, con=False))
+        program = found.get('path') if not found.get('return') and isinstance(found.get('path'), str) else ''
+        version = found.get('version') if program and isinstance(found.get('version'), str) and len(found['version']) <= 80 else ''
+        saved = {'tool': tool, 'path': program, 'version': version, 'next_check': now + VERSION_RECHECK}
+        if program:
+            try:
+                stat = os.stat(program)
+                saved['file'] = [os.path.realpath(program), stat.st_mtime_ns, stat.st_size]
+            except OSError:
+                saved['file'] = None
+        record.parent.mkdir(exist_ok=True)
+        temporary = record.with_suffix('.%d.tmp' % os.getpid())
+        temporary.write_text(json.dumps(saved, allow_nan=False), encoding='utf-8')
+        os.replace(temporary, record)
+        return version, program
+
+    def _codex(self, folder, executable=''):
+        executable = executable or shutil.which('codex')
         if not executable:
             setup = self.cm.access(dict(category=self.cmeta['uses_categories']['task'], command='run',
                 arg1='setup,a2f9b61079ce4333', name='codex,cdbf5f6e6882460f', skip_install=True,
@@ -266,8 +351,8 @@ class CTask(InitCTask):
             proc.stdin.close()
             proc.stdout.close()
 
-    def _openclaw(self, folder, provider):
-        executable = shutil.which('openclaw')
+    def _openclaw(self, folder, provider, executable=''):
+        executable = executable or shutil.which('openclaw')
         if not executable:
             setup = self.cm.access(dict(category=self.cmeta['uses_categories']['task'], command='run',
                 arg1='setup,a2f9b61079ce4333', name='openclaw,1776c76162b14545', skip_install=True,
@@ -313,9 +398,14 @@ class CTask(InitCTask):
         return {'available': bool(windows), 'account': shown, 'windows': windows, 'source': 'openclaw-status',
                 'message': '' if windows else 'OpenClaw did not report quota windows for this provider.'}
 
-    def _selection(self, harness, model, include_identity=True):
-        """Read only this harness's credentials; never substitute another harness's account."""
-        if harness == 'claude':
+    def _selection(self, harness, model, include_identity=True, way='', executable=''):
+        """Read only this harness's credentials; never substitute another harness's account. `way`: the name of the
+        way chosen for the harness's version ('' = the newest one declared for the harness); `executable`: the
+        harness's program as cMeta found it, for the ways that start it."""
+        if not way:
+            declared = (harness_ways().get(harness) or {}).get('ways') or []
+            way = str(declared[0].get('name') or '') if declared else ''
+        if way == 'claude-oauth-usage':
             token = os.environ.get('CLAUDE_CODE_OAUTH_TOKEN')
             data = {}
             if not token:
@@ -325,7 +415,7 @@ class CTask(InitCTask):
                 raise StatusError('login_required', 'No readable Claude personal login on this server. API keys do not expose the Claude subscription allowance; use Claude Usage for that account.', 30)
             plan = data.get('subscriptionType')
             return token, lambda folder: claude_usage(token, plan[:80] if isinstance(plan, str) else '', include_identity=include_identity), PAGES['claude']
-        if harness == 'opencode':
+        if way == 'opencode-auth-file':
             provider = model.split('/', 1)[0] if '/' in model else ''
             if not provider:
                 raise StatusError('provider_required', 'OpenCode quota belongs to its selected provider. Select an openai/… or anthropic/… model with OAuth login for automatic quota; other providers report usage in their own dashboard.', 120)
@@ -343,7 +433,7 @@ class CTask(InitCTask):
             account_id = data.get('accountId')
             account_id = account_id if isinstance(account_id, str) and len(account_id) <= 200 else ''
             return token + account_id, lambda folder: openai_usage(token, account_id, include_identity=include_identity), PAGES['openai']
-        if harness == 'codex':
+        if way == 'codex-app-server':
             home = Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex')
             # A login switch in the same CODEX_HOME must invalidate the quota cache.
             fingerprint = hashlib.sha256()
@@ -351,12 +441,14 @@ class CTask(InitCTask):
                 path = home / name
                 if path.is_file() and path.stat().st_size <= 1_048_576:
                     fingerprint.update(path.read_bytes())
-            return str(home) + fingerprint.hexdigest(), self._codex, PAGES['openai']
-        if harness == 'openclaw':
+            return str(home) + fingerprint.hexdigest(), lambda folder: self._codex(folder, executable), PAGES['openai']
+        if way == 'openclaw-status':
             provider = model.split('/', 1)[0] if '/' in model else ''
             if not provider:
                 raise StatusError('provider_required', 'Select an explicit provider/model to read its OpenClaw quota. The default provider is not guessed.')
-            return os.environ.get('OPENCLAW_STATE_DIR', str(Path.home() / '.openclaw')), lambda folder: self._openclaw(folder, provider), PAGES['openclaw']
+            return os.environ.get('OPENCLAW_STATE_DIR', str(Path.home() / '.openclaw')), lambda folder: self._openclaw(folder, provider, executable), PAGES['openclaw']
+        if way:
+            raise StatusError('not_supported', 'This copy of the task has no reader for the way "%s" of its _desc.yaml.' % way[:60], 120)
         messages = {
             'vibe': 'Vibe allowance is managed by Mistral. This adapter does not have a reliable read-only quota interface for the installed Vibe login; open Mistral Usage. Per-run tokens and cost remain available when reported.',
             'gemini': 'Gemini quota depends on Google login, Code Assist licence, API key or Vertex project. Automatic account quota is not connected here; use Gemini /stats or the quota page for the same account/project.',
@@ -364,6 +456,35 @@ class CTask(InitCTask):
             'hermes': 'Hermes uses several providers. Its per-run token/cost statistics are not a remaining subscription allowance; check the selected provider account.',
         }
         raise StatusError('not_supported', messages.get(harness, 'Automatic quota reporting is not configured for this harness.'), 120)
+
+    def _machine_gateway(self, harness):
+        """The gateway a run-ai run without a gateway flag takes on this machine (set-ai-gateway's choice, the general
+        default only for GATEWAY_HARNESSES) -> (alias or 'login', how). No gateways here (a trimmed copy): login."""
+        r = self.cm.access(dict(category=self.cmeta['uses_categories']['task'], command='run', arg1=SET_AI_GATEWAY,
+            harness=harness, connect=False, quiet=True, con=False))
+        if r.get('return') == 16:
+            return 'login', 'no AI gateways on this machine'
+        if r.get('return'):
+            raise StatusError('gateway_unavailable', "This machine's default AI gateway could not be read: %s" % display_text(str(r.get('error', ''))[:250]), 30)
+        if r['gateway'] != 'login' and r.get('general') and harness not in GATEWAY_HARNESSES:
+            return 'login', 'its own login: %s takes no gateway' % harness
+        return r['gateway'], r.get('how', '')
+
+    def _gateway_route(self, harness, gateway):
+        """What a gateway means for the account: None = an account of its own (a key, a local server), or
+        {'own_login': True} = it passes this harness's own login on, whose allowance is then the one used."""
+        r = self.cm.access(dict(category=GATEWAY_CATEGORY, command='list', arg1=gateway, quiet=True, con=False))
+        rows = (r.get('gateways') or []) if not r.get('return') else []
+        row = rows[0] if len(rows) == 1 else None
+        if row is None:
+            return None, 'The AI gateway %s is not on this machine: a run with it stops before it starts.' % gateway
+        if str(row.get('auth') or '').split(' ')[0] == 'login':
+            if harness in LOGIN_HARNESSES:
+                return {'own_login': True}, ''
+            return None, 'The AI gateway %s passes a login on for %s only.' % (gateway, ' and '.join(LOGIN_HARNESSES))
+        if str(row.get('auth') or 'none') == 'none':
+            return None, 'Through the AI gateway %s, without a key: no account allowance applies.' % gateway
+        return None, 'Through the AI gateway %s with its key: its billing applies, not a subscription quota.' % gateway
 
     def _display(self, out, show_identity):
         out = dict(out, identity_visible=show_identity)
@@ -379,8 +500,11 @@ class CTask(InitCTask):
         out['account'] = account
         return out
 
-    def run(self, ctx: dict, harness: str = 'codex', gateway: str = 'login', model: str = '', client_script: bool = False, show_identity: bool = None):
-        """Return safe normalized account/windows/credits, or the optional shared browser component."""
+    def run(self, ctx: dict, harness: str = 'codex', gateway: str = 'login', model: str = '', client_script: bool = False, show_identity: bool = None,
+            machine_default: bool = False):
+        """Return safe normalized account/windows/credits, or the optional shared browser component.
+        gateway: login (the harness's own login), or an ai.gateway alias - one that passes the login on (local-login)
+        reads that login. machine_default: an empty gateway is the one a run-ai run without a gateway flag takes here."""
         if client_script:
             return {'return': 0, 'script': (Path(__file__).parent / 'files/js/account-status.js').read_text(encoding='utf-8')}
         if not all(isinstance(v, str) and len(v) <= 300 for v in (harness, gateway, model)):
@@ -406,15 +530,41 @@ class CTask(InitCTask):
         harness = {'agy': 'antigravity', 'claude-code': 'claude'}.get(harness, harness)
         base = {'return': 0, 'harness': harness, 'available': False, 'windows': [], 'credits': None,
                 'checked_at': time.time(), 'usage_url': PAGES.get(harness, '')}
-        if gateway not in ('', 'login'):
-            return self._display(dict(base, **dict(api_status(), reason='gateway')), show_identity)
+        if not isinstance(machine_default, bool):
+            return {'return': 1, 'error': 'machine_default must be true or false.'}
+        gateway = gateway.strip()
         try:
-            identity, fetch, page = self._selection(harness, model, include_identity=show_identity)
-            base['usage_url'] = page
+            if not gateway and machine_default:
+                gateway, how = self._machine_gateway(harness)
+                base['gateway_how'] = how
+        except StatusError as exc:
+            return self._display(dict(base, reason=exc.reason, message=exc.message), show_identity)
+        base['gateway'] = gateway or 'login'
+        if gateway not in ('', 'login'):
+            route, note = self._gateway_route(harness, gateway)
+            if not route:
+                return self._display(dict(base, **dict(api_status(), reason='gateway', message=note)), show_identity)
+            base.update(route)
+        try:
             root = self.cm.access(dict(category=self.cmeta['uses_categories']['log'], command='get', arg1='local:ai-account-status', yaml=True, quiet=True, con=False))
             if root.get('return'):
                 raise StatusError('storage_unavailable', 'The local account-status cache could not be opened.')
             folder = Path(root['artifact']['path'])
+            # The way this harness's account is read follows its version, as cMeta's tool detection gives it
+            declared = harness_ways().get(harness) or {}
+            way, executable = '', ''
+            if declared.get('ways'):
+                version, executable = self._harness_version(harness, str(declared.get('tool') or harness), folder, base['checked_at'])
+                chosen, note = choose_way(declared['ways'], version)
+                base['harness_version'] = version
+                if chosen is None:
+                    raise StatusError('harness_version', note, 120)
+                way = str(chosen.get('name') or '')
+                base['mechanism'] = way
+                if note:
+                    base['mechanism_note'] = note
+            identity, fetch, page = self._selection(harness, model, include_identity=show_identity, way=way, executable=executable)
+            base['usage_url'] = page
             key = hashlib.sha256(('v2\0' + str(show_identity) + '\0' + harness + '\0' + model.split('/')[0] + '\0' + identity).encode()).hexdigest()
             path = folder / (key + '.json')
             lock = PathLock(str(path) + '.lock')

@@ -8,3 +8,51 @@ configs:
         desc: Show the active login email/username or API beside quota; false suppresses identity from returned data too.
         type: yes/no
         default: true
+
+# The harnesses whose account is read: the cMeta tool that finds each one on a machine (the harness's version comes
+# from that tool's own detection) and the ways its account is read, THE NEWEST FIRST. For the installed version the
+# task takes the first way whose `since` is not above it (no `since`: every version). A version that is not known
+# takes the newest way and the answer says so (`mechanism_note`); a version below every `since` is answered
+# "not read for this version", never an error of the run.
+#
+# A harness that moves its login or changes how its usage is asked gets a NEW way above the others, with
+# `since: <the first version that needs it>` and a reader that `_selection` of api_v1.py knows by that name. The
+# ways below it stay as they are, for the machines that still run an older harness: nothing here is replaced.
+# `verified` lists what was really read with a way: the harness's version, the system, the day.
+harnesses:
+  claude:
+    tool: claude,383841b240c74e88
+    ways:
+      - name: claude-oauth-usage
+        reads: >-
+          the login Claude Code keeps on the machine (.credentials.json: claudeAiOauth; or CLAUDE_CODE_OAUTH_TOKEN),
+          then Anthropic's OAuth usage and profile addresses with exactly that login
+        verified:
+          - {harness: '2.1.327', os: windows, date: '2026-11-20'}
+
+  codex:
+    tool: codex,cdbf5f6e6882460f
+    ways:
+      - name: codex-app-server
+        reads: >-
+          the installed program itself (codex app-server --stdio): account/read, then account/rateLimits/read
+        verified:
+          - {harness: '0.170.0', os: windows, date: '2026-11-20'}
+
+  opencode:
+    tool: opencode,7777071804e84fb5
+    ways:
+      - name: opencode-auth-file
+        reads: >-
+          OpenCode's auth.json (the OAuth entry of the provider of the selected model), then that provider's usage
+          address: Anthropic's or OpenAI's
+        verified:
+          - {harness: '1.19.5', os: windows, date: '2026-11-20'}
+
+  openclaw:
+    tool: openclaw,1776c76162b14545
+    ways:
+      - name: openclaw-status
+        reads: >-
+          the installed program itself (openclaw status --usage --json), the selected provider's entry alone
+        verified: []
