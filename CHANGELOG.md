@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.78.0.1)
+## 0.78.1
 - **`ai-account-status` follows the gateway a run takes.** A gateway that passes the harness's own login on (an
   ai.gateway with `auth: {header: login}`, such as `local-login`) now reads that login - its address, its windows and
   its credits - instead of saying "API": the quota the run spends is the login's (Claude and Codex, the harnesses such
