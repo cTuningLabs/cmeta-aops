@@ -349,6 +349,25 @@ cx program run test-hello-c-cpu cpu --quiet    # sets up a C compiler, builds he
 
 ---
 
+## Before you finish: the concepts every change keeps
+
+A tool, a task or a program keeps the five concepts of `AGENTS.md` §8.2 of cmeta-aops (for people:
+`docs/cmeta-aops/compatibility.md` there):
+
+- **Add, do not replace.** A new key in `_desc.yaml` or in a result, a new parameter whose default keeps the old
+  behaviour, an `api_v2.py` beside `api_v1.py`. An existing key, parameter, default or result keeps its meaning,
+  also for the tasks and tools that rely on this one.
+- **Follow the version of what you wrap.** Take the version a system has. Where versions differ, ask cMeta for the
+  version (the tool's detection) and take the mechanism for it: a new version gets a mechanism added, the older
+  mechanisms stay and stay tested (`task/ai-account-status` is a worked case).
+- **Work everywhere.** A missing or older system gets reduced functionality and a plain message, not a failure. A
+  forced version or configuration that is not available must fail, as must a real bug or a security issue.
+- **Never guess.** `alias,UID`, `cx repo find`, the `path` of a `setup` result, the artifact's own path - never a
+  search for a likely name, a first or last match, or the order of a listing. When the defined way does not hold,
+  stop with an error.
+
+A change that cannot keep one of them is raised with the maintainer before it is written.
+
 ## 9. Checklist / gotchas
 
 - [ ] Created/registered with the **repo-qualified** name (`cx program add|index

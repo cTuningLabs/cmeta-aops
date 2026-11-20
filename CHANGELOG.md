@@ -2,6 +2,32 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.78.0.1)
+- **`ai-account-status` follows the gateway a run takes.** A gateway that passes the harness's own login on (an
+  ai.gateway with `auth: {header: login}`, such as `local-login`) now reads that login - its address, its windows and
+  its credits - instead of saying "API": the quota the run spends is the login's (Claude and Codex, the harnesses such
+  a gateway serves). A gateway with a key, one without a key and one that is not on the machine are each named in the
+  message, never their secrets. `--machine_default` with an empty `--gateway`: the gateway a run-ai run without a
+  gateway flag takes on that machine (set-ai-gateway's choice; the general default only for claude, codex and
+  opencode, as run-ai), given back as `gateway` and `gateway_how`. Without it an empty gateway is the login, as before.
+  The shared browser component says the gateway (`Claude (you@example.com) via local-login: ...`) and, with the new
+  optional `where()` of `mount`, the machine it checked.
+- **`ai-account-status` reads an account the way the installed harness's version needs.** Its `_desc.yaml` now
+  declares, per harness (`harnesses:`), the cMeta tool that finds it and the ways its account is read, the newest
+  first, each with the harness version it starts at (`since`) and what was really read with it (`verified`). The
+  task asks cMeta's own tool detection for the installed version (the `setup` task, nothing installed; kept in the
+  task's log artifact and asked again when the program's file changed), takes the first way that is not above it,
+  and says so in its answer: `harness_version`, `mechanism`, `mechanism_note` - new keys; `source` and every other
+  key are as they were. A harness cMeta does not find is read the newest way (the answer says so); a version below
+  every way is answered "not read for this version" with `return` 0, never an error of the run. The ways that
+  start the harness start the program cMeta found. The four readers that existed are the first entries; when a
+  harness changes, a way is added above them and they stay for the machines that run the older harness.
+- **The concepts every change keeps, written down.** `docs/cmeta-aops/compatibility.md` and `AGENTS.md` §8.2: a
+  tool, a task, a program or a page is a connector and an adaptor (never a replacement), backwards compatible by
+  extension, following the version of what it wraps, working on old and unseen systems (reduced functionality
+  rather than a failure; a forced configuration that is not available still fails), and never guessing. The
+  skills `add-tool`, `add-task` and `add-program` end with the same check.
+
 ## 0.78.0
 - **Prometheus reads a changed list without a restart: `run-prometheus-server --action=reload`.** The targets and the
   interval as the config says now: prometheus.yml written beside the one in use, checked with promtool, put in its

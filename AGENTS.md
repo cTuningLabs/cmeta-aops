@@ -267,6 +267,12 @@ Details: [`task/test-session/README.md`](task/test-session/README.md).
   rename, commit, or treat as authoritative.
 - Reference artifacts/categories by `alias,UID`; cross-category code deps via
   `uses_categories:`.
+- **Read §8.2 first — the concepts every change keeps:** a tool, a task, a
+  program or a page is a connector and an adaptor (never a replacement),
+  backwards compatible by extension, following the version of what it wraps,
+  working everywhere (older systems with reduced functionality rather than a
+  failure), and never guessing. A change that cannot keep one of them is raised
+  with the maintainer before it is written.
 - After hand-editing an artifact's `_cmeta.*` **meta**, refresh the index with the
   narrowest command: `cx <cat> index <repo>:<artifact>` to register a hand-made
   folder, `cx <cat> update <repo>:<artifact>` after a meta edit. `cx --reindex`
@@ -372,6 +378,57 @@ When you generate, modify or move code, metadata or scripts in this project:
   the project — [`CITATION.cff`](CITATION.cff) carries the machine-readable
   citation. This is a **request, not a licence condition**. Citation and
   collaboration are actively welcomed: https://cTuning.ai/@gfursin
+
+### 8.2 The concepts every change keeps
+
+The author's design concepts (stated 2026-11-19/20; the engine's `AGENTS.md`
+§5.3 holds the same five for the engine). They decide how a change is made. A
+change that cannot keep one of them is **raised with the maintainer before it is
+written**. The same text for people:
+[`docs/cmeta-aops/compatibility.md`](docs/cmeta-aops/compatibility.md).
+
+1. **A connector and an adaptor, never a replacement.** A tool, a task, a
+   program or a page wraps what exists on a machine — whatever its version,
+   system and hardware — and what was made before (older artifacts, cache
+   entries, records). It adapts to them; it does not require them to be updated
+   first.
+2. **Backwards compatible, by extension.** ADD: a new key in `_desc.yaml` or in
+   a result, a new parameter whose default keeps the old behaviour, a new task
+   or an `api_v2.py` beside `api_v1.py`, a new dated folder or record. Do not
+   change what an existing key, parameter, default, result or file layout
+   means, and do not remove one that a caller, a cache entry or a saved record
+   may still use. A task or a tool that relies on other tasks or tools keeps
+   this for them too: it does not start to need the newest version of what it
+   uses.
+3. **Follow the version of what is wrapped.** A tool is version-agnostic: it
+   takes the version a system has
+   ([`tool-abstraction.md`](docs/cmeta-aops/tool-abstraction.md)). Code that
+   needs to know asks cMeta — the tool's own detection gives the version — and
+   takes the mechanism for that version. A program that changed gets a
+   mechanism ADDED for its newer versions; the mechanisms for the older ones
+   stay, and stay tested. Never "the newest only". A worked case:
+   `task/ai-account-status` — `harnesses:` in its `_desc.yaml` lists the ways
+   an account is read by harness version, the newest first.
+4. **Works everywhere: old, current and not yet seen.** Windows, Linux, macOS,
+   Android and iOS targets, old and new distributions, CPUs, GPUs and NPUs,
+   Python 3.9–3.15, and versions of tools nobody has tried. Where something is
+   missing or too old, do what still works and say plainly what does not
+   (reduced functionality) rather than fail. Failing is right for a real bug, a
+   security issue, or what the user explicitly forced: a forced version or
+   configuration that is not available must fail, never be quietly replaced.
+5. **Never guess: everything is deterministic.** A task, a tool or a page finds
+   what it needs the way cMeta defines it: an artifact by `alias,UID` (the UID
+   decides), a repository by `cx repo find` (never `<home>/repos/<alias>`), a
+   tool's program from its `setup` result, a file inside an artifact from the
+   artifact's own path — never by searching for a likely name, taking the first
+   or last match, relying on the order of a listing, or falling back to a
+   second heuristic. When the defined way does not hold, stop with an error
+   that says what was expected; two candidates are an error that lists them,
+   not a choice. Tests check results by names and cRefs, never by positions.
+
+Before proposing a change, check it against the five: does it replace something
+instead of adding beside it? does it stop an older artifact, caller, system or
+tool version from working? does any step guess? If yes, say so and ask.
 
 ## 9. Pointers
 
