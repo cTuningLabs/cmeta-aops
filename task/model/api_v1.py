@@ -7,9 +7,16 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 
 import os
 import platform
+import re
 import shutil
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
+
+
+def memo_keys(template):
+    """The keys of the run's global results a result template reads: '{{global.get-hf-model}}' -> ['get-hf-model']."""
+    return re.findall(r'\{\{\s*global\.([^.}|\s]+)', str(template or ''))
+
 
 class CTask(InitCTask):
     """
@@ -155,6 +162,14 @@ class CTask(InitCTask):
                 if con and verbose:
                     print ('')
                     print (f'{space}Preparing model ...')
+
+                # The files of THIS model. The tasks that fetch them keep one result per run under a fixed key
+                # (get-hf-model: global["get-hf-model"]) and answer a second request of the run with it, whatever
+                # it asks for - a second model of one run came back as the first one's file (found 2026-11-20). So
+                # what an earlier model left under the keys this model's result is read from is forgotten first;
+                # the fetch then runs for this model and takes its own cache entry.
+                for key in memo_keys(result_from_ctx):
+                    _global.pop(key, None)
 
                 p = {'category': self.category_alias + ',' + self.category_uid,
                      'command': 'use',

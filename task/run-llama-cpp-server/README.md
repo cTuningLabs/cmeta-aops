@@ -47,6 +47,33 @@ cx config read task-run-llama-cpp-server
 A word on the command line wins. A server a host keeps (`server: run: cxt run-llama-cpp-server --foreground` in a
 project of its host artifact) takes a change at its next start; a page of the server can set the keys and restart it.
 
+**Another model, or several** (since 2026-11-20).
+
+- **A server that is up is left as it is.** A start that names a model it does not serve says so (and answers
+  `other_model: true`): nothing is replaced behind a caller's back. `--swap` replaces it: the server this task
+  started is stopped and started with the model asked for. A server another program started is never replaced.
+  `--swap` looks at the models only; another context or limit is a `--action=restart`.
+
+  ```
+  cx task run run-llama-cpp-server --model=hf-Qwen@Qwen2.5-0.5B-Instruct-GGUF --swap
+  ```
+
+- **Several models behind one port:** `--models="<a>;<b>;<c>"` (or the config key `models`). llama-server is then
+  started without a model, as llama.cpp's *router*: every model is listed in `/v1/models`, a request names one in its
+  `"model"` field, and that model is loaded then, as an instance of its own. `--models_max=<n>` (1 by default) says
+  how many stay loaded: beyond it the least recently used one is unloaded, never one that is answering. With 1 the
+  models swap on demand, which is what a small GPU needs; a request for a model that is not listed gets a 400.
+
+  ```
+  cx task run run-llama-cpp-server --models="hf-Qwen@Qwen3-8B-GGUF;hf-Qwen@Qwen2.5-0.5B-Instruct-GGUF" --models_max=1
+  cx task run run-llama-cpp-server --action=status          # which are loaded now
+  ```
+
+  The models are the artifacts named and no others: their files are written into `models.ini` of the server's state
+  (llama.cpp's preset file; the context, the requests at once and the GPU layers are its common section), and
+  llama.cpp's own cache of downloads is pointed at an empty folder. A model's name is its file's name, as for one
+  model. One model named on the command line (`--model=`) is one model served, whatever the config says of several.
+
 **Its numbers.** The server starts with `--metrics`: llama.cpp's own counters at `http://127.0.0.1:<port>/metrics`
 (Prometheus' format, `llamacpp:` names - tokens in and out, their speeds, requests being served and waiting), beside
 `/health`, `/props` (the model, the context, the build) and `/slots` (what each slot is doing). A server in the

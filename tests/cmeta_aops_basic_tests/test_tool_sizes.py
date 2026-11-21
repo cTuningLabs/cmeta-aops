@@ -320,7 +320,11 @@ def test_download_file_reports_and_records_the_peak(cm, zip_tool):
     assert len(records) == 1 and records[0]["download_bytes"] == archive and records[0]["unpacked_bytes"] == unpacked
     assert records[0]["peak_bytes"] == archive + unpacked
     assert impact["download_gb"] == round(archive / GB, 6)
-    assert impact["peak_gb"] == round((archive + unpacked) / GB, 6)
+
+    # the peak is the largest of what the downloads took and what the entry weighs now. With a 600-byte archive the
+    # entry's own records (their size follows the paths of the machine) can weigh more than the archive did: an
+    # exact "archive + unpacked" failed on a machine where they do (2026-11-20: 0.000281 against 0.00028)
+    assert impact["peak_gb"] == max(round((archive + unpacked) / GB, 6), impact["disk_gb"])
 
     # the archive is gone, so what is kept is below the peak by the archive's size (a 600-byte
     # archive is within the 6-decimal rounding of the GB figures, so the bytes carry the check)

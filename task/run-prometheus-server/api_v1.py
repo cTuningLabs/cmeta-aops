@@ -244,6 +244,7 @@ class CTask(InitCTask):
             since: str = '',                # import: the time its samples start (Unix seconds; for the record of imports)
             until: str = '',                # import: the time they end (Unix seconds; for the record of imports)
             unparsed: list = None,          # extra words for prometheus (everything after "--")
+            workdir: str = '',              # the folder the detached server stands in (default: its state folder; with words after "--", the current one)
     ):
         """
         A Prometheus server on this machine that reads the /metrics of the AI gateway and the model servers.
@@ -375,14 +376,18 @@ class CTask(InitCTask):
                 pass
             return {'return': 0, 'port': port, 'returncode': rc, 'foreground': True}
 
+        # the folder a detached server stands in (2026-11-21): it outlives the command, so by default its own state folder
+        # - the folder of the command stays free to be moved, renamed or deleted on Windows. Words passed on after "--"
+        # may name files by a relative path: with them, where the command was given, as before; --workdir says where
+        cwd = workdir or (os.getcwd() if unparsed else folder)
         with open(log, 'ab') as out:
             if os.name == 'nt':
                 # a hidden console of its own, not none: a program it starts shares it (Grafana starts one per data
                 # source plugin) - detached from any console, each of them opened a window of its own (2026-11-19)
-                p = subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                p = subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, cwd=cwd,
                                      creationflags=0x08000000 | 0x00000200)        # CREATE_NO_WINDOW, CREATE_NEW_PROCESS_GROUP
             else:
-                p = subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                p = subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, cwd=cwd,
                                      start_new_session=True)
         rec = dict(rec, pid=p.pid, log=log)
         self._write_record(folder, rec)

@@ -24,10 +24,13 @@ cx task run run-vllm-server -- --enable-auto-tool-choice --tool-call-parser herm
 - **The models** are downloaded once by vLLM into the state artifact `local:vllm-cache`, mounted as the container's
   `/root/.cache` (vLLM's compiled kernels are kept there too, so a second start is quicker). A model that needs a
   Hugging Face login takes `HF_TOKEN` of this console, passed through a temporary env file, never on a command line.
-- **The memory.** `--gpu_memory_utilization` (0.85) is the share of the GPU's memory vLLM takes for the model and its
-  KV cache, `--max_model_len` (8192) the context window; a context the memory cannot hold stops the start, with
-  vLLM's own words in the error.
-- **A first start** pulls the image (vllm/vllm-openai:v0.31.0 is 32 GB once unpacked) and the model, then
+- **The memory.** `--gpu_memory_utilization` is the share of the GPU's memory vLLM takes for the model and its KV
+  cache, `--max_model_len` (8192) the context window; a context the memory cannot hold stops the start, with vLLM's
+  own words in the error. When neither the command line nor the config names a share, the task follows vLLM's
+  release (the tag of the image): vLLM 0.34 and later size their KV cache from the memory free after warm-up (the
+  "extensible KV cache"; its notes: best not to set the share), so nothing is passed; an earlier vLLM, or an image
+  whose tag names no release, gets 0.85 as before. Set a share to leave room for other programs on the GPU.
+- **A first start** pulls the image (vllm/vllm-openai:v0.34.0 is about 10 GB to download) and the model, then
   compiles: it may take minutes (the laptop, 2026-11-19: 239 s with the model's download, 142 s the next time).
   `--timeout` (1200 s) bounds the wait; the last line of the container's log is shown meanwhile.
 

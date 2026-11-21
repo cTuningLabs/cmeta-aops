@@ -45,12 +45,12 @@ configs:
 # artifact and checked against these digests (a new version of them is a new entry here, never a different file).
 upstream_boards:
   vllm:
-    version: 0.31.0
+    version: 0.34.0
     folder: vLLM
     files:
-      - url: https://raw.githubusercontent.com/vllm-project/vllm/v0.31.0/examples/observability/dashboards/grafana/performance_statistics.json
+      - url: https://raw.githubusercontent.com/vllm-project/vllm/v0.34.0/examples/observability/dashboards/grafana/performance_statistics.json
         sha256: 507f481a47ed3606826aa373704dd84b28dfc311456398fed73dc992d649c637
-      - url: https://raw.githubusercontent.com/vllm-project/vllm/v0.31.0/examples/observability/dashboards/grafana/query_statistics.json
+      - url: https://raw.githubusercontent.com/vllm-project/vllm/v0.34.0/examples/observability/dashboards/grafana/query_statistics.json
         sha256: 459de6707d482b462fc3922b5964a743bd5b2cc1f45365661eb04d7b7fd1faaa
 
 cli_help:

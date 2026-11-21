@@ -10,6 +10,7 @@ line does not say comes from config::task-run-vllm-server (README.md).
 
 import json
 import os
+import re
 import socket
 import subprocess
 import time
@@ -30,8 +31,22 @@ CACHE_ARTIFACT = 'local:vllm-cache'    # mounted as the container's /root/.cache
 
 # What a start takes when its command line does not say: the keys of this config (this machine's), else these
 CONFIG = 'task-run-vllm-server'
-BUILT_IN = {'model': 'Qwen/Qwen3-0.6B', 'image': 'vllm/vllm-openai:v0.31.0', 'max_model_len': 8192,
-            'gpu_memory_utilization': 0.85, 'served_name': '', 'max_num_seqs': 0}
+BUILT_IN = {'model': 'Qwen/Qwen3-0.6B', 'image': 'vllm/vllm-openai:v0.34.0', 'max_model_len': 8192,
+            'gpu_memory_utilization': 0.0, 'served_name': '', 'max_num_seqs': 0}
+
+# The share of the GPU's memory, when neither the command line nor the config names one: vLLM sizes its KV cache
+# itself since 0.34.0 (the "extensible KV cache", gpu_memory_utilization 1.0 by default - its release notes: in most
+# cases it is best not to set it), so the task passes nothing then; to an earlier vLLM, or an image whose tag names no
+# release, it passes the share it always gave
+OWN_CACHE_SINCE = (0, 34)
+SHARE_BEFORE = 0.85
+
+
+def image_release(image):
+    """The vLLM release an image's tag names (vllm/vllm-openai:v0.34.0 -> (0, 34, 0); v0.34.0-efa too), or None when
+    the tag names none (latest, nightly, a digest)."""
+    m = re.search(r':v?(\d+)\.(\d+)(?:\.(\d+))?(?:[-+][^/:]*)?$', str(image or ''))
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)) if m else None
 
 
 def http_get(url, timeout = 2.0):
@@ -69,9 +84,10 @@ class CTask(InitCTask):
             host: str = '127.0.0.1',        # the address the port is published on (0.0.0.0 for other machines: there is no key)
             image: str = '',                # vLLM's container image, its release (default: the config's, else vllm/vllm-openai:v0.31.0)
             max_model_len: int = 0,         # the context window in tokens (default: the config's, else 8192)
-            gpu_memory_utilization: float = 0.0,   # the share of the GPU's memory vLLM takes (default: the config's, else 0.85)
+            gpu_memory_utilization: float = 0.0,   # the share of the GPU's memory vLLM takes (default: the config's, else by vLLM's release: none from 0.34 - vLLM sizes its cache -, 0.85 before)
             served_name: str = '',          # the model's name in /v1/models (default: the config's, else the model's own)
             max_num_seqs: int = 0,          # requests served at once (default: the config's, else vLLM's own)
+            swap: bool = False,             # a start that finds the server up with another model than asked for replaces it (default: it is left as it is, and said)
             lines: int = 60,                # logs: how many of the last lines
             timeout: int = 1200,            # seconds a start waits for the server to answer (a first start downloads the model)
             foreground: bool = False,       # attached to this console (its log on the screen; a host keeps it so)
@@ -82,6 +98,8 @@ class CTask(InitCTask):
 
             cx task run run-vllm-server                               # Qwen3-0.6B, port 8868, detached
             cx task run run-vllm-server --model=Qwen/Qwen3-4B --max_model_len=16384
+            cx task run run-vllm-server --model=<another> --swap      # replace the model a running server serves
+            cx task run run-vllm-server --model=<another> --port=8869 # a second server: vLLM serves one model each
             cx task run run-vllm-server --action=status|logs|stop|restart
         """
         con = ctx['control'].get('con', False)
@@ -140,9 +158,29 @@ class CTask(InitCTask):
             status = self._status(name, host, port)
 
         if status['running']:
-            if con:
-                print('vLLM server on %s:%d is up already (container %s), models: %s' % (host, port, name, ', '.join(status['models'])))
-            return {'return': 0, 'port': port, 'host': host, 'already': True, 'state': folder, 'record': rec, **status}
+            # up already. When the command line names a model and the server serves another, it is left as it is and
+            # that is said - or replaced, with --swap (vLLM serves one model per server: another one is another port)
+            other = bool(model) and str(rec.get('model') or '') != str(model)
+            if other and swap:
+                if con:
+                    print('vLLM server on %s:%d serves %s; replaced by %s (--swap)' % (host, port, rec.get('model') or '?', model))
+                self._docker('stop', '-t', '30', name, timeout = 90)
+                self._docker('rm', '-f', name)
+                try:
+                    os.remove(os.path.join(folder, 'server.json'))
+                except OSError:
+                    pass
+                rec, status = {}, self._status(name, host, port)
+            else:
+                if con:
+                    print('vLLM server on %s:%d is up already (container %s), models: %s' % (host, port, name, ', '.join(status['models'])))
+                    if other:
+                        print('  it %s %s: add --swap to replace it, or --port=<another> for a second server' % (
+                            'does not serve' if rec.get('model') else 'is not recorded to serve', model))
+                out = {'return': 0, 'port': port, 'host': host, 'already': True, 'state': folder, 'record': rec, **status}
+                if other:
+                    out.update({'other_model': True, 'requested': model})
+                return out
         if status['container']:
             # a container of an earlier start that ended (a crash, a host that kept it and was stopped): its name is ours
             self._docker('rm', '-f', name)
@@ -153,7 +191,10 @@ class CTask(InitCTask):
         d = self._defaults()
         model, image, served_name = model or d['model'], image or d['image'], served_name or d['served_name']
         max_model_len = int(max_model_len or 0) or int(d['max_model_len'])
-        gpu_memory_utilization = float(gpu_memory_utilization or 0) or float(d['gpu_memory_utilization'])
+        gpu_memory_utilization = float(gpu_memory_utilization or 0) or float(d['gpu_memory_utilization'] or 0)
+        release = image_release(image)
+        if not gpu_memory_utilization and (release is None or release[:2] < OWN_CACHE_SINCE):
+            gpu_memory_utilization = SHARE_BEFORE
         max_num_seqs = int(max_num_seqs or 0) or int(d['max_num_seqs'] or 0)
 
         r = self._artifact(CACHE_ARTIFACT, 'run-vllm-server: the cache of its containers (/root/.cache): the models, '
@@ -162,7 +203,9 @@ class CTask(InitCTask):
             return r
         cache = r['path']
 
-        args = ['--model', model, '--max-model-len', str(max_model_len), '--gpu-memory-utilization', str(gpu_memory_utilization)]
+        args = ['--model', model, '--max-model-len', str(max_model_len)]
+        if gpu_memory_utilization:
+            args += ['--gpu-memory-utilization', str(gpu_memory_utilization)]
         if served_name:
             args += ['--served-model-name', served_name]
         if max_num_seqs:
@@ -181,8 +224,9 @@ class CTask(InitCTask):
                'started': time.strftime('%Y-%m-%dT%H:%M:%S')}
         if con:
             print('')
-            print('vLLM: %s, %s, context %d, %.2f of the GPU\'s memory - container %s on %s:%d' % (
-                image, model, max_model_len, gpu_memory_utilization, name, host, port))
+            share = ('%.2f of the GPU\'s memory' % gpu_memory_utilization) if gpu_memory_utilization else 'its KV cache sized by vLLM'
+            print('vLLM: %s, %s, context %d, %s - container %s on %s:%d' % (
+                image, model, max_model_len, share, name, host, port))
 
         if foreground:
             # attached: its log on the screen; the container goes when it ends (--rm), and when this run is ended

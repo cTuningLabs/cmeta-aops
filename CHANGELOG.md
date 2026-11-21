@@ -2,6 +2,47 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.79.0
+- **AI gateways with a key of their own for their clients: `client_key`.** An `ai.gateway` record may say
+  `client_key: {header, secret}`: a gateway server reached over a network lets in only the machines that show it
+  that key. `cx ai.gateway connect` gives it to each harness its own way (Claude Code a line of
+  `ANTHROPIC_CUSTOM_HEADERS`, Codex `env_http_headers` with the variable `CMETA_AI_GATEWAY_CLIENT_KEY`, OpenCode its
+  providers' headers) and returns `request_headers` for a task that asks a model itself; the catalog, the
+  reachability check and `cx ai.gateway test` send it too; `cx ai.gateway ls` names its secret.
+- **An open model's reasoning: `thinking_off`.** A gateway record of a model server says how a request turns the
+  model's reasoning off (`{chat_template_kwargs: {enable_thinking: false}}` for llama.cpp, vLLM and SGLang); a
+  pass-through inherits it, and `connect` returns it with the resolved `wires` - a task that asks a model itself adds
+  it only where it is declared (a vendor's API may refuse a word it does not know).
+- **`cx secret generate` on a token secret** gives it a random value (32 bytes, URL-safe) in its token file,
+  owner-only, never printed, and prints its SHA-256 - what another machine keeps to check it.
+- **`cx secret check` says OPEN** for a key file others can read (it said "ok" beside the note "readable by ...");
+  `--fix` tightens it, as before; a status of its own (PLAIN, sealed) stays.
+- **A detached server stands in its own state folder** (`run-llama-cpp-server`, `run-prometheus-server`,
+  `run-openssh`): it stood in the folder of the command that started it, which could then not be moved or deleted on
+  Windows. With words after `--` (they may name files by a relative path) where the command was given, as before;
+  `--workdir` says where.
+- **run-vllm-server: vLLM v0.34.0 by default** (`vllm/vllm-openai:v0.34.0`). vLLM 0.34 sizes its KV cache itself
+  (its notes: best not to set `gpu_memory_utilization`): no share is passed unless the command line or the config
+  names one; an earlier release, or an image whose tag names none, gets 0.85 as before. `container/vllm-cuda` on
+  vLLM 0.34.0; `run-grafana-server`: vLLM's two boards from the tag v0.34.0.
+- **`--swap`** for `run-llama-cpp-server` and `run-vllm-server`: a server that runs another model than the one asked
+  for is replaced (without it, it is left as it is, and that is said); `run-llama-cpp-server --models="<a>;<b>"`
+  with `--models_max=<n>` serves several models behind one port (llama.cpp's router).
+- **The newest version of a tool installed from the files of its GitHub releases** (`latest_needs_assets: true`) is
+  the newest tag whose release has them, read from the release page (no API): a build's tag comes minutes before its
+  files. `tool/llama-cpp` says so.
+- **tool/llama-cpp: 11707 -> 12590** (`program/build-llama-cpp` checks out `b12590` by default). Tools moved to their
+  newest version: aiperf 0.14.0, ansible-lint 26.11.0, cloudflared 2026.11.1, docker-compose 5.8.0, flux 2.10.1,
+  helm 4.3.2, kubectl 1.37.2, kubelogin 0.2.22, opentofu 1.13.9, rclone 1.76.0, sccache 0.19.0, terraform 1.17.2,
+  yq 4.54.3. `tool/ansible`: `latest_limits` keeps `latest` below 2.22 (ansible-core 2.22 needs Python 3.13; the
+  tool makes a Python 3.12 environment).
+- **`cx host upgrade`** names the servers a host declares, which still run the engine from before the upgrade, and
+  how to start them again (`restart_servers` in its result).
+- **get-mlperf-training-results**: MLPerf Training v6.1 by default.
+- **run-ai**: `--no_log` makes no `!AI` folder at all and asks nothing outside cMeta.
+- **model** (task): two models asked for in one run no longer come back as the same file.
+- **Tests** for the above; `test_tool_sizes` states the rule of the peak instead of an exact figure.
+
 ## 0.78.1
 - **`ai-account-status` follows the gateway a run takes.** A gateway that passes the harness's own login on (an
   ai.gateway with `auth: {header: login}`, such as `local-login`) now reads that login - its address, its windows and

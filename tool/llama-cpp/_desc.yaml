@@ -6,7 +6,7 @@ name: llama-cli
 
 # Build number of the release installed when no --version is given (and checked out for
 # source builds). "cx tool setup llama-cpp --versions" lists the builds.
-default_version: 11707
+default_version: 12590
 
 # "llama-cli --version" prints "version: 0.5.0-dev (build 11324, commit 32dd62ee6)" since
 # the 0.5.0 line (September 2026) and "version: 9524 (59917d392)" before
@@ -22,6 +22,10 @@ cmd_get_versions_uses:
   - task: setup,a2f9b61079ce4333
     name: git,959d8c0fbc004bd0
 cmd_get_versions_regex: '\brefs/tags/b(\d+)\b'
+
+# a build's tag comes minutes before the files of its release: the newest version is the newest tag whose GitHub
+# release has its files (cx tool check-updates, 2026-11-21: b12591 was named while its binaries were not published)
+latest_needs_assets: true
 
 install_help_text:
   Please check https://github.com/ggml-org/llama.cpp !

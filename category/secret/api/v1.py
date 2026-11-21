@@ -25,6 +25,7 @@ import hmac
 import json
 import os
 import re
+import secrets
 import shutil
 import stat
 import subprocess
@@ -422,6 +423,11 @@ class Category(InitCategory):
                         notes.append('passphrase ' + ('set' if has_pass else 'none') + (f' as declared ({policy})' if policy else ''))
                 if key == 'token.file' and status == 'ok':
                     status = self._check_sealed(ctx, s, path, notes, unlock)
+                # a file others can read is not "ok" (2026-11-21: the status said ok beside the note): OPEN, until --fix;
+                # a status of its own (PLAIN, sealed ...) says more and stays
+                if key in OWNER_ONLY_KEYS and status == 'ok' and any(
+                        n and not n.startswith('tightened') and ('readable' in n or 'mode' in n) for n in notes):
+                    status = 'OPEN'
                 rows.append((s['alias'], what, status, '; '.join(notes)))
 
         if con:
@@ -529,15 +535,23 @@ class Category(InitCategory):
         (a key with a passphrase is the human's: made by them with ssh-keygen). The private key is made owner-only
         (fix-ssh-key-permissions). Only the public key's path and fingerprint are printed.
 
+        A token secret gets a random value (32 bytes, URL-safe) in its token file (token.file, else files/token),
+        owner-only, never printed: what a machine shows another one it trusts - the client key of a gateway server,
+        say. Only its SHA-256 is printed: what the other machine keeps to check it.
+
             cx secret generate deploy-key-lab --comment=lab-ci
             cx secret generate deploy-key-lab --force     # a new pair over the old one
+            cx secret generate my-gateway-client           # a token secret: a random value, its SHA-256 printed
         """
-        r = self._one(ctx, arg1, ('ssh', 'git'), 'generate')
+        r = self._one(ctx, arg1, ('ssh', 'git', 'token'), 'generate')
         if r['return'] > 0:
             return r
         s = r['secret']
         d = s['desc']
         con = ctx['control'].get('con', False)
+
+        if str(d.get('kind') or '') == 'token':
+            return self._generate_token(ctx, s, force)
 
         if str(_get(d, 'ssh.passphrase') or 'none') != 'none':
             return self.cm.error(f'{s["alias"]}: ssh.passphrase is {_get(d, "ssh.passphrase")} - a key with a passphrase is made by '
@@ -573,6 +587,37 @@ class Category(InitCategory):
             print (f'cMeta info: {s["alias"]}: a new ed25519 key pair; the public key: {pub or path + ".pub"}')
             print (f'            {fp}')
         return {'return': 0, 'key': path, 'public_key': pub or path + '.pub', 'fingerprint': fp}
+
+    def _generate_token(self, ctx, s, force):
+        """A random value into a token secret's file, owner-only; its SHA-256 printed, the value never."""
+        d = s['desc']
+        con = ctx['control'].get('con', False)
+        if _get(d, 'token.env'):
+            return self.cm.error(f'{s["alias"]} takes its value from the variable {_get(d, "token.env")}: nothing to generate')
+        if d.get('password_protected') or _get(d, 'token.stored') and str(_get(d, 'token.file') or '').endswith('.sealed'):
+            return self.cm.error(f'{s["alias"]} keeps its value sealed by a password: cx secret store {s["alias"]} --force')
+        rel = str(_get(d, 'token.file') or 'files/token')
+        if ':' in rel or rel.startswith(('/', '\\')):
+            return self.cm.error(f'{s["alias"]}: token.file must name a file inside the artifact (files/token) to generate it')
+        path = self._resolve(s, rel)[0]
+        if os.path.exists(path) and not force:
+            return self.cm.error(f'{s["alias"]}: {rel} exists already (--force makes a new value over it; whoever checks the old '
+                                 f'one must then be given the new SHA-256)')
+        value = secrets.token_urlsafe(32)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if os.path.exists(path):
+            os.remove(path)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(value + '\n')
+        left = self._tighten(ctx, path)
+        if left:
+            return self.cm.error(f'{s["alias"]}: the value was made but its permissions could not be tightened ({left})')
+        digest = hashlib.sha256(value.encode('utf-8')).hexdigest()
+        if con:
+            print(f'cMeta info: {s["alias"]}: a new random value in {rel} (never printed)')
+            print(f'            its SHA-256: {digest}')
+        return {'return': 0, 'token_file': path, 'sha256': digest}
 
     ############################################################
     def settings_(self, ctx, arg1: str = None):

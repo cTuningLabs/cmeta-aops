@@ -132,8 +132,10 @@ asking, preserving unattended usage. A closed input without `-q` gives an error 
                                        (read for those sessions, not written by default - "Codex's own state" below)
 ```
 
-The folders are created on the first real run; `--dry_run` creates nothing. `--no_log` leaves `log/` out (the
-settings file then goes to the temp directory, and no conversation is recorded or continued). `--record_prompt`
+The folders are created on the first real run; `--dry_run` creates nothing. `--no_log` creates no folder either:
+`log/` is left out, and a `memory/` that does not exist yet is not made (the settings file then goes to the temp
+directory, no conversation is recorded or continued, and outside cMeta the run does not ask before it starts, since
+it makes nothing; a harness that writes a memory makes `memory/` by that write). `--record_prompt`
 keeps the text submitted to the harness as `log/<stamp>.<harness>.prompt.md` and answers with `prompt_file` - for a
 caller that wants the exact prompt beside the run record without carrying it in every result.
 

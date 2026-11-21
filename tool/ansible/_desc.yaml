@@ -21,6 +21,13 @@ names:
   - ansible{{global.host.vars.file_ext_exe}}
 
 default_version: '2.21.5'
+
+# What `latest` may not take, and why (cx tool check-updates reads it)
+latest_limits:
+  - exclude: '>=2.22'
+    reason: 'ansible-core 2.22 needs Python 3.13 or newer; this tool installs it in a Python 3.12 environment'
+    since: '2026-11-20'
+
 match_version:
   - regex: 'core (\d+\.\d+\.\d+)'
     group: 1

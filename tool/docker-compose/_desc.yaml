@@ -5,7 +5,7 @@ names:
   - docker-compose{{global.host.vars.file_ext_exe}}
 
 # The version installed when none is asked for, and how a found program tells its version
-default_version: '5.6.0'
+default_version: '5.8.0'
 
 match_version:
   - regex: 'Docker Compose version v?(\d+\.\d+\.\d+)'
