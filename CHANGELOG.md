@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.78.1.1)
+## 0.79.0
 - **AI gateways with a key of their own for their clients: `client_key`.** An `ai.gateway` record may say
   `client_key: {header, secret}`: a gateway server reached over a network lets in only the machines that show it
   that key. `cx ai.gateway connect` gives it to each harness its own way (Claude Code a line of
