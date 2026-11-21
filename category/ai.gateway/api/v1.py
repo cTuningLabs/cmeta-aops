@@ -12,6 +12,10 @@ A pass-through - a server that sits between a harness and the place its requests
 is an artifact too: "upstream" names where its traffic goes (another gateway's alias: its wires, catalog, key and
 models are taken from there unless the artifact says otherwise), and auth.header "login" says the harness keeps its
 own account and only the address changes.
+
+A gateway server reached over a network may ask its clients for a key of its own (client_key: {header, secret}): the
+secret holds it, every request to that gateway carries it in that header, and the server keeps only its SHA-256 and
+passes it on to nobody.
 """
 
 import json
@@ -51,6 +55,9 @@ KEY_VAR = 'CMETA_AI_GATEWAY_KEY'
 # harness; no other gateway ever is.
 RUN_VAR = 'CMETA_AI_RUN'
 
+# The variable that carries a gateway's client key to Codex (its env_http_headers names it): never on a command line
+CLIENT_KEY_VAR = 'CMETA_AI_GATEWAY_CLIENT_KEY'
+
 ANTHROPIC_VERSION = '2023-06-01'
 
 # auth.header "login": the harness keeps its own account (a subscription), the artifact changes only the address its
@@ -59,7 +66,13 @@ LOGIN = 'login'
 LOGIN_HARNESSES = ('claude', 'codex')
 
 # what a pass-through takes from the gateway its "upstream" names, when it does not say it itself
-INHERITED = ('wires', 'catalog', 'catalogs', 'auth', 'models', 'codex_wire', 'opencode_openai_npm')
+INHERITED = ('wires', 'catalog', 'catalogs', 'auth', 'models', 'codex_wire', 'opencode_openai_npm', 'thinking_off')
+
+# thinking_off (2026-11-21): what a request adds to turn the hidden reasoning of an open model off - for a server that
+# reads it, such as llama.cpp, vLLM or SGLang with a Qwen3-like chat template:
+#   thinking_off: {chat_template_kwargs: {enable_thinking: false}}
+# A task that asks a model itself (gen-ai) adds it to its request; nothing else reads it. A gateway that declares none
+# gets nothing added (a vendor's API may refuse a word it does not know).
 
 
 def key_helper():
@@ -163,6 +176,23 @@ class Category(InitCategory):
             v = h.read().strip()
         return v, header, '' if v else 'the secret "%s": %s is empty' % (name, f)
 
+    def _client_key(self, ctx, desc):
+        """The key a gateway asks of its clients (client_key: {header, secret}) - a gateway server of one's own reached over
+        a network checks it before anything else and passes it on to nobody. -> (the headers to add: {} when the gateway
+        asks none, an error or ''). The value comes from the secret, like a key, and is never printed."""
+        ck = desc.get('client_key')
+        if not ck:
+            return {}, ''
+        if not isinstance(ck, dict):
+            return {}, 'client_key must be {header: <a header name>, secret: <the secret that holds the key>}'
+        header = str(ck.get('header') or '').strip().lower()
+        if not re.fullmatch(r'[a-z0-9-]{1,64}', header) or header in ('authorization', 'x-api-key'):
+            return {}, 'client_key.header must be a header of its own (letters, digits, dashes; not authorization, not x-api-key)'
+        value, _, err = self._key(ctx, {'auth': {'header': header, 'secret': ck.get('secret')}})
+        if err:
+            return {}, 'client_key: ' + err
+        return {header: value}, ''
+
     @staticmethod
     def _headers(header, key, extra = None):
         h = {'Content-Type': 'application/json'}
@@ -190,7 +220,7 @@ class Category(InitCategory):
         except ValueError:
             return status, text[:400]
 
-    def _catalog(self, desc, wire, header, key):
+    def _catalog(self, desc, wire, header, key, client = None):
         """The model names a wire offers -> (names, the url, an error or ''): the wire's own catalog (catalogs: {wire:
         path}) when declared, else the whole catalog - of which the anthropic wire takes the claude-* names."""
         cats = desc.get('catalogs') if isinstance(desc.get('catalogs'), dict) else {}
@@ -199,7 +229,10 @@ class Category(InitCategory):
         if not path:
             return [], '', 'no catalog declared (catalog: /v1/models)'
         url = self._url(desc, path)
-        status, data = self._http(url, self._headers(header, key, {'anthropic-version': ANTHROPIC_VERSION} if wire == 'anthropic' else None))
+        extra = dict(client or {})
+        if wire == 'anthropic':
+            extra['anthropic-version'] = ANTHROPIC_VERSION
+        status, data = self._http(url, self._headers(header, key, extra))
         if status != 200 or not isinstance(data, dict):
             return [], url, 'http %s from %s: %s' % (status, url, str(data)[:200])
         names = [str(m.get('id')) for m in (data.get('data') or []) if isinstance(m, dict) and m.get('id')]
@@ -220,7 +253,7 @@ class Category(InitCategory):
             words.append('--%s=%s' % (k, v))
         return ' '.join(words)
 
-    def _reachable(self, desc, wire, header, key):
+    def _reachable(self, desc, wire, header, key, client = None):
         """The catalog of the wire answers -> ''; else what went wrong, with the start command of a local gateway.
         A gateway without a catalog is not asked anything - but one that names the task providing it must at least
         accept a connection (a pass-through for a login has no catalog to read without that login)."""
@@ -236,7 +269,7 @@ class Category(InitCategory):
                     return ''
             except OSError:
                 return 'the gateway does not answer (nothing listens on %s:%d); start it: %s' % (u.hostname, port, hint)
-        names, url, e = self._catalog(desc, wire, header, key)
+        names, url, e = self._catalog(desc, wire, header, key, client)
         if not e:
             return ''
         hint = self._start_hint(desc)
@@ -272,7 +305,8 @@ class Category(InitCategory):
             up = ', '.join('%s: %s' % (k, v) for k, v in sorted(up.items())) if isinstance(up, dict) else str(up or '')
             rows.append({'alias': a['cmeta_ref_parts']['artifact_alias'], 'uid': a['cmeta_ref_parts']['artifact_uid'],
                          'base_url': str(desc.get('base_url') or ''), 'wires': ','.join(sorted(self._wires(desc))),
-                         'auth': str(auth.get('header') or 'none') + (' (' + str(auth['secret']) + ')' if auth.get('secret') else ''),
+                         'auth': str(auth.get('header') or 'none') + (' (' + str(auth['secret']) + ')' if auth.get('secret') else '')
+                                 + (' + client key (%s)' % (desc.get('client_key') or {}).get('secret', '?') if isinstance(desc.get('client_key'), dict) else ''),
                          'provided_by': str((desc.get('provided_by') or {}).get('task') or ''), 'upstream': up,
                          'repo': a['cmeta_ref_parts'].get('repo_alias') or a['cmeta_ref_parts'].get('artifact_repo_alias', '')})
         if ctx['control'].get('con', False):
@@ -503,9 +537,14 @@ class Category(InitCategory):
         if own_login and harness not in LOGIN_HARNESSES:
             return self.cm.error('the gateway "%s" passes a harness\'s own login on: %s have a recipe for that, %s has none' % (
                 alias, ' and '.join(LOGIN_HARNESSES), harness))
+        # the gateway's own key, when it asks one of its clients (client_key): with every request made here and given to
+        # the harness below
+        client, err = self._client_key(ctx, desc)
+        if err:
+            return self.cm.error('%s: %s' % (alias, err))
         # a gateway that does not answer is an error here, with the command that starts a local one - never a harness
         # started without a model, which could fall back to a provider it is logged into
-        err = self._reachable(desc, avail[0], header, key)
+        err = self._reachable(desc, avail[0], header, key, client)
         if err:
             return self.cm.error('%s for %s: %s' % (alias, harness, err))
         mine, top = self._defaults(desc, harness)
@@ -543,7 +582,7 @@ class Category(InitCategory):
                 env['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'] = '1'
             if not chosen and not own_login:
                 # no default declared (a local server): the loaded model's name, so that Claude Code names it
-                names, _, e = self._catalog(desc, 'anthropic', header, key)
+                names, _, e = self._catalog(desc, 'anthropic', header, key, client)
                 chosen = names[0] if names else ''
             if not own_login:
                 notes.append('Claude Code on a key: the claude.ai connectors (HubSpot, Microsoft 365, ...) are unavailable in '
@@ -563,7 +602,7 @@ class Category(InitCategory):
                     args += ['-c', '%s.env_http_headers.%s="%s"' % (p, header, KEY_VAR)]
                 env[KEY_VAR] = key
             if not chosen and not own_login:
-                names, _, e = self._catalog(desc, 'openai', header, key)
+                names, _, e = self._catalog(desc, 'openai', header, key, client)
                 chosen = names[0] if names else ''
                 if e:
                     notes.append('no model declared and the catalog is not readable (%s): the harness decides' % e)
@@ -573,7 +612,7 @@ class Category(InitCategory):
             oai = (alias + '-openai' if ant else alias) if 'openai' in avail else ''
             lists = {}
             for w in avail:
-                names, _, e = self._catalog(desc, w, header, key)
+                names, _, e = self._catalog(desc, w, header, key, client)
                 lists[w] = names
             if ant:
                 providers[ant] = {'npm': '@ai-sdk/anthropic', 'name': '%s (anthropic wire)' % alias,
@@ -615,8 +654,33 @@ class Category(InitCategory):
             elif harness == 'opencode':
                 for prov in occ['provider'].values():
                     prov['options'].setdefault('headers', {})[run_header] = run
+        # the client key: Claude Code sends it among its custom headers (one per line), Codex from a variable its
+        # provider names, OpenCode from its providers' headers - never on a command line
+        for name, value in client.items():
+            if harness == 'claude':
+                lines = [x for x in str(env.get('ANTHROPIC_CUSTOM_HEADERS') or '').split(chr(10)) if x.strip()]
+                env['ANTHROPIC_CUSTOM_HEADERS'] = chr(10).join(['%s: %s' % (name, value)] + lines)
+            elif harness == 'codex':
+                args += ['-c', 'model_providers.%s.env_http_headers.%s="%s"' % (alias, name, CLIENT_KEY_VAR)]
+                env[CLIENT_KEY_VAR] = value
+            elif harness == 'opencode':
+                for prov in occ['provider'].values():
+                    prov['options'].setdefault('headers', {})[name] = value
+        # what a plain HTTP client sends with each request (a task asking a model itself): the key in its header, the
+        # client key, the run - the values are for the caller only, like env
+        plain = {k: v for k, v in self._headers(header, key if header not in ('none', LOGIN) else '', client).items() if k != 'Content-Type'}
+        if run_header and run and re.fullmatch(r'[a-z0-9-]{1,64}', run_header):
+            plain[run_header] = run
         out = {'return': 0, 'gateway': alias, 'harness': harness, 'wire': wire, 'model': chosen, 'env': env, 'args': args,
-               'notes': notes, 'base_url': str(desc.get('base_url') or ''), 'provided_by': desc.get('provided_by') or {}}
+               'notes': notes, 'base_url': str(desc.get('base_url') or ''), 'provided_by': desc.get('provided_by') or {},
+               'request_headers': plain,
+               # what a plain HTTP client needs beside the headers (2026-11-21): the wires with what a pass-through
+               # inherits from its upstream, and how a request turns an open model's reasoning off when that is declared
+               'wires': dict(wires)}
+        if isinstance(desc.get('thinking_off'), dict):
+            out['thinking_off'] = desc['thinking_off']
+        if client:
+            out['client_key_header'] = next(iter(client))
         if occ:
             out['opencode_config'] = occ
         if ccs is not None:
@@ -653,6 +717,9 @@ class Category(InitCategory):
         key, header, err = self._key(ctx, desc)
         if err:
             return self.cm.error(err)
+        client, err = self._client_key(ctx, desc)
+        if err:
+            return self.cm.error('%s: %s' % (arg1, err))
         if header == LOGIN:
             return self.cm.error('the gateway "%s" passes a harness\'s own login on, and this command has none to send: '
                                  'test it with a harness (cx task run run-claude --gateway=%s -- -p hello)' % (alias, alias))
@@ -660,21 +727,21 @@ class Category(InitCategory):
         out = {'return': 0, 'gateway': alias, 'wires': {}}
         prompt = 'Say hello in five words.'
         for wire in sorted(wires):
-            names, url, e = self._catalog(desc, wire, header, key)
+            names, url, e = self._catalog(desc, wire, header, key, client)
             mine, top = self._defaults(desc, 'claude' if wire == 'anthropic' else 'codex')
             m = model or (mine.get('haiku') if wire == 'anthropic' else '') or mine.get('default') or top or (names[0] if names else '')
             res = {'catalog': len(names) if not e else e, 'model': m}
             started = time.monotonic()
             if wire == 'anthropic':
                 status, data = self._http(self._url(desc, wires[wire]).rstrip('/') + '/v1/messages',
-                                          self._headers(header, key, {'anthropic-version': ANTHROPIC_VERSION}),
+                                          self._headers(header, key, dict(client, **{'anthropic-version': ANTHROPIC_VERSION})),
                                           {'model': m, 'max_tokens': 40, 'messages': [{'role': 'user', 'content': prompt}]})
                 if status == 200 and isinstance(data, dict):
                     res['text'] = ' '.join(b.get('text', '') for b in data.get('content', []) if isinstance(b, dict)).strip()[:120]
                     res['usage'] = data.get('usage')
             else:
                 status, data = self._http(self._url(desc, wires[wire]).rstrip('/') + '/chat/completions',
-                                          self._headers(header, key),
+                                          self._headers(header, key, client),
                                           {'model': m, 'messages': [{'role': 'user', 'content': prompt}], 'max_completion_tokens': 40})
                 if status == 200 and isinstance(data, dict) and data.get('choices'):
                     res['text'] = str((data['choices'][0].get('message') or {}).get('content') or '').strip()[:120]

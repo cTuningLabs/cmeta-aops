@@ -29,7 +29,7 @@ class CTask(InitCTask):
 
         version = params.get('version')
         if not version:
-            version = '6.0'
+            version = '6.1'
 
         url = params.get('url')
         if not url:

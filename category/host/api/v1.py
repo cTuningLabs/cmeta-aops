@@ -5332,11 +5332,13 @@ class Category(InitCategory):
         self._status_all(ctx, hosts)
 
         results = {}
+        upgraded_servers = {}     # host -> the servers it declares, still on the engine from before an upgrade
         for h in hosts:
             alias = h['alias']
             cm = h['desc'].get('cmeta') or {}
             install = str(cm.get('install') or '')
             steps = []          # what this host got: sync / upgrade / restart notes for the summary
+            changed = False     # the engine of this host is another one now (its servers still run the one from before)
 
             cmd = cm.get('upgrade')
             # a declared command runs as written: --version reaches it only if it names that version
@@ -5484,6 +5486,7 @@ class Category(InitCategory):
                 after = self._cmeta_version_on(ctx, h)
                 step, rc = self._engine_step(before, after, rc, version)
                 steps.append(step)
+                changed = bool(after) and after != before
             results[alias] = '; '.join(steps) or 'nothing asked'
             if con: print(f'{alias:32} {results[alias]}')
             if rc != 0:
@@ -5492,6 +5495,19 @@ class Category(InitCategory):
                 continue        # a failed upgrade is not restarted
             if not restart and not check:
                 self._refresh_state(ctx, h, con)        # (a restart probes the host itself afterwards)
+
+                # The engine was replaced under the servers this host declares (2026-11-21): a running one stays on the
+                # old engine, in a folder the upgrade may have deleted (a cserver then answered its pages with 500, and
+                # what it starts begins in that deleted folder) - say which, and how to start them again on the new one
+                servers = [name for name, p in (h['desc'].get('projects') or {}).items()
+                           if isinstance(p, dict) and isinstance(p.get('server'), dict) and (p['server'].get('run') or p['server'].get('start')
+                                                                                             or p['server'].get('url'))]
+                if servers and changed:
+                    upgraded_servers.setdefault(alias, servers)
+                    if con:
+                        print(f'cMeta info: {alias}: its servers still run the engine from before the upgrade: ' + ', '.join(servers))
+                        print(f'            start them again on the new one - for each: cx host down {alias} --project=<name>, then cx host up '
+                              f'{alias} --project=<name> (Restart on /host), or the whole host: --restart')
 
             # 3. restart - reboot and bring the servers up on the new engine, as "cx host restart <host>"
             if restart:
@@ -5518,7 +5534,10 @@ class Category(InitCategory):
                 results[alias] = '; '.join(steps)
                 if con: print(f'{alias:32} {results[alias]}')
 
-        return {'return': 0, 'results': results}
+        out = {'return': 0, 'results': results}
+        if upgraded_servers:
+            out['restart_servers'] = upgraded_servers
+        return out
 
     def destroy_(
         self,

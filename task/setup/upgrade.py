@@ -324,6 +324,29 @@ def pick_latest(versions):
     return best if best is not None else fallback
 
 
+def release_has_files(page, tag):
+    """The expanded-assets page of a GitHub release names a file to download of this tag (a release whose files are
+    still being uploaded, or a tag without a release, names none: only its source archives)."""
+    return ('/releases/download/%s/' % tag) in (page or '')
+
+
+def github_release_has_files(owner_repo, tag, timeout = 20):
+    """Has the GitHub release of a tag its files already? From its expanded-assets page - no API call, no rate limit
+    (2026-11-21: llama.cpp's newest tag b12591 was taken while its binaries were not published yet). True, False, or
+    None when the page cannot be read."""
+    import urllib.request
+    import urllib.parse
+
+    url = 'https://github.com/%s/releases/expanded_assets/%s' % (owner_repo, urllib.parse.quote(tag, safe = ''))
+    try:
+        request = urllib.request.Request(url, headers = {'User-Agent': 'cmeta-aops'})
+        with urllib.request.urlopen(request, timeout = timeout) as response:
+            page = response.read().decode('utf-8', 'replace')
+    except Exception:
+        return None
+    return release_has_files(page, tag)
+
+
 def version_verdict(installed, latest):
     """
     'not-installed', 'unknown', 'outdated', 'up-to-date' or 'newer' (installed is ahead
@@ -712,6 +735,7 @@ def list_versions(self, ctx, desc, params, never_install = False):
 
     output = rx['output']
     versions = []
+    tags = {}                       # version -> the tag it was read from (git ls-remote lines with cmd_get_versions_regex)
 
     j = output.find('Available versions:')
     if j >= 0:
@@ -730,6 +754,9 @@ def list_versions(self, ctx, desc, params, never_install = False):
                 v = match.group(group)
                 if v not in versions:
                     versions.append(v)
+                    t = re.search(r'refs/tags/([^\s^]+)', s)
+                    if t:
+                        tags[v] = t.group(1)
     else:
         versions = [s for s in output.splitlines() if s.strip()]
 
@@ -738,7 +765,10 @@ def list_versions(self, ctx, desc, params, never_install = False):
                            key = lambda v: self.cm.utils.common.build_sort_key(v, ['@version-']))
         versions = [dv['version'] for dv in dversions]
 
-    return {'return': 0, 'versions': versions}
+    out = {'return': 0, 'versions': versions}
+    if tags:
+        out['tags'] = tags
+    return out
 
 
 def find_latest(self, ctx, desc, tool_read, params, channels, query_channel = None, never_install = True):
@@ -888,6 +918,22 @@ def find_latest(self, ctx, desc, tool_read, params, channels, query_channel = No
                 notes.append(f'cmd_get_versions failed ({r.get("error", "").strip().splitlines()[0] if r.get("error") else r["return"]})')
             elif r.get('versions'):
                 v = pick_latest(r['versions'])
+                if v and repo and desc.get('latest_needs_assets') and r.get('tags'):
+                    # a tool installed from the files of its GitHub releases (latest_needs_assets: true): the newest tag
+                    # whose release has them - a tag comes before its release's files (2026-11-21); up to 5 tags looked at
+                    left = list(r['versions'])
+                    for _ in range(5):
+                        has = github_release_has_files(repo, r['tags'].get(v, v))
+                        if has is None:
+                            notes.append('the release of %s could not be read: taken as the newest' % r['tags'].get(v, v))
+                            break
+                        if has:
+                            break
+                        notes.append('%s has no files released yet - skipped' % r['tags'].get(v, v))
+                        left.remove(v)
+                        v = pick_latest(left)
+                        if not v:
+                            break
                 if v:
                     result['upstream_version'] = v
                     result['upstream_source'] = TAGS_SOURCE

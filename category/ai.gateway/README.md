@@ -111,3 +111,40 @@ percent-encoded - and `connect` has the harness send it in that header with ever
 the command line), OpenCode through its provider's `headers`. A gateway without `run_header` - a company's, a
 vendor's - is never sent it, and outside run-ai (no `CMETA_AI_RUN`) nothing is sent. The server should take the header
 out of what it passes on.
+
+## A gateway that asks its clients for a key: `client_key`
+
+A gateway server of one's own reached over a network (another machine of a tailnet, say) can let in only the machines
+that show it a key of its own - apart from the login or the key it passes on. The client's artifact names the header
+and the secret that holds the key:
+
+```yaml
+base_url: http://100.101.102.103:8401/local-login
+auth: {header: login}
+client_key: {header: x-cmeta-gateway-key, secret: my-gateway-client}
+```
+
+`connect` reads the key from the secret and has the harness send it in that header with every request: Claude Code
+as a line of `ANTHROPIC_CUSTOM_HEADERS` (beside the run header), Codex through its provider's `env_http_headers` (the
+variable `CMETA_AI_GATEWAY_CLIENT_KEY`; its name, never its value, on the command line), OpenCode through its
+providers' `headers`. A task that asks a model itself takes `request_headers` from `connect`: the key in its header,
+the client key, the run. `test` and the catalog are asked with it too; `ls` names its secret, never its value.
+
+The header must be one of its own (not `authorization`, not `x-api-key`: those carry what is passed on). The secret
+is a token secret: `cx secret generate <alias>` gives it a random value and prints its SHA-256 - what the server keeps
+to check it (the AI gateway server of cmeta-aops-ext2: `client_keys` of its config).
+
+## An open model's reasoning: `thinking_off`
+
+A model server of one's own (llama.cpp, vLLM, SGLang) serving a model that reasons before it answers (Qwen3 and the
+like) turns that off when the request asks it its own way. A gateway record says how, and a task that asks a model
+itself (gen-ai) adds it to its request:
+
+```yaml
+thinking_off:
+  chat_template_kwargs: {enable_thinking: false}
+```
+
+A pass-through (`upstream: <alias>`) takes it from its upstream, like its wires. `cx ai.gateway connect` returns it
+(`thinking_off`) beside the resolved `wires`, for a plain HTTP client. A gateway that declares none gets nothing added:
+a vendor's API may refuse a word it does not know.

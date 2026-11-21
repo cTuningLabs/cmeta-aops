@@ -522,17 +522,19 @@ class CTask(InitCTask):
             p = subprocess.Popen(command, stdin = subprocess.DEVNULL)
         else:
             out = open(log, 'ab')
+            # the folder the detached server stands in (2026-11-21): its state folder, never the folder of the command
+            # that started it (on Windows that folder could not be moved or deleted while the server ran)
             if windows:
                 flags = 0x00000008 | 0x00000200            # DETACHED_PROCESS, CREATE_NEW_PROCESS_GROUP
                 try:
                     p = subprocess.Popen(command, stdout = out, stderr = subprocess.STDOUT, stdin = subprocess.DEVNULL,
-                                         creationflags = flags | 0x01000000)    # CREATE_BREAKAWAY_FROM_JOB
+                                         creationflags = flags | 0x01000000, cwd = state)    # CREATE_BREAKAWAY_FROM_JOB
                 except OSError:
                     p = subprocess.Popen(command, stdout = out, stderr = subprocess.STDOUT, stdin = subprocess.DEVNULL,
-                                         creationflags = flags)
+                                         creationflags = flags, cwd = state)
             else:
                 p = subprocess.Popen(command, stdout = out, stderr = subprocess.STDOUT, stdin = subprocess.DEVNULL,
-                                     start_new_session = True)
+                                     start_new_session = True, cwd = state)
             out.close()
         with open(pidfile, 'w') as f:
             f.write(str(p.pid))

@@ -95,7 +95,9 @@ cx secret check [<alias>] [--fix] [--unlock]   # the files exist, the mode, pass
 cx secret which <cat>::<artifact>/<file>       # the secret holding a copy of that file, and its path (since 2026-10-22)
 cx secret import [<alias>] [--force]           # copy the files in from files.from (files.names), tighten the private
                                                # key, mark files.status imported (done 2026-10-15 for the four)
-cx secret generate <alias> [--comment=..]      # a new ed25519 key pair without a passphrase at ssh.key (--force: over it)
+cx secret generate <alias> [--comment=..]      # a new ed25519 key pair without a passphrase at ssh.key (--force: over it);
+                                               # a token secret: a random value in its token file, owner-only, never
+                                               # printed - only its SHA-256 (what another machine keeps to check it)
 cx secret use <alias> --repo=<path>            # the identity into a clone's .git/config (name, email, core.sshCommand,
 cx secret use <alias> --git_global             # gpg.format, user.signingkey, commit.gpgsign, allowed signers), or the user's
 cx secret render <alias> --out=<file>          # a standalone git config include file (+ the ssh config stanza)

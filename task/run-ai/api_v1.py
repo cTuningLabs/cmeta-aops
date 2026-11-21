@@ -2021,7 +2021,8 @@ class CTask(InitCTask):
         if scratch and con:
             print('cMeta info: scratch workspace%s: %s' % (' (preview)' if read_only else '', project_path))
             print('cMeta info: memory and records: %s' % ai_root)
-        if not scratch and not cref and not read_only:
+        # (--no_log makes no folder, so there is nothing to ask about)
+        if not scratch and not cref and not read_only and not no_log:
             r = self._confirm_new_ai(ctx, project_path, ai_root)
             if r['return'] > 0:
                 return r
@@ -2585,9 +2586,11 @@ class CTask(InitCTask):
                     print('%sRUN-AI: %s' % (space, saved_note))
 
         # 4. the folders, the settings and context files, the conversation and the run record (written before the run,
-        #    so a crash still leaves a trace)
-        os.makedirs(mem_dir, exist_ok=True)
-        os.makedirs(log_dir, exist_ok=True)
+        #    so a crash still leaves a trace). --no_log leaves no folder behind: log/ is not made, and neither is a
+        #    memory/ that does not exist yet - the one a harness writes a memory into is made by that write
+        if not no_log:
+            os.makedirs(mem_dir, exist_ok=True)
+            os.makedirs(log_dir, exist_ok=True)
         if codex_dir:
             os.makedirs(codex_dir, exist_ok=True)
         if settings is not None:

@@ -403,3 +403,72 @@ def test_a_gateway_that_asks_is_told_which_run_a_request_comes_from(cm, tmp_path
             assert r['return'] == 0, r
             assert 'ANTHROPIC_CUSTOM_HEADERS' not in r['env'] and 'CMETA_AI_RUN' not in r['env'] and 'CMETA_AI_RUN' not in ' '.join(r['args'])
             assert RUN not in str(r.get('opencode_config'))
+
+
+def test_a_gateway_that_asks_its_clients_for_a_key(cm, tmp_path, monkeypatch):
+    """client_key: a gateway server reached over a network checks a key of its own before anything else. Each harness
+    sends it its own way - Claude Code a line of ANTHROPIC_CUSTOM_HEADERS, Codex a variable its provider names, OpenCode
+    its providers' headers -, a task that asks a model itself gets it in request_headers; never on a command line, and
+    never in place of the credential the gateway passes on."""
+    monkeypatch.setenv('CMETA_AI_RUN', RUN)
+    holder = 'gwc-' + uuid.uuid4().hex[:8]
+    gateway(cm, tmp_path, holder)                          # its secret <holder>-key holds the client key
+    value = 'sk-test-' + holder
+    name = gateway(cm, tmp_path, 'gw-' + uuid.uuid4().hex[:8], run_header='x-cmeta-run',
+                   client_key={'header': 'X-Cmeta-Gateway-Key', 'secret': holder + '-key'})
+
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': 'claude', 'con': False})
+    assert r['return'] == 0, r
+    assert r['env']['ANTHROPIC_CUSTOM_HEADERS'].split(chr(10)) == ['x-cmeta-gateway-key: ' + value, 'x-cmeta-run: ' + RUN]
+    assert r['env']['CMETA_AI_GATEWAY_KEY'] == 'sk-test-' + name and r['client_key_header'] == 'x-cmeta-gateway-key'
+    assert r['request_headers'] == {'x-api-key': 'sk-test-' + name, 'x-cmeta-gateway-key': value, 'x-cmeta-run': RUN}
+
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': 'codex', 'con': False})
+    assert r['return'] == 0, r
+    words = ' '.join(r['args'])
+    assert 'model_providers.%s.env_http_headers.x-cmeta-gateway-key="CMETA_AI_GATEWAY_CLIENT_KEY"' % name in words
+    assert value not in words and r['env']['CMETA_AI_GATEWAY_CLIENT_KEY'] == value
+
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': name, 'harness': 'opencode', 'con': False})
+    assert r['return'] == 0, r
+    assert all(p['options']['headers']['x-cmeta-gateway-key'] == value for p in r['opencode_config']['provider'].values())
+
+    # a pass-through of the harness's own login: the client key goes with it, and no credential of a secret
+    login = gateway(cm, tmp_path, 'gw-' + uuid.uuid4().hex[:8], auth={'header': 'login'},
+                    client_key={'header': 'x-cmeta-gateway-key', 'secret': holder + '-key'})
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': login, 'harness': 'claude', 'con': False})
+    assert r['return'] == 0 and r['own_login'] is True, r
+    # (this one names no run_header: the run is not sent)
+    assert r['env']['ANTHROPIC_CUSTOM_HEADERS'] == 'x-cmeta-gateway-key: ' + value
+    assert r['request_headers'] == {'x-cmeta-gateway-key': value} and 'CMETA_AI_GATEWAY_KEY' not in r['env']
+
+    # the listing names the client key's secret, never its value
+    rows = {x['alias']: x for x in cm.access({'category': 'ai.gateway', 'command': 'list', 'con': False})['gateways']}
+    assert rows[name]['auth'].endswith('+ client key (%s-key)' % holder) and value not in str(rows)
+
+    # a client key whose secret is not here, or a header that is a credential's own: an error, nothing started
+    for bad, words in (({'header': 'x-cmeta-gateway-key', 'secret': 'no-such-' + uuid.uuid4().hex[:6]}, 'is not on this machine'),
+                       ({'header': 'authorization', 'secret': holder + '-key'}, 'a header of its own'),
+                       ('x-cmeta-gateway-key', 'must be')):
+        other = gateway(cm, tmp_path, 'gw-' + uuid.uuid4().hex[:8], client_key=bad)
+        r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': other, 'harness': 'claude', 'con': False})
+        assert r['return'] > 0 and words in r['error'] and value not in r['error'], r
+
+
+def test_connect_gives_a_plain_client_the_wires_and_the_thinking_switch(cm, tmp_path):
+    """connect returns the wires with what a pass-through inherits (a task that asks a model itself builds its address
+    from them), and thinking_off - how a request turns an open model's reasoning off - only where a gateway, or the
+    upstream of a pass-through, declares it (2026-11-21)."""
+    off = {'chat_template_kwargs': {'enable_thinking': False}}
+    server = gateway(cm, tmp_path, 'gw-' + uuid.uuid4().hex[:8], thinking_off=off)
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': server, 'harness': 'codex', 'con': False})
+    assert r['return'] == 0 and r['wires'] == {'anthropic': '/anthropic', 'openai': '/openai/v1'} and r['thinking_off'] == off, r
+
+    through = passthrough(cm, 'gw-' + uuid.uuid4().hex[:8], base_url='http://127.0.0.1:9/through', upstream=server)
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': through, 'harness': 'codex', 'con': False})
+    assert r['return'] == 0 and r['wires'] == {'anthropic': '/anthropic', 'openai': '/openai/v1'} and r['thinking_off'] == off, r
+    assert r['base_url'] == 'http://127.0.0.1:9/through'
+
+    vendor = gateway(cm, tmp_path, 'gw-' + uuid.uuid4().hex[:8])
+    r = cm.access({'category': 'ai.gateway', 'command': 'connect', 'arg1': vendor, 'harness': 'codex', 'con': False})
+    assert r['return'] == 0 and 'thinking_off' not in r, r

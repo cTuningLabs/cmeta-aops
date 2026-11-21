@@ -28,15 +28,15 @@ configs:
         default: Qwen/Qwen3-0.6B
       image:
         desc: vLLM's container image, which is the vLLM release (vllm/vllm-openai:v<release>).
-        default: vllm/vllm-openai:v0.31.0
+        default: vllm/vllm-openai:v0.34.0
       max_model_len:
         desc: The context window in tokens (it must fit in the GPU's memory beside the model).
         type: int
         default: 8192
       gpu_memory_utilization:
-        desc: The share of the GPU's memory vLLM takes for the model and its KV cache, 0.1 to 0.98.
+        desc: The share of the GPU's memory vLLM takes for the model and its KV cache, 0.1 to 1.0. 0 - by vLLM's release - none is passed to vLLM 0.34 and later (it sizes its KV cache from the memory free after warm-up), 0.85 to an earlier one or to an image whose tag names no release; set it to share the GPU with other programs.
         type: float
-        default: 0.85
+        default: 0.0
       served_name:
         desc: The model's name in /v1/models and in the harnesses; empty - the model's own.
       max_num_seqs:

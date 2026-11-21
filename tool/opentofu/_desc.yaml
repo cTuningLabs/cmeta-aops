@@ -20,7 +20,7 @@ authors: Grigori Fursin
 names:
   - tofu{{global.host.vars.file_ext_exe}}
 
-default_version: '1.13.1'
+default_version: '1.13.9'
 match_version:
   - regex: 'OpenTofu v(\d+\.\d+\.\d+)'
     group: 1

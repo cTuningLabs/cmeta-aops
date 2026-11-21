@@ -351,6 +351,32 @@ def test_new_conversations_and_picking_one(fresh):
     assert sorted(p.name for p in (fresh.project / "!AI" / "log").iterdir()) == before
 
 
+def test_no_log_makes_no_folder(fresh, monkeypatch):
+    # a project that never ran: --no_log runs the harness and leaves no !AI behind (not an empty memory/ or log/)
+    assert not (fresh.project / "!AI").exists()
+    r = fresh.run(prompt = "not recorded", no_log = True)
+    assert r["return"] == 0 and r["conversation"] == "" and r["record"] == ""
+    assert read(fresh.scratch / "prompt.txt").endswith("not recorded"), "the harness ran"
+    assert not (fresh.project / "!AI").exists()
+
+    # a recorded run still makes both folders
+    r = fresh.run(prompt = "recorded")
+    assert r["return"] == 0 and (fresh.project / "!AI" / "memory").is_dir() and (fresh.project / "!AI" / "log").is_dir()
+
+    # a plain folder outside cMeta, where a recorded run asks first: --no_log makes nothing, so it asks nothing
+    plain = fresh.scratch / "plain-no-log"
+    plain.mkdir(exist_ok = True)
+    monkeypatch.chdir(plain)
+    loaded = fresh.cm.access({"category": "utils", "command": "select_artifact", "select_category": "task", "select_artifact": "run-ai",
+                              "load_api": True, "load_api_ver": 1, "load_api_class": "CTask", "con": False})
+    monkeypatch.setattr(type(loaded["api_code"]), "_repo_meta", staticmethod(lambda p: {}))
+    refused = fresh.run(project = "", prompt = "recorded, so it asks")
+    assert refused["return"] > 0 and "-q" in refused["error"] and not (plain / "!AI").exists()
+    r = fresh.run(project = "", prompt = "not recorded either", no_log = True)
+    assert r["return"] == 0, r.get("error")
+    assert not (plain / "!AI").exists()
+
+
 def test_the_listing_names_the_harness_the_model_and_the_effort_of_every_run(fresh):
     # a project without a conversation: the listing says so, and neither flag writes anything
     for flags in ({"conversations": True}, {"cs": True}):

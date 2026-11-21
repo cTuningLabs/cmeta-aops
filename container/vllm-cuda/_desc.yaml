@@ -7,7 +7,7 @@ authors: Grigori Fursin
 # the image: nothing to download but the model; a package a program adds goes into that venv. The version below is vLLM's
 # release (the image's tag); the GPU needs Docker Desktop on Windows, or tool/nvidia-container-toolkit on Linux.
 #
-#   cx container build vllm-cuda                                   # vllm/vllm-openai:v0.31.0 + cMeta
+#   cx container build vllm-cuda                                   # vllm/vllm-openai:v0.34.0 + cMeta
 #   cx container build vllm-cuda --template.os_version=0.30.0      # another vLLM release
 #   cx program run test-vllm --compute=cuda --on=docker:vllm-cuda  # test-vllm inside, on the image's vLLM
 #   cx task run get-host--docker vllm-cuda --compute=cuda          # just the instance: cx host ssh <instance>, vllm serve ...
@@ -17,7 +17,7 @@ kind: base
 compute_default: cuda
 
 template:
-  os_version: "0.31.0"            # here: the vLLM release (vllm/vllm-openai:v<release>)
+  os_version: "0.34.0"            # here: the vLLM release (vllm/vllm-openai:v<release>)
   from: "vllm/vllm-openai:v{{cmeta.os_version}}"
   cmeta_source: pypi
   cmeta_version: ""
