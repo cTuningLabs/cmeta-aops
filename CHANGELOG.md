@@ -18,6 +18,23 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **Every row of `cx host ls` / `cx host status` says where a host runs:** `via` (the host it is reached through - the
   machine of a container or a WSL instance, the parent of a phone), a container's `engine` and the `template` an
   instance was made from - what a page needs to show the instances under their machine.
+- **The container engines through their cMeta tools:** `get-host--docker`, `cx container ...` and the commands of the
+  host category for a container host (run, ssh, up, down, restart, snapshot) run the docker / podman program that
+  `tool/docker` / `tool/podman` find on this machine - detected only, never installed from there; a container another
+  machine carries keeps the engine's name, which that machine's own shell finds. Before, the engine was looked for by
+  name in PATH, then in a list of install places.
+- **`get-host--docker --network=host`:** an instance with the machine's own network (the engine's host network is
+  never made or removed); `cx host up` starts it again without making a network.
+- **`get-host--docker --engine_host=<socket or URL>`:** an instance made by an engine other than the default one of
+  the machine (a Mac's colima VM: `unix://$HOME/.colima/<profile>/docker.sock`), through `DOCKER_HOST`; recorded in
+  `access.engine_host`, which the host category's commands pass on (`-H` for docker, `--url` for podman).
+- **New task `set-wsl-network`:** WSL 2's network mode on Windows - `nat` or `mirrored` (every distribution with the
+  machine's own addresses, as a node of a cluster of machines needs) in the user's `.wslconfig`, its other keys kept,
+  `--restart`; `--allow_from=<addresses>` lets those machines through the Hyper-V firewall of WSL (one rule, an
+  administrator's prompt), `none` removes it. Without a mode it says what is set, what is in use and what the rule lets
+  in.
+- **New tool `socket-vmnet` (macOS):** the network helper that bridges a Lima / colima VM to the Mac's network (its
+  release archive, checked against its sha256, unpacked into `/opt/socket_vmnet` with sudo, where Lima looks for it).
 - **`tool/open-ssh` reports the programs beside the ssh it found** (`features.paths`: `ssh-keygen`, `ssh-keyscan`,
   `ssh-add`, `ssh-agent`, `scp`, `sftp` - those present): a task takes `ssh-keygen` from there instead of looking for
   it by name.

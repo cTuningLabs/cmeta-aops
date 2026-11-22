@@ -30,6 +30,8 @@ def host_category(run=None):
     category = module.Category.__new__(module.Category)
     category.cm = SimpleNamespace(error=lambda message: {'return': 1, 'error': message},
                                   utils=SimpleNamespace(files=SimpleNamespace(quote_path=lambda p: '<' + p + '>')))
+    # the engine's word as its tool would give it here (the tool itself is not asked in these tests)
+    category._engine_word = lambda ctx, h: 'docker'
     if run is not None:
         category._run_local = run
     return category

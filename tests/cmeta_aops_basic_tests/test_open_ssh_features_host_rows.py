@@ -63,6 +63,33 @@ def host_category():
     return module.Category.__new__(module.Category)
 
 
+def test_the_engine_word_of_a_container_host():
+    """A container of this machine runs the engine its tool finds (quoted; detected only - skip_install); a container
+    another machine carries keeps the engine's name (that machine's shell finds it); a tool that finds nothing leaves
+    the name (2026-11-22)."""
+    import types
+    cat = host_category()
+    g = type(cat)._engine_word.__globals__
+    asked = []
+
+    def access(request):
+        asked.append(request)
+        return {'return': 0, 'path': r'C:\Program Files\Docker\docker.exe'} if request['arg1'].startswith('docker,') else {'return': 16}
+
+    cat.cm = types.SimpleNamespace(access=access, q=lambda p: '"' + p + '"')
+    cat._get_host = lambda ctx, alias: {'return': 0, 'host': {'alias': alias}}
+    cat._here = lambda h: h['alias'] == 'laptop'
+    g['ENGINE_EXE'].clear()
+    here = {'alias': 'node-1', 'via': 'laptop', 'desc': {'access': {'engine': 'docker'}}}
+    away = {'alias': 'node-2', 'via': 'mac', 'desc': {'access': {'engine': 'docker'}}}
+    pod = {'alias': 'node-3', 'desc': {'access': {'engine': 'podman'}}}
+    assert cat._engine_word({}, here) == r'"C:\Program Files\Docker\docker.exe"'
+    assert asked and asked[0]['skip_install'] is True
+    assert cat._engine_word({}, away) == 'docker'
+    assert cat._engine_word({}, pod) == 'podman'
+    g['ENGINE_EXE'].clear()
+
+
 def test_host_rows_say_where_a_host_runs():
     cat = host_category()
     instance = {'alias': 'slurm-demo-1', 'type': 'docker', 'machine': 'laptop', 'via': 'laptop-win',

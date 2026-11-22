@@ -64,10 +64,8 @@ CONFIG_CATEGORY = 'config,cc6bfe174be847ed'
 REPO_CATEGORY = 'repo,f4f792ab40c7498f'
 
 ENGINES = ('docker', 'podman')
-ENGINE_WELL_KNOWN_PATHS = {
-    'docker': [r'C:\Program Files\Docker\Docker\resources\bin\docker.exe', '/usr/local/bin/docker', '/usr/bin/docker'],
-    'podman': [r'C:\Program Files\RedHat\Podman\podman.exe', '/usr/local/bin/podman', '/usr/bin/podman'],
-}
+# cMeta's tools of the container engines: the program each one finds is the one this category runs
+ENGINE_TOOLS = {'docker': 'docker,fd2bb541ed094b7a', 'podman': 'podman,aeb171c7e6574f88'}
 
 LABEL = 'cmeta.container'
 
@@ -293,15 +291,17 @@ class Category(InitCategory):
     # engines
 
     def _engine_path(self, engine):
-        """Path of the docker / podman binary on this host (PATH first, then the well-known install locations)."""
+        """Path of the docker / podman binary on this host: the one cMeta's tool of it finds (PATH and the places the
+        tool declares; detected only, never installed from here - 2026-11-22: it was shutil.which, then a list of
+        install locations, which the tools' extra_paths hold too)."""
         if engine in self._engine_cache:
             return self._engine_cache[engine]
-        p = shutil.which(engine)
-        if not p:
-            for cand in ENGINE_WELL_KNOWN_PATHS.get(engine, []):
-                if os.path.isfile(cand):
-                    p = cand
-                    break
+        p = ''
+        tool = ENGINE_TOOLS.get(engine)
+        if tool:
+            r = self.cm.access({'category': 'tool,c393ba5c6fa14f66', 'command': 'setup', 'arg1': tool, 'skip_install': True,
+                                'con': False, 'quiet': True})
+            p = str(r.get('path') or '') if r.get('return', 1) == 0 else ''
         self._engine_cache[engine] = p
         if p and engine == 'docker':
             # once per process, before the first docker command: a session without a desktop gets a config

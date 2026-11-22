@@ -1,0 +1,19 @@
+{
+  "artifact": "105a86fab84c4caa",
+  "authors": "Grigori Fursin",
+  "category": "tool,c393ba5c6fa14f66",
+  "creation_timestamp": "2026-11-22T17:40:53.708811+00:00",
+  "generator": {
+    "agent": "Claude Code 2.1.330",
+    "ai_run": {
+      "conversation": "20261122-143211",
+      "project": "cc4b49b688493a7f::73db9d9a2f774195",
+      "run": "20261122-155659"
+    },
+    "by": "Grigori Fursin",
+    "cmeta_task": "run-ai",
+    "harness": "claude",
+    "method": "agent",
+    "via": "cmeta 0.45.2"
+  }
+}

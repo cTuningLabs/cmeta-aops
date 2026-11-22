@@ -1306,6 +1306,11 @@ def _host_source(function):
     return _HOST_SOURCE[function.__name__]
 
 
+# cMeta's tools of the container engines, and the programs they found here (a quoted path, or the name when none)
+ENGINE_TOOLS = {'docker': 'docker,fd2bb541ed094b7a', 'podman': 'podman,aeb171c7e6574f88'}
+ENGINE_EXE = {}
+
+
 class Category(InitCategory):
     """
     """
@@ -1998,7 +2003,7 @@ class Category(InitCategory):
             distro = str(acc.get('distro') or '')
             local_cmd = f'wsl.exe -t {distro} && wsl.exe -d {distro} -- true' if distro else 'wsl.exe --shutdown && wsl.exe -- true'
         elif t == 'docker':
-            local_cmd = f'{self._engine(h)} restart {acc.get("container") or alias}'
+            local_cmd = f'{self._engine_word(ctx, h)} restart {acc.get("container") or alias}'
             if h.get('via'):
                 r = self._get_host(ctx, h['via'])
                 if r['return'] > 0: return r
@@ -5651,7 +5656,7 @@ class Category(InitCategory):
             cmd = f'wsl.exe --export {distro} {self.cm.utils.files.quote_path(record["file"])}'
         else:
             record['image'] = f'cmeta/snapshot:{h["alias"]}-{snap}'
-            cmd = f'{self._engine(h)} commit {acc.get("container") or h["alias"]} {record["image"]}'
+            cmd = f'{self._engine_word(ctx, h)} commit {acc.get("container") or h["alias"]} {record["image"]}'
 
         rr = self._engine_cmd(ctx, h, cmd, timeout=1800)
         if rr['return'] > 0: return rr
@@ -5743,7 +5748,7 @@ class Category(InitCategory):
         """The home of the default user of a docker / podman container or a WSL distribution of this machine ('' when it
         does not answer): printenv needs no quoting, the same from cmd.exe and from a POSIX shell."""
         if h['type'] == 'docker':
-            cmd = f'{self._engine(h)} exec {acc.get("container") or h["alias"]} printenv HOME'
+            cmd = f'{self._engine_word(None, h)} exec {acc.get("container") or h["alias"]} printenv HOME'
         else:
             cmd = f'wsl.exe -d {acc.get("distro") or h["alias"]} -- printenv HOME'
         rr = self._run_local(cmd, capture=True, con=False, timeout=60)
@@ -7027,6 +7032,30 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         acc = h['desc'].get('access') or {}
         return str(acc.get('engine') or (h['desc'].get('made_from') or {}).get('engine') or 'docker')
 
+    def _engine_word(self, ctx, h):
+        """
+        The engine of a docker-type host as the first word of a command (2026-11-22: it was the engine's name
+        everywhere): on this machine the program cMeta's tool of it finds (quoted; detected only, never installed
+        from here), for a container another machine carries its name - that machine's own shell finds it. A tool that
+        finds nothing leaves the name: the command then says the engine is not there, as before. Without ctx the
+        command runs here.
+        """
+        engine = self._engine(h)
+        # an engine of its own on the carrier (access: engine_host - colima's socket beside Docker Desktop on a Mac,
+        # 2026-11-22): every command names it, "docker -H <socket>" / "podman --url <socket>"
+        target = str(((h.get('desc') or {}).get('access') or {}).get('engine_host') or '')
+        flag = (' --url ' if engine == 'podman' else ' -H ') + shlex.quote(target) if target else ''
+        if ctx is not None and h.get('via'):
+            r = self._get_host(ctx, h['via'])
+            if r.get('return', 1) > 0 or not self._here(r['host']):
+                return engine + flag
+        if engine not in ENGINE_EXE:
+            tool = ENGINE_TOOLS.get(engine)
+            r = self.cm.access({'category': 'tool,c393ba5c6fa14f66', 'command': 'setup', 'arg1': tool, 'skip_install': True,
+                                'con': False, 'quiet': True}) if tool else {}
+            ENGINE_EXE[engine] = self.cm.q(r['path']) if r.get('return', 1) == 0 and r.get('path') else engine
+        return ENGINE_EXE[engine] + flag
+
     def _boot_stamp(self, ctx, h):
         """
         A stamp of the boot an ssh host is running - Linux: the kernel's boot id; macOS: the boot time; a
@@ -7194,7 +7223,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             if interactive or cmd is None: flags += '-it '
             elif stdin: flags += '-i '
             if acc.get('user'): flags += f'-u {acc["user"]} '
-            local = f'{self._engine(h)} exec {flags}{name} ' + (shell if cmd is None else wrapped)
+            local = f'{self._engine_word(ctx, h)} exec {flags}{name} ' + (shell if cmd is None else wrapped)
 
         elif t == 'adb':
             s = f'-s {acc["serial"]} ' if acc.get('serial') else ''
@@ -7398,7 +7427,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                     volume_name = volume.get('volume') or ''
                     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', volume_name):
                         return self.cm.error('Invalid registered artifact volume name')
-                    check = f'{self._engine(h)} volume inspect {volume_name}'
+                    check = f'{self._engine_word(ctx, h)} volume inspect {volume_name}'
                     if h.get('via'):
                         parent = self._get_host(ctx, h['via'])
                         if parent['return'] > 0: return parent
@@ -7418,8 +7447,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 # the network the instance was made on (get-host--docker --network) is made again when it is gone
                 # (an existing one answers "already exists": nothing to do)
                 net = str(acc.get('network') or '')
-                if net and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', net):
-                    mk = f'{self._engine(h)} network create --label cmeta.network=1 {net}'
+                # "host" (the machine's own network) is not made: docker and podman have it
+                if net and net != 'host' and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', net):
+                    mk = f'{self._engine_word(ctx, h)} network create --label cmeta.network=1 {net}'
                     if h.get('via'):
                         parent = self._get_host(ctx, h['via'])
                         if parent['return'] > 0: return parent
@@ -7433,9 +7463,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                     return self.cm.error(f'container "{name}" does not exist and no "access: image" is declared to create it')
                 keep = acc.get('keepalive') or 'sleep infinity'
                 run_args = acc.get('run_args') or ''
-                cmd = f'{self._engine(h)} run -d --name {name} {run_args} {image} {keep}'.replace('  ', ' ')
+                cmd = f'{self._engine_word(ctx, h)} run -d --name {name} {run_args} {image} {keep}'.replace('  ', ' ')
             else:
-                cmd = f'{self._engine(h)} start {name}'
+                cmd = f'{self._engine_word(ctx, h)} start {name}'
             if h.get('via'):
                 r = self._get_host(ctx, h['via'])
                 if r['return'] > 0: return r
@@ -7480,7 +7510,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                                      f'or "cx host down {h["alias"]} --force" ends it with the distro')
             cmd = 'wsl.exe -t ' + distro
         elif t == 'docker':
-            cmd = f'{self._engine(h)} stop ' + str(acc.get('container') or h['alias'])
+            cmd = f'{self._engine_word(ctx, h)} stop ' + str(acc.get('container') or h['alias'])
             if h.get('via'):
                 r = self._get_host(ctx, h['via'])
                 if r['return'] > 0: return r
