@@ -2,6 +2,58 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.80.0
+- **run-llama-cpp-server: `--mmproj`, a model that reads pictures.** The projector of a vision model (its second GGUF
+  file) is served with it: `auto` takes the one the model's file names (`mmproj:` in its `_desc-<file>.yaml`), or a file
+  of the artifact, or a path; the config key `mmproj` too. llama-server takes a projector from build 5331 (May 2025):
+  the build cMeta detected decides, an older one is refused with the build to set up, a build without a number is
+  asked itself. A projector is never taken as the model's file when none is named; a running server without the
+  projector is not taken for one with it (`--swap`). The record and `--action=status` name it.
+- **`get-host--docker --network=<name>`:** an instance on a user-defined network of the engine (made when missing),
+  where instances reach each other by name - a cluster of instances; recorded in `access.network`, made again by
+  `cx host up`.
+- **A container template's own `run_flags:`** (every compute; a list, or per engine), before its compute overlay's -
+  `get-host--docker` and `cx container run`: what every instance of a template needs (a cluster node's
+  `--privileged`).
+- **Every row of `cx host ls` / `cx host status` says where a host runs:** `via` (the host it is reached through - the
+  machine of a container or a WSL instance, the parent of a phone), a container's `engine` and the `template` an
+  instance was made from - what a page needs to show the instances under their machine.
+- **The container engines through their cMeta tools:** `get-host--docker`, `cx container ...` and the commands of the
+  host category for a container host (run, ssh, up, down, restart, snapshot) run the docker / podman program that
+  `tool/docker` / `tool/podman` find on this machine - detected only, never installed from there; a container another
+  machine carries keeps the engine's name, which that machine's own shell finds. Before, the engine was looked for by
+  name in PATH, then in a list of install places.
+- **`get-host--docker --network=host`:** an instance with the machine's own network (the engine's host network is
+  never made or removed); `cx host up` starts it again without making a network.
+- **`get-host--docker --engine_host=<socket or URL>`:** an instance made by an engine other than the default one of
+  the machine (a Mac's colima VM: `unix://$HOME/.colima/<profile>/docker.sock`), through `DOCKER_HOST`; recorded in
+  `access.engine_host`, which the host category's commands pass on (`-H` for docker, `--url` for podman).
+- **New task `set-wsl-network`:** WSL 2's network mode on Windows - `nat` or `mirrored` (every distribution with the
+  machine's own addresses, as a node of a cluster of machines needs) in the user's `.wslconfig`, its other keys kept,
+  `--restart`; `--allow_from=<addresses>` lets those machines through the Hyper-V firewall of WSL (one rule, an
+  administrator's prompt), `none` removes it - done only when the rule, read back, lets them in (a declined prompt is
+  an error, not a success). Without a mode it says what is set, what is in use and what the rule lets in.
+- **New tool `socket-vmnet` (macOS):** the network helper that bridges a Lima / colima VM to the Mac's network (its
+  release archive, checked against its sha256, unpacked into `/opt/socket_vmnet` with sudo, where Lima looks for it).
+- **`tool/open-ssh` reports the programs beside the ssh it found** (`features.paths`: `ssh-keygen`, `ssh-keyscan`,
+  `ssh-add`, `ssh-agent`, `scp`, `sftp` - those present): a task takes `ssh-keygen` from there instead of looking for
+  it by name.
+- **`not_needed_on` in a tool's description:** `cx tool setup <tool> --status` says that the tool is not needed on this
+  system, and why, instead of offering an install it would refuse (the NVIDIA container toolkit on Windows, where
+  Docker Desktop passes the GPU through WSL2 by itself; on macOS). `--status` also reports the version a program prints
+  now when the system's package manager upgraded it since setup cached it ("cached by setup as <version>").
+- **`get-mlperf-endpoints-results`:** the rolling MLPerf Endpoints results (v1.0, the default): one branch per cohort
+  of `mlcommons/endpoints_results` - `--cohort=<name>`, `--cohort=all`, or the newest by its name; v0.7 as before.
+- **`clone-git` on Windows:** a repository holding names Windows refuses (`:` ...) is checked out without them (a
+  sparse checkout; `windows_skipped_paths` names them) - git left the whole work tree empty before, and the task did
+  not fail.
+- **`tool/conda`** installs the `default_version` of its description; a prefix longer than a shebang line gets a
+  launcher that runs conda with the prefix's Python.
+- **`tool/gcc` on Debian and Ubuntu installs `gcc libc6-dev`:** a system set up without recommended packages (a
+  container) had a gcc without the C headers, which the tool then refused, and reinstalling gcc did not help.
+- Versions: conda 26.9.4, ray 2.60.0, ansible 2.21.6, llama-cpp 12613 (and `build-llama-cpp` b12613), docker 29.10.0
+  (the client of Windows and macOS), nvidia-container-toolkit 1.20.2.
+
 ## 0.79.0
 - **AI gateways with a key of their own for their clients: `client_key`.** An `ai.gateway` record may say
   `client_key: {header, secret}`: a gateway server reached over a network lets in only the machines that show it

@@ -1,0 +1,48 @@
+authors: Grigori Fursin
+
+# socket_vmnet (https://github.com/lima-vm/socket_vmnet, Apache-2.0): Apple's vmnet framework behind a socket, so that a
+# Linux VM of Lima or colima on a Mac gets an address of its own - on the Mac only ("shared") or on the Mac's home
+# network like any other machine there ("bridged": colima start --network-address --network-mode bridged
+# --network-interface en0). What a node of a cluster made of the fleet's machines needs on a Mac: Docker Desktop's VM
+# stays behind NAT, and Slurm, MPI, NCCL and PyTorch tell their peers the address to connect back to.
+#
+# Installed (api_v1.py) as its upstream says it must be: the release archive for this CPU, its SHA-256 checked against
+# the pinned one below, unpacked by root into /opt/socket_vmnet (a binary that runs as root must be owned by root and
+# not writable by the user: Lima refuses one under a user's folder). With sudo (an administrator); macOS only.
+# Removal: sudo rm -rf /opt/socket_vmnet.
+#
+#   cx tool setup socket-vmnet
+#   cx tool run colima -- start --profile node --network-address --network-mode bridged --network-interface en1
+
+names:
+  - socket_vmnet
+
+extra_paths:
+  darwin:
+    - /opt/socket_vmnet/bin
+
+match_version:
+  - regex: 'v?(\d+\.\d+\.\d+)'
+    group: 1
+
+cmd_get_version: '{{tool_path}} --version'
+
+default_version: '1.2.2'
+
+# The release archives: version -> architecture -> SHA-256 (the digests GitHub publishes for the assets)
+archives:
+  '1.2.2':
+    arm64: c7bf62308fbcfdc29bdfb8373c9b1951f7ac2396446e4390919796a94972e6dc
+    amd64: 2968a82c97e692c2d36f87230152e8018e00589c1b598e8257775adfe83800a1
+
+requires_sudo:
+  darwin: True
+
+not_needed_on:
+  linux: 'a Linux machine gives a container its own network (docker run --network=host): no VM is needed'
+  windows: 'on Windows the WSL instances share the machine network in mirrored mode (cx task run set-wsl-network mirrored)'
+
+install_help_text: |
+  Could not install socket_vmnet here (macOS only, with sudo). Upstream's way: download
+  socket_vmnet-<version>-$(uname -m).tar.gz from https://github.com/lima-vm/socket_vmnet/releases and run
+  sudo tar Cxzvf / socket_vmnet-<version>-$(uname -m).tar.gz opt/socket_vmnet

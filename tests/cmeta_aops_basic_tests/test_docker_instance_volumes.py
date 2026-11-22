@@ -179,6 +179,7 @@ def test_host_up_refuses_missing_or_foreign_state_volume(tmp_path):
     category.cm = SimpleNamespace(error=lambda message: {'return': 1, 'error': message})
     category._declared_command = lambda *a: None
     category._engine = lambda h: 'docker'
+    category._engine_word = lambda ctx, h: 'docker'
     host = dict(type='docker', alias='example', status='missing', desc={
         'access': {'container': 'example', 'image': 'example-image'},
         'artifact_mounts': [{'storage': 'volume', 'volume': 'owned-volume', 'uid': 'owner', 'subpath': 'volumes/app'}]})

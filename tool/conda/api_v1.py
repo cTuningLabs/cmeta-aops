@@ -12,19 +12,20 @@ downloaded with the download-file task, its SHA-256 verified against the per-ass
 publishes, then run silently into content/miniforge3 of the cache entry - user-level, no administrator
 rights, nothing registered with the OS, nothing put on the PATH or into the shell's profile.
 
-The version is conda's own (26.7.2); Miniforge tags it with an installer build number (26.7.2-0),
+The version is conda's own (26.9.4); Miniforge tags it with an installer build number (26.9.4-0),
 0 unless BUILDS says otherwise. Linux and macOS run the .sh installer with -b -p <prefix>, Windows
 the .exe with /S /D=<prefix>.
 """
 
 import os
 import shutil
+import stat
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 from tool_c393ba5c6fa14f66.api.common_release import _fetch_one
 
-DEFAULT_VERSION = '26.7.2'
-BUILDS = {'26.7.2': '0'}                  # conda version -> Miniforge installer build (0 when not listed)
+DEFAULT_VERSION = '26.9.4'                # when _desc.yaml names no default_version (that one is read first)
+BUILDS = {'26.7.2': '0', '26.9.4': '0'}   # conda version -> Miniforge installer build (0 when not listed)
 
 URL = 'https://github.com/conda-forge/miniforge/releases/download/{tag}/Miniforge3-{tag}-{os}-{arch}{suffix}'
 OS = {'linux': 'Linux', 'darwin': 'MacOSX', 'windows': 'Windows'}
@@ -69,7 +70,7 @@ class CTool(InitCTool):
         version = params.get('version')
         version_simple = params.get('version_simple')
         if not version:
-            version = version_simple = DEFAULT_VERSION
+            version = version_simple = str(self.cdesc.get('default_version') or DEFAULT_VERSION)
         if not version_simple:
             return {'return': 16, 'install_cmd': cmd,
                     'error': f'the Miniforge download needs an exact conda version (got "{version}")'}
@@ -133,4 +134,40 @@ class CTool(InitCTool):
         except OSError:
             pass
 
+        # A prefix longer than a shebang line holds (the deep folders of a cache entry in a test home, 2026-11-21):
+        # Miniforge then writes "#!/usr/bin/env python" into condabin/conda, which fails where no "python" is on the PATH
+        # (Ubuntu has python3 only) - the command is then a launcher that runs conda with the prefix's own Python
+        if not windows:
+            launcher = self._long_prefix_launcher(conda, prefix, os.path.join(os.getcwd(), directory, 'bin'))
+            if launcher:
+                if con:
+                    print(f'{space}INFO: the prefix is longer than a shebang line holds: {launcher} runs conda with '
+                          f'{os.path.join(prefix, "bin", "python")}')
+                conda = launcher
+
         return {'return': 0, 'install_cmd': None, 'found_path': conda}
+
+    ############################################################
+    def _long_prefix_launcher(self, conda, prefix, bin_dir):
+        """
+        A launcher <bin_dir>/conda that runs "<prefix>/bin/python -m conda" when the installer fell back to
+        "#!/usr/bin/env python" in condabin/conda (a prefix too long for a shebang line); None when it did not.
+        """
+        try:
+            with open(conda, encoding = 'utf-8', errors = 'replace') as f:
+                first = f.readline().strip()
+        except OSError:
+            return None
+        python = os.path.join(prefix, 'bin', 'python')
+        if not first.startswith('#!/usr/bin/env python') or not os.path.isfile(python):
+            return None
+        q = lambda s: "'" + str(s).replace("'", "'\"'\"'") + "'"
+        os.makedirs(bin_dir, exist_ok = True)
+        launcher = os.path.join(bin_dir, 'conda')
+        with open(launcher, 'w', encoding = 'utf-8', newline = '\n') as f:
+            f.write('#!/bin/sh\n'
+                    '# Written by cMeta (tool/conda): the Miniforge prefix is longer than a shebang line holds, so its\n'
+                    '# condabin/conda starts "/usr/bin/env python" - this runs conda with the prefix\'s own Python\n'
+                    f'exec {q(python)} -m conda "$@"\n')
+        os.chmod(launcher, os.stat(launcher).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        return launcher

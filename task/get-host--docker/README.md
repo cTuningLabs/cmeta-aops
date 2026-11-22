@@ -21,6 +21,7 @@ cx host down <instance>  /  cx host up <instance>               # the container 
 cx host destroy <instance> [--image]                                 # the container, the artifact, the image
 cx task run get-host--docker ubuntu --instance=web --ports=8080       # ports published on 127.0.0.1 (a server; --on_detach)
 cx task run get-host--docker ubuntu --refresh_cmeta                  # the image's uv and cMeta built again (a newer release; --on_refresh_cmeta)
+cx task run get-host--docker ubuntu --instance=node-1 --network=lab   # on a network of the engine (made when missing): the instances on it reach each other by name
 ```
 
 What happens:
@@ -74,6 +75,18 @@ by stopping or destroying an instance. Back up durable application data before e
 
 The instance is what `--on=docker` / `--on=podman` of any `cx task run`, `cx program run`, `cx tool setup` or
 `cx app run` makes and uses (`docs/cmeta-aops/task-engine.md`, "Running the same words elsewhere").
+
+## Networks and a template's own run flags
+
+`--network=<name>` puts a new instance on a user-defined network of the engine (made, labelled `cmeta.network=1`, when
+it is missing): the engine's DNS answers the names of the instances on it, so several instances form a cluster (the
+task make-slurm-cluster of cmeta-aops-ext2 makes its nodes this way). The network is recorded in `access.network` of the
+host artifact; `cx host up` makes it again when the container and the network are gone. An existing instance made
+without that network (or on another) is refused with the cure: `--instance=<name>`, `--new_host`, or `cx host destroy`.
+
+A template may declare `run_flags:` for every compute (a list for both engines, or `{docker: [...], podman: [...]}`),
+before the flags of its compute overlay: what an instance of it always needs - a cluster node's `--privileged`
+(container/slurm-node of cmeta-aops-ext2). `cx container run` takes them too.
 
 ## Bind individual host artifacts
 

@@ -25,6 +25,10 @@ package_name: gcc
 package_name_os_id:
   azurelinux: 'gcc binutils glibc-devel kernel-headers'
   mariner: 'gcc binutils glibc-devel kernel-headers'
+  # Debian and Ubuntu only recommend the C headers (libc6-dev) with gcc: a system that installs without
+  # recommendations (a container's --no-install-recommends) has a gcc that cannot compile (seen 2026-11-22)
+  debian: 'gcc libc6-dev'
+  ubuntu: 'gcc libc6-dev'
 
 install_cmd:
   linux: '{{global.host.os_extra.install_cmd_sudo}}'

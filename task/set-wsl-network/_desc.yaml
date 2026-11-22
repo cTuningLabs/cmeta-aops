@@ -1,0 +1,34 @@
+authors: Grigori Fursin
+
+# set-wsl-network - the network of WSL 2 on this Windows machine: NAT (Windows' default: the distributions behind a
+# private address of their own, reached from other machines only through ports Windows forwards) or mirrored (every
+# distribution has the machine's own addresses - its home network, Tailscale - as a Linux machine would: what a node of
+# a cluster made of the fleet's machines needs, since Slurm, MPI, NCCL and PyTorch tell their peers the address to
+# connect back to). WSL 2.0+ on Windows 11.
+#
+# The mode is the networkingMode of the user's %USERPROFILE%\.wslconfig (its other keys kept; the file before the
+# change kept beside it as .wslconfig.cmeta-before); it applies after WSL restarts (--restart: wsl --shutdown, which
+# stops every distribution and Docker Desktop's engine - its containers too).
+#
+# In mirrored mode the Hyper-V firewall of WSL blocks what comes from other machines. --allow_from=<addresses or
+# networks> adds one rule (cmeta-wsl-allow, inbound, those remote addresses only, every profile: a café's network
+# that does not hold those addresses reaches nothing); it needs an administrator (UAC). --allow_from=none removes it.
+#
+# Docker Desktop's engine does NOT follow the mirrored mode (its containers keep the address of its own VM,
+# 192.168.65.x): a node of a cluster on this machine is a WSL instance (get-host--wsl), not a Docker Desktop container.
+#
+#   cx task run set-wsl-network                                   # the mode set, the mode in use, the firewall rule
+#   cx task run set-wsl-network mirrored --restart
+#   cx task run set-wsl-network --allow_from=192.168.1.20,192.168.1.21    # two other machines
+#   cx task run set-wsl-network nat --allow_from=none --restart  # back to Windows' default
+
+fail_if_not_win: True
+
+cache: False
+
+params_map:
+  arg2: mode
+
+cli_params:
+  restart:
+    type: bool

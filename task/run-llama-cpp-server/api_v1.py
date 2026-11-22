@@ -18,6 +18,8 @@ import sys
 import time
 import urllib.request
 
+import yaml
+
 from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive
 
 TASK_CATEGORY = 'task,c36be4b9314a45e0'
@@ -25,6 +27,7 @@ STATE_CATEGORY = 'state'
 TOOL = 'llama-cpp,daa99512448647b7'
 SETUP_TASK = 'setup,a2f9b61079ce4333'
 MODEL_TASK = 'model,86f0effd07ad454d'
+MODEL_CATEGORY = 'model,f8ef4c0af87a4a9e'
 
 DEFAULT_MODEL = 'hf-Qwen@Qwen3-8B-GGUF'
 DEFAULT_PORT = 8686
@@ -34,7 +37,37 @@ DEFAULT_PORT = 8686
 # them; a server kept by its host (server: run: cxt run-llama-cpp-server --foreground) takes them at its next start.
 CONFIG = 'task-run-llama-cpp-server'
 BUILT_IN = {'model': DEFAULT_MODEL, 'filename': '', 'compute': 'cuda', 'ctx_size': 32768, 'gpu_layers': 'auto',
-            'alias': '', 'parallel': 1, 'models': '', 'models_max': 1}
+            'alias': '', 'parallel': 1, 'models': '', 'models_max': 1, 'mmproj': ''}
+
+# A model that reads pictures comes as two GGUF files: the language model and its multimodal projector (the encoder of
+# pictures and the layer that turns them into the model's tokens). llama-server loads the projector with --mmproj from
+# build 5331 on (2025-05-09: "server : vision support via libmtmd", llama.cpp PR #12898 - the tag b5331 is its merge
+# commit); before it, pictures went through separate programs (llava-cli, then llama-mtmd-cli), never the server.
+PROJECTOR_SINCE = 5331
+
+
+def projector_supported(version):
+    """Does a llama.cpp of this version serve pictures from llama-server (--mmproj)? The version as cMeta detects it: the
+    build number ("12590"; "0.5.0-dev (build 11324, ...)" names it too). True or False by the build; None when the
+    version holds no build number (a build of one's own) - then the program itself is asked (its --help)."""
+    import re
+    text = str(version or '').strip()
+    m = re.search(r'build\s+(\d+)', text) or re.fullmatch(r'b?(\d+)', text)
+    if not m:
+        return None
+    return int(m.group(1)) >= PROJECTOR_SINCE
+
+
+def default_model_file(files, projectors):
+    """The file of a model artifact a start takes when none is named: the first of its descriptions (_desc-<file>.yaml,
+    by name, as the model task takes it) that is not the projector of another (named by that one's "mmproj:"). '' when
+    nothing is to be skipped - the model task then chooses as before."""
+    names = sorted(f[len('_desc-'):] for f in files if f.startswith('_desc-'))
+    names = [n[:-len('.yaml')] if n.endswith('.yaml') else n for n in names]
+    if not projectors or not names or names[0] not in projectors:
+        return ''
+    rest = [n for n in names if n not in projectors]
+    return rest[0] if rest else ''
 
 
 def listening(host, port, timeout = 1.0):
@@ -177,6 +210,43 @@ class CTask(InitCTask):
         want = [str(x).split(',')[0] for x in (many or [one])]
         return bool(have) and all(w in have for w in want) and (not many or bool(rec.get('router')))
 
+    def _model_descs(self, model):
+        """The descriptions of the files of a model artifact: {file name: its _desc-<file>.yaml as a dict}."""
+        r = self.cm.access({'category': MODEL_CATEGORY, 'command': 'find', 'arg1': model, 'con': False})
+        if r.get('return', 1) > 0 or len(r.get('artifacts') or []) != 1:
+            return {}
+        folder = r['artifacts'][0]['path']
+        out = {}
+        for f in sorted(os.listdir(folder)):
+            if f.startswith('_desc-') and f.endswith('.yaml'):
+                try:
+                    with open(os.path.join(folder, f), encoding = 'utf-8') as fh:
+                        out[f[len('_desc-'):-len('.yaml')]] = yaml.safe_load(fh) or {}
+                except Exception:
+                    out[f[len('_desc-'):-len('.yaml')]] = {}
+        return out
+
+    def _projector(self, ctx, model, filename, mmproj, descs, con, quiet):
+        """The projector to load (--mmproj): (its path or '', None) or ('', the error).
+        auto - the one the model's file names in its description (mmproj: <a file of the artifact>), none when it names
+        none; a file of the model artifact (named as its description is); a file of this machine, by its path."""
+        word = str(mmproj or '').strip()
+        if not word:
+            return '', None
+        if os.path.isfile(word):
+            return os.path.abspath(word), None
+        if word.lower() == 'auto':
+            named = str((descs.get(filename) or {}).get('mmproj') or '').strip() if filename else ''
+            if not named:
+                if con:
+                    print('  no projector: the model file %s names none (mmproj: in its _desc-%s.yaml)' % (filename or '(the first)', filename or '<file>'))
+                return '', None
+            word = named
+        path, err = self._model_file(ctx, model, word, con, quiet)
+        if err:
+            return '', self.cm.error('the projector "%s" of %s: %s' % (word, model, err.get('error', '')))
+        return path, None
+
     def _model_file(self, ctx, model, filename, con, quiet):
         """The GGUF file of a model artifact (the model task gets it): (its path, None) or ('', the error)."""
         mp = {'category': TASK_CATEGORY, 'command': 'run', 'arg1': MODEL_TASK, 'name': model, 'ctx': ctx, 'con': con, 'quiet': quiet}
@@ -214,6 +284,7 @@ class CTask(InitCTask):
             swap: bool = False,             # a start that finds the server up with something else than asked for replaces it (default: it is left as it is, and said)
             timeout: int = 300,             # seconds to wait for the model to load before "start" gives up
             foreground: bool = False,       # keep the server attached to this console (its log on the screen; Ctrl-C ends it)
+            mmproj: str = '',               # a model that reads pictures: its projector - auto (the one its file names), a file of the model artifact, or a path (default: the config's, else none)
             unparsed: list = None,          # extra words for llama-server (everything after "--")
             workdir: str = '',              # the folder the detached server stands in (default: its state folder; with words after "--", the current one)
     ):
@@ -224,6 +295,7 @@ class CTask(InitCTask):
             cx task run run-llama-cpp-server --model=hf-ggml-org@gpt-oss-20b-GGUF      # the larger model: the layers that fit on the GPU
             cx task run run-llama-cpp-server --model=<another> --swap                  # replace the model a running server serves
             cx task run run-llama-cpp-server --models="<a>;<b>;<c>" --models_max=2     # several models, loaded on demand, two at once
+            cx task run run-llama-cpp-server --model=hf-Qwen@Qwen3-VL-8B-Instruct-GGUF --mmproj=auto --port=8689   # a model that reads pictures
             cx task run run-llama-cpp-server --action=status
             cx task run run-llama-cpp-server --action=stop
         """
@@ -248,6 +320,8 @@ class CTask(InitCTask):
                         print('  several models, %s at once, loaded on demand; loaded now: %s' % (
                             rec.get('models_max', '?'), ', '.join(status['loaded']) or 'none'))
                     print('  model file: %s' % rec.get('model_path', '?'))
+                    if rec.get('mmproj_path'):
+                        print('  projector (pictures): %s' % rec['mmproj_path'])
                     print('  log: %s' % os.path.join(folder, 'server.log'))
                 elif status['listening']:
                     print('something listens on %s:%d but does not answer /health as llama.cpp' % (host, port))
@@ -274,11 +348,17 @@ class CTask(InitCTask):
         gpu_layers, alias = gpu_layers or d['gpu_layers'], alias or d['alias']
         ctx_size, parallel = int(ctx_size or 0) or int(d['ctx_size']), int(parallel or 0) or int(d['parallel'])
         models_max = int(models_max or 0) or int(d['models_max'] or 1)
+        asked_mmproj = str(mmproj or '').strip()                 # named on the command line: a running server must have it
+        mmproj = asked_mmproj or str(d['mmproj'] or '').strip()
+        if mmproj and many:
+            return self.cm.error('--mmproj goes with one model (--model), not with several (--models)')
 
         if status['running']:
             # up already. When the command line names what to serve and the server serves something else, it is left
             # as it is and that is said - or replaced, with --swap (only a server this task started)
             other = named and not self._serves(rec, model, many)
+            # a projector asked for that the running server was not started with: another server is needed
+            other = other or bool(asked_mmproj and not many and rec.get('mmproj') != asked_mmproj)
             asked = '; '.join(many) if many else model
             if other and swap:
                 if not status.get('ours'):
@@ -343,10 +423,18 @@ class CTask(InitCTask):
             router = {'router': True, 'models': many, 'model_names': names, 'models_max': int(models_max)}
             model = '; '.join(many)
         else:
+            # a model artifact whose file names its projector (mmproj:): that projector is never its model file - a
+            # start without --filename takes the first file that is not one (the model task would take the first)
+            descs = self._model_descs(model) if (mmproj or not filename) else {}
+            projectors = {str(v.get('mmproj')) for v in descs.values() if isinstance(v, dict) and v.get('mmproj')}
+            if not filename and projectors:
+                filename = default_model_file(['_desc-%s.yaml' % k for k in descs], projectors)
             model_path, err = self._model_file(ctx, model, filename, con, quiet)
             if err:
                 return err
             name = alias or os.path.splitext(os.path.basename(model_path))[0]
+            if not filename and descs:
+                filename = sorted(descs)[0]          # the file the model task took: the first of its descriptions
 
             # the context is set, so llama.cpp's --fit (on by default in the builds since 2026) never shrinks it; the GPU
             # layers are left to --fit unless a number is given (-ngl): a model larger than the GPU's memory then loads
@@ -356,6 +444,25 @@ class CTask(InitCTask):
                        '--metrics']             # its numbers at /metrics (Prometheus' format): for its page and any scraper
             if str(gpu_layers).strip().lower() not in ('', 'auto'):
                 command += ['-ngl', str(int(gpu_layers))]
+
+            # the projector of a model that reads pictures: llama-server takes it from build 5331 on; the build cMeta
+            # detected says whether this one does, and a build without a number is asked itself (its --help)
+            projector, err = self._projector(ctx, model, filename, mmproj, descs, con, quiet)
+            if err:
+                return err
+            if projector:
+                can = projector_supported(r.get('version'))
+                if can is None:
+                    h = subprocess.run([server, '--help'], capture_output = True, text = True, errors = 'replace',
+                                       stdin = subprocess.DEVNULL, timeout = 60)
+                    can = '--mmproj' in (h.stdout or '') + (h.stderr or '')
+                if not can:
+                    return self.cm.error('this llama.cpp (version %s) serves no pictures: llama-server loads a projector '
+                                         '(--mmproj) from build %d on (May 2025). Set up a newer one (cx tool setup '
+                                         'llama-cpp --version=<a build>), or start the model without --mmproj: its text '
+                                         'is served all the same' % (r.get('version') or '?', PROJECTOR_SINCE))
+                command += ['--mmproj', projector]
+                router['mmproj'], router['mmproj_path'] = mmproj, projector
         command += [str(u) for u in unparsed] if unparsed else []
         log = os.path.join(folder, 'server.log')
         if con:
@@ -426,5 +533,7 @@ class CTask(InitCTask):
             print('llama.cpp server up on http://%s:%d (pid %d) in %.0f s: %s' % (host, port, p.pid, time.monotonic() - started, ', '.join(status['models'])))
             if router:
                 print('  several models: each is loaded when a request names it in "model", %d at once' % int(models_max))
+            if rec.get('mmproj_path'):
+                print('  reads pictures: the projector %s' % rec['mmproj_path'])
             print('  wires: /v1/messages (Anthropic), /v1/chat/completions, /v1/responses; stop: cx task run run-llama-cpp-server --action=stop --port=%d' % port)
         return {'return': 0, 'port': port, 'host': host, 'pid': p.pid, 'state': folder, 'record': rec, 'seconds': round(time.monotonic() - started, 1), **status}

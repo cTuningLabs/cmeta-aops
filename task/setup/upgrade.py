@@ -1429,6 +1429,11 @@ def status_tool(self, ctx, params, tool_read):
             same = [c for c in detected if os.path.normcase(os.path.normpath(c['path'])) == os.path.normcase(os.path.normpath(d['path']))]
             if same:
                 same[0]['on_path'] = True
+                # The program may have moved on since setup cached it - the system's package manager upgraded it
+                # (2026-11-22: nvidia-ctk 1.20.2 under a cache entry of 1.20.1): what it prints now is what is installed
+                if d.get('version') and str(d['version']) != str(same[0].get('version')):
+                    same[0]['cached_version'] = same[0].get('version')
+                    same[0]['version'] = d['version']
             else:
                 detected.append({'path': d['path'], 'version': d['version'], 'on_path': True})
 
@@ -1475,6 +1480,12 @@ def status_tool(self, ctx, params, tool_read):
 
     verdict = version_verdict(version, latest) if installed else 'not-installed'
 
+    # A tool this system does not need (not_needed_on of its description: the NVIDIA container toolkit on Windows, where
+    # Docker Desktop passes the GPU through WSL2 by itself): said instead of an install it would refuse
+    not_needed = (desc.get('not_needed_on') or {}).get(uname) if not installed else None
+    if not_needed:
+        verdict = 'not-needed'
+
     # What --upgrade would run
     upgrade_cmd = None
     versioned_install = versioned_install_cmd(desc, uname, channels)
@@ -1504,6 +1515,7 @@ def status_tool(self, ctx, params, tool_read):
     status = {'name': alias,
               'os': uname,
               'installed': installed,
+              'not_needed': not_needed,
               'path': path,
               'version': version,
               'detected': detected,
@@ -1536,7 +1548,7 @@ def status_tool(self, ctx, params, tool_read):
             for d in detected:
                 mark = ''
                 if d.get('cache'):
-                    mark += '   (cached by setup)'
+                    mark += '   (cached by setup' + (f' as {d["cached_version"]}' if d.get('cached_version') else '') + ')'
                 if len(detected) > 1 and d['path'] == path:
                     mark += '   <- used by setup'
                 print (f'{space}  {label} {str(d["version"]):<14} {d["path"]}{mark}')
@@ -1559,7 +1571,9 @@ def status_tool(self, ctx, params, tool_read):
         upstream_ahead = (rl['upstream_version'] and latest and rl['upstream_version'] != latest and
                           version_verdict(latest, rl['upstream_version']) == 'outdated')
 
-        if verdict == 'not-installed':
+        if verdict == 'not-needed':
+            text = f'not needed on {uname} - {not_needed}'
+        elif verdict == 'not-installed':
             text = 'not installed'
             if latest:
                 text += f' - the newest version available{via} is {latest}; "cx tool setup {alias} --upgrade" installs it'
