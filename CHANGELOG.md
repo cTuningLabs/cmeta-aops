@@ -31,8 +31,8 @@ All notable changes to cMeta AOps are documented here, newest first.
 - **New task `set-wsl-network`:** WSL 2's network mode on Windows - `nat` or `mirrored` (every distribution with the
   machine's own addresses, as a node of a cluster of machines needs) in the user's `.wslconfig`, its other keys kept,
   `--restart`; `--allow_from=<addresses>` lets those machines through the Hyper-V firewall of WSL (one rule, an
-  administrator's prompt), `none` removes it. Without a mode it says what is set, what is in use and what the rule lets
-  in.
+  administrator's prompt), `none` removes it - done only when the rule, read back, lets them in (a declined prompt is
+  an error, not a success). Without a mode it says what is set, what is in use and what the rule lets in.
 - **New tool `socket-vmnet` (macOS):** the network helper that bridges a Lima / colima VM to the Mac's network (its
   release archive, checked against its sha256, unpacked into `/opt/socket_vmnet` with sudo, where Lima looks for it).
 - **`tool/open-ssh` reports the programs beside the ssh it found** (`features.paths`: `ssh-keygen`, `ssh-keyscan`,

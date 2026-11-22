@@ -198,6 +198,8 @@ class Projects(unittest.TestCase):
         scripts = []
         self.cat._temp_script = lambda cmd: (scripts.append(cmd), {'return': 0, 'path': 'script.sh'})[1]
         self.cat._cmd_stdin = lambda ctx, host, path: {'return': 0, 'cmd': 'stdin < ' + path, 'here': False}
+        # the engine's program comes from its cMeta tool (test_open_ssh_features_host_rows checks that); here only the route
+        self.cat._engine_word = lambda ctx, h: 'docker'
         hosts = {'wsl': {'alias': 'w', 'type': 'wsl', 'status': 'up', 'desc': {'access': {'distro': 'ubuntu', 'shell': 'bash -l'}}},
                  'docker': {'alias': 'd', 'type': 'docker', 'status': 'up', 'desc': {'access': {'container': 'box', 'shell': 'bash -l'}}}}
         quoted = 'E=$(sed -n "s/x/y/p" f | head -1); uv tool install "cmeta${E:+[$E]}"'

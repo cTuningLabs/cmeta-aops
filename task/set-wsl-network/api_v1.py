@@ -44,6 +44,24 @@ def set_mode(text, mode):
     return '\r\n'.join(out) + '\r\n'
 
 
+def network_of(text):
+    """One address or network as Windows lists a rule's (192.168.1.5, 192.168.1.0/24, 192.168.1.0/255.255.255.0) and as
+    --allow_from gives it: the network in one spelling (192.168.1.5/32); '' when it is neither."""
+    text = str(text).strip()
+    if '/' in text:
+        ip, mask = text.split('/', 1)
+        if '.' in mask:
+            try:
+                mask = str(ipaddress.IPv4Network(f'0.0.0.0/{mask}').prefixlen)
+            except ValueError:
+                return ''
+        text = f'{ip}/{mask}'
+    try:
+        return str(ipaddress.ip_network(text, strict = False))
+    except ValueError:
+        return ''
+
+
 def mode_of(text):
     """networkingMode of the [wsl2] section ('' when none: WSL's default, nat)."""
     section = ''
@@ -79,8 +97,12 @@ class CTask(InitCTask):
         encoded = base64.b64encode(script.encode('utf-16-le')).decode('ascii')
         if not elevated:
             return self._run(['powershell', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded])
+        # a declined (or unanswered) prompt starts nothing: Start-Process returns no process - 1223 (ERROR_CANCELLED),
+        # never "exit $null", which is 0 (2026-11-22: a cluster went on as if the rule had changed)
         outer = ("$p = Start-Process -FilePath powershell -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','"
-                 + encoded + "' -Verb RunAs -Wait -PassThru -WindowStyle Hidden; exit $p.ExitCode")
+                 + encoded + "' -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ErrorAction SilentlyContinue; "
+                 "if (-not $p) { Write-Output 'the administrator prompt (UAC) was declined or not answered'; exit 1223 }; "
+                 "exit $p.ExitCode")
         return self._run(['powershell', '-NoProfile', '-NonInteractive', '-Command', outer], timeout = 600)
 
     def _rule(self):
@@ -143,8 +165,21 @@ class CTask(InitCTask):
             if con:
                 print('cMeta info: the Hyper-V firewall of WSL is changed by an administrator: accept the prompt (UAC)')
             code, out = self._powershell(script, True)
+            if code == 1223:
+                return self.cm.error(f'the firewall rule {RULE} is unchanged: the administrator\'s prompt (UAC) was declined or '
+                                     f'not answered (exit 1223) - run it again and accept the prompt')
             if code != 0:
                 return self.cm.error(f'changing the firewall rule {RULE} failed (exit {code}): {out.strip()[-500:]}')
+            # what the rule lets in now, read back: the change is done only when it is there
+            now = self._rule()
+            if str(allow_from).strip().lower() == 'none':
+                if now not in (None, '?'):
+                    return self.cm.error(f'the firewall rule {RULE} is still there (it lets in {now})')
+            elif now != '?':
+                got = {network_of(a) for a in (now or '').split(',') if a.strip()}
+                missing = [a for a in remote if a not in got]
+                if missing:
+                    return self.cm.error(f'the firewall rule {RULE} does not let in {", ".join(missing)} (it lets in {now or "nothing"})')
 
         if restart:
             if con:
