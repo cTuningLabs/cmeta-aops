@@ -11,6 +11,8 @@ usage: |
   cx task run run-llama-cpp-server --model=<another> --swap                 replace the model a running server serves
   cx task run run-llama-cpp-server --models="<a>;<b>;<c>" --models_max=2    several models behind one port, loaded on
                                                                           demand (a request names one in "model"), two at once
+  cx task run run-llama-cpp-server --model=hf-Qwen@Qwen3-VL-8B-Instruct-GGUF --mmproj=auto --port=8689
+                                                                          a model that reads pictures, with its projector
   cx task run run-llama-cpp-server --action=status
   cx task run run-llama-cpp-server --action=stop
 
@@ -55,6 +57,9 @@ configs:
         desc: With several models, how many stay loaded at once; the least recently used one is unloaded first. 1 swaps them on demand - right for a small GPU.
         type: int
         default: 1
+      mmproj:
+        desc: "A model that reads pictures: its projector (its second GGUF file). auto - the one the model's file names (mmproj in its _desc-<file>.yaml), none when it names none; or a file of the model artifact, or a path. Empty - no projector. llama-server takes one from build 5331."
+        example: auto
 
 # Which of its words are the choices of a run, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read it,
 # the engine never does. A choice changes what is served (the model, the device, the context) and is shown first;
@@ -68,4 +73,5 @@ cli_help:
   parallel: {choice: run}
   models: {choice: run}
   models_max: {choice: run}
+  mmproj: {choice: run}
   action: {group: main}

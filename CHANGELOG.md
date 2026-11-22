@@ -2,6 +2,14 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.79.0.1)
+- **run-llama-cpp-server: `--mmproj`, a model that reads pictures.** The projector of a vision model (its second GGUF
+  file) is served with it: `auto` takes the one the model's file names (`mmproj:` in its `_desc-<file>.yaml`), or a file
+  of the artifact, or a path; the config key `mmproj` too. llama-server takes a projector from build 5331 (May 2025):
+  the build cMeta detected decides, an older one is refused with the build to set up, a build without a number is
+  asked itself. A projector is never taken as the model's file when none is named; a running server without the
+  projector is not taken for one with it (`--swap`). The record and `--action=status` name it.
+
 ## 0.79.0
 - **AI gateways with a key of their own for their clients: `client_key`.** An `ai.gateway` record may say
   `client_key: {header, secret}`: a gateway server reached over a network lets in only the machines that show it

@@ -58,6 +58,27 @@ project of its host artifact) takes a change at its next start; a page of the se
   cx task run run-llama-cpp-server --model=hf-Qwen@Qwen2.5-0.5B-Instruct-GGUF --swap
   ```
 
+- **A model that reads pictures** comes as two GGUF files: the language model and its multimodal projector (the
+  encoder of pictures and the layer that turns them into the model's tokens). `--mmproj` serves the projector too:
+
+  ```
+  cx task run run-llama-cpp-server --model=hf-Qwen@Qwen3-VL-8B-Instruct-GGUF --mmproj=auto --port=8689
+  ```
+
+  - `auto`: the projector the model's file names in its description (`mmproj: <a file of the artifact>` in
+    `_desc-<file>.yaml`); none when it names none (said in a line). Also a file of the model artifact, named as its
+    description is, or a file of this machine by its path. The config key `mmproj` sets it for a machine.
+  - A file another file names as its projector is never taken as the model's file: a start without `--filename`
+    takes the first file that is not one (the model task alone would take the first by name - the projector, in
+    Qwen3-VL's artifact).
+  - llama-server takes a projector from build **5331** (2025-05-09, llama.cpp PR #12898); before it, pictures went
+    through separate programs. The build cMeta detected decides: an older one is refused with the build that serves
+    pictures (start without `--mmproj` and its text is served all the same); a build without a number is asked itself
+    (its `--help`).
+  - A server that is up without the projector is not taken for one with it: a start with `--mmproj` says so, and
+    `--swap` replaces it. A projector goes with one model, not with `--models`. Passing one after `--`
+    (`-- --mmproj <file>`) works as before.
+
 - **Several models behind one port:** `--models="<a>;<b>;<c>"` (or the config key `models`). llama-server is then
   started without a model, as llama.cpp's *router*: every model is listed in `/v1/models`, a request names one in its
   `"model"` field, and that model is loaded then, as an instance of its own. `--models_max=<n>` (1 by default) says
