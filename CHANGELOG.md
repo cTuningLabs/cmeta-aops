@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.79.0.1)
+## 0.80.0
 - **run-llama-cpp-server: `--mmproj`, a model that reads pictures.** The projector of a vision model (its second GGUF
   file) is served with it: `auto` takes the one the model's file names (`mmproj:` in its `_desc-<file>.yaml`), or a file
   of the artifact, or a path; the config key `mmproj` too. llama-server takes a projector from build 5331 (May 2025):
