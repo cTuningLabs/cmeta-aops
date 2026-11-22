@@ -9,6 +9,33 @@ All notable changes to cMeta AOps are documented here, newest first.
   the build cMeta detected decides, an older one is refused with the build to set up, a build without a number is
   asked itself. A projector is never taken as the model's file when none is named; a running server without the
   projector is not taken for one with it (`--swap`). The record and `--action=status` name it.
+- **`get-host--docker --network=<name>`:** an instance on a user-defined network of the engine (made when missing),
+  where instances reach each other by name - a cluster of instances; recorded in `access.network`, made again by
+  `cx host up`.
+- **A container template's own `run_flags:`** (every compute; a list, or per engine), before its compute overlay's -
+  `get-host--docker` and `cx container run`: what every instance of a template needs (a cluster node's
+  `--privileged`).
+- **Every row of `cx host ls` / `cx host status` says where a host runs:** `via` (the host it is reached through - the
+  machine of a container or a WSL instance, the parent of a phone), a container's `engine` and the `template` an
+  instance was made from - what a page needs to show the instances under their machine.
+- **`tool/open-ssh` reports the programs beside the ssh it found** (`features.paths`: `ssh-keygen`, `ssh-keyscan`,
+  `ssh-add`, `ssh-agent`, `scp`, `sftp` - those present): a task takes `ssh-keygen` from there instead of looking for
+  it by name.
+- **`not_needed_on` in a tool's description:** `cx tool setup <tool> --status` says that the tool is not needed on this
+  system, and why, instead of offering an install it would refuse (the NVIDIA container toolkit on Windows, where
+  Docker Desktop passes the GPU through WSL2 by itself; on macOS). `--status` also reports the version a program prints
+  now when the system's package manager upgraded it since setup cached it ("cached by setup as <version>").
+- **`get-mlperf-endpoints-results`:** the rolling MLPerf Endpoints results (v1.0, the default): one branch per cohort
+  of `mlcommons/endpoints_results` - `--cohort=<name>`, `--cohort=all`, or the newest by its name; v0.7 as before.
+- **`clone-git` on Windows:** a repository holding names Windows refuses (`:` ...) is checked out without them (a
+  sparse checkout; `windows_skipped_paths` names them) - git left the whole work tree empty before, and the task did
+  not fail.
+- **`tool/conda`** installs the `default_version` of its description; a prefix longer than a shebang line gets a
+  launcher that runs conda with the prefix's Python.
+- **`tool/gcc` on Debian and Ubuntu installs `gcc libc6-dev`:** a system set up without recommended packages (a
+  container) had a gcc without the C headers, which the tool then refused, and reinstalling gcc did not help.
+- Versions: conda 26.9.4, ray 2.60.0, ansible 2.21.6, llama-cpp 12613 (and `build-llama-cpp` b12613), docker 29.10.0
+  (the client of Windows and macOS), nvidia-container-toolkit 1.20.2.
 
 ## 0.79.0
 - **AI gateways with a key of their own for their clients: `client_key`.** An `ai.gateway` record may say

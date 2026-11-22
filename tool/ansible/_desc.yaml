@@ -20,7 +20,7 @@ authors: Grigori Fursin
 names:
   - ansible{{global.host.vars.file_ext_exe}}
 
-default_version: '2.21.5'
+default_version: '2.21.6'
 
 # What `latest` may not take, and why (cx tool check-updates reads it)
 latest_limits:

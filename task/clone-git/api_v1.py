@@ -6,8 +6,41 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
+import re
+import subprocess
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask
+
+# Names a Windows checkout cannot hold, or that git refuses there as NTFS tricks: characters NTFS refuses (":" opens an
+# alternate data stream), a trailing dot or space, a reserved device name, ".git" and its 8.3 short forms
+WINDOWS_BAD_CHARS = set(':*?"<>|\\')
+WINDOWS_RESERVED = {'CON', 'PRN', 'AUX', 'NUL'} | {f'COM{i}' for i in range(1, 10)} | {f'LPT{i}' for i in range(1, 10)}
+
+
+def windows_refuses(path):
+    """Whether a path of a repository cannot be checked out on Windows (any of its parts)."""
+    for part in path.split('/'):
+        if not part:
+            continue
+        if any(ch in WINDOWS_BAD_CHARS or ord(ch) < 32 for ch in part):
+            return True
+        if part[-1] in '. ':
+            return True
+        if part.split('.')[0].upper() in WINDOWS_RESERVED:
+            return True
+        low = part.lower()
+        if low == '.git' or re.match(r'^\.?git[a-z]*~\d', low):
+            return True
+    return False
+
+
+def sparse_pattern(path):
+    """A path as a pattern of a non-cone sparse checkout (gitignore syntax), its special characters escaped."""
+    out = ''.join('\\' + ch if ch in '\\*?[' else ch for ch in path)
+    if out.endswith(' '):
+        out = out[:-1] + '\\ '
+    return '!/' + out
+
 
 class CTask(InitCTask):
     """
@@ -314,6 +347,16 @@ class CTask(InitCTask):
 
 
         ###################################################################
+        # Windows: a repository with names Windows refuses was cloned with an empty work tree (git refuses the whole
+        # checkout: "invalid path"; MLPerf Inference v6.0 has three names with ":") - checked out without them
+        windows_skipped = []
+        if os.name == 'nt' and os.path.isdir(path_to_git_repo):
+            git_path = ctx_tasks['global']['git'].get('path') or path_to_git_bin.strip('"')
+            r = self._windows_checkout(git_path, path_to_git_repo, con, space)
+            if self.cm.catch_error(r): return r
+            windows_skipped = r['skipped']
+
+        ###################################################################
         # Prepare result
         result = {'return':0,
                   'url': url,
@@ -335,8 +378,58 @@ class CTask(InitCTask):
             checkout_short = checkout[:7]
             result['checkout_short'] = checkout_short
 
+        if windows_skipped:
+            result['windows_skipped_paths'] = windows_skipped
+
         if len(_params)>0:
-            result['_update_params'] = _params    
+            result['_update_params'] = _params
 
         return result
+
+    ############################################################
+    def _windows_checkout(self, git_bin, repo, con, space):
+        """
+        Windows: a clone whose HEAD holds names Windows refuses (windows_refuses) and whose checkout git therefore never
+        made (an empty index): a non-cone sparse checkout of everything but those paths, then the files of HEAD. Git's
+        NTFS protection is lifted for that one command only: every name it would refuse is outside the checkout, so
+        none is written. Returns the paths left out ([] when the clone did not need it).
+        """
+        def git(args, data = None):
+            p = subprocess.run([git_bin, '-C', repo, '-c', 'core.longpaths=true'] + args, input = data,
+                               stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+            return p.returncode, p.stdout.decode('utf-8', 'replace'), p.stderr.decode('utf-8', 'replace')
+
+        rc, tree, _ = git(['ls-tree', '-r', '-z', '--name-only', 'HEAD'])
+        names = [x for x in tree.split('\0') if x] if rc == 0 else []
+        if not names:
+            return {'return': 0, 'skipped': []}
+
+        rc, files, _ = git(['ls-files', '-z'])
+        if rc == 0 and files.strip('\0'):
+            return {'return': 0, 'skipped': []}             # checked out (or a sparse checkout chosen before)
+
+        refused = [x for x in names if windows_refuses(x)]
+        if not refused:
+            return {'return': 0, 'skipped': []}             # empty for another reason: left as it is
+
+        if con:
+            print('')
+            print(f'{space}INFO: {len(refused)} of {len(names)} paths of this repository have names Windows refuses '
+                  f'(first: {refused[0]}): checking out the others')
+
+        patterns = '/*\n' + ''.join(sparse_pattern(x) + '\n' for x in refused)
+        rc, _, err = git(['sparse-checkout', 'set', '--no-cone', '--stdin'], data = patterns.encode('utf-8'))
+        if rc != 0:
+            return self.cm.error(f'git sparse-checkout failed in {repo}: {err.strip()}')
+
+        rc, _, err = git(['-c', 'core.protectNTFS=false', 'reset', '-q', '--hard', 'HEAD'])
+        if rc != 0:
+            return self.cm.error(f'the checkout without the {len(refused)} names Windows refuses failed in {repo}: '
+                                 f'{err.strip()}')
+
+        rc, files, _ = git(['ls-files', '-z'])
+        if rc != 0 or not files.strip('\0'):
+            return self.cm.error(f'the checkout without the names Windows refuses left no files in {repo}')
+
+        return {'return': 0, 'skipped': refused}
 

@@ -2,11 +2,14 @@ params_map:
   arg2: version
   arg3: checkout
 
+# --cohort: a cohort branch of the rolling rounds (1.0 and later: 2026-11-C1), "all", or none for the newest by its
+# name; check_params of api_v1.py sets local.name, local.url and local.checkout (a fixed round such as 0.7: the
+# name mlperf-endpoints-results-0.7 and --checkout, as before)
 uses:
   - task: clone-git-to-cache,86919b3cfdd443d2
-    name: mlperf-endpoints-results-{{local.version}}
+    name: '{{local.name}}'
     url: '{{local.url}}'
-    checkout: '{{params.checkout|$None}}'
+    checkout: '{{local.checkout|$None}}'
     version: '{{local.version}}'
     root_dir: '{{params.root_dir|$None}}'
     cache_extra_tags: '{{params.extra_tags|$None}}'

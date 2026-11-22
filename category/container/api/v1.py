@@ -908,8 +908,9 @@ class Category(InitCategory):
             if config_from_env:
                 run_env['CMETA_CONFIG_FROM_ENV'] = ';'.join(f'{k}={v}' for k, v in config_from_env.items())
 
-            # ---- run flags per compute (a list for both engines, or {docker: [...], podman: [...]})
-            for src in (bcomp, acomp):
+            # ---- run flags per compute (a list for both engines, or {docker: [...], podman: [...]}), after the
+            # template's own for every compute (a cluster node's --privileged)
+            for src in ((b['desc'], desc) if app else (b['desc'],)) + (bcomp, acomp):
                 rf = src.get('run_flags')
                 if isinstance(rf, dict):
                     rf = rf.get(engine) or []

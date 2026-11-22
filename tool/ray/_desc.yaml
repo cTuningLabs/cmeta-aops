@@ -5,7 +5,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 # Ray Train, Tune, Data and Serve, and the cluster vLLM and SGLang use for multi-node inference.
 # Detected on the PATH, else installed in its own Python environment ("ray[default]", api_v1.py).
 # Every node of a cluster needs the same Ray and the same Python patch release: the pins (Ray
-# 2.59.0, Python 3.12.14, which uv downloads) give them on every machine.
+# 2.60.0, Python 3.12.14, which uv downloads) give them on every machine.
 #
 #   cx tool setup ray
 #   cx tool run ray -- start --head --port=6379                        # the head node
@@ -19,7 +19,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 names:
   - ray{{global.host.vars.file_ext_exe}}
 
-default_version: '2.59.0'
+default_version: '2.60.0'
 
 match_version:
   - regex: 'version (\d+\.\d+\.\d+)'

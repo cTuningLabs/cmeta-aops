@@ -63,6 +63,18 @@ def engine_run(engine, args, timeout=600):
     return r.returncode, r.stdout.decode('utf-8', errors='replace'), r.stderr.decode('utf-8', errors='replace')
 
 
+def ensure_network(engine, network):
+    """A user-defined network of the engine, created (labelled cmeta.network=1) when missing: '' or the error."""
+    if not re.match(r'^[A-Za-z0-9][A-Za-z0-9_.-]*$', network):
+        return f'--network: "{network}" is not a network name (letters, digits, _ . -)'
+    if engine_run(engine, ['network', 'inspect', network], timeout=60)[0] == 0:
+        return ''
+    code, out, err = engine_run(engine, ['network', 'create', '--label', 'cmeta.network=1', network], timeout=120)
+    if code != 0:
+        return f'{engine} network create {network} failed: {err.strip() or out.strip()}'
+    return ''
+
+
 def ensure_artifact_volumes(engine, mounts):
     """Create owned Linux volumes once; a lost registered volume requires explicit recovery."""
     for mount in mounts:
@@ -377,6 +389,7 @@ class CTask(InitCTask):
             artifacts: dict = {},            # selected state/result/cache artifacts; optional owned Linux volumes for state subpaths
             new_host: bool = False,          # another instance of the same place (-2, -3 ...) instead of the existing one
             ports: str = '',                 # ports published on 127.0.0.1 when the instance is made: "8000" or "8080:80", comma-separated (a server run with --on_detach)
+            network: str = '',               # a network of the engine the instance joins when it is made (created when missing): the instances on it reach each other by name (a cluster of instances)
             pull: bool = False,              # pull the base image again when building
             rebuild: bool = False,           # build the image again
             refresh_cmeta: bool = False,     # build the layers of uv and cMeta of the image again (a newer cMeta; the OS layers stay)
@@ -490,6 +503,10 @@ class CTask(InitCTask):
                 except (OSError, ValueError) as error:
                     return self.cm.error(str(error))
             acc = d.get('access') or {}
+            if network and network != (acc.get('network') or ''):
+                return self.cm.error(f'the instance {inst} was made ' + (f'on the network {acc["network"]}' if acc.get('network') else 'without a network')
+                                     + f', not on {network} (a container keeps the network it was made with): --instance=<name> or --new_host '
+                                     f'makes another instance on it, or cx host destroy {inst} first')
             missing = [p for p in published if p not in (acc.get('ports') or [])]
             if missing:
                 return self.cm.error(f'the instance {inst} was made without the port{"s" if len(missing) > 1 else ""} '
@@ -585,6 +602,13 @@ class CTask(InitCTask):
             if isinstance(rf, dict):
                 rf = rf.get(engine) or []
             run_flags = [str(x) for x in rf]
+        # the template's own run flags, whatever the compute (a list for both engines, or {docker: [...], podman: [...]}):
+        # what an instance of it always needs - a cluster node's --privileged (container/slurm-node of cmeta-aops-ext2)
+        for src in ((bdesc, tdesc) if bdesc is not tdesc else (tdesc,)):
+            rf = src.get('run_flags') or []
+            if isinstance(rf, dict):
+                rf = rf.get(engine) or []
+            run_flags += [str(x) for x in rf]
         for p in published:
             # loopback only: a server of an instance is this machine's until someone exposes it on purpose
             h, _, c = p.partition(':')
@@ -597,6 +621,12 @@ class CTask(InitCTask):
             run_args += ['--platform', platform_str]
         if keep_id and user != 'root':
             run_args += ['--userns=keep-id']
+        if network:
+            # a user-defined network: the engine's DNS answers the names of the instances on it (a cluster of instances)
+            r = ensure_network(engine, network)
+            if r:
+                return self.cm.error(r)
+            run_args += ['--network', network]
         run_args += run_flags
         # Optional template-owned named volumes preserve an instance's state
         # across recreation without sharing the orchestrator's local cache.
@@ -694,7 +724,7 @@ class CTask(InitCTask):
         desc.update({
             'access': {'container': inst, 'engine': engine, 'image': image, 'keepalive': ' '.join(KEEPALIVE),
                        'run_args': subprocess.list2cmdline(run_args) if os.name == 'nt' else shlex.join(run_args),
-                       'user': user, 'shell': 'bash -l', 'ports': published},
+                       'user': user, 'shell': 'bash -l', 'ports': published, **({'network': network} if network else {})},
             'cmeta': {'home': f'{home}/CMETA', 'install': 'uv-tool'},
             'sync': {'default': 'none'},
             'made_from': {'template': name, 'base': base_name, 'params': params, 'compute': compute, 'arch': arch_norm, 'engine': engine,

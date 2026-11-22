@@ -16,6 +16,7 @@ authors: Grigori Fursin
 #   cx task run get-host--docker ubuntu --repos=ctuninglabs@cmeta-aops,fgg-hosts   # mounted inside (default: ctuninglabs@cmeta-aops)
 #   cx task run get-host--docker ubuntu --new_host                  # another instance of the same place (-2, -3 ...)
 #   cx task run get-host--docker ubuntu --engine=podman
+#   cx task run get-host--docker ubuntu --instance=node-1 --network=lab  # on a network of the engine: instances reach each other by name
 #
 # Then: cx host ls --tags=made-by-cmeta | cx host run <instance> "cx --version" | cx host ssh <instance>
 #       cx host down <instance> | cx host up <instance> | cx host destroy <instance> [--image]

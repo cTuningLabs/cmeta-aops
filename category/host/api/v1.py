@@ -5722,6 +5722,11 @@ class Category(InitCategory):
             image = str(record.get('image') or '')
             keep = acc.get('keepalive') or 'sleep infinity'
             run_args = acc.get('run_args') or ''
+            net = str(acc.get('network') or '')
+            if net and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', net):
+                # the network it was made on, made again when it is gone ("already exists" otherwise: nothing to do)
+                rr = self._engine_cmd(ctx, h, f'{engine} network create --label cmeta.network=1 {net}', timeout=120)
+                if rr['return'] > 0: return rr
             for cmd in (f'{engine} rm -f {container}',
                         f'{engine} run -d --name {container} {run_args} {image} {keep}'.replace('  ', ' ')):
                 rr = self._engine_cmd(ctx, h, cmd, timeout=600)
@@ -7410,6 +7415,19 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                         return self.cm.error('Cannot verify registered artifact volume: ' + volume_name)
                     if labels.get('cmeta.artifact') != volume.get('uid') or labels.get('cmeta.subpath') != volume.get('subpath'):
                         return self.cm.error('Registered volume belongs to another artifact: ' + volume_name)
+                # the network the instance was made on (get-host--docker --network) is made again when it is gone
+                # (an existing one answers "already exists": nothing to do)
+                net = str(acc.get('network') or '')
+                if net and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', net):
+                    mk = f'{self._engine(h)} network create --label cmeta.network=1 {net}'
+                    if h.get('via'):
+                        parent = self._get_host(ctx, h['via'])
+                        if parent['return'] > 0: return parent
+                        if not self._here(parent['host']):
+                            routed = self._cmd_run(ctx, parent['host'], mk)
+                            if routed['return'] > 0: return routed
+                            mk = routed['cmd']
+                    self._run_local(mk, capture=True, con=False)
                 image = acc.get('image')
                 if not image:
                     return self.cm.error(f'container "{name}" does not exist and no "access: image" is declared to create it')
@@ -10157,6 +10175,14 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         row['uid'] = str((h.get('cmeta') or {}).get('artifact') or h.get('uid') or '').split(',')[-1]
         row['tags'] = list((h.get('cmeta') or {}).get('tags') or [])
         row['made'] = bool((h.get('desc') or {}).get('made_from'))
+        # where it runs (2026-11-22): the host it is reached through - the machine of a container or a WSL instance,
+        # the parent of a phone - a container's engine and the template an instance was made from; a page folds the
+        # instances under their machine
+        row['via'] = str(h.get('via') or '')
+        if h['type'] == 'docker':
+            row['engine'] = self._engine(h)
+        if row['made']:
+            row['template'] = str(((h.get('desc') or {}).get('made_from') or {}).get('template') or '')
         row['retired'] = self._retired(h)
         if with_status or row['retired']:
             row['status'] = 'retired' if row['retired'] else (h.get('status') or '-')

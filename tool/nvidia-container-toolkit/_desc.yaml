@@ -27,7 +27,13 @@ cmd_get_versions_regex: '\brefs/tags/v(\d+\.\d+\.\d+)$'
 # Installed when no --version is given: the four packages of this version from NVIDIA's own package repository
 # (nvidia.github.io/libnvidia-container, stable channel; apt on Debian/Ubuntu, dnf/yum/zypper on the RPM
 # distributions) - api_v1.py adds the repository and its signing key first
-default_version: '1.20.1'
+default_version: '1.20.2'
+
+# Where it is not needed: "cx tool setup nvidia-container-toolkit --status" says so instead of offering an install
+# (checked 2026-11-22: Docker Desktop 4.99 on Windows ran "docker run --gpus all ... nvidia-smi" with no toolkit)
+not_needed_on:
+  windows: 'Docker Desktop passes the NVIDIA GPU into its containers through WSL2 by itself ("docker run --gpus all" works with the Windows NVIDIA driver alone)'
+  darwin: 'containers on macOS run in a Linux VM without NVIDIA GPUs'
 
 packages:
   - nvidia-container-toolkit
