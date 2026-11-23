@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.80.0.1)
+## 0.81.0
 - **run-ai: `--main_screen` and `--autocompact`.** `--main_screen` keeps the harness on the terminal's main screen, so
   that what it shows stays in the history one scrolls back to: the flag, else the terminal's own request
   (`CMETA_NO_ALT_SCREEN`), else the key `main_screen` of the config `task-run-ai`; `--main_screen=no` leaves it to the
