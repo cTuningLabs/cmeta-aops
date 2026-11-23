@@ -20,6 +20,8 @@ import urllib.request
 
 import yaml
 
+from cmeta.utils.names import parse_cmeta_name
+
 from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive
 
 TASK_CATEGORY = 'task,c36be4b9314a45e0'
@@ -206,8 +208,12 @@ class CTask(InitCTask):
     def _serves(rec, one, many):
         """Does the server of this record serve what is asked for - the one model artifact, or every one of the many
         (those need a server of several models)? A server without a record is not known to serve anything."""
-        have = [str(x).split(',')[0] for x in (rec.get('models') or ([rec['model']] if rec.get('model') else []))]
-        want = [str(x).split(',')[0] for x in (many or [one])]
+        def alias(model):      # a model by its alias (it may hold commas: only a UID after the last one is cut), else its UID
+            name = parse_cmeta_name(str(model)).get('name') or {}
+            return name.get('alias') or name.get('uid') or str(model).strip()
+
+        have = [alias(x) for x in (rec.get('models') or ([rec['model']] if rec.get('model') else []))]
+        want = [alias(x) for x in (many or [one])]
         return bool(have) and all(w in have for w in want) and (not many or bool(rec.get('router')))
 
     def _model_descs(self, model):

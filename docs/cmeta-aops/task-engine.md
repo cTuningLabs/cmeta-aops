@@ -67,7 +67,9 @@ The single thread of state through all nested calls:
 - **`local`** — scoped to one invocation; blanked on entry, restored on exit.
 - **`params` / `cparams`** — the current task's user params vs. control params.
 - **`aggregated`** — accumulator across the pipeline, chiefly **`aggregated.env`** (the
-  `+PATH`/`+LD_LIBRARY_PATH` lists a later `cmd` task consumes).
+  `+PATH`/`+LD_LIBRARY_PATH` lists a later `cmd` task consumes; on the command line the `+`
+  stays in front of the variable, `--env.+PATH=<dir>`, one folder per `--env.+PATH+=<dir>` with
+  cMeta 0.45.3+ - `--env.PATH+=<dir>` is a list and would replace `PATH`).
 - **`use`** — `--use.<storage_key>.<param>` overrides injected into a specific task.
 - **`nested_call`** — depth counter (verbose indentation).
 - **`run_control`** — per-run scratch (`cur_dir`, `work_dir`, `task_path`,

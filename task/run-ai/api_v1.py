@@ -132,6 +132,8 @@ import time
 
 import yaml
 
+from cmeta.utils.names import parse_cmeta_name
+
 from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive, gateways_here, gateway_asked, NO_GATEWAYS
 
 TASK_CATEGORY = 'task,c36be4b9314a45e0'
@@ -509,7 +511,7 @@ class CTask(InitCTask):
         """A short name of the project for session names and plugin names."""
         if cref and '::' in cref:
             # the artifact part of the cRef without its UID; an alias may contain commas itself
-            alias = re.sub(r',[0-9a-f]{16}$', '', cref.split('::', 1)[1]).strip()
+            alias = re.sub(r'\s*,\s*[0-9a-fA-F]{16}\s*$', '', cref.split('::', 1)[1]).strip()
         else:
             alias = os.path.basename(os.path.normpath(project_path))
         return alias or 'project'
@@ -957,13 +959,11 @@ class CTask(InitCTask):
     @staticmethod
     def _cref_parts(c):
         """'category[,UID]::artifact[,UID]' -> (category alias, category UID, artifact alias, artifact UID), lower case;
-        an artifact alias may contain commas, so its UID is the part after the last one when it looks like a UID."""
+        an alias may contain commas, so a UID is the part after the last one when it is a UID (either case)."""
         cat, _, art = str(c).partition('::')
-        ca, _, cu = cat.partition(',')
-        aa, au = art, ''
-        if ',' in art and re.fullmatch(r'[0-9a-f]{16}', art.rsplit(',', 1)[1].strip()):
-            aa, au = art.rsplit(',', 1)
-        return ca.strip().lower(), cu.strip().lower(), aa.strip().lower(), au.strip().lower()
+        cat, art = parse_cmeta_name(cat).get('name') or {}, parse_cmeta_name(art).get('name') or {}
+        return (str(cat.get('alias') or '').lower(), cat.get('uid') or '',
+                str(art.get('alias') or '').lower(), art.get('uid') or '')
 
     @classmethod
     def _cref_matches(cls, key, cref):
@@ -992,8 +992,8 @@ class CTask(InitCTask):
                     flat[key] = v
         walk(mapping, '')
         repo = str(self._repo_meta(project_path).get('artifact') or '').strip()
-        r_alias, _, r_uid = repo.partition(',')
-        repo_keys = {x.strip().lower() for x in (repo, r_alias, r_uid) if x.strip()}
+        named = parse_cmeta_name(repo).get('name') or {}      # alias,UID: an alias may hold commas, a UID only follows the last one
+        repo_keys = {x.strip().lower() for x in (repo, named.get('alias') or '', named.get('uid') or '') if x.strip()}
         art_uid = self._cref_parts(cref)[3] if cref else ''
         out = []
         for key, value in flat.items():

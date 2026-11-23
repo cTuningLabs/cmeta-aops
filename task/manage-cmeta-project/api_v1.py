@@ -11,6 +11,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from cmeta.utils.names import parse_cmeta_name
+
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 
 
@@ -54,7 +56,7 @@ class CTask(InitCTask):
                 category, separator, reference = definition.partition('::')
                 if not separator:
                     category, reference = 'website', definition
-                key = category.split(',')[0]
+                key = (parse_cmeta_name(category).get('name') or {}).get('alias')     # only a UID after the last comma is cut
                 if key not in ('website', 'task'):
                     raise ValueError('Definition must reference a website or task artifact')
                 result = self.cm.access(dict(category=self.cmeta['uses_categories'][key], command='find',

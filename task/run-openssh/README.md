@@ -26,7 +26,7 @@ INFO: stop with: cx task run run-openssh stop --port=2222
 | Option | Default | Meaning |
 |---|---|---|
 | first argument or `--action` | `start` | `start`, `status` or `stop` |
-| `--keys` | `~/.ssh/authorized_keys` | the public keys allowed to log in: public key files, `authorized_keys` files or the keys themselves, separated by commas |
+| `--keys` | `~/.ssh/authorized_keys` | the public keys allowed to log in: public key files, `authorized_keys` files, the keys themselves or references (`secret::<alias>`), separated by commas - or by `;` when the text holds one: then each part is one item and a reference keeps its commas (`secret::Kim Doe, laptop,<UID>;` for one alone) |
 | `--listen` | the Tailscale address, else `127.0.0.1` | the address to listen on |
 | `--port` | `2222` | the port to listen on |
 | `--name` | `default` | a name for the server; several servers run side by side with different names or ports |

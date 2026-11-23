@@ -1052,7 +1052,8 @@ class CTask(InitCTask):
                 try:
                     with open(found[0], encoding='utf-8') as f:
                         meta = yaml.safe_load(f) or {}
-                    alias = str(meta.get('artifact', '')).split(',')[0].strip()
+                    name = self.cm.utils.names.parse_cmeta_name(str(meta.get('artifact', ''))).get('name') or {}
+                    alias = name.get('alias') or name.get('uid') or ''      # an alias may hold commas: a UID only follows the last one
                     if alias:
                         defaults.append(alias)
                 except Exception:

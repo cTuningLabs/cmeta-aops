@@ -411,7 +411,7 @@ GENERATOR_VIA_KEY = 'via'
 
 
 AI_RUN_ENV = 'CMETA_AI_RUN'      # set by run-ai for the harness it starts: the run it belongs to (run-ai's RUN_REF_ENV)
-UID16 = re.compile(r'^[0-9a-f]{16}$')
+UID16 = re.compile(r'^[0-9a-fA-F]{16}$')     # a cMeta UID: 16 hex digits in either case (kept in lower case)
 
 
 def ai_run_record(harness=''):
@@ -437,7 +437,7 @@ def ai_run_record(harness=''):
     if sep:
         cu, au = cat.split(',')[-1].strip(), art.split(',')[-1].strip()
         if UID16.match(cu) and UID16.match(au):
-            run['project'] = cu + '::' + au
+            run['project'] = cu.lower() + '::' + au.lower()
     for k in ('conversation', 'run'):
         if fields.get(k):
             run[k] = fields[k]

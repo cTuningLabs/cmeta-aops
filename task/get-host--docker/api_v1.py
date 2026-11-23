@@ -39,6 +39,8 @@ import sys
 import tempfile
 import time
 
+from cmeta.utils.names import parse_cmeta_name
+
 from task_c36be4b9314a45e0.api.ctask import InitCTask, changed_mounts, write_signatures
 
 CONTAINER_CATEGORY = 'container,ed08f0d107044479'
@@ -312,7 +314,7 @@ class CTask(InitCTask):
             if storage not in ('bind', 'volume'):
                 raise ValueError('Artifact storage must be bind or volume')
             category, separator, reference = cref.partition('::')
-            kind = category.split(',')[0]
+            kind = (parse_cmeta_name(category).get('name') or {}).get('alias')       # only a UID after the last comma is cut
             reference, slash, suffix = reference.replace('\\', '/').partition('/')
             if not separator or kind not in ARTIFACT_CATEGORIES or not reference or (slash and kind != 'state'):
                 raise ValueError('Artifact mounts require a state/result/cache reference; only state supports volume subpaths')

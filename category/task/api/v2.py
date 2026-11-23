@@ -16,6 +16,7 @@ import threading
 from datetime import datetime, timezone
 
 from cmeta.category import InitCategory
+from cmeta.utils.names import parse_cmeta_name
 
 
 def cli_words(ctx):
@@ -43,6 +44,10 @@ def cli_words(ctx):
 
 # The types of a parameter that takes a value (in cli_params or as an annotation of run()), not a flag
 VALUE_TYPES = ('str', 'int', 'float')
+
+# ... and described in cli_params only: list - one value is one whole item, more come with --key+=<value> (cMeta
+# 0.45.3; an older engine leaves the value a text). An annotation list of run() is not read, as before
+DESCRIBED_VALUE_TYPES = VALUE_TYPES + ('list',)
 
 
 def cli_flags(ctx):
@@ -87,7 +92,7 @@ def value_params_of(func, described):
 
     for name, desc in (described or {}).items():
         d = {'type': desc} if isinstance(desc, str) else (desc if isinstance(desc, dict) else {})
-        if str(d.get('type', '')).strip().lower() in VALUE_TYPES or d.get('values') is not None:
+        if str(d.get('type', '')).strip().lower() in DESCRIBED_VALUE_TYPES or d.get('values') is not None:
             out[name] = d
         if d.get('bare'):
             # the task says what the bare flag means ("bare: choose from a list"): it takes a value or none
@@ -2297,7 +2302,10 @@ class Category(InitCategory):
             screen = True
         if screen:
             if screen is True or str(screen).strip().lower() in ('', 'true', 'yes', 'on', '1'):
-                screen = str(inner_words[2]).split(',')[0].split(':')[-1] if len(inner_words) > 2 else 'cx-task'
+                # the alias of the artifact named (repo:alias,UID -> alias; an alias may hold commas, only a UID after
+                # the last one is cut), else its UID
+                name = (parse_cmeta_name(str(inner_words[2]).split(':')[-1]).get('name') or {}) if len(inner_words) > 2 else {}
+                screen = name.get('alias') or name.get('uid') or 'cx-task'
             if any(options.get(k) for k in ('detach', 'pull', 'rm', 'isolated')):
                 return self.cm.error('--on_screen cannot be combined with --on_detach, --on_pull, --on_rm or --on_isolated')
             try:

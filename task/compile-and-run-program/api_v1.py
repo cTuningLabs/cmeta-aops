@@ -13,6 +13,8 @@ import shutil
 import copy
 import time
 
+from cmeta.utils.names import parse_cmeta_name
+
 from task_c36be4b9314a45e0.api.ctask import InitCTask
 from task_c36be4b9314a45e0.api import deadlines
 from task_c36be4b9314a45e0.api import build_stamp
@@ -527,7 +529,7 @@ def output_files_of(rules, local):
 def output_key(rules, program, cmd, local, params):
     """The key of a case: the program, the command, the dataset, its sub-dataset and file, the parameters that matter."""
     dataset = local.get('dataset') if isinstance(local.get('dataset'), dict) else {}
-    alias = str(dataset.get('artifact_au') or '').split(',')[0] or None
+    alias = str(dataset.get('artifact_au') or '') or None        # the dataset's alias (commas and all), else its UID
     key = {'program': program, 'cmd': cmd or 'default', 'dataset': alias,
            'sub_dataset': dataset.get('sub_dataset') or None,
            'dataset_file': os.path.basename(str(dataset['path'])) if dataset.get('path') else None,
@@ -715,7 +717,9 @@ class CTask(InitCTask):
         not name their own "name" and "filename": every program answers to them, as the ones converted from CK do.
         """
         for step in steps if isinstance(steps, list) else []:
-            if isinstance(step, dict) and str(step.get('task') or '').split(',')[0] == 'dataset':
+            # the task's alias: an alias may hold commas, only a UID after the last one is cut
+            task = (parse_cmeta_name(str(step.get('task') or '')).get('name') or {}) if isinstance(step, dict) else {}
+            if task.get('alias') == 'dataset':
                 step.setdefault('name', '{{params.dataset|$None}}')
                 step.setdefault('filename', '{{params.dataset_file|$None}}')
 

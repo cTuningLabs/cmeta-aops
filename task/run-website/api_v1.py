@@ -13,6 +13,12 @@ import uuid
 
 from cmeta import CMeta
 from cmeta.utils.files import PathLock
+from cmeta.utils.names import parse_cmeta_name
+
+
+def category_alias(name):
+    """The alias of the category part of a cRef ('' for a UID alone): only a UID after the last comma is cut."""
+    return (parse_cmeta_name(str(name)).get('name') or {}).get('alias') or ''
 
 
 def read(path):
@@ -228,7 +234,7 @@ if __name__ != '__main__':
             kind, separator, reference = str(cref).partition('::')
             if not separator:
                 kind, reference = 'task', str(cref)
-            kind = kind.split(',')[0]
+            kind = category_alias(kind)
             if kind not in self.cmeta['uses_categories'] or '/' in reference or '\\' in reference:
                 raise ValueError('Expected a root website/task/container/result reference')
             matches = self.access(kind, 'find', arg1=reference)['artifacts']
@@ -362,7 +368,7 @@ if __name__ != '__main__':
                     raise ValueError('deployment must contain ordinary letters, digits, hyphens or underscores')
                 state_cref = state_cref or 'state::local:website-' + profile['name'] + '-' + deployment
                 state_kind, separator, reference = state_cref.partition('::')
-                if not separator or state_kind.split(',')[0] != 'state' or '/' in reference or '\\' in reference:
+                if not separator or category_alias(state_kind) != 'state' or '/' in reference or '\\' in reference:
                     raise ValueError('state-cref must name a root state artifact')
                 if action == 'plan':
                     print(json.dumps(dict(state=state_cref, deployment=deployment, profile=profile,
@@ -409,7 +415,7 @@ if __name__ != '__main__':
                 data_ref = profile.get('data')
                 if data_ref:
                     data_kind, separator, data_reference = str(data_ref).partition('::')
-                    if not separator or data_kind.split(',')[0] != 'result' or '/' in data_reference or '\\' in data_reference:
+                    if not separator or category_alias(data_kind) != 'result' or '/' in data_reference or '\\' in data_reference:
                         raise ValueError('deployment.data must name a root result artifact')
                     data_root = Path(self.access('result', 'get', arg1=data_reference,
                         meta={'permanent': True, 'tags': ['website-data', profile['name']]})['artifact']['path']).resolve()

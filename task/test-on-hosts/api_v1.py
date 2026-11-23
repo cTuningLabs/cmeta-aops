@@ -104,11 +104,19 @@ def config_value(cm, key):
 
 
 def default_hosts(cm):
-    """The hosts of a round without --hosts: the key "hosts" of the config artifact task-test-on-hosts, else here."""
+    """The hosts of a round without --hosts: the key "hosts" of the config artifact task-test-on-hosts (a list stays a
+    list: a host's alias may hold commas), else here."""
     hosts = config_value(cm, 'hosts')
-    if isinstance(hosts, list):
-        hosts = ','.join(str(h) for h in hosts)
+    if isinstance(hosts, (list, tuple)):
+        return [str(h).strip() for h in hosts if str(h).strip()] or HERE
     return str(hosts).strip() if hosts else HERE
+
+
+def host_refs(hosts, cm):
+    """The hosts of a round: --hosts, else default_hosts - a text split at its commas, a list (YAML, --hosts,=...) as
+    it is: a host's alias may hold commas."""
+    given = hosts or default_hosts(cm)
+    return [str(h).strip() for h in (given if isinstance(given, (list, tuple)) else str(given).split(',')) if str(h).strip()]
 
 
 def here_dir(cm):
@@ -191,7 +199,7 @@ class CTask(InitCTask):
             host_list = list(saved['hosts'])
             self.instances = saved.get('instances') or {}
         else:
-            host_list = [h.strip() for h in str(hosts or default_hosts(self.cm)).split(',') if h.strip()]
+            host_list = host_refs(hosts, self.cm)
 
             # A host ref of the run-on-any-host design (docker[:template], podman[:template], wsl[:template]) is the
             # instance of that template on this machine, made on first use: the round runs inside it, with the tree

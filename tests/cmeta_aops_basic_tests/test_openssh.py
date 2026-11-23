@@ -123,6 +123,11 @@ def test_read_keys_references_and_private_keys(task, tmp_path):
 
     assert read_keys("secret::me, " + OTHER, resolve = resolve) == ([KEY, OTHER], None)
     assert asked == ["secret::me"]
+
+    # ";" separates when the text holds one (2026-11-23): a reference then keeps its commas
+    asked.clear()
+    assert read_keys("secret::me; " + OTHER, resolve = resolve) == ([KEY, OTHER], None)
+    assert asked == ["secret::me"]
     lines, error = read_keys("fgg.crypt::ssh-x/2026/id_ed25519", resolve = resolve)
     assert lines is None and "is a private key" in error and error.endswith("(.pub)")
     lines, error = read_keys(str(private))

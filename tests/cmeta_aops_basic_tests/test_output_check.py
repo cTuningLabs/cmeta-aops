@@ -49,7 +49,8 @@ def test_the_rules_of_a_program_and_of_a_command(carp):
 
 
 def test_the_key_of_a_case_and_what_makes_two_keys_the_same(carp):
-    local = {'dataset': {'artifact_au': 'ctuning-image-ppm,1234', 'sub_dataset': 'image-ppm-0007', 'path': '/x/image-ppm-0007/data.ppm'}}
+    # artifact_au as the engine's select_artifact gives it: the alias (or the UID of an artifact without one)
+    local = {'dataset': {'artifact_au': 'ctuning-image-ppm', 'sub_dataset': 'image-ppm-0007', 'path': '/x/image-ppm-0007/data.ppm'}}
     params = {'compile': {'size': 'large', 'dump': True}, 'n': 3}
     key = carp['output_key']({'key_params': ['compile.size', 'compile.dump', 'n', 'missing.one']}, 'prog', 'default', local, params)
     assert key == {'program': 'prog', 'cmd': 'default', 'dataset': 'ctuning-image-ppm', 'sub_dataset': 'image-ppm-0007',

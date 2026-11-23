@@ -42,6 +42,7 @@ import textwrap
 import uuid
 
 from cmeta.category import InitCategory
+from cmeta.utils.names import parse_cmeta_name
 
 DESC_FILE = '_desc.yaml'
 STATE_FILE = 'state.yaml'
@@ -1053,7 +1054,7 @@ def _sync_side(p):
 # PARTIAL.md in the host's copy says what it holds.
 PARTIAL_NOTE = 'PARTIAL.md'
 GLOB_CHARS = re.compile(r'([\[\]{}\\])')        # escaped in a rule; * and ? are escaped too where a part is literal
-UID_SUFFIX = re.compile(r',[0-9a-f]{16}$')
+UID_SUFFIX = re.compile(r'\s*,\s*[0-9a-fA-F]{16}\s*$')     # ",<UID>" ending a name (an alias may hold commas itself)
 
 # A memory index has one line per memory, "- [Title](file.md) - hook": two sides that changed one index between two
 # syncs are merged line by line per memory file, against the index both started from - a copy of each index kept
@@ -6440,13 +6441,15 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
 
     @staticmethod
     def _ref_alias(ref):
-        """'machine,uid::my-pc,uid' or 'my-pc' -> 'my-pc'."""
+        """'machine,uid::my-pc,uid' or 'my-pc' -> 'my-pc'; a UID alone stays. An alias may hold commas: only a UID after
+        the last one is cut."""
         if not ref:
             return None
         s = str(ref)
         if '::' in s:
             s = s.split('::')[-1]
-        return s.split(',')[0].strip()
+        name = parse_cmeta_name(s).get('name') or {}
+        return name.get('alias') or name.get('uid') or s.strip()
 
     @staticmethod
     def _csv(value):

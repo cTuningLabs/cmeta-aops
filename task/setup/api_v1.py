@@ -657,7 +657,7 @@ class CTask(InitCTask):
         from tool_c393ba5c6fa14f66.api import common_sizes as sizes
 
         con = ctx['control'].get('con', False)
-        name = tool_read['artifact_au'].split(',')[0]
+        name = tool_read['artifact_au']      # the tool's alias (commas and all) or its UID: params.name of its entries
 
         r = self.cm.access({'category': upgrade.CACHE_CATEGORY, 'command': 'find',
                             'tags': ['task', self.category_uid, 'setup', self.artifact_uid],

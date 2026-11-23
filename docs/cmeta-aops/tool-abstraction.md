@@ -11,7 +11,10 @@ python, cuda, nvcc, node-js, claude, codex, openclaw, …) portably across OSes.
 the central task **`setup,a2f9b61079ce4333`** (`task/setup/`), which orchestrates
 **detect → install → build**; `tool run` additionally runs the resolved binary via task
 `cmd,c9ba0a88df394d7f`, folding dynamic-lib dirs into
-`env['+PATH' | '+LD_LIBRARY_PATH' | '+DYLD_LIBRARY_PATH']`.
+`env['+PATH' | '+LD_LIBRARY_PATH' | '+DYLD_LIBRARY_PATH']`. On the command line the `+` stays
+in front of the variable: `cx tool run X --env.+PATH=<dir> -- <args>` adds `<dir>` after the
+tool's own folders, and `--env.+PATH+=<d1> --env.+PATH+=<d2>` adds several, each whole
+(cMeta 0.45.3+). `--env.PATH+=<dir>` is a list, not an addition: `PATH` would be `<dir>` alone.
 
 Authoring = one or two files (see the **`add-tool`** skill for the full guide):
 

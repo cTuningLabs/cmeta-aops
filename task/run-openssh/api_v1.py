@@ -25,10 +25,11 @@ port of its own (default 2222), with key-only logins:
   may block or expose).
 - The keys allowed: --host=<host>, the public key of the key the fleet reaches this machine with
   (the host artifact's "access: key", as "cx host key <host>" finds it on this machine: the artifact
-  it names, else the copy a secret holds, else ~/.ssh); --keys, separated by commas: public key
-  files, authorized_keys files, the keys themselves, or references - secret::<alias> (the secret's
-  ssh.public_key) and <category>::<artifact>/<file> (resolved like a host's key; a private key named
-  there stands for the .pub beside it). Without either, the user's ~/.ssh/authorized_keys.
+  it names, else the copy a secret holds, else ~/.ssh); --keys, separated by commas (or by ";" when the
+  text holds one: then a reference keeps its commas, alias,UID): public key files, authorized_keys files,
+  the keys themselves, or references - secret::<alias> (the secret's ssh.public_key) and
+  <category>::<artifact>/<file> (resolved like a host's key; a private key named there stands for the
+  .pub beside it). Without either, the user's ~/.ssh/authorized_keys.
 - Its host key, configuration, authorized keys, log and PID live in a cache entry
   (task--run-openssh), one folder per --name and port, so the host key stays the same.
 - Stop ends the server and the logins it serves.
@@ -52,6 +53,8 @@ import socket
 import subprocess
 import sys
 import time
+
+from cmeta.utils.names import parse_cmeta_name
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_file_alive
 
@@ -105,12 +108,24 @@ def tailscale_address(cli = None):
     return None
 
 
+def split_names(text):
+    """
+    The items of a list such as --keys: separated by commas, as always - or by ";" when the text holds one, and then
+    each part is one item, so a reference keeps its commas (alias,UID, an alias with commas: "secret::a, b,<UID>;"
+    for one). A list is taken as it is.
+    """
+    if isinstance(text, (list, tuple)):
+        return [str(x).strip() for x in text if str(x).strip()]
+    text = str(text or '')
+    return [p.strip() for p in (text.split(';') if ';' in text else text.split(',')) if p.strip()]
+
+
 def read_keys(keys, resolve = None):
     """
-    The authorized_keys lines of --keys (separated by commas: files, keys, or references that `resolve`
-    turns into a public key file - (path, error)): (lines, error). A private key file is refused.
+    The authorized_keys lines of --keys (split_names: files, keys, or references that `resolve` turns into a public
+    key file - (path, error)): (lines, error). A private key file is refused.
     """
-    items = [k.strip() for k in keys.split(',')] if isinstance(keys, str) else list(keys or [])
+    items = split_names(keys)
     lines = []
     for item in [i for i in items if i]:
         words = item.split()
@@ -345,7 +360,7 @@ class CTask(InitCTask):
         """
         uses = self.cmeta.get('uses_categories', {})
         cat, _, rest = ref.partition('::')
-        if cat == 'secret' and '/' not in rest:
+        if (parse_cmeta_name(cat).get('name') or {}).get('alias') == 'secret' and '/' not in rest:      # secret or secret,<UID>
             r = self.cm.access({'category': uses.get('secret', SECRET), 'command': 'find', 'arg1': rest, 'con': False})
             arts = r.get('artifacts', []) if r['return'] == 0 else []
             if len(arts) != 1:
@@ -371,7 +386,7 @@ class CTask(InitCTask):
             action: str = 'start',    # start, stop or status
             port: int = 2222,         # the port to listen on
             listen: str = '',         # the address to listen on (default: Tailscale's, else 127.0.0.1)
-            keys: str = '',           # public keys allowed: files, keys or references, separated by commas
+            keys: str = '',           # public keys allowed: files, keys or references, separated by commas (";" when the text holds one)
             host: str = '',           # the host artifact this machine is: the fleet's key for it is allowed
             name: str = 'default',    # several servers: one folder per name and port
             foreground: bool = False, # attached to this console: the log on the screen, Ctrl-C or the window closed ends it
@@ -454,7 +469,7 @@ class CTask(InitCTask):
         elif con and not listen and address == '127.0.0.1':
             print('INFO: no Tailscale address ("tailscale ip -4"): only this machine can connect;'
                   ' --listen=<address> picks another')
-        items = [k.strip() for k in str(keys or '').split(',') if k.strip()]
+        items = split_names(keys)        # a reference keeps its commas; ";" separates when the text holds one
         if host:
             r = self.cm.access({'category': self.cmeta.get('uses_categories', {}).get('host', HOST), 'command': 'key',
                                 'arg1': str(host), 'con': False})
@@ -466,7 +481,7 @@ class CTask(InitCTask):
             if con:
                 print(f'INFO: the key of host {host} ({r.get("ref")}): {r["public"]}')
         default_keys = os.path.expanduser('~/.ssh/authorized_keys')
-        lines, error = read_keys(items or (default_keys if os.path.isfile(default_keys) else ''), resolve = self._public_key_of)
+        lines, error = read_keys(items or ([default_keys] if os.path.isfile(default_keys) else []), resolve = self._public_key_of)
         if error:
             return self.cm.error(error)
         if not lines:

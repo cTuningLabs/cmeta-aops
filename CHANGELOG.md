@@ -13,6 +13,34 @@ All notable changes to cMeta AOps are documented here, newest first.
   that the block `run_settings` of the harness task's `_desc.yaml` names (run-claude: Claude Code's auto-compact
   window, idle compaction, the subagents' cache lifetime and effort, its renderer; run-codex: its effort,
   auto-compact limit and alternate screen) - nothing else of their settings files.
+- **Aliases with commas and spaces, wherever aops reads a name.** A name is split at its LAST comma, and the part
+  after it is the UID only when it is one (16 hex digits in either case, kept in lower case); otherwise the whole text
+  is the alias (`Kim Doe, joined Example Co, 20260922,5ca1ab1e5ca1ab1e`) - as the engine reads it
+  (`utils.names.parse_cmeta_name`, in every release). What took the text before the first comma reads the whole alias
+  now: a host's `via:` and `machine:` (a parent host with such an alias was not found; `cx machine ls/show` listed no
+  hosts for such a machine, and now also lists those that name it by UID alone), the dataset of an output check and
+  the tool of `cx tool setup --sizes` (the engine's `artifact_au` is an alias or a UID, never cut now), the models a
+  running llama.cpp server is taken to serve, the default `--on_screen` session, the alias of a new build entry, the
+  repository of a project in `local_ai_uses`, the repository run-claude adds, a repository mounted or copied into a
+  container and one a project bootstraps, the category of a cRef with or without its UID (`state`, `result`, `cache`,
+  `website`, `task`, `secret`, `host`, `sync`), the hosts and steps that sync and the project scripts name, and the
+  folder of a used artifact under `!AI/pending`. `run-openssh --keys` also takes `;` as its separator when the text
+  holds one: each part is then one item and a reference keeps its commas (`--keys="secret::a, b,<UID>;laptop.pub"`,
+  one alone with a `;` after it); a list separated by commas reads as before. `test-on-hosts` keeps a YAML list of hosts as a
+  list. The generated `___sync_all.bat`/`.sh` and the Containerfile lines of `--copy_repo` quote such a name for their
+  shell (a caret, which cmd.exe's `call` cannot pass, is refused). Plain aliases and `alias,UID` read as before.
+  Tests: `test_comma_aliases.py`.
+- **A task parameter described `type: list` in `cli_params` takes a value.** With cMeta 0.45.3 one plain value of such
+  a parameter is one whole item (`--x="a, b; c"` -> `['a, b; c']`) and more come with `--x+=<value>`; a bare `--x`
+  now says that it needs a value, as one of type str does. An annotation `list` of `run()` is not read, as before; an
+  older engine leaves the value a text.
+- **`cx tool run <tool> --env.+PATH=<dir>` for a tool with library folders.** The run puts the folders of the tool's
+  dynamic libraries in front of `+PATH` (`+LD_LIBRARY_PATH`, `+DYLD_LIBRARY_PATH`) with `.insert` - on the text the
+  command line gives for `--env.+PATH=<dir>` (AttributeError). The text is now read as its folders (split at
+  `os.pathsep`, as the engine reads a `+` variable), after the tool's own; a list (`--env.+PATH+=<dir>`, cMeta 0.45.3)
+  or a tuple is kept (`add_dynamic_lib_paths` of category/tool/api/v1.py; `test_tool_run_env.py`). AGENTS.md,
+  task-engine.md, tool-abstraction.md and the add-tool skill say how the command line writes it: the `+` in front of
+  the variable; `--env.PATH+=<dir>` is a list and would replace `PATH`.
 - **run-ai: `--prompt_cache_minutes`, how long the provider keeps the prompt cache of a conversation.** A request that
   comes later than that after the one before pays for the whole conversation again, and a harness on a key asks for the
   short lifetime by itself. Without the flag a run on a key (a gateway that sends one) asks for the key

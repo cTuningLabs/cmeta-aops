@@ -5,6 +5,10 @@ Licensed under the Apache License, Version 2.0; see COPYRIGHT and LICENSE.
 import hashlib
 import json
 from pathlib import Path
+import re
+import shlex
+
+from cmeta.utils.names import parse_cmeta_name
 
 
 MANAGER = 'manage-cmeta-project,9df2b3a416e84c75'
@@ -244,14 +248,35 @@ exec cx task run RUNNER \\
     return files
 
 
+def _alias(name):
+    """The alias of a cMeta name (alias, UID or alias,UID), else its UID: an alias may hold commas - only a UID after
+    the last one is cut."""
+    parsed = parse_cmeta_name(str(name)).get('name') or {}
+    return parsed.get('alias') or parsed.get('uid') or str(name).strip()
+
+
+def _bat(word):
+    """A word after "call" in the generated .bat: in double quotes when it holds a space or a character cmd.exe reads
+    (an alias may hold spaces and commas), each % written %%%% (the line and call each halve them). call doubles a
+    caret even in quotes: a word with one is refused."""
+    word = str(word)
+    if '^' in word or '"' in word:
+        raise ValueError(f'"{word}": cmd.exe cannot pass a caret or a double quote through call - rename it')
+    word = word.replace('%', '%%%%')
+    return '"' + word + '"' if re.search(r'[\s&|<>()]', word) else word
+
+
+def _bat_echo(text):
+    """A text for echo in the generated .bat: the characters cmd.exe reads escaped with ^, each % doubled."""
+    return re.sub(r'([&|<>^])', r'^\1', str(text).replace('%', '%%'))
+
+
 def _step(entry):
     """('host', alias) for a host::<alias> entry of syncs:, else ('sync', <alias,UID>)."""
     text = str(entry).strip()
     kind, sep, rest = text.partition('::')
-    if sep and kind.split(',')[0] == 'host':
-        return 'host', rest
-    if sep and kind.split(',')[0] == 'sync':
-        return 'sync', rest
+    if sep and _alias(kind) in ('host', 'sync'):
+        return _alias(kind), rest.strip()
     return 'sync', text
 
 
@@ -282,22 +307,23 @@ def sync_files(profile):
                "host_flags=''", "plan=''", 'for a in "$@"; do', '    case "$a" in',
                '        -q|--dry-run) host_flags="$host_flags $a" ;;', '        --plan) plan=1 ;;', '    esac', 'done']
     for number, (kind, ref) in enumerate(steps, 1):
-        label = '[%d/%d] %s' % (number, total, ('cx host sync ' + ref) if kind == 'host' else ref.split(',')[0])
-        bat += ['', 'echo ' + label]
-        sh += ['', "echo '" + label + "'"]
+        # a reference as one word of each shell: an alias may hold spaces and commas
+        label = '[%d/%d] %s' % (number, total, ('cx host sync ' + ref) if kind == 'host' else _alias(ref))
+        bat += ['', 'echo ' + _bat_echo(label)]
+        sh += ['', 'echo ' + shlex.quote(label)]
         if kind == 'host':
-            bat += ['if not defined PLAN (', '    call cx host sync ' + ref + ' %HOST_Q% %HOST_DRY%',
+            bat += ['if not defined PLAN (', '    call cx host sync ' + _bat(ref) + ' %HOST_Q% %HOST_DRY%',
                     '    if errorlevel 1 exit /b 1', ')']
-            sh += ['if [ -z "$plan" ]; then', '    cx host sync ' + ref + ' $host_flags', 'fi']
+            sh += ['if [ -z "$plan" ]; then', '    cx host sync ' + shlex.quote(ref) + ' $host_flags', 'fi']
         else:
-            command = 'call cxt sync ' + ref + ' --require-initialized --live %*'
-            bat += [command] if len(command) < 100 else ['call cxt sync ' + ref + ' ^', '    --require-initialized --live %*']
+            command = 'call cxt sync ' + _bat(ref) + ' --require-initialized --live %*'
+            bat += [command] if len(command) < 100 else ['call cxt sync ' + _bat(ref) + ' ^', '    --require-initialized --live %*']
             bat += ['if errorlevel 1 exit /b %errorlevel%']
-            command = 'cxt sync ' + ref + ' --require-initialized --live "$@"'
-            sh += [command] if len(command) < 100 else ['cxt sync ' + ref + ' \\', '    --require-initialized --live "$@"']
+            command = 'cxt sync ' + shlex.quote(ref) + ' --require-initialized --live "$@"'
+            sh += [command] if len(command) < 100 else ['cxt sync ' + shlex.quote(ref) + ' \\', '    --require-initialized --live "$@"']
     name = str((profile or {}).get('name') or 'project')
-    bat += ['', 'echo ' + name + ' synchronized.', 'exit /b 0', '']
-    sh += ['', "echo '" + name + " synchronized.'", '']
+    bat += ['', 'echo ' + _bat_echo(name + ' synchronized.'), 'exit /b 0', '']
+    sh += ['', 'echo ' + shlex.quote(name + ' synchronized.'), '']
     return {'___sync_all.bat': '\n'.join(bat), '___sync_all.sh': '\n'.join(sh)}
 
 
