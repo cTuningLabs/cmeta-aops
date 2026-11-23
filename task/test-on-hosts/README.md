@@ -25,9 +25,10 @@ The parameters:
   launches the round: put such a line into a script file and make the command `!call D:\...\run.bat <args>`
   (`!bash /path/run.sh` on a POSIX host). A command that must run in the host's own home, not the throwaway
   one, is `!env -u CMETA_HOME cx ...` (`!set "CMETA_HOME=" && cx ...` in such a script on Windows).
-- **`--hosts`:** host aliases separated by `,`. `here` is this machine. The default is the key `hosts` of the
-  config artifact `task-test-on-hosts` (`cx config set task-test-on-hosts --meta.hosts=a,b,c`: the test machines of
-  a fleet, never a production host), else `here`. A ref of the run-on-any-host design - `docker:ubuntu`,
+- **`--hosts`:** host aliases separated by `,` (a list - `--hosts,=...` or a YAML list - is taken as it is: a host's
+  alias may hold commas). `here` is this machine. The default is the key `hosts` of the config artifact
+  `task-test-on-hosts` (`cx config set task-test-on-hosts --meta.hosts=a,b,c`: the test machines of a fleet, never a
+  production host), else `here`. A ref of the run-on-any-host design - `docker:ubuntu`,
   `podman:debian`, `wsl`, with `--on_*` words after it (`docker:ubuntu --on_template.os_version=24.04`) - is the
   instance of that template on this machine, made on first use (`get-host--docker`, `get-host--wsl`): the round
   runs inside it, and when the tree is the repository the instance carries, nothing is pushed - the runner reads

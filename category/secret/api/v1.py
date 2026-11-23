@@ -126,8 +126,8 @@ def _ref_key(ref):
     cat, _, rest = str(ref or '').replace('\\', '/').partition('::')
     art, _, inside = rest.partition('/')
 
-    def alias(x):
-        return re.sub(r',[0-9a-f]{16}$', '', x.strip()).lower()
+    def alias(x):      # an alias may hold commas: only a UID (either case) after the last one is cut
+        return re.sub(r'\s*,\s*[0-9a-fA-F]{16}$', '', x.strip()).lower()
 
     return alias(cat), alias(art), inside.strip('/')
 

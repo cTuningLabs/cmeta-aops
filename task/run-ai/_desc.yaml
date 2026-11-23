@@ -39,6 +39,12 @@ authors: Grigori Fursin
 # What a run may write: --write=ask (default) | project (no questions, like --yes) | all (-w: also the used artifacts'
 # memory, directly - listed, recorded, the versions before the run saved) | none (the harness's read-only mode); the
 # key "write" of the config task-run-ai is this machine's default (cx config set task-run-ai --meta.write=all).
+#
+# The prompt cache: --prompt_cache_minutes=<minutes> says how long the model's provider keeps the prompt cache of the
+# conversation (Claude Code: 5 or 60) - a request that comes later pays for the whole conversation again. Without the
+# flag a run on a key asks for the key "prompt_cache_minutes" of the config task-run-ai (60; 0: the harness's own),
+# and a run on the harness's own login leaves it to the harness. A harness is told the way its task declares
+# (prompt_cache in the _desc.yaml of run-claude); for one whose task declares none the flag is an error.
 
 # This task launches a coding agent - never memoize it on disk
 cache: False
@@ -52,6 +58,9 @@ cli_params:
   gw: {type: str, bare: 'the gateways of this machine to choose from (nobody to ask - its default)'}
   gw_default: {type: str, bare: 'a gateway chosen from the list becomes the default'}
   write: {type: str, bare: 'all'}
+  prompt_cache_minutes: {type: int, hint: 'minutes; Claude Code takes 5 or 60'}
+  main_screen: bool
+  autocompact: {type: str, hint: 'auto, or tokens: 400k'}
 
 uses:
   - task: runner,1e48cc0c5f6041a5
@@ -62,6 +71,36 @@ configs:
   task-run-ai:
     desc: 'this machine''s settings of run-ai, in its local repository - the mapping local_ai_uses, the limit of the
       context estimate, what a run may write, runs of a project on another machine (the README, "Configuration")'
+    keys:
+      prompt_cache_minutes:
+        desc: 'how long the model''s provider is asked to keep the prompt cache of a run that goes through a gateway
+          with a key, in minutes, when --prompt_cache_minutes is not given: a lifetime the harness takes (Claude Code:
+          5 or 60); 0 leaves it to the harness. A run on the harness''s own login is always left to the harness.'
+        type: number
+        default: '60'
+        example: '5'
+      main_screen:
+        desc: 'yes: every interactive run of this machine keeps its harness on the terminal''s main screen, so that what
+          it shows stays in the history one scrolls back to (claude, codex, hermes); --main_screen=no for one run. The
+          sessions of /ai.sessions ask for it themselves.'
+        type: yes/no
+        default: 'no: the harness''s own setting'
+        example: 'yes'
+      autocompact:
+        desc: 'the auto-compact window of a run when --autocompact is not given: the size at which the harness
+          summarises its conversation - auto, or tokens such as 400k (Claude Code: at least 100k); not set or 0: the
+          harness''s own window'
+        type: text
+        default: 'the harness''s own'
+        example: 400k
+      max_context_tokens:
+        desc: 'the limit of the context estimate of a run, in tokens, when --max_context_tokens is not given: over it
+          a run asks, or fails under -q, --yes or without a terminal'
+        type: number
+        default: '30000'
+        example: '40000'
+        secret: false                 # a count of tokens: only its name looks like a secret's (an engine that knows
+                                      # the word shows its value on its settings pages; an older one hides it)
   default:
     keys:
       run_ai_max_context_tokens:
@@ -70,3 +109,4 @@ configs:
           task-run-ai come first'
         type: number
         default: '30000'
+        secret: false                 # a count of tokens, as above

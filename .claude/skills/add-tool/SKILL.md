@@ -12,7 +12,10 @@ and `cx tool run X -- <args>` both re-dispatch into the central task
 `setup,a2f9b61079ce4333` (`task/setup/`), which orchestrates
 **detect → install → build**. `tool run` additionally runs the resolved
 binary via task `cmd,c9ba0a88df394d7f`, folding any dynamic-lib dirs into
-`env['+PATH' | '+LD_LIBRARY_PATH' | '+DYLD_LIBRARY_PATH']`.
+`env['+PATH' | '+LD_LIBRARY_PATH' | '+DYLD_LIBRARY_PATH']`. On the command line
+the `+` stays in front of the variable: `--env.+PATH=<dir>` (several, each whole:
+`--env.+PATH+=<d1> --env.+PATH+=<d2>`, cMeta 0.45.3+); `--env.PATH+=<dir>` is a
+list, not an addition - `PATH` would be `<dir>` alone.
 
 So authoring a tool = writing two files under `tool/<name>/`:
 

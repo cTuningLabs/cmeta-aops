@@ -539,12 +539,16 @@ cxt run-ai --project=<an artifact of that repository> --dry_run   # the source s
 | `trim_context` | `true`: every run leaves context sources out to fit the limit, as `--trim_context` does |
 | `write` | what a run may write when no flag says so: `ask` (the default), `project`, `all` or `none` (the next section) |
 | `other_runs` | a run of this project recorded as running on another machine: `report` (the default: one line, no question), `ask` or `refuse` (the section "Several machines") |
+| `prompt_cache_minutes` | how long the provider is asked to keep the prompt cache of a run on a key when `--prompt_cache_minutes` is not given: 60 when the key is not there, `0` to leave it to the harness (the section "The prompt cache") |
 
 ```bash
 cx config set task-run-ai --meta.max_context_tokens=40000
 cx config set task-run-ai --meta.trim_context=true
 cx config set task-run-ai --meta.write=all
 cx config set task-run-ai --meta.other_runs=ask
+cx config set task-run-ai --meta.prompt_cache_minutes=5
+cx config set task-run-ai --meta.main_screen=yes
+cx config set task-run-ai --meta.autocompact=400k
 cx config show task-run-ai
 ```
 
@@ -815,6 +819,15 @@ and its run into `CMETA_AI_RUN` (`project=<cRef>;conversation=<id>;run=<stamp>`)
 that each line names the session it belongs to ([ai.gateway](../../category/ai.gateway/README.md)); no other gateway
 ever is.
 
+**What the run was started with (since 2026-11-22).** The same reference goes on with the settings of the run, each
+`key=value` and percent-encoded like the three before them, so that such a server's lines can be compared by them:
+`cache_minutes` (the lifetime of the prompt cache the run asked for; left out when the harness decides), `mode`
+(`interactive` or `prompt`), `cmeta` and `aops` (the versions of the engine and of this repository), `context` (the
+estimate of what run-ai hands the harness, in tokens), `harness`, `model` and `effort` (as given to run-ai; left out
+when the harness chooses), `write`, `resumed` (`yes`, `handover` or `no`), `uses` (the number of context sources) and
+`host`. They are in the order of what matters most: a reader that keeps only the first pairs keeps those. A key is
+lower-case letters and `_`, at most 16.
+
 **What a run inherits (since 2026-10-30).** A session that runs through a gateway and starts another agent no longer
 hands it the gateway. A gateway run names the variables it puts into its process (`CMETA_AI_GATEWAY_VARS`), and every
 harness task - Claude Code, Codex, OpenCode, OpenClaw, Gemini CLI, agy, Hermes, Mistral Vibe - drops those of a
@@ -826,6 +839,97 @@ keys, OpenRouter, Groq, DeepSeek, xAI, Together, Fireworks, Cerebras). The run s
 user's own keys stay for the other harnesses, whose keys are one of their ways in (`GEMINI_API_KEY` for Gemini CLI,
 Hermes' providers); `GOOGLE_CLOUD_PROJECT` stays everywhere (Gemini's Code Assist login needs it). The list lives in
 one place: `category/task/api/ctask.py` (`drop_provider_variables`).
+
+## The prompt cache: `--prompt_cache_minutes`
+
+Every request of a harness sends the whole conversation again. The model's provider keeps what it has read in a
+prompt cache and bills the repeat as a cache read, a small part of the input price. The cache lives for a time that
+starts again with every request: a request that comes later pays for the whole conversation once more, as a cache
+write. How long it lives is the harness's to ask. Claude Code asks for 1 hour on a Claude subscription and for 5
+minutes on a key (an API key, a gateway, a cloud provider), where a 1-hour write costs more than a 5-minute one.
+
+```bash
+cxai --prompt_cache_minutes=60          # ask for the 1-hour cache
+cxai --prompt_cache_minutes=5           # ask for the 5-minute cache
+```
+
+What a run asks for, in this order:
+
+1. `--prompt_cache_minutes=<minutes>`;
+2. a variable of the environment that decides it for the harness (Claude Code: `CLAUDE_CODE_PROMPT_CACHE_TTL`,
+   `FORCE_PROMPT_CACHING_5M`, `ENABLE_PROMPT_CACHING_1H`) - one's own choice: the harness follows it, run-ai sets
+   nothing;
+3. what the last run of the conversation with this harness asked for: a conversation keeps its lifetime, since a
+   provider writes the whole conversation again when the lifetime changes - choose it when the conversation starts;
+4. on a key - a gateway that sends one - the key `prompt_cache_minutes` of the config `task-run-ai`: 60 when it is not
+   there, `0` to leave it to the harness;
+5. else - a run on the harness's own login, also through a gateway that passes the login on - the harness decides.
+
+Every run says which it is, under the gateway's line:
+
+```
+        prompt cache: 60 min - the default of a run on a key (cx config set task-run-ai --meta.prompt_cache_minutes=<minutes> changes it, 0 leaves it to the harness)
+        prompt cache: 5 min - the flag --prompt_cache_minutes
+        prompt cache: 5 min - the conversation keeps what its last run asked for (--prompt_cache_minutes changes it)
+        prompt cache: the harness decides (a run on its own login)
+```
+
+- **A lifetime is one the harness takes, never rounded.** Claude Code takes 5 or 60: `--prompt_cache_minutes=30`
+  stops the run and names them, before anything is written. So does such a value in the config.
+- **A harness is told the way its own task declares, by its version.** `run-claude` has the block `prompt_cache` in
+  its `_desc.yaml`: the ways, the newest first, each with the first version that has it. Claude Code 2.1.243 and later
+  takes the setting `promptCacheTtl`, which goes into the session's `--settings`; 2.1.108 to 2.1.242 takes one
+  lifetime for the whole session through a variable; an older one cannot be told, so the flag is an error for it. The
+  version is the one the program itself reports, since Claude Code updates itself in place.
+- **A flag wins over one's own variables**: they are not passed on to the session, and the run says which.
+- **A harness whose task declares no way keeps its own lifetime** - Codex, OpenCode and the others today. The flag is
+  an error for it; this machine's default is simply not applied.
+- **It is the lifetime of the session's own conversation.** What a harness starts beside it (Claude Code's subagents)
+  keeps the harness's own.
+- **Where it is kept:** the run record (`prompt cache`), the run in the conversation (`prompt_cache_minutes`), the
+  answer of the task (`prompt_cache_minutes`, `prompt_cache_from`) and the run reference a gateway of one's own is
+  sent (`cache_minutes`). The line "the harness's prompt cache is probably still warm" of the next run reads the
+  lifetime the last run asked for.
+- **Which to choose.** The long lifetime pays when the requests of one conversation are often more than 5 minutes
+  apart: a person who reads and answers, a command that runs for ten minutes, a wait for a background task. The short
+  one is cheaper for a run that is one uninterrupted loop. With the 1-hour cache Claude Code (2.1.314 and later, on a
+  key too) also summarises a long conversation that is left idle, shortly before its cache would expire - its own
+  setting `idleCompaction`, on by default.
+
+`cx task run run-claude --prompt_cache_minutes=<5|60>` sets it for a run of that task alone; there nothing is set
+without the flag.
+
+## The screen and the auto-compact window: `--main_screen`, `--autocompact`
+
+```bat
+cxai --main_screen                  rem the harness on the terminal's main screen: what it shows stays in the history
+cxai --main_screen=no               rem the harness's own choice, also in a terminal that asks for the main screen
+cxai --autocompact=400k             rem the harness summarises its conversation at 400k tokens (auto: its own window)
+```
+
+**The screen.** A harness on the terminal's alternate screen (Claude Code's fullscreen renderer, Codex's TUI) redraws
+its window in place: nothing it shows reaches the history one scrolls back to. What an interactive run asks for, in
+this order: the flag; else the terminal itself (`CMETA_NO_ALT_SCREEN`: every session of `/ai.sessions` sets it, and the
+page adds `--main_screen` to the run-ai lines of the sessions this machine holds); else the key `main_screen` of the
+config `task-run-ai`; else the harness's own setting. The harness tasks keep claude (its classic renderer), codex
+(`--no-alt-screen`) and hermes (`--native` with `--tui`) there; another harness is said to have no known way. A prompt
+run has no screen. The header says it (`screen: main - the flag --main_screen`), the run record and the conversation's
+run entry (`main_screen`) keep it.
+
+**The auto-compact window.** The size at which the harness summarises its conversation: every request reads the whole
+conversation again, so a smaller window makes each one cheaper - and summarises more. The flag, else the key
+`autocompact` of the config `task-run-ai` (not set or `0`: the harness's own window). A harness is told the way its
+task declares (the block `autocompact` of its `_desc.yaml`): run-claude gives Claude Code its own `--autocompact` from
+version 2.1.304 (at least 100k tokens; an older one cannot be told: an error). A value below the harness's
+`min_tokens`, or a harness whose task declares no way, stops the run before anything is written (the config is then
+not applied). The header, the run record and the conversation's run entry (`autocompact`) say what was asked.
+
+**The harness's own settings in the run reference.** After the run's own settings (`cache_minutes`, `mode`, ...)
+`CMETA_AI_RUN` carries `screen`, `autocompact` and what the harness itself is set to - the block `run_settings` of its
+task's `_desc.yaml` names its settings file (`CLAUDE_CONFIG_DIR`, `CODEX_HOME` when set), the keys read there and the
+variables of the run's environment, each with its key in the reference (`h_compact`, `h_idle_compact`, `h_sub_cache`,
+`h_effort`, `h_tui`, `h_sub_effort`, ...). Nothing else of the file is read; a value is cut at 40 characters. So a
+gateway of one's own that keeps the reference can compare requests by the settings they were made under.
 
 ## Signing a harness in: `--login`, `--login_status`
 
@@ -993,6 +1097,8 @@ In the repository's hermetic suite (`tests/cmeta_aops_basic_tests/`; no network,
 | File | What it covers |
 |---|---|
 | `test_run_ai_pending.py` | the proposals and the guard, on plain folders |
+| `test_run_ai_screen_compact.py` | `--main_screen` and `--autocompact`: where each decision comes from, Claude Code's window by its version, the settings of Claude Code and Codex a run records (nothing else of their files) |
+| `test_run_ai_prompt_cache.py` | `--prompt_cache_minutes`: what a run asks for and where that comes from, what Claude Code is told by its version, the run's settings in the run reference |
 | `test_run_ai_context.py` | the `--context` entries, cRef matching, the `ai_uses` values, this machine's mapping, the seed, folder names with brackets, the harnesses and their model lists |
 | `test_run_ai_conversations.py` | the conversation files, how each harness starts and resumes a session, the Claude and Gemini session readers, the transcript, the hand-over |
 | `test_run_ai_engine.py` | the task through the engine with a stand-in harness that calls no model: records, conversations, context sources, the config artifact, the seed, the write modes, proposals and the guard end to end |

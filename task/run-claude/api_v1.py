@@ -9,6 +9,10 @@ import re
 import subprocess
 import time
 
+import yaml
+
+from cmeta.utils.common import compare_versions
+
 from task_c36be4b9314a45e0.api.ctask import InitCTask, prompt_via_file, prompt_via_file_done, drop_provider_variables, gateway_into_environment, choose_gateway, main_screen, NO_ALT_SCREEN
 
 # Suffix appended to the prompt file name (without extension) when
@@ -105,6 +109,144 @@ def _with_settings(flags, add):
     return ['--settings', json.dumps(dict(given, **add))] + out, ''
 
 
+# The version each program answered with in this process ({its path: version or ''}): asked once
+_VERSIONS = {}
+
+
+def _program_version(claude_path):
+    """
+    The version the program itself reports ("2.1.330 (Claude Code)" -> "2.1.330"), or '' when it cannot be asked.
+    Claude Code updates itself in place, so the version cMeta's tool set-up recorded is not always the one that runs:
+    the program is asked, once per process.
+    """
+    key = claude_path or 'claude'
+    if key not in _VERSIONS:
+        version = ''
+        try:
+            out = subprocess.run([key, '--version'], capture_output=True, text=True, timeout=30).stdout.strip()
+            if out[:1].isdigit():
+                version = out.split()[0]
+        except Exception:
+            pass
+        _VERSIONS[key] = version
+    return _VERSIONS[key]
+
+
+# How long the provider keeps the prompt cache of a conversation (--prompt_cache_minutes). What Claude Code can be
+# told, and how, is declared in the block prompt_cache of this task's _desc.yaml, by version.
+PROMPT_CACHE_KEY = 'prompt_cache'
+
+
+def prompt_cache_ways():
+    """The ways of `prompt_cache` in this task's _desc.yaml, the newest first. Claude Code that changes how it is told
+    gets a way ADDED there; the ways that exist stay, for the machines that still run an older version."""
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml'), encoding='utf-8') as f:
+        declared = (yaml.safe_load(f) or {}).get(PROMPT_CACHE_KEY)
+    ways = declared.get('ways') if isinstance(declared, dict) else None
+    return [w for w in ways if isinstance(w, dict)] if isinstance(ways, list) else []
+
+
+def prompt_cache_way(ways, version):
+    """
+    The way Claude Code of this version is told how long its prompt cache lives -> (the way, a note), or (None, why
+    there is none). `ways`: the newest first; the first whose `since` is not above the version is taken (no `since`:
+    every version). A version that is not known, or that cMeta does not compare, takes the newest way and the note
+    says so. A version below every `since` knows no way.
+    """
+    if not ways:
+        return None, 'this task declares no way to tell Claude Code how long its prompt cache lives'
+    if not version:
+        return ways[0], 'the version of Claude Code is not known: the newest way of setting its prompt cache is used'
+    for way in ways:
+        since = str(way.get('since') or '')
+        if not since:
+            return way, ''
+        r = compare_versions(str(version), since)
+        if r.get('return'):
+            return ways[0], 'the version of Claude Code (%s) is not one cMeta compares: the newest way of setting its prompt cache is used' % str(version)[:40]
+        if r['comparison'] in ('>', '='):
+            return way, ''
+    return None, 'Claude Code %s cannot be told how long its prompt cache lives (from version %s on)' % (
+        str(version)[:40], str(ways[-1].get('since'))[:40])
+
+
+def prompt_cache_request(minutes, version, ways=None):
+    """
+    What makes Claude Code of this version keep the prompt cache of its conversation for `minutes`:
+    {'return': 0, 'minutes': <int>, 'way': <its name>, 'settings': {<key of Claude Code's settings>: <its word>},
+    'env': {<variable>: <value>}, 'drops': [<variables that would decide in its place>], 'note': ''} - or
+    {'return': 1, 'error': ...} for a lifetime Claude Code does not take (it takes the ones the way lists, nothing
+    between) or a version that has no way.
+    """
+    try:
+        minutes = int(str(minutes).strip())
+    except ValueError:
+        return {'return': 1, 'error': '--prompt_cache_minutes takes a number of minutes, not "%s"' % str(minutes)[:40]}
+    if minutes <= 0:
+        return {'return': 1, 'error': '--prompt_cache_minutes takes a number of minutes above 0, not %d' % minutes}
+
+    way, note = prompt_cache_way(prompt_cache_ways() if ways is None else ways, version)
+    if way is None:
+        return {'return': 1, 'error': '--prompt_cache_minutes=%d: %s' % (minutes, note)}
+
+    declared = way.get('minutes') if isinstance(way.get('minutes'), dict) else {}
+    takes = {int(k): v for k, v in declared.items() if str(k).isdigit() and isinstance(v, dict)}
+    if minutes not in takes:
+        return {'return': 1, 'error': '--prompt_cache_minutes=%d: Claude Code keeps its prompt cache for %s minutes, nothing between' % (
+            minutes, ' or '.join(str(k) for k in sorted(takes)))}
+
+    what = takes[minutes]
+    return {'return': 0, 'minutes': minutes, 'way': str(way.get('name') or ''),
+            'settings': dict(what.get('settings') or {}),
+            'env': {str(k): str(v) for k, v in (what.get('env') or {}).items()},
+            'drops': [str(x) for x in (way.get('drops') or [])], 'note': note}
+
+
+AUTOCOMPACT_KEY = 'autocompact'
+
+
+def autocompact_tokens(value):
+    """An auto-compact window as given -> ('auto' or the tokens as a number in text, '') or ('', why it is not one):
+    auto; tokens, with k or M (400k, 1.2M); a plain number under 1000 is thousands, as Claude Code itself takes it
+    ("200 as shorthand"); at least 100k."""
+    text = str(value or '').strip()
+    if text.lower() == 'auto':
+        return 'auto', ''
+    m = re.match(r'^(\d+(?:\.\d+)?)([kKmM]?)$', text)
+    if not m:
+        return '', '"%s" - auto, or a number of tokens such as 400k or 400000' % text[:40]
+    n = float(m.group(1)) * {'': 1, 'k': 1000, 'K': 1000, 'm': 1000000, 'M': 1000000}[m.group(2)]
+    if not m.group(2) and n < 1000:
+        n *= 1000
+    if n < 100000:
+        return '', '%s tokens - Claude Code takes at least 100k' % format(int(n), ',d')
+    return str(int(n)), ''
+
+
+def autocompact_request(value, version, ways=None):
+    """
+    What makes Claude Code of this version take the auto-compact window `value` -> {'return': 0, 'value': <auto or
+    tokens>, 'way': <its name>, 'flags': [...], 'note': ''} or {'return': 1, 'error': ...} (a value it does not take,
+    a version that has no way).
+    """
+    tokens, why = autocompact_tokens(value)
+    if why:
+        return {'return': 1, 'error': '--autocompact: %s' % why}
+    if ways is None:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml'), encoding='utf-8') as f:
+            declared = (yaml.safe_load(f) or {}).get(AUTOCOMPACT_KEY)
+        ways = declared.get('ways') if isinstance(declared, dict) else None
+        ways = [w for w in ways if isinstance(w, dict)] if isinstance(ways, list) else []
+    way, note = prompt_cache_way(ways, version)
+    if way is None:
+        return {'return': 1, 'error': '--autocompact: %s' % note.replace('how long its prompt cache lives', 'its auto-compact window')
+                .replace('of setting its prompt cache', 'of setting its auto-compact window')}
+    if not way.get('flag'):
+        return {'return': 1, 'error': '--autocompact: the way "%s" of this task names no flag' % way.get('name')}
+    return {'return': 0, 'value': tokens, 'way': str(way.get('name') or ''), 'flags': [str(way['flag']), tokens],
+            'note': note.replace('of setting its prompt cache', 'of setting its auto-compact window')}
+
+
 def _agent_generator(claude_path, flags):
     """
     The CMETA_GENERATOR record of a claude session: the agent and its version, and the model and
@@ -112,13 +254,9 @@ def _agent_generator(claude_path, flags):
     """
     from task_c36be4b9314a45e0.api.ctask import GENERATOR_VIA_KEY, generator_via
     rec = {'method': 'agent', 'agent': 'Claude Code', GENERATOR_VIA_KEY: generator_via()}
-    try:
-        out = subprocess.run([claude_path or 'claude', '--version'], capture_output=True, text=True,
-                             timeout=30).stdout.strip()
-        if out[:1].isdigit():
-            rec['agent'] = 'Claude Code ' + out.split()[0]
-    except Exception:
-        pass
+    version = _program_version(claude_path)
+    if version:
+        rec['agent'] = 'Claude Code ' + version
     model = _flag_value(flags, '--model')
     if model:
         rec['model'] = model
@@ -191,6 +329,8 @@ class CTask(InitCTask):
             gateway: str = '',              # an ai.gateway alias (a company's gateway, a llama.cpp server, ...) or "login"; empty: this machine's config, else login
             gw: str = '',                   # the short form of --gateway: bare = the configured gateway, -gw=<alias>
             ln: bool = False,               # the tool's own login, whatever the config says
+            prompt_cache_minutes: int = 0,  # how long the provider keeps the prompt cache of the conversation: 5 or 60 minutes; 0: nothing is set, claude decides (1 hour on a subscription, 5 minutes on a key)
+            autocompact: str = '',          # the auto-compact window: auto, or tokens such as 400k (at least 100k); not given: claude's own
             unparsed: list = None,          # extra flags for claude (everything after "--")
     ):
 
@@ -243,6 +383,17 @@ class CTask(InitCTask):
         file, else a temporary file removed after the run - and the session is asked
         to read it first: it then follows it and stays interactive as before.
 
+        With "prompt_cache_minutes", claude is told how long the model's provider keeps
+        the prompt cache of the conversation: a request that comes later than that
+        after the one before pays for the whole conversation again. By itself claude
+        asks for 1 hour on a Claude subscription and for 5 minutes on a key (an API
+        key, a gateway, Bedrock, Vertex, Foundry). What claude can be told, and how, is
+        in the block "prompt_cache" of this task's _desc.yaml, by its version - asked
+        of the program itself, since claude updates itself in place. The setting goes
+        into the session's --settings, and the variables of the environment that would
+        decide in its place do not reach the session. A lifetime claude does not take,
+        or a version that cannot be told, is an error; nothing is touched without it.
+
         Args:
             ctx (dict): cMeta context.
             prompt (str): Prompt text (appended after the prompt file text).
@@ -262,6 +413,8 @@ class CTask(InitCTask):
                 defaults (the repository of this task, then the "agent_add_repos" key of the local cMeta
                 config) are added whenever plugged in; "none" adds nothing. Each becomes "--add-dir <path>"
                 with the path resolved by cMeta.
+            prompt_cache_minutes (int): How long the provider keeps the prompt cache of the conversation, in
+                minutes (5 or 60); 0 sets nothing.
             unparsed (list): Extra flags passed to claude (everything after "--").
 
         Returns:
@@ -278,6 +431,7 @@ class CTask(InitCTask):
                 - **stats** (dict): Raw "result" event of claude (usage, cost, ...) if `stats`.
                 - **tokens** (dict): Sent/output/total tokens and cost in USD if `stats`.
                 - **stats_file** (str): Where the statistics were recorded ('' if none).
+                - **prompt_cache_minutes** (int): The lifetime of the prompt cache claude was told, if `prompt_cache_minutes`.
         """
 
         self.logger.debug("RUNNING TASK run")
@@ -400,6 +554,44 @@ class CTask(InitCTask):
                 extra_flags, err = _with_settings(extra_flags, gwc['claude_settings'])
                 if err:
                     return self.cm.error(f'AI gateway {gwc["gateway"]}: {err}', 1)
+
+        # how long the provider keeps the prompt cache of this conversation (--prompt_cache_minutes): what the
+        # installed claude takes for it (prompt_cache of _desc.yaml) goes into the session's one --settings; what it
+        # sets or drops in the environment is applied to the session alone, just before it starts (below)
+        cache = None
+        if prompt_cache_minutes:
+            cache = prompt_cache_request(prompt_cache_minutes, _program_version(claude_path))
+            if cache['return'] > 0:
+                return self.cm.error(cache['error'], 1)
+            if cache['settings']:
+                extra_flags, err = _with_settings(extra_flags, cache['settings'])
+                if err:
+                    return self.cm.error(f'--prompt_cache_minutes: {err}', 1)
+            if con:
+                print ('')
+                how = ', '.join([f'{k} {v} in --settings' for k, v in cache['settings'].items()] +
+                                [f'{k}={v}' for k, v in cache['env'].items()])
+                gone = [x for x in cache['drops'] if x in os.environ]
+                print (f'{space}INFO: prompt cache: {cache["minutes"]} minutes ({how})'
+                       + (f'; {", ".join(gone)} of the environment not passed on' if gone else ''))
+                if cache['note']:
+                    print (f'{space}      {cache["note"]}')
+
+        # the auto-compact window (--autocompact): claude's own option, by its version (autocompact of _desc.yaml);
+        # one given after "--" as well is a conflict, not a choice made here
+        compact = None
+        if str(autocompact or '').strip():
+            if '--autocompact' in extra_flags or any(str(x).startswith('--autocompact=') for x in extra_flags):
+                return self.cm.error('--autocompact is given twice: as a flag of the task and after "--"', 1)
+            compact = autocompact_request(autocompact, _program_version(claude_path))
+            if compact['return'] > 0:
+                return self.cm.error(compact['error'], 1)
+            extra_flags = extra_flags + compact['flags']
+            if con:
+                print ('')
+                print (f'{space}INFO: autocompact: {compact["value"]} ({" ".join(compact["flags"])})')
+                if compact['note']:
+                    print (f'{space}      {compact["note"]}')
 
         # cMeta repositories -> "--add-dir <path>": Claude Code reads their CLAUDE.md, AGENTS.md and skills.
         # Portable: the alias is resolved here, on this machine, through cMeta's own registry.
@@ -524,6 +716,15 @@ class CTask(InitCTask):
         if not os.environ.get('CMETA_GENERATOR'):
             os.environ['CMETA_GENERATOR'] = json.dumps(_agent_generator(claude_path, extra_flags))
 
+        # The session's environment: this process's own (None), unless the prompt cache is set by a way that sets or
+        # drops variables - then a copy for the session alone, so that nothing of it stays in this process
+        session_env = None
+        if cache and (cache['env'] or [x for x in cache['drops'] if x in os.environ]):
+            session_env = dict(os.environ)
+            for name in cache['drops']:
+                session_env.pop(name, None)
+            session_env.update(cache['env'])
+
         # The run's duration, on the monotonic clock: the wall clock can be set while it runs
         start_time = time.monotonic()
 
@@ -535,7 +736,7 @@ class CTask(InitCTask):
 
         if interactive:
             try:
-                returncode = subprocess.call(cmd)
+                returncode = subprocess.call(cmd, env=session_env)
             except KeyboardInterrupt:
                 returncode = 1
             except Exception as e:
@@ -553,15 +754,20 @@ class CTask(InitCTask):
                     print (f'{space}INFO: claude exited with return code {returncode}')
                 print (f'{space}Duration: {duration:.1f} sec')
 
-            return {'return':0,
-                    'output': '',
-                    'output_file': '',
-                    'prompt': full_prompt,
-                    'long_prompt_file': pr['file'],
-                    'returncode': returncode,
-                    'duration': duration,
-                    'interactive': True,
-                    'stats_file': ''}
+            result = {'return':0,
+                      'output': '',
+                      'output_file': '',
+                      'prompt': full_prompt,
+                      'long_prompt_file': pr['file'],
+                      'returncode': returncode,
+                      'duration': duration,
+                      'interactive': True,
+                      'stats_file': ''}
+            if cache:
+                result['prompt_cache_minutes'] = cache['minutes']
+            if compact:
+                result['autocompact'] = compact['value']
+            return result
 
         ###########################################################################################
         # Non-interactive: run claude on the prompt and collect everything it prints
@@ -576,6 +782,7 @@ class CTask(InitCTask):
                 encoding = 'utf-8',
                 errors = 'replace',
                 bufsize = 1,
+                env = session_env,
             )
         except Exception as e:
             return self.cm.error(f'cannot run "{claude_path}": {e}', 1)
@@ -633,6 +840,10 @@ class CTask(InitCTask):
             'return_code': returncode,
             'output_file': output_file,
         }
+        if cache:
+            run_info['prompt_cache_minutes'] = cache['minutes']
+        if compact:
+            run_info['autocompact'] = compact['value']
 
         info_lines = [
             f'task: {run_info["task"]}',
@@ -726,6 +937,9 @@ class CTask(InitCTask):
             result['tokens'] = self._get_tokens(run_stats)
 
         result['stats_file'] = stats_file
+
+        if cache:
+            result['prompt_cache_minutes'] = cache['minutes']
 
         return result
 
@@ -838,7 +1052,8 @@ class CTask(InitCTask):
                 try:
                     with open(found[0], encoding='utf-8') as f:
                         meta = yaml.safe_load(f) or {}
-                    alias = str(meta.get('artifact', '')).split(',')[0].strip()
+                    name = self.cm.utils.names.parse_cmeta_name(str(meta.get('artifact', ''))).get('name') or {}
+                    alias = name.get('alias') or name.get('uid') or ''      # an alias may hold commas: a UID only follows the last one
                     if alias:
                         defaults.append(alias)
                 except Exception:

@@ -18,6 +18,14 @@ import time
 import uuid
 
 from cmeta import CMeta
+from cmeta.utils.names import parse_cmeta_name
+
+
+def name_alias(name):
+    """The alias of a cMeta name (alias, UID or alias,UID), else its UID: an alias may hold commas - only a UID after
+    the last one is cut."""
+    parsed = parse_cmeta_name(str(name)).get('name') or {}
+    return parsed.get('alias') or parsed.get('uid') or str(name).strip()
 
 
 def checked(result):
@@ -68,7 +76,7 @@ def instance_state(cm, categories, profile):
     if not reference:
         return None
     kind, sep, alias = str(reference).partition('::')
-    if not sep or kind.split(',')[0] != 'state' or '/' in alias or '\\' in alias:
+    if not sep or name_alias(kind) != 'state' or '/' in alias or '\\' in alias:
         raise ValueError('state must name a root state artifact, e.g. state::local:website-<site>')
     artifact = checked(cm.access(dict(category=categories['state'], command='get', arg1=alias, con=False)))['artifact']
     path = Path(artifact['path']).resolve()
@@ -292,7 +300,7 @@ def find(cm, categories, reference, default='task'):
     kind, sep, alias = str(reference).partition('::')
     if not sep:
         kind, alias = default, str(reference)
-    kind = kind.split(',')[0]
+    kind = name_alias(kind)
     result = checked(cm.access(dict(category=categories[kind], command='find', arg1=alias, con=False)))
     if len(result['artifacts']) != 1:
         raise ValueError('Expected one artifact: ' + reference)
@@ -353,7 +361,7 @@ def bootstrap(cm, request):
     root, profile = Path(request['root']), request['profile']
     checked(cm.repos.init())
     for item in profile.get('repositories', []):
-        name = item['name'].split(',')[0]
+        name = name_alias(item['name'])
         if name in ('local', '.', '..') or '/' in name or '\\' in name:
             raise ValueError('Invalid bootstrap repository name: ' + name)
         destination = contained(root / 'repos', name)

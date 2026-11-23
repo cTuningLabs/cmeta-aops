@@ -275,6 +275,96 @@ def ask(question, how='-q (--quiet) to take the default answers', optional=False
             'no_terminal': True}
 
 
+def pins(ctx):
+    """
+    A copy of the pins of a run: what "--use.<storage key>.<param>=<value>" (and the machine's own defaults, the key
+    "use" of config::task) put into ctx['tasks']['use'] - the versions and settings the outermost command line asks of
+    the sub-tasks, by their storage keys.
+
+    How the pins reach the tasks a task starts (the three ways a task starts another one):
+
+      1. A sub-task of the SAME STACK (its tools must agree with the caller's: a tool set up for the run, a compiler):
+         the caller's context itself - {'ctx': ctx, ...} in the call. The pins reach it, a tool already chosen in this
+         run is the same one for it (ctx['tasks']['global'], by storage key: in one run a storage key is one choice -
+         a second request that asks another version gets the first choice, and the engine says so), and what it adds
+         to the run's environment is seen by the caller. The engine gives the caller back its own params, local
+         values and control afterwards - also when the sub-task fails.
+
+      2. A RUN OF ITS OWN in this process (one variant of an exploration, one host of many, a sub-run whose tools
+         must not be taken from the caller's): no ctx in the call. It starts as an outermost run - nothing the
+         caller or an earlier variant chose is seen by it - and the engine gives it the pins the caller's run was
+         given, below its own "use": {'use': {<storage key>: {'version': ...}}} is what a variant adds or changes.
+         Nothing to hand on by hand (before 2026-11-23: {'use': pins(ctx)} - still right, and no longer needed).
+
+      3. A run in ANOTHER PROCESS, here or on another host (cx host run, a pod, a Slurm job, a container): the pins
+         as words of its command line - use_words(run_pins(ctx)) after "cx task run <task>" / "cx program run
+         <program>". The machine's own defaults are not sent: every machine, and every process, reads its own.
+
+    This function gives everything in force (for a record, a message); what is handed on is run_pins(ctx).
+    """
+    import copy
+
+    return copy.deepcopy((((ctx or {}).get('tasks') or {}).get('use')) or {})
+
+
+def run_pins(ctx):
+    """
+    A copy of the pins GIVEN FOR THIS RUN - by the command line's --use.<storage key>.<param>=<value> and by the callers'
+    "use" - without the machine's own defaults (the key "use" of config::task, which pins(ctx) holds too): what goes
+    with a sub-run on another machine, which has defaults of its own (a path of this machine's Python means nothing
+    there). The task engine keeps them in ctx['tasks']['use_run'].
+
+    Asking for them says that they go with a run the engine of this process does not see: the engine then does not
+    judge, at the end of the outermost run, which pins no task took (ctx['tasks']['pins_not_judged']).
+    """
+    import copy
+
+    tasks = (ctx or {}).get('tasks') if isinstance(ctx, dict) else None
+    given = (tasks or {}).get('use_run') or {}
+    if given and isinstance(tasks, dict):
+        tasks['pins_not_judged'] = True
+    return copy.deepcopy(given)
+
+
+def use_words(use):
+    """
+    The pins of a run (a dict as pins(ctx) gives it) as the command line words that make them again:
+    {'python': {'version': '3.12'}, 'nvcc': {'with': {'debug': True}}} -> ['--use.python.version=3.12',
+    '--use.nvcc.with.debug'] - what the engine's command line reads back into the same dict (key=value: the value as
+    text, typed by the task that takes it; a key alone: True; "key-": False; "key,=a,b": a list). The words are not
+    quoted: a caller that builds a shell line quotes each one. ValueError for what a command line cannot carry (a key
+    with a dot, "=", "," or a space; a list item with a comma; a value that is not text, a number, a switch or a list).
+    """
+    words = []
+
+    def walk(prefix, value):
+        for key, v in value.items():
+            key = str(key)
+            if not key or any(c in key for c in '.=, \t\n') or key.endswith('-'):
+                raise ValueError(f'the pin key "{key}" (under {prefix}) cannot be written on a command line')
+            name = f'{prefix}.{key}'
+            if isinstance(v, dict):
+                walk(name, v)
+            elif v is None:
+                continue
+            elif v is True:
+                words.append(name)
+            elif v is False:
+                words.append(name + '-')
+            elif isinstance(v, (list, tuple)):
+                items = [str(x) for x in v]
+                if any(',' in x for x in items) or not all(isinstance(x, (str, int, float)) and not isinstance(x, bool) for x in v):
+                    raise ValueError(f'the pin {name} is a list a command line cannot carry: {v!r}')
+                words.append(f'{name},={",".join(items)}')
+            elif isinstance(v, (str, int, float)):
+                words.append(f'{name}={v}')
+            else:
+                raise ValueError(f'the pin {name} is a {type(v).__name__}: a command line cannot carry it')
+
+    walk('--use', use or {})
+    return words
+
+
 def folder_as_named(named, base=None):
     """
     The current directory under the name the request gave it.
@@ -321,7 +411,7 @@ GENERATOR_VIA_KEY = 'via'
 
 
 AI_RUN_ENV = 'CMETA_AI_RUN'      # set by run-ai for the harness it starts: the run it belongs to (run-ai's RUN_REF_ENV)
-UID16 = re.compile(r'^[0-9a-f]{16}$')
+UID16 = re.compile(r'^[0-9a-fA-F]{16}$')     # a cMeta UID: 16 hex digits in either case (kept in lower case)
 
 
 def ai_run_record(harness=''):
@@ -347,7 +437,7 @@ def ai_run_record(harness=''):
     if sep:
         cu, au = cat.split(',')[-1].strip(), art.split(',')[-1].strip()
         if UID16.match(cu) and UID16.match(au):
-            run['project'] = cu + '::' + au
+            run['project'] = cu.lower() + '::' + au.lower()
     for k in ('conversation', 'run'):
         if fields.get(k):
             run[k] = fields[k]

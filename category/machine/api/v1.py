@@ -12,6 +12,7 @@ Declared in _desc.yaml by hand (the layout is in ../README.md).
 import os
 
 from cmeta.category import InitCategory
+from cmeta.utils.names import parse_cmeta_name
 
 DESC_FILE = '_desc.yaml'
 
@@ -56,7 +57,7 @@ class Category(InitCategory):
         rows = []
         for m in machines:
             d = m['desc']
-            hosts = by_machine.get(m['alias'], [])
+            hosts = self._hosts_of(by_machine, m)
             rows.append([m['alias'], str(d.get('owner', '-')), str(d.get('kind', '-')),
                          'retired' if d.get('retired') is True else '-',
                          str(d.get('model') or d.get('name') or '-'), str(d.get('acquired', '-')),
@@ -74,7 +75,7 @@ class Category(InitCategory):
             if not rows:
                 print('no machines' + (' match' if (arg1 or tags or owner or kind) else ' yet'))
 
-        return {'return': 0, 'machines': [{'alias': m['alias'], 'desc': m['desc'], 'hosts': by_machine.get(m['alias'], []),
+        return {'return': 0, 'machines': [{'alias': m['alias'], 'desc': m['desc'], 'hosts': self._hosts_of(by_machine, m),
                                           'retired': m['desc'].get('retired') is True,
                                           'status': 'retired' if m['desc'].get('retired') is True else '-'}
                                           for m in machines]}
@@ -105,7 +106,7 @@ class Category(InitCategory):
 
         r = self._hosts_by_machine(ctx)
         if self.cm.catch_error(r): return r
-        hosts = r['by_machine'].get(m['alias'], [])
+        hosts = self._hosts_of(r['by_machine'], m)
 
         if con:
             import yaml
@@ -146,7 +147,8 @@ class Category(InitCategory):
         return {'return': 0, 'machines': machines}
 
     def _hosts_by_machine(self, ctx):
-        """{machine alias: [host aliases]} from the host artifacts' "machine:" references."""
+        """{machine alias (its UID for a reference by UID alone): [host aliases]} from the host artifacts' "machine:"
+        references."""
         r = self.cm.access({'category': self.cmeta['uses_categories']['host'], 'command': 'find', 'con': False})
         if r['return'] > 0 and r['return'] != 16: return r
 
@@ -159,10 +161,17 @@ class Category(InitCategory):
             ref = str((rr.get('data') or {}).get('machine') or '')
             if not ref: continue
             if '::' in ref: ref = ref.split('::')[-1]
-            ref = ref.split(',')[0].strip()
+            # an alias may hold commas: only a UID after the last one is cut
+            name = parse_cmeta_name(ref).get('name') or {}
+            ref = name.get('alias') or name.get('uid') or ref.strip()
             parts = a.get('cmeta_ref_parts', {})
             by_machine.setdefault(ref, []).append(parts.get('artifact_alias') or parts.get('artifact_uid'))
 
         for k in by_machine:
             by_machine[k].sort()
         return {'return': 0, 'by_machine': by_machine}
+
+    @staticmethod
+    def _hosts_of(by_machine, m):
+        """The hosts of a machine of _select, named by its alias or by its UID alone."""
+        return sorted(set(by_machine.get(m['alias'], []) + by_machine.get(m.get('uid') or '', [])))

@@ -236,9 +236,10 @@ def find_or_create_entry(cm, cache_category, alias, uid, identity):
     if rr['return'] > 0:
         return rr
     meta = rr.get('meta') or {}
-    entry_uid = meta.get('artifact') or (name.split(',')[-1] if ',' in name else None)
-    return {'return': 0, 'path': rr['path'], 'alias': name.split(',')[0], 'uid': entry_uid, 'params': params,
-            'created': True, 'adopted': False}
+    # the name made: a program's alias may hold commas, so only a UID after the last one is the UID
+    made = cm.utils.names.parse_cmeta_name(name).get('name') or {}
+    return {'return': 0, 'path': rr['path'], 'alias': made.get('alias'), 'uid': meta.get('artifact') or made.get('uid'),
+            'params': params, 'created': True, 'adopted': False}
 
 
 def resolved_of(record_resolved):

@@ -53,10 +53,12 @@ def read(path):
 # ---------------------------------------------------------------------------------------------- names
 def test_stage_key_is_the_alias_and_the_uid():
     assert P.stage_key(LABEL) == "shared-rules--0a1b2c3d4e5f6a7b"
-    assert P.stage_key("task,1234::_Check pages: now and then, again,abcd") == "_Check-pages-now-and-then-again--abcd"
+    assert P.stage_key("task,1234::_Check pages: now and then, again,abcdef0123456789") == "_Check-pages-now-and-then-again--abcdef0123456789"
+    # an alias may hold commas: what follows the last one is the UID only when it is one (16 hex digits)
+    assert P.stage_key("task,1234::_Check pages: now and then, again,abcd") == "_Check-pages-now-and-then-again-abcd"
     assert P.stage_key("tool::plain") == "plain"                              # no UID known
     assert P.stage_key("", os.path.join("x", "My Folder")) == "My-Folder"   # no cRef at all: the folder name
-    assert P.stage_key("c,1::...,77") == "artifact--77"                       # nothing usable in the alias
+    assert P.stage_key("c,1::...,77ab77ab77ab77ab") == "artifact--77ab77ab77ab77ab"     # nothing usable in the alias
 
 
 # ---------------------------------------------------------------------------------------------- the guard

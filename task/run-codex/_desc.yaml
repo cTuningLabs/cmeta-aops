@@ -71,3 +71,16 @@ uses:
   # Detect / install the "codex" tool and expose {{global.codex.path}}
   - task: setup,a2f9b61079ce4333
     name: codex,cdbf5f6e6882460f
+
+# What run-ai records of Codex's own settings with every request of a run (the run reference a gateway of one's own
+# keeps): its config.toml (CODEX_HOME when set), these keys only (dotted: a table of it). An older Python than 3.11
+# (no tomllib) records none of them.
+run_settings:
+  file: '~/.codex/config.toml'
+  home_env: CODEX_HOME
+  file_name: config.toml
+  format: toml
+  keys:
+    model_reasoning_effort: h_effort
+    model_auto_compact_token_limit: h_compact
+    tui.alternate_screen: h_alt_screen

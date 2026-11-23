@@ -140,7 +140,8 @@ error handling, with the repo's real idioms.
 - **`tool` (`category/tool/api/v1.py`)**: `setup`/`run` re-dispatch into `task`.
   `tool setup X` → task `setup,a2f9b61079ce4333 --name=X`; `tool run X -- <args>`
   sets X up then runs task `cmd,c9ba0a88df394d7f` (dynamic-lib paths folded into
-  `env['+PATH'/'+LD_LIBRARY_PATH'/...]`). A **tool artifact's `_desc.yaml`** describes
+  `env['+PATH'/'+LD_LIBRARY_PATH'/...]`; on the command line the `+` stays in front of the variable,
+  `--env.+PATH=<dir>` - `--env.PATH+=<dir>` is a list and would replace `PATH`). A **tool artifact's `_desc.yaml`** describes
   detection/install: `names:`, `match_version:`/`cmd_get_version:`,
   `install_cmd:`/`install_cmd_version:` (per OS, templated with `{{global....}}`),
   `extra_paths:`, `requires_sudo:`.

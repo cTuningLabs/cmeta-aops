@@ -20,7 +20,17 @@ import threading
 import time
 import uuid
 
+from cmeta.utils.names import parse_cmeta_name
+
 from task_c36be4b9314a45e0.api.ctask import InitCTask
+
+
+def host_label(ref):
+    """A host for a person: the alias of host::<alias>,<UID> (an alias may hold commas: only a UID after the last one
+    is cut), else its UID."""
+    text = str(ref).split('::')[-1]
+    name = parse_cmeta_name(text).get('name') or {}
+    return name.get('alias') or name.get('uid') or text.strip()
 
 
 def duration_text(seconds):
@@ -702,7 +712,7 @@ class CTask(InitCTask):
         sides = []
         for word, side in (('the source', plan['source']), ('the destination', plan['destination'])):
             if side['remote']:
-                sides.append({'where': str(side.get('host')).split('::')[-1].split(',')[0], 'host': side.get('host'),
+                sides.append({'where': host_label(side.get('host')), 'host': side.get('host'),
                               'root': side['path'][len(':sftp:'):],
                               'dest': posixpath.join(moved['remote_art'], run_id) if moved.get('remote_art') else ''})
             else:
@@ -974,7 +984,7 @@ class CTask(InitCTask):
                     except (OSError, subprocess.TimeoutExpired) as exc:
                         error = str(exc)
             failed = [r for r in t['repos'] if r not in ok]
-            where = (str(t['host']).split('::')[-1].split(',')[0] + ':' if t['remote'] else '') + t['home']
+            where = (host_label(t['host']) + ':' if t['remote'] else '') + t['home']
             done.append({'side': t['side'], 'home': t['home'], 'host': t['host'], 'ok': ok, 'failed': failed,
                          'error': error, 'elapsed': round(time.monotonic() - began, 1)})
             if con:

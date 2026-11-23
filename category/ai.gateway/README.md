@@ -112,6 +112,13 @@ the command line), OpenCode through its provider's `headers`. A gateway without 
 vendor's - is never sent it, and outside run-ai (no `CMETA_AI_RUN`) nothing is sent. The server should take the header
 out of what it passes on.
 
+After those three, run-ai names what the run was started with, in the same form and in the order of what matters most
+(a server may keep only the first pairs): `cache_minutes` - the lifetime of the prompt cache the run asked for -,
+`mode`, `cmeta` and `aops` (the versions of the engine and of cmeta-aops), `context` (the estimated tokens of what
+run-ai hands the harness), `harness`, `model`, `effort`, `write`, `resumed`, `uses` and `host`; a setting without a
+value is left out. A key is lower-case letters and `_`, at most 16. The lines of such a server can then be compared
+by the settings their requests were made under.
+
 ## A gateway that asks its clients for a key: `client_key`
 
 A gateway server of one's own reached over a network (another machine of a tailnet, say) can let in only the machines

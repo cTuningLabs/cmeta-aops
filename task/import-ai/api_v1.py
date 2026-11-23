@@ -220,7 +220,7 @@ class CTask(InitCTask):
         stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
 
         # the artifact's alias: its part of the cRef without the UID (an alias may contain commas itself)
-        alias = re.sub(r',[0-9a-f]{16}$', '', cref.split('::', 1)[1]) if cref else os.path.basename(path)
+        alias = re.sub(r'\s*,\s*[0-9a-fA-F]{16}$', '', cref.split('::', 1)[1].strip()) if cref else os.path.basename(path)
 
         mem_items = self._split(memories)
         skill_items = self._split(skills)

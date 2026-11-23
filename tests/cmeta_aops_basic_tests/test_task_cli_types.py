@@ -250,6 +250,12 @@ def test_the_value_options_of_a_task(cm):
     values = module.value_params_of(run_, {'a': {'type': 'str', 'bare': 'choose from a list'}, 'h': {'type': 'str', 'bare': 'x'}})
     assert sorted(values) == ['b', 'd', 'f']
 
+    # a list described in cli_params takes a value (one whole item; more with --key+=), an annotation list does not
+    def run_list(self, ctx, m: list = None, **kw):
+        pass
+
+    assert sorted(module.value_params_of(run_list, {'n': {'type': 'list'}, 'o': 'list'})) == ['n', 'o']
+
     ctx = {'origin': {'cli': {'cmd': ['tool', 'setup', 'nvcc', '--version', '-q', '--a-b', '--x=1', '--l,', '--', '--z']}}}
     assert module.cli_flags(ctx) == {'version', 'q', 'a_b'}
 

@@ -76,9 +76,11 @@ def stage_key(label, root=''):
     if '::' in (label or ''):
         art = label.split('::', 1)[1]
         alias, _, uid = art.rpartition(',') if ',' in art else (art, '', '')
+        if uid.strip() and not re.fullmatch(r'[0-9a-fA-F]{16}', uid.strip()):
+            alias, uid = art, ''            # an alias may hold commas: a UID only follows the last one
     alias = alias or os.path.basename(os.path.normpath(root or '')) or 'artifact'
     alias = re.sub(r'[^A-Za-z0-9._-]+', '-', alias.strip()).strip('-.') or 'artifact'
-    uid = re.sub(r'[^A-Za-z0-9]+', '', uid.strip())
+    uid = re.sub(r'[^A-Za-z0-9]+', '', uid.strip()).lower()
     return ('%s--%s' % (alias, uid)) if uid else alias
 
 

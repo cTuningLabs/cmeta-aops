@@ -18,6 +18,15 @@ configs:
           reuse)'
         type: yes/no
         default: 'false'
+      reuse_conflict:
+        desc: 'what the task engine does when a storage key that is already chosen in a run is asked again with another
+          version (in one run a storage key is one choice: the first result is used, whatever the request asks). warn -
+          the run says it and keeps it in its context (ctx.tasks.reuse_conflicts); all - any other parameter asked
+          differently is said too; error - the run stops (an exploration: a variant must not run another version than
+          the one it names); ignore - nothing. --use.init.reuse_conflict=<word> for one run, CMETA_REUSE_CONFLICT for
+          a process'
+        default: warn
+        example: error
       cache_repos.<key>:
         desc: 'the repository that keeps the cache entries, and their files, of the data tasks whose cache_repo_key is
           <key>: portable, shared with the instances and the other hosts (such a task ignores file_cache);

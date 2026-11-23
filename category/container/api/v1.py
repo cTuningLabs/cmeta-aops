@@ -44,6 +44,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -55,6 +56,7 @@ import urllib.request
 import webbrowser
 
 from cmeta.category import InitCategory
+from cmeta.utils.names import parse_cmeta_name
 
 CATEGORY_ALIAS = 'container'
 TASK_CATEGORY = 'task,c36be4b9314a45e0'
@@ -518,9 +520,10 @@ class Category(InitCategory):
             path = arts[0]['path']
             alias = os.path.basename(os.path.normpath(path))
             meta = arts[0].get('meta') or {}
-            art = str(meta.get('artifact', '') or '')
-            if ',' in art:
-                alias = art.split(',')[0].strip() or alias
+            # the alias of alias,UID - it may hold commas: only a UID after the last one is cut
+            name = parse_cmeta_name(str(meta.get('artifact', '') or '')).get('name') or {}
+            if name.get('alias') and name.get('uid'):
+                alias = name['alias']
             return {'return': 0, 'path': path, 'alias': alias}
         if len(arts) > 1:
             return self._err(f'--repo: "{ref}" matches {len(arts)} repositories - use alias,UID (cx repo find {ref})')
@@ -834,8 +837,7 @@ class Category(InitCategory):
                     if rt['return'] > 0:
                         return rt
                     copy_files.append({'src': rt['tar'], 'dst': f'repos/{rr["alias"]}.tar.gz', 'sha256': rt['sha256']})
-                    lines.append(f'COPY --chown={user} repos/{rr["alias"]}.tar.gz /tmp/repo.tar.gz')
-                    lines.append(f'RUN mkdir -p {cmeta["home"]}/repos/{rr["alias"]} && tar -xzf /tmp/repo.tar.gz -C {cmeta["home"]}/repos/{rr["alias"]} && rm -f /tmp/repo.tar.gz')
+                    lines += self._bake_lines(user, cmeta['home'], rr['alias'])
                 if lines:
                     lines.append('RUN cx --reindex >/dev/null')
                 clone_block = '\n'.join(lines)
@@ -1039,6 +1041,17 @@ class Category(InitCategory):
             for chunk in iter(lambda: f.read(1 << 20), b''):
                 h.update(chunk)
         return {'return': 0, 'tar': tar_path, 'sha256': h.hexdigest(), 'checkout': root}
+
+    @staticmethod
+    def _bake_lines(user, home, alias):
+        """The Containerfile lines that unpack a repository copied into the image (--copy_repo). An alias may hold
+        spaces and commas: COPY then takes its archive in the JSON form and RUN its folder quoted for the shell (a
+        plain alias gives the lines as before)."""
+        tar = f'repos/{alias}.tar.gz'
+        copy = json.dumps([tar, '/tmp/repo.tar.gz']) if re.search(r'\s', tar) else f'{tar} /tmp/repo.tar.gz'
+        folder = f'{home}/repos/' + shlex.quote(alias)
+        return [f'COPY --chown={user} {copy}',
+                f'RUN mkdir -p {folder} && tar -xzf /tmp/repo.tar.gz -C {folder} && rm -f /tmp/repo.tar.gz']
 
     def _tar_repo(self, path, alias):
         """--copy_repo: tar a cMeta repository of this machine (without .git, caches, venvs) for the build context."""

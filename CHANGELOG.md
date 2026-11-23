@@ -2,6 +2,97 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.81.0
+- **run-ai: `--main_screen` and `--autocompact`.** `--main_screen` keeps the harness on the terminal's main screen, so
+  that what it shows stays in the history one scrolls back to: the flag, else the terminal's own request
+  (`CMETA_NO_ALT_SCREEN`), else the key `main_screen` of the config `task-run-ai`; `--main_screen=no` leaves it to the
+  harness. `--autocompact=<auto|tokens>` (or the key `autocompact`) sets the size at which the harness summarises its
+  conversation, the way its task declares by version: run-claude gives Claude Code its own `--autocompact` from
+  2.1.304 (at least 100k). A harness whose task declares no way refuses the flag and is not given the default.
+- **The run reference carries the harness's own settings.** After `screen` and `autocompact`, the keys and variables
+  that the block `run_settings` of the harness task's `_desc.yaml` names (run-claude: Claude Code's auto-compact
+  window, idle compaction, the subagents' cache lifetime and effort, its renderer; run-codex: its effort,
+  auto-compact limit and alternate screen) - nothing else of their settings files.
+- **Aliases with commas and spaces, wherever aops reads a name.** A name is split at its LAST comma, and the part
+  after it is the UID only when it is one (16 hex digits in either case, kept in lower case); otherwise the whole text
+  is the alias (`Kim Doe, joined Example Co, 20260922,5ca1ab1e5ca1ab1e`) - as the engine reads it
+  (`utils.names.parse_cmeta_name`, in every release). What took the text before the first comma reads the whole alias
+  now: a host's `via:` and `machine:` (a parent host with such an alias was not found; `cx machine ls/show` listed no
+  hosts for such a machine, and now also lists those that name it by UID alone), the dataset of an output check and
+  the tool of `cx tool setup --sizes` (the engine's `artifact_au` is an alias or a UID, never cut now), the models a
+  running llama.cpp server is taken to serve, the default `--on_screen` session, the alias of a new build entry, the
+  repository of a project in `local_ai_uses`, the repository run-claude adds, a repository mounted or copied into a
+  container and one a project bootstraps, the category of a cRef with or without its UID (`state`, `result`, `cache`,
+  `website`, `task`, `secret`, `host`, `sync`), the hosts and steps that sync and the project scripts name, and the
+  folder of a used artifact under `!AI/pending`. `run-openssh --keys` also takes `;` as its separator when the text
+  holds one: each part is then one item and a reference keeps its commas (`--keys="secret::a, b,<UID>;laptop.pub"`,
+  one alone with a `;` after it); a list separated by commas reads as before. `test-on-hosts` keeps a YAML list of hosts as a
+  list. The generated `___sync_all.bat`/`.sh` and the Containerfile lines of `--copy_repo` quote such a name for their
+  shell (a caret, which cmd.exe's `call` cannot pass, is refused). Plain aliases and `alias,UID` read as before.
+  Tests: `test_comma_aliases.py`.
+- **A task parameter described `type: list` in `cli_params` takes a value.** With cMeta 0.45.3 one plain value of such
+  a parameter is one whole item (`--x="a, b; c"` -> `['a, b; c']`) and more come with `--x+=<value>`; a bare `--x`
+  now says that it needs a value, as one of type str does. An annotation `list` of `run()` is not read, as before; an
+  older engine leaves the value a text.
+- **`cx tool run <tool> --env.+PATH=<dir>` for a tool with library folders.** The run puts the folders of the tool's
+  dynamic libraries in front of `+PATH` (`+LD_LIBRARY_PATH`, `+DYLD_LIBRARY_PATH`) with `.insert` - on the text the
+  command line gives for `--env.+PATH=<dir>` (AttributeError). The text is now read as its folders (split at
+  `os.pathsep`, as the engine reads a `+` variable), after the tool's own; a list (`--env.+PATH+=<dir>`, cMeta 0.45.3)
+  or a tuple is kept (`add_dynamic_lib_paths` of category/tool/api/v1.py; `test_tool_run_env.py`). AGENTS.md,
+  task-engine.md, tool-abstraction.md and the add-tool skill say how the command line writes it: the `+` in front of
+  the variable; `--env.PATH+=<dir>` is a list and would replace `PATH`.
+- **run-ai: `--prompt_cache_minutes`, how long the provider keeps the prompt cache of a conversation.** A request that
+  comes later than that after the one before pays for the whole conversation again, and a harness on a key asks for the
+  short lifetime by itself. Without the flag a run on a key (a gateway that sends one) asks for the key
+  `prompt_cache_minutes` of the config `task-run-ai` - 60 when it is not there, `0` to leave it to the harness; a run on
+  the harness's own login is left to the harness, and so is one whose environment already holds the harness's own
+  variable for it. A continued conversation keeps the lifetime its last run asked for (a provider writes a whole
+  conversation again when its lifetime changes). A lifetime the harness does not take stops the run (never rounded).
+  The header of a run, its record, the conversation and the answer of the task say what was asked and where it came
+  from; the "probably still warm" line of the next run reads it.
+- **run-claude: `--prompt_cache_minutes=<5|60>`**, and how Claude Code is told, by its version: the block
+  `prompt_cache` of the task's `_desc.yaml` - the setting `promptCacheTtl` in the session's `--settings` from 2.1.243,
+  a variable for the whole session from 2.1.108, an error before. The version is the one the program reports (it
+  updates itself in place, so the tool cache's version can be behind). One's own variables that would decide in the
+  flag's place are not passed on to the session. Without the flag nothing changes.
+- **The run reference names what a run was started with.** After the project, the conversation and the run,
+  `CMETA_AI_RUN` carries `cache_minutes`, `mode`, `cmeta`, `aops`, `context`, `harness`, `model`, `effort`, `write`,
+  `resumed`, `uses` and `host`, so that a gateway of one's own that asks for the reference (`run_header`) can keep the
+  settings of a run with every line. The three first fields and every reader of them are as before.
+- **run-ai declares its two limits of the context estimate as no secrets.** `max_context_tokens` (config
+  `task-run-ai`) and the older `run_ai_max_context_tokens` (config `default`) are counts of tokens: only their names
+  made the pages of the config keys hide their values. Their `configs` block now says `secret: false`, which an
+  engine that knows the word honours (an older one keeps them hidden); `max_context_tokens` is declared there with
+  its type and default.
+- **`get-host--docker --ports_on=<address>` and UDP ports:** the ports of an instance published on an address of this
+  machine instead of 127.0.0.1 - an explicit exposure (a node of a Kubernetes cluster of machines: the API, the
+  kubelet, VXLAN), recorded with the instance (another address is another instance); `--ports=8472/udp` a UDP port.
+  Without them nothing changes.
+- **The pins of a run reach everything the run starts.** A version asked at the top
+  (`--use.<storage key>.<param>=<value>`) holds for a sub-task of the same stack (the caller's context, as before),
+  for **a run of its own** started inside a task - a call without the caller's context now takes the pins the caller's
+  run was given, below its own `use`, and nothing else of that run - and for a run in another process or on another
+  machine, as words of its command line: `ctask.use_words(ctask.run_pins(ctx))` (a pod, a host, a Slurm job). The
+  engine keeps the pins given for a run apart from the machine's own defaults (`ctx['tasks']['use_run']`): a path of
+  this machine's Python does not travel. `ctask.pins(ctx)` gives everything in force.
+  `CMETA_TASK_INHERIT_PINS=off`: a run of its own takes nothing, as before.
+- **The task engine says what a shared context hides.** In one run a storage key is one choice: a second request gets
+  the first result whatever it asks. When it asks **another version**, the run now says so and keeps it
+  (`ctx['tasks']['reuse_conflicts']`); `reuse_conflict` - a key of `config::task`, `--use.init.reuse_conflict=<word>`
+  for one run, `CMETA_REUSE_CONFLICT` - is `warn` (the default), `all`, `error` (the run stops: an exploration must
+  not measure another version than the one a variant names) or `ignore`. **A pin nothing took** - under a key that is
+  no task's storage key - is said at the end of the outermost run, with the storage keys that did run
+  (`ctx['tasks']['use_unused']`; `CMETA_TASK_UNUSED_PINS=off`). **A sub-task that fails gives its caller's state
+  back** (params, local values, control, the results it took out of the run, the folder), as one that ends well
+  always did (`CMETA_TASK_RESTORE=off`: as before). `docs/cmeta-aops/task-engine.md`: the three ways a task starts
+  another one, and "Exploring versions side by side" - each variant a run of its own, the versions kept as entries of
+  their own and switched by asking, what an exploration leaves for the requests after it, an environment of its own
+  for a variant that changes a Python package. Tests: `test_task_pins.py`, `test_task_isolation.py`.
+- **`set-wsl-network --check=<address> --peers=<addresses>`:** reads, without changing anything, whether other
+  machines reach every port of WSL (mirrored mode) at an address of this machine - through cMeta's rule or a rule of
+  the host merged into Hyper-V's firewall (Tailscale's `Tailscale-In` on the Tailscale address), for the profile of
+  that address' network. A cluster over Tailscale then needs no administrator's prompt.
+
 ## 0.80.0
 - **run-llama-cpp-server: `--mmproj`, a model that reads pictures.** The projector of a vision model (its second GGUF
   file) is served with it: `auto` takes the one the model's file names (`mmproj:` in its `_desc-<file>.yaml`), or a file

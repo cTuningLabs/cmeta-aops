@@ -1657,8 +1657,13 @@ def upgrade_tool(self, ctx, old, **kwargs):
               'changed': False, 'timestamp': now_iso()}
 
     if channel == CHANNEL_NONE and not channels['upgrade_cmd']:
+        from cmeta.utils.names import parse_cmeta_name
+
         hint = ''
-        parents = [u.get('name', '').split(',')[0] for u in desc.get('uses', []) if 'setup' in str(u.get('task', ''))]
+        # the tools it is set up through, by their aliases (an alias may hold commas: only a UID after the last one is cut)
+        names = [parse_cmeta_name(str(u.get('name', ''))).get('name') or {}
+                 for u in desc.get('uses', []) if 'setup' in str(u.get('task', ''))]
+        parents = [n.get('alias') or n.get('uid') or '' for n in names]
         if parents:
             hint = f' - it is set up through {", ".join(p for p in parents if p)}: upgrade that tool instead'
         if con:

@@ -23,6 +23,29 @@ TOOL_CATEGORY = 'tool,c393ba5c6fa14f66'
 UPDATE_STATUS_ORDER = ('behind', 'unknown', 'error', 'ahead', 'current', 'no pin')
 
 
+def add_dynamic_lib_paths(env, key, paths):
+    """
+    The library folders a tool found (`paths`) put in front of the "+" variable `key` of a run's env (+PATH,
+    +LD_LIBRARY_PATH, +DYLD_LIBRARY_PATH), each once -> the list now there. A value the command line gave is a
+    text (--env.+PATH=<dir>): it is read as its folders, separated the way the engine separates them
+    (utils.sys.plus_env: os.pathsep), and stays after the tool's own; a list (--env.+PATH+=<dir>) is kept as it is.
+    """
+    value = env.get(key)
+
+    if isinstance(value, tuple):
+        value = list(value)
+    elif not isinstance(value, list):
+        value = [x for x in str(value if value is not None else '').split(os.pathsep) if x]
+
+    for f in reversed(paths):
+        if f not in value:
+            value.insert(0, f)
+
+    env[key] = value
+
+    return value
+
+
 def glob_pattern_is_safe(pattern):
     """
     Whether a search pattern may be expanded: a pattern without a recursive "**" always; one with it only
@@ -504,15 +527,14 @@ class Category(InitCategory):
 
         if fdlp:
             if uname == 'windows':
-                env_dlib = env.setdefault('+PATH', [])
+                key = '+PATH'
             elif uname == 'darwin':
-                env_dlib = env.setdefault('+DYLD_LIBRARY_PATH', [])
+                key = '+DYLD_LIBRARY_PATH'
             else:
-                env_dlib = env.setdefault('+LD_LIBRARY_PATH', [])
+                key = '+LD_LIBRARY_PATH'
 
-            for f in reversed(fdlp):
-                if f not in env_dlib:
-                    env_dlib.insert(0, f)
+            # a folder of the command line (--env.+PATH=<dir>) arrives as a text: read as a list of its folders
+            add_dynamic_lib_paths(env, key, fdlp)
 
 
         pp['arg1'] = self.cmeta['uses_artifacts']['tool::cmd']
