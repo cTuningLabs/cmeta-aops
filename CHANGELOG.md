@@ -3,6 +3,24 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.80.0.1)
+- **run-ai: `--prompt_cache_minutes`, how long the provider keeps the prompt cache of a conversation.** A request that
+  comes later than that after the one before pays for the whole conversation again, and a harness on a key asks for the
+  short lifetime by itself. Without the flag a run on a key (a gateway that sends one) asks for the key
+  `prompt_cache_minutes` of the config `task-run-ai` - 60 when it is not there, `0` to leave it to the harness; a run on
+  the harness's own login is left to the harness, and so is one whose environment already holds the harness's own
+  variable for it. A continued conversation keeps the lifetime its last run asked for (a provider writes a whole
+  conversation again when its lifetime changes). A lifetime the harness does not take stops the run (never rounded).
+  The header of a run, its record, the conversation and the answer of the task say what was asked and where it came
+  from; the "probably still warm" line of the next run reads it.
+- **run-claude: `--prompt_cache_minutes=<5|60>`**, and how Claude Code is told, by its version: the block
+  `prompt_cache` of the task's `_desc.yaml` - the setting `promptCacheTtl` in the session's `--settings` from 2.1.243,
+  a variable for the whole session from 2.1.108, an error before. The version is the one the program reports (it
+  updates itself in place, so the tool cache's version can be behind). One's own variables that would decide in the
+  flag's place are not passed on to the session. Without the flag nothing changes.
+- **The run reference names what a run was started with.** After the project, the conversation and the run,
+  `CMETA_AI_RUN` carries `cache_minutes`, `mode`, `cmeta`, `aops`, `context`, `harness`, `model`, `effort`, `write`,
+  `resumed`, `uses` and `host`, so that a gateway of one's own that asks for the reference (`run_header`) can keep the
+  settings of a run with every line. The three first fields and every reader of them are as before.
 - **`get-host--docker --ports_on=<address>` and UDP ports:** the ports of an instance published on an address of this
   machine instead of 127.0.0.1 - an explicit exposure (a node of a Kubernetes cluster of machines: the API, the
   kubelet, VXLAN), recorded with the instance (another address is another instance); `--ports=8472/udp` a UDP port.

@@ -21,6 +21,7 @@ where the last run stopped, with any harness and any model.
     cxt run-ai --list_models                               # the same for every harness, compact
     cxt run-ai --dry_run                                   # the project, its !AI, the conversation and the command - nothing runs
     cxt run-ai -w "..."                                    # no questions, write anywhere - also the used artifacts' memory (--write=all)
+    cxt run-ai --prompt_cache_minutes=60                   # ask the provider to keep the prompt cache for an hour (claude: 5 or 60)
     cxt run-ai --pending                                  # the changes staged for the artifacts this project uses (ai_uses)
     cxt run-ai --apply_pending                             # show each of them and apply it on your word
 
@@ -106,6 +107,11 @@ What a run may write is one switch: --write=ask|project|all|none, -w for "all", 
     all      the same, and the memory and skills of the used artifacts may be changed directly - run-ai lists the
              changes, records them in the artifact and keeps the versions before the run in !AI/log/<stamp>.before/
     none     read-only: the harness runs in its plan / read-only mode (claude, codex, opencode, agy, gemini)
+
+How long the model's provider keeps the prompt cache of the conversation is one number: --prompt_cache_minutes, and
+the key "prompt_cache_minutes" of the config "task-run-ai" as this machine's default for a run on a key (60 when it is
+not there; 0: the harness's own). A harness is told the way its task declares (the block prompt_cache of the
+_desc.yaml of run-claude); a run on the harness's own login is left to the harness (_prompt_cache).
 
 Everything else - the prompt, --prompt_file, -i, --yes, --stats, --reproducible, --add_repos (claude) and the
 flags after "--" - goes to run-<harness> unchanged. The task engine changes into the project folder for the
@@ -202,18 +208,35 @@ CONFIG_MAX_TOKENS_KEY = 'run_ai_max_context_tokens'
 # 10 minutes, up to an hour off-peak - 10 taken; the others when known)
 CACHE_TTL_MINUTES = {'claude': 5, 'codex': 10}
 
+# How long the provider is asked to keep the prompt cache of a run's conversation (--prompt_cache_minutes). A harness
+# that can be told declares how in the block "prompt_cache" of its task's _desc.yaml (run-claude does). Without the
+# flag: a run on a key takes the config key below (60 when it is not there; 0: the harness's own lifetime), since a
+# harness on a key asks for the short lifetime by itself; a run on the harness's own login is left to the harness.
+PROMPT_CACHE_KEY = 'prompt_cache'
+CONFIG_PROMPT_CACHE_KEY = 'prompt_cache_minutes'
+DEFAULT_PROMPT_CACHE_MINUTES = 60
+
+# The keys a gateway's line can keep of a run reference: lower-case letters and "_", at most 16 (the reader of the
+# gateway server, which also keeps only so many pairs - the first ones, so the order below is by what matters most)
+RUN_REF_KEY = re.compile(r'^[a-z_]{1,16}$')
+
 
 def _truthy(value):
     """A flag or a config value as it arrives (True, "true", "1", "yes", "on"; a missing value is False)."""
     return value is True or str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
 
 
-def run_reference(project, conversation, stamp):
+def run_reference(project, conversation, stamp, settings=None):
     """The run a request belongs to, for a gateway that asks for it: "project=<cRef>;conversation=<id>;run=<stamp>",
-    each value percent-encoded (a header carries no spaces or other letters than ASCII safely)."""
+    each value percent-encoded (a header carries no spaces or other letters than ASCII safely) - then, when given,
+    what the run was started with (`settings`: (key, value) pairs in the order they are to be kept - the lifetime of
+    its prompt cache, its mode, the versions of cMeta and of this repository, ...), so that a gateway's lines say
+    under which settings a request was made. A pair without a value, or with a key a gateway's line cannot keep,
+    is left out."""
     import urllib.parse
     parts = [('project', project), ('conversation', conversation), ('run', stamp)]
-    return ';'.join('%s=%s' % (k, urllib.parse.quote(str(v), safe=':,@./_-')) for k, v in parts if v)
+    parts += [(str(k), v) for k, v in (settings or []) if RUN_REF_KEY.match(str(k)) and str(k) not in ('project', 'conversation', 'run')]
+    return ';'.join('%s=%s' % (k, urllib.parse.quote(str(v), safe=':,@./_-')) for k, v in parts if v not in (None, ''))
 
 
 def _bare_flag(value):
@@ -1155,7 +1178,13 @@ class CTask(InitCTask):
             return ''
         ttl = CACHE_TTL_MINUTES.get(CONV.harness_key(harness))
         text = 'last turn %s ago' % ('%.0f min' % minutes if minutes < 120 else '%.1f h' % (minutes / 60))
-        if ttl:
+
+        # the lifetime that run itself asked for (--prompt_cache_minutes, recorded with it) says more than the table
+        asked = runs[-1].get(CONFIG_PROMPT_CACHE_KEY)
+        if isinstance(asked, int) and not isinstance(asked, bool) and asked > 0 and runs[-1].get('harness') == harness:
+            text += '; the harness\'s prompt cache is probably %s (that run asked for %d min)' % (
+                'still warm' if minutes <= asked else 'cold', asked)
+        elif ttl:
             text += '; the harness\'s prompt cache is probably %s (TTL %d min%s)' % (
                 'still warm' if minutes <= ttl else 'cold', ttl, ', 60 with extended caching' if CONV.harness_key(harness) == 'claude' else '')
         return text
@@ -1452,6 +1481,110 @@ class CTask(InitCTask):
         its address - what a key's gateway takes away (the claude.ai connectors) is not said of it."""
         row = self._gateway_row(alias)
         return bool(row) and str(row.get('auth') or '').split(' ')[0] == 'login'
+
+    def _versions(self):
+        """The versions a run is made with -> {'cmeta': the engine's, 'aops': this repository's (its _cmr.yaml)}; '' for
+        one that cannot be read."""
+        try:
+            import cmeta
+            engine = str(getattr(cmeta, '__version__', '') or '')
+        except Exception:
+            engine = ''
+        return {'cmeta': engine, 'aops': str(self._repo_meta(os.path.dirname(os.path.abspath(__file__))).get('version') or '')}
+
+    def _harness_prompt_cache(self, task_ref):
+        """How the harness of this task is told how long its prompt cache lives: the block "prompt_cache" of the
+        task's _desc.yaml as {'minutes': [the lifetimes its ways take], 'variables': [the variables of the environment
+        that decide it for the harness]}, or None for a harness whose task declares none."""
+        path = self._artifact_path(TASK_CATEGORY, task_ref)
+        block = self._read_desc(path).get(PROMPT_CACHE_KEY) if path else None
+        ways = block.get('ways') if isinstance(block, dict) else None
+        ways = [w for w in ways if isinstance(w, dict)] if isinstance(ways, list) else []
+        if not ways:
+            return None
+        minutes, variables = set(), []
+        for way in ways:
+            takes = way.get('minutes') if isinstance(way.get('minutes'), dict) else {}
+            for k, what in takes.items():
+                if str(k).isdigit():
+                    minutes.add(int(k))
+                for name in ((what or {}).get('env') or {}) if isinstance(what, dict) else {}:
+                    if str(name) not in variables:
+                        variables.append(str(name))
+            for name in way.get('drops') or []:
+                if str(name) not in variables:
+                    variables.append(str(name))
+        return {'minutes': sorted(minutes), 'variables': variables}
+
+    def _prompt_cache(self, harness, task_ref, asked, on_key, environ=None, kept=0):
+        """
+        How long the provider is asked to keep the prompt cache of this run's conversation
+        -> (minutes, or 0 when the harness is left to decide; where that came from; an error text or '').
+
+          asked     --prompt_cache_minutes (0 or nothing: not given)
+          on_key    the run goes through a gateway with a key: a harness then asks for the short lifetime by itself
+          kept      what the last run of this conversation with this harness asked for (0: nothing, or a new conversation)
+
+        In this order: the flag; a variable of the environment that decides it for the harness (the user's own: the
+        harness follows it, nothing is set); what the conversation's last run asked for - a provider writes a whole
+        conversation again when its lifetime changes, so a conversation keeps the one it has; on a key, the key
+        prompt_cache_minutes of the config task-run-ai (60 when it is not there, 0: leave it to the harness); else
+        the harness decides. A harness whose task declares no way (the block prompt_cache of its _desc.yaml): a
+        lifetime given by the flag is an error, a default is not applied. A lifetime none of the harness's ways
+        takes is an error wherever it came from - it is never rounded.
+        """
+        environ = os.environ if environ is None else environ
+        declared = self._harness_prompt_cache(task_ref)
+
+        def minutes_of(value, where):
+            try:
+                n = int(str(value).strip())
+            except ValueError:
+                return 0, '%s takes a number of minutes, not "%s"' % (where, str(value)[:40])
+            if n < 0:
+                return 0, '%s takes a number of minutes, not %d' % (where, n)
+            if n and declared and n not in declared['minutes']:
+                return 0, '%s=%d: %s keeps its prompt cache for %s minutes, nothing between' % (
+                    where, n, harness, ' or '.join(str(m) for m in declared['minutes']))
+            return n, ''
+
+        if asked not in (None, '', 0, False):
+            n, err = minutes_of(asked, '--' + CONFIG_PROMPT_CACHE_KEY)
+            if err:
+                return 0, '', err
+            if n and not declared:
+                return 0, '', ('--%s: run-ai knows no way to tell the harness "%s" how long its prompt cache lives (the task %s '
+                               'declares none in a block %s of its _desc.yaml) - leave the flag out' % (
+                                   CONFIG_PROMPT_CACHE_KEY, harness, task_ref.split(',')[0], PROMPT_CACHE_KEY))
+            if n:
+                return n, 'the flag --%s' % CONFIG_PROMPT_CACHE_KEY, ''
+
+        if not declared:
+            return 0, 'the harness decides (run-ai knows no setting of %s for it)' % harness, ''
+
+        own = [name for name in declared['variables'] if environ.get(name)]
+        if own:
+            return 0, 'the harness follows %s of the environment' % ', '.join(own), ''
+
+        if isinstance(kept, int) and not isinstance(kept, bool) and kept in declared['minutes']:
+            return kept, 'the conversation keeps what its last run asked for (--%s changes it)' % CONFIG_PROMPT_CACHE_KEY, ''
+
+        if not on_key:
+            return 0, 'the harness decides (a run on its own login)', ''
+
+        value = self._run_ai_config().get(CONFIG_PROMPT_CACHE_KEY)
+        if value in (None, ''):
+            if DEFAULT_PROMPT_CACHE_MINUTES not in declared['minutes']:
+                return 0, 'the harness decides (%s takes no lifetime of %d minutes, the default of a run on a key)' % (
+                    harness, DEFAULT_PROMPT_CACHE_MINUTES), ''
+            return DEFAULT_PROMPT_CACHE_MINUTES, ('the default of a run on a key (cx config set %s --meta.%s=<minutes> changes it, '
+                                                  '0 leaves it to the harness)' % (CONFIG_ARTIFACT, CONFIG_PROMPT_CACHE_KEY)), ''
+        n, err = minutes_of(value, 'the config %s %s' % (CONFIG_ARTIFACT, CONFIG_PROMPT_CACHE_KEY))
+        if err:
+            return 0, '', err
+        if not n:
+            return 0, 'the harness decides (config %s %s is 0)' % (CONFIG_ARTIFACT, CONFIG_PROMPT_CACHE_KEY), ''
+        return n, 'config %s %s (a run on a key)' % (CONFIG_ARTIFACT, CONFIG_PROMPT_CACHE_KEY), ''
 
     def _gateway_flags(self, ctx, harness, gateway, gw, ln, gw_default, gw_unset, con, dry_run = False):
         """The flags of a run that say which gateway, before the choice is made: --gw_unset (this machine's default
@@ -1861,6 +1994,7 @@ class CTask(InitCTask):
             ai_dir: str = AI_DIR,           # the folder inside the project that holds the agent's memory and records
             model: str = '',                # the model in the harness's own names, or "<model>,<effort>" (--list_models shows them)
             effort: str = '',               # the reasoning effort, in the harness's vocabulary (--list_models shows it)
+            prompt_cache_minutes: int = 0,  # how long the model's provider keeps the prompt cache of the conversation, in minutes (claude: 5 or 60); not given: on a key the config key prompt_cache_minutes (60), on the harness's own login the harness decides
             list_models: bool = False,      # list the models and efforts of the harness (of every harness without --harness) and stop
             models: bool = False,           # short alias of "list_models"
             new: bool = False,              # start a new conversation instead of continuing the latest one
@@ -1952,6 +2086,12 @@ class CTask(InitCTask):
         if not self._artifact_path(TASK_CATEGORY, task_ref):
             return self.cm.error('no task "%s" for the harness "%s" - the known harnesses are %s (any other <x> needs a task run-<x>)' % (
                 task_ref, harness, ', '.join(h for h in HARNESSES if h != 'agy')))
+
+        # a lifetime of the prompt cache that cannot be asked for (the flag's, or this machine's default) stops the run
+        # here, before anything is written; which one applies is decided with the gateway, below
+        c_err = self._prompt_cache(harness, task_ref, prompt_cache_minutes, True)[2]
+        if c_err:
+            return self.cm.error(c_err)
 
         # an interactive session is what the user wants when there is no prompt at all
         interactive = bool(interactive or i) or not (prompt or prompt_file)
@@ -2299,6 +2439,22 @@ class CTask(InitCTask):
         if gateway_name != 'login' and hk == 'claude' and not self._gateway_own_login(gateway_name):
             notes.append('the claude.ai connectors (HubSpot, Microsoft 365, ...) are unavailable in a gateway session - -ln for a login session')
 
+        # how long the provider is asked to keep the prompt cache of this conversation: the flag; else, on a key -
+        # where a harness asks for the short lifetime by itself - this machine's default; else the harness decides
+        on_key = gateway_name != 'login' and not self._gateway_own_login(gateway_name)
+        kept = 0
+        if conv is not None and conv_how == 'continued':
+            # the lifetime this conversation has: what its last run with this harness asked for
+            for earlier in reversed(conv.get('runs') or []):
+                if CONV.harness_key(str(earlier.get('harness') or '')) == hk:
+                    kept = earlier.get(CONFIG_PROMPT_CACHE_KEY) or 0
+                    break
+        cache_minutes, cache_from, c_err = self._prompt_cache(harness, task_ref, prompt_cache_minutes, on_key, kept=kept)
+        if c_err:
+            self._release_stamp(stamp_lock, stamp_made)
+            return self.cm.error(c_err)
+        cache_asked = ('%d min - %s' % (cache_minutes, cache_from)) if cache_minutes else cache_from
+
         params = {'prompt': prompt, 'prompt_file': prompt_file, 'interactive': interactive, 'stats': stats}
         if hk in GATEWAY_HARNESSES:
             params['gateway'] = gateway_name        # the harness task connects, or runs as before with login
@@ -2306,6 +2462,8 @@ class CTask(InitCTask):
             return self.cm.error(NO_GATEWAY_SUPPORT % harness)
 
         # only when asked for: not every run-<harness> task has them (run-openclaw has neither)
+        if cache_minutes:
+            params[CONFIG_PROMPT_CACHE_KEY] = cache_minutes
         if forward_yes:
             params['yes'] = True
         if reproducible:
@@ -2523,6 +2681,7 @@ class CTask(InitCTask):
             if model_name or effort_name:
                 print('%s        model:   %s%s' % (space, model_name or '(the harness default)', (', effort ' + effort_name) if effort_name else ''))
             print('%s        gateway: %s' % (space, gateway_line))
+            print('%s        prompt cache: %s' % (space, cache_asked))
             if conv_line:
                 print('%s        %s' % (space, conv_line))
             for n in notes:
@@ -2553,6 +2712,7 @@ class CTask(InitCTask):
                     'conversation': conv['id'] if conv else '', 'conversation_how': conv_how, 'native_session': native_sid,
                     'new_session': new_sid, 'handover': handover, 'skills': [s[0] for s in own_skills], 'plugin_dirs': plugin_dirs,
                     'tokens_estimated': est_total, 'token_limit': limit, 'token_limit_from': limit_from, 'context_depth': context_depth,
+                    'prompt_cache_minutes': cache_minutes, 'prompt_cache_from': cache_from,
                     'params': params, 'flags': extra, 'env': env, 'settings': settings, 'context': sources, 'context_skipped': skipped,
                     'write': write_mode, 'write_from': write_from, 'context_guard': guard_mode, 'notes': notes,
                     'other_runs': other_mode, 'running_elsewhere': [{k: v for k, v in d.items() if not k.startswith('_')} for d in elsewhere],
@@ -2620,6 +2780,8 @@ class CTask(InitCTask):
                          'effort': effort_name, 'prompt': CONV.title_from_prompt(prompt or (('file ' + os.path.basename(prompt_file)) if prompt_file else ''), interactive, stamp),
                          'started': CONV.now_iso(), 'host': CONV.host_name(), 'session': sid_now, 'resumed': bool(native_sid), 'handover': bool(handover),
                          'tokens_estimated': est_total, 'token_limit': limit}
+            if cache_minutes:
+                run_entry[CONFIG_PROMPT_CACHE_KEY] = cache_minutes
             conv.setdefault('runs', []).append(run_entry)
             CONV.save_conversation(conv)
         record = os.path.join(log_dir, '%s.%s.run.md' % (stamp, harness)) if not no_log else ''
@@ -2635,6 +2797,7 @@ class CTask(InitCTask):
                      '| mode | %s |' % ('interactive' if interactive else 'one prompt (-p)'),
                      '| model | %s |' % (('`%s`' % model_name) if model_name else 'the harness default'),
                      '| effort | %s |' % (('`%s`' % effort_name) if effort_name else 'the harness default'),
+                     '| prompt cache | %s |' % cache_asked,
                      '| write | `%s` (%s); context guard `%s` |' % (write_mode, write_from, guard_mode),
                      '| conversation | %s |' % (('`%s` - %s' % (conv['id'], conv_how + (', native resume' if native_sid else (', hand-over' if handover else '')))) if conv else 'none (--no_log)'),
                      '| session | %s |' % (('%s `%s`' % (hk, native_sid or new_sid)) if (native_sid or new_sid) else ('%s: read from its store after the run' % hk if conv else '')),
@@ -2668,7 +2831,16 @@ class CTask(InitCTask):
         # which cMeta artifact and conversation this run is: a gateway of one's own that asks for it (its run_header)
         # is sent it with every request of the harness, so that its lines name the session they belong to (the user,
         # 2026-11-19: "record which working cMeta artifact the run-ai ran from in stats of gateway")
-        env[RUN_REF_ENV] = run_reference(cref or project_path, conv['id'] if conv else '', stamp)
+        # ... and what the run was started with (2026-11-22: "add such cmeta flags and versions to our logs"): the
+        # lifetime of its prompt cache, its mode, the versions of cMeta and of this repository, the size of the context
+        # it is handed - in the order a gateway that keeps only the first pairs should keep them
+        versions = self._versions()
+        env[RUN_REF_ENV] = run_reference(cref or project_path, conv['id'] if conv else '', stamp, [
+            ('cache_minutes', cache_minutes or ''), ('mode', 'interactive' if interactive else 'prompt'),
+            ('cmeta', versions['cmeta']), ('aops', versions['aops']), ('context', est_total),
+            ('harness', harness), ('model', model_name), ('effort', effort_name), ('write', write_mode),
+            ('resumed', 'yes' if native_sid else ('handover' if handover else 'no')), ('uses', len(sources)),
+            ('host', CONV.host_name())])
 
         # 5. run the harness's task inside the project folder (the engine's "path" control: cd there, back afterwards)
         before = CONV.capture_before(harness, project_path)
@@ -2870,7 +3042,8 @@ class CTask(InitCTask):
                'conversation': conv['id'] if conv else '', 'session': (run_entry or {}).get('session', ''), 'transcript': transcript,
                'codex_state': codex_dir or ('home' if hk == 'codex' else ''),
                'write': write_mode, 'write_from': write_from,
-               'context_guard': guard_mode, 'context_changes': guard_records, 'pending': staged_now}
+               'context_guard': guard_mode, 'context_changes': guard_records, 'pending': staged_now,
+               'prompt_cache_minutes': cache_minutes, 'prompt_cache_from': cache_from}
         if scratch:
             out['log_project'] = project_path
         if record_prompt and not no_log and isinstance(rr.get('prompt'), str):
