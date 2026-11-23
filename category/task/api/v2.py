@@ -11,6 +11,8 @@ import copy
 import fnmatch
 import json
 import platform
+import re
+import threading
 from datetime import datetime, timezone
 
 from cmeta.category import InitCategory
@@ -170,6 +172,62 @@ def read_cli_words(cm, ctx, ctx_tasks, task_api_code, cdesc, artifact_alias):
 # The cache attempts begun by the runs of one ctx (id(ctx) -> a stack): released by run() however a run ends
 _CACHE_ATTEMPTS = {}
 
+# The task runs of this thread, innermost last (their contexts). A run started from inside a task without that task's
+# context is a run of its own: it takes the pins the outer run was given, and nothing else (see Category.run).
+_ACTIVE = threading.local()
+
+PLAIN_VERSION = re.compile(r'^\d+(\.\d+)*$')
+
+
+def switched_on(name):
+    """An environment switch of the task engine that is on unless it says off (off, no, false, 0)."""
+    return str(os.environ.get(name, '')).strip().lower() not in ('off', 'no', 'false', '0')
+
+
+def plain(x):
+    """
+    A copy of a request's parameters that a JSON file can hold (a context is written to files: --save, a cache
+    entry): dicts, lists, texts, numbers and switches as they are, a tuple or a set as a list, anything else as its
+    text.
+    """
+    if isinstance(x, dict):
+        return {str(k): plain(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple, set, frozenset)):
+        return [plain(v) for v in x]
+    if x is None or isinstance(x, (str, int, float, bool)):
+        return x
+    return repr(x)[:200]
+
+
+def request_differences(first, now, result = None):
+    """
+    What a request of a storage key asks (now: its parameters) that the FIRST request of that key in the run did not
+    (first): {parameter path: (asked now, asked first)} - only what the new request says itself; what it leaves open is
+    no difference. A version asked now where the first request left it open is no difference when the first result
+    has that version (3.13 for a result 3.13.15), and is not judged when it is no plain number (latest, a range).
+    """
+    out = {}
+
+    def walk(prefix, a, b):
+        for k, v in (a or {}).items():
+            name = f'{prefix}.{k}' if prefix else str(k)
+            old = b.get(k) if isinstance(b, dict) else None
+            if isinstance(v, dict):
+                walk(name, v, old if isinstance(old, dict) else {})
+            elif v is None or v == '' or v == []:
+                continue
+            elif v != old:
+                out[name] = (v, old)
+
+    walk('', now if isinstance(now, dict) else {}, first if isinstance(first, dict) else {})
+    v = out.get('version')
+    if v and v[1] in (None, '', []):
+        asked, have = str(v[0]), str((result or {}).get('version') or '') if isinstance(result, dict) else ''
+        if not PLAIN_VERSION.match(asked) or (have and (have == asked or have.startswith(asked + '.'))):
+            del out['version']
+    return out
+
+
 class Category(InitCategory):
     """
     """
@@ -221,6 +279,29 @@ class Category(InitCategory):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
     ############################################################
+    def _unused_pins(self, ctx, given):
+        """
+        At the end of the outermost run that ended well: the pins given to it (given: the command line's
+        --use.<storage key>.<param>, the "use" of a Python caller - not the machine's own defaults, not what a task
+        of the run pins for its own sub-tasks) whose storage key no task of the run had, the runs of their own it
+        started included. Kept in ctx['tasks']['use_unused'] and said on the console, with the storage keys
+        that did run: a pin under a key that is not a task's storage key changes nothing, silently - the version one
+        believes to test is not the one that ran. Not judged: a run whose pins went to another machine
+        (ctask.run_pins, --on) or that stopped in check_params (help, versions). CMETA_TASK_UNUSED_PINS=off: nothing.
+        """
+        t = ctx.get('tasks') or {}
+        ran = t.get('storage_keys') or {}
+        if not isinstance(given, dict) or not given or not ran or t.get('pins_not_judged'):
+            return
+        unused = sorted(str(k) for k in given if k not in ran)
+        t['use_unused'] = unused
+        if unused and (ctx.get('control') or {}).get('con'):
+            keys = sorted(str(k) for k in ran)
+            for k in unused:
+                print(f'cMeta info: --use.{k} was given, and no task of this run has the storage key "{k}" - the storage keys of this run: '
+                      + ', '.join(keys[:60]) + (f', ... ({len(keys)})' if len(keys) > 60 else ''))
+
+    ############################################################
     def run(
             self,
             params,
@@ -238,15 +319,77 @@ class Category(InitCategory):
         if repro is not None:
             repro['_task_depth'] = repro.get('_task_depth', 0) + 1
 
+        active = getattr(_ACTIVE, 'runs', None)
+        if active is None:
+            active = _ACTIVE.runs = []
+
+        # A run started from inside a task WITHOUT that task's context is a run of its own - nothing the outer run
+        # chose is taken (ctx['tasks']['global']), nothing it chooses is seen there. It still takes the pins the
+        # outer run was given (--use.<storage key>.<param>, a caller's "use"): a version asked at the top holds for
+        # every sub-run, below this call's own "use". Said with -v, kept in ctx['use_inherited'].
+        if isinstance(ctx, dict) and 'tasks' not in ctx and active and switched_on('CMETA_TASK_INHERIT_PINS'):
+            given = ((active[-1].get('tasks') or {}).get('use_run')) or {}
+            own = params.get('use')
+            if given and (own is None or isinstance(own, dict)):
+                # (its own list replaces the list it would take: a caller that hands the pins on by hand gets no item twice)
+                params = dict(params, use = self.cm.utils.common.deep_merge(copy.deepcopy(given), copy.deepcopy(own or {}), append_lists=False))
+                ctx['use_inherited'] = copy.deepcopy(given)
+
+        # A sub-task on the context of a task that runs (the same stack): what it changes there is given back to the
+        # caller when it ends well (_finish_run) - and, since 2026-11-23, when it FAILS too (below): a caller that goes
+        # on after a failure has its own params, local values, control, the results the sub-task took out of the run
+        # to choose its own (preserve_global_keys) and its folder again.
+        # (the outermost run of this thread says, when it ends well, the pins nothing took - _unused_pins)
+        outermost = not active
+        top_use = params.get('use') if outermost else None
+
+        before = None
+        if isinstance(ctx, dict) and any(x is ctx for x in active) and switched_on('CMETA_TASK_RESTORE'):
+            t = ctx.get('tasks') or {}
+            before = ({k: t[k] for k in ('params', 'cparams', 'local') if k in t}, ctx.get('control'),
+                      dict(t.get('global') or {}), os.getcwd())
+        if isinstance(ctx, dict):
+            active.append(ctx)
+
+        failed = True
         try:
             result = self._run(params)
+            failed = not isinstance(result, dict) or result.get('return', 0) > 0
 
             if repro is not None and repro.get('_task_depth') == 1:
                 self._write_repro(ctx, result)
 
+            if outermost and not failed and isinstance(ctx, dict) and switched_on('CMETA_TASK_UNUSED_PINS'):
+                self._unused_pins(ctx, top_use)
+
             return result
 
         finally:
+            if isinstance(ctx, dict) and active and active[-1] is ctx:
+                active.pop()
+
+            # A run of its own that ends: the storage keys it ran are known to the run that started it (a pin of that
+            # one that reached a tool here was taken), and so is a hand-over of the pins to another machine
+            if isinstance(ctx, dict) and active and not any(x is ctx for x in active):
+                mine, up = ctx.get('tasks') or {}, active[-1].setdefault('tasks', {})
+                if mine.get('storage_keys'):
+                    up.setdefault('storage_keys', {}).update(mine['storage_keys'])
+                if mine.get('pins_not_judged'):
+                    up['pins_not_judged'] = True
+
+            if failed and before is not None:
+                t = ctx.setdefault('tasks', {})
+                t.update(before[0])
+                if before[1] is not None:
+                    ctx['control'] = before[1]
+                g = t.setdefault('global', {})
+                for k, v in before[2].items():
+                    g.setdefault(k, v)
+                try:
+                    os.chdir(before[3])
+                except OSError:
+                    pass
+
             if repro is not None:
                 repro['_task_depth'] -= 1
 
@@ -369,8 +512,16 @@ class Category(InitCategory):
                 ctx_use = self.cm.utils.common.deep_merge(copy.deepcopy(defaults), ctx_use, append_lists=True)
                 ctx_tasks['use'] = ctx_use
 
+        if con and verbose and nested_call == 0 and ctx.get('use_inherited'):
+            print(f'{space}PINS: this run is started from inside another one and takes the pins that one was given: {ctx["use_inherited"]}')
+
         if use:
             ctx_use = self.cm.utils.common.deep_merge(ctx_use, copy.deepcopy(use), append_lists=True)
+
+            # The pins given for this run (the command line's --use, a caller's "use") kept apart from the machine's
+            # own defaults above: what goes with a sub-run on ANOTHER machine, whose defaults are its own
+            # (ctask.run_pins - a job in a pod, a command on a host). Nothing reads it in a run's own process.
+            ctx_tasks['use_run'] = self.cm.utils.common.deep_merge(ctx_tasks.get('use_run') or {}, copy.deepcopy(use), append_lists=True)
 
         ###########################################################################################
         # SELECT TASK ARTIFACT
@@ -418,6 +569,8 @@ class Category(InitCategory):
                 if self.cm.catch_error(r_route): return r_route
                 on = r_route['route']
             if on and on != 'here':
+                # (the pins go with the command line: what takes them is seen on that host, not here)
+                ctx_tasks['pins_not_judged'] = True
                 return self._run_on(ctx, params, on, con, quiet, verbose)
             screen_option = params.get('on_screen')
             if screen_option is not None and screen_option is not False and str(screen_option).strip().lower() not in ('false', 'no', 'off', '0'):
@@ -689,6 +842,10 @@ class Category(InitCategory):
 
 
 
+        # (every storage key of the run is kept: at the end of the outermost run a pin whose storage key no task had
+        # is said - _unused_pins)
+        ctx_tasks.setdefault('storage_keys', {})[storage_key] = True
+
         ###########################################################################################
         # UPDATE PARAMS FROM USE BASED ON STORAGE KEY ...
 
@@ -739,6 +896,8 @@ class Category(InitCategory):
 
             if r.get('stop', False):
                 # It's usually done when code should not continue - for example to print versions, help, etc
+                # (no sub-task ran: the pins of such a run are not judged)
+                ctx_tasks['pins_not_judged'] = True
 
                 # Do not aggregate further - already done!
                 rr = self._finish_run(
@@ -821,6 +980,35 @@ class Category(InitCategory):
                 print (f'{space}REUSE: load task result from ctx["tasks"]["global"]["{storage_key}"]')
 
             result = copy.deepcopy(ctx_tasks['global'][storage_key])
+
+            # In one run a storage key is ONE choice: this request gets the first result whatever it asks. When it
+            # asks another version than the first request (or, with reuse_conflict "all", any other parameter), that
+            # is said and kept (ctx['tasks']['reuse_conflicts']): another version needs a storage key or a run of its
+            # own. reuse_conflict of config::task, --use.init.reuse_conflict or CMETA_REUSE_CONFLICT: warn (the
+            # default), all, error, ignore.
+            first_request = (ctx_tasks.get('global_requests') or {}).get(storage_key)
+            if first_request is not None:
+                asked = request_differences(first_request, plain(_params), result)
+                mode = str((ctx_tasks['global'].get('init') or {}).get('reuse_conflict') or os.environ.get('CMETA_REUSE_CONFLICT') or 'warn').strip().lower()
+                if mode not in ('all', 'error', 'ignore'):
+                    mode = 'warn'
+                # (what is said is what is kept: another version - any other parameter too only with "all")
+                told = asked if mode == 'all' else {k: v for k, v in asked.items() if k == 'version'}
+                if told and mode != 'ignore':
+                    record = {'storage_key': storage_key, 'version': result.get('version') if isinstance(result, dict) else None,
+                              'asked': {k: v[0] for k, v in told.items()}, 'first': {k: v[1] for k, v in told.items()}}
+                    conflicts = ctx_tasks.setdefault('reuse_conflicts', [])
+                    new = record not in conflicts
+                    if new:
+                        conflicts.append(record)
+                    text = (f'"{storage_key}" was already chosen in this run' + (f' (version {record["version"]})' if record['version'] else '')
+                            + ' and is used again, though this request asks '
+                            + ', '.join(f'{k}={v[0]}' + (f' (the first request: {v[1]})' if v[1] not in (None, '', []) else '') for k, v in sorted(told.items()))
+                            + ' - in one run a storage key is one choice; another version needs a storage key of its own, or a run of its own')
+                    if mode == 'error' and 'version' in told:
+                        return self.cm.error(text)
+                    if new and con:
+                        print(f'cMeta warning: {text}')
 
             # Dynamic update to result (even if cached)
             if task_api_code is not None and hasattr(task_api_code, 'finish_dynamic_result') and callable(getattr(task_api_code, 'finish_dynamic_result')):
@@ -1471,6 +1659,7 @@ class Category(InitCategory):
                         if storage_key:
                             if store_global:
                                 ctx_tasks['global'][storage_key] = result
+                                ctx_tasks.setdefault('global_requests', {})[storage_key] = plain(_params)
                             else:
                                 ctx_tasks['local'][storage_key] = result
 
@@ -1728,6 +1917,7 @@ class Category(InitCategory):
         if storage_key and store_global:
             if store_global:
                 ctx_tasks['global'][storage_key] = result
+                ctx_tasks.setdefault('global_requests', {})[storage_key] = plain(_params)
             else:
                 ctx_tasks['local'][storage_key] = result
 

@@ -30,6 +30,26 @@ All notable changes to cMeta AOps are documented here, newest first.
   machine instead of 127.0.0.1 - an explicit exposure (a node of a Kubernetes cluster of machines: the API, the
   kubelet, VXLAN), recorded with the instance (another address is another instance); `--ports=8472/udp` a UDP port.
   Without them nothing changes.
+- **The pins of a run reach everything the run starts.** A version asked at the top
+  (`--use.<storage key>.<param>=<value>`) holds for a sub-task of the same stack (the caller's context, as before),
+  for **a run of its own** started inside a task - a call without the caller's context now takes the pins the caller's
+  run was given, below its own `use`, and nothing else of that run - and for a run in another process or on another
+  machine, as words of its command line: `ctask.use_words(ctask.run_pins(ctx))` (a pod, a host, a Slurm job). The
+  engine keeps the pins given for a run apart from the machine's own defaults (`ctx['tasks']['use_run']`): a path of
+  this machine's Python does not travel. `ctask.pins(ctx)` gives everything in force.
+  `CMETA_TASK_INHERIT_PINS=off`: a run of its own takes nothing, as before.
+- **The task engine says what a shared context hides.** In one run a storage key is one choice: a second request gets
+  the first result whatever it asks. When it asks **another version**, the run now says so and keeps it
+  (`ctx['tasks']['reuse_conflicts']`); `reuse_conflict` - a key of `config::task`, `--use.init.reuse_conflict=<word>`
+  for one run, `CMETA_REUSE_CONFLICT` - is `warn` (the default), `all`, `error` (the run stops: an exploration must
+  not measure another version than the one a variant names) or `ignore`. **A pin nothing took** - under a key that is
+  no task's storage key - is said at the end of the outermost run, with the storage keys that did run
+  (`ctx['tasks']['use_unused']`; `CMETA_TASK_UNUSED_PINS=off`). **A sub-task that fails gives its caller's state
+  back** (params, local values, control, the results it took out of the run, the folder), as one that ends well
+  always did (`CMETA_TASK_RESTORE=off`: as before). `docs/cmeta-aops/task-engine.md`: the three ways a task starts
+  another one, and "Exploring versions side by side" - each variant a run of its own, the versions kept as entries of
+  their own and switched by asking, what an exploration leaves for the requests after it, an environment of its own
+  for a variant that changes a Python package. Tests: `test_task_pins.py`, `test_task_isolation.py`.
 - **`set-wsl-network --check=<address> --peers=<addresses>`:** reads, without changing anything, whether other
   machines reach every port of WSL (mirrored mode) at an address of this machine - through cMeta's rule or a rule of
   the host merged into Hyper-V's firewall (Tailscale's `Tailscale-In` on the Tailscale address), for the profile of

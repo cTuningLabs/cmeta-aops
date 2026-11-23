@@ -14,6 +14,10 @@ from task_c36be4b9314a45e0.api.ctask import InitCTask
 VERSION_KEYS = {'version_policy': 'CMETA_VERSION_POLICY',           # known | latest | ask
                 'versions_ttl_hours': 'CMETA_VERSIONS_TTL_HOURS'}    # how long a lookup of the newest version is trusted
 
+# What the task engine does when a storage key already chosen in a run is asked again with another version (the first
+# choice is used): warn | all | error | ignore - read the same way (category/task/api/v2.py)
+REUSE_CONFLICT_ENV = 'CMETA_REUSE_CONFLICT'
+
 
 class CTask(InitCTask):
     """
@@ -40,6 +44,7 @@ class CTask(InitCTask):
             hf: dict = None,                 # --use.init.hf.cache=<folder(s)>: the Hugging Face cache of this run (else the key hf.cache of config::task)
             version_policy: str = None,      # known | latest | ask for every tool of the run (else CMETA_VERSION_POLICY, else config::task)
             versions_ttl_hours: str = None,  # hours a cached lookup of a newest version is trusted (else CMETA_VERSIONS_TTL_HOURS, else config::task; 24)
+            reuse_conflict: str = None,      # warn | all | error | ignore: a storage key asked again in the run with another version (else CMETA_REUSE_CONFLICT, else config::task; warn)
     ):
 
         """
@@ -88,6 +93,11 @@ class CTask(InitCTask):
             value = given[key] or os.environ.get(env)
             if value not in (None, ''):
                 result[key] = value
+
+        # --use.init.reuse_conflict=<word>: the flag, else the environment, else the config (already in result)
+        value = reuse_conflict or os.environ.get(REUSE_CONFLICT_ENV)
+        if value not in (None, ''):
+            result['reuse_conflict'] = str(value)
 
         return result
 

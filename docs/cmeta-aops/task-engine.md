@@ -155,6 +155,117 @@ task's `cmeta-task-cached-ctx.json`, or run with `-v`.
 so `--use.llvm.version=...` changes nothing there. A version given through `--use` also enters the
 cache identity of that sub-task, so it gets its own cache entry and the default one stays.
 
+### How the pins reach the tasks a task starts: the same stack, a run of its own, another process
+
+A pin given at the top of a command (`--use.<storage key>.<param>=<value>`) holds for everything the command
+starts. A task starts another one in three ways (`category/task/api/ctask.py`: `pins`, `run_pins`,
+`use_words`):
+
+| The sub-run is | The call | What it shares with the caller |
+|---|---|---|
+| of the **same stack** - a tool set up for the run, a compiler, a step of the pipeline | `self.cm.access({'ctx': ctx, ...})` | everything of the run: the pins, the results by storage key (`ctx['tasks']['global']`), what is added to the run's environment |
+| a **run of its own** in this process - one variant of an exploration, one host of many, a sub-run whose tools must not be the caller's | no `ctx` in the call; its own `'use': {...}` for what it adds or changes | the pins the caller's run was given, and nothing else: the engine hands them on, below the call's own `use` (a list of its own replaces the list it would take). It starts as an outermost run - nothing chosen before is seen by it. `-v` says `PINS: ...`; `ctx['use_inherited']` keeps what was taken. (A sub-run started in another thread takes nothing: the runs are known per thread - its pins go in its `use`) |
+| in **another process**, here or on another machine - `cx host run`, a pod, a Slurm job, a container | the pins as words of its command line: `ctask.use_words(ctask.run_pins(ctx))` after `cx task run <task>` / `cx program run <program>` / `cx tool setup <tool>` | the pins given for the run (`ctx['tasks']['use_run']`) - not this machine's own defaults (`use` of `config::task`), which every machine, and every process, reads for itself |
+
+What one context shares, and what the engine does about it:
+
+- **One storage key is one choice in a run.** The first result of a storage key is kept in
+  `ctx['tasks']['global']` and reused: a second request of the same key gets it, whatever it asks. That keeps
+  a stack coherent - every step sees the same Python, the same compiler. When the second request **asks
+  another version** than the first one, the engine says so and keeps it
+  (`ctx['tasks']['reuse_conflicts']`: the storage key, the version in use, what was asked, what the first
+  request asked):
+
+  ```text
+  cMeta warning: "python" was already chosen in this run (version 3.13.15) and is used again, though this request asks version=3.14.8 (the first request: 3.13.15) - in one run a storage key is one choice; another version needs a storage key of its own, or a run of its own
+  ```
+
+  A version asked where the first request left it open is no conflict when the result has it (3.13 for
+  3.13.15); a word or a range (`latest`, `<3.14`) is not judged. `reuse_conflict` decides what happens -
+  the key of `config::task` (every run of a machine), `--use.init.reuse_conflict=<mode>` (one run) or
+  `CMETA_REUSE_CONFLICT` (a process): `warn` (the default), `all` (any other parameter asked differently is
+  said too), `error` (the run stops: what an exploration wants - a variant must not measure another version
+  than the one it names), `ignore`. Two versions of a tool in one run need two storage keys (a `uses:` entry
+  with its own `storage_key`, for a tool that does not name one in its `_desc.yaml`); two versions of a
+  tool **with dependencies of its own** need two runs - its dependencies have their storage keys too.
+- **A pin stays for the rest of the run**: `use` is one dict, merged in place - a pin a sub-task was given
+  holds for the tasks after it.
+- **A pin nothing took is said.** A pin under a key that is no task's storage key changes nothing, silently
+  (`--use.llvm.version=...` where the pipeline sets up `clang`). At the end of the outermost run that ended
+  well, the engine keeps the keys given to it that no task of the run had - the runs of their own it started
+  included - in `ctx['tasks']['use_unused']` and says each, with the storage keys that did run:
+
+  ```text
+  cMeta info: --use.pyhton was given, and no task of this run has the storage key "pyhton" - the storage keys of this run: host, init, python, runner
+  ```
+
+  Not judged: a run that handed its pins to another process (`ctask.run_pins`), went to another host
+  (`--on`), or stopped before its sub-tasks (help, `--versions`); the machine's own defaults; what a task
+  pins for its own sub-tasks. The line says what the engine knows - that no task of that key ran: a task
+  that reads the pin of another key itself (a compiler looks at the pin of the other language's compiler
+  to stay in its family) has used it all the same. `CMETA_TASK_UNUSED_PINS=off`: nothing is kept or said.
+- **What a tool really is decides whether two versions can stand side by side.** The cache keeps an entry
+  per version, and a version given through `--use` enters the cache identity of its sub-task - a tool that
+  is installed into its entry (a downloaded release, a source build, a Python of `uv`) has every version
+  beside the others. A Python **package** lives in a Python environment: two versions of one package in the
+  same environment replace each other, and the entry of the first then names a version that is no longer
+  there. A tool of the system (apt, winget, brew) is one version on a machine.
+- **A sub-task that fails gives its caller's state back.** The engine gives the caller its own `params`,
+  `cparams`, `local` values and `control` back when a sub-task ends - also when it fails (a failure used
+  to leave the sub-task's parameters in the shared context), with the results the sub-task
+  took out of the run to choose its own (`preserve_global_keys`) and the folder the caller was in. A
+  pipeline stops at a failure anyway; a caller that goes on - an exploration - finds what it had. The
+  outermost run of a command keeps what its failure left (what a person looks at). `CMETA_TASK_RESTORE=off`:
+  as before.
+
+The switches, all on unless they say `off` (`no`, `false`, `0`): `CMETA_TASK_INHERIT_PINS` (a run of its own
+takes the pins of the run that started it), `CMETA_TASK_RESTORE`, `CMETA_TASK_UNUSED_PINS`; and
+`reuse_conflict` / `CMETA_REUSE_CONFLICT` above.
+
+### Exploring versions side by side
+
+An exploration - the same task or program with several versions of a tool, a model, a compiler, to compare
+what works, what it gives and how fast - is a caller that runs every variant as **a run of its own**:
+
+```python
+for variant in ({'python': {'version': '3.12'}}, {'python': {'version': '3.14'}}, {}):      # {}: what the machine has
+    r = self.cm.access({'category': TASK_CATEGORY, 'command': 'run', 'arg1': task, 'use': variant,   # no ctx
+                        'con': con, 'quiet': True})
+```
+
+- **Each variant chooses anew.** Without the caller's `ctx` nothing a variant chose is seen by the next one;
+  the pins the exploration itself was given (`cx task run <exploration> --use.compiler-c.name=clang`) hold
+  for every variant, below the variant's own. From a shell the same is one command per variant:
+  `cx task run <task> --use.python.version=3.12`.
+- **The versions stay, and a variant switches between them by asking.** A version asked for is set up once,
+  into an entry of its own, and found again by every later request of that version (a tool installed into
+  its entry: the second version of `yq` stands beside the first, and asking the first again takes it from
+  its entry). So the newest version of a tool, the one most people use and an older one stand side by
+  side, and the same task runs with each: `--use.<key>.version=<v>` is the switch.
+- **What an exploration leaves is seen by the requests after it.** A request without a version takes the
+  highest version among the entries it sees ("Several usable entries" below), in every plugged repository -
+  on purpose: a plain request reuses what fits. An exploration that keeps its versions so changes what such
+  requests get. To keep the day-to-day runs as they were: remove the entries (`explore-tool-versions` does,
+  unless `--keep`); or pin the machine's own version (`cx config set task --meta.use.<key>.version=<v>`);
+  or give the exploration **a cache repository of its own** - `--use.init.default_cache_repo=<repository>`
+  makes every entry of a run, its dependencies included, found and made there - and unplug that repository
+  (`cx repo unplug`), or hide it from a call (`--hide_repos=<repository>`), outside the explorations.
+- **A variant that changes a Python package gets an environment of its own**, so that the versions do not
+  replace each other: `--use.python.with.venv_path=<folder>` (the venv `<folder>/.venv`, made if missing).
+  A folder **inside a cache entry** - the exploration's own - keeps the venv the variant's; a venv at
+  another place of one's choice is offered to later plain requests whose version fits
+  ([tool/python](../../tool/python/README.md), "Which Python a request gets"). Another version of Python
+  (`--use.python.version=<v>`) is another environment too - the one every request of that version shares.
+- **A variant must run what it names.** With `--use.init.reuse_conflict=error` (or `CMETA_REUSE_CONFLICT=error`
+  for the exploration's process) a variant whose pin meets an earlier choice stops instead of measuring
+  that one; `use_unused` of the variant's context names a pin nothing took; a version a tool cannot give is
+  an error of its setup.
+- **Another machine, the same words.** `ctask.use_words(variant)` after `cx task run <task>` in
+  `cx host run`, a pod or a Slurm job.
+
+`cx task run explore-tool-versions <tool> --versions=... [--program=<program>]` does this for one tool
+and records a verdict per version; `--use.<key>.version=<v>` on any command is one variant by hand.
+
 ## Running the same words elsewhere: `--on`
 
 Docker/Podman instances have their own cMeta engine, home, index and local tool cache. Selected
