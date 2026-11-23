@@ -3,6 +3,16 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.80.0.1)
+- **run-ai: `--main_screen` and `--autocompact`.** `--main_screen` keeps the harness on the terminal's main screen, so
+  that what it shows stays in the history one scrolls back to: the flag, else the terminal's own request
+  (`CMETA_NO_ALT_SCREEN`), else the key `main_screen` of the config `task-run-ai`; `--main_screen=no` leaves it to the
+  harness. `--autocompact=<auto|tokens>` (or the key `autocompact`) sets the size at which the harness summarises its
+  conversation, the way its task declares by version: run-claude gives Claude Code its own `--autocompact` from
+  2.1.304 (at least 100k). A harness whose task declares no way refuses the flag and is not given the default.
+- **The run reference carries the harness's own settings.** After `screen` and `autocompact`, the keys and variables
+  that the block `run_settings` of the harness task's `_desc.yaml` names (run-claude: Claude Code's auto-compact
+  window, idle compaction, the subagents' cache lifetime and effort, its renderer; run-codex: its effort,
+  auto-compact limit and alternate screen) - nothing else of their settings files.
 - **run-ai: `--prompt_cache_minutes`, how long the provider keeps the prompt cache of a conversation.** A request that
   comes later than that after the one before pays for the whole conversation again, and a harness on a key asks for the
   short lifetime by itself. Without the flag a run on a key (a gateway that sends one) asks for the key

@@ -202,6 +202,51 @@ def prompt_cache_request(minutes, version, ways=None):
             'drops': [str(x) for x in (way.get('drops') or [])], 'note': note}
 
 
+AUTOCOMPACT_KEY = 'autocompact'
+
+
+def autocompact_tokens(value):
+    """An auto-compact window as given -> ('auto' or the tokens as a number in text, '') or ('', why it is not one):
+    auto; tokens, with k or M (400k, 1.2M); a plain number under 1000 is thousands, as Claude Code itself takes it
+    ("200 as shorthand"); at least 100k."""
+    text = str(value or '').strip()
+    if text.lower() == 'auto':
+        return 'auto', ''
+    m = re.match(r'^(\d+(?:\.\d+)?)([kKmM]?)$', text)
+    if not m:
+        return '', '"%s" - auto, or a number of tokens such as 400k or 400000' % text[:40]
+    n = float(m.group(1)) * {'': 1, 'k': 1000, 'K': 1000, 'm': 1000000, 'M': 1000000}[m.group(2)]
+    if not m.group(2) and n < 1000:
+        n *= 1000
+    if n < 100000:
+        return '', '%s tokens - Claude Code takes at least 100k' % format(int(n), ',d')
+    return str(int(n)), ''
+
+
+def autocompact_request(value, version, ways=None):
+    """
+    What makes Claude Code of this version take the auto-compact window `value` -> {'return': 0, 'value': <auto or
+    tokens>, 'way': <its name>, 'flags': [...], 'note': ''} or {'return': 1, 'error': ...} (a value it does not take,
+    a version that has no way).
+    """
+    tokens, why = autocompact_tokens(value)
+    if why:
+        return {'return': 1, 'error': '--autocompact: %s' % why}
+    if ways is None:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml'), encoding='utf-8') as f:
+            declared = (yaml.safe_load(f) or {}).get(AUTOCOMPACT_KEY)
+        ways = declared.get('ways') if isinstance(declared, dict) else None
+        ways = [w for w in ways if isinstance(w, dict)] if isinstance(ways, list) else []
+    way, note = prompt_cache_way(ways, version)
+    if way is None:
+        return {'return': 1, 'error': '--autocompact: %s' % note.replace('how long its prompt cache lives', 'its auto-compact window')
+                .replace('of setting its prompt cache', 'of setting its auto-compact window')}
+    if not way.get('flag'):
+        return {'return': 1, 'error': '--autocompact: the way "%s" of this task names no flag' % way.get('name')}
+    return {'return': 0, 'value': tokens, 'way': str(way.get('name') or ''), 'flags': [str(way['flag']), tokens],
+            'note': note.replace('of setting its prompt cache', 'of setting its auto-compact window')}
+
+
 def _agent_generator(claude_path, flags):
     """
     The CMETA_GENERATOR record of a claude session: the agent and its version, and the model and
@@ -285,6 +330,7 @@ class CTask(InitCTask):
             gw: str = '',                   # the short form of --gateway: bare = the configured gateway, -gw=<alias>
             ln: bool = False,               # the tool's own login, whatever the config says
             prompt_cache_minutes: int = 0,  # how long the provider keeps the prompt cache of the conversation: 5 or 60 minutes; 0: nothing is set, claude decides (1 hour on a subscription, 5 minutes on a key)
+            autocompact: str = '',          # the auto-compact window: auto, or tokens such as 400k (at least 100k); not given: claude's own
             unparsed: list = None,          # extra flags for claude (everything after "--")
     ):
 
@@ -531,6 +577,22 @@ class CTask(InitCTask):
                 if cache['note']:
                     print (f'{space}      {cache["note"]}')
 
+        # the auto-compact window (--autocompact): claude's own option, by its version (autocompact of _desc.yaml);
+        # one given after "--" as well is a conflict, not a choice made here
+        compact = None
+        if str(autocompact or '').strip():
+            if '--autocompact' in extra_flags or any(str(x).startswith('--autocompact=') for x in extra_flags):
+                return self.cm.error('--autocompact is given twice: as a flag of the task and after "--"', 1)
+            compact = autocompact_request(autocompact, _program_version(claude_path))
+            if compact['return'] > 0:
+                return self.cm.error(compact['error'], 1)
+            extra_flags = extra_flags + compact['flags']
+            if con:
+                print ('')
+                print (f'{space}INFO: autocompact: {compact["value"]} ({" ".join(compact["flags"])})')
+                if compact['note']:
+                    print (f'{space}      {compact["note"]}')
+
         # cMeta repositories -> "--add-dir <path>": Claude Code reads their CLAUDE.md, AGENTS.md and skills.
         # Portable: the alias is resolved here, on this machine, through cMeta's own registry.
         wanted = [x.strip() for x in str(add_repos or '').split(',') if x.strip()]
@@ -703,6 +765,8 @@ class CTask(InitCTask):
                       'stats_file': ''}
             if cache:
                 result['prompt_cache_minutes'] = cache['minutes']
+            if compact:
+                result['autocompact'] = compact['value']
             return result
 
         ###########################################################################################
@@ -778,6 +842,8 @@ class CTask(InitCTask):
         }
         if cache:
             run_info['prompt_cache_minutes'] = cache['minutes']
+        if compact:
+            run_info['autocompact'] = compact['value']
 
         info_lines = [
             f'task: {run_info["task"]}',

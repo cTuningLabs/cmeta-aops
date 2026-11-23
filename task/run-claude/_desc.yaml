@@ -83,6 +83,39 @@ cache: False
 # The words of the command line that take a number
 cli_params:
   prompt_cache_minutes: {type: int, hint: 'minutes: 5 or 60'}
+  autocompact: {type: str, hint: 'auto, or tokens: 400k (at least 100k)'}
+
+# The auto-compact window of the session (--autocompact): the size at which Claude Code summarises its conversation.
+# The ways, THE NEWEST FIRST, chosen by the version of the installed claude as for prompt_cache below.
+#   flag      Claude Code's own option, given the value (auto, or tokens: 400k, 400000; at least 100k)
+autocompact:
+  ways:
+    - name: autocompact-flag
+      since: '2.1.304'                 # its changelog of 2.1.304 names "--autocompact" (and its k / M suffixes)
+      flag: '--autocompact'
+      min_tokens: 100000               # "at least 100k" (its help); run-ai refuses less before a run starts
+      verified:
+        - {harness: '2.1.330', os: windows, date: '2026-11-23'}
+
+# What run-ai records of Claude Code's own settings with every request of a run (the run reference a gateway of one's
+# own keeps): the settings that decide what a long session costs. Its settings file (CLAUDE_CONFIG_DIR when set),
+# the keys read there - nothing else of the file - and the variables of the run's environment (or of the file's "env"
+# block), each with the key of the run reference.
+run_settings:
+  file: '~/.claude/settings.json'
+  home_env: CLAUDE_CONFIG_DIR
+  file_name: settings.json
+  format: json
+  keys:
+    autoCompactWindow: h_compact
+    idleCompaction: h_idle_compact
+    subagentPromptCacheTtl: h_sub_cache
+    effortLevel: h_effort
+    tui: h_tui
+  env:
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW: h_compact
+    CLAUDE_CODE_SUBAGENT_EFFORT: h_sub_effort
+    CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS: h_idle_min
 
 # How long the prompt cache of a conversation lives, as claude can be told (--prompt_cache_minutes): the ways, THE
 # NEWEST FIRST. For the installed version - asked of the program itself, which updates itself in place - the task

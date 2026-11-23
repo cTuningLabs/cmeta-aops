@@ -220,10 +220,97 @@ DEFAULT_PROMPT_CACHE_MINUTES = 60
 # gateway server, which also keeps only so many pairs - the first ones, so the order below is by what matters most)
 RUN_REF_KEY = re.compile(r'^[a-z_]{1,16}$')
 
+# The screen of an interactive run (2026-11-23): --main_screen keeps the harness on the terminal's main screen, so that
+# what it shows stays in the history one scrolls back to (a full-screen harness redraws its window in place and leaves
+# nothing there). Asked by the flag; else by the terminal itself (CMETA_NO_ALT_SCREEN - every session of /ai.sessions);
+# else by the config key below (every run of this machine); else the harness's own setting. The harness tasks know how
+# (main_screen of the task engine): claude, codex and hermes; another harness is said to have no known way.
+NO_ALT_SCREEN_ENV = 'CMETA_NO_ALT_SCREEN'           # the task engine's NO_ALT_SCREEN
+CONFIG_MAIN_SCREEN_KEY = 'main_screen'
+MAIN_SCREEN_HARNESSES = ('claude', 'codex', 'hermes')
+HARNESS_SCREEN_VARIABLES = ('CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN',)   # a harness's own: not passed on when the flag says no
+
+# The auto-compact window of a run (--autocompact): the size at which the harness summarises its conversation - every
+# request reads the whole conversation, so a smaller window makes each one cheaper and summarises more. A harness that
+# can be told declares how in the block "autocompact" of its task's _desc.yaml (run-claude: its own --autocompact, by
+# version); the flag, else the config key below; not given: the harness's own window.
+AUTOCOMPACT_KEY = 'autocompact'
+CONFIG_AUTOCOMPACT_KEY = 'autocompact'
+AUTOCOMPACT_RE = re.compile(r'^(auto|\d+(\.\d+)?[kKmM]?)$')
+
+# What a run records of the harness's own settings, with every request a gateway of one's own sees (2026-11-23, the
+# user: "record settings for each harness"): the block "run_settings" of the harness task's _desc.yaml names its
+# settings file and the keys and variables that decide what a session costs, each with the key of the run reference
+RUN_SETTINGS_KEY = 'run_settings'
+RUN_SETTING_CHARS = 40                              # a value longer than this is cut (a per-model dict, a long list)
+
 
 def _truthy(value):
     """A flag or a config value as it arrives (True, "true", "1", "yes", "on"; a missing value is False)."""
     return value is True or str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def harness_settings(block, environ=None, home=None):
+    """
+    The harness's own settings a run records (the block "run_settings" of its task's _desc.yaml) -> [(key of the
+    run reference, value as text)], in the order the block names them; a setting that is not set is left out.
+
+      file      the settings file, "~" for the user's home; home_env: a variable that names the folder in its place
+                (CLAUDE_CONFIG_DIR, CODEX_HOME) - then file_name inside it
+      format    json | toml (tomllib: Python 3.11+; an older Python records none of the file's keys)
+      keys      {<key of the file, dotted for a nested one>: <key of the run reference>}
+      env       {<variable>: <key of the run reference>} - the run's environment first, then the file's "env" block
+                (a JSON settings file of Claude Code carries one)
+
+    Nothing else of the file is read; a file that is not there or not readable gives no pairs.
+    """
+    if not isinstance(block, dict):
+        return []
+    environ = os.environ if environ is None else environ
+    path = ''
+    home_env = str(block.get('home_env') or '')
+    if home_env and environ.get(home_env):
+        path = os.path.join(environ[home_env], str(block.get('file_name') or os.path.basename(str(block.get('file') or ''))))
+    elif block.get('file'):
+        path = str(block['file'])
+        if path.startswith('~'):
+            path = os.path.join(home or os.path.expanduser('~'), path[2:] if path[1:2] in ('/', '\\') else path[1:])
+    doc = {}
+    if path and os.path.isfile(path):
+        try:
+            if str(block.get('format') or 'json') == 'toml':
+                import tomllib
+                with open(path, 'rb') as f:
+                    doc = tomllib.load(f)
+            else:
+                with open(path, encoding='utf-8') as f:
+                    doc = json.load(f)
+        except Exception:
+            doc = {}
+    doc = doc if isinstance(doc, dict) else {}
+
+    def text(value):
+        t = value if isinstance(value, str) else json.dumps(value, separators=(',', ':'))
+        t = ('yes' if value else 'no') if isinstance(value, bool) else t
+        return t[:RUN_SETTING_CHARS]
+
+    out, seen = [], set()
+    for name, key in (block.get('keys') or {}).items():
+        node = doc
+        for part in str(name).split('.'):
+            node = node.get(part) if isinstance(node, dict) else None
+        if node not in (None, '') and RUN_REF_KEY.match(str(key)) and key not in seen:
+            out.append((str(key), text(node)))
+            seen.add(key)
+    file_env = doc.get('env') if isinstance(doc.get('env'), dict) else {}
+    for name, key in (block.get('env') or {}).items():
+        value = environ.get(str(name))
+        if value in (None, ''):
+            value = file_env.get(str(name))
+        if value not in (None, '') and RUN_REF_KEY.match(str(key)) and key not in seen:
+            out.append((str(key), text(value)))
+            seen.add(key)
+    return out
 
 
 def run_reference(project, conversation, stamp, settings=None):
@@ -1516,6 +1603,61 @@ class CTask(InitCTask):
                     variables.append(str(name))
         return {'minutes': sorted(minutes), 'variables': variables}
 
+    def _main_screen(self, harness, asked, environ=None):
+        """
+        Whether this run keeps the harness on the terminal's main screen -> (True: yes, False: no - the flag said so,
+        None: the harness's own setting; where that came from). The flag (yes or no); else the terminal's own request
+        (CMETA_NO_ALT_SCREEN: the sessions of /ai.sessions); else the config key main_screen of task-run-ai; else none.
+        """
+        environ = os.environ if environ is None else environ
+        if asked not in (None, ''):
+            on = _truthy(asked)
+            return on, 'the flag --%s%s' % (CONFIG_MAIN_SCREEN_KEY, '' if on else '=no')
+        if _truthy(environ.get(NO_ALT_SCREEN_ENV)):
+            return True, 'this terminal asks (%s)' % NO_ALT_SCREEN_ENV
+        value = self._run_ai_config().get(CONFIG_MAIN_SCREEN_KEY)
+        if value not in (None, ''):
+            on = _truthy(value)
+            return (True if on else None), 'config %s %s' % (CONFIG_ARTIFACT, CONFIG_MAIN_SCREEN_KEY)
+        return None, ''
+
+    def _harness_block(self, task_ref, key):
+        """A block of the harness task's _desc.yaml (autocompact, run_settings ...), or None."""
+        path = self._artifact_path(TASK_CATEGORY, task_ref)
+        block = self._read_desc(path).get(key) if path else None
+        return block if isinstance(block, dict) else None
+
+    def _autocompact(self, harness, task_ref, asked):
+        """
+        The auto-compact window this run asks the harness for -> (the value as given - auto, or tokens such as 400k -
+        or ''; where it came from; an error text or ''). The flag, else the config key autocompact of task-run-ai;
+        a harness whose task declares no way (the block autocompact of its _desc.yaml): the flag is an error, the
+        config is not applied. The harness task checks the value against the version of the harness.
+        """
+        value, where = str(asked or '').strip(), 'the flag --%s' % AUTOCOMPACT_KEY
+        if not value:
+            value = str(self._run_ai_config().get(CONFIG_AUTOCOMPACT_KEY) or '').strip()
+            where = 'config %s %s' % (CONFIG_ARTIFACT, CONFIG_AUTOCOMPACT_KEY)
+        if not value or value.lower() in ('0', 'no', 'none', 'off'):
+            return '', '', ''
+        if not AUTOCOMPACT_RE.match(value):
+            return '', '', '%s: "%s" - auto, or a number of tokens such as 400k or 400000' % (where, value[:40])
+        ways = (self._harness_block(task_ref, AUTOCOMPACT_KEY) or {}).get('ways')
+        if not isinstance(ways, list) or not ways:
+            if where.startswith('the flag'):
+                return '', '', ('--%s: run-ai knows no way to tell the harness "%s" its auto-compact window (the task %s '
+                                'declares none in a block %s of its _desc.yaml) - leave the flag out' % (
+                                    AUTOCOMPACT_KEY, harness, task_ref.split(',')[0], AUTOCOMPACT_KEY))
+            return '', 'the harness decides (run-ai knows no setting of %s for it)' % harness, ''
+        if value.lower() != 'auto':
+            m = re.match(r'^(\d+(?:\.\d+)?)([kKmM]?)$', value)
+            tokens = int(float(m.group(1)) * {'': 1, 'k': 1000, 'K': 1000, 'm': 1000000, 'M': 1000000}[m.group(2)])
+            least = max([int(w.get('min_tokens') or 0) for w in ways if isinstance(w, dict)] or [0])
+            if tokens < least:
+                return '', '', '%s: %s is %s tokens - %s takes at least %s' % (
+                    where, value, format(tokens, ',d'), harness, format(least, ',d'))
+        return value, where, ''
+
     def _prompt_cache(self, harness, task_ref, asked, on_key, environ=None, kept=0):
         """
         How long the provider is asked to keep the prompt cache of this run's conversation
@@ -1995,6 +2137,8 @@ class CTask(InitCTask):
             model: str = '',                # the model in the harness's own names, or "<model>,<effort>" (--list_models shows them)
             effort: str = '',               # the reasoning effort, in the harness's vocabulary (--list_models shows it)
             prompt_cache_minutes: int = 0,  # how long the model's provider keeps the prompt cache of the conversation, in minutes (claude: 5 or 60); not given: on a key the config key prompt_cache_minutes (60), on the harness's own login the harness decides
+            main_screen = None,             # yes: the harness on the terminal's main screen (its output stays in the history); no: its own choice; not given: the terminal's request (CMETA_NO_ALT_SCREEN of /ai.sessions), else the config key main_screen
+            autocompact: str = '',          # the harness's auto-compact window: auto, or tokens such as 400k (claude: at least 100k); not given: the config key autocompact, else the harness's own
             list_models: bool = False,      # list the models and efforts of the harness (of every harness without --harness) and stop
             models: bool = False,           # short alias of "list_models"
             new: bool = False,              # start a new conversation instead of continuing the latest one
@@ -2090,6 +2234,9 @@ class CTask(InitCTask):
         # a lifetime of the prompt cache that cannot be asked for (the flag's, or this machine's default) stops the run
         # here, before anything is written; which one applies is decided with the gateway, below
         c_err = self._prompt_cache(harness, task_ref, prompt_cache_minutes, True)[2]
+        if c_err:
+            return self.cm.error(c_err)
+        compact_value, compact_from, c_err = self._autocompact(harness, task_ref, autocompact)
         if c_err:
             return self.cm.error(c_err)
 
@@ -2464,6 +2611,24 @@ class CTask(InitCTask):
         # only when asked for: not every run-<harness> task has them (run-openclaw has neither)
         if cache_minutes:
             params[CONFIG_PROMPT_CACHE_KEY] = cache_minutes
+        if compact_value:
+            params[AUTOCOMPACT_KEY] = compact_value
+        compact_asked = ('%s - %s' % (compact_value, compact_from)) if compact_value else (compact_from or 'the harness decides')
+
+        # the screen of an interactive run: the harness task reads the terminal's request (CMETA_NO_ALT_SCREEN), so the
+        # flag and the config put it there - or take it out, with the harness's own variable, for a flag that says no
+        screen_on, screen_from = self._main_screen(harness, main_screen)
+        screen_env = {}
+        if interactive and screen_on is True:
+            screen_env[NO_ALT_SCREEN_ENV] = '1'
+            if hk not in MAIN_SCREEN_HARNESSES:
+                notes.append('main screen asked (%s), but run-ai knows no way to keep %s there: it may keep its history '
+                             'inside itself' % (screen_from, harness))
+        elif interactive and screen_on is False:
+            screen_env.update({k: None for k in (NO_ALT_SCREEN_ENV,) + HARNESS_SCREEN_VARIABLES})
+        screen_asked = ('main - %s' % screen_from) if (interactive and screen_on) else (
+            ('the harness decides - %s' % screen_from) if (interactive and screen_on is False) else
+            ('the harness decides' if interactive else 'none (a prompt run)'))
         if forward_yes:
             params['yes'] = True
         if reproducible:
@@ -2682,6 +2847,10 @@ class CTask(InitCTask):
                 print('%s        model:   %s%s' % (space, model_name or '(the harness default)', (', effort ' + effort_name) if effort_name else ''))
             print('%s        gateway: %s' % (space, gateway_line))
             print('%s        prompt cache: %s' % (space, cache_asked))
+            if compact_value or compact_from:
+                print('%s        autocompact: %s' % (space, compact_asked))
+            if interactive:
+                print('%s        screen:  %s' % (space, screen_asked))
             if conv_line:
                 print('%s        %s' % (space, conv_line))
             for n in notes:
@@ -2713,6 +2882,8 @@ class CTask(InitCTask):
                     'new_session': new_sid, 'handover': handover, 'skills': [s[0] for s in own_skills], 'plugin_dirs': plugin_dirs,
                     'tokens_estimated': est_total, 'token_limit': limit, 'token_limit_from': limit_from, 'context_depth': context_depth,
                     'prompt_cache_minutes': cache_minutes, 'prompt_cache_from': cache_from,
+                    'autocompact': compact_value, 'autocompact_from': compact_from, 'main_screen': screen_on,
+                    'main_screen_from': screen_from,
                     'params': params, 'flags': extra, 'env': env, 'settings': settings, 'context': sources, 'context_skipped': skipped,
                     'write': write_mode, 'write_from': write_from, 'context_guard': guard_mode, 'notes': notes,
                     'other_runs': other_mode, 'running_elsewhere': [{k: v for k, v in d.items() if not k.startswith('_')} for d in elsewhere],
@@ -2782,6 +2953,10 @@ class CTask(InitCTask):
                          'tokens_estimated': est_total, 'token_limit': limit}
             if cache_minutes:
                 run_entry[CONFIG_PROMPT_CACHE_KEY] = cache_minutes
+            if compact_value:
+                run_entry[AUTOCOMPACT_KEY] = compact_value
+            if interactive and screen_on is not None:
+                run_entry[CONFIG_MAIN_SCREEN_KEY] = bool(screen_on)
             conv.setdefault('runs', []).append(run_entry)
             CONV.save_conversation(conv)
         record = os.path.join(log_dir, '%s.%s.run.md' % (stamp, harness)) if not no_log else ''
@@ -2798,6 +2973,8 @@ class CTask(InitCTask):
                      '| model | %s |' % (('`%s`' % model_name) if model_name else 'the harness default'),
                      '| effort | %s |' % (('`%s`' % effort_name) if effort_name else 'the harness default'),
                      '| prompt cache | %s |' % cache_asked,
+                     '| autocompact | %s |' % compact_asked,
+                     '| screen | %s |' % screen_asked,
                      '| write | `%s` (%s); context guard `%s` |' % (write_mode, write_from, guard_mode),
                      '| conversation | %s |' % (('`%s` - %s' % (conv['id'], conv_how + (', native resume' if native_sid else (', hand-over' if handover else '')))) if conv else 'none (--no_log)'),
                      '| session | %s |' % (('%s `%s`' % (hk, native_sid or new_sid)) if (native_sid or new_sid) else ('%s: read from its store after the run' % hk if conv else '')),
@@ -2840,7 +3017,12 @@ class CTask(InitCTask):
             ('cmeta', versions['cmeta']), ('aops', versions['aops']), ('context', est_total),
             ('harness', harness), ('model', model_name), ('effort', effort_name), ('write', write_mode),
             ('resumed', 'yes' if native_sid else ('handover' if handover else 'no')), ('uses', len(sources)),
-            ('host', CONV.host_name())])
+            ('host', CONV.host_name()),
+            # 2026-11-23: the screen and the auto-compact window asked for, then the harness's own settings that
+            # decide what a session costs (the block run_settings of its task)
+            ('screen', ('main' if screen_on else 'harness') if interactive else ''), ('autocompact', compact_value)] +
+            harness_settings(self._harness_block(task_ref, RUN_SETTINGS_KEY)))
+        env.update(screen_env)
 
         # 5. run the harness's task inside the project folder (the engine's "path" control: cd there, back afterwards)
         before = CONV.capture_before(harness, project_path)
@@ -2848,7 +3030,11 @@ class CTask(InitCTask):
         # the memory and skills of the used artifacts as they are now: compared again when the harness is back
         snaps = {g['ai']: PEND.snapshot(g['ai']) for g in guarded} if guard_mode != 'off' else {}
         saved = {k: os.environ.get(k) for k in env}
-        os.environ.update(env)
+        for k, v in env.items():
+            if v is None:
+                os.environ.pop(k, None)             # taken out for this run (--main_screen=no in a terminal that asks)
+            else:
+                os.environ[k] = v
         # t0, a time of day, finds the native session and bounds the guard; the run's duration is on the
         # monotonic clock, which nobody sets while it runs
         t0 = time.time()
@@ -3043,7 +3229,8 @@ class CTask(InitCTask):
                'codex_state': codex_dir or ('home' if hk == 'codex' else ''),
                'write': write_mode, 'write_from': write_from,
                'context_guard': guard_mode, 'context_changes': guard_records, 'pending': staged_now,
-               'prompt_cache_minutes': cache_minutes, 'prompt_cache_from': cache_from}
+               'prompt_cache_minutes': cache_minutes, 'prompt_cache_from': cache_from,
+               'autocompact': compact_value, 'main_screen': screen_on}
         if scratch:
             out['log_project'] = project_path
         if record_prompt and not no_log and isinstance(rr.get('prompt'), str):

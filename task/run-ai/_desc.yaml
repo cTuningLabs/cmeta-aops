@@ -59,6 +59,8 @@ cli_params:
   gw_default: {type: str, bare: 'a gateway chosen from the list becomes the default'}
   write: {type: str, bare: 'all'}
   prompt_cache_minutes: {type: int, hint: 'minutes; Claude Code takes 5 or 60'}
+  main_screen: bool
+  autocompact: {type: str, hint: 'auto, or tokens: 400k'}
 
 uses:
   - task: runner,1e48cc0c5f6041a5
@@ -77,6 +79,20 @@ configs:
         type: number
         default: '60'
         example: '5'
+      main_screen:
+        desc: 'yes: every interactive run of this machine keeps its harness on the terminal''s main screen, so that what
+          it shows stays in the history one scrolls back to (claude, codex, hermes); --main_screen=no for one run. The
+          sessions of /ai.sessions ask for it themselves.'
+        type: yes/no
+        default: 'no: the harness''s own setting'
+        example: 'yes'
+      autocompact:
+        desc: 'the auto-compact window of a run when --autocompact is not given: the size at which the harness
+          summarises its conversation - auto, or tokens such as 400k (Claude Code: at least 100k); not set or 0: the
+          harness''s own window'
+        type: text
+        default: 'the harness''s own'
+        example: 400k
       max_context_tokens:
         desc: 'the limit of the context estimate of a run, in tokens, when --max_context_tokens is not given: over it
           a run asks, or fails under -q, --yes or without a terminal'

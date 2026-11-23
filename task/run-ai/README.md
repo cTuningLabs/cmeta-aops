@@ -547,6 +547,8 @@ cx config set task-run-ai --meta.trim_context=true
 cx config set task-run-ai --meta.write=all
 cx config set task-run-ai --meta.other_runs=ask
 cx config set task-run-ai --meta.prompt_cache_minutes=5
+cx config set task-run-ai --meta.main_screen=yes
+cx config set task-run-ai --meta.autocompact=400k
 cx config show task-run-ai
 ```
 
@@ -897,6 +899,38 @@ Every run says which it is, under the gateway's line:
 `cx task run run-claude --prompt_cache_minutes=<5|60>` sets it for a run of that task alone; there nothing is set
 without the flag.
 
+## The screen and the auto-compact window: `--main_screen`, `--autocompact`
+
+```bat
+cxai --main_screen                  rem the harness on the terminal's main screen: what it shows stays in the history
+cxai --main_screen=no               rem the harness's own choice, also in a terminal that asks for the main screen
+cxai --autocompact=400k             rem the harness summarises its conversation at 400k tokens (auto: its own window)
+```
+
+**The screen.** A harness on the terminal's alternate screen (Claude Code's fullscreen renderer, Codex's TUI) redraws
+its window in place: nothing it shows reaches the history one scrolls back to. What an interactive run asks for, in
+this order: the flag; else the terminal itself (`CMETA_NO_ALT_SCREEN`: every session of `/ai.sessions` sets it, and the
+page adds `--main_screen` to the run-ai lines of the sessions this machine holds); else the key `main_screen` of the
+config `task-run-ai`; else the harness's own setting. The harness tasks keep claude (its classic renderer), codex
+(`--no-alt-screen`) and hermes (`--native` with `--tui`) there; another harness is said to have no known way. A prompt
+run has no screen. The header says it (`screen: main - the flag --main_screen`), the run record and the conversation's
+run entry (`main_screen`) keep it.
+
+**The auto-compact window.** The size at which the harness summarises its conversation: every request reads the whole
+conversation again, so a smaller window makes each one cheaper - and summarises more. The flag, else the key
+`autocompact` of the config `task-run-ai` (not set or `0`: the harness's own window). A harness is told the way its
+task declares (the block `autocompact` of its `_desc.yaml`): run-claude gives Claude Code its own `--autocompact` from
+version 2.1.304 (at least 100k tokens; an older one cannot be told: an error). A value below the harness's
+`min_tokens`, or a harness whose task declares no way, stops the run before anything is written (the config is then
+not applied). The header, the run record and the conversation's run entry (`autocompact`) say what was asked.
+
+**The harness's own settings in the run reference.** After the run's own settings (`cache_minutes`, `mode`, ...)
+`CMETA_AI_RUN` carries `screen`, `autocompact` and what the harness itself is set to - the block `run_settings` of its
+task's `_desc.yaml` names its settings file (`CLAUDE_CONFIG_DIR`, `CODEX_HOME` when set), the keys read there and the
+variables of the run's environment, each with its key in the reference (`h_compact`, `h_idle_compact`, `h_sub_cache`,
+`h_effort`, `h_tui`, `h_sub_effort`, ...). Nothing else of the file is read; a value is cut at 40 characters. So a
+gateway of one's own that keeps the reference can compare requests by the settings they were made under.
+
 ## Signing a harness in: `--login`, `--login_status`
 
 ```
@@ -1063,6 +1097,7 @@ In the repository's hermetic suite (`tests/cmeta_aops_basic_tests/`; no network,
 | File | What it covers |
 |---|---|
 | `test_run_ai_pending.py` | the proposals and the guard, on plain folders |
+| `test_run_ai_screen_compact.py` | `--main_screen` and `--autocompact`: where each decision comes from, Claude Code's window by its version, the settings of Claude Code and Codex a run records (nothing else of their files) |
 | `test_run_ai_prompt_cache.py` | `--prompt_cache_minutes`: what a run asks for and where that comes from, what Claude Code is told by its version, the run's settings in the run reference |
 | `test_run_ai_context.py` | the `--context` entries, cRef matching, the `ai_uses` values, this machine's mapping, the seed, folder names with brackets, the harnesses and their model lists |
 | `test_run_ai_conversations.py` | the conversation files, how each harness starts and resumes a session, the Claude and Gemini session readers, the transcript, the hand-over |
