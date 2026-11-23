@@ -77,6 +77,14 @@ configs:
         type: number
         default: '60'
         example: '5'
+      max_context_tokens:
+        desc: 'the limit of the context estimate of a run, in tokens, when --max_context_tokens is not given: over it
+          a run asks, or fails under -q, --yes or without a terminal'
+        type: number
+        default: '30000'
+        example: '40000'
+        secret: false                 # a count of tokens: only its name looks like a secret's (an engine that knows
+                                      # the word shows its value on its settings pages; an older one hides it)
   default:
     keys:
       run_ai_max_context_tokens:
@@ -85,3 +93,4 @@ configs:
           task-run-ai come first'
         type: number
         default: '30000'
+        secret: false                 # a count of tokens, as above

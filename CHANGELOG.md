@@ -21,6 +21,11 @@ All notable changes to cMeta AOps are documented here, newest first.
   `CMETA_AI_RUN` carries `cache_minutes`, `mode`, `cmeta`, `aops`, `context`, `harness`, `model`, `effort`, `write`,
   `resumed`, `uses` and `host`, so that a gateway of one's own that asks for the reference (`run_header`) can keep the
   settings of a run with every line. The three first fields and every reader of them are as before.
+- **run-ai declares its two limits of the context estimate as no secrets.** `max_context_tokens` (config
+  `task-run-ai`) and the older `run_ai_max_context_tokens` (config `default`) are counts of tokens: only their names
+  made the pages of the config keys hide their values. Their `configs` block now says `secret: false`, which an
+  engine that knows the word honours (an older one keeps them hidden); `max_context_tokens` is declared there with
+  its type and default.
 - **`get-host--docker --ports_on=<address>` and UDP ports:** the ports of an instance published on an address of this
   machine instead of 127.0.0.1 - an explicit exposure (a node of a Kubernetes cluster of machines: the API, the
   kubelet, VXLAN), recorded with the instance (another address is another instance); `--ports=8472/udp` a UDP port.
