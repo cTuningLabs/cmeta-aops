@@ -8,6 +8,7 @@ use, and the Hyper-V firewall rule that lets chosen machines reach WSL in mirror
 
 import base64
 import ipaddress
+import json
 import os
 import re
 import subprocess
@@ -115,14 +116,85 @@ class CTask(InitCTask):
             return m.group(1)
         return None if re.search(r'^NONE\s*$', out, re.M) else '?'
 
+    def _reaches(self, addr, peers):
+        """
+        Whether the other machines (peers) reach every port of WSL on this machine's address (addr) in mirrored mode, as
+        Hyper-V's firewall for WSL decides - read, nothing changed. -> (True, how) or (False, why). A rule counts when
+        it is an enabled inbound allow rule of any protocol and port, bound to this address (or any), from the peers (or
+        anyone), for the profile of the address' network: cMeta's rule, or a rule of the host merged into it (Tailscale's
+        "Tailscale-In": the tailnet on the Tailscale address).
+        """
+        ps = ("$a = '" + addr + "'; $o = @{}; "
+              "$ip = Get-NetIPAddress -IPAddress $a -ErrorAction SilentlyContinue | Select-Object -First 1; "
+              "if ($ip) { $o.alias = $ip.InterfaceAlias; "
+              "  $c = Get-NetConnectionProfile -InterfaceAlias $ip.InterfaceAlias -ErrorAction SilentlyContinue | Select-Object -First 1; "
+              "  if ($c) { $o.category = \"$($c.NetworkCategory)\" } }; "
+              "$o.rules = @(Get-NetFirewallHyperVRule -ErrorAction SilentlyContinue | Where-Object { "
+              "  \"$($_.Direction)\" -eq 'Inbound' -and \"$($_.Action)\" -eq 'Allow' -and \"$($_.Enabled)\" -eq 'True' } | ForEach-Object { "
+              "  @{ name = $_.DisplayName; local = (@($_.LocalAddresses) -join ','); remote = (@($_.RemoteAddresses) -join ','); "
+              "     protocol = \"$($_.Protocol)\"; ports = (@($_.LocalPorts) -join ','); profiles = \"$($_.Profiles)\" } }); "
+              "'@@HV@@ ' + ($o | ConvertTo-Json -Compress -Depth 4)")
+        code, out = self._powershell(ps, False)
+        line = next((l for l in out.splitlines() if l.startswith('@@HV@@ ')), '')
+        try:
+            o = json.loads(line[len('@@HV@@ '):] or '{}') or {}
+        except ValueError:
+            return False, f'Hyper-V\'s firewall for WSL could not be read: {out.strip()[-300:]}'
+        if not o.get('alias'):
+            return False, f'{addr} is not an address of this machine'
+        cat = str(o.get('category') or '').replace('DomainAuthenticated', 'Domain')
+        rules = o.get('rules') or []
+        if isinstance(rules, dict):
+            rules = [rules]
+
+        def net(x):
+            try:
+                return ipaddress.ip_network(x.strip(), strict = False)
+            except ValueError:
+                return None
+
+        def covers(r):
+            local = [x.strip() for x in str(r.get('local') or '').split(',') if x.strip()]
+            remote = [x.strip() for x in str(r.get('remote') or '').split(',') if x.strip()]
+            profiles = str(r.get('profiles') or 'Any')
+            if str(r.get('protocol') or 'Any') != 'Any' or str(r.get('ports') or 'Any') != 'Any':
+                return False
+            if 'Any' not in local and addr not in [x.split('/')[0] for x in local]:
+                return False
+            if 'Any' not in profiles and (not cat or cat not in profiles):
+                return False
+            if 'Any' in remote:
+                return True
+            nets = [n for n in (net(x) for x in remote) if n]
+            return all(any(ipaddress.ip_address(p) in n for n in nets) for p in peers)
+
+        found = sorted({str(r.get('name')) for r in rules if covers(r)})
+        if not found:
+            return False, f'no rule of Hyper-V\'s firewall for WSL lets {", ".join(peers)} reach every port of {addr} ({o["alias"]})'
+        return True, f'{addr} ({o["alias"]}, {cat or "no profile"}): WSL reached through {", ".join(found)}'
+
     ############################################################
     def run(self,
             ctx: dict,
             mode: str = '',            # nat or mirrored (nothing: say what is set and in use)
             allow_from: str = '',      # mirrored: the addresses / networks of other machines let into WSL (comma-separated); none: the rule removed
             restart: bool = False,     # wsl --shutdown, so that the mode applies (every distribution and Docker Desktop's engine stop)
+            check: str = '',           # an address of this machine: do the --peers reach every port of WSL there? (read only)
+            peers: str = '',           # with --check: the other machines' addresses (comma-separated)
     ):
         con = ctx['control'].get('con', False)
+        if check:
+            others = [p.strip() for p in str(peers).split(',') if p.strip()]
+            try:
+                [ipaddress.ip_address(p) for p in others + [str(check).strip()]]
+            except ValueError:
+                return self.cm.error('--check and --peers: addresses (--peers comma-separated)')
+            if not others:
+                return self.cm.error('--peers: the other machines\' addresses (with --check)')
+            ok, why = self._reaches(str(check).strip(), others)
+            if con:
+                print(('cMeta info: ' if ok else 'cMeta warning: ') + why)
+            return {'return': 0, 'reachable': ok, 'why': why}
         mode = str(mode or '').strip().lower()
         if mode and mode not in MODES:
             return self.cm.error(f'the mode is nat or mirrored (got "{mode}")')

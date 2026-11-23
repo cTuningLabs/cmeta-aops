@@ -2,6 +2,16 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.80.0.1)
+- **`get-host--docker --ports_on=<address>` and UDP ports:** the ports of an instance published on an address of this
+  machine instead of 127.0.0.1 - an explicit exposure (a node of a Kubernetes cluster of machines: the API, the
+  kubelet, VXLAN), recorded with the instance (another address is another instance); `--ports=8472/udp` a UDP port.
+  Without them nothing changes.
+- **`set-wsl-network --check=<address> --peers=<addresses>`:** reads, without changing anything, whether other
+  machines reach every port of WSL (mirrored mode) at an address of this machine - through cMeta's rule or a rule of
+  the host merged into Hyper-V's firewall (Tailscale's `Tailscale-In` on the Tailscale address), for the profile of
+  that address' network. A cluster over Tailscale then needs no administrator's prompt.
+
 ## 0.80.0
 - **run-llama-cpp-server: `--mmproj`, a model that reads pictures.** The projector of a vision model (its second GGUF
   file) is served with it: `auto` takes the one the model's file names (`mmproj:` in its `_desc-<file>.yaml`), or a file

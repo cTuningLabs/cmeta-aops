@@ -27,6 +27,7 @@ Everything runs through the engine's own commands (docker run / inspect / start 
 
 import datetime
 import hashlib
+import ipaddress
 import json
 import os
 import platform
@@ -134,6 +135,29 @@ def artifact_mount_identity(mounts):
 def clean_name(text):
     """A container and artifact name: lower case, letters, digits, dots and dashes."""
     return re.sub(r'[^a-z0-9.]+', '-', str(text).lower()).strip('-.')
+
+
+def parse_ports(ports):
+    """--ports as recorded: "8000", "8080:80", "8472/udp" (comma-separated) -> ['8000:8000', '8080:80', '8472:8472/udp'];
+    ValueError for anything else."""
+    published = []
+    for p in [x.strip() for x in str(ports or '').split(',') if x.strip()]:
+        spec, _, proto = p.partition('/')
+        h, _, c = spec.partition(':')
+        if not h.isdigit() or (c and not c.isdigit()) or proto not in ('', 'tcp', 'udp'):
+            raise ValueError(f'--ports: "{p}" is not a port or host:container ports (with /udp for UDP)')
+        published.append(f'{h}:{c or h}' + ('/udp' if proto == 'udp' else ''))
+    return published
+
+
+def port_flags(published, bind = '127.0.0.1'):
+    """The engine's -p flags of the ports as recorded, on the address bind."""
+    flags = []
+    for p in published:
+        spec, _, proto = p.partition('/')
+        h, _, c = spec.partition(':')
+        flags += ['-p', f'{bind}:{h}:{c}' + (f'/{proto}' if proto else '')]
+    return flags
 
 
 def instance_volume_mounts(volumes, instance, home):
@@ -399,7 +423,8 @@ class CTask(InitCTask):
             data: str = '',                  # data repositories (config::task cache_repos) mounted under <home>/data/<alias>: all by default, a subset, or "none"
             artifacts: dict = {},            # selected state/result/cache artifacts; optional owned Linux volumes for state subpaths
             new_host: bool = False,          # another instance of the same place (-2, -3 ...) instead of the existing one
-            ports: str = '',                 # ports published on 127.0.0.1 when the instance is made: "8000" or "8080:80", comma-separated (a server run with --on_detach)
+            ports: str = '',                 # ports published on 127.0.0.1 when the instance is made: "8000" or "8080:80", comma-separated (a server run with --on_detach); "8472/udp" a UDP port
+            ports_on: str = '',              # the address of this machine the ports are published on instead of 127.0.0.1 (its Tailscale address, its home network's: an explicit exposure - a node of a cluster of machines)
             network: str = '',               # a network of the engine the instance joins when it is made (created when missing): the instances on it reach each other by name (a cluster of instances)
             pull: bool = False,              # pull the base image again when building
             rebuild: bool = False,           # build the image again
@@ -516,13 +541,19 @@ class CTask(InitCTask):
             inst = f'{stem}-{n}'
             existing = None
 
-        # ---- the ports to publish (host:container, on 127.0.0.1): only a container that is made gets them
-        published = []
-        for p in [x.strip() for x in str(ports or '').split(',') if x.strip()]:
-            h, _, c = p.partition(':')
-            if not h.isdigit() or (c and not c.isdigit()):
-                return self.cm.error(f'--ports: "{p}" is not a port or host:container ports')
-            published.append(f'{h}:{c or h}')
+        # ---- the ports to publish (host:container[/udp], on 127.0.0.1 or --ports_on): only a container that is made gets them
+        try:
+            published = parse_ports(ports)
+        except ValueError as e:
+            return self.cm.error(str(e))
+        # the address they are published on: loopback unless another is asked for, which must be one of this machine
+        # (2026-11-23: the nodes of a Kubernetes cluster of machines publish the API, kubelet and VXLAN ports there)
+        bind = '127.0.0.1'
+        if ports_on:
+            try:
+                bind = str(ipaddress.ip_address(str(ports_on).strip()))
+            except ValueError:
+                return self.cm.error(f'--ports_on: "{ports_on}" is not an address')
 
         declared_artifacts = dict(bdesc.get('instance_artifacts') or {})
         if bdesc is not tdesc:
@@ -549,6 +580,8 @@ class CTask(InitCTask):
                                      + f', not on {network} (a container keeps the network it was made with): --instance=<name> or --new_host '
                                      f'makes another instance on it, or cx host destroy {inst} first')
             missing = [p for p in published if p not in (acc.get('ports') or [])]
+            if published and bind != (acc.get('ports_on') or '127.0.0.1'):
+                missing = published      # published on another address: not the same instance
             if missing:
                 return self.cm.error(f'the instance {inst} was made without the port{"s" if len(missing) > 1 else ""} '
                                      f'{", ".join(missing)} (a container cannot publish a port later): --new_host makes another '
@@ -650,10 +683,8 @@ class CTask(InitCTask):
             if isinstance(rf, dict):
                 rf = rf.get(engine) or []
             run_flags += [str(x) for x in rf]
-        for p in published:
-            # loopback only: a server of an instance is this machine's until someone exposes it on purpose
-            h, _, c = p.partition(':')
-            run_flags += ['-p', f'127.0.0.1:{h}:{c}']
+        # loopback unless --ports_on: a server of an instance is this machine's until someone exposes it on purpose
+        run_flags += port_flags(published, bind)
         # --init: a small init as PID 1 reaps the orphans of what runs inside (sleep infinity does not): a multi-process
         # program (vLLM's engine) stayed a zombie with live threads and its run never returned (seen 2026-10-17)
         run_args = ['--init', '--hostname', inst, '--label', 'cmeta.container=1', '--label', f'cmeta.host={inst}',
@@ -765,7 +796,7 @@ class CTask(InitCTask):
         desc.update({
             'access': {'container': inst, 'engine': engine, 'image': image, 'keepalive': ' '.join(KEEPALIVE),
                        'run_args': subprocess.list2cmdline(run_args) if os.name == 'nt' else shlex.join(run_args),
-                       'user': user, 'shell': 'bash -l', 'ports': published, **({'network': network} if network else {}),
+                       'user': user, 'shell': 'bash -l', 'ports': published, **({'ports_on': bind} if published and bind != '127.0.0.1' else {}), **({'network': network} if network else {}),
                        **({'engine_host': engine_host} if engine_host else {})},
             'cmeta': {'home': f'{home}/CMETA', 'install': 'uv-tool'},
             'sync': {'default': 'none'},

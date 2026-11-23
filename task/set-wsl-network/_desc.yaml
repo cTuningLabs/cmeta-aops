@@ -21,6 +21,9 @@ authors: Grigori Fursin
 #   cx task run set-wsl-network mirrored --restart
 #   cx task run set-wsl-network --allow_from=192.168.1.20,192.168.1.21    # two other machines
 #   cx task run set-wsl-network nat --allow_from=none --restart  # back to Windows' default
+#   cx task run set-wsl-network --check=100.70.1.2 --peers=100.70.1.3   # read only: do the peers reach every port of
+#                                                                 # WSL at this address? (cMeta's rule, or a rule of the
+#                                                                 # host merged into Hyper-V's firewall: Tailscale's)
 
 fail_if_not_win: True
 

@@ -68,3 +68,28 @@ def test_a_rule_change_is_checked_afterwards(tmp_path, monkeypatch):
     assert r['return'] == 1 and '192.168.1.141/32' in r['error']
     r = run_task(m, tmp_path, monkeypatch, '192.168.1.67', code = 1223)
     assert r['return'] == 1 and '1223' in r['error']
+
+
+def reaches(m, rules, category = 'Private'):
+    """The task's --check with Windows faked: the address on a network of that category, Hyper-V's rules as given."""
+    import json
+    t = m['CTask']()
+    t.cm = FakeCm()
+    answer = {'alias': 'Tailscale', 'category': category, 'rules': rules}
+    t._powershell = lambda script, elevated: (0, '@@HV@@ ' + json.dumps(answer))
+    return t._reaches('100.70.1.2', ['100.70.1.3', '100.70.1.4'])
+
+
+def test_check_counts_only_rules_for_every_port_from_the_peers_on_this_address():
+    m = task_module()
+    tailscale = {'name': 'Tailscale-In', 'local': '100.70.1.2', 'remote': 'Any', 'protocol': 'Any', 'ports': 'Any',
+                 'profiles': 'Domain, Private'}
+    assert reaches(m, [tailscale])[0]
+    # another network's profile, another address, one port only, other peers: no
+    assert not reaches(m, [tailscale], category = 'Public')[0]
+    assert not reaches(m, [dict(tailscale, local = '100.70.1.9')])[0]
+    assert not reaches(m, [dict(tailscale, protocol = 'TCP', ports = '22')])[0]
+    assert not reaches(m, [dict(tailscale, remote = '100.70.1.3')])[0]
+    # cMeta's own rule: any address of this machine, the peers' network
+    assert reaches(m, [dict(tailscale, name = 'cMeta', local = 'Any', remote = '100.64.0.0/10', profiles = 'Any')])[0]
+    assert not reaches(m, [])[0]
