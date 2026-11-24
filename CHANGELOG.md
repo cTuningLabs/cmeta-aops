@@ -2,6 +2,84 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.82.0.1)
+- **The optional parts of a build: `components` and `variations`.** A `build-*` program can declare, in its
+  `_desc.yaml`, the parts only some targets, systems or uses need - for each the build variables it sets (`flags:
+  {VAR: [when on, when off]}`), the git submodules it alone reads, the systems and compute targets it can be built
+  for, the parts it needs, its default (`on`, `off`, `auto`, or by system) - and named sets of them. A request then
+  says which build it wants: `--compile.variation=<name>`, `--compile.components.<part>` (on), `<part>-` (off). One
+  function decides (`common_build.resolve_components`), the first that speaks: the part cannot be built here; the
+  request asked it; the request set one of its build variables itself; the variation; the default - then a part whose
+  required part is off is off. What cannot be honoured is an error (an unknown part or variation, a part asked where
+  it cannot be built or without the part it needs, a part asked one way and its variable set the other way). The run
+  prints the table of the parts with the reasons. Without a variation and without a part asked, a program builds what
+  it built before. Each variation is a build entry of its own. Docs: `docs/cmeta-aops/program-and-compute.md` (D2).
+  Tests: `test_build_components.py`.
+- **build-pytorch: its parts declared, `lean` and `minimal`.** Twelve parts (distributed, TensorPipe, Kineto, the ROCm
+  kernels, MSLK, oneDNN, FBGEMM, XNNPACK, NNPACK, QNNPACK, flash-attention, the tests) with the place of PyTorch's
+  build that reads each. `--compile.variation=lean` builds the same PyTorch from a lean clone: the submodules shallow,
+  and the submodules of the parts that are off for this system and these targets without their own (PyTorch's own
+  check wants the folder of every submodule; what is under it is fetched only where the part is built). `minimal` also
+  turns the optional CPU kernels, the profiler and the GPU attention kernels off. A submodule a version of the source
+  no longer has (Kineto is in PyTorch 2.15's own tree) is said and nothing is left out for it. The licence texts the
+  package lists (`project.license-files` of its `pyproject.toml`, PEP 639 - the build stops when one is missing) are
+  always there: a nested submodule that holds one is fetched also under a part that is off. From the tool: `cx tool
+  setup pytorch --with.variation=lean`, `--with.components.<part>`. `README.tech.md`: "The parts of the build".
+- **A build's own limits on its host compiler; build-pytorch on Windows.** A program can declare, by system and tool,
+  the compilers it does not configure with (`compiler_limits:` in its `_desc.yaml` - a version range, what happens
+  with it, since when) and takes the newest installed one outside them for its own run - in its `customize` hook,
+  before the template sets the compiler up: `common_build.msvc_installed()` lists the MSVC compilers of a Windows
+  machine, `common_build.compiler_outside_limits()` picks. The tool's default stays the newest for every other
+  request; a compiler the request names (`--use.msvc.version=`) is taken as asked; a machine with no compiler outside
+  the limits stops with the reason and what to install. build-pytorch declares MSVC 19.51 (seen with 19.51.36260): its
+  `cl.exe` ends with an internal compiler error on one of SLEEF's configuration probes, which stops CMake; 19.50 and
+  the compilers of Visual Studio 2022 and 2019 do not. A limit is lifted by removing its entry. Docs:
+  `docs/cmeta-aops/program-and-compute.md` (D2), build-pytorch's `README.tech.md`.
+- **clone-git: submodules by a plan, an existing clone, and Git's limit on Windows said.** `--submodules_depth=<n>`
+  fetches the submodules shallow; `--submodules_not_recursive=<paths>` fetches those without their own submodules (a
+  path that is no submodule of the clone is an error); `--submodules_files=<paths>` names files a build needs inside
+  them - the nested submodule that holds each is fetched, nothing else; `--repo=<folder>` works in a clone made before
+  and clones nothing (a build's pipeline uses it after `clone-git-to-cache`, which passes the two options on and has
+  them in its cache identity). On Windows a failed submodule update is explained: Git for Windows refuses a git folder
+  longer than 220 characters - long paths enabled or not - and the error names how many submodules are over the limit,
+  the longest, by how much, and the remedy (a shorter folder: the file cache). On Windows its commands also enter a
+  clone that is on another drive than the folder the run stands in (`cd /d`). Tests: `test_clone_git_submodules.py`.
+- **test-on-hosts: a short file cache on Windows, one step stopped, the commands from a file.** A Windows round gives
+  its throwaway home a file cache in the round's root (a step `file-cache`), so that a deep source tree cloned there
+  stays under Git's limit. `--action=stop-step` ends the step that runs now - its whole process tree - and the round
+  goes on with the next one (`stopped in <n> s (asked)` in `steps.txt`; `work/current.json` says which step runs).
+  `--cmds_file=<file>` takes the commands one per line (`#` and empty lines left out) - a command can then hold a `;`.
+  Tests: `test_test_on_hosts_stop_step.py`.
+- **pip: a resolution date for an old release.** `--with.exclude_newer=<YYYY-MM-DD>` or `release` (the day after the
+  asked version was uploaded to PyPI) resolves the dependencies as they were then: pip `--uploaded-prior-to` (pip 26.0
+  and newer; an older pip is an error with the reason, never newer packages silently), uv `--exclude-newer` for a
+  Python environment. The date is part of the entry's identity; anything but a day or `release` is refused, also when
+  the package is already there. Docs: `docs/cmeta-aops/versions-and-reproducibility.md`. Tests:
+  `test_tool_options_and_resolution_date.py`.
+- **setup-run `--profile_cuda`: the child processes too, where Nsight Systems can.** `nsys profile` gets
+  `--trace-fork-before-exec=true` only when this nsys's own help names the option (the Linux one does; the Windows one
+  has none). The new `ctask.supported_options(program, help_words, options)` answers which options a program's help
+  names - how a task follows the version of what it wraps.
+- **run-ai: the harness `pi`** (Pi, https://pi.dev), run by a task `run-pi` and a tool `pi` that a plugged repository
+  provides (run-ai finds them by its rule for any other harness). run-ai knows it by name: it takes a gateway (`-gw`),
+  a long prompt file and `--yes`; `--write=none` gives it the tools that only read (`--tools read,grep,find,ls`); a
+  conversation's session gets run-ai's id (`--session-id`) and is resumed by it (`--session`), found in Pi's own
+  folder and exported for the transcript. `ai.gateway connect` and `models` take `--harness=pi` (both wires). Tests:
+  `test_run_ai_pi.py`.
+- **New tool `powershell`: PowerShell 7 and newer (`pwsh`), through the system's own channel.** Detected where the
+  system keeps it; installed and upgraded with winget on Windows (`Microsoft.PowerShell`, its package for the user: no
+  administrator rights) and with Homebrew's formula on macOS; on Linux it is detected, not installed (the help says
+  how). `cx tool setup powershell --status`, `cx tool install powershell`, `cx tool upgrade powershell`, `cx tool run
+  powershell -- ...`. Windows PowerShell 5.1 (`powershell.exe`) is another program and is left alone. Tests:
+  `test_tool_powershell.py`.
+- **`cx tool status <tool>`**: `cx tool setup <tool> --status` in short, beside `cx tool install` and `cx tool
+  upgrade` - the versions cMeta has set up on this machine and where they are, the channel, the newest version there
+  and upstream, up to date or not; nothing is installed or changed.
+- **Newer default versions, after `explore-tool-versions` on every system each tool is set up on:** elasticsearch
+  9.5.7 and ollama 0.40.18 (Linux, macOS, Windows), lima 2.3.0 (Linux, macOS), opensearch 3.10.0 (Linux, Windows),
+  obsidian 1.15.1 (the pin is its Linux AppImage's; Windows and macOS follow the system's channel). llvm stays at
+  23.1.3: the newer release has no macOS download.
+
 ## 0.82.0
 - **The hardware a tool needs, checked before anything is downloaded.** A tool's `_desc.yaml` may declare `hardware`
   rules - the CPU features a version needs (`versions: '>=1.0.13'`, `cpu_features: [avx512f]`, `why`), as

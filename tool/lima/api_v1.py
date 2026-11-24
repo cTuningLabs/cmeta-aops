@@ -110,7 +110,7 @@ class CTool(InitCTool):
         version = params.get('version')
         version_simple = params.get('version_simple')
         if version and not version_simple:
-            return {'return': 16, 'install_cmd': cmd, 'error': 'the Lima release download needs an exact version (--version=2.2.1)'}
+            return {'return': 16, 'install_cmd': cmd, 'error': 'the Lima release download needs an exact version (--version=2.3.0)'}
         version = version_simple or default_version(self)
         if not version:
             return self.cm.error('lima pins no default_version in its _desc.yaml: give --version=<version>')

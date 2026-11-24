@@ -90,6 +90,22 @@ A version the request names fails loudly, as every forced configuration does: a 
 latest LLVM is reported, never retried with another version behind the user's back. Walking the versions on
 purpose is the exploration run of section 6.
 
+### An old release with the dependencies of its day
+
+A package asked at an old version still resolves its dependencies today, and the newest ones may
+no longer fit it. The pip tool takes a resolution date:
+
+```
+cx tool setup pip --with.package=requests --version=2.28.0 --with.exclude_newer=release
+cx tool setup pip --with.package=requests --version=2.28.0 --with.exclude_newer=2022-07-01
+```
+
+`release` is the day after the asked version was uploaded to PyPI (read from PyPI's JSON); a day
+is `YYYY-MM-DD`. Packages uploaded later are not considered: pip gets `--uploaded-prior-to`
+(pip 26.0 and newer - an older pip is an error with the reason, never a silent install of newer
+packages), uv gets `--exclude-newer`. The date is part of the entry's identity, and the result
+names it (`resolution_date`).
+
 ## 5. The lookup of the newest version: once, cached, honest offline
 
 A lookup happens only when a resolution needs one (`latest`, `ask`, `--versions`, `--status`): `known` never

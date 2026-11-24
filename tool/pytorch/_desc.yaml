@@ -55,6 +55,10 @@ cache_meta_const:
       strict_compute: '{{params.with.strict_compute|$None}}'
       ver: '{{params.with.ver|$None}}'
 
+      # the optional parts of the build (components: / variations: of program/build-pytorch): a build of its own
+      variation: '{{params.with.variation|$None}}'
+      components: '{{params.with.components|$None}}'
+
 build_uses:
   all:
     - task: compile-and-run-program,05437a1aae224270
@@ -65,6 +69,10 @@ build_uses:
       compile:
         static: '{{params.with.static|$False}}'
         strict_compute: '{{params.with.strict_compute|$None}}'
+
+        # --with.variation=<name>, --with.components.<part> (on) / <part>- (off): the parts of the build
+        variation: '{{params.with.variation|$None}}'
+        components: '{{params.with.components|$None}}'
       skip_run: True
       target_path: '{{local.target_path}}'
       checkout: '{{local.checkout|$None}}'

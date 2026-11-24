@@ -1,0 +1,24 @@
+artifact: 336b116603224c15
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-11-24T13:36:39.427083+00:00'
+desc: PowerShell 7 and newer (pwsh), detected where the system keeps it and installed or upgraded through the
+  system's own channel - winget on Windows (the MSIX package for the user), Homebrew on macOS; detected on Linux.
+  Windows PowerShell 5.1 (powershell.exe) is another program and is left alone.
+generator:
+  method: agent
+  agent: Claude Code 2.1.330
+  model: claude-fable-5-2
+  via: cmeta 0.45.3
+tags:
+- powershell
+- pwsh
+- shell
+- microsoft
+last_update_timestamp: '2026-11-24T13:37:25.226077+00:00'
+last_generator:
+  method: agent
+  agent: Claude Code 2.1.330
+  model: claude-fable-5-2
+  via: cmeta 0.45.3
+  date: '2026-11-24'

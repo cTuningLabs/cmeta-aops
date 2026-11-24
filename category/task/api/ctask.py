@@ -275,6 +275,27 @@ def ask(question, how='-q (--quiet) to take the default answers', optional=False
             'no_terminal': True}
 
 
+def supported_options(program, help_words, options, timeout = 60):
+    """
+    Which of these options a program takes, whatever its version: the ones its own help names (program + help_words,
+    e.g. ['profile', '--help']). A tool adapts to the version it wraps by asking it - never by a version number, never
+    by a guess. An option is found as a whole word of the help's text. A program that cannot be run or prints no help
+    takes none.
+
+        extra = supported_options(nsys, ['profile', '--help'], ['--trace-fork-before-exec'])
+    """
+    import re
+    import subprocess
+
+    try:
+        p = subprocess.run([str(program)] + [str(w) for w in help_words], stdout = subprocess.PIPE, stderr = subprocess.STDOUT,
+                           stdin = subprocess.DEVNULL, timeout = timeout)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return []
+    text = p.stdout.decode('utf-8', 'replace')
+    return [o for o in options if re.search(r'(?<![\w-])' + re.escape(str(o)) + r'(?![\w-])', text)]
+
+
 def pins(ctx):
     """
     A copy of the pins of a run: what "--use.<storage key>.<param>=<value>" (and the machine's own defaults, the key

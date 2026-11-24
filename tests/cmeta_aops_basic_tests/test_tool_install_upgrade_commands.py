@@ -33,6 +33,13 @@ def test_install_and_upgrade_are_setup_with_the_flag():
     assert seen[1] == {'arg1': 'git', 'ctx': {}, 'upgrade': True}
 
 
+def test_status_is_setup_with_the_flag_too():
+    # "cx tool status <tool>" (2026-11-24): what cMeta knows of a tool here, nothing installed or changed
+    category, seen = tool_category()
+    assert category.status({'arg1': 'msvc', 'ctx': {}}) == {'return': 0}
+    assert seen[0] == {'arg1': 'msvc', 'ctx': {}, 'status': True}
+
+
 def test_the_cached_version_check_is_for_the_tool_asked_on_the_command_line():
     """Only an explicit --check_versions of this call checks (the user, 2026-10-30): a global check_versions would run the
     version command of every nested tool at every reuse and throw away the entries of tools that update themselves.

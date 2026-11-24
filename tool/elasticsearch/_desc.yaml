@@ -1,7 +1,7 @@
 authors: Grigori Fursin
 description: Detect or install the official Elasticsearch distribution with its bundled Java runtime.
 names: [cmeta-elasticsearch.cmd, elasticsearch, elasticsearch.bat]
-default_version: '9.5.5'
+default_version: '9.5.7'
 cmd_get_version: '{{tool_path}} --version'
 match_version:
   - regex: 'Version:\s*(\d+\.\d+\.\d+)'

@@ -8,7 +8,7 @@ install a service or modify the firewall. The default version is declared in `_d
 ```sh
 cx tool setup opensearch
 cx tool setup opensearch --detect
-cx tool setup opensearch --version=3.9.0
+cx tool setup opensearch --version=3.10.0
 cx tool setup opensearch --versions
 cx tool setup opensearch --latest
 cx tool run opensearch -- --version

@@ -36,6 +36,8 @@ SPEC keys:
   c_compiler       True for a package that builds a C extension from source (python-augeas, which certbot's
                    Apache plugin needs, publishes no wheels): the C compiler of cMeta's compiler task is set up
                    first and passed to the build as CC - a machine without "cc" on its PATH works too
+  (--with.exclude_newer=<YYYY-MM-DD | release> of the request: uv resolves the package's dependencies as of that
+                   day - "release": the day after the pinned version was uploaded to PyPI; see resolution_date)
   c_libraries      the C libraries such a build compiles against, as the names of the tools that set them up first
                    (the tool's install_uses, e.g. ['lib-augeas']): their include and library folders go to the build's
                    CFLAGS and LDFLAGS, unless the compiler searches them anyway (/usr/include, /usr/lib) - Homebrew's
@@ -46,9 +48,56 @@ version cMeta installs by default (common_release.default_version reads it; a 'd
 a tool written before 0.46.1 is still read when the description has none).
 """
 
+import datetime
+import json
 import os
+import re
+import urllib.error
+import urllib.request
 
 from tool_c393ba5c6fa14f66.api.common_release import default_version
+
+PYPI_JSON = 'https://pypi.org/pypi/{package}/{version}/json'
+
+
+def pypi_upload_day(package, version, timeout = 60):
+    """The day (UTC, YYYY-MM-DD) the first file of a package's version was uploaded to PyPI; ValueError with the
+    reason when PyPI does not say (no such version, no network)."""
+    url = PYPI_JSON.format(package = package, version = version)
+    try:
+        with urllib.request.urlopen(url, timeout = timeout) as resp:
+            data = json.loads(resp.read().decode('utf-8', 'replace'))
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        raise ValueError(f'PyPI does not say when {package} {version} was released ({url}: {e})')
+    days = sorted(str(f.get('upload_time_iso_8601') or f.get('upload_time') or '')[:10] for f in data.get('urls') or [])
+    days = [d for d in days if re.fullmatch(r'\d{4}-\d{2}-\d{2}', d)]
+    if not days:
+        raise ValueError(f'PyPI names no upload time for {package} {version} ({url})')
+    return days[0]
+
+
+def resolution_date(asked, package, version, lookup = pypi_upload_day):
+    """
+    The day (YYYY-MM-DD) after which no release counts when a package's dependencies are resolved
+    (--with.exclude_newer): the day asked for, or - for the word "release" - the day AFTER the pinned version was
+    uploaded to PyPI, so that everything released up to that day counts and nothing later (an old release then gets
+    the dependencies of its own time). '' when nothing is asked; ValueError for anything that is no day.
+    """
+    asked = str(asked or '').strip()
+    if not asked or asked.lower() in ('false', 'no', 'off'):
+        return ''
+    if asked.lower() == 'release':
+        if not version:
+            raise ValueError(f'--with.exclude_newer=release needs a version of {package} (--version=<x.y.z>): the release day is that version\'s')
+        day = datetime.date.fromisoformat(lookup(package, version)) + datetime.timedelta(days = 1)
+        return day.isoformat()
+    wrong = ValueError(f'--with.exclude_newer: a day (YYYY-MM-DD) or the word "release" (got "{asked}")')
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}([T ].*)?', asked):
+        raise wrong
+    try:
+        return datetime.date.fromisoformat(asked[:10]).isoformat()
+    except ValueError:
+        raise wrong
 
 
 def searched_anyway(folder):
@@ -136,7 +185,17 @@ def install_pyvenv(tool, ctx, params, cmd, spec):
         if r['return'] > 0:
             return r
     reqs = ' '.join(f'"{x}"' for x in [requirement] + list(spec.get('extra', [])))
-    r = run(f'{uv} pip install --python "{python}" {reqs}', f'installing {requirement}')
+
+    # --with.exclude_newer=<day | release>: the dependencies as they were on that day (uv's --exclude-newer)
+    try:
+        day = resolution_date((params.get('with') or {}).get('exclude_newer'), spec.get('package', spec['name']), version_simple)
+    except ValueError as e:
+        return tool.cm.error(str(e))
+    older = f' --exclude-newer {day}' if day else ''
+    if day and con:
+        print(f'{space}INFO: the dependencies of {requirement} are resolved as of {day} (--with.exclude_newer)')
+
+    r = run(f'{uv} pip install{older} --python "{python}" {reqs}', f'installing {requirement}')
     if r['return'] > 0:
         return r
 

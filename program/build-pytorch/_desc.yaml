@@ -32,6 +32,133 @@ params:
 #      USE_FBGEMM: 'OFF'
 
 ###################################################################################################
+# The host compilers this build does not configure with, by system and tool - each with what happens and since when,
+# so that a limit is lifted when the compiler is fixed. The machine's newest compiler stays the default of every
+# other request: this build alone takes the newest one outside its limits (api_v1.py: customize), says so, and
+# stops with the reason when the machine has no other. A compiler the request names itself (--use.msvc.version=)
+# is taken as asked. Seen with cl.exe 19.51.36260; the whole 19.51 line is excluded on that evidence, until one of
+# its builds is seen to work (README.tech.md, "The host compiler on Windows").
+compiler_limits:
+  windows:
+    msvc:
+      - exclude: '>=19.51,<19.52'
+        reason: 'its cl.exe ends with an internal compiler error (C1001) on a probe of SLEEF
+          (COMPILER_SUPPORTS_BUILTIN_MATH: __builtin_sqrt), which CMake counts as a failed configuration'
+        since: '2026-11-24'
+
+###################################################################################################
+# The optional parts of this build, and named sets of them (README.tech.md, "The parts of the build"):
+#
+#   cx program run build-pytorch --compute=cpu --compile.variation=lean
+#   cx program run build-pytorch --compute=cuda --compile.variation=minimal --compile.components.kineto
+#   cx program run build-pytorch --compile.components.distributed                 # one part on;  <name>-  off
+#
+# Without a variation and without a part asked, the build is what it was before the parts were declared. With one,
+# the parts decide the build variables (flags: [when on, when off]) and what is cloned: the submodules shallow, and
+# the submodules of a part that is off without their own (PyTorch's cmake/PreBuildSteps.cmake wants the folder of
+# every submodule of .gitmodules; what is under it is read only where the part is built).
+#
+# The evidence for each part is PyTorch's own build (v2.14 / v2.15): the option in CMakeLists.txt and the place
+# that reads the part's submodule.
+components:
+  distributed:
+    desc: torch.distributed (c10d) with Gloo
+    flags: {USE_DISTRIBUTED: ['ON', 'OFF']}          # option(USE_DISTRIBUTED "Use distributed" ON)
+    default: 'off'                                   # as this program always built it
+
+  tensorpipe:
+    desc: TensorPipe, the RPC transport of torch.distributed - PyTorch builds it on Linux and macOS only
+    flags: {USE_TENSORPIPE: ['ON', 'OFF']}
+    submodules: [third_party/tensorpipe]             # cmake/Dependencies.cmake: if(USE_DISTRIBUTED AND USE_TENSORPIPE) ... if(MSVC) -> off
+    os: [linux, darwin]
+    requires: [distributed]
+    default: 'on'
+
+  kineto:
+    desc: Kineto, the library behind torch.profiler (CUPTI traces of CUDA)
+    flags: {USE_KINETO: ['ON', 'OFF']}               # option(USE_KINETO "Use Kineto profiling library" ON)
+    # caffe2/CMakeLists.txt: if(USE_KINETO) ... third_party/kineto/libkineto/src. A submodule up to 2.14; 2.15 carries
+    # it in its own tree - a submodule the source does not have is said by the run, and nothing is left out for it
+    submodules: [third_party/kineto]
+    default: {windows: 'off', '*': auto}             # Windows: off, as this program builds it there (build problems met)
+
+  rocm-kernels:
+    desc: AMD's Composable Kernel and AITER for attention and GEMM on ROCm
+    flags: {USE_ROCM_CK_SDPA: ['ON', 'OFF'], USE_ROCM_CK_GEMM: ['ON', 'OFF']}      # cmake_dependent_option(... "USE_ROCM;NOT WIN32" OFF)
+    # aten/src/ATen/CMakeLists.txt: if(USE_ROCM) ... third_party/aiter, third_party/composable_kernel; the submodules
+    # under third_party/flash-attention are the same two again (its CUDA sources are its own folder csrc/)
+    submodules: [third_party/flash-attention, third_party/aiter]
+    os: [linux]
+    targets: [rocm]
+    default: 'on'
+
+  mslk:
+    desc: MSLK, quantized GEMM kernels for the newest GPUs (PyTorch turns it on by the GPU architecture)
+    flags: {USE_MSLK: ['ON', 'OFF']}                 # cmake_dependent_option(USE_MSLK ... "(USE_CUDA AND NOT MSVC) OR USE_ROCM" OFF)
+    submodules: [third_party/mslk]                   # aten/src/ATen/CMakeLists.txt: if(USE_MSLK)
+    os: [linux]
+    targets: [cuda, rocm]
+    default: auto
+
+  mkldnn:
+    desc: oneDNN (MKL-DNN) kernels for CPUs
+    flags: {USE_MKLDNN: ['ON', 'OFF']}               # cmake_dependent_option(USE_MKLDNN ... "CPU_INTEL OR CPU_AARCH64 ...")
+    submodules: [third_party/ideep]                  # cmake/Modules/FindMKLDNN.cmake (only with USE_MKLDNN)
+    default: {windows: 'off', '*': auto}             # Windows: off, as this program builds it there
+
+  fbgemm:
+    desc: FBGEMM, the quantized 8-bit operators for x86 servers
+    flags: {USE_FBGEMM: ['ON', 'OFF']}               # (its submodule stays whole: PreBuildSteps.cmake wants third_party/fbgemm/external/asmjit)
+    default: auto
+
+  xnnpack:
+    desc: XNNPACK, the mobile CPU kernels
+    flags: {USE_XNNPACK: ['ON', 'OFF']}
+    default: {windows: 'off', '*': auto}             # Windows: off, as this program builds it there
+
+  nnpack:
+    desc: NNPACK, the older CPU convolution kernels
+    flags: {USE_NNPACK: ['ON', 'OFF']}
+    default: auto
+
+  qnnpack:
+    desc: QNNPACK, quantized 8-bit operators of ATen
+    flags: {USE_PYTORCH_QNNPACK: ['ON', 'OFF']}
+    default: auto
+
+  flash-attention:
+    desc: the flash-attention kernels of scaled dot product attention on a GPU (a long part of a CUDA build)
+    flags: {USE_FLASH_ATTENTION: ['ON', 'OFF']}      # cmake_dependent_option(USE_FLASH_ATTENTION ... ON "USE_CUDA ...")
+    targets: [cuda, rocm]
+    default: auto
+
+  tests:
+    desc: PyTorch's C++ test binaries (they double the build's time; not needed to use or measure it)
+    flags: {BUILD_TEST: ['1', '0']}
+    default: 'off'                                   # as this program always built it
+
+variations:
+  lean:
+    desc: the same build as without a variation, cloned with only what it reads - the submodules shallow, and the
+      submodules of the parts that are off without their own
+    components: {}
+
+  minimal:
+    desc: the smallest build for a check of the targets - the optional CPU kernels, the profiler and the GPU
+      attention kernels off
+    components:
+      distributed: 'off'
+      kineto: 'off'
+      mkldnn: 'off'
+      fbgemm: 'off'
+      xnnpack: 'off'
+      nnpack: 'off'
+      qnnpack: 'off'
+      mslk: 'off'
+      flash-attention: 'off'
+      tests: 'off'
+
+###################################################################################################
 updates:
   compile:
     uses:
@@ -140,12 +267,24 @@ updates:
             # The newest release (master is the next development version); --checkout=<tag|branch>
             checkout: '{{params.checkout|v2.15.0}}'
 
-          # PyTorch depends heavily on submodules (e.g. pybind11, sleef, XNNPACK)
-          - task: cmd,c9ba0a88df394d7f
+          # The optional parts of the build for this system and these targets (components: / variations: above):
+          # the build variables that follow, and which submodules are fetched without their own
+          - internal_func: plan_components
+            internal_func_from_local_key: selected-program
+            internal_func_safe: True
+
+          # PyTorch depends heavily on submodules (e.g. pybind11, sleef, XNNPACK): fetched by clone-git in the clone
+          # made above - with git's long paths on Windows, by the plan of the parts when one is asked, and with the
+          # words for Git's limit of a git folder on Windows when a clone is too deep for it
+          - task: clone-git,af9422df6ea241ec
             storage_key: init-pytorch-submodules
-            chdir: '{{global.clone-git-to-cache-src-pytorch.path_to_git_repo}}'
-            cmds:
-              - '{{global.git.qpath}} submodule update --init --recursive'
+            cache: False
+            url: 'https://github.com/pytorch/pytorch'
+            repo: '{{global.clone-git-to-cache-src-pytorch.path_to_git_repo}}'
+            update_submodules: True
+            submodules_depth: '{{local.pytorch_submodules_depth|$None}}'
+            submodules_not_recursive: '{{local.pytorch_submodules_not_recursive|$[]}}'
+            submodules_files: '{{local.pytorch_submodules_files|$[]}}'
 
           ######################################################################################
           # Compute pip_install_env and check-file paths

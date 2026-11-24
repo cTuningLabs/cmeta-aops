@@ -96,8 +96,9 @@ class CTask(InitCTask):
         # arguments, e.g. "--depth 1 origin <commit>" to pin a commit in a shallow clone (see clone-git).
         # branch, new_branch and update_submodules are part of this task's cache identity too, so
         # they reach clone-git as well
+        # (and the plan of the submodules: shallow, and which ones without their own - see clone-git)
         for k in ['url', 'directory', 'tag', 'checkout', 'branch', 'new_branch', 'depth', 'filter', 'fetch',
-                  'update_submodules']:
+                  'update_submodules', 'submodules_depth', 'submodules_not_recursive', 'submodules_files']:
             if k in params:
                 p[k] = params[k]
 

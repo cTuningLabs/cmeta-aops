@@ -83,5 +83,6 @@ def test_the_commands_can_come_from_a_json_file_in_the_root(tmp_path):
     (root / 'commands.json').write_text(json.dumps(['task run test-python -q', 'task run test-c -q']))
     steps, calls = run_round(tmp_path, lambda root: str(root / 'home'), commands = ['@commands.json'])
 
-    assert [s.split(': ', 2)[2] for s in steps[1:]] == ['task run test-python -q', 'task run test-c -q']
+    # (the commands by their numbers: the steps before them - the plug, on Windows the home's file cache - have names)
+    assert [s.split(': ', 2)[2] for s in steps if s.split(':')[0].isdigit()] == ['task run test-python -q', 'task run test-c -q']
     assert any('test-python' in c for c in calls) and any('test-c ' in c for c in calls)
