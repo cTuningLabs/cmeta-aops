@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.81.0.1)
+## 0.81.1
 - **Two runs of a program in one cache entry no longer fail on `_repro_ctx_run.json`.** compile-and-run-program
   removed the file after checking that it was there; a second run in the same cache entry (two pods of a Kubernetes
   job on one node share that node's cMeta home) could remove it in between, and the first stopped with
