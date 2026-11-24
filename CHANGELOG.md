@@ -2,6 +2,18 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.81.1.1)
+- **The hardware a tool needs, checked before anything is downloaded.** A tool's `_desc.yaml` may declare `hardware`
+  rules - the CPU features a version needs (`versions: '>=1.0.13'`, `cpu_features: [avx512f]`, `why`), as
+  `task::target--cpu` names them. `task/setup` checks them before an install and before a build, for the version set
+  up: a machine without such a feature stops at once with "*<tool> <version> is not supported on this machine: it
+  needs the CPU feature(s) ..., which this processor (<name>) does not have - <why>*" instead of a download, an install
+  and a crash. What the machine's inventory cannot tell (no CPU flags read, a name Windows does not answer for) only
+  warns - an unseen system is never refused; an unknown version is never refused; `--skip_hardware_check` skips the
+  check. `explore-tool-versions` records such a refusal as **not supported here** - neither a limit of "latest" nor a
+  broken version, a note in its proposals. tool/flm declares AVX-512 for 1.0.13 and newer (not the NPU: flm installs
+  and answers without one). Docs: `docs/cmeta-aops/tool-hardware.md`, the add-tool skill. Tests: `test_tool_hardware.py`.
+
 ## 0.81.1
 - **Two runs of a program in one cache entry no longer fail on `_repro_ctx_run.json`.** compile-and-run-program
   removed the file after checking that it was there; a second run in the same cache entry (two pods of a Kubernetes

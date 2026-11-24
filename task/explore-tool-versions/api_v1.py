@@ -25,6 +25,8 @@ VERDICT_SCHEMA = 1
 
 # The class of a failure from the words of its error, the first that matches; else the stage it failed at
 ERROR_CLASSES = (
+    # the machine lacks what the tool's hardware rules ask (task/setup check_hardware): not the version's fault
+    ('not supported here', ('not supported on this machine',)),
     ('not available', ('no matching', 'could not find a version', 'no versions of', 'not available',
                        'not found for version', '404')),
     ('checksum', ('sha256', 'sha-256', 'checksum')),
@@ -34,7 +36,8 @@ ERROR_CLASSES = (
 
 
 def error_class(text, stage):
-    """'not available', 'checksum', 'download', 'build', else the stage that failed ('setup' or 'program')."""
+    """'not supported here', 'not available', 'checksum', 'download', 'build', else the stage that failed ('setup' or
+    'program')."""
     low = str(text or '').lower()
     for name, words in ERROR_CLASSES:
         if any(word in low for word in words):
@@ -203,7 +206,7 @@ def proposals_of(verdicts, descs, min_os = 2, today = None):
                 classify(r)
             bad = [r for r in runs if not r.get('works')
                    and (r.get('host', {}).get('uname'), r.get('error_class')) not in known_fails]
-            broken = [r for r in bad if r.get('error_class') != 'not available']
+            broken = [r for r in bad if r.get('error_class') not in ('not available', 'not supported here')]
             where = lambda rs: ', '.join(sorted({r.get('host', {}).get('uname') or '?' for r in rs}))
             if broken:
                 if not excluded_by(version, limits):
@@ -217,7 +220,10 @@ def proposals_of(verdicts, descs, min_os = 2, today = None):
                 hosts = lambda rs: ', '.join(sorted({(r.get('host', {}).get('uname') or '?') +
                                                      (f" ({r['host']['hostname']})" if r.get('host', {}).get('hostname') else '')
                                                      for r in rs}))
-                proposals.append({'tool': tool, 'change': 'not available', 'version': version, 'on': hosts(bad),
+                # the note names the class: a version the channel does not offer there, or a machine without the
+                # hardware the version needs (its hardware rules)
+                change = 'not supported here' if all(r.get('error_class') == 'not supported here' for r in bad) else 'not available'
+                proposals.append({'tool': tool, 'change': change, 'version': version, 'on': hosts(bad),
                                   'error': bad[0].get('error'), 'works_on': ok, 'evidence': len(runs)})
             elif len(ok) >= min_os and not v.is_prerelease:
                 candidates.append((v, version, ok, len(runs)))

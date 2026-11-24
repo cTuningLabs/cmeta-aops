@@ -71,7 +71,7 @@ class CTask(InitCTask):
                 'skip_detect', 'skip_install', 'skip_build',
                 'skip_install_uses', 'skip_build_uses',
                 'skip_cache_version_check',
-                'skip_size_check', 'sizes',
+                'skip_size_check', 'sizes', 'skip_hardware_check',
                 'name', 'tool_tags', 'tool_api_ver', 'tool_path', 'paths',
                 'version', 'env', 'timeout', 'with', 'arg3',
                 'version_check', 'version_policy', 'version_word', 'refresh_versions', 'check_update',
@@ -602,6 +602,75 @@ class CTask(InitCTask):
         return {'return': 0}
 
     ############################################################
+    def check_hardware(self,
+                       ctx: dict,
+                       method: str,        # install or build
+                       kwargs: dict,       # the setup's parameters (tool_read, version, ...)
+    ):
+        """
+        Before an install or a build: what this machine must have for this version of the tool - the "hardware"
+        rules of its _desc.yaml (docs/cmeta-aops/tool-hardware.md) -, checked before anything is downloaded:
+
+            hardware:
+              - versions: '>=1.0.13'        # the versions a rule is for (a fuzzy version, as in _desc_sizes.yaml);
+                                            # none: every version
+                cpu_features: [avx512f]     # as task::target--cpu names them (avx2, avx512f, sve, ...)
+                why: the 1.0.13 builds use AVX-512
+
+        A machine without a required feature gets "not supported on this machine" with the reason - an error, so
+        the setup says it at once and explore-tool-versions records "not supported here". A feature that this
+        machine's inventory cannot tell (no CPU flags read, a name Windows' list does not cover) only warns: an
+        unseen system is never refused. --skip_hardware_check skips it. Tools without rules: no check, no output.
+        """
+
+        rules = ((kwargs.get('tool_read') or {}).get('desc') or {}).get('hardware')
+        if not rules or kwargs.get('skip_hardware_check', False):
+            return {'return': 0}
+
+        ctx_tasks = ctx['tasks']
+        _global = ctx_tasks['global']
+        con = ctx['control'].get('con', False)
+        verbose = ctx['control'].get('verbose', False)
+        space = '  ' * ctx_tasks.get('nested_call', 0) if verbose else ''
+
+        # the CPU inventory: the pipeline's, else task::target--cpu (cached per machine); unreadable: nothing refused
+        inventory = (_global.get('target--cpu') or {}).get('features')
+        if inventory is None:
+            r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'target--cpu,309b284325874aa7',
+                                'ctx': ctx, 'con': False, 'quiet': True})
+            inventory = (_global.get('target--cpu') or {}).get('features') or (r.get('features') if r['return'] == 0 else None) or {}
+
+        def version_matches(version, spec):
+            return self.cm.utils.common.matches_query({'version': version}, {'@version': spec},
+                                                      match_version_func = self.cm.repos.match_version_func,
+                                                      match_empty_version = False)
+
+        version = kwargs.get('version_simple') or kwargs.get('version') or None
+        if version is True:
+            version = kwargs.get('version')
+        missing, unknown = install.hardware_verdict(rules, version, inventory, version_matches)
+
+        tool_read = kwargs.get('tool_read', {})
+        tool_name = tool_read.get('artifact_print_name') or kwargs.get('name')
+        what = f'{tool_name}' + (f' {version}' if version else '')
+
+        if unknown and con:
+            names = ', '.join(sorted({f for f, _ in unknown}))
+            print (f'{space}WARNING: {what} needs the CPU feature(s) {names}; this machine cannot tell whether it has '
+                   f'them - going on (the {method} may fail)')
+
+        if not missing:
+            return {'return': 0}
+
+        names = ', '.join(sorted({f for f, _ in missing}))
+        whys = '; '.join(dict.fromkeys(str(rule['why']) for _, rule in missing if rule.get('why')))
+        cpu = install.processor_name(inventory)
+        return {'return': 1, 'unsupported_hardware': sorted({f for f, _ in missing}),
+                'error': f'{what} is not supported on this machine: it needs the CPU feature(s) {names}, which this '
+                         f'processor{" (" + cpu + ")" if cpu else ""} does not have' + (f' - {whys}' if whys else '') +
+                         ' (--skip_hardware_check to try anyway)'}
+
+    ############################################################
     def record_disk_size(self,
                          ctx: dict,
                          result: dict,
@@ -905,6 +974,10 @@ class CTask(InitCTask):
 
         ##############################################################################
         if not success and install and not skip_install:
+            # The hardware this version needs (the tool's "hardware" rules), before anything is downloaded
+            r = self.check_hardware(ctx, 'install', kwargs_copy)
+            if self.cm.catch_error(r): return r
+
             # Enough disk space for the install? (the tool's _desc_sizes.yaml, the configured minimum)
             r = self.check_disk_space(ctx, 'install', kwargs_copy)
             if self.cm.catch_error(r): return r
@@ -982,7 +1055,10 @@ class CTask(InitCTask):
 
         ##############################################################################
         if not success and build and not skip_build:
-            # Enough disk space for the build?
+            # The hardware this version needs, then enough disk space for the build?
+            r = self.check_hardware(ctx, 'build', kwargs_copy)
+            if self.cm.catch_error(r): return r
+
             r = self.check_disk_space(ctx, 'build', kwargs_copy)
             if self.cm.catch_error(r): return r
 

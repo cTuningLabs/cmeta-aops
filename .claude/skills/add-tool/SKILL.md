@@ -632,6 +632,22 @@ sizes:
 setup <name> --sizes` prints the records and a suggested file. A custom `install()` may return
 `peak_gb`. Full text: `docs/cmeta-aops/tool-sizes.md`.
 
+### 7.2 Tools that need given hardware: `hardware` in `_desc.yaml`
+
+A tool whose builds run only on given CPUs declares it, and `task/setup` refuses a machine without it
+**before** downloading ("not supported on this machine: it needs the CPU feature(s) ..."); what the
+machine's inventory cannot tell only warns, `--skip_hardware_check` skips the check, and
+`explore-tool-versions` records "not supported here" (neither a limit nor a broken version):
+
+```yaml
+hardware:
+  - versions: '>=1.0.13'      # none: every version
+    cpu_features: [avx512f]   # task::target--cpu's names
+    why: the builds from 1.0.13 on use AVX-512
+```
+
+Full text: `docs/cmeta-aops/tool-hardware.md` (`tool/flm` is the example).
+
 ---
 
 ## Before you finish: the concepts every change keeps
