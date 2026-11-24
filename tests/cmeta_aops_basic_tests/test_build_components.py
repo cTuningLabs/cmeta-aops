@@ -240,6 +240,12 @@ def test_build_pytorch_declares_its_limit_and_applies_it_first():
 def test_the_licence_files_a_python_project_lists(build, tmp_path):
     assert build.declared_license_files(str(tmp_path)) == []                               # no pyproject.toml
     (tmp_path / 'pyproject.toml').write_text('[project]' + chr(10) + 'name = "x"' + chr(10), encoding = 'utf-8')
+    try:
+        import tomllib                                                                     # noqa: F401 (Python 3.11 and newer)
+    except ImportError:
+        # a Python that cannot read TOML says so for any pyproject.toml: the caller then leaves nothing out
+        assert build.declared_license_files(str(tmp_path)) is None
+        return
     assert build.declared_license_files(str(tmp_path)) == []                               # none listed
     (tmp_path / 'pyproject.toml').write_text('[project]' + chr(10) + 'name = "x"' + chr(10) + 'license-files = [' + chr(10) +
                                              '    "LICENSE",  # its own' + chr(10) + '    "third_party/a/b/LICENSE*",' + chr(10) + ']' + chr(10),
