@@ -343,6 +343,17 @@ class Category(InitCategory):
         return self.setup(dict(params, upgrade=True))
 
     ############################################################
+    def status(self, params):
+        """
+        What cMeta knows of a tool on this machine - the versions it has set up and where they are, the channel it
+        comes through, the newest version there and upstream, whether it is up to date - without installing or
+        changing anything: "cx tool setup <tool> --status" in short (the user's wish, 2026-11-24).
+
+            cx tool status msvc
+        """
+        return self.setup(dict(params, status=True))
+
+    ############################################################
     def check_updates_(self,
                        ctx: dict,
                        arg1: str = None,                 # the tools to check, comma-separated (else every tool with a default_version)

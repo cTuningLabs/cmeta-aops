@@ -106,7 +106,7 @@ What a run may write is one switch: --write=ask|project|all|none, -w for "all", 
     project  the harness asks nothing (what --yes does); the used artifacts still take proposals only
     all      the same, and the memory and skills of the used artifacts may be changed directly - run-ai lists the
              changes, records them in the artifact and keeps the versions before the run in !AI/log/<stamp>.before/
-    none     read-only: the harness runs in its plan / read-only mode (claude, codex, opencode, agy, gemini)
+    none     read-only: the harness runs in its plan / read-only mode (claude, codex, opencode, agy, gemini, pi)
 
 How long the model's provider keeps the prompt cache of the conversation is one number: --prompt_cache_minutes, and
 the key "prompt_cache_minutes" of the config "task-run-ai" as this machine's default for a run on a key (60 when it is
@@ -144,7 +144,8 @@ LOG_PROJECT = 'task-run-ai'
 MODELS_FILE = '_desc_models.yaml'
 
 # The harnesses, the tasks that run them and the tools that hold their model lists (alias,UID: rename-safe).
-# Any other --harness=<x> tries the task run-<x> and the tool <x>.
+# Any other --harness=<x> tries the task run-<x> and the tool <x>: so runs pi (Pi, pi.dev), whose task and tool are not
+# part of this repository - the tables below and the session adapter of conversations.py know it by its name.
 HARNESSES = {
     'claude':      {'task': 'run-claude,38be73ffceaa4f67',   'tool': 'claude,383841b240c74e88'},
     'codex':       {'task': 'run-codex,ad2fd6be195a4e36',    'tool': 'codex,cdbf5f6e6882460f'},
@@ -177,8 +178,8 @@ AI_USES_KEY = 'ai_uses'
 AI_GATEWAY_KEY = 'ai_gateway'           # the project's _desc.yaml: an ai.gateway alias, or "login", for its runs
 RUN_AI_CONFIG_KEY = 'run_ai_config'     # the project's _desc.yaml: the harness, model, effort and gateway (or login) its runs take without flags (its last run's)
 SET_AI_GATEWAY = 'set-ai-gateway,e10aa0a00edd4a2c'
-GATEWAY_HARNESSES = ('claude', 'codex', 'opencode')   # the run-<harness> tasks that take --gateway
-NO_GATEWAY_SUPPORT = 'the harness "%s" has no gateway support (claude, codex, opencode have): -ln for its own login'
+GATEWAY_HARNESSES = ('claude', 'codex', 'opencode', 'pi')   # the run-<harness> tasks that take --gateway
+NO_GATEWAY_SUPPORT = 'the harness "%%s" has no gateway support (%s have): -ln for its own login' % ', '.join(GATEWAY_HARNESSES)
 GATEWAY_CATEGORY = 'ai.gateway,ae1ae632e0ec4f75'
 
 # The config artifact of this task (cx config ...: in the local repository, so on this machine only; named after the
@@ -226,10 +227,11 @@ RUN_REF_KEY = re.compile(r'^[a-z_]{1,16}$')
 # what it shows stays in the history one scrolls back to (a full-screen harness redraws its window in place and leaves
 # nothing there). Asked by the flag; else by the terminal itself (CMETA_NO_ALT_SCREEN - every session of /ai.sessions);
 # else by the config key below (every run of this machine); else the harness's own setting. The harness tasks know how
-# (main_screen of the task engine): claude, codex and hermes; another harness is said to have no known way.
+# (main_screen of the task engine): claude, codex and hermes; run-pi asks pi itself (its regular mode); another harness
+# is said to have no known way.
 NO_ALT_SCREEN_ENV = 'CMETA_NO_ALT_SCREEN'           # the task engine's NO_ALT_SCREEN
 CONFIG_MAIN_SCREEN_KEY = 'main_screen'
-MAIN_SCREEN_HARNESSES = ('claude', 'codex', 'hermes')
+MAIN_SCREEN_HARNESSES = ('claude', 'codex', 'hermes', 'pi')
 HARNESS_SCREEN_VARIABLES = ('CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN',)   # a harness's own: not passed on when the flag says no
 
 # The auto-compact window of a run (--autocompact): the size at which the harness summarises its conversation - every
@@ -375,16 +377,17 @@ READ_ONLY_FLAGS = {
     'opencode': ['--agent', 'plan'],
     'agy': ['--mode', 'plan'],
     'gemini': ['--approval-mode', 'plan'],
+    'pi': ['--tools', 'read,grep,find,ls'],     # Pi has no plan mode: the tools that only read (no bash, edit, write)
 }
 
 # The harness tasks that take "yes" (their own flags that stop the questions and lift the sandbox); run-openclaw has
 # none - OpenClaw follows its own settings. A task run-<x> that is not listed gets it only from --yes itself.
-YES_HARNESSES = ('claude', 'codex', 'opencode', 'agy', 'gemini', 'hermes', 'vibe')
+YES_HARNESSES = ('claude', 'codex', 'opencode', 'agy', 'gemini', 'hermes', 'vibe', 'pi')
 
 # The harness tasks that take "long_prompt_file": where they write a prompt too long for a command line argument (an
 # interactive session preloads its first prompt that way; opencode and openclaw have no stdin mode at all) and ask the
 # agent to read it first. run-ai names that file in !AI/log; a task run-<x> that is not listed is not given it.
-LONG_PROMPT_HARNESSES = ('claude', 'codex', 'opencode', 'openclaw', 'agy', 'gemini', 'hermes', 'vibe')
+LONG_PROMPT_HARNESSES = ('claude', 'codex', 'opencode', 'openclaw', 'agy', 'gemini', 'hermes', 'vibe', 'pi')
 
 
 def harness_choice(harness, agent, cx = False):
@@ -2122,7 +2125,7 @@ class CTask(InitCTask):
     # ------------------------------------------------------------------ run
     def run(self,
             ctx: dict,                      # cMeta context
-            harness: str = '',              # claude (default) | codex | opencode | openclaw | antigravity (agy) | gemini | hermes | vibe | <x> (then the task run-<x>)
+            harness: str = '',              # claude (default) | codex | opencode | openclaw | antigravity (agy) | gemini | hermes | vibe | <x> (then the task run-<x>: pi, whose task and tool a plugged repository provides)
             agent: str = '',                # the old name of --harness (still accepted)
             cx: bool = False,               # --harness=codex in short
             gateway: str = '',              # an ai.gateway alias (a company's gateway, a llama.cpp server, ...) or "login"; empty: what the project ran with last (run_ai_config), what its _desc.yaml declares (ai_gateway), this machine's config, else login

@@ -9,6 +9,10 @@ import os
 import shutil
 import sys
 
+import re
+
+import yaml
+
 from program_22788f3c30d04e6d.api.cprogram import InitCProgram
 from program_22788f3c30d04e6d.api import common_build
 
@@ -34,6 +38,129 @@ class CProgram(InitCProgram):
         if 'cuda' in compute:
             _local['lang'] = 'cuda'
 
+        return {'return': 0}
+
+    ############################################################
+    def customize(self,
+                  ctx: dict,
+                  desc: dict = {},
+                  **misc,
+    ):
+        """
+        The first step of the pipeline, before the template sets the compiler up: the host compiler of this build
+        where its _desc.yaml declares limits (compiler_limits: <system>: <tool>; Windows and msvc today).
+
+        The machine's compilers are listed, the newest first. When the newest is one a limit excludes, the newest
+        one outside the limits becomes the msvc of THIS run (a pin of the run, as --use.msvc.version=<it> would be -
+        nothing of the machine changes, every other request keeps the newest), and the console says which and why.
+        When the machine has no other, the run stops with the reason and what to install. Nothing is changed when
+        the request names its compiler itself (it is taken as asked, with a line when a limit excludes it), when
+        the newest compiler is fine, and when the compilers cannot be listed (the build then goes on as before).
+        """
+        _global = ctx['tasks']['global']
+        con = ctx['control'].get('con', False)
+
+        system = _global['host']['os']['uname']
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml'), encoding = 'utf-8') as f:
+            limits = (((yaml.safe_load(f) or {}).get('compiler_limits') or {}).get(system) or {}).get('msvc') or []
+        if system != 'windows' or not limits:
+            return {'return': 0}
+
+        def matches(spec, version):
+            return self.cm.packages.match_version(spec, version).get('matched', False)
+
+        use = ctx['tasks'].setdefault('use', {})
+        asked = str((use.get('msvc') or {}).get('version') or '').strip()
+        if asked:
+            why = next((str(l.get('reason')) for l in limits if common_build.version_key(asked) != () and
+                        re.fullmatch(r'=*[0-9.]+', asked) and matches(str(l['exclude']), asked.lstrip('='))), None)
+            if why and con:
+                print('')
+                print(f'WARNING: MSVC {asked} is asked for, and this build is known not to configure with it: {why}')
+            return {'return': 0}
+
+        r = common_build.compiler_outside_limits(common_build.msvc_installed(), limits, matches)
+        if r['none_left']:
+            version, where, why = r['excluded'][0]
+            return self.cm.error(f'this build does not configure with the MSVC of this machine ({version}, {where}): {why}. '
+                                 f'The machine has no other one: install one outside that limit beside it - the Build Tools of '
+                                 f'Visual Studio 2022: cx tool setup microsoft.visual-studio --install --with.year=2022 - '
+                                 f'or name a compiler yourself (--use.msvc.version=<version>)')
+        if r['choice']:
+            version, where = r['choice']
+            use.setdefault('msvc', {})['version'] = version
+            _global_note = {'version': version, 'instead_of': r['excluded'][0][0], 'why': r['excluded'][0][2]}
+            ctx['tasks']['local']['pytorch_host_compiler'] = _global_note
+            if con:
+                print('')
+                print(f'INFO: the host compiler of this build is MSVC {version} ({where}), not the newest of this machine '
+                      f'({r["excluded"][0][0]}): {r["excluded"][0][2]}')
+                print('      (this run only; --use.msvc.version=<version> names another one)')
+        return {'return': 0}
+
+    ############################################################
+    def plan_components(self,
+                        ctx: dict,
+                        desc: dict = {},
+                        **misc,
+    ):
+        """
+        The optional parts of the build (components: and variations: of this program's _desc.yaml), resolved for this
+        system and these targets when the request names a variation (--compile.variation=<name>) or a part
+        (--compile.components.<name>, <name>-): the table on the console, the build variables for customize_pytorch
+        (local.pytorch_component_flags), the plan of the submodules for the clone step - shallow, and those of the
+        parts that are off without their own (local.pytorch_submodules_depth / _not_recursive). Without either the
+        request is the one of before: every submodule with everything under it, the variables of customize_pytorch.
+        """
+        _local = ctx['tasks']['local']
+        _global = ctx['tasks']['global']
+        con = ctx['control'].get('con', False)
+
+        compile_params = (misc.get('params') or {}).get('compile') or {}
+        variation = compile_params.get('variation')
+        asked = compile_params.get('components') or {}
+        if not isinstance(asked, dict):
+            return self.cm.error('--compile.components.<name> (on) or --compile.components.<name>- (off): one part at a time')
+        if variation in (None, '', False) and not asked:
+            return {'return': 0}
+
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml'), encoding = 'utf-8') as f:
+            own = yaml.safe_load(f) or {}
+
+        # the build variables the request set itself: its word for their parts (the program's own defaults in
+        # params.compile.d are the parts' defaults now, and no request)
+        defaults = ((own.get('params') or {}).get('compile') or {}).get('d') or {}
+        given = {k: v for k, v in (compile_params.get('d') or {}).items() if str(defaults.get(k)) != str(v)}
+
+        # the submodules this version of the source has (2.15 carries kineto in its own tree, 2.14 as a submodule)
+        git_repo = _global['clone-git-to-cache-src-pytorch']['path_to_git_repo']
+
+        r = common_build.resolve_components(own.get('components'), own.get('variations'), variation, asked,
+                                            {'os': _global['host']['os']['uname'], 'targets': list(_global['target']['compute']),
+                                             'submodules': common_build.source_submodules(git_repo)}, given)
+        if r['return'] > 0:
+            return self.cm.error(r['error'])
+
+        # What the package's own metadata names inside the submodules (project.license-files of pyproject.toml - PEP 639:
+        # a listed file that is missing stops the build; 2.15 lists licence texts of nested submodules): the nested
+        # submodules that hold them are still fetched. A Python that cannot read the list leaves nothing out.
+        listed = common_build.declared_license_files(git_repo)
+        not_recursive = r['not_recursive'] if listed is not None else []
+
+        _local['pytorch_component_flags'] = r['flags']
+        _local['pytorch_submodules_depth'] = 1
+        _local['pytorch_submodules_not_recursive'] = not_recursive
+        _local['pytorch_submodules_files'] = [x for x in (listed or []) if any(x.startswith(s + '/') for s in not_recursive)]
+        _local['pytorch_components'] = {'variation': r['variation'], 'parts': {k: v['state'] for k, v in r['parts'].items()}}
+        if con:
+            print('')
+            for line in r['lines']:
+                print(line)
+            print('  the submodules: shallow' + (', and without their own: ' + ', '.join(not_recursive) if not_recursive else '') +
+                  (f' (but with the ones that hold the {len(_local["pytorch_submodules_files"])} licence files the package lists in them)'
+                   if _local['pytorch_submodules_files'] else '') +
+                  (' - all of them whole: this Python reads no pyproject.toml (before 3.11), so nothing is left out'
+                   if listed is None and r['not_recursive'] else ''))
         return {'return': 0}
 
     ############################################################
@@ -105,6 +232,10 @@ class CProgram(InitCProgram):
 
         def _to_01(v):
             return '1' if v else '0'
+
+        # the parts of the build (plan_components): their variables are over this program's own defaults of compile.d;
+        # a variable the request set itself is none of them (the request's word decided its part)
+        d = dict(d, **(_local.get('pytorch_component_flags') or {}))
 
         for k, v in d.items():
             v_str = str(v)

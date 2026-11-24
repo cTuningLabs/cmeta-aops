@@ -11,6 +11,7 @@ cx task run test-on-hosts --cmds="..." --hosts=lab-laptop-ubuntu,lab-mac-mini-ma
 cx task run test-on-hosts --action=peek --id=yq1 [--hosts=...]                                     # running or done, the steps
 cx task run test-on-hosts --action=collect --id=yq1 [--files=*.jsonl] [--to=<folder>]              # the results here
 cx task run test-on-hosts --action=remove --id=yq1                                                 # the hosts' folders removed
+cx task run test-on-hosts --action=stop-step --id=yq1 [--hosts=...]                                # the step that runs now is ended, the round goes on
 cx task run test-on-hosts --cmds="task run test-python -q" --hosts="docker:ubuntu,docker:debian,wsl,lab-laptop-ubuntu"   # a matrix of OS images and hosts
 ```
 
@@ -25,6 +26,10 @@ The parameters:
   launches the round: put such a line into a script file and make the command `!call D:\...\run.bat <args>`
   (`!bash /path/run.sh` on a POSIX host). A command that must run in the host's own home, not the throwaway
   one, is `!env -u CMETA_HOME cx ...` (`!set "CMETA_HOME=" && cx ...` in such a script on Windows).
+- **`--cmds_file`:** a file with one command per line instead (lines that start with `#` and empty ones are left
+  out): a `;` inside a command no longer splits it, and every command reaches its host's runner as it is written
+  (as arguments here, quoted for a POSIX host, in `commands.json` for a Windows host). Both may be given: the
+  file's commands run first.
 - **`--hosts`:** host aliases separated by `,` (a list - `--hosts,=...` or a YAML list - is taken as it is: a host's
   alias may hold commas). `here` is this machine. The default is the key `hosts` of the config artifact
   `task-test-on-hosts` (`cx config set task-test-on-hosts --meta.hosts=a,b,c`: the test machines of a fleet, never a
@@ -59,6 +64,12 @@ How it runs:
 - The runner gives each host a throwaway home (`<root>/home`) and plugs the tree into it. It runs each command in
   `<root>/work`, writes `step-<n>.log` and a line of `steps.txt` per command, then `DONE`.
 - The host's own home, cache and repositories are never touched.
+- **On Windows the throwaway home keeps its file cache in the round's folder** (`<root>\fc`, set with
+  `cx config set task --meta.file_cache=...` right after the plug - the step `file-cache` of `steps.txt`): the clones
+  and large downloads of the tasks that use the file cache (clone-git-to-cache, the Hugging Face tasks) stay out of
+  the home's cache entries, whose paths are deep. Git for Windows refuses a submodule's git folder beyond 220
+  characters (`'$GIT_DIR' too big`), whatever Windows and `core.longpaths` allow: a recursive clone with nested
+  submodules failed in a round's home. Removed with the round.
 
 ## Peek, collect, remove
 
@@ -71,6 +82,12 @@ How it runs:
   `<to>` is the round's local folder plus `collected`. For the verdicts of explorations, promote them with
   `cx task run explore-tool-versions --promote --verdicts=<to>`.
 - **remove:** the round's folder on each host is removed, and here the `here` copy.
+- **stop-step:** the step that runs now on each host (`--hosts` for some) is ended with everything it started, and
+  the round goes on with its next command; `steps.txt` then says `<n>: stopped in <s> s (asked): <command>`. The
+  runner starts each step in a process group of its own and says which one runs in `work/current.json`; the action
+  makes the file `stop-step` beside it, and the runner ends that group (POSIX: TERM, then KILL after 10 s; Windows:
+  the process tree). Never look for a step by its command line: the runner's own command line holds every step's.
+  A round launched before 2026-11-24 has an older runner, which does not know the file.
 
 The round's local folder is `test-on-hosts-<id>` in the sandbox of the shell's test session (`CMETA_TEST_SESSION`),
 else in the artifact `tmp::task-test-on-hosts` of the local repository (made on first use) - never in the current

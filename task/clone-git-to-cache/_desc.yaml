@@ -17,6 +17,9 @@ cache_params:
   - fetch
   - checkout
   - update_submodules
+  - submodules_depth              # (a clone with other submodules is another clone)
+  - submodules_not_recursive
+  - submodules_files
 
 cache_extra_params:
   version: '{{params.version|$None}}'

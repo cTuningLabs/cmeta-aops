@@ -34,6 +34,10 @@ TMP_CATEGORY = 'tmp,a2551f6124a34cf3'
 TMP_ARTIFACT = 'task-test-on-hosts'  # tmp::task-test-on-hosts of the local repository: the rounds without a test session
 
 
+# what stop-step says of a host where no step runs (also: a round whose runner is from before 2026-11-24)
+NO_STEP = 'no step runs here (or the round was launched before stop-step existed)'
+
+
 def tar_tree(tree, out):
     """
     The tree as a tarball, without .git, the caches of Python and pytest, and the symbolic links that lead out of the
@@ -144,8 +148,9 @@ class CTask(InitCTask):
     ############################################################
     def run(self,
             ctx: dict,
-            action: str = 'launch',       # launch, peek, collect or remove
+            action: str = 'launch',       # launch, peek, collect, remove or stop-step (the step that runs now is ended, the round goes on)
             cmds: str = None,             # launch: the commands, separated by ";" - the words after "cx", or "!<shell line>"
+            cmds_file: str = None,        # launch: or a file with one command per line (a ";", "&&" or a quote inside a command travels as it is; # lines and empty ones are left out)
             hosts: str = None,            # host aliases separated by "," ("here": this machine; "docker:ubuntu", "podman", "wsl:debian" = an instance of that template here); default: the test hosts
             tree: str = None,             # launch: the repository folder to test (default: the clone of ctuninglabs@cmeta-aops)
             id: str = None,               # the name of the round (default at launch: the time; then required)
@@ -163,8 +168,8 @@ class CTask(InitCTask):
 
         con = ctx['control'].get('con', False)
 
-        if action not in ('launch', 'peek', 'collect', 'remove'):
-            return self.cm.error(f'test-on-hosts: unknown action "{action}" (launch, peek, collect, remove)')
+        if action not in ('launch', 'peek', 'collect', 'remove', 'stop-step'):
+            return self.cm.error(f'test-on-hosts: unknown action "{action}" (launch, peek, collect, remove, stop-step)')
         if action != 'launch' and not id:
             return self.cm.error(f'test-on-hosts --action={action}: name the round (--id=<round>, printed at its launch)')
 
@@ -214,6 +219,14 @@ class CTask(InitCTask):
                 return self.cm.error('test-on-hosts: no host to run on' + (f' - every ref failed: {self.failed_refs}' if self.failed_refs else ''))
 
         if action == 'launch':
+            if cmds_file:
+                # one command per line: nothing inside a command separates it
+                try:
+                    with open(os.path.expanduser(str(cmds_file)), encoding = 'utf-8') as f:
+                        lines = [l.strip() for l in f.read().splitlines()]
+                except OSError as e:
+                    return self.cm.error(f'test-on-hosts --cmds_file: {e}')
+                cmds = [l for l in lines if l and not l.startswith('#')] + [c.strip() for c in str(cmds or '').split(';') if c.strip()]
             return self.launch(con, rid, local, remote, host_list, cmds, tree)
 
         if action == 'peek':
@@ -222,13 +235,77 @@ class CTask(InitCTask):
         if action == 'collect':
             return self.collect(con, rid, local, remote, host_list, files, to)
 
+        if action == 'stop-step':
+            return self.stop_step(con, rid, local, remote, host_list)
+
         return self.remove(con, rid, local, remote, host_list)
 
     ############################################################
+    def stop_step(self, con, rid, local, remote, host_list):
+        """
+        The step that runs now on each host is ended, with everything it started, and the round goes on with its next
+        command: the file <root>/stop-step is made where a step runs (work/current.json says which), and the host's
+        runner ends that step's process group within a second or two. Nothing is searched by a command line - a
+        step's command is also part of the runner's own. A host where no step runs is said and left alone.
+        """
+        asked = {}
+        for h in host_list:
+            if h == HERE:
+                root = self.here_root_of(local)
+                current = os.path.join(root, 'work', 'current.json')
+                try:
+                    with open(current, encoding = 'utf-8') as f:
+                        text = f.read().strip()
+                    with open(os.path.join(root, 'stop-step'), 'w') as f:
+                        f.write('asked\n')
+                except OSError:
+                    text = NO_STEP
+            elif self.is_windows(h):
+                import tempfile
+                script_dir = tempfile.mkdtemp(prefix = f'cmeta-stop-{rid}-')
+                script = os.path.join(script_dir, 'stop.ps1')
+                with open(script, 'w', encoding = 'utf-8', newline = '\n') as f:
+                    f.write(f"$ROOT = Join-Path $HOME '{remote.replace('/', chr(92))}'\n"
+                            'if (Test-Path -LiteralPath "$ROOT\\work\\current.json") {\n'
+                            '    Get-Content -LiteralPath "$ROOT\\work\\current.json"\n'
+                            '    Set-Content -LiteralPath "$ROOT\\stop-step" -Value asked\n'
+                            f"}} else {{ '{NO_STEP}' }}\n")
+                r = self.host('run', arg1 = h, script = script, capture = True)
+                shutil.rmtree(script_dir, ignore_errors = True)
+                text = (r.get('outputs') or {}).get(h, {}).get('stdout', '').strip() if r['return'] == 0 else f'unreachable: {r.get("error")}'
+            else:
+                import tempfile
+                script_dir = tempfile.mkdtemp(prefix = f'cmeta-stop-{rid}-')
+                script = os.path.join(script_dir, 'stop.sh')
+                with open(script, 'w', encoding = 'utf-8', newline = '\n') as f:
+                    f.write('#!/bin/bash\n'
+                            f'ROOT="$HOME/{remote}"\n'
+                            'if [ -f "$ROOT/work/current.json" ]; then cat "$ROOT/work/current.json"; echo; : > "$ROOT/stop-step"\n'
+                            f'else echo "{NO_STEP}"; fi\n'
+                            'true\n')
+                r = self.host('run', arg1 = h, script = script, capture = True)
+                shutil.rmtree(script_dir, ignore_errors = True)
+                text = (r.get('outputs') or {}).get(h, {}).get('stdout', '').strip() if r['return'] == 0 else f'unreachable: {r.get("error")}'
+
+            step = None
+            for line in text.splitlines():
+                if line.strip().startswith('{'):
+                    try:
+                        step = json.loads(line.strip())
+                    except ValueError:
+                        step = None
+            asked[h] = {'stopping': bool(step), 'step': step, 'said': '' if step else (text.splitlines() or [NO_STEP])[-1]}
+            if con:
+                print (f'  {h}: ' + (f'step {step.get("step")} is being stopped ({step.get("command")}); the round goes on with its next command'
+                                     if step else asked[h]['said']))
+
+        return {'return': 0, 'id': rid, 'asked': asked}
+
+    ############################################################
     def launch(self, con, rid, local, remote, host_list, cmds, tree):
-        commands = [c.strip() for c in str(cmds or '').split(';') if c.strip()]
+        commands = list(cmds) if isinstance(cmds, list) else [c.strip() for c in str(cmds or '').split(';') if c.strip()]
         if not commands:
-            return self.cm.error('test-on-hosts: nothing to run (--cmds="task run explore-tool-versions yq;...")')
+            return self.cm.error('test-on-hosts: nothing to run (--cmds="task run explore-tool-versions yq;...", or --cmds_file=<a file, one command per line>)')
 
         if not tree:
             r = self.cm.access({'category': 'repo', 'command': 'find', 'arg1': TREE_REPO, 'con': False})

@@ -7,7 +7,7 @@ with any harness and any model, and the transcript of every conversation kept in
 
 A conversation is a thread of runs on one project. Each harness keeps its own native session for it (Claude Code a
 session id in ~/.claude/projects/<slug>/<id>.jsonl, Codex a thread in CODEX_HOME, Antigravity a conversation in
-~/.gemini/antigravity-cli, OpenCode a session in its database, OpenClaw and Gemini CLI a session file). run-ai
+~/.gemini/antigravity-cli, OpenCode a session in its database, OpenClaw, Gemini CLI and Pi a session file). run-ai
 remembers them per conversation:
 
     !AI/log/<id>.conversation.json     id = the stamp of the first run (YYYYMMDD-HHMMSS); the runs, the title, and
@@ -21,7 +21,7 @@ remembers them per conversation:
 The default run continues the conversation with the latest run; --new starts another; --conversation=<id or prefix>
 picks one; --conversations lists them. Continuing with the harness that holds a native session resumes it natively
 (claude --resume, codex resume / codex exec resume, agy --conversation, opencode --session, openclaw --session-id,
-gemini --resume); continuing with another harness, or when the native session is gone, starts a new native session
+gemini --resume, pi --session); continuing with another harness, or when the native session is gone, starts a new native session
 and hands the transcript over in the prompt ("read !AI/log/<id>.transcript.md first").
 
 Each harness has a small adapter here: how a NEW session is named (some let run-ai choose the id, some reveal it
@@ -1189,6 +1189,74 @@ def gemini_export(sid):
     return out
 
 
+# pi ------------------------------------------------------------------------------------------------------------
+# Pi keeps a session as one file: <its folder>/sessions/--<the folder's path>--/<time>_<id>.jsonl - a "session" line
+# (version, id, cwd), then entries; a "message" entry holds a message with a role (system, user, assistant, toolResult)
+# and a content, a string or a list of text, thinking and toolCall parts.
+def pi_sessions_dir():
+    """Where Pi keeps its sessions: <its folder>/sessions (~/.pi/agent; PI_CODING_AGENT_DIR moves the folder,
+    PI_CODING_AGENT_SESSION_DIR the sessions by themselves)."""
+    own = os.environ.get('PI_CODING_AGENT_SESSION_DIR')
+    if own:
+        return os.path.expanduser(own)
+    return os.path.join(os.path.expanduser(os.environ.get('PI_CODING_AGENT_DIR') or os.path.join('~', '.pi', 'agent')), 'sessions')
+
+
+def pi_session_file(sid, project_path=''):
+    """The file of a session, by the id in its name and in its first line. With a project path: only a session of
+    that folder (Pi opens a session by its id in the folder it was made in)."""
+    store = pi_sessions_dir()
+    name = '*_%s.jsonl' % glob.escape(str(sid))
+    for fp in sorted(_glob(store, '*', name) + _glob(store, name)):
+        try:
+            with io.open(fp, encoding='utf-8', errors='replace') as f:
+                head = json.loads(f.readline())
+        except Exception:
+            continue
+        if not isinstance(head, dict) or head.get('id') != sid:
+            continue
+        if project_path and not _same_path(os.path.realpath(str(head.get('cwd') or '')), os.path.realpath(project_path)):
+            continue
+        return fp
+    return ''
+
+
+def pi_exists(sid, project_path=''):
+    return bool(pi_session_file(sid, project_path))
+
+
+def pi_export(sid, project_path=''):
+    """The user's and the assistant's messages, in the order of the file. Tool results, the system prompt and the
+    thinking are left out; a tool call becomes one line."""
+    fp = pi_session_file(sid, project_path)
+    if not fp:
+        return None
+    out = []
+    with io.open(fp, encoding='utf-8', errors='replace') as f:
+        for line in f:
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            msg = d.get('message') if isinstance(d, dict) else None
+            if not isinstance(msg, dict) or d.get('type') != 'message' or msg.get('role') not in ('user', 'assistant'):
+                continue
+            content = msg.get('content')
+            blocks = []
+            for part in ([{'type': 'text', 'text': content}] if isinstance(content, str) else (content or [])):
+                if not isinstance(part, dict):
+                    continue
+                if part.get('type') == 'text' and str(part.get('text') or '').strip():
+                    blocks.append(('text', str(part['text'])))
+                elif part.get('type') == 'toolCall':
+                    args = part.get('arguments') if isinstance(part.get('arguments'), dict) else {}
+                    hint = next((' '.join(str(args[k]).split())[:160] for k in ('command', 'path', 'file_path', 'pattern', 'url', 'query') if args.get(k)), '')
+                    blocks.append(('tool', ('%s %s' % (part.get('name') or '?', hint)).strip()))
+            if blocks:
+                out.append((msg['role'], local_ts(d.get('timestamp') or ''), blocks))
+    return out
+
+
 # hermes --------------------------------------------------------------------------------------------------------
 # Hermes Agent keeps its sessions in <HERMES_HOME>/state.db (SQLite, its own schema and a search index): they are read
 # through its CLI - "hermes sessions list" (newest first: "<id>  <date>  <title> ...") and "hermes sessions export
@@ -1342,13 +1410,13 @@ def new_session_flags(harness, sid, cid, alias, interactive=False):
         return ['--session-id', sid, '--name', 'run-ai %s %s' % (cid, alias or '')]
     if h == 'openclaw' and interactive:
         return ['--session', openclaw_session_key(sid)]
-    if h in ('openclaw', 'gemini'):
+    if h in ('openclaw', 'gemini', 'pi'):
         return ['--session-id', sid]
     return []
 
 
 def chooses_id(harness):
-    return harness_key(harness) in ('claude', 'openclaw', 'gemini')
+    return harness_key(harness) in ('claude', 'openclaw', 'gemini', 'pi')
 
 
 def resume_flags(harness, sid, interactive=False):
@@ -1358,7 +1426,7 @@ def resume_flags(harness, sid, interactive=False):
         return ['--session', openclaw_session_key(sid)]
     return {'claude': ['--resume', sid], 'agy': ['--conversation', sid], 'opencode': ['--session', sid],
             'openclaw': ['--session-id', sid], 'gemini': ['--resume', sid], 'hermes': ['--resume', sid],
-            'vibe': ['--resume', sid]}.get(h, [])
+            'vibe': ['--resume', sid], 'pi': ['--session', sid]}.get(h, [])
 
 
 def session_exists(harness, sid, project_path):
@@ -1377,6 +1445,8 @@ def session_exists(harness, sid, project_path):
         return gemini_exists(sid)
     if h == 'hermes':
         return hermes_exists(sid)
+    if h == 'pi':
+        return pi_exists(sid, project_path)
     return True     # unknown harness: let it try
 
 
@@ -1436,6 +1506,8 @@ def export_session(harness, sid, project_path):
         return gemini_export(sid)
     if h == 'hermes':
         return hermes_export(sid)
+    if h == 'pi':
+        return pi_export(sid, project_path)
     return None
 
 
@@ -1445,7 +1517,8 @@ def native_store_hint(harness):
             'agy': '~/.gemini/antigravity-cli/conversations/<id>.db (protobuf blobs; the readable runs are recovered)', 'opencode': '~/.local/share/opencode/opencode.db',
             'openclaw': '~/.openclaw/agents/<agent>/sessions/<id>.jsonl (OPENCLAW_STATE_DIR moves ~/.openclaw)', 'gemini': '~/.gemini/tmp/<project>/chats/session-*.jsonl',
             'hermes': '<HERMES_HOME>/state.db (~/.hermes; SQLite, read through "hermes sessions list" and "hermes sessions export --format jsonl")',
-            'vibe': '<VIBE_HOME>/logs (~/.vibe; a folder per session: meta.json, messages.jsonl)'}.get(h, '')
+            'vibe': '<VIBE_HOME>/logs (~/.vibe; a folder per session: meta.json, messages.jsonl)',
+            'pi': '~/.pi/agent/sessions/--<folder>--/<time>_<id>.jsonl (PI_CODING_AGENT_DIR moves ~/.pi/agent, PI_CODING_AGENT_SESSION_DIR the sessions)'}.get(h, '')
 
 
 # ====================================================================== the transcript
@@ -1578,7 +1651,7 @@ def write_transcript(conv, log_dir):
             notes.append('%s: the transcript could not be exported (%s)' % (h, e))
             messages = None
         if messages:
-            body += _render_messages(messages, {'user': 'User', 'assistant': {'claude': 'Claude', 'codex': 'Codex', 'agy': 'Antigravity', 'opencode': 'OpenCode', 'openclaw': 'OpenClaw', 'gemini': 'Gemini', 'hermes': 'Hermes'}.get(harness_key(h), 'Assistant')})
+            body += _render_messages(messages, {'user': 'User', 'assistant': {'claude': 'Claude', 'codex': 'Codex', 'agy': 'Antigravity', 'opencode': 'OpenCode', 'openclaw': 'OpenClaw', 'gemini': 'Gemini', 'hermes': 'Hermes', 'pi': 'Pi'}.get(harness_key(h), 'Assistant')})
             s['exported'] = len(messages)
             if harness_key(h) == 'agy':
                 body += _own_records(conv, h, s.get('id'), log_dir)

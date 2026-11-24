@@ -160,6 +160,7 @@ Each harness keeps its own **native session** for a conversation, and `run-ai` r
 | `gemini` | `--session-id <uuid>` (run-ai chooses it) | `--resume <uuid>` (a session of the project folder) | run-ai |
 | `hermes` | - | `--resume <id>` | the `init` / `result` events of the stream (`session_id`), else the `session_id:` line a quiet run prints, else the newest entry of `hermes sessions list`; the transcript comes from `hermes sessions export --format jsonl` |
 | `vibe` | - | `--resume <id>` | the session of the export Vibe writes into its `--output-dir` (`export.json`); the transcript is the run's output (the session journal is in `<VIBE_HOME>/logs`, not read yet) |
+| `pi` | `--session-id <uuid>` (run-ai chooses it; Pi 0.76.0 and newer) | `--session <uuid>` | run-ai; the session is a file of Pi's own folder (`~/.pi/agent/sessions/--<folder>--/<time>_<id>.jsonl`; `PI_CODING_AGENT_DIR` moves it), read for the transcript |
 
 So `cxt run-ai` after `cxt run-ai` is `claude --resume` of the same session, with the memory folder and the records as
 before - and the model may change (`--model=claude-opus-5-5,high` on a conversation started with another model
@@ -293,6 +294,7 @@ renews the copy), the copy (a note: carry the change over to the source if it sh
 | `openclaw` | `task/run-openclaw` (`openclaw agent --local --json`): the index and the skills are prepended to the prompt; `--session-id` names the session and resumes it. OpenClaw works in its own workspace (`~/.openclaw/workspace`, from its config, with its persona files `AGENTS.md`, `SOUL.md`, ...) whatever the current directory is, so the orientation tells it the project folder and it uses absolute paths there. Its default model (`openai/gpt-5.5`) needs an OpenAI key; `--model=claude-cli/<model>` runs through the local Claude Code login, and the token counts of such a turn are read from Claude Code's own session (OpenClaw reports only the last model call). The terminal UI (`--interactive`) takes the session's key, `--session agent:main:explicit:<id>`, and no `--model`: run-ai leaves it out and says so - type `/model <provider/model>` in the UI, or set the default once with `cx tool run openclaw -- models set <provider/model>` (drive OpenClaw through the tool: cMeta installs it when missing, a bare `openclaw` may be another copy or none). The UI files a new session under an id of its own; run-ai reads it from OpenClaw's index afterwards, so that the next turn continues that session | read only; OpenClaw's own memory lives in its workspace |
 | `hermes` | `task/run-hermes` with `tool/hermes` (`hermes chat -Q -q`, one shot; the JSON event stream with `--stats`): the index and the skills are prepended to the prompt. Hermes reads `AGENTS.md` from the project folder by itself, and keeps its own memory (`memories/MEMORY.md`, `USER.md`) and skills under `HERMES_HOME` (`~/.hermes`); the session ids come back from its events and `--resume <id>` continues them. A provider is connected once by hand (`cx tool run hermes -- model`); without one a headless run fails with the ways to connect | read only through the prompt; Hermes's own memory lives in `HERMES_HOME` |
 | `vibe` | `task/run-vibe` with `tool/vibe` (`vibe -p` or `--prompt-file`, one shot; `export.json` of an `--output-dir` for the tokens, the cost and the session): the index and the skills are prepended to the prompt. Vibe reads `AGENTS.md` from the project folder, keeps its config, keys and session logs under `VIBE_HOME` (`~/.vibe`); cMeta installs it with uv into the cache entry (Python 3.12, nothing in the user's Python); `--login` runs `vibe --setup` (a Mistral account in the browser, or an API key) |
+| `pi` | `task/run-pi` with `tool/pi` (not part of cmeta-aops yet: a plugged repository provides them; `pi -p` with the prompt on stdin, one shot; the JSON event stream with `--stats`): the index and the skills are prepended to the prompt. Pi reads `AGENTS.md` / `CLAUDE.md` from the project folder by itself and keeps its logins, settings and sessions in its own folder (`~/.pi/agent`); cMeta installs its npm package into the cache entry with its own Node.js and, on Windows, sets up Git for Windows with it (Pi runs its bash tool through Git Bash); `--login` starts Pi for its `/login`; through a gateway its task registers the gateway's providers for the run alone | read only through the prompt; Pi has no memory of its own |
 | others | the task `run-<harness>` with the shared parameters (`--yes` and `--reproducible` are forwarded only when given); the index is prepended to the prompt | - |
 
 A prompt that tells the agent to *search* for something makes OpenCode and Codex reach for tools, and a tool that
@@ -371,6 +373,7 @@ cxt run-ai --list_models                                            # every harn
 | `gemini` | `--model m` | none: Gemini CLI has no effort flag, so `--effort` is dropped with a note |
 | `hermes` | `--model provider/m` | `--reasoning e` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) |
 | `vibe` | `--model <alias>` (an alias of `~/.vibe/config.toml`; headless only) | none (Vibe has no effort setting) |
+| `pi` | `--model provider/m` (through a gateway: a model as the gateway names it) | `--thinking e` (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; Pi clamps it to what the model takes) |
 
 Without `--model` the harness runs its default model, which run-ai cannot know in advance: the run's stats name the
 model afterwards, and a test session (`cx task run test-session`) takes it from the session's transcript.
@@ -585,6 +588,7 @@ starts from `ask`.
 | `gemini` | `--yolo` | `--approval-mode plan` |
 | `hermes` | `--yolo` | none that run-ai knows (Hermes has approval modes, no read-only mode): told to change nothing |
 | `vibe` | `--auto-approve` | none that run-ai knows (Vibe's agents are approval modes): told to change nothing |
+| `pi` | nothing to add: Pi asks nothing before a tool call | `--tools read,grep,find,ls` (no bash, edit or write tool) |
 | `openclaw`, others | none that run-ai knows: the harness follows its own settings (a task `run-<x>` gets `yes` from `--yes` itself) | told to change nothing; nothing enforces it |
 
 The same setting given after `--` (`-- --permission-mode acceptEdits`) is your own choice for that run and is left
@@ -622,6 +626,7 @@ session can decide to edit a file there, and what stands in its way depends on t
 | `antigravity`, `gemini` | the context text in front of the prompt; the artifacts join the workspace (`--add-dir`, `--include-directories`) | their own approval modes |
 | `hermes` | the context text in front of the prompt; it opens the files itself | its approval modes (`smart` by default; `--yes` is `--yolo`) |
 | `vibe` | the context text in front of the prompt; it opens the files itself | its default agent's approvals (`--yes` is `--auto-approve`) |
+| `pi` | the context text in front of the prompt; it opens the files itself | nothing: Pi has no approvals and no sandbox |
 
 So the rule cannot rest on the harnesses. It rests on three steps that run-ai takes for all of them.
 
@@ -790,12 +795,12 @@ Every run says what it talks to, and why, in its header before the harness start
 A pass-through shows where it sends the traffic (`-> <upstream>`) and who pays: a key's gateway, or the harness's own
 login through it (`auth.header: login`).
 
-Only Claude Code, Codex and OpenCode take a gateway. The general default (`run_ai_gateway`) is for them: another
+Only Claude Code, Codex, OpenCode and Pi take a gateway. The general default (`run_ai_gateway`) is for them: another
 harness (vibe, gemini, agy, hermes, openclaw) runs on its own login then, with a note, and `--list_models` shows its
 own models. A gateway chosen for the run, the project or the harness is an error for it (`-ln` for its own login).
 
 A gateway run of Claude Code drops the user's own Anthropic credentials first (`ANTHROPIC_*`, `CLAUDE_CODE_OAUTH_TOKEN`,
-the provider switches `CLAUDE_CODE_USE_*`), which would compete with the gateway's key; Codex and OpenCode keep the
+the provider switches `CLAUDE_CODE_USE_*`), which would compete with the gateway's key; Codex, OpenCode and Pi keep the
 user's keys in a gateway run (they name the gateway's provider, where those keys do not compete).
 
 ```
@@ -830,11 +835,11 @@ lower-case letters and `_`, at most 16.
 
 **What a run inherits (since 2026-10-30).** A session that runs through a gateway and starts another agent no longer
 hands it the gateway. A gateway run names the variables it puts into its process (`CMETA_AI_GATEWAY_VARS`), and every
-harness task - Claude Code, Codex, OpenCode, OpenClaw, Gemini CLI, agy, Hermes, Mistral Vibe - drops those of a
-parent's gateway first. A login run of Claude Code, Codex or OpenCode also drops what that harness reaches its models with, wherever it
+harness task - Claude Code, Codex, OpenCode, OpenClaw, Gemini CLI, agy, Hermes, Mistral Vibe, Pi - drops those of a
+parent's gateway first. A login run of Claude Code, Codex, OpenCode or Pi also drops what that harness reaches its models with, wherever it
 came from: Claude Code the `ANTHROPIC_*` variables (keys, URL, the `DEFAULT_*_MODEL` names) and its provider switches
 (`CLAUDE_CODE_USE_BEDROCK`, `_VERTEX`, ...), Codex `OPENAI_*` and
-`AZURE_OPENAI_*`, OpenCode those of every provider it reads (Anthropic, OpenAI, Azure, Mistral, Gemini and Google API
+`AZURE_OPENAI_*`, OpenCode and Pi those of every provider they read (Anthropic, OpenAI, Azure, Mistral, Gemini and Google API
 keys, OpenRouter, Groq, DeepSeek, xAI, Together, Fireworks, Cerebras). The run says which names left (names only). The
 user's own keys stay for the other harnesses, whose keys are one of their ways in (`GEMINI_API_KEY` for Gemini CLI,
 Hermes' providers); `GOOGLE_CLOUD_PROJECT` stays everywhere (Gemini's Code Assist login needs it). The list lives in

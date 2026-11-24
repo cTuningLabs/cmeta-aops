@@ -495,7 +495,8 @@ cache → repro), but their `updates.compile.uses` **append** a full real-build 
 - **Clone source into its own cache entry** via `clone-git-to-cache,86919b3cfdd443d2`
   (keyed by `url`/`checkout`; result at `global.clone-git-to-cache-<name>.path_to_git_repo`)
   — the source cache is **separate** from the program's `task--program--<name>` build
-  cache. Submodules are initialised with a `cmd` sub-task.
+  cache. Submodules are initialised with a `cmd` sub-task, or by `clone-git` working in that
+  clone (`repo:`), which can fetch them shallow and some without their own (section D2).
 - A program-specific `internal_func` (`customize_pytorch` / `customize_llama_cpp` /
   `customize_vllm`) computes build env / cmake vars / check-file paths. The CUDA
   architecture list comes from the detected GPUs, and `MAX_JOBS` from the RAM free now
@@ -515,6 +516,120 @@ So the difference from a `test-nmm-*` program is **only in the compile step's co
 (a real multi-tool build vs a single compiler invocation) and the **extra source-clone
 cache**; the driver, compute abstraction, repro-caching and run/finish machinery are
 identical.
+
+---
+
+## D2. The optional parts of a build: `components` and `variations`
+
+A large build has parts that only some targets, systems or uses need: kernels for one GPU
+vendor, a profiler, a transport for distributed runs, the tests. A `build-*` program can declare
+them in its `_desc.yaml`, and a request then says which build it wants instead of knowing the
+build system's variables:
+
+```
+cx program run build-pytorch --compute=cpu --compile.variation=lean
+cx program run build-pytorch --compute=cuda --compile.variation=minimal --compile.components.kineto
+cx program run build-pytorch --compile.components.distributed            # one part on;  <part>-  off
+```
+
+```yaml
+components:                               # in the order they are shown
+  kineto:
+    desc: the library behind torch.profiler
+    flags: {USE_KINETO: ['ON', 'OFF']}    # <build variable>: [when on, when off]
+    submodules: [third_party/kineto]      # the git submodules of the source this part alone reads
+    os: [linux, darwin, windows]          # where it can be built; none: everywhere
+    targets: [cuda]                       # the compute targets it is for; none: all
+    requires: [another-part]              # parts it needs on
+    default: {windows: 'off', '*': auto}  # on | off | auto, or by system; none: auto
+
+variations:                               # named sets
+  minimal:
+    desc: the smallest build for a target
+    components: {kineto: 'off'}
+```
+
+`auto` leaves a part to the build's own choice: no variable is set and its submodules are
+fetched whole.
+
+**The rule** is one function of the program category,
+`common_build.resolve_components(components, variations, variation, asked, facts, given_flags)`.
+For each part, the first of these that speaks decides:
+
+1. the part cannot be built here (the system, the targets) - off;
+2. the request asked the part (`--compile.components.<part>`, `<part>-`);
+3. the request set one of the part's build variables itself (`--compile.d.<VAR>=...`) - that is
+   its word for the part, and the variable stays as given;
+4. the variation;
+5. the part's default.
+
+Then a part whose required part is off is off. What cannot be honoured is an error, never a
+silent change: an unknown part or variation, a part asked on where it cannot be built or without
+the part it needs, a part asked one way and its build variable set the other way.
+
+It returns the state of every part with the reason, the build variables that follow (only for
+parts that are on or off, and never one the request set), the submodules of the parts that are
+off (`not_recursive`), those of them this version of the source does not have (`not_in_source`,
+when the program passes the source's own list: `common_build.source_submodules(<clone>)`), and
+the table for the console.
+
+**What the program does with it** (`build-pytorch`: `plan_components`, an `internal_func` between
+the clone and the submodules): it keeps the build variables for its build step, and hands the
+clone step a plan -
+
+```yaml
+- task: clone-git,af9422df6ea241ec
+  repo: '{{global.clone-git-to-cache-src-<name>.path_to_git_repo}}'      # the clone made above: nothing is cloned again
+  update_submodules: True
+  submodules_depth: '{{local.<name>_submodules_depth|$None}}'            # shallow: the pinned commit, no history
+  submodules_not_recursive: '{{local.<name>_submodules_not_recursive|$[]}}'
+```
+
+`submodules_not_recursive` fetches those submodules without their own: their folders are there
+(a superproject's checks often want them), what is under them is not. A path that is no
+submodule of the clone is an error of `clone-git`.
+
+A build may still name single files inside such a submodule's own submodules - the licence texts
+a Python package lists in its metadata (`project.license-files` of `pyproject.toml`, PEP 639: a
+back-end stops when a listed file is missing). `common_build.declared_license_files(<clone>)`
+reads that list, and the clone step takes it as `submodules_files`: the nested submodule that
+holds each file is fetched, and the ones on the way to it; nothing else under the named
+submodule. A Python that cannot read the list (before 3.11) leaves nothing out.
+
+### A build's own limits on its host compiler
+
+A newer compiler can break one build while it is right for everything else. Such a build declares
+the compilers it does not configure with, by system and tool, and leaves the tool's default
+alone:
+
+```yaml
+compiler_limits:
+  windows:
+    msvc:
+      - exclude: '>=19.51,<19.52'      # a version range, as a request writes it
+        reason: what happens with it
+        since: '2026-11-24'
+```
+
+The program applies them in its `customize` hook - the first step of the template's pipeline,
+before the compiler is set up: `common_build.msvc_installed()` lists the machine's compilers
+(the newest first), `common_build.compiler_outside_limits(installed, limits, matches)` gives the
+newest one no limit excludes, and the hook makes it the compiler of this run (a pin of the run,
+as `--use.msvc.version=<it>` would be). The machine's newest compiler stays the default of every
+other request; a compiler the request names is taken as asked; a machine without a compiler
+outside the limits stops with the reason. First program: `build-pytorch`.
+
+**Rules for an author**
+
+- Without a variation and without a part asked, the program must build exactly what it built
+  before the parts were declared.
+- Declare a part with the evidence: the option of the build system and the place that reads the
+  part's submodule (a comment beside it).
+- Name a submodule under a part only when that part alone reads it; a submodule two parts read is
+  fetched whole unless both are off.
+- `--compile.*` is part of a build's identity: each variation is a build entry of its own.
+- A tool that builds through the program passes `--with.variation` and `--with.components` on as
+  `compile` (tool/pytorch), and names both in its cache identity.
 
 ---
 

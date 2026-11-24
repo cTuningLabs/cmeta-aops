@@ -9,6 +9,7 @@ import os
 import re
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
+from tool_c393ba5c6fa14f66.api.common_pyvenv import resolution_date
 
 
 def wheel_line(version, kind):
@@ -88,8 +89,15 @@ class CTool(InitCTool):
                 'flags', 
                 'post_flags',
                 'skip_force_reinstall',
+                'exclude_newer',
             ], __name__)
         if self.cm.catch_error(r): return r
+
+        # --with.exclude_newer: a day or the word "release" - said here, also when nothing has to be installed
+        if _with.get('exclude_newer') not in (None, '', False):
+            word = str(_with['exclude_newer']).strip()
+            if word.lower() != 'release' and not re.fullmatch(r'\d{4}-\d{2}-\d{2}([T ].*)?', word):
+                return self.cm.error(f'--with.exclude_newer: a day (YYYY-MM-DD) or the word "release" (got "{word}")')
 
         package = _with.get('package')
         if not package:
@@ -183,6 +191,25 @@ class CTool(InitCTool):
         custom_package += custom_version
 
         install_cmd = install_cmd.replace('{{custom_package}}', custom_package)
+
+        # --with.exclude_newer=<YYYY-MM-DD | release>: the package's dependencies as they were on that day (pip's
+        # --uploaded-prior-to, pip 26.0 and later - asked of this pip's own help); "release": the day after the
+        # pinned version was uploaded to PyPI
+        if _with.get('exclude_newer'):
+            try:
+                day = resolution_date(_with['exclude_newer'], _with.get('package'), version_simple)
+            except ValueError as e:
+                return self.cm.error(str(e))
+            if day:
+                from task_c36be4b9314a45e0.api.ctask import supported_options
+                python = ((ctx.get('tasks') or {}).get('global') or {}).get('python', {}).get('path')
+                if not python or not supported_options(python, ['-m', 'pip', 'install', '--help'], ['--uploaded-prior-to']):
+                    return self.cm.error(f'--with.exclude_newer={_with["exclude_newer"]}: the pip of this Python ({python}) has no '
+                                         f'--uploaded-prior-to (pip 26.0 and later): upgrade it there (python -m pip install -U pip), '
+                                         f'or drop the option')
+                flags = ((flags or '') + f' --uploaded-prior-to={day}T00:00:00Z').strip()
+                _with['flags'] = flags
+                result['resolution_date'] = day
 
         # Check force update
         if force_update:

@@ -20,6 +20,7 @@ cache_params_use:
 cache_features:
   - with.extras
   - with.variations
+  - with.exclude_newer            # the day its dependencies were resolved as of (--with.exclude_newer=<YYYY-MM-DD | release>)
 
 match_version: 
   - regex: "version: (.+)"

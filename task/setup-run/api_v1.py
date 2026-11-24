@@ -8,7 +8,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 import os
 import platform
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, supported_options
 
 from . import android
 
@@ -292,7 +292,12 @@ class CTask(InitCTask):
         if _cuda:
             if _profile_cuda:
                 nsys = _global['nsys']['qpath']
-                prefix_cmd += f'{nsys} profile --trace=cuda,nvtx --stats=true -o cuda_profile '
+                # A program whose work runs in a process it forks and then executes (a model server's engine) shows no
+                # kernel unless nsys follows it between the two - where this nsys has the option (Linux; the Windows
+                # nsys has none): asked of its own help
+                follow = ''.join(f' {o}=true' for o in supported_options(_global['nsys'].get('path') or str(nsys).strip('"'),
+                                                                        ['profile', '--help'], ['--trace-fork-before-exec']))
+                prefix_cmd += f'{nsys} profile --trace=cuda,nvtx{follow} --stats=true -o cuda_profile '
                 output_files.append('cuda_profile.nsys-rep')
                 output_files.append('cuda_profile.sqlite')
             elif _profile_cuda_kernels:

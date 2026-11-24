@@ -17,6 +17,89 @@ WINDOWS_BAD_CHARS = set(':*?"<>|\\')
 WINDOWS_RESERVED = {'CON', 'PRN', 'AUX', 'NUL'} | {f'COM{i}' for i in range(1, 10)} | {f'LPT{i}' for i in range(1, 10)}
 
 
+# Git for Windows refuses a git folder (a repository's .git, a submodule's folder under .git/modules) longer than this:
+# "fatal: '$GIT_DIR' too big". The limit is built into Git (its PATH_MAX of 260 less 40) - neither Windows' long paths
+# (LongPathsEnabled) nor core.longpaths lifts it; work-tree files may be longer. Measured with Git 2.53: 220 works,
+# 221 is refused.
+WINDOWS_GIT_DIR_LIMIT = 220
+
+# How a command goes into a folder: cmd.exe's "cd <path>" stays on the current drive when the path is on another one
+# (a clone in a file cache on D:, a run that stands on C: - every git command then ran in the wrong folder: "not a git
+# repository"); "cd /d" changes the drive too
+CD = 'cd /d' if os.name == 'nt' else 'cd'
+
+
+def submodule_paths(git_bin, folder):
+    """The submodules a work tree declares (its .gitmodules, read by git itself): [(name, path)], [] without one."""
+    gitmodules = os.path.join(folder, '.gitmodules')
+    if not os.path.isfile(gitmodules):
+        return []
+    p = subprocess.run([git_bin, 'config', '-f', gitmodules, '--get-regexp', r'^submodule\..*\.path$'],
+                       stdout = subprocess.PIPE, stderr = subprocess.PIPE, stdin = subprocess.DEVNULL)
+    out = []
+    for line in p.stdout.decode('utf-8', 'replace').splitlines():
+        key, _, path = line.partition(' ')
+        if key.startswith('submodule.') and key.endswith('.path') and path.strip():
+            out.append((key[len('submodule.'):-len('.path')], path.strip()))
+    return out
+
+
+def literal_prefix(pattern):
+    """The part of a file pattern before its first segment with a wildcard: 'a/b/*.txt' -> 'a/b', 'a/LICENSE' ->
+    'a/LICENSE' (forward slashes, no slash at the ends)."""
+    parts = []
+    for segment in str(pattern).replace(chr(92), '/').strip('/').split('/'):
+        if any(c in segment for c in '*?['):
+            break
+        parts.append(segment)
+    return '/'.join(parts)
+
+
+def submodule_git_dirs(git_bin, repo):
+    """
+    The git folders the submodules of a clone need, nested ones included, as Git lays them out -
+    <repo>/.git/modules/<name>[/modules/<name> ...] - as far as the work tree is checked out (a submodule that was
+    not fetched does not show its own). -> [(git folder, the submodule's path in the clone)], the longest first.
+    """
+    top = os.path.join(repo, '.git')
+    if os.path.isfile(top):                       # a clone with a separate git folder: its .git file names it
+        with open(top, encoding = 'utf-8', errors = 'replace') as f:
+            text = f.read().strip()
+        if text.startswith('gitdir:'):
+            top = os.path.normpath(os.path.join(repo, text[len('gitdir:'):].strip()))
+    found = []
+
+    def walk(work, git_dir, shown):
+        for name, path in submodule_paths(git_bin, work):
+            sub_git = os.path.join(git_dir, 'modules', *name.split('/'))
+            sub_shown = f'{shown}/{path}' if shown else path
+            found.append((sub_git, sub_shown))
+            walk(os.path.join(work, *path.split('/')), sub_git, sub_shown)
+
+    walk(repo, top, '')
+    return sorted(found, key = lambda x: -len(x[0]))
+
+
+def windows_git_dir_problem(git_bin, repo):
+    """
+    Why a submodule update failed on Windows when it is Git's limit of a git folder: the text for the error, or ''
+    when no git folder of this clone is over the limit (the failure has another cause).
+    """
+    dirs = submodule_git_dirs(git_bin, repo)
+    over = [(d, s) for d, s in dirs if len(d) > WINDOWS_GIT_DIR_LIMIT]
+    if not over:
+        return ''
+    longest, sub = over[0]
+    excess = len(longest) - WINDOWS_GIT_DIR_LIMIT
+    return (f'Git for Windows refuses a git folder longer than {WINDOWS_GIT_DIR_LIMIT} characters ("\'$GIT_DIR\' too big"; a limit '
+            f'built into Git, which Windows\' long paths and core.longpaths do not lift), and {len(over)} submodule'
+            f'{"s" if len(over) != 1 else ""} of this clone need{"" if len(over) != 1 else "s"} a longer one - the longest, '
+            f'{len(longest)} characters, for {sub}. The clone is in {repo} ({len(repo)} characters): {excess} character'
+            f'{"s" if excess != 1 else ""} too deep for this repository. Give it a shorter place - the file cache keeps clones '
+            f'outside the cache entries: "cx config set task --meta.file_cache=<a short folder>" for this machine, or '
+            f'"--use.init.file_cache=<a short folder>" for one run')
+
+
 def windows_refuses(path):
     """Whether a path of a repository cannot be checked out on Windows (any of its parts)."""
     for part in path.split('/'):
@@ -113,6 +196,10 @@ class CTask(InitCTask):
             tag: str = None,
             checkout: str = None,
             update_submodules: bool = False,
+            submodules_depth: int = None,         # with update_submodules: shallow submodules (git submodule update --depth)
+            submodules_not_recursive: list = None,  # ... these submodules (paths of the clone) without their own submodules
+            submodules_files: list = None,        # ... but with the nested submodules that hold these files of the clone
+            repo: str = None,                     # an existing clone to work in (its submodules, a checkout): nothing is cloned
             env: dict = {},
             timeout: int = None,
             force: bool = False,
@@ -124,6 +211,19 @@ class CTask(InitCTask):
         Args:
             depth (int): shallow clone with this history depth (`git clone --depth`); checking out
                          a commit older than the fetched history then fails.
+            update_submodules (bool): `git submodule update --init --recursive` after the checkout.
+            submodules_depth (int): fetch the submodules shallow (`--depth`): the commit each one is pinned
+                         to, without its history.
+            submodules_not_recursive (list): submodules of the clone, by their paths, that are fetched without
+                         their own submodules - the parts a build does not use (their folders are there, as
+                         a superproject's own checks expect; what is under them is not). The other submodules
+                         are fetched with everything under them.
+            submodules_files (list): files of the clone (paths, or patterns: read up to their first wildcard)
+                         that a build names inside a submodule of submodules_not_recursive - a licence text
+                         its package's metadata lists: the nested submodule that holds each one is fetched
+                         (and the ones on the way to it), the others under the named submodule are not.
+            repo (str): the folder of a clone made before: this run works in it (its submodules, a checkout)
+                         and clones nothing.
             filter (str): partial clone filter (`git clone --filter`), e.g. "blob:none": the full
                           history is fetched but file contents only for the commits checked out.
                           Old blobs stay remote only while nothing reads them: `git show <old>`,
@@ -186,6 +286,22 @@ class CTask(InitCTask):
 
         path_to_git_repo = os.path.join(workdir, directory)
 
+        # --repo: a clone made before (by clone-git-to-cache in a build's pipeline) - worked in where it is
+        if repo:
+            path_to_git_repo = os.path.abspath(str(repo))
+            if not os.path.exists(os.path.join(path_to_git_repo, '.git')):
+                return self.cm.error(f'--repo: no git clone in "{path_to_git_repo}"')
+            directory = self.cm.q(path_to_git_repo) if hasattr(self.cm, 'q') else f'"{path_to_git_repo}"'
+            clean = False
+
+        if isinstance(submodules_not_recursive, str):
+            submodules_not_recursive = [x.strip() for x in submodules_not_recursive.split(',') if x.strip()]
+        submodules_not_recursive = [str(x).strip().strip('/') for x in (submodules_not_recursive or []) if str(x).strip()]
+        if isinstance(submodules_files, str):
+            submodules_files = [x.strip() for x in submodules_files.split(',') if x.strip()]
+        submodules_files = [str(x).strip() for x in (submodules_files or []) if str(x).strip()]
+        sub_depth = f' --depth {int(submodules_depth)}' if submodules_depth not in (None, '', 0, '0') else ''
+
         if os.path.isdir(path_to_git_repo):
             if clean:
                 r = self.cm.utils.files.ask_to_delete(con, force, path_to_git_repo, name='repo', space=True)
@@ -239,7 +355,7 @@ class CTask(InitCTask):
             cmds = []
 
             if update or fetch or branch or checkout:
-                cmd = f'cd {directory}'
+                cmd = f'{CD} {directory}'
 
                 if update:
                     cmd += f' && {git} fetch --all --tags --prune'
@@ -267,9 +383,13 @@ class CTask(InitCTask):
             ###################################################################
             # Submodules update
 
+            # (all of them with everything under them - or, with submodules_not_recursive, the clone's own submodules
+            # first and then, one by one, what is under each of the others: see _submodules_under)
+            submodule_cmd = None
             if update_submodules:
-                cmds.append(f'cd {directory} && {git} submodule sync')
-                cmds.append(f'cd {directory} && {git} submodule update --init --recursive')
+                cmds.append(f'{CD} {directory} && {git} submodule sync')
+                submodule_cmd = f'{CD} {directory} && {git} submodule update --init' + ('' if submodules_not_recursive else ' --recursive') + sub_depth
+                cmds.append(submodule_cmd)
 
             ###################################################################
             # TBD: add detect current git checkout and branch
@@ -277,19 +397,19 @@ class CTask(InitCTask):
             if r['return']>0: return r
             temp_file_branch = r['filepath']
 
-            cmds.append(f'cd {directory} && {path_to_git_bin} rev-parse --abbrev-ref HEAD > {temp_file_branch}')
+            cmds.append(f'{CD} {directory} && {path_to_git_bin} rev-parse --abbrev-ref HEAD > {temp_file_branch}')
 
             r = self.cm.utils.files.gen_temp_filepath()
             if r['return']>0: return r
             temp_file_checkout = r['filepath']
 
-            cmds.append(f'cd {directory} && {path_to_git_bin} rev-parse HEAD > {temp_file_checkout}')
+            cmds.append(f'{CD} {directory} && {path_to_git_bin} rev-parse HEAD > {temp_file_checkout}')
 
             r = self.cm.utils.files.gen_temp_filepath()
             if r['return']>0: return r
             temp_file_tag = r['filepath']
 
-            cmds.append(f'cd {directory} && {path_to_git_bin} describe --tags --dirty --always > {temp_file_tag}')
+            cmds.append(f'{CD} {directory} && {path_to_git_bin} describe --tags --dirty --always > {temp_file_tag}')
 
             ###################################################################
             # Run commands
@@ -315,8 +435,28 @@ class CTask(InitCTask):
                     if returncode>0:
                         rx['return'] = 99
                         rx['error'] = f'CMD "{cmd}" failed with return code {returncode}'
+                        if cmd == submodule_cmd and os.name == 'nt':
+                            # Git's own limit of a git folder on Windows: said with the folder and the way out
+                            why = windows_git_dir_problem(path_to_git_bin.strip('"'), path_to_git_repo)
+                            if why:
+                                rx['error'] = why
+                                rx['git_dir_too_long'] = True
                         fail = True
                         break
+
+                    if cmd == submodule_cmd and submodules_not_recursive:
+                        rx = self._submodules_under(git, path_to_git_bin.strip('"'), path_to_git_repo, submodules_not_recursive,
+                                                    sub_depth, env, timeout, con, verbose, space, print_extra_line)
+                        if rx['return'] > 0:
+                            fail = True
+                            break
+                        if submodules_files:
+                            rx = self._submodule_files(git, path_to_git_bin.strip('"'), path_to_git_repo, submodules_files,
+                                                       submodules_not_recursive, sub_depth, env, timeout, con, verbose, space,
+                                                       print_extra_line)
+                            if rx['return'] > 0:
+                                fail = True
+                                break
 
             if not fail:
                 # Read text files
@@ -368,11 +508,13 @@ class CTask(InitCTask):
 
         ###################################################################
         # Check size and time ...
-        r = self.cm.utils.sys.get_dir_size(path_to_git_repo, unit='MB', skip_datetime=True)
-        if self.cm.catch_error(r): return r
-        del(r['return'])
+        # (--repo: a clone made before, with what a build left in it - not measured again on every run)
+        if not repo:
+            r = self.cm.utils.sys.get_dir_size(path_to_git_repo, unit='MB', skip_datetime=True)
+            if self.cm.catch_error(r): return r
+            del(r['return'])
 
-        result['_impact'] = {'dir_size':r}
+            result['_impact'] = {'dir_size':r}
 
         if checkout is not None and len(checkout)>7:
             checkout_short = checkout[:7]
@@ -385,6 +527,85 @@ class CTask(InitCTask):
             result['_update_params'] = _params
 
         return result
+
+    ############################################################
+    def _submodules_under(self, git, git_bin, repo, not_recursive, sub_depth, env, timeout, con, verbose, space, print_extra_line):
+        """
+        The plan of submodules_not_recursive, after the clone's own submodules were fetched: every submodule that is
+        not named gets what is under it (git submodule update --init --recursive in it); a named one stays as it is.
+        A name that is no submodule of the clone is an error (a plan that names nothing would fetch everything).
+        """
+        declared = [path for _, path in submodule_paths(git_bin, repo)]
+        unknown = [x for x in not_recursive if x not in declared]
+        if unknown:
+            return self.cm.error(f'submodules_not_recursive names no submodule of {repo}: {", ".join(unknown)} (its submodules: '
+                                 f'{", ".join(declared) or "none"})')
+        for path in declared:
+            folder = os.path.join(repo, *path.split('/'))
+            if path in not_recursive or not os.path.isfile(os.path.join(folder, '.gitmodules')):
+                continue
+            cmd = f'{CD} {self.cm.q(folder) if hasattr(self.cm, "q") else chr(34) + folder + chr(34)} && {git} submodule update --init --recursive{sub_depth}'
+            rx = self.cm.utils.sys.run(cmd, env = env, timeout = timeout, con = con, verbose = verbose, text_cmd = 'RUN',
+                                       space = space, print_extra_line = print_extra_line)
+            if rx['return'] > 0:
+                return rx
+            if rx['returncode'] > 0:
+                rx['return'] = 99
+                rx['error'] = f'CMD "{cmd}" failed with return code {rx["returncode"]}'
+                if os.name == 'nt':
+                    why = windows_git_dir_problem(git_bin, repo)
+                    if why:
+                        rx['error'] = why
+                        rx['git_dir_too_long'] = True
+                return rx
+        if con and verbose:
+            print('')
+            print(f'{space}INFO: the submodules fetched without their own: {", ".join(not_recursive)}')
+        return {'return': 0}
+
+    ############################################################
+    def _submodule_files(self, git, git_bin, repo, files, not_recursive, sub_depth, env, timeout, con, verbose, space, print_extra_line):
+        """
+        submodules_files, after the plan of submodules_not_recursive: a file the build names inside a submodule that
+        was fetched without its own is in one of its nested submodules - that one is fetched (and the ones on the way
+        to it), nothing else under the named submodule. A file that is the clone's own, or under a submodule that is
+        whole, or the named submodule's own, asks for nothing. -> {'return': 0, 'fetched': [paths in the clone]}
+        """
+        fetched = []
+        for wanted in files:
+            path = literal_prefix(wanted)
+            top = next((s for s in not_recursive if path.startswith(s + '/')), None)
+            if not top:
+                continue
+            current, rest = top, path[len(top) + 1:]
+            while rest:
+                folder = os.path.join(repo, *current.split('/'))
+                nested = next((p for _, p in submodule_paths(git_bin, folder) if rest == p or rest.startswith(p + '/')), None)
+                if nested is None:
+                    break                                           # the rest is this submodule's own tree
+                target = current + '/' + nested
+                if not os.path.exists(os.path.join(repo, *target.split('/'), '.git')):
+                    quoted = self.cm.q(folder) if hasattr(self.cm, 'q') else chr(34) + folder + chr(34)
+                    cmd = f'{CD} {quoted} && {git} submodule update --init{sub_depth} -- "{nested}"'
+                    rx = self.cm.utils.sys.run(cmd, env = env, timeout = timeout, con = con, verbose = verbose, text_cmd = 'RUN',
+                                               space = space, print_extra_line = print_extra_line)
+                    if rx['return'] > 0:
+                        return rx
+                    if rx['returncode'] > 0:
+                        rx['return'] = 99
+                        rx['error'] = f'CMD "{cmd}" failed with return code {rx["returncode"]}'
+                        if os.name == 'nt':
+                            why = windows_git_dir_problem(git_bin, repo)
+                            if why:
+                                rx['error'] = why
+                                rx['git_dir_too_long'] = True
+                        return rx
+                    fetched.append(target)
+                current, rest = target, rest[len(nested) + 1:]
+        if con and verbose and fetched:
+            print('')
+            print(f'{space}INFO: fetched for the files the build names in them: {", ".join(fetched)}')
+        return {'return': 0, 'fetched': fetched}
 
     ############################################################
     def _windows_checkout(self, git_bin, repo, con, space):

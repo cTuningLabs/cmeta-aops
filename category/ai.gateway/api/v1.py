@@ -41,9 +41,10 @@ CONFIG_ON = 'run_ai_gateway'
 CONFIG_NAME = 'run_ai_gateway_name'
 CONFIG_HARNESS = 'run_ai_gateway_'
 
-# the wire each harness speaks (opencode and openclaw take both, through their provider packages)
+# the wire each harness speaks (opencode and openclaw take both, through their provider packages; pi takes both too:
+# its task registers a provider per wire from what connect returns - the address, the wires, the request headers)
 HARNESS_WIRES = {'claude': ('anthropic',), 'codex': ('openai',), 'opencode': ('anthropic', 'openai'),
-                 'openclaw': ('anthropic', 'openai'), 'hermes': ('openai',)}
+                 'openclaw': ('anthropic', 'openai'), 'hermes': ('openai',), 'pi': ('anthropic', 'openai')}
 
 # the variable the key travels in to Codex's provider block (which names the variable, never the value) and to Claude
 # Code's apiKeyHelper
