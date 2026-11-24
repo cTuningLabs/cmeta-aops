@@ -55,7 +55,7 @@ cmd_get_versions_regex: 'refs/tags/azure-cli-(\d+\.\d+\.\d+)(?:\^\{\})?$'
 # purpose: resolving "latest" over the network at install time would make the
 # same command produce different results on different days. Bump this line to
 # move everyone forward; `cx tool setup az --versions` lists what is available.
-default_version: '2.91.0'
+default_version: '2.93.0'
 # Download templates used by api_v1.py.
 #   - The Windows ZIP is published on Microsoft's blob store AND mirrored on the
 #     GitHub release, so both are handed to task/download-file, which walks them

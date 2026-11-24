@@ -36,6 +36,10 @@ SPEC keys:
   c_compiler       True for a package that builds a C extension from source (python-augeas, which certbot's
                    Apache plugin needs, publishes no wheels): the C compiler of cMeta's compiler task is set up
                    first and passed to the build as CC - a machine without "cc" on its PATH works too
+  c_libraries      the C libraries such a build compiles against, as the names of the tools that set them up first
+                   (the tool's install_uses, e.g. ['lib-augeas']): their include and library folders go to the build's
+                   CFLAGS and LDFLAGS, unless the compiler searches them anyway (/usr/include, /usr/lib) - Homebrew's
+                   /opt/homebrew is not among Apple clang's folders
 
 The version is not a SPEC key: default_version in the tool's _desc.yaml is the one place that says which
 version cMeta installs by default (common_release.default_version reads it; a 'default_version' SPEC key of
@@ -45,6 +49,26 @@ a tool written before 0.46.1 is still read when the description has none).
 import os
 
 from tool_c393ba5c6fa14f66.api.common_release import default_version
+
+
+def searched_anyway(folder):
+    """True for a folder the C compiler searches by itself: naming it with -I / -L could reorder the system's own."""
+    f = folder.replace('\\', '/').rstrip('/')
+    return f in ('/usr/include', '/usr/lib', '/usr/lib64') or f.startswith('/usr/lib/')
+
+
+def library_flags(_global, names):
+    """(CFLAGS, LDFLAGS) words for the include and library folders of the C libraries set up by these tools."""
+    cflags, ldflags = [], []
+    for name in names:
+        paths = ((_global.get(name) or {}).get('features') or {}).get('paths') or {}
+        for flag, words, folders in (('-I', cflags, paths.get('includes') or [paths.get('include')]),
+                                     ('-L', ldflags, paths.get('libs') or [paths.get('lib')])):
+            for d in folders:
+                word = flag + (f'"{d}"' if d and ' ' in d else (d or ''))
+                if d and not searched_anyway(d) and word not in words:
+                    words.append(word)
+    return cflags, ldflags
 
 
 def install_pyvenv(tool, ctx, params, cmd, spec):
@@ -90,6 +114,14 @@ def install_pyvenv(tool, ctx, params, cmd, spec):
         if not cc:
             return tool.cm.error(f'{spec["name"]} builds a C extension, but no C compiler was set up')
         env['CC'] = cc
+
+    # ... and the C libraries it compiles against, after what the caller's CFLAGS / LDFLAGS say ("'augeas.h' file not
+    # found" for python-augeas with Homebrew's augeas on macOS, 2026-11-24)
+    cflags, ldflags = library_flags(_global, spec.get('c_libraries') or [])
+    if cflags:
+        env['CFLAGS'] = ' '.join([w for w in [os.environ.get('CFLAGS', '')] if w] + cflags)
+    if ldflags:
+        env['LDFLAGS'] = ' '.join([w for w in [os.environ.get('LDFLAGS', '')] if w] + ldflags)
 
     def run(command, what):
         rr = tool.cm.utils.sys.run(command, env=env or None, con=con, verbose=verbose, text_cmd='RUN', space=space)

@@ -3,7 +3,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 storage_key: pytorch
 
 # Default to a recent stable release (the one program/build-pytorch checks out); override with --version or params.with.ver
-default_version: '2.14.1'
+default_version: '2.15.0'
 
 # The Python package name used when the tool is queried via pip-like mechanisms
 name: torch

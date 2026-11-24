@@ -148,7 +148,7 @@ class CProgram(InitCProgram):
         git_repo = _global.get('clone-git-to-cache-src-pytorch', {}).get('path_to_git_repo', '')
 
         # A tag checkout builds as 2.14.1a0+git<sha> unless the version is given
-        checkout = str(params.get('checkout') or 'v2.14.1')   # the default of the clone step in _desc.yaml
+        checkout = str(params.get('checkout') or 'v2.15.0')   # the default of the clone step in _desc.yaml
         if checkout.startswith('v') and checkout[1:2].isdigit():
             env.setdefault('PYTORCH_BUILD_VERSION', checkout[1:])
             env.setdefault('PYTORCH_BUILD_NUMBER', '1')

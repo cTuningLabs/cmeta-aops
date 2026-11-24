@@ -133,7 +133,12 @@ class CTool(InitCTool):
                 f'{PACKAGE}@{version}']
         if con:
             print(f'{space}RUN: {" ".join(args)}')
-        p = subprocess.run(args, cwd = entry, env = env, stdin = subprocess.DEVNULL, shell = (uname == 'windows'))
+
+        # the files of the package not writable by the group, whatever the user's umask: Ubuntu's 0002 left the
+        # Copilot executable of 2026.1117.0 group-writable and its install stopped on "unsafe permissions"
+        # (2026-11-24); POSIX only - Windows has no umask
+        extra = {} if uname == 'windows' else {'umask': 0o022}
+        p = subprocess.run(args, cwd = entry, env = env, stdin = subprocess.DEVNULL, shell = (uname == 'windows'), **extra)
         if p.returncode != 0:
             return self.cm.error(f'npm install {PACKAGE}@{version} failed (return code {p.returncode})')
 

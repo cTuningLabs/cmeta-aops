@@ -2,6 +2,32 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.81.1
+- **Two runs of a program in one cache entry no longer fail on `_repro_ctx_run.json`.** compile-and-run-program
+  removed the file after checking that it was there; a second run in the same cache entry (two pods of a Kubernetes
+  job on one node share that node's cMeta home) could remove it in between, and the first stopped with
+  `FileNotFoundError`. A file already gone is fine now (before compiling and before running).
+- **paperclip installs whatever the user's umask.** npm runs with the umask 022 on Linux and macOS: Ubuntu's 0002 left
+  the Copilot executable of 2026.1117.0 group-writable, and its installation stopped on "unsafe permissions".
+- **A pip tool that builds a C extension compiles against the libraries cMeta set up for it.** The new SPEC key
+  `c_libraries` of `common_pyvenv` names the tools set up first (the tool's `install_uses`) whose include and library
+  folders go to the build's `CFLAGS` and `LDFLAGS` - unless the compiler searches them anyway (`/usr/include`,
+  `/usr/lib`); lib-augeas reports its library folder too. certbot uses it: python-augeas, which its Apache plugin
+  needs, found no `augeas.h` under Homebrew's `/opt/homebrew` on macOS, and certbot could not be installed there;
+  5.8.0 and 5.10.0 install on macOS now.
+- **flm: release 1.0.13 pinned, and the reason when it cannot start.** Its Linux and Windows assets with the digests
+  GitHub publishes. After unpacking, flm is started once, and the setup names the reason instead of only "failed to
+  setup tool": on Windows without AMD's NPU driver (0xC0000135, a DLL not found), and on a processor without the
+  instructions of the 1.0.13 builds (an illegal instruction: they use AVX-512, which AMD Ryzen AI processors have;
+  1.0.7 still runs on such a processor).
+- **lib-zlib: 1.4 pinned** by its SHA-256 (the release's signature checked); it builds on Linux and macOS.
+- **cloudflared: the digests of 2026.11.1 and 2026.11.2 pinned**, as its rule for a new default version says.
+- **Newer default versions, after `explore-tool-versions` on Linux, macOS and Windows** - each newer version worked
+  wherever the one before did: aks-flex-node 0.4.0, az 2.93.0 (Microsoft's repository serves it where 2.91.0 failed),
+  certbot 5.10.0, cloudflared 2026.11.2, cmeta 0.45.3, llama-cpp 12651 (with build-llama-cpp's default checkout
+  b12651), nemoclaw 0.0.145, openshell 0.1.9, opentofu 1.13.10, paperclip 2026.1117.0, pytorch 2.15.0 (with
+  build-pytorch's default checkout v2.15.0; torchvision pairs as 0.30.0 by its rule), ray 2.60.1, sccache 0.20.0.
+
 ## 0.81.0
 - **run-ai: `--main_screen` and `--autocompact`.** `--main_screen` keeps the harness on the terminal's main screen, so
   that what it shows stays in the history one scrolls back to: the flag, else the terminal's own request

@@ -19,7 +19,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 names:
   - ray{{global.host.vars.file_ext_exe}}
 
-default_version: '2.60.0'
+default_version: '2.60.1'
 
 match_version:
   - regex: 'version (\d+\.\d+\.\d+)'

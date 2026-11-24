@@ -164,7 +164,7 @@ def test_the_tool_mirrors_pytorch():
     assert all(n.endswith("site-packages/torch/__init__.py") for n in torch_desc["names"]) and len(torch_desc["names"]) == 2
     assert "{{global.python.path_home|}}" in torch_desc["extra_paths"]["linux"] and "{{global.python.path_home|}}" in torch_desc["extra_paths"]["windows"]
     assert any(u.get("name", "").startswith("python,") for u in torch_desc["uses"])
-    assert torch_desc["default_version"] == "2.14.1"
+    assert torch_desc["default_version"] == "2.15.0"
     assert "pytorch/vision" in desc["cmd_get_versions"]
     build = desc["build_uses"]["all"][0]
     assert build["name"].startswith("build-pytorchvision,")

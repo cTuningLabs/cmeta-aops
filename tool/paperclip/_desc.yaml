@@ -21,7 +21,7 @@ names:
   - paperclipai.cmd
 
 # CalVer of upstream: <year>.<month><day>.<n>
-default_version: '2026.1012.0'
+default_version: '2026.1117.0'
 
 match_version:
   - regex: '(\d{4}\.\d{3,4}\.\d+)'

@@ -15,7 +15,7 @@ Targets are chosen with `--compute` (or `--target`); see [task/target/README.tec
 ```bash
 cx tool setup llama-cpp                          # the release for the host: cpu (metal on macOS)
 cx tool setup llama-cpp --with.compute=cuda      # the CUDA build
-cx tool setup llama-cpp --version=11324          # a given build (default: 11324)
+cx tool setup llama-cpp --version=11324          # a given build (default: 12651)
 cx tool setup llama-cpp --versions               # the published builds
 cx tool setup llama-cpp --status | --upgrade     # newest build available / install it
 ```
@@ -79,7 +79,7 @@ chat template and a single turn.
 ## Building from source: program/build-llama-cpp
 
 ```bash
-cx program run build-llama-cpp --compute=cuda                     # b11324 (as the release), for the detected GPU
+cx program run build-llama-cpp --compute=cuda                     # b12651 (as the release), for the detected GPU
 cx program run build-llama-cpp --compute=cuda,vulkan --target_tmp=auto
 cx program run build-llama-cpp --compute=cuda,vulkan --target_tmp=auto --devices=Vulkan0
 cx program run build-llama-cpp --compute=metal --checkout=b11400 --compile.d.GGML_METAL_EMBED_LIBRARY=OFF

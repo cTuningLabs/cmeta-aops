@@ -19,7 +19,7 @@ authors: Grigori Fursin
 names:
   - cloudflared{{global.host.vars.file_ext_exe}}
 
-default_version: '2026.11.1'
+default_version: '2026.11.2'
 match_version:
   - regex: 'cloudflared version (\d+\.\d+\.\d+)'
     group: 1

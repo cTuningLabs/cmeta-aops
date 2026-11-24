@@ -138,7 +138,7 @@ updates:
             url: 'https://github.com/pytorch/pytorch'
 
             # The newest release (master is the next development version); --checkout=<tag|branch>
-            checkout: '{{params.checkout|v2.14.1}}'
+            checkout: '{{params.checkout|v2.15.0}}'
 
           # PyTorch depends heavily on submodules (e.g. pybind11, sleef, XNNPACK)
           - task: cmd,c9ba0a88df394d7f
