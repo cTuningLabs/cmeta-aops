@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.81.1.1)
+## 0.82.0
 - **The hardware a tool needs, checked before anything is downloaded.** A tool's `_desc.yaml` may declare `hardware`
   rules - the CPU features a version needs (`versions: '>=1.0.13'`, `cpu_features: [avx512f]`, `why`), as
   `task::target--cpu` names them. `task/setup` checks them before an install and before a build, for the version set
