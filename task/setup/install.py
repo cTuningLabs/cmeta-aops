@@ -33,6 +33,48 @@ def unattended_rights(uname, quiet, needs_admin, passwordless_sudo, elevated):
     return None if passwordless_sudo else 'sudo -n'
 
 
+def hardware_verdict(rules, version, inventory, version_matches):
+    """
+    What a tool's "hardware" rules ask of this machine for this version, against the CPU inventory of
+    task::target--cpu -> (missing, unknown): lists of (feature, rule). A rule without "versions" is for every
+    version; with them it counts only for a known version they match (version_matches(version, spec)) - an unknown
+    version is never refused. A feature is missing only when the inventory read the CPU's flags and says it is not
+    there; nothing read at all, or a name Windows' list does not cover, is unknown: an unseen system is never
+    refused (the design concepts' reduced functionality).
+    """
+    if isinstance(rules, dict):
+        rules = [rules]
+    norm = inventory.get('features_normalized') or {}
+    raw = {str(x).lower() for x in inventory.get('features_raw') or []}
+    # Linux and macOS list every flag the CPU has; Windows answers for the normalized names only
+    complete = bool(raw) and inventory.get('platform') != 'windows'
+
+    missing, unknown = [], []
+    for rule in rules or []:
+        if not isinstance(rule, dict):
+            continue
+        spec = rule.get('versions')
+        if spec is not None and not (version and version_matches(str(version), str(spec))):
+            continue
+        for feature in rule.get('cpu_features') or []:
+            f = str(feature).strip().lower()
+            if not raw:
+                unknown.append((f, rule))
+            elif f in norm:
+                if not norm[f]:
+                    missing.append((f, rule))
+            elif f not in raw:
+                (missing if complete else unknown).append((f, rule))
+    return missing, unknown
+
+
+def processor_name(inventory):
+    """The processor's name as the inventory has it (WMI's Name, /proc/cpuinfo's model name, the identifier), or ''."""
+    package = (inventory.get('packages') or [{}])[0] or {}
+    return str(package.get('Name') or (inventory.get('cpu_signature') or {}).get('model_name') or inventory.get('brand')
+               or inventory.get('extended_identifier') or '').strip()
+
+
 from task_c36be4b9314a45e0.api.ctask import ask
 
 from . import upgrade

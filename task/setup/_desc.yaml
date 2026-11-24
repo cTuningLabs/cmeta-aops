@@ -20,6 +20,7 @@ cli_params:
   skip_build_uses: bool
   skip_cache_version_check: bool
   skip_size_check: bool
+  skip_hardware_check: bool
   versions: bool
   status: bool
   upgrade: bool
@@ -158,3 +159,4 @@ cli_help:
   force_add_tool_path_to_env: Put the tool's folder first on PATH even when it is there already
   skip_cache_version_check: Remember this copy as one whose version is not checked again when it is reused, even with --check_versions
   skip_size_check: Do not check the free disk space before an install or a build
+  skip_hardware_check: Do not check the hardware the tool declares (its hardware rules) before an install or a build
