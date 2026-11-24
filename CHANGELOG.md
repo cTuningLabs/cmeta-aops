@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.82.0.1)
+## 0.83.0
 - **The optional parts of a build: `components` and `variations`.** A `build-*` program can declare, in its
   `_desc.yaml`, the parts only some targets, systems or uses need - for each the build variables it sets (`flags:
   {VAR: [when on, when off]}`), the git submodules it alone reads, the systems and compute targets it can be built
