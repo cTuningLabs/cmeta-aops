@@ -19,7 +19,16 @@ ASSETS = {
     ('1.0.7', 'windows', 'amd64'): ('fastflowlm_1.0.7_windows_amd64.zip', '0377e501afe3595d491cde1ff91923f225240053437d6e55b47c6e86fadc54d8'),
     ('1.0.9', 'linux', 'amd64'): ('fastflowlm_1.0.9_linux.tar.gz', '6ecd27d59f1f17650faaedc11787c4b755912a1725508ef15a772a6cc98a582e'),
     ('1.0.9', 'windows', 'amd64'): ('fastflowlm_1.0.9_windows_amd64.zip', '5edd8a04919aa907af5f53ff81464726210291d601c144615ddc5b2cb4f0afc7'),
+    ('1.0.13', 'linux', 'amd64'): ('fastflowlm_1.0.13_linux.tar.gz', '7c2ee388f23503f323d6c21beca8401e7ef675ce700a92f2c786ca6581322a72'),
+    ('1.0.13', 'windows', 'amd64'): ('fastflowlm_1.0.13_windows_amd64.zip', 'c174605585334103b912f703eb753fda37fb9257d1e7bfe40c62bcd6286517ba'),
 }
+
+# How flm ends when it cannot start on a machine, as a process's exit code: Windows' STATUS_DLL_NOT_FOUND (flm.exe
+# without AMD's NPU driver; unsigned and signed), and an illegal instruction - the signal on Linux (-4 from Python, 132
+# from a shell) or Windows' STATUS_ILLEGAL_INSTRUCTION: the 1.0.13 builds use AVX-512 (2026-11-24: "Illegal
+# instruction" on two Intel processors without it, where 1.0.7 runs)
+DLL_NOT_FOUND = (0xC0000135, 0xC0000135 - 2 ** 32)
+ILLEGAL_INSTRUCTION = (-4, 128 + 4, 0xC000001D, 0xC000001D - 2 ** 32)
 
 
 def asset_for(version, uname, uarch):
@@ -130,5 +139,22 @@ class CTool(InitCTool):
             return self.cm.error(f'{asset} was unpacked but has no flm{exe}')
         if uname != 'windows':
             os.chmod(path_to_flm, 0o755)
+
+        # flm must start on this machine, or the setup only says that it failed (2026-11-24): flm.exe loads the DLLs of
+        # AMD's NPU driver, and newer builds use instructions older processors lack - say which. An error, not 16: a
+        # 16 is "this way is not available, try the next" and the setup would end with its generic message
+        env = dict(os.environ, FLM_DISABLE_UPDATE_CHECK = '1')
+        r = self.cm.utils.sys.run(f'{self.cm.q(path_to_flm)} version', capture_output = True, fail_on_error = False,
+                                  env = env, timeout = 60, logger = self.logger)
+        code = r.get('returncode')
+        if code in DLL_NOT_FOUND:
+            return self.cm.error(f'FastFlowLM {version} is unpacked in {dest}, but flm.exe cannot start on this machine: '
+                                 f'Windows did not find a DLL it needs (0xC0000135). FastFlowLM runs on the NPU of an AMD '
+                                 f'Ryzen AI processor and needs its NPU driver (from AMD or the maker of the PC)')
+        if code in ILLEGAL_INSTRUCTION:
+            return self.cm.error(f'FastFlowLM {version} is unpacked in {dest}, but flm stops at once with "illegal '
+                                 f'instruction": it uses instructions this processor does not have (AVX-512 in the '
+                                 f'1.0.13 builds). FastFlowLM targets AMD Ryzen AI processors, which have them; an older '
+                                 f'release may run here (cx tool setup flm --version=1.0.7)')
 
         return {'return': 0, 'install_cmd': None, 'found_path': path_to_flm, 'version': version}

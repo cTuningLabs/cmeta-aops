@@ -32,7 +32,7 @@ honours), unless the caller set the variable.
 
 | | |
 |---|---|
-| default version | `2026.1012.0` (upstream's CalVer: year, month and day, number) |
+| default version | `2026.1117.0` (upstream's CalVer: year, month and day, number) |
 | Node.js | 24.11 or newer (`engines` of the package) |
 | data | `~/.paperclip` by default; the task `run-paperclip` uses `~/.local/state/paperclip` (`PAPERCLIP_HOME`) |
 

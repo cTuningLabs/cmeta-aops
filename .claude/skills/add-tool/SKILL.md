@@ -390,6 +390,10 @@ SPEC = {'name': 'ansible', 'package': 'ansible-core', 'python': '3.12',
 The package version installed by default is `default_version: '2.21.4'` in `_desc.yaml`, as for every tool.
 `extra` pins companion packages (`tool/ansible-lint` pins `ansible-core==2.21.4`), and
 `unsupported_os` turns a known-broken OS into one clear message instead of a traceback.
+A package that builds a C extension from source (no wheel) takes `'c_compiler': True` (cMeta's C compiler as `CC`)
+and `'c_libraries': ['lib-augeas']`: the tools set up first through `install_uses` whose include and library folders
+the build gets in `CFLAGS` / `LDFLAGS` - Homebrew's `/opt/homebrew` is not among Apple clang's folders
+(`tool/certbot`).
 
 ---
 

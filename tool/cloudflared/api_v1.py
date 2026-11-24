@@ -39,7 +39,19 @@ SPEC = {'name': 'cloudflared',
          'cloudflared-linux-arm64': '2c65dfabf616c40efc7545d107d7a57ad5e21377e2964b7e88af19a238074a46',
          'cloudflared-darwin-amd64.tgz': '3b0dbaf378337e9d7fb6cd235a76d1d6a7dee434c2d8edf9281164fb6a3837ab',
          'cloudflared-darwin-arm64.tgz': '647615df99d49cd179ea5e13ef760b9bbfb33630f6ae62f87e33dfadda60adcc',
-         'cloudflared-windows-amd64.exe': '4d2490e74082c5d48dbfedaf92576fa5bd1702379ab88eb7faa0cfbe8dc891b6'}}}}
+         'cloudflared-windows-amd64.exe': '4d2490e74082c5d48dbfedaf92576fa5bd1702379ab88eb7faa0cfbe8dc891b6'},
+     '2026.11.1': {
+         'cloudflared-linux-amd64': '97bb3b02d23a5980fc9c15a1a270e692da1923f103f920d5b16d4931d5ab55e7',
+         'cloudflared-linux-arm64': 'b155cec3e48e489cfb8e5c602769fb8c771083018d8881d68b4d18a791567c5a',
+         'cloudflared-darwin-amd64.tgz': '5e0403b188dfee71fbd9b995e7dc9910d61b661c52371935ab6475d41185632f',
+         'cloudflared-darwin-arm64.tgz': '02fe4bcf08f2c09699cff30658228a739a0c47fb75f3653d1b8772a27ade4462',
+         'cloudflared-windows-amd64.exe': '341deda3db5ec498a0482254d6c38c0b7cf01a30c37bb5dd95d2216d08955e35'},
+     '2026.11.2': {
+         'cloudflared-linux-amd64': '56f13335143ec0e22772963290683a84a04114a35ec64cbc794a4d39ff9bb8cf',
+         'cloudflared-linux-arm64': '04a7b7f08bce85d56b26ffe1fdbfbb21a074495a363d16f0783c40e25b5c5281',
+         'cloudflared-darwin-amd64.tgz': '6153d9ec629174882a3adbff2f7dc5a24b4f3bdd7ccc38eaa84fba26eb890311',
+         'cloudflared-darwin-arm64.tgz': 'f6d58eeec91ad1ec5fd1f7e4a587303772929b2625be5d24068033851c36ff55',
+         'cloudflared-windows-amd64.exe': '555b46c85582461d189cac30d14ad05480d612613801be9f110b8ce08c5b2113'}}}}
 
 
 class CTool(InitCTool):

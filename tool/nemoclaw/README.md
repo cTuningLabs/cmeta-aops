@@ -5,7 +5,7 @@ LangChain Deep Agents Code inside [NVIDIA OpenShell](../openshell/README.md) san
 managed inference and network policies. Its CLI `nemoclaw` is a Node.js program and needs Node 22.19 or newer.
 
 ```sh
-cx tool setup nemoclaw                       # detect, else build the pinned release tag (0.0.135)
+cx tool setup nemoclaw                       # detect, else build the pinned release tag (0.0.145)
 cx tool run nemoclaw -- --version
 cx tool run nemoclaw -- agents list          # the agent runtimes it can onboard
 cx tool run nemoclaw -- profiles list        # the serving profiles and whether this host suits them

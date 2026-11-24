@@ -22,7 +22,7 @@ authors: Grigori Fursin
 names:
   - aks-flex-node{{global.host.vars.file_ext_exe}}
 
-default_version: '0.2.0'
+default_version: '0.4.0'
 
 match_version:
   - regex: 'Version:\s*v?(\d+\.\d+\.\d+[0-9A-Za-z.\-]*)'

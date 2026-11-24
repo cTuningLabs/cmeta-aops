@@ -1588,8 +1588,12 @@ class CTask(InitCTask):
                 print ('')
                 print (f'{space}COMPILING ...')
 
-            if os.path.isfile(path_repro_run):
+            # another run of this program in the same cache entry (two pods of a job on one node share its home)
+            # may remove it between a check and the removal: a file already gone is fine (2026-11-23)
+            try:
                 os.remove(path_repro_run)
+            except FileNotFoundError:
+                pass
 
             _compiled = False
 
@@ -1841,8 +1845,12 @@ class CTask(InitCTask):
                 print ('')
                 print (f'{space}RUNNING ...')
 
-            if os.path.isfile(path_repro_run):
+            # another run of this program in the same cache entry (two pods of a job on one node share its home)
+            # may remove it between a check and the removal: a file already gone is fine (2026-11-23)
+            try:
                 os.remove(path_repro_run)
+            except FileNotFoundError:
+                pass
 
             # --provenance=loaded: the dynamic loader logs what the run's processes load (a file per
             # process in the build folder); nothing is added to the environment in the other modes

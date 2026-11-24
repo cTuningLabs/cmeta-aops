@@ -4,7 +4,9 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 
 The development files of Augeas: augeas.h has no version of its own, so the version is the one of
 the pkg-config file installed with it (augeas.pc, "Version: 1.14.1"). A header without that file is
-not taken: the build of python-augeas finds Augeas through pkg-config.
+not taken. The features give the include folder and the library folder (beside the pkgconfig folder):
+the build of python-augeas asks pkg-config for libxml2 only, so a pip tool that builds it passes them
+on (common_pyvenv's c_libraries) - needed where they are not the compiler's own, as Homebrew's.
 """
 
 import glob
@@ -28,6 +30,15 @@ def pc_file(header):
                 return p
 
     return None
+
+
+def library_folder(pc_dir):
+    """The folder of the library beside a pkgconfig folder: lib, lib64 or lib/<triplet>; share/pkgconfig: <prefix>/lib."""
+
+    lib = os.path.dirname(pc_dir)
+    if os.path.basename(lib).startswith('lib') or os.path.basename(os.path.dirname(lib)).startswith('lib'):
+        return lib
+    return os.path.join(os.path.dirname(lib), 'lib')
 
 
 class CTool(InitCTool):
@@ -63,8 +74,11 @@ class CTool(InitCTool):
 
             include = os.path.dirname(path[1:] if path.startswith('!') else path)
 
+            pc_dir = os.path.dirname(pc)
+            lib = library_folder(pc_dir)
+
             features = {'paths': {'include': include, 'qinclude': self.cm.q(include), 'includes': [include],
-                                  'pkgconfig': os.path.dirname(pc)}}
+                                  'pkgconfig': pc_dir, 'lib': lib, 'libs': [lib]}}
 
             found_paths_with_versions[path] = {'output': m.group(1), 'features': features}
 

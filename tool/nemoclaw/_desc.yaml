@@ -17,7 +17,7 @@ authors: Grigori Fursin
 names:
   - nemoclaw
 
-default_version: '0.0.135'
+default_version: '0.0.145'
 
 match_version:
   - regex: '(\d+\.\d+\.\d+)'
