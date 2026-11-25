@@ -5296,6 +5296,7 @@ class Category(InitCategory):
         system=False,       # the OS packages too, with "cx task run upgrade-os" on the host (needs passwordless sudo there)
         firmware=False,     # the firmware too (upgrade-os --firmware: fwupd on Linux)
         check=False,        # with --system/--firmware: only list what would be upgraded (upgrade-os --check)
+        full=False,         # with --system: apt's dist-upgrade (upgrade-os --full) - what a plain upgrade keeps back too
         project=None,      # named environment; omitted: the host's global environment
     ):
         """
@@ -5308,7 +5309,8 @@ class Category(InitCategory):
 
         --system (and --firmware) also runs the task upgrade-os on the host: the OS packages with the OS's
         own commands (apt, dnf, zypper, pacman, apk, softwareupdate + brew, winget), the firmware with fwupd,
-        and reports whether the OS asks for a reboot; --check only lists what would be upgraded.
+        and reports whether the OS asks for a reboot; --check only lists what would be upgraded. A plain apt upgrade
+        keeps back what needs a new package (a new kernel): its line says so, and --full (dist-upgrade) installs it.
 
         The full update of a host that runs servers is sync, upgrade, restart - in that order, since the
         upgrade replaces the engine under the running servers and only the restart brings them up on the
@@ -5319,6 +5321,7 @@ class Category(InitCategory):
             cx host upgrade my-azure-vm-ubuntu --sync --restart --yes
             cx host upgrade lab-laptop-ubuntu --system --firmware --check     # what the OS would upgrade
             cx host upgrade lab-laptop-ubuntu --engine- --system --restart --yes
+            cx host upgrade lab-laptop-ubuntu --engine- --system --full --restart --yes   # a new kernel too
         """
 
         if project and (restart or system or firmware):
@@ -5414,7 +5417,7 @@ class Category(InitCategory):
                     else:
                         steps.append('no sync declared')
                 if system or firmware:
-                    steps.append('would run: ' + self._upgrade_os_cmd(system, firmware, check))
+                    steps.append('would run: ' + self._upgrade_os_cmd(system, firmware, check, full))
                 if engine:
                     steps.append(f'would run: {cmd}' + ('' if pinned else f' (its own command: --version={version} does not reach it)'))
                 if restart:
@@ -5448,7 +5451,7 @@ class Category(InitCategory):
             # 1b. the OS packages and the firmware: task upgrade-os on the host, through its shell
             rc = 0
             if system or firmware:
-                os_cmd = self._upgrade_os_cmd(system, firmware, check)
+                os_cmd = self._upgrade_os_cmd(system, firmware, check, full)
                 sudo_state = str((h.get('state') or {}).get('sudo') or '')
                 if sudo_state == 'password' and not here and not check:
                     steps.append('OS: skipped - sudo needs a password there (run "cx task run upgrade-os" in a terminal on it, or add a NOPASSWD rule)')
@@ -7619,9 +7622,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
     ############################################################
 
     @staticmethod
-    def _upgrade_os_cmd(system, firmware, check):
+    def _upgrade_os_cmd(system, firmware, check, full=False):
         """The upgrade-os command for a host: quiet (sudo -n, no questions), the OS packages unless only the
-        firmware was asked for, --check to list only."""
+        firmware was asked for, --check to list only, --full for apt's dist-upgrade."""
         cmd = 'cx task run upgrade-os -q'
         if not system:
             cmd += ' --system- --apps-'
@@ -7629,6 +7632,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             cmd += ' --firmware'
         if check:
             cmd += ' --check'
+        if full and system:
+            cmd += ' --full'
         return cmd
 
     def _installed_versions(self):

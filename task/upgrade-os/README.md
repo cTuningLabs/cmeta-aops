@@ -26,6 +26,11 @@ cx task run upgrade-os --dry_run                 # print the commands, run nothi
 | macOS | `softwareupdate -ia` (root) | `brew update && brew upgrade` | in the system updates | an update still listed by `softwareupdate -l` with `Action: restart` |
 | Windows | Windows Update only with `--windows_update`: software updates, no drivers (`windows-update.ps1`, PSWindowsUpdate, elevated) | `winget upgrade --all` | through Windows Update | the `RebootRequired` registry key |
 
+A plain apt `upgrade` installs no new package, so an upgrade that needs one - a new kernel above all - is kept back:
+after it the task asks apt what is still upgradable (`apt list --upgradable`, no root), names those packages and puts
+them into its last line (`kept back: <n> (--full installs them)`, which `cx host upgrade` shows) and its result
+(`kept_back`); `--full` (`dist-upgrade`) installs them.
+
 On Linux the upgrade is wrapped by `file-mounts.sh` (root): a file of a package that something else
 mounts over cannot be replaced by any package manager - WSL mounts its kernel's `perf` read-only over
 the `/usr/bin/perf` of `linux-tools-common`, and dpkg stopped with "Invalid cross-device link" and

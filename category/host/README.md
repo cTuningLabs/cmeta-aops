@@ -89,6 +89,7 @@ cx host archives [host|wildcard]      the drives attached here and, for every ho
 cx host upgrade [host|selection] [--version=0.33.0] [--sync] [--restart [--yes] [--timeout=600]] [--dry_run]
                                       (sync, upgrade and restart probe the host again afterwards: "cx host ls" shows what is there now)
 cx host upgrade <host> [--engine-] --system [--firmware] [--check]   the OS packages (and firmware) too: "cx task run upgrade-os" on the host
+cx host upgrade <host> --engine- --system --full                       apt's dist-upgrade: also what a plain upgrade keeps back (a new kernel)
 ```
 
 ## Persistent terminals with GNU Screen

@@ -325,6 +325,7 @@ class CTask(InitCTask):
             skip_output_file: bool = False, # do not record the output at all
             append_output_file: bool = False, # append to the output file instead of overwriting it
             skip_output_header: bool = False, # do not add the summary header to the output file
+            stream_file: str = '',          # every line claude prints, written to this file as it comes (for a caller that shows progress)
             add_repos: str = '',            # cMeta repos to add to the claude context ("alias,alias"; "none" = not even the defaults)
             gateway: str = '',              # an ai.gateway alias (a company's gateway, a llama.cpp server, ...) or "login"; empty: this machine's config, else login
             gw: str = '',                   # the short form of --gateway: bare = the configured gateway, -gw=<alias>
@@ -409,6 +410,10 @@ class CTask(InitCTask):
             skip_output_file (bool): If True, do not record the output to a file.
             append_output_file (bool): If True, append to the output file instead of overwriting it.
             skip_output_header (bool): If True, do not add the summary header to the output file.
+            stream_file (str): Every line claude prints, written to this file (started anew) as it comes and
+                flushed at once - with "stats" these are the JSON events of claude, with "--include-partial-messages"
+                after "--" the answer word by word - so that another thread or process can follow the run.
+                Not used by an interactive session.
             add_repos (str): cMeta repositories to add to the claude context, comma-separated aliases; the
                 defaults (the repository of this task, then the "agent_add_repos" key of the local cMeta
                 config) are added whenever plugged in; "none" adds nothing. Each becomes "--add-dir <path>"
@@ -798,8 +803,22 @@ class CTask(InitCTask):
         lines = []
         run_stats = {}
 
+        # The lines as they come, for a caller that follows the run (stream_file)
+        follow = None
+        if stream_file:
+            try:
+                follow = open(os.path.abspath(os.path.expanduser(stream_file)), 'w', encoding='utf-8', newline='\n')
+            except Exception as e:
+                process.kill()
+                process.wait()
+                return self.cm.error(f'cannot write the stream file {stream_file}: {e}', 1)
+
         try:
             for line in process.stdout:
+                if follow:
+                    follow.write(line)
+                    follow.flush()
+
                 texts = self._parse_stream_line(line, run_stats) if parse_stream else [line]
 
                 for text in texts:
@@ -810,6 +829,9 @@ class CTask(InitCTask):
             process.kill()
             process.wait()
             return self.cm.error('interrupted by the user', 1)
+        finally:
+            if follow:
+                follow.close()
 
         returncode = process.wait()
 

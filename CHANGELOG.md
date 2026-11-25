@@ -3,6 +3,22 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.83.0.1)
+- **run-claude: `--stream_file=<file>`** - every line claude prints, written to that file as it comes and flushed at
+  once (with `--stats` its JSON events, with `--include-partial-messages` after `--` the answer word by word), so that
+  another thread or process follows the run - a content task shows the answer as it is written. Not used by an
+  interactive session.
+- **llvm 23.1.5 by default** (was 23.1.3): the newest release with a download for every system (23.1.6 has none for
+  macOS, where `latest` stops at 23.1.5); explored on macOS, Linux and Windows (explore-tool-versions --promote).
+- **clone-git-to-cache: a shallow or partial clone is a clone of its own.** `depth` and `filter` were not part of its
+  cache identity nor of its folder in the file cache, so a full clone and a shallow one of the same tag could be taken
+  for each other (nobody asked for one yet). Both are cache parameters now, and such a clone's folder says it
+  (`git-<name>/<checkout>-depth1`, `...-filter-blob-none`); a clone without them keeps its key and its folder of before.
+  Tests: `test_clone_git_to_cache.py`.
+- **upgrade-os says what a plain apt upgrade kept back, and `cx host upgrade --system --full` installs it.** `apt
+  upgrade` installs no new package, so a new kernel stayed back until a second round by hand. After a plain upgrade the
+  task asks apt what is still upgradable (`apt list --upgradable`, no root), names those packages and says them in its
+  last line (`kept back: <n> (--full installs them)`) and its result (`kept_back`); `cx host upgrade` takes `--full`
+  and passes it on with `--system` (apt's `dist-upgrade`). Tests: `test_upgrade_os.py`.
 - **`latest` on a system where the newest release has no download.** A limit of `latest` (`latest_limits` in a tool's
   `_desc.yaml`) may be for some systems only - `os: [darwin]`, `arch: [arm64]`, the host's names - beside its
   `exclude`, `reason` and `since`: on such a system `latest` takes the newest version no limit excludes, elsewhere the

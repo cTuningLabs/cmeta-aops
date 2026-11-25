@@ -29,6 +29,9 @@ APT = {'update': '{pm} update',
        'full': 'dist-upgrade', 'normal': 'upgrade',
        'autoremove': 'env DEBIAN_FRONTEND=noninteractive {pm} -y autoremove',
        'check': 'apt list --upgradable',
+       # after a plain upgrade: what apt still lists was kept back - an upgrade that needs a new package (a new kernel)
+       # is left to dist-upgrade (--full)
+       'kept': 'apt list --upgradable',
        'reboot_file': '/var/run/reboot-required'}
 SYSTEM = {
     'apt-get': APT,
@@ -108,6 +111,8 @@ def plan(uname, os_extra, system = True, apps = True, firmware = False, windows_
                 add('mounts aside', FILE_MOUNTS + ' aside', True, 'system')
                 add('configure', table.get('configure'), True, 'system')
                 add('upgrade', fmt(table['upgrade']), True, 'system')
+                if not full and table.get('kept'):
+                    add('kept back?', fmt(table['kept']), False, 'kept?')
                 if autoremove:
                     add('autoremove', fmt(table['autoremove']) if table.get('autoremove') else None, True, 'system')
                 add('mounts back', FILE_MOUNTS + ' back', True, 'restore')       # also after a failed upgrade
@@ -173,6 +178,11 @@ def pending(name, stdout, package_manager = None):
     if name == 'windows update check':
         return len([x for x in lines if re.search(r'\bKB\d{6,8}\b', x)]), [], 'Windows updates'
     return None
+
+
+def kept_back(stdout):
+    """The packages apt still lists as upgradable after its upgrade (apt list --upgradable): those it kept back."""
+    return [x.strip().split('/', 1)[0] for x in (stdout or '').splitlines() if 'upgradable from' in x]
 
 
 class CTask(InitCTask):
@@ -263,8 +273,9 @@ class CTask(InitCTask):
                 sys.stdout.flush()              # keep the header ahead of the command's own output in a pipe
             # a check is captured, then printed, so that what it found can be counted
             counted = check and kind != 'reboot?'
-            rr = self.cm.utils.sys.run(line, capture_output = (kind == 'reboot?') or counted or not con,
-                                       con = con and kind != 'reboot?' and not counted,
+            probe = kind in ('reboot?', 'kept?')
+            rr = self.cm.utils.sys.run(line, capture_output = probe or counted or not con,
+                                       con = con and not probe and not counted,
                                        verbose = verbose, print_cmd = False, fail_on_error = False, timeout = timeout,
                                        env = env, logger = self.logger)
             rc = rr.get('returncode', 0)
@@ -277,6 +288,16 @@ class CTask(InitCTask):
                 found = pending(name, rr.get('stdout'), extra.get('package_manager'))
                 if found is not None:
                     result.setdefault('pending', {})[name] = {'count': found[0], 'items': found[1], 'what': found[2]}
+            if kind == 'kept?':
+                # what the upgrade left: a probe, never a failure of the run
+                names = kept_back(rr.get('stdout')) if rc == 0 else []
+                if names:
+                    result['kept_back'] = names
+                    if con:
+                        print(f'upgrade-os: {len(names)} package(s) kept back - they need a new package (a new kernel, say), '
+                              f'which only --full (apt dist-upgrade) installs: ' + ', '.join(names[:12]) +
+                              (' ...' if len(names) > 12 else ''))
+                continue
             if kind == 'reboot?':
                 # an exit code that says so, or a text in the output (macOS: an update still waiting for its restart)
                 if isinstance(codes, str):
@@ -304,7 +325,7 @@ class CTask(InitCTask):
                     stopped = True
 
         if con:
-            done = [s['name'] for s in result['steps'] if s['name'] not in ('reboot?', 'mounts aside', 'mounts back')
+            done = [s['name'] for s in result['steps'] if s['name'] not in ('reboot?', 'kept back?', 'mounts aside', 'mounts back')
                     and (s['returncode'] == 0 or s.get('note'))]
             text = f'upgrade-os: {label}: ' + (', '.join(done) + ' ok' if done else 'nothing ran')
             if failed:
@@ -313,6 +334,8 @@ class CTask(InitCTask):
                      for p in (result.get('pending') or {}).values()]
             if found:
                 text += '; pending: ' + ', '.join(found)
+            if result.get('kept_back'):
+                text += f"; kept back: {len(result['kept_back'])} (--full installs them)"
             if result['reboot_required'] is True:
                 text += '; a reboot is required'
             elif result['reboot_required'] is False:
