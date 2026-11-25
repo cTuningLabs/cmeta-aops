@@ -8,7 +8,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 import os
 import platform
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, supported_options
+from task_c36be4b9314a45e0.api.ctask import InitCTask, supported_options, nvidia_counters_for_admins_only, running_as_administrator
 
 from . import android
 
@@ -232,6 +232,16 @@ class CTask(InitCTask):
                 return self.cm.error(f'profile_cuda_kernels is requested but cuda is not found in the global context in "{__file__}"')
             if 'ncu' not in ctx['tasks']['global']:
                 return self.cm.error(f'profile_cuda_kernels is requested but ncu is not found in the global context in "{__file__}"')
+            # Nsight Compute reads the GPU's performance counters: a driver that keeps them for administrators makes it
+            # stop with ERR_NVGPUCTRPERM - said before the run, with the way to allow them (2026-11-25)
+            if con and nvidia_counters_for_admins_only() and not running_as_administrator():
+                how = ('NVIDIA Control Panel - Desktop: Enable Developer Settings, then Developer: Manage GPU Performance '
+                       'Counters: "Allow access to the GPU performance counters to all users" (an administrator)'
+                       if os.name == 'nt' else
+                       'a line "options nvidia NVreg_RestrictProfilingToAdminUsers=0" in a file of /etc/modprobe.d and '
+                       'a reboot (root)')
+                print("cMeta warning: Nsight Compute reads the GPU's performance counters, which this NVIDIA driver "
+                      'lets administrators only read (ERR_NVGPUCTRPERM): ' + how + ' - or run this as an administrator')
 
 
         run_flags_after_exe = params.get('run_flags_after_exe')
@@ -296,8 +306,10 @@ class CTask(InitCTask):
                 # A program whose work runs in a process it forks and then executes (a model server's engine) shows no
                 # kernel unless nsys follows it between the two - where this nsys has the option (Linux; the Windows
                 # nsys has none): asked of its own help
+                # and a run again in the same folder replaces the report of before (--force-overwrite), where it can
                 follow = ''.join(f' {o}=true' for o in supported_options(_global['nsys'].get('path') or str(nsys).strip('"'),
-                                                                        ['profile', '--help'], ['--trace-fork-before-exec']))
+                                                                        ['profile', '--help'],
+                                                                        ['--trace-fork-before-exec', '--force-overwrite']))
                 prefix_cmd += f'{nsys} profile --trace=cuda,nvtx{follow} --stats=true -o cuda_profile '
                 output_files.append('cuda_profile.nsys-rep')
                 output_files.append('cuda_profile.sqlite')
@@ -495,7 +507,11 @@ class CTask(InitCTask):
                     run_time_cmds.append(f'{perf} report -i perf.data --sort symbol --children --stdio > perf_report.txt')
 
         if _profile_cuda:
-            x = f'{nsys} stats --report cuda_gpu_kern_sum cuda_profile.nsys-rep'
+            # the export of a run before in this folder is older than this report: nsys refuses it ("Use --force-export
+            # =true to update export file") and the step failed on every run after the first (2026-11-25, WSL)
+            force = ''.join(f' {o}=true' for o in supported_options(_global['nsys'].get('path') or str(nsys).strip('"'),
+                                                                   ['stats', '--help'], ['--force-export']))
+            x = f'{nsys} stats{force} --report cuda_gpu_kern_sum cuda_profile.nsys-rep'
             run_time_cmds.append(x)
 
         if _profile_cuda_kernels:

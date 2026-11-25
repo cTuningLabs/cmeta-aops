@@ -186,8 +186,8 @@ components:
 
 variations:
   lean:
-    desc: the same build as without a variation, cloned with only what it reads - the submodules shallow, and the
-      submodules of the parts that are off without their own
+    desc: the same build as without a variation, cloned with only what it reads - the superproject and the submodules
+      shallow, and the submodules of the parts that are off without their own
     components: {}
 
   minimal:
@@ -343,6 +343,11 @@ updates:
                 - $cufile
 
           ######################################################################################
+          # A build of a variation or of named parts reads one commit of the superproject: cloned shallow (plan_clone)
+          - internal_func: plan_clone
+            internal_func_from_local_key: selected-program
+            internal_func_safe: True
+
           # Clone PyTorch source
           - task: clone-git-to-cache,86919b3cfdd443d2
             name: src-pytorch
@@ -350,6 +355,9 @@ updates:
 
             # The newest release (master is the next development version); --checkout=<tag|branch>
             checkout: '{{params.checkout|v2.15.0}}'
+
+            # its tag alone for a variation or named parts (a clone of its own beside the full one); whole otherwise
+            depth: '{{local.pytorch_superproject_depth|$None}}'
 
           # The optional parts of the build for this system and these targets (components: / variations: above):
           # the build variables that follow, and which submodules are fetched without their own

@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 
 from program_22788f3c30d04e6d.api.cprogram import InitCProgram
@@ -51,6 +52,20 @@ def torchvision_checkout_for(torch_version, requested = None):
     if release:
         return f'v{release}', f'torchvision {release} pairs with torch {base}'
     return 'main', f'no torchvision release pairs with torch {torch_version}: main'
+
+
+VISION_URL = 'https://github.com/pytorch/vision'
+
+
+def missing_tag_note(tag, ls_remote):
+    """'' when the output of "git ls-remote --tags" lists the tag, or lists none (a remote that did not answer: the
+    clone decides); else why the pair cannot be built, with the newest release and main as the ways on."""
+    tags = re.findall(r'refs/tags/(v[0-9][0-9.]*)$', ls_remote or '', re.M)
+    if not tags or tag in tags:
+        return ''
+    newest = max(tags, key = lambda t: [int(x) for x in t[1:].split('.') if x.isdigit()])
+    return (f'torchvision {tag[1:]} is not released yet (no tag {tag} in {VISION_URL}; its newest release is {newest}): '
+            f'--checkout=main builds the development version, --checkout={newest} the newest release')
 
 
 def pair_env(checkout, torch_version, compute, cuda_caps = None):
@@ -175,6 +190,12 @@ class CProgram(InitCProgram):
                     f'PyTorch\'s wheel for this machine), or build the CPU operators only (--compute=cpu)')
 
         checkout, reason = torchvision_checkout_for(info['version'], params.get('checkout'))
+        # the pair of a release torch can come out after it (torch 2.15.0 had no torchvision 0.30.0 yet, 2026-11-25):
+        # asked of the vision repository with cMeta's git and said with the ways on; offline, the clone decides
+        if not params.get('checkout') and checkout.startswith('v'):
+            note = self._missing_tag(ctx, checkout)
+            if note:
+                return self.cm.error(note)
         _local['checkout'] = checkout
         _local['torch_version'] = info['version']
         _local['torch_cuda'] = info.get('cuda')
@@ -186,6 +207,21 @@ class CProgram(InitCProgram):
             print (f'INFO: torchvision checkout "{checkout}": {reason}')
 
         return {'return': 0}
+
+    def _missing_tag(self, ctx, tag):
+        """What missing_tag_note says of the vision repository's tags, asked with cMeta's git ('' when it cannot ask)."""
+        c = ctx['control']
+        r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'setup,a2f9b61079ce4333',
+                            'name': 'git,959d8c0fbc004bd0', 'ctx': ctx, 'con': False, 'quiet': c.get('quiet', False)})
+        git = ((ctx['tasks'].get('global') or {}).get('git') or {}).get('path')
+        if r.get('return', 1) > 0 or not git:
+            return ''
+        try:
+            p = subprocess.run([git, 'ls-remote', '--tags', VISION_URL], stdin = subprocess.DEVNULL, capture_output = True,
+                               timeout = 60)
+        except (OSError, subprocess.SubprocessError):
+            return ''
+        return missing_tag_note(tag, p.stdout.decode('utf-8', 'replace')) if p.returncode == 0 else ''
 
     ############################################################
     def customize_pytorchvision(self,

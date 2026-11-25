@@ -80,8 +80,11 @@ def test_a_program_that_cannot_run_takes_none(ctask, tmp_path):
 def test_setup_run_asks_nsys_for_the_fork_option():
     src = (REPO_ROOT / 'task' / 'setup-run' / 'api_v1.py').read_text(encoding = 'utf-8')
     assert "supported_options(_global['nsys'].get('path') or str(nsys).strip('\"')," in src
-    assert "['profile', '--help'], ['--trace-fork-before-exec'])" in src
+    assert "['--trace-fork-before-exec', '--force-overwrite']))" in src        # a run again replaces the report
     assert "profile --trace=cuda,nvtx{follow} --stats=true -o cuda_profile" in src
+    # the summary of a run again in the same folder: the export of the run before is replaced (2026-11-25)
+    assert "['stats', '--help'], ['--force-export']))" in src
+    assert "stats{force} --report cuda_gpu_kern_sum cuda_profile.nsys-rep" in src
 
 
 # ---------------------------------------------------------------- the resolution date

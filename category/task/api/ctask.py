@@ -276,6 +276,48 @@ def ask(question, how='-q (--quiet) to take the default answers', optional=False
             'no_terminal': True}
 
 
+def nvidia_counters_for_admins_only(params_text = None):
+    """
+    Whether this machine's NVIDIA driver lets only administrators read the GPU's performance counters, which Nsight
+    Compute (ncu) needs - it stops with ERR_NVGPUCTRPERM otherwise. Linux: RmProfilingAdminOnly of
+    /proc/driver/nvidia/params (params_text: that file's text, for a test); Windows: the driver's value of that name
+    among its NVTweak settings (none there: the driver's default, administrators only). True, False, or None when it
+    cannot be read (no NVIDIA driver here).
+    """
+    if params_text is None and os.name == 'nt':
+        try:
+            import winreg
+            key = chr(92).join(['SYSTEM', 'CurrentControlSet', 'Services', 'nvlddmkm', 'Global', 'NVTweak'])
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as k:
+                try:
+                    return bool(winreg.QueryValueEx(k, 'RmProfilingAdminOnly')[0])
+                except FileNotFoundError:
+                    return True
+        except OSError:
+            return None
+    if params_text is None:
+        try:
+            with open('/proc/driver/nvidia/params', encoding = 'utf-8') as f:
+                params_text = f.read()
+        except OSError:
+            return None
+    for line in params_text.splitlines():
+        if line.startswith('RmProfilingAdminOnly:'):
+            return line.split(':', 1)[1].strip() == '1'
+    return None
+
+
+def running_as_administrator():
+    """An administrator's process (Windows) or root's (Linux, macOS)."""
+    if os.name == 'nt':
+        try:
+            import ctypes
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except (AttributeError, OSError):
+            return False
+    return hasattr(os, 'geteuid') and os.geteuid() == 0
+
+
 def supported_options(program, help_words, options, timeout = 60):
     """
     Which of these options a program takes, whatever its version: the ones its own help names (program + help_words,

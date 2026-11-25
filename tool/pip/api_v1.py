@@ -373,7 +373,18 @@ class CTool(InitCTool):
 
         result = {'return':0}
 
-        # Check target compute
+        # Check target compute: the run's target, as a program sets it up before its tools; a setup of the tool alone
+        # (cx tool setup pip --with.package=torch --with.compute=xpu) runs the target task first - with --with.compute,
+        # else cpu - where it failed with KeyError 'target' before (2026-11-25)
+        if 'target' not in ctx['tasks']['global']:
+            c = ctx['control']
+            r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'target,94decb2ddd28441f',
+                                'compute': _with.get('compute') or 'cpu', 'ctx': ctx, 'con': c.get('con', False),
+                                'quiet': c.get('quiet', False), 'verbose': c.get('verbose', False)})
+            if r.get('return', 1) > 0:
+                return r
+            if 'target' not in ctx['tasks']['global']:
+                return self.cm.error('the target task gave this run no compute (task::target)')
         target = ctx['tasks']['global']['target']
 
         compute = target['compute']

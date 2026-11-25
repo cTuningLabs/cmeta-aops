@@ -3,6 +3,34 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.83.0.1)
+- **Nsight Systems: a run again in the same folder, and the right nsys on Linux.** `--profile_cuda` failed on every
+  run after the first in a build folder: nsys refused to overwrite the export of the run before ("Use
+  --force-export=true to update export file"). Its summary step now passes `--force-export=true` and the capture
+  `--force-overwrite=true`, where this nsys's own help lists them. tool/nsys looks for Nsight Systems in its own
+  folders on Linux (a toolkit's `bin`, `nsight-systems*/bin`, `/opt/nvidia/nsight-systems/*/bin`): a search of the
+  whole toolkit found the nsys that Nsight Compute carries for itself first, by its newer version, and that one has no
+  `stats --report`.
+- **A shallow clone takes its tag; build-pytorch's variations clone the superproject shallow.** clone-git: with
+  `depth` and a checkout the remote has as a tag or a branch (`git ls-remote`), the clone is `git clone --depth N
+  --branch <it>` - before, a shallow clone of the default branch did not hold the tag and the checkout after it
+  failed. build-pytorch: a build of a variation or of named parts (`plan_clone`, the step before the clone) takes the
+  superproject at depth 1 - its tag alone, a small part of a full clone, and a clone of its own beside the full one
+  (depth is part of the clone's identity and folder); a build without them clones it whole, as before. Tests:
+  `test_clone_git_submodules.py`, `test_build_components.py`.
+- **Nsight Compute: who may read the GPU's counters, said before the run.** `--profile_cuda_kernels` (ncu) stops with
+  ERR_NVGPUCTRPERM where the NVIDIA driver keeps the GPU's performance counters for administrators - Windows' default.
+  setup-run now says so before the run, with the way to allow them (NVIDIA Control Panel on Windows,
+  `NVreg_RestrictProfilingToAdminUsers=0` on Linux), from the driver's own setting (`nvidia_counters_for_admins_only`
+  of the task category's helpers; an administrator's run is not warned). Tests: `test_build_and_target_helpers.py`.
+- **build-pytorchvision: a torchvision that is not released yet is said as such.** The torchvision that pairs with a
+  release torch can come out after it (torch 2.15.0 before torchvision 0.30.0): its tag is looked for in the vision
+  repository first (cMeta's git) and a missing one stops the run with the newest release and `--checkout=main` as the
+  ways on - before, the clone failed at the checkout. Offline the clone decides, as before. Tests:
+  `test_build_pytorchvision.py`.
+- **tool/pip on its own sets up its target.** `cx tool setup pip --with.package=torch --with.compute=xpu` outside a
+  program failed with `KeyError: 'target'` (the compute of a run comes from its target task, which a program sets up):
+  the tool now runs the target task itself, with `--with.compute` (cpu without it). Tests: `test_pip_torch_wheel_line.py`
+  (its loader now asks cMeta for the tool category first, so the file passes on its own too).
 - **run-claude: `--stream_file=<file>`** - every line claude prints, written to that file as it comes and flushed at
   once (with `--stats` its JSON events, with `--include-partial-messages` after `--` the answer word by word), so that
   another thread or process follows the run - a content task shows the answer as it is written. Not used by an

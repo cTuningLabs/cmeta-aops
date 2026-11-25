@@ -233,3 +233,21 @@ def test_the_submodule_words_reach_clone_git_from_clone_git_to_cache(task_namesp
     call = t.cm.calls[0]
     assert call['submodules_depth'] == 1 and call['submodules_not_recursive'] == ['third_party/unused']
     assert call['submodules_files'] == ['third_party/unused/third_party/deep/LICENSE']
+
+
+def test_a_ref_a_shallow_clone_can_take(task, tmp_path):
+    """depth with checkout=<a tag or a branch>: git clone --depth N --branch <it>, so that the checkout after it finds
+    it - asked of the remote (git ls-remote); a commit or an unknown name is not one (2026-11-25)."""
+    src = tmp_path / 'src'
+    src.mkdir()
+    git('init', '-q', cwd = src)
+    for n in ('one', 'two'):
+        (src / 'f').write_text(n)
+        git('add', '-A', cwd = src)
+        git('commit', '-q', '-m', n, cwd = src)
+        if n == 'one':
+            git('tag', 'v1.0', cwd = src)
+    sha = git('rev-parse', 'HEAD', cwd = src).strip()
+    has = task['remote_has_ref']
+    assert has(GIT, str(src), 'v1.0') and has(GIT, str(src), 'main')
+    assert not has(GIT, str(src), sha) and not has(GIT, str(src), 'v9.9') and not has(GIT, str(tmp_path / 'none'), 'v1.0')

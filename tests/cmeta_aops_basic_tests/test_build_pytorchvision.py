@@ -105,7 +105,7 @@ def test_cuda_major_mismatch(mod, torch_cuda, toolkit, mismatch):
     assert mod["cuda_major_mismatch"](torch_cuda, toolkit) == mismatch
 
 
-def pair(mod, torch_version, torch_cuda, compute, nvcc = "13.3.73"):
+def pair(mod, torch_version, torch_cuda, compute, nvcc = "13.3.73", missing = ""):
     """customize_torch_pair with a Python whose torch is the given one; returns (the result, the local variables)."""
     import json, types
     program = mod["CProgram"].__new__(mod["CProgram"])
@@ -115,6 +115,7 @@ def pair(mod, torch_version, torch_cuda, compute, nvcc = "13.3.73"):
         error = lambda text, code = 1: {"return": code, "error": text},
         utils = types.SimpleNamespace(sys = types.SimpleNamespace(run = lambda cmd, **kw: {"return": 0, "returncode": 0, "stdout": probe + "\n"})))
     program.logger = None
+    program._missing_tag = lambda ctx, tag: missing          # the vision repository's answer (no network in a test)
     g = {"python": {"path": "/venvs/pair/.venv/bin/python"}, "target": {"compute": compute}}
     if nvcc:
         g["nvcc"] = {"version": nvcc, "path": "/usr/local/cuda/bin/nvcc"}
@@ -199,3 +200,14 @@ def test_the_description_pairs_before_the_clone():
     # --torch=pip brings PyTorch's wheel before the pairing
     torch_step = next(s for s in steps if s.get("with", {}).get("package") == "torch")
     assert "pip" in torch_step["if"] and steps.index(torch_step) < pair
+
+
+def test_a_pair_that_is_not_released_yet_is_said_with_the_ways_on(mod):
+    """torch 2.15.0 came before torchvision 0.30.0 (2026-11-25): its tag is looked for in the vision repository's tags
+    (release candidates are not releases); a remote that answered nothing leaves it to the clone."""
+    listing = "".join("abc123 refs/tags/%s" % t + chr(10) for t in ("v0.28.0", "v0.29.1", "v0.29.2", "v0.29.2-rc4", "v0.9.0"))
+    note = mod["missing_tag_note"]("v0.30.0", listing)
+    assert "not released yet" in note and "newest release is v0.29.2" in note and "--checkout=main" in note
+    assert mod["missing_tag_note"]("v0.29.2", listing) == "" and mod["missing_tag_note"]("v0.30.0", "") == ""
+    r, _ = pair(mod, "2.15.0", None, ["cpu"], nvcc = None, missing = note)
+    assert r["return"] == 1 and "not released yet" in r["error"]

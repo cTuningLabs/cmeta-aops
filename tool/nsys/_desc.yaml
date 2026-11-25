@@ -19,8 +19,12 @@ extra_paths:
   windows:
     - "C:\\Program Files\\NVIDIA Corporation\\Nsight Systems*\\**\\"
     - "D:\\Program Files\\NVIDIA Corporation\\Nsight Systems*\\**\\"
+  # Nsight Systems' own folders (a CUDA toolkit links its bin/nsys to them; a standalone install has its version's
+  # bin) - never the nsys that Nsight Compute carries for itself (nsight-compute-*/host/...: no "stats --report"),
+  # which a search of the whole toolkit found first by its newer version (2026-11-25, a WSL distribution)
   linux:
-    - "/usr/local/cuda/**"
-    - "/usr/cuda/**"
-    - "/opt/nvidia/**"
+    - "/usr/local/cuda/bin"
+    - "/usr/local/cuda*/nsight-systems*/bin"
+    - "/usr/cuda/bin"
+    - "/opt/nvidia/nsight-systems/*/bin"
 

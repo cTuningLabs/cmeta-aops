@@ -434,3 +434,12 @@ def test_a_source_path_with_a_space_is_quoted_in_the_joined_list(rel_path):
     src = (REPO_ROOT / rel_path).read_text(encoding = 'utf-8')
     assert src.count('sfnp = self.cm.utils.files.quote_path(os.path.join(src_path, sfn))') == 1
     assert 'sfnp = os.path.join(src_path, sfn)' not in src
+
+
+def test_who_may_read_the_nvidia_counters(ctask_helpers):
+    """Nsight Compute needs the GPU's performance counters: the driver's RmProfilingAdminOnly says whether only
+    administrators may read them (/proc/driver/nvidia/params on Linux); nothing there says nothing (2026-11-25)."""
+    f = ctask_helpers("nvidia_counters_for_admins_only")["nvidia_counters_for_admins_only"]
+    assert f("ResmanDebugLevel: 4294967295" + chr(10) + "RmProfilingAdminOnly: 1" + chr(10)) is True
+    assert f("RmProfilingAdminOnly: 0" + chr(10)) is False
+    assert f("ResmanDebugLevel: 4294967295" + chr(10)) is None and f("") is None

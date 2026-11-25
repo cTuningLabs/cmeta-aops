@@ -119,6 +119,19 @@ class CProgram(InitCProgram):
         return {'return': 0}
 
     ############################################################
+    def plan_clone(self, ctx, desc = {}, **misc):
+        """
+        The step before the clone: a build of a variation or of named parts (--compile.variation, --compile.components)
+        reads one commit of the superproject - cloned shallow, its tag alone (clone-git takes it with --branch; depth is
+        part of the clone's identity and folder, so it is a clone of its own beside the full one). Any other build
+        clones it whole, as before.
+        """
+        compile_params = (misc.get('params') or {}).get('compile') or {}
+        if compile_params.get('variation') not in (None, '', False) or compile_params.get('components'):
+            ctx['tasks']['local']['pytorch_superproject_depth'] = 1
+        return {'return': 0}
+
+    ############################################################
     def customize(self,
                   ctx: dict,
                   desc: dict = {},

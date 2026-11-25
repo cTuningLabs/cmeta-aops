@@ -506,3 +506,18 @@ def test_the_pytorch_tool_hands_a_variation_and_parts_to_the_build_and_keeps_the
         # them is the request of before
         assert build[0]['compile'][key] == '{{params.with.' + key + '|$None}}'
         assert tool['cache_meta_const']['params']['with'][key] == '{{params.with.' + key + '|$None}}'
+
+
+@pytest.mark.parametrize('compile_params, depth', [
+    ({'variation': 'minimal'}, 1),
+    ({'components': {'kineto': 'on'}}, 1),
+    ({}, None),                                                  # the build of before: the superproject whole
+    ({'variation': ''}, None),
+])
+def test_build_pytorch_clones_the_superproject_shallow_for_a_variation_or_named_parts(build, compile_params, depth):
+    """plan_clone, the step before the clone (2026-11-25): a build of a variation or of named parts reads one commit of
+    the superproject - its tag alone (clone-git takes it with --branch); any other build clones it whole."""
+    program = object.__new__(build_pytorch_class(build))
+    ctx = {'control': {}, 'tasks': {'global': {}, 'local': {}}}
+    assert program.plan_clone(ctx, params = {'compile': compile_params})['return'] == 0
+    assert ctx['tasks']['local'].get('pytorch_superproject_depth') == depth

@@ -29,6 +29,17 @@ WINDOWS_GIT_DIR_LIMIT = 220
 CD = 'cd /d' if os.name == 'nt' else 'cd'
 
 
+def remote_has_ref(git_bin, url, ref, timeout = 60):
+    """Whether the remote has this ref as a tag or a branch (git ls-remote): what a shallow clone takes with --branch.
+    A commit, or a remote that does not answer, is no."""
+    try:
+        p = subprocess.run([git_bin, 'ls-remote', '--exit-code', url, 'refs/tags/' + ref, 'refs/heads/' + ref],
+                           stdin = subprocess.DEVNULL, stdout = subprocess.PIPE, stderr = subprocess.PIPE, timeout = timeout)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+    return p.returncode == 0 and bool(p.stdout.strip())
+
+
 def submodule_paths(git_bin, folder):
     """The submodules a work tree declares (its .gitmodules, read by git itself): [(name, path)], [] without one."""
     gitmodules = os.path.join(folder, '.gitmodules')
@@ -329,6 +340,13 @@ class CTask(InitCTask):
             xdepth += f' --filter={filter}'
 
         if not os.path.isdir(path_to_git_repo):
+            # a shallow clone holds the history of one ref: of the one to check out, when the remote has it as a tag or a
+            # branch (--branch), so that the checkout after it finds it; a commit goes through fetch (see depth above)
+            ref = branch or checkout
+            if depth not in (None, '') and ref and not new:
+                git_path = (ctx_tasks['global']['git'].get('path') or path_to_git_bin).strip('"')
+                if remote_has_ref(git_path, url, ref):
+                    clone_options += f' --branch {ref}'
             cmd = f'{path_to_git_bin} clone{clone_options} {url} {directory}{xdepth}'
 
             r = self.cm.utils.sys.run(
