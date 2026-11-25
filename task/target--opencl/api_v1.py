@@ -6,27 +6,11 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import copy
-import glob
 import os
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask
+from task_c36be4b9314a45e0.api.ctask import InitCTask, intel_gpu_on_pci
 
 INTEL_GPU_RUNTIME = 'intel-gpu-runtime,1fce5a1fbba34a81'
-
-
-def intel_gpu_on_pci(sys_pci = '/sys/bus/pci/devices'):
-    """Whether an Intel display controller (vendor 0x8086, class 0x03xxxx) is on the PCI bus."""
-    for d in glob.glob(os.path.join(sys_pci, '*')):
-        try:
-            with open(os.path.join(d, 'vendor')) as f:
-                vendor = f.read().strip().lower()
-            with open(os.path.join(d, 'class')) as f:
-                cls = f.read().strip().lower()
-        except OSError:
-            continue
-        if vendor == '0x8086' and cls.startswith('0x03'):
-            return True
-    return False
 
 
 class CTask(InitCTask):

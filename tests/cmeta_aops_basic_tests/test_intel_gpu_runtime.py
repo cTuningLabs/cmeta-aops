@@ -119,6 +119,115 @@ def make_deb(path, files, links):
     path.write_bytes(b"!<arch>\n" + ar_entry("debian-binary", b"2.0\n") + ar_entry("data.tar.gz", buf.getvalue()))
 
 
+def test_the_lines_are_the_data_of_the_description(tool):
+    # releases: of _desc.yaml, in their order: a new release of the runtime is an entry there, not code
+    import yaml
+    desc = yaml.safe_load((REPO_ROOT / "tool" / "intel-gpu-runtime" / "_desc.yaml").read_text(encoding = "utf-8"))
+    assert list(tool["LINES"]) == [str(v) for v in desc["releases"]] == [tool["MODERN"], tool["LEGACY"]]
+    assert tool["LINES"][tool["MODERN"]]["default"] is True and tool["LINES"][tool["LEGACY"]]["device_id_prefixes"]
+    assert all(line["for"] for line in tool["LINES"].values())
+
+    # a line the data adds is chosen by its device ids, the default line keeps the rest
+    lines = dict(tool["LINES"], **{"99.1": {"device_id_prefixes": ["e2"], "packages": []}})
+    assert tool["line_for"](["e20b"], lines) == "99.1"
+    assert tool["line_for"](["e20b", "a7a0"], lines) == tool["MODERN"]
+    assert tool["line_for"](["591b"], lines) == tool["LEGACY"]
+
+
+def test_the_line_of_gen12_and_later_provides_the_offline_compiler_and_the_level_zero_headers(tool):
+    # PyTorch's XPU build compiles its SYCL kernels ahead of time (icx -fsycl-targets=spir64_gen: ocloc of the same
+    # compute-runtime release, on PATH) and includes level_zero/ze_api.h (ATen's LazyLevelZero: libze-dev of the
+    # loader's release, on CPATH); the legacy1 line is no target of it and keeps its packages
+    names = [p.rsplit("/", 1)[-1] for p, _ in tool["RELEASES"][tool["MODERN"]]]
+    assert "intel-ocloc_" + tool["MODERN"] + "-0_amd64.deb" in names
+    loader = next(n for n in names if n.startswith("libze1_"))
+    assert loader.replace("libze1_", "libze-dev_") in names
+    assert tool["provided"](tool["MODERN"]) == [{"file": "usr/bin/ocloc", "env": "PATH"},
+                                                {"file": "usr/include/level_zero/ze_api.h", "env": "CPATH", "dir": "usr/include"}]
+    assert tool["provided"](tool["LEGACY"]) == []
+    assert not any("ocloc" in p for p, _ in tool["RELEASES"][tool["LEGACY"]])
+
+
+def test_what_a_line_provides_is_linked_and_exported(tool, tmp_path):
+    modern = tool["MODERN"]
+    root = tmp_path / "content" / modern
+    assert tool["provide"](str(root), modern) == ["usr/bin/ocloc", "usr/include/level_zero/ze_api.h"]
+    assert tool["exports"](str(root), modern) == {}
+
+    # the package names its command ocloc-<version> (update-alternatives makes "ocloc", which an unpacking without
+    # root does not run): a link of that name beside it, to the newest; an "ocloc" that is there is kept
+    bin_dir = root / "usr" / "bin"
+    bin_dir.mkdir(parents = True)
+    for name in ("ocloc-9.1.2", "ocloc-26.35.1"):
+        (bin_dir / name).write_text("#!/bin/sh")
+    headers = root / "usr" / "include" / "level_zero"
+    headers.mkdir(parents = True)
+    (headers / "ze_api.h").write_text("")
+    if os.name == "nt":
+        pytest.skip("symbolic links need privileges on Windows (the runtime is for Linux)")
+    assert tool["provide"](str(root), modern) == []
+    assert os.path.realpath(bin_dir / "ocloc") == os.path.realpath(bin_dir / "ocloc-26.35.1")
+    assert tool["command_link"](str(root), "usr/bin/ocloc") == str(bin_dir / "ocloc")
+    assert tool["exports"](str(root), modern) == {"PATH": [str(bin_dir)], "CPATH": [str(root / "usr" / "include")]}
+
+
+def test_a_runtime_unpacked_before_a_package_was_added_gets_it_on_its_next_use(tool):
+    modern = tool["MODERN"]
+    listed = [p for p, _ in tool["RELEASES"][modern]]
+    assert tool["missing_packages"]({"version": modern, "packages": listed}) == []
+
+    # an entry of the night of 2026-11-24 (with ocloc, before the headers)
+    before = [p for p in listed if "/libze-dev_" not in p]
+    assert [p.rsplit("/", 1)[-1] for p in tool["missing_packages"]({"version": modern, "packages": before})] == \
+           [p.rsplit("/", 1)[-1] for p in listed if "/libze-dev_" in p]
+
+    # a line no longer known has nothing to compare with
+    assert tool["missing_packages"]({"version": "1.2.3", "packages": []}) == []
+
+
+def runtime_class():
+    """tool/intel-gpu-runtime's CTool, its base class a stand-in (no cMeta)."""
+    path = REPO_ROOT / "tool" / "intel-gpu-runtime" / "api_v1.py"
+    src = path.read_text(encoding = "utf-8")
+    src = src.replace("from tool_c393ba5c6fa14f66.api.ctool import InitCTool", "class InitCTool: pass")
+    deb = common_deb()
+    ns = {"__name__": "intel_gpu_runtime_under_test", "__file__": str(path)}
+    ns.update({k: deb[k] for k in ("ar_members", "extract_deb", "sha256_of", "zstd_decompress")})
+    exec(compile(src.replace(COMMON_DEB_IMPORT, ""), str(path), "exec"), ns)
+    return ns["CTool"]
+
+
+def test_complete_unpacks_only_what_the_line_gained_and_records_it(tool, tmp_path):
+    import json
+    modern = tool["MODERN"]
+    listed = [p for p, _ in tool["RELEASES"][modern]]
+    root = tmp_path / "task--setup--intel-gpu-runtime--x" / "content" / modern
+    root.mkdir(parents = True)
+    (root / tool["MARKER"]).write_text(json.dumps({"version": modern, "packages": [p for p in listed if "/libze-dev_" not in p],
+                                                   "sha256": {}}))
+    (root / "usr" / "bin").mkdir(parents = True)
+    (root / "usr" / "bin" / "ocloc").write_text("#!/bin/sh")
+
+    runtime = object.__new__(runtime_class())
+    unpacked = []
+
+    def unpack(ctx, params, entry, into, packages):
+        unpacked.append((entry, into, [p for p, _ in packages]))
+        (root / "usr" / "include" / "level_zero").mkdir(parents = True)
+        (root / "usr" / "include" / "level_zero" / "ze_api.h").write_text("")
+        return {"return": 0, "sha256": {p.rsplit("/", 1)[-1]: "f" * 64 for p, _ in packages}}
+
+    runtime._unpack = unpack
+    r = runtime.complete({"control": {}}, {}, str(root))
+    assert r == {"return": 0, "version": modern}
+    assert unpacked == [(str(tmp_path / "task--setup--intel-gpu-runtime--x"), str(root), [p for p in listed if "/libze-dev_" in p])]
+    marker = json.loads((root / tool["MARKER"]).read_text())
+    assert sorted(marker["packages"]) == sorted(listed) and list(marker["sha256"]) == ["libze-dev_1.34.0+u24.04_amd64.deb"]
+
+    # the next use has nothing to unpack
+    assert runtime.complete({"control": {}}, {}, str(root)) == {"return": 0, "version": modern} and len(unpacked) == 1
+
+
 def test_extract_a_deb_without_dpkg(tool, tmp_path):
     deb = tmp_path / "libtest_1.0_amd64.deb"
     make_deb(deb, {"usr/lib/x86_64-linux-gnu/libtest.so.1.0": b"\x7fELF fake",

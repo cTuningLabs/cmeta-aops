@@ -174,6 +174,24 @@ def test_finish_removes_a_large_sandbox_and_keeps_the_log(session):
     assert "## Summary" in md and "compiler crashed" in md and "(removed, 0.3 MiB)" in md
 
 
+def test_finish_removes_read_only_files_too(session):
+    # git makes its objects read-only and Windows refuses to delete a read-only file: a sandbox with a test's git
+    # repository kept 1,486 of them while the session said "removed" (2026-11-25)
+    import stat
+    r = session(start=True, type="git" + session.unique)
+    sid, sandbox = r["id"], r["sandbox"]
+    objects = os.path.join(sandbox, "repo", ".git", "objects", "2e")
+    os.makedirs(objects)
+    path = os.path.join(objects, "4e0c168202f55cede2ec57e4c8b0689d6339")
+    with open(path, "wb") as f:
+        f.write(b"x" * 300000)
+    os.chmod(path, stat.S_IREAD)
+
+    r = session(finish=True, id=sid, max_keep_mib="0.1")
+    assert r["return"] == 0, r.get("error")
+    assert r["record"]["sandbox_removed"] is True and not os.path.exists(sandbox)
+
+
 def test_keep_list_and_prune(session):
     u = session.unique
     kept = session(start=True, type="keepme-" + u)

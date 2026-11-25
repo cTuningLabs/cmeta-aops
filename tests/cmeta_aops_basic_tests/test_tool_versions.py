@@ -304,12 +304,59 @@ def test_latest_limits_and_exclusion(up):
     assert up.excluded_by("2.5.3", [{"exclude": "==2.5.*"}]) is not None
     assert up.excluded_by("2.5.3", [{"exclude": "this is not a specifier"}]) is None
 
+    # a limit for some systems only (a release without a download for one of them): with a run's context the limits of
+    # other systems are left out; without it every limit is returned
+    mac = {"exclude": "==23.1.6", "os": ["darwin"], "reason": "the release has no macOS download", "since": "2026-11-24"}
+    arm = {"exclude": "==9.9.9", "os": "linux", "arch": ["arm64"]}
+    desc = {"latest_limits": [limit, mac, arm]}
+    host = lambda uname, uarch: {"tasks": {"global": {"host": {"os": {"uname": uname, "uarch": uarch}}}}}
+    assert up.latest_limits(desc) == [limit, mac, arm]
+    assert up.latest_limits(desc, host("darwin", "arm64")) == [limit, mac]
+    assert up.latest_limits(desc, host("linux", "amd64")) == [limit]
+    assert up.latest_limits(desc, host("linux", "arm64")) == [limit, arm]
+    assert up.latest_limits(desc, {"tasks": {}}) == [limit, mac, arm]                      # a context without a host yet
+    assert up.limit_applies(mac, "Darwin", "arm64") and not up.limit_applies(mac, "windows", "amd64") and up.limit_applies(limit, None, None)
+    assert up.limit_text(mac) == "excluded ==23.1.6 on darwin: the release has no macOS download (since 2026-11-24)"
+    assert up.limit_text(arm) == "excluded ==9.9.9 on linux arm64"
+    tags = ["23.1.3", "23.1.4", "23.1.5", "23.1.6"]
+    assert up.allowed_latest("23.1.6", tags, up.latest_limits({"latest_limits": [mac]}, host("darwin", "arm64"))) == ("23.1.5", mac)
+    assert up.allowed_latest("23.1.6", tags, up.latest_limits({"latest_limits": [mac]}, host("linux", "amd64"))) == ("23.1.6", None)
+
     versions = ["3.15.0", "3.15.0rc2", "3.14.8", "3.14.7", "3.13.15"]
     assert up.allowed_latest("3.15.0", versions, [limit]) == ("3.14.8", limit)
     assert up.allowed_latest("3.14.8", versions, [limit]) == ("3.14.8", None)
     assert up.allowed_latest("3.15.0", None, [limit]) == (None, limit)
     assert up.allowed_latest("3.15.0", versions, []) == ("3.15.0", None)
     assert up.limit_text(limit) == "excluded >=3.15: no cp315 wheels (since 2026-10-12)"
+
+
+def test_a_tool_follows_the_fallback_of_the_tool_it_is_set_up_through(up):
+    desc = {"uses": [{"task": "runner,1e48cc0c5f6041a5"},
+                     {"task": "setup,a2f9b61079ce4333", "name": "llvm,532bab2de2e94c7d", "version": "{{params.version|$None}}"},
+                     {"task": "setup,a2f9b61079ce4333", "name": "other,0000000000000000", "version": "1.0"}]}
+    fell = {"version": "23.1.3", "version_fallback": {"from": "23.1.6", "to": "23.1.3", "why": "failed downloading file" + chr(10) + "more"}}
+    ctx = {"tasks": {"global": {"llvm": fell, "other": {"version_fallback": {"from": "23.1.6", "to": "0.1"}}}}}
+
+    # the version came from a word and went to llvm, which obtained another one: that one, with the reason
+    assert up.follow_used_fallback(ctx, desc, "23.1.6", "latest") == (
+        "23.1.3", {"from": "23.1.6", "to": "23.1.3", "through": "llvm", "why": "failed downloading file"})
+
+    # a version the request named is never changed; nor is one the used tool did obtain, or another version's fallback
+    assert up.follow_used_fallback(ctx, desc, "23.1.6", None) == ("23.1.6", None)
+    assert up.follow_used_fallback({"tasks": {"global": {"llvm": {"version": "23.1.6"}}}}, desc, "23.1.6", "latest") == ("23.1.6", None)
+    assert up.follow_used_fallback(ctx, desc, "23.1.5", "latest") == ("23.1.5", None)
+    assert up.follow_used_fallback(ctx, {"uses": []}, "23.1.6", "latest") == ("23.1.6", None)
+    assert up.follow_used_fallback({}, desc, "23.1.6", "latest") == ("23.1.6", None)
+
+
+def test_the_three_tools_of_one_llvm_release_declare_the_same_limits():
+    limits = []
+    for tool in ("llvm", "clang", "clang-cpp"):
+        with open(REPO_ROOT / "tool" / tool / "_desc.yaml", encoding = "utf-8") as f:
+            limits.append(yaml.safe_load(f).get("latest_limits"))
+    assert limits[0] and limits[0] == limits[1] == limits[2]
+    assert limits[0][0]["exclude"] == "==23.1.6" and limits[0][0]["os"] == ["darwin"] and limits[0][0]["reason"]
+
 
 
 def test_the_python_tool_declares_its_limit():

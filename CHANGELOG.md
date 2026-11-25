@@ -2,6 +2,140 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.83.0.1)
+- **`latest` on a system where the newest release has no download.** A limit of `latest` (`latest_limits` in a tool's
+  `_desc.yaml`) may be for some systems only - `os: [darwin]`, `arch: [arm64]`, the host's names - beside its
+  `exclude`, `reason` and `since`: on such a system `latest` takes the newest version no limit excludes, elsewhere the
+  newest. llvm, clang and clang-cpp declare 23.1.6 on macOS (the release has no macOS download; 23.1.5 has): `latest`
+  there is 23.1.5. Before, `latest` took 23.1.6, the download failed and the setup fell back to the pinned version.
+- **A tool follows the fallback of the tool it is set up through.** When a version chosen by a word (`latest`,
+  `known`) is handed to a tool this one is set up through (clang and clang-cpp through llvm) and that tool could not
+  obtain it and fell back, this tool takes the version obtained, with one warning line, and its cache entry records
+  it. Before, llvm fell back while clang still asked for the version that could not be obtained, and its setup failed.
+  A version the request names is never changed. Tests: `test_tool_versions.py`.
+- **The provenance check: a version asked by a word is what it resolved to.** `--use.<tool>.version=latest` (or
+  `known`) was compared with the resolved number and called a mismatch, which failed a run in strict mode after its
+  build and its program had worked. The check now says `resolved <version> (the word "latest")`; a version asked by
+  number is compared as before. Tests: `test_provenance_record.py`.
+- **build-pytorch for CUDA with a toolkit installed from NVIDIA's archives.** Such a toolkit holds the compiler until
+  a program asks for its libraries: build-pytorch now asks for the ones PyTorch links (cuBLAS, cuFFT, cuRAND,
+  cuSPARSE, cuSOLVER, nvrtc, nvJitLink, CUPTI, NVTX, NVML, cuFile, the runtime) through `lib-cuda`, as build-torch-cpp
+  and build-llama-cpp do - before, CMake stopped with `CUDA::cublas ... target was not found`, and the compilation on
+  `nvml.h`. And CMake's own CUDA language gets the same compiler (`CUDACXX`): with another toolkit on the PATH it
+  compiled with that one while PyTorch read `CUDA_HOME`.
+- **The tool `oneapi` installs Intel oneAPI** (it only detected one before): Intel Deep Learning Essentials, the
+  package Intel publishes for building PyTorch for its GPUs - the DPC++/C++ compiler with SYCL and the libraries
+  around it. `cx tool setup oneapi --install --with.accept_eula=yes`; `--version=2026.0` names a line of oneAPI. On
+  Linux Intel's installer runs without root into the tool's cache entry, with an installation instance of its own, so
+  several releases stand side by side and nothing of the system changes; on Windows the tool downloads the installer
+  and hands the command to the setup task (it needs administrator rights: a quiet run from a plain process prints the
+  command), into the folder Intel chooses or the one `--with.install_dir=<folder>` names. Intel's licence is the
+  user's to accept: without `--with.accept_eula=yes` the install stops before anything is downloaded. The releases are
+  a table in the tool's `_desc.yaml` (per release and system: Intel's file, its address, size and sha256); Intel's
+  folders are searched on Linux too. A SYCL extension is no package of its own - it comes with the compiler's release.
+  `tool/oneapi/README.tech.md`: what an install leaves and how it is removed. Tests: `test_tool_oneapi.py`.
+- **build-pytorch: the toolkit release a target needs, by the PyTorch version that is built** (`toolkits: <target>:
+  <tool>` in its `_desc.yaml`; `common_build.toolkit_request`). For Intel GPUs (`xpu`) Intel names one release of
+  oneAPI per PyTorch release (2.15: 2026.1, 2.14: 2026.1, 2.13: 2026.0, 2.12: 2025.3): the build asks the `oneapi`
+  tool for that line before the compiler is set up, for its own run, and says so - the tool finds it on the machine or
+  installs it (`--use.oneapi.with.accept_eula=yes`). Before, the build took whatever oneAPI the machine had, and
+  PyTorch 2.15 with oneAPI 2025.3 stopped in the middle of the compilation (`c10/xpu/XPUCachingAllocator.cpp` uses
+  SYCL's `ipc_memory`, which that compiler does not have). `--use.oneapi.version=<version>` is taken as asked, with a
+  warning when it is outside what the build is known to work with; a PyTorch version the table does not name asks
+  nothing. The driver is declared the same way (`drivers: <target>: <system>`,
+  `common_build.drivers_older_than_named`): a driver older than the one the vendor names for the PyTorch version is a
+  warning, and the build goes on. README.tech.md, "The toolkit of a target".
+- **A tool's environment script on Linux and macOS no longer drops what another tool added to a list of paths.** What
+  a script (`cmd_call_script`: `oneapi-vars.sh`) leaves in `LD_LIBRARY_PATH`, `LIBRARY_PATH`, `CPATH`,
+  `PKG_CONFIG_PATH`, `CMAKE_PREFIX_PATH`, `MANPATH`, `OCL_ICD_FILENAMES` and the like is now added in front of what
+  the run has (`add_env_path_keys` of the setup task named the lists of Windows only: `PATH`, `INCLUDE`, `LIB` ...).
+  Before, such a variable was taken as the script left it, so a run with oneAPI and the Intel GPU runtime lost the
+  runtime's libraries and ICD, and SYCL saw the CPU only. Two tools call such a script: Visual Studio and oneAPI.
+- **`test-icpx-sycl-gpu` sets up the Intel GPU's compute runtime first, on Linux with an Intel GPU** (Level Zero and
+  OpenCL, without root: `tool/intel-gpu-runtime`), so the SYCL program of the test runs on the GPU where there is one;
+  before, it saw the devices of oneAPI alone. Every other machine runs the test as before. The check for an Intel GPU
+  on the PCI bus (`intel_gpu_on_pci`) moved from the `opencl` target to `ctask.py`, where both take it.
+
+- **build-pytorch for an Intel GPU on Linux keeps the machine's compiler** (`common_build.host_compute`): the host
+  compilers (C and C++) are asked for the targets without `xpu`, so a build takes GCC as Intel's own instructions do,
+  and PyTorch's CMake finds icpx of oneAPI for its SYCL kernels in the oneAPI environment, which the build now sets up
+  itself (a step of its own, the release its `toolkits` name). Before, the compiler task took the one compiler that
+  names xpu - icpx - for everything, and the third-party code built with `-Werror` stopped on icpx's warnings (fbgemm:
+  `-qopenmp` recommended over `-fopenmp`). Windows is unchanged (MSVC, with icx named for SYCL).
+- **The `oneapi` tool on Windows: `--with.gui=yes` and `--with.vs_integration=no`.** The first starts Intel's wizard
+  instead of the silent install (to watch it, or to choose the folder, the licence and the Visual Studio integration
+  there); the second installs without the Visual Studio integration - no Visual Studio extensions, no registration of
+  Intel's project converter (whose `regsvr32` shows error windows on some machines), and no ending of the programs
+  that run from Visual Studio's folder while it updates them (an MSVC build that runs meanwhile stops).
+- **A source file's path with a space is quoted in the joined lists of a program** (`src_file_names_str_with_path`,
+  `run_src_file_names_str_with_path` of `compile-and-run-program` and `setup-run`): on a machine whose home holds a
+  space, `python <program.py>` read the first word only and the run of a finished PyTorch build stopped with "can't
+  open file".
+
+- **`tool/intel-gpu-runtime` brings Intel's offline compiler (`ocloc`) with the line of Gen12 and later GPUs**: the
+  package `intel-ocloc` of the same compute-runtime release (pinned by its sha256), unpacked without root, named
+  `ocloc` by a link beside its `ocloc-<version>` and exported on `PATH`. PyTorch's XPU build on Linux compiles its
+  SYCL kernels ahead of time (`icx -fsycl-targets=spir64_gen`, SYCL-TLA for pvc and bmg always) and stopped without it
+  ("ocloc tool could not be found and is required for AOT compilation"). The legacy1 line is unchanged.
+- **`tool/intel-gpu-runtime`: the release lines are data, with the Level Zero headers.** The lines, their packages
+  (GitHub path, sha256), the GPUs a line is for (`device_id_prefixes`, `default`) and what a package provides
+  (`provides: file, env, dir` - a file the runtime must have and the variable its folder goes on) are `releases:` of
+  the tool's `_desc.yaml`; a new release of Intel's runtime is an entry there. The Gen12+ line adds `libze-dev` of the
+  Level Zero loader's release (its headers on `CPATH`): PyTorch's XPU build stopped near its end without
+  `level_zero/ze_api.h`. A runtime unpacked before a package was added to its line gets that package on its next use,
+  also when reused from the cache (`finish_dynamic_result`), the others kept. Tests: `test_intel_gpu_runtime.py`.
+- **`tool/llvm`: the OpenMP runtime of a release that ships none** (`openmp_runtime:` of its `_desc.yaml`). The Linux
+  packages of LLVM 21.x have no `omp.h` and no `libomp` (23.x has them), so `clang -fopenmp` failed - and PyTorch's
+  CMake with it. After an install, and on every use of an LLVM this tool unpacked into its own cache entry, the
+  release is looked at (not its number): one without the runtime gets it, built from the same release's sources with
+  its own clang, cmake and ninja (seconds), into the folders where a release with OpenMP keeps it. The source layouts
+  are data (the runtime's own source up to 21.x, the whole `llvm-project` from 22.x), checked against a pinned sha256
+  (21.1.8) or the one GitHub publishes for the asset; a release with neither is left as it is, with a warning that
+  says how to pin it. An LLVM of the system or of another installer is never written. Tests:
+  `test_tool_llvm_openmp.py`.
+- **build-pytorch on Windows: the Visual Studio installation follows the MSVC of the run.** When the build pins its
+  host compiler (MSVC 19.51 is outside its limits) or the request names one, the installation of Visual Studio is
+  pinned to the same version: oneAPI, which an `xpu` build sets up before MSVC and which asks for no version, took the
+  newest installation, and MSVC then found its version taken (the build stopped at once). Tests:
+  `test_build_components.py`.
+- **The parts of a build: `required_for`, the targets that cannot do without a part.** A part declared with
+  `required_for: {<target>: <why>}` is on whenever one of those targets is built - over its default and over a
+  variation, also in a run that asks no part (`common_build.required_flags`) - and asking it off (`<part>-`, or its
+  build variable set off) is an error before anything is built. build-pytorch declares it for oneDNN (`mkldnn`) and
+  `xpu`: PyTorch compiles its oneDNN sources for XPU always and builds oneDNN for the GPU only with `USE_MKLDNN`, which
+  this program turns off on Windows - an `xpu` build there stopped after 2.5 hours on `oneapi/dnnl/dnnl.hpp`. Tests:
+  `test_build_components.py`.
+- **test-session: a finished session's sandbox goes with its read-only files too.** git makes its objects read-only
+  and Windows refuses to delete such a file: a sandbox with a test's git repository kept 1,486 of them while the
+  session said "removed". The engine's removal (which clears the flag) does it now, and "removed" is recorded only
+  when the folder is gone (else a note says how many files stayed). Tests: `test_test_session.py`.
+- **Intel's installers through one helper of the tool category** (`category/tool/api/common_intel.py`): Intel's EULA,
+  the silent command on Windows and on Linux (without root, into a folder of its own with an installation instance of
+  its own), the instance of a folder and the commands that remove it, now with `components` - only those of a package
+  (Intel's online installer then downloads only them). The `oneapi` tool takes them from there (no change of its
+  behaviour); a tool of a plugged repository that installs another of Intel's tools uses the same. Tests:
+  `test_tool_oneapi.py`.
+- **run-ai: the harnesses are artifacts of the graph.** A task that runs a harness carries the tag `ai-harness` and
+  declares it in the block `harness` of its `_desc.yaml` (its name and other names, a title, the tool of its model
+  list, its place in a list, the words of run-ai it takes, its read-only flags, its prompt-cache lifetime); run-ai
+  finds them in every plugged repository and asks them, so a harness of another repository or a user's own needs no
+  word in run-ai. The eight harness tasks here declare what run-ai's tables said of them (a test keeps the two
+  alike); the tables stay as the fallback of a task that declares nothing. `--list_models` without a harness lists
+  the declared ones (agy under its name now, antigravity its other name). README.md, "Harnesses as artifacts".
+- **The harnesses, asked of the graph: `cx task harnesses`.** The task category answers with every task that declares
+  a harness, in every plugged repository (`cx task harnesses codex`: one, with every fact it declares;
+  `--takes=gateway,output_file`: only those whose task takes these words). What chose among harnesses by a list in its
+  code asks it now: run-ai, `cx ai.gateway pick / models / connect` (the wires a harness speaks and whether a gateway
+  may pass its own login on: `wires`, `login_pass_through` in the block), ai-account-status (which harness takes a
+  gateway, which login passes through) and run-ai's native sessions (`resume`, `chooses_session_id`). A harness of
+  another repository is offered and taken everywhere at once; the tables stay as the fallback of a task that declares
+  nothing. task/run-ai/README.md, "Harnesses as artifacts". Tests: `test_run_ai_engine.py`, `test_ai_account_status.py`.
+- **run-ai: a bare `--harness` asks which one**, as a bare `-gw` does for the gateway: at a terminal the harnesses
+  the graph declares are listed with their titles, and the answer is a number or a name; Enter takes what a run
+  without the flag takes (the project's last harness, else claude). A run nobody watches (`-q`, no terminal) takes
+  that too, with a note - before, a bare `--harness` looked for a harness called "true". Not together with `--cx`.
+  Tests: `test_run_ai_engine.py`, `test_run_ai_pi.py`, `test_run_ai_prompt_cache.py`.
+
 ## 0.83.0
 - **The optional parts of a build: `components` and `variations`.** A `build-*` program can declare, in its
   `_desc.yaml`, the parts only some targets, systems or uses need - for each the build variables it sets (`flags:

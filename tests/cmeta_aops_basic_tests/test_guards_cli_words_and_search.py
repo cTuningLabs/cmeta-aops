@@ -210,12 +210,14 @@ def test_cli_params_are_readable(path):
 # so a mistake there changes no run; this guard keeps it readable. The keys of a word's entry and of a command's:
 HELP_WORD_KEYS = {'desc', 'title', 'group', 'example', 'default', 'conflicts', 'needs', 'multiple', 'values_from', 'bare',
                   'refresh', 'position', 'tags', 'inherits', 'programs', 'if_read', 'hide', 'artifact', 'artifact_tags',
-                  'type', 'values', 'min', 'max', 'choice', 'order'}
+                  'type', 'values', 'min', 'max', 'choice', 'order', 'harness_takes', 'values_also'}
 # choice: what the word changes - what is built, what is run, both, or true for a choice without a stage; false: a
 # control, for a word a program reads itself (the page would take it for a choice of the stage that reads it)
 CHOICE_STAGES = ('build', 'run')
-# the lists a page asks for: the targets a program supports, its commands, its inputs, its models, its compilers
-VALUES_FROM = ('targets', 'cmds', 'datasets', 'models', 'compilers')
+# the lists a page asks for: the targets a program supports, its commands, its inputs, its models, its compilers, the
+# harnesses the graph declares (cx task harnesses; harness_takes: only those whose task takes these words; values_also:
+# the word's own other values)
+VALUES_FROM = ('targets', 'cmds', 'datasets', 'models', 'compilers', 'harnesses')
 HELP_COMMAND_KEYS = {'title', 'desc', 'artifact', 'task', 'passthrough', 'arg1', 'main', 'without', 'only', 'params'}
 HELP_CATEGORY_KEYS = {'title', 'one', 'desc', 'order', 'hide'}
 HELP_DESCS = sorted(TASK_DESCS + list(REPO_ROOT.glob('program/*/_desc.yaml')))

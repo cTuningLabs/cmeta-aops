@@ -424,3 +424,13 @@ def test_cuda_libraries_of_a_cached_toolkit(tmp_path):
     assert v["CMAKE_EXE_LINKER_FLAGS"] == f"-fuse-ld=gold -Wl,-rpath-link,{lib}"
     assert v["CMAKE_SHARED_LINKER_FLAGS"] == f"-Wl,-rpath-link,{lib}"
     assert common.cuda_link_vars([], {}) == {}
+
+
+@pytest.mark.parametrize('rel_path', ['task/setup-run/api_v1.py', 'task/compile-and-run-program/api_v1.py'])
+def test_a_source_path_with_a_space_is_quoted_in_the_joined_list(rel_path):
+    # On a machine whose home holds a space (C:/Users/First Last) "python <program.py>" read the first word only and
+    # stopped with "can't open file 'C:/Users/First'" after a whole PyTorch build: each path of the joined lists
+    # (src_file_names_str_with_path, run_src_file_names_str_with_path) is quoted by the engine's quote_path
+    src = (REPO_ROOT / rel_path).read_text(encoding = 'utf-8')
+    assert src.count('sfnp = self.cm.utils.files.quote_path(os.path.join(src_path, sfn))') == 1
+    assert 'sfnp = os.path.join(src_path, sfn)' not in src

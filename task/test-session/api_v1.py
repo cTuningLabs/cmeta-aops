@@ -669,8 +669,16 @@ class CTask(InitCTask):
     def _remove_sandbox(self, rec):
         if os.path.isdir(rec['sandbox']):
             rec.setdefault('costs', {})['sandbox_mib'] = folder_mib(rec['sandbox'])
+            # Read-only files too: git makes its objects read-only, and Windows refuses to delete a read-only file -
+            # shutil.rmtree with ignore_errors left 1,486 of them (5.8 MB) while the session said "removed"
+            # (2026-11-25). The engine's removal clears the flag; then the folder itself, now empty
+            self.cm.utils.files.remove_files_and_dirs_in_path(rec['sandbox'])
             shutil.rmtree(rec['sandbox'], ignore_errors = True)
-        rec['sandbox_removed'] = True
+        rec['sandbox_removed'] = not os.path.isdir(rec['sandbox'])
+        if not rec['sandbox_removed']:
+            left = sum(len(files) for _, _, files in os.walk(rec['sandbox']))
+            rec.setdefault('notes', []).append({'time': now().isoformat(timespec = 'seconds'),
+                                                'text': f'the sandbox was not removed completely: {left} files stayed'})
 
     def _finish(self, params):
         rec, err = self._load(params.get('id'))

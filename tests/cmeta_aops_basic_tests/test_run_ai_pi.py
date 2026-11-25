@@ -63,7 +63,12 @@ def test_the_tables_of_run_ai_know_pi(task_namespace):
     assert "pi" not in ns["HARNESSES"]
     cls = ns["CTask"]
     task = cls.__new__(cls)
+    task._harness_cache = ns["harness_declarations"]([])                     # no task declares it here
     assert task._harness_refs("pi") == ("run-pi", "pi")
+
+    # declared by its task (the tag ai-harness, its "harness" block), wherever it is plugged: that task and its tool
+    task._harness_cache = ns["harness_declarations"]([("run-pi,e09024944b584215", {"name": "pi", "tool": "pi,b9da93b6b4094df3"})])
+    assert task._harness_refs("pi") == ("run-pi,e09024944b584215", "pi,b9da93b6b4094df3")
 
     for table in ("GATEWAY_HARNESSES", "YES_HARNESSES", "LONG_PROMPT_HARNESSES", "MAIN_SCREEN_HARNESSES"):
         assert "pi" in ns[table], table

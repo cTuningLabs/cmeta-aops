@@ -24,7 +24,16 @@ from cmeta.utils.common import compare_versions
 from cmeta.utils.files import PathLock
 from task_c36be4b9314a45e0.api.ctask import InitCTask, drop_provider_variables
 
-HARNESSES = ('codex', 'claude', 'opencode', 'vibe', 'gemini', 'antigravity', 'openclaw', 'hermes')
+def _own_harnesses():
+    """The harnesses this task reads accounts of: the keys of harnesses: in its _desc.yaml (their ways are there)."""
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml'), encoding='utf-8') as f:
+            return tuple(str(h) for h in ((yaml.safe_load(f) or {}).get('harnesses') or {}))
+    except (OSError, yaml.YAMLError):
+        return ()
+
+
+HARNESSES = _own_harnesses()
 CLAUDE_URL = 'https://api.anthropic.com/api/oauth/usage'
 CLAUDE_PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile'
 OPENAI_URL = 'https://chatgpt.com/backend-api/wham/usage'
@@ -35,8 +44,10 @@ PAGES = {'claude': 'https://claude.ai/settings/usage', 'openai': 'https://chatgp
          'openclaw': 'https://docs.openclaw.ai/concepts/usage-tracking',
          'hermes': 'https://hermes-agent.nousresearch.com/docs/'}
 
-# As run-ai: a machine's general default gateway (config run_ai_gateway) is for these harnesses; others run on their
-# login. A gateway that passes the harness's own login on (ai.gateway auth.header "login") serves only LOGIN_HARNESSES.
+# As run-ai: a machine's general default gateway (config run_ai_gateway) is for the harnesses whose task takes a
+# gateway; others run on their login. A gateway that passes the harness's own login on (ai.gateway auth.header "login")
+# serves the harnesses that declare login_pass_through. Both are what each harness declares (the block "harness" of its
+# task - cx task harnesses); these tuples are the fallback of a harness that declares nothing.
 GATEWAY_HARNESSES = ('claude', 'codex', 'opencode')
 LOGIN_HARNESSES = ('claude', 'codex')
 SET_AI_GATEWAY = 'set-ai-gateway,e10aa0a00edd4a2c'
@@ -457,6 +468,32 @@ class CTask(InitCTask):
         }
         raise StatusError('not_supported', messages.get(harness, 'Automatic quota reporting is not configured for this harness.'), 120)
 
+    def _harnesses(self):
+        """The harnesses the graph declares (cx task harnesses), found once per run; {} when nothing answers."""
+        if getattr(self, '_harness_cache', None) is None:
+            r = self.cm.access(dict(category=self.cmeta['uses_categories']['task'], command='harnesses', con=False))
+            self._harness_cache = r if r.get('return', 1) == 0 else {}
+        return self._harness_cache
+
+    def _declared(self, harness):
+        """What a harness declares: (its entry of cx task harnesses, its block), or (None, {})."""
+        d = (self._harnesses().get('index') or {}).get(str(harness or '').strip().lower())
+        return d, ((d or {}).get('declared') or {})
+
+    def _takes_gateway(self, harness):
+        """Whether the task of a harness takes a gateway: what it declares, else GATEWAY_HARNESSES."""
+        d, _ = self._declared(harness)
+        if d is not None and d.get('takes') is not None:
+            return 'gateway' in d['takes']
+        return harness in GATEWAY_HARNESSES
+
+    def _passes_login(self, harness):
+        """Whether a gateway may pass the harness's own login on: what it declares, else LOGIN_HARNESSES."""
+        d, block = self._declared(harness)
+        if d is not None and 'login_pass_through' in block:
+            return bool(block['login_pass_through'])
+        return harness in LOGIN_HARNESSES
+
     def _machine_gateway(self, harness):
         """The gateway a run-ai run without a gateway flag takes on this machine (set-ai-gateway's choice, the general
         default only for GATEWAY_HARNESSES) -> (alias or 'login', how). No gateways here (a trimmed copy): login."""
@@ -466,7 +503,7 @@ class CTask(InitCTask):
             return 'login', 'no AI gateways on this machine'
         if r.get('return'):
             raise StatusError('gateway_unavailable', "This machine's default AI gateway could not be read: %s" % display_text(str(r.get('error', ''))[:250]), 30)
-        if r['gateway'] != 'login' and r.get('general') and harness not in GATEWAY_HARNESSES:
+        if r['gateway'] != 'login' and r.get('general') and not self._takes_gateway(harness):
             return 'login', 'its own login: %s takes no gateway' % harness
         return r['gateway'], r.get('how', '')
 
@@ -479,9 +516,10 @@ class CTask(InitCTask):
         if row is None:
             return None, 'The AI gateway %s is not on this machine: a run with it stops before it starts.' % gateway
         if str(row.get('auth') or '').split(' ')[0] == 'login':
-            if harness in LOGIN_HARNESSES:
+            if self._passes_login(harness):
                 return {'own_login': True}, ''
-            return None, 'The AI gateway %s passes a login on for %s only.' % (gateway, ' and '.join(LOGIN_HARNESSES))
+            names = [d['name'] for d in self._harnesses().get('harnesses') or [] if (d.get('declared') or {}).get('login_pass_through')]
+            return None, 'The AI gateway %s passes a login on for %s only.' % (gateway, ' and '.join(names or LOGIN_HARNESSES))
         if str(row.get('auth') or 'none') == 'none':
             return None, 'Through the AI gateway %s, without a key: no account allowance applies.' % gateway
         return None, 'Through the AI gateway %s with its key: its billing applies, not a subscription quota.' % gateway

@@ -6,6 +6,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 from pathlib import Path
+import glob
 import os
 import re
 import logging
@@ -789,6 +790,91 @@ def file_cache_folder(places, sub_folder='', key='file_cache', con=False, space=
             _FILE_CACHE_SAID.add(note)
             print('%sWARNING: %s' % (space, note))
     return {'return': 0, 'path': path, 'away': away, 'note': note}
+
+
+# The Intel GPU of a Linux machine, from sysfs (no lspci, no root). What a task asks before it sets up Intel's GPU
+# compute runtime (tool/intel-gpu-runtime), which only such a machine can use. In WSL2 the GPU is behind /dev/dxg
+# and is not on this bus.
+def intel_gpu_on_pci(sys_pci = '/sys/bus/pci/devices'):
+    """Whether an Intel display controller (vendor 0x8086, class 0x03xxxx) is on the PCI bus."""
+    for d in glob.glob(os.path.join(sys_pci, '*')):
+        try:
+            with open(os.path.join(d, 'vendor')) as f:
+                vendor = f.read().strip().lower()
+            with open(os.path.join(d, 'class')) as f:
+                cls = f.read().strip().lower()
+        except OSError:
+            continue
+        if vendor == '0x8086' and cls.startswith('0x03'):
+            return True
+    return False
+
+
+# The AI harnesses are artifacts of the graph (2026-11-25, the user: selectors from the graph, never a table in code):
+# a task that runs one carries the tag ai-harness and declares it in the block "harness" of its _desc.yaml. The task
+# category's command "harnesses" (cx task harnesses) finds them in every plugged repository; run-ai, ai.gateway,
+# ai-account-status and the pages that offer a harness ask it (task/run-ai/README.md, "Harnesses as artifacts").
+HARNESS_TAG = 'ai-harness'
+HARNESS_BLOCK = 'harness'
+HARNESS_TAKES = ('yes', 'long_prompt_file', 'gateway', 'main_screen', 'output_file')
+
+
+def harness_declarations(found):
+    """
+    The harnesses the graph declares. found: [(the task's alias,UID, the "harness" block of its _desc.yaml)] of the
+    tasks tagged ai-harness (a task without a block, or with no name in it, is left out).
+    -> {'list': [decl] sorted by (sort, name), 'index': {<every name and other name>: decl},
+        'conflicts': {<a name two tasks declare>: [their tasks]}} - a name in conflict is resolved by neither;
+    decl = {name, also, title, task, tool, sort, takes, read_only, cache_ttl_minutes, declared} - takes, read_only and
+    cache_ttl_minutes are None where the block does not say (the caller's fallback then); declared is the block as it
+    is, for the facts a caller reads by their own key (wires, login_pass_through, resume, ...).
+    """
+    decls = []
+    for cref, block in found or []:
+        if not isinstance(block, dict) or not str(block.get('name') or '').strip():
+            continue
+        name = str(block['name']).strip().lower()
+        also = [str(x).strip().lower() for x in (block.get('also') or []) if str(x).strip() and str(x).strip().lower() != name]
+        try:
+            sort = float(block.get('sort', 1000))
+        except (TypeError, ValueError):
+            sort = 1000.0
+        decls.append({'name': name, 'also': also, 'title': str(block.get('title') or '').strip(), 'task': str(cref),
+                      'tool': str(block.get('tool') or name).strip(), 'sort': sort,
+                      # (an unquoted yes in YAML is True: the one word of HARNESS_TAKES it can be)
+                      'takes': ['yes' if x is True else str(x) for x in block['takes']] if isinstance(block.get('takes'), list) else None,
+                      'read_only': [str(x) for x in block['read_only']] if isinstance(block.get('read_only'), list) else None,
+                      'cache_ttl_minutes': block.get('cache_ttl_minutes'),
+                      'declared': dict(block)})
+    decls.sort(key = lambda d: (d['sort'], d['name'], d['task']))
+    claims = {}
+    for d in decls:
+        for n in [d['name']] + d['also']:
+            if d not in claims.setdefault(n, []):
+                claims[n].append(d)
+    return {'list': decls,
+            'index': {n: ds[0] for n, ds in claims.items() if len(ds) == 1},
+            'conflicts': {n: [d['task'] for d in ds] for n, ds in claims.items() if len(ds) > 1}}
+
+
+def harness_fact(harnesses, harness, key, fallback = None):
+    """
+    A fact a harness declares (a key of its "harness" block: wires, login_pass_through, resume, ...), from the answer
+    of "cx task harnesses" (or harness_declarations); fallback(harness) - a caller's table of before - when the harness
+    or the key is not declared.
+    """
+    d = ((harnesses or {}).get('index') or {}).get(str(harness or '').strip().lower())
+    if d is not None and key in (d.get('declared') or {}):
+        return d['declared'][key]
+    return fallback(harness) if callable(fallback) else fallback
+
+
+def harness_takes(harnesses, harness, word, fallback = ()):
+    """Whether the task of a harness takes a word (HARNESS_TAKES): what it declares, else harness in fallback."""
+    d = ((harnesses or {}).get('index') or {}).get(str(harness or '').strip().lower())
+    if d is not None and d.get('takes') is not None:
+        return word in d['takes']
+    return str(harness or '').strip().lower() in tuple(fallback or ())
 
 
 class InitCTask:

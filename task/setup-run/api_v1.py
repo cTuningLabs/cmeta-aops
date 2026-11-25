@@ -100,7 +100,8 @@ class CTask(InitCTask):
                     src_file_names_str += ' '
                 src_file_names_str += sfn
 
-                sfnp = os.path.join(src_path, sfn)
+                # quoted when it holds a space (a home under "C:\Users\First Last"): the joined list goes into a command line
+                sfnp = self.cm.utils.files.quote_path(os.path.join(src_path, sfn))
                 if src_file_names_str_with_path != '':
                     src_file_names_str_with_path += ' '
                 src_file_names_str_with_path += sfnp

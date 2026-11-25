@@ -1036,7 +1036,7 @@ def update_status(known, latest):
     return 'unknown', None
 
 
-def latest_limits(desc):
+def latest_limits(desc, ctx = None):
     """
     The limits of "latest" a tool's _desc.yaml declares (latest_limits): the versions "latest" must not take,
     each with why and since when - a range known to break, or the versions after a maximum until a dependency
@@ -1047,12 +1047,37 @@ def latest_limits(desc):
             reason: 'PyYAML 6.0.3 has no cp315 wheels for Windows'
             since: '2026-10-12'         # when it was set: the report says how old a limit is
 
-    Returns the list (a single dict is a list of one; an entry without exclude is ignored).
+    A limit may be for some systems only - a release without a download for one of them:
+
+          - exclude: '==23.1.6'
+            os: [darwin]                # and / or arch: [arm64] - the host's names (uname, uarch)
+            reason: 'the release has no macOS download'
+
+    Returns the list (a single dict is a list of one; an entry without exclude is ignored). With the context of a
+    run, the limits of other systems than its host are left out; without it (a report that is not about one machine)
+    every limit is returned.
     """
     limits = (desc or {}).get('latest_limits') or []
     if isinstance(limits, dict):
         limits = [limits]
-    return [limit for limit in limits if isinstance(limit, dict) and limit.get('exclude')]
+    limits = [limit for limit in limits if isinstance(limit, dict) and limit.get('exclude')]
+
+    host = ((((ctx or {}).get('tasks') or {}).get('global') or {}).get('host') or {}).get('os') if isinstance(ctx, dict) else None
+    if host:
+        limits = [limit for limit in limits if limit_applies(limit, host.get('uname'), host.get('uarch'))]
+    return limits
+
+
+def limit_applies(limit, uname, uarch):
+    """True when a limit of "latest" is for this system: it names no system, or this one (os: / arch:, a name or a
+    list of the host's names - linux, darwin, windows; amd64, arm64)."""
+    for key, value in (('os', uname), ('arch', uarch)):
+        only = (limit or {}).get(key)
+        if only:
+            only = [only] if isinstance(only, str) else list(only)
+            if str(value or '').strip().lower() not in [str(x).strip().lower() for x in only]:
+                return False
+    return True
 
 
 def excluded_by(version, limits):
@@ -1091,8 +1116,38 @@ def limit_text(limit):
     """A limit in one line: 'excluded >=3.15: <reason> (since <date>)'."""
     if not limit:
         return ''
-    return (f'excluded {limit.get("exclude")}' + (f': {limit["reason"]}' if limit.get('reason') else '') +
+    where = []
+    for key in ('os', 'arch'):
+        only = limit.get(key)
+        if only:
+            where.append('/'.join([only] if isinstance(only, str) else [str(x) for x in only]))
+    return (f'excluded {limit.get("exclude")}' + (f' on {" ".join(where)}' if where else '') +
+            (f': {limit["reason"]}' if limit.get('reason') else '') +
             (f' (since {limit["since"]})' if limit.get('since') else ''))
+
+
+def follow_used_fallback(ctx, desc, version, word):
+    """
+    A tool whose version was chosen by a word ("latest", "known") and handed to a tool it is set up through - a
+    "uses" entry of its _desc.yaml that takes {{params.version}}: clang and clang-cpp through llvm. When that tool
+    could not obtain the version and fell back (the version_fallback of its result), this tool's version is the one
+    obtained: the two are one release. A version the request named is never changed.
+
+    -> (the version to go on with, {'from', 'to', 'through', 'why'} or None)
+    """
+    if not word or not version:
+        return version, None
+    results = ((ctx or {}).get('tasks') or {}).get('global') or {}
+    for entry in (desc or {}).get('uses') or []:
+        if not isinstance(entry, dict) or 'params.version' not in str(entry.get('version') or ''):
+            continue
+        alias = str(entry.get('name') or '').split(',')[0].strip()
+        used = results.get(alias) if alias else None
+        fallback = used.get('version_fallback') if isinstance(used, dict) else None
+        if isinstance(fallback, dict) and fallback.get('to') and str(fallback.get('from')) == str(version):
+            return str(fallback['to']), {'from': str(version), 'to': str(fallback['to']), 'through': alias,
+                                         'why': str(fallback.get('why') or '').strip().splitlines()[0] if fallback.get('why') else ''}
+    return version, None
 
 
 def version_policy(self, ctx, desc, params):
@@ -1234,7 +1289,7 @@ def newest_allowed(self, ctx, desc, tool_read, params, record):
     excludes - the list is looked up (and cached) only then. Returns (version or None, the limit that excluded
     the newest one or None).
     """
-    limits = latest_limits(desc)
+    limits = latest_limits(desc, ctx)
     latest = record.get('latest')
     if not limits or not excluded_by(latest, limits):
         return latest, None
@@ -1266,7 +1321,7 @@ def resolve_version(self, ctx, params, tool_read):
     if not word:
         if params.get('version'):
             # A version the request names is taken as asked, also when a limit of "latest" excludes it
-            limit = excluded_by(params['version'], latest_limits(desc))
+            limit = excluded_by(params['version'], latest_limits(desc, ctx))
             if limit and con:
                 print ('')
                 print (f'{space}cMeta warning: version {params["version"]} of "{name}" is {limit_text(limit)} - taken as asked')

@@ -5,16 +5,119 @@ Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
+import glob
+import json
 import os
 import re
 import shutil
+import subprocess
+import sys
+import tarfile
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
+from tool_c393ba5c6fa14f66.api.common_release import _download, _sha256
 
 LLVM_RELEASES = 'https://github.com/llvm/llvm-project/releases/download/llvmorg-{version}/{filename}'
 LLVM_TAGS_REPO = 'https://github.com/llvm/llvm-project'
+LLVM_RELEASE_API = 'https://api.github.com/repos/llvm/llvm-project/releases/tags/llvmorg-{version}'
+
+OPENMP_MARKER = '.cmeta-openmp.json'     # in the content folder of an LLVM whose OpenMP runtime this tool built or tried
+
+
+def has_openmp(home):
+    """Whether an LLVM has the OpenMP runtime with its clang: omp.h in clang's resource folder (lib/clang/<N>/include)."""
+    return bool(home) and bool(glob.glob(os.path.join(home, 'lib', 'clang', '*', 'include', 'omp.h')))
+
+
+def is_inside(path, folder):
+    """Whether a path is inside a folder (both real paths), the folder itself excluded."""
+    try:
+        return os.path.commonpath([os.path.realpath(path), os.path.realpath(folder)]) == os.path.realpath(folder) and \
+               os.path.realpath(path) != os.path.realpath(folder)
+    except ValueError:                                            # another drive on Windows
+        return False
+
+
+def openmp_sources(spec, version, assets = None):
+    """
+    The sources of the OpenMP runtime of an LLVM release (openmp_runtime of _desc.yaml), checked before a download:
+    the first layout of spec['sources'] that the release publishes, with a sha256 for each of its files - the one
+    pinned in spec['sha256'][<version>], else the one GitHub publishes for the asset.
+
+    assets: {<asset name>: <sha256 or None>} of the release, as GitHub lists it; None when it could not be listed
+            (then only a layout whose digests are all pinned is taken).
+    -> {'files': {<folder>: <file name>}, 'folders': [...], 'sha256': {<file name>: <sha256>}} or
+       {'files': None, 'why': <text>}
+    """
+    pinned = ((spec or {}).get('sha256') or {}).get(str(version)) or {}
+    whys = []
+    for layout in (spec or {}).get('sources') or []:
+        files = {key: str(name).format(version = version) for key, name in (layout.get('files') or {}).items()}
+        if not files:
+            continue
+        if assets is not None and not all(name in assets for name in files.values()):
+            whys.append(f'{", ".join(files.values())}: not published with the release')
+            continue
+        digests = {name: (pinned.get(name) or (assets or {}).get(name) or '').lower() for name in files.values()}
+        unchecked = [name for name, sha in digests.items() if not re.fullmatch(r'[0-9a-f]{64}', sha)]
+        if unchecked:
+            whys.append(f'{", ".join(unchecked)}: no sha256 pinned' + ('' if assets is None else ' or published'))
+            continue
+        return {'files': files, 'folders': list(layout.get('folders') or []), 'sha256': digests}
+    return {'files': None, 'why': '; '.join(whys) or 'no source layout declared'}
+
+
+def release_assets(version, timeout = 30):
+    """{<asset name>: <sha256 or None>} of an LLVM release, as GitHub lists it; None when it cannot be listed."""
+    request = urllib.request.Request(LLVM_RELEASE_API.format(version = version),
+                                     headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'cmeta-tool-llvm'})
+    try:
+        with urllib.request.urlopen(request, timeout = timeout) as f:
+            release = json.load(f)
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+    assets = {}
+    for a in release.get('assets') or []:
+        digest = str(a.get('digest') or '')
+        assets[a.get('name')] = digest.split(':', 1)[1] if digest.startswith('sha256:') else None
+    return assets
+
+
+def safe_members(t, folders = None):
+    """
+    The members of a source archive to unpack, its top folder dropped: files and folders only (no links, nothing
+    absolute or with ".."), and with folders only those under <top>/<folder>/.
+    """
+    for m in t.getmembers():
+        parts = Path(m.name).parts
+        if m.name.startswith('/') or '..' in parts or m.issym() or m.islnk() or len(parts) < 2:
+            continue
+        if folders and parts[1] not in folders:
+            continue
+        m.name = '/'.join(parts[1:])
+        yield m
+
+
+def place_openmp(stage, resource_dir, lib_dir):
+    """
+    The OpenMP runtime installed into a staging folder, put where a release with OpenMP keeps it: the headers into
+    clang's resource folder "include", the libraries into lib_dir. -> the paths placed.
+    """
+    placed = []
+    include = os.path.join(stage, 'include')
+    for name in sorted(os.listdir(include)) if os.path.isdir(include) else []:
+        if name.endswith('.h') and os.path.isfile(os.path.join(include, name)):
+            os.makedirs(os.path.join(resource_dir, 'include'), exist_ok = True)
+            placed.append(shutil.copy2(os.path.join(include, name), os.path.join(resource_dir, 'include', name)))
+    lib = os.path.join(stage, 'lib')
+    for name in sorted(os.listdir(lib)) if os.path.isdir(lib) else []:
+        if name.startswith('lib') and re.search(r'\.(so(\.[0-9.]+)?|a|dylib)$', name) and os.path.isfile(os.path.join(lib, name)):
+            os.makedirs(lib_dir, exist_ok = True)
+            placed.append(shutil.copy2(os.path.join(lib, name), os.path.join(lib_dir, name)))
+    return placed
 
 
 def is_swift_toolchain(path, output = ''):
@@ -109,6 +212,183 @@ class CTool(InitCTool):
 
         return {'return':0, 'paths':new_paths}
 
+
+    ############################################################
+    def finish_dynamic_result(self,
+                              ctx: dict,
+                              result: dict = {},
+                              params: dict = {},
+    ):
+        """
+        On every use of the LLVM (installed now or reused from the cache): features.openmp says whether its clang
+        has the OpenMP runtime, and an LLVM this tool unpacked into its own cache entry without one gets it, built
+        from the same release's sources (openmp_runtime of _desc.yaml). Whatever stops that build is said and the
+        LLVM is used as it is - programs without OpenMP do not need it.
+        """
+        r = self.complete_openmp(ctx, result, params)
+        if r['return'] > 0 and ctx['control'].get('con', False):
+            print ('')
+            print (f'WARNING: this LLVM has no OpenMP runtime (omp.h, libomp), so programs built with -fopenmp fail with '
+                   f'its clang: {r.get("error")}')
+        return {'return': 0, 'result': result}
+
+    ############################################################
+    def complete_openmp(self,
+                        ctx: dict,
+                        result: dict,
+                        params: dict = {},
+    ):
+        """
+        The OpenMP runtime of an LLVM this tool unpacked (see finish_dynamic_result). -> {'return': 0} when it has
+        one, gets one or is not this tool's to complete; {'return': 1, 'error': ...} when it stays without.
+        """
+        _global = ctx['tasks']['global']
+        uname = _global['host']['os']['uname']
+        spec = self.cdesc.get('openmp_runtime') or {}
+
+        features = result.setdefault('features', {})
+        home = (features.get('paths') or {}).get('home') or ''
+        features['openmp'] = has_openmp(home)
+        if features['openmp'] or uname not in (spec.get('systems') or []):
+            return {'return': 0}
+
+        # Only an LLVM unpacked into this tool's own cache entry: never one of the system or of another installer
+        clang = result.get('path') or ''
+        entry = result.get('path_cmeta_cache') or ''
+        content = os.path.join(entry, 'content')
+        if not (entry and clang and home and is_inside(clang, content) and is_inside(home, entry)):
+            return {'return': 0}
+
+        version = str(result.get('version') or result.get('detected_version') or '')
+        if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
+            return {'return': 1, 'error': f'the release of this LLVM is not known ({version or "no version"})'}
+
+        # A release whose sources could not be found or checked is tried again only when openmp_runtime changes
+        marker = os.path.join(home, OPENMP_MARKER)
+        spec_key = json.dumps({'sources': spec.get('sources'), 'sha256': (spec.get('sha256') or {}).get(version),
+                               'cmake_args': spec.get('cmake_args')}, sort_keys = True)
+        if os.path.isfile(marker):
+            try:
+                with open(marker, encoding = 'utf-8') as f:
+                    tried = json.load(f)
+            except (OSError, ValueError):
+                tried = {}
+            if tried.get('status') == 'unavailable' and tried.get('spec') == spec_key:
+                return {'return': 1, 'error': tried.get('why', '')}
+
+        # The sources: their sha256 pinned in _desc.yaml, else as GitHub publishes them
+        pinned_only = openmp_sources(spec, version, None)
+        sources = pinned_only if pinned_only['files'] else openmp_sources(spec, version, release_assets(version))
+        if not sources['files']:
+            why = (f'LLVM {version} publishes no OpenMP sources this tool can check ({sources["why"]}) - pin their sha256 '
+                   f'in openmp_runtime of tool/llvm/_desc.yaml, or use a release that ships the runtime')
+            with open(marker, 'w', encoding = 'utf-8') as f:
+                json.dump({'version': version, 'status': 'unavailable', 'why': why, 'spec': spec_key}, f, indent = 2)
+            return {'return': 1, 'error': why}
+
+        r = self._build_openmp(ctx, params, entry, home, clang, version, sources, spec.get('cmake_args') or [])
+        if r['return'] > 0:
+            return r
+
+        with open(marker, 'w', encoding = 'utf-8') as f:
+            json.dump({'version': version, 'status': 'built', 'sources': sources, 'placed': r['placed'],
+                       'compiler': clang, 'spec': spec_key}, f, indent = 2)
+        features['openmp'] = has_openmp(home)
+        if not features['openmp']:
+            return {'return': 1, 'error': f'the OpenMP runtime of LLVM {version} was built, but {home} still has no omp.h'}
+        return {'return': 0}
+
+    ############################################################
+    def _build_openmp(self,
+                      ctx: dict,
+                      params: dict,
+                      entry: str,
+                      home: str,
+                      clang: str,
+                      version: str,
+                      sources: dict,
+                      cmake_args: list,
+    ):
+        """
+        Download, check, configure, build and install the OpenMP runtime of a release with its own clang, then put
+        it where a release with OpenMP keeps it. -> {'return': 0, 'placed': [...]}
+        """
+        c = ctx.get('control', {})
+        con, quiet, verbose = c.get('con', False), c.get('quiet', False), c.get('verbose', False)
+        space = '  ' * ctx['tasks'].get('nested_call', 0) if verbose else ''
+
+        clang_cpp = os.path.join(os.path.dirname(clang), 'clang++' + os.path.splitext(clang)[1])
+        if not os.path.isfile(clang_cpp):
+            return {'return': 1, 'error': f'the release has no {clang_cpp}'}
+
+        # Where clang looks for the runtime: asked of clang itself
+        asked = {}
+        for key, flag in (('resource_dir', '-print-resource-dir'), ('triple', '-print-target-triple')):
+            p = subprocess.run([clang, flag], capture_output = True, text = True, stdin = subprocess.DEVNULL)
+            asked[key] = p.stdout.strip()
+            if p.returncode != 0 or not asked[key]:
+                return {'return': 1, 'error': f'{clang} {flag} failed: {(p.stderr or p.stdout).strip()}'}
+        lib_dir = os.path.join(home, 'lib', asked['triple'])
+        if not os.path.isdir(lib_dir):
+            lib_dir = os.path.join(home, 'lib')                     # a release without per-target runtime folders
+
+        tools = {}
+        for key, name in (('cmake', 'cmake,e26c11ebb3dd40ca'), ('ninja', 'ninja,a3df3c45e9b04830')):
+            r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run', 'arg1': 'setup,a2f9b61079ce4333',
+                                'name': name, 'ctx': ctx, 'con': con, 'quiet': quiet, 'verbose': verbose})
+            if r['return'] > 0:
+                return {'return': 1, 'error': f'{key} could not be set up: {r.get("error")}'}
+            tools[key] = r['path']
+
+        if con:
+            print ('')
+            print (f'{space}INFO: LLVM {version} has no OpenMP runtime: building it from the sources of the release '
+                   f'({", ".join(sources["files"].values())}) with {clang} ...')
+
+        work = os.path.join(entry, 'openmp-src')
+        shutil.rmtree(work, ignore_errors = True)
+        os.makedirs(work)
+        cwd = os.getcwd()
+        os.chdir(entry)
+        try:
+            for folder, name in sources['files'].items():
+                url = LLVM_RELEASES.format(version = version, filename = name)
+                r = _download(self, ctx, {'control': {'con': con, 'quiet': quiet, 'verbose': verbose}}, url, 'openmp-src', name)
+                if r['return'] > 0:
+                    return {'return': 1, 'error': f'could not download {url}: {r.get("error")}'}
+                digest = _sha256(r['path'])
+                if digest != sources['sha256'][name]:
+                    return {'return': 1, 'error': f'{name}: sha256 {digest} is not the expected {sources["sha256"][name]}'}
+                into = work if sources['folders'] else os.path.join(work, folder)
+                with tarfile.open(r['path']) as t:
+                    kwargs = {'filter': 'data'} if hasattr(tarfile, 'data_filter') else {}
+                    t.extractall(into, members = list(safe_members(t, sources['folders'])), **kwargs)
+                os.remove(r['path'])
+
+            build, stage = os.path.join(work, 'build'), os.path.join(work, 'stage')
+            configure = [tools['cmake'], '-S', os.path.join(work, 'openmp'), '-B', build, '-G', 'Ninja',
+                         f'-DCMAKE_MAKE_PROGRAM={tools["ninja"]}', '-DCMAKE_BUILD_TYPE=Release',
+                         f'-DCMAKE_C_COMPILER={clang}', f'-DCMAKE_CXX_COMPILER={clang_cpp}',
+                         f'-DCMAKE_INSTALL_PREFIX={stage}', f'-DPython3_EXECUTABLE={sys.executable}'] + list(cmake_args)
+            for log, args in (('configure', configure), ('build', [tools['cmake'], '--build', build]),
+                              ('install', [tools['cmake'], '--install', build])):
+                if verbose:
+                    print (f'{space}RUN: ' + ' '.join(args))
+                p = subprocess.run(args, capture_output = True, text = True, stdin = subprocess.DEVNULL)
+                log_file = os.path.join(entry, f'openmp-{log}.log')
+                with open(log_file, 'w', encoding = 'utf-8') as f:
+                    f.write(p.stdout + p.stderr)
+                if p.returncode != 0:
+                    return {'return': 1, 'error': f'its {log} step failed ({log_file}): {(p.stderr or p.stdout).strip()[-1500:]}'}
+
+            placed = place_openmp(stage, asked['resource_dir'], lib_dir)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(work, ignore_errors = True)
+
+        if con:
+            print (f'{space}INFO: the OpenMP runtime of LLVM {version}: {", ".join(placed)}')
+        return {'return': 0, 'placed': placed}
 
     ############################################################
     def _resolve_release(self,

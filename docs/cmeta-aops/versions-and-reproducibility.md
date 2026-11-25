@@ -144,6 +144,24 @@ list, the known version, with one warning. A version asked for by number is take
 limit excludes it. `--versions` and `cx tool check-updates` show the limits and their dates. tool/python carries the
 first one (the cap of cMeta's own installer).
 
+A limit may be for some systems only - a release that has no download for one of them:
+
+```yaml
+latest_limits:
+  - exclude: '==23.1.6'
+    os: [darwin]               # and / or arch: [arm64] - the host's names (linux, darwin, windows; amd64, arm64)
+    reason: 'the release has no macOS download (23.1.5 has)'
+    since: '2026-11-24'
+```
+
+On such a system `latest` is the newest version no limit excludes (23.1.5 on macOS); on the others the limit is not
+read. The tools of one upstream release declare the same limits (llvm, clang, clang-cpp).
+
+**A tool that is set up through another one follows it.** clang and clang-cpp hand their version to llvm. When that
+version was chosen by a word (`latest`, `known`) and llvm could not obtain it and fell back (section 4), clang takes
+the version llvm obtained - with one warning line, and its cache entry records it. A version the request names is
+never changed.
+
 **The report: `cx tool check-updates`.** For every tool with a `default_version` (`--all`: every tool), it
 compares two versions:
 

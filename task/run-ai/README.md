@@ -21,6 +21,8 @@ cxt run-ai --conversations                           # the conversations of the 
 cxt run-ai --conversation=20261004-18 -i             # continue a given one (id or prefix)
 cxt run-ai --harness=codex --model=gpt-6.1-sol,high  # the same conversation with codex: the transcript is handed over
 cxt run-ai --cx "..."                                # --harness=codex in short
+cxt run-ai --harness -i                              # a bare --harness: the harnesses of this machine listed, one chosen
+                                                     # (Enter: the project's last; nobody to ask: as without the flag)
 cxt run-ai --project="project::my-app" -i            # the project named explicitly (category::artifact)
 cxt run-ai --project=. "..."                         # the current directory itself, no artifact detection
 cxt run-ai --harness=claude --model=claude-opus-5-5,high "..."     # or --model=claude-opus-5-5 --effort=high
@@ -305,6 +307,50 @@ Everything else goes to `run-<harness>` unchanged: the prompt (positional or `--
 `--stats` (on by default; the cost lands in `!AI/log`), `--reproducible`, `--add_repos` (claude), and every flag after
 `--`. A `--settings` of your own after `--` is read and merged: your keys and hooks stay, the memory folder is added.
 Without a prompt the run is interactive; with one it is a single turn unless `-i` says otherwise.
+
+## Harnesses as artifacts
+
+A harness is a task of the graph, not a name in this task's code: a task that runs one carries the tag `ai-harness`
+in its `_cmeta.yaml` and declares the harness in the block `harness` of its `_desc.yaml`. The task category finds them
+in every plugged repository - run-ai's own, `pi` of another repository, a user's own harness in a private one - with
+`cx task harnesses`; run-ai lists them for a bare `--harness`, resolves `--harness=<name>` with them, and asks each
+what it takes and how it goes on with a session:
+
+```yaml
+harness:
+  name: claude                     # the word of --harness
+  # also: [<other words>]          # its other words (optional; agy: [antigravity])
+  title: 'Claude Code (Anthropic)' # what it is, in a few words (the lists show it)
+  tool: claude,383841b240c74e88    # the tool that holds its models, efforts and flags (_desc_models.yaml)
+  sort: 10                         # its place in a list (1000 when not given; then by name)
+  takes: ['yes', long_prompt_file, gateway, main_screen, output_file]   # the words its run() takes
+  read_only: ['--permission-mode', 'plan']   # its flags for a read-only run (--write=none), when it has such a mode
+  cache_ttl_minutes: 5             # how long its provider keeps a prompt cache by default
+  wires: [anthropic]               # the APIs it speaks to an AI gateway (cx ai.gateway pick / models / connect)
+  login_pass_through: true         # a gateway may pass its own login on (an ai.gateway with auth.header login)
+  resume: ['--resume', '{session}']  # its flags that go on with a native session ({session}: the session's id)
+  chooses_session_id: true         # cMeta names a new session itself (else the harness does, and run-ai reads it)
+```
+
+Quote `'yes'`: an unquoted `yes` is YAML's `true` (run-ai reads it as `yes` all the same). A key the block leaves out
+is asked of run-ai's tables, the fallback of a task that declares nothing (an older copy of a repository; any
+`--harness=<x>`, which tries the task `run-<x>` and the tool `<x>`); a name two tasks declare is listed by neither and
+stops a run that asks for it, with both tasks named. A new harness task is found once it is indexed (`cx task
+reindex <alias>` after its `_cmeta.yaml` changed by hand).
+
+Others ask the same declarations, never a list of their own: `cx ai.gateway pick / models / connect` (`wires`,
+`login_pass_through`), ai-account-status (which harness takes a gateway, which login a gateway passes on), and a
+program that hands a harness more than a prompt asks for the harnesses whose task takes those words - gen-ai of
+cmeta-aops-ext2 hands a gateway and an output file: `cx task harnesses --takes=gateway,output_file`. So a harness
+added in any repository is offered and taken everywhere at once; the tables in their code are only the fallback of
+an older cmeta-aops.
+
+```bash
+cxt run-ai --harness -i        # the harnesses of this machine, numbered with their titles; Enter: the project's last
+cx task harnesses              # the harnesses the graph declares (cx task harnesses codex: one, every fact; -j: data)
+cx task harnesses --takes=gateway,output_file   # only those whose task takes a gateway and an output file
+cx task find --tags=ai-harness # the tasks that declare one
+```
 
 ## The project remembers its harness: `run_ai_config`
 

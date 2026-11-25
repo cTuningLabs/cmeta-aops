@@ -13,6 +13,7 @@ authors: Grigori Fursin
 #   cxt run-ai "one prompt"                         # one more turn of it, then exit
 #   cxt run-ai --harness=codex --model=<m>,<e>      # the same conversation with another harness and model
 #   cxt run-ai --cx "..."                           # --harness=codex in short
+#   cxt run-ai --harness -i                         # the harnesses of this machine listed, one chosen (as a bare -gw)
 #   cxt run-ai --new / --conversation=<id> / --conversations
 #   cxt run-ai --summarize                          # !AI/log/<id>.summary.md, read first at the next hand-over
 #   cxt run-ai --dry_run                            # everything that would be given to the harness; nothing runs
@@ -55,6 +56,7 @@ params_map:
 # The switches that take a word and also mean something without one: the task category lets them come bare
 # ("bare" says what a bare one means)
 cli_params:
+  harness: {type: str, bare: 'the harnesses of this machine to choose from (nobody to ask - as without the flag)'}
   gw: {type: str, bare: 'the gateways of this machine to choose from (nobody to ask - its default)'}
   gw_default: {type: str, bare: 'a gateway chosen from the list becomes the default'}
   write: {type: str, bare: 'all'}

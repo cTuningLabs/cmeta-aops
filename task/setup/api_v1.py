@@ -287,7 +287,7 @@ class CTask(InitCTask):
             result['latest_source'] = record.get('source')
             result['newest'] = record.get('latest')
             result['limit'] = limit
-            result['latest_limits'] = upgrade.latest_limits(desc)
+            result['latest_limits'] = upgrade.latest_limits(desc, ctx)
             result['policy'] = policy
             result['versions_lookup'] = record
 
@@ -305,7 +305,7 @@ class CTask(InitCTask):
                 if limit:
                     print (f'Newest allowed by the latest_limits of the tool: {latest or "-"} '
                            f'({record.get("latest")} is {upgrade.limit_text(limit)})')
-                for other in upgrade.latest_limits(desc):
+                for other in upgrade.latest_limits(desc, ctx):
                     if other is not limit:
                         print (f'Limit of "latest": {upgrade.limit_text(other)}')
                 print (f'Policy of a request without a version: {policy} ({policy_source})')
@@ -904,6 +904,22 @@ class CTask(InitCTask):
         install_refused = None
 
         ##############################################################################
+        # A version chosen by a word ("latest", "known") that this tool handed to a tool it is set up through (clang
+        # and clang-cpp through llvm): when that tool could not obtain it and fell back, this one follows - with one
+        # warning line, and the version obtained in its record
+        followed = None
+        if version and kwargs_copy.get('version_word') and kwargs_copy.get('tool_read'):
+            version, followed = upgrade.follow_used_fallback(ctx, kwargs_copy['tool_read'].get('desc') or {}, version,
+                                                             kwargs_copy.get('version_word'))
+            if followed:
+                kwargs_copy['version'] = version
+                if con:
+                    print ('')
+                    print (f'{space}cMeta warning: version {followed["from"]} of "{kwargs_copy["tool_read"].get("artifact_print_name") or name}" '
+                           f'("{kwargs_copy["version_word"]}") is not what "{followed["through"]}", which it is set up through, '
+                           f'obtained - taking {followed["to"]}' + (f' ({followed["why"]})' if followed.get('why') else ''))
+
+        ##############################################################################
         if version:
             # Prepare various versions for further reuse
             version_pip = '==' + version if version and version[0].isdigit() else version
@@ -1180,6 +1196,12 @@ class CTask(InitCTask):
         # The word the version came from ("known", "latest") and the version it became, for the record
         if kwargs_copy.get('version_word'):
             result['version_resolved'] = {'word': kwargs_copy['version_word'], 'version': version}
+
+        # ... and, when it followed the tool it is set up through, the version obtained (the cache entry records it)
+        if followed:
+            result.setdefault('version_fallback', {'from': followed['from'], 'to': followed['to'],
+                                                   'why': f'{followed["through"]}: {followed["why"]}'.rstrip(': ')})
+            result.setdefault('_update_params', {}).setdefault('version', version)
 
         if skip_cache_version_check:
             result['skip_cache_version_check'] = True

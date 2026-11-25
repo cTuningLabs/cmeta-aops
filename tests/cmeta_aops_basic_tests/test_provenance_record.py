@@ -1084,3 +1084,20 @@ def test_hook_attaches_the_record_to_the_test_session(driver, prov, tmp_path, mo
     driver.cm.access = access
     r = driver.write_provenance(ctx, {}, "on", {"name": "prog"}, {}, str(tmp_path), "tmp", "prog", "0" * 16, ["cpu"])
     assert r["return"] == 0 and calls == []
+
+
+def test_a_version_asked_by_a_word_is_what_it_resolved_to(prov):
+    # --use.compiler-c.version=latest: a word is no number to compare (a build with the newest clang ended as a
+    # "mismatch" before, 2026-11-24); a number is still compared
+    rec = {"requested": {"use": {"compiler-c": {"name": "clang", "version": "latest"}, "nvcc": {"version": "Known"},
+                                 "python": {"version": "3.14"}, "cmake": {"version": "4.2"}}},
+           "compute": ["cpu"], "host": {"uname": "linux"}, "loaded": {"method": "resolved", "libraries": []},
+           "build": {"binary": {"format": "elf"}, "toolchain": {}}, "runtime": {}, "resolved": {}}
+    g = {"compiler-c": {"version": "23.1.6"}, "nvcc": {"version": "13.3.73"}, "python": {"version": "3.14.8"}, "cmake": {"version": "4.3.1"}}
+    prov.run_checks(rec, g, False)
+    by = {c["tool"]: c for c in rec["checks"] if c["rule"] == "version"}
+    assert by["compiler-c"]["ok"] is True and by["compiler-c"]["level"] == "info"
+    assert by["compiler-c"]["detail"] == '--use.compiler-c.version=latest: resolved 23.1.6 (the word "latest")'
+    assert by["nvcc"]["ok"] is True and 'the word "known"' in by["nvcc"]["detail"]
+    assert by["python"]["ok"] is True and by["python"]["level"] == "error"            # 3.14 is 3.14.8
+    assert by["cmake"]["ok"] is False and "(mismatch)" in by["cmake"]["detail"] and rec["ok"] is False

@@ -563,7 +563,8 @@ def test_the_harness_must_exist_and_the_models_are_listed(fresh):
     with contextlib.redirect_stdout(out):
         r = fresh.cm.access({"category": "task", "command": "run", "arg1": "run-ai", "list_models": True, "con": True})
     assert r["return"] == 0, r.get("error")
-    for harness in ("claude", "codex", "opencode", "openclaw", "antigravity", "gemini", "hermes"):
+    # every harness the graph declares (the tasks tagged ai-harness), by its declared name (agy: also antigravity)
+    for harness in ("claude", "codex", "opencode", "openclaw", "agy", "gemini", "hermes", "vibe"):
         assert 'the harness "%s"' % harness in out.getvalue(), harness
 
     r = fresh.run(harness = "codex", model = "gpt-test,high", dry_run = True)
@@ -1180,3 +1181,147 @@ def test_cx_is_codex_in_short(task_namespace):
     assert choice('', 'codex', False) == ('codex', 'codex', None)            # the old name --agent
     given, harness, err = choice('claude', '', True)
     assert (given, harness) == ('claude', 'claude') and '--cx is --harness=codex' in err
+
+
+def test_the_harnesses_are_the_tasks_that_declare_one(task_namespace):
+    """The harnesses come from the graph: each task tagged ai-harness declares its block (name, other names, title, tool,
+    sort, the words it takes); a task without a block or without a name is none; a name two tasks declare resolves to
+    neither and is said. An answer to the question: a number, a name, another name of a listed one, or Enter."""
+    ns = task_namespace("run-ai")
+    found = [("run-b,2", {"name": "Beta", "title": "B", "sort": 20, "takes": [True, "gateway"]}),     # an unquoted yes
+             ("run-a,1", {"name": "alpha", "also": ["al"], "title": "A", "sort": 10, "read_only": ["--plan"]}),
+             ("run-x,3", {"title": "no name"}), ("run-y,4", None),
+             ("run-c,5", {"name": "gamma", "also": ["al"]})]
+    h = ns["harness_declarations"](found)
+    assert [d["name"] for d in h["list"]] == ["alpha", "beta", "gamma"]           # by sort (1000 if none), then name
+    assert h["index"]["beta"]["takes"] == ["yes", "gateway"] and h["index"]["alpha"]["takes"] is None
+    assert h["index"]["alpha"]["read_only"] == ["--plan"] and h["index"]["beta"]["tool"] == "beta"
+    assert "al" not in h["index"] and h["conflicts"] == {"al": ["run-a,1", "run-c,5"]}
+
+    answer = ns["harness_answer"]
+    names = [d["name"] for d in h["list"]]
+    assert answer("2", names, h["index"]) == "beta" and answer(" Gamma ", names, h["index"]) == "gamma"
+    assert answer("", names, h["index"], "alpha") == "alpha"                     # Enter: the default
+    assert answer("0", names) == "" and answer("4", names) == "" and answer("al", names, h["index"]) == ""
+    assert answer("", names) == ""                                                # no answer and no default
+
+
+def test_the_question_of_a_bare_harness_at_a_terminal(task_namespace, monkeypatch, capsys):
+    """The harnesses the graph declares - a user's own from a private repository too - numbered with their titles, the
+    default marked, and the answer taken."""
+    ns = task_namespace("run-ai")
+    task = ns["CTask"].__new__(ns["CTask"])
+    task.cm = type("CM", (), {"error": staticmethod(lambda text: {"return": 1, "error": text})})()
+    task._harness_cache = ns["harness_declarations"]([
+        ("run-claude,38be73ffceaa4f67", {"name": "claude", "title": "Claude Code (Anthropic)", "sort": 10}),
+        ("run-agy,fe910b4a9c88448f", {"name": "agy", "also": ["antigravity"], "title": "Antigravity CLI (Google)", "sort": 50}),
+        ("run-mine,0123456789abcdef", {"name": "mine", "title": "a harness of my own"})])
+
+    monkeypatch.setattr("builtins.input", lambda question: "3")
+    r = task._pick_harness("antigravity", "this project's last run")
+    out = capsys.readouterr().out
+    assert r == {"return": 0, "harness": "mine"}
+    lines = [l for l in out.splitlines() if l.strip()]
+    assert lines[0] == "The harnesses of this machine:" and len(lines) == 4
+    assert "claude" in lines[1] and "Claude Code (Anthropic)" in lines[1]
+    assert "agy (antigravity)" in lines[2] and lines[2].endswith("<- this project's last run")
+    assert "mine" in lines[3] and "a harness of my own" in lines[3]
+    assert task._harness_refs("mine") == ("run-mine,0123456789abcdef", "mine")
+
+    monkeypatch.setattr("builtins.input", lambda question: "")
+    assert task._pick_harness("antigravity")["harness"] == "agy"                       # Enter: the default
+    monkeypatch.setattr("builtins.input", lambda question: "gemini")
+    assert "none of the list" in task._pick_harness("claude")["error"]                 # not declared here
+
+    def closed(question):
+        raise EOFError
+    monkeypatch.setattr("builtins.input", closed)
+    assert task._pick_harness("claude")["harness"] == "claude"                         # nobody to answer: the default
+    assert "nobody to ask" in task._pick_harness("")["error"]
+
+    task._harness_cache = ns["harness_declarations"]([])
+    assert "no harness declared on this machine" in task._pick_harness("claude")["error"]
+
+
+def test_the_harness_tasks_of_this_repository_declare_what_run_ai_knew(task_namespace):
+    """Each harness task of this repository carries the tag ai-harness and a "harness" block with a title, and declares
+    what run-ai's tables (now the fallback of a task that declares nothing) said of it."""
+    import yaml
+    root = pathlib.Path(__file__).resolve().parents[2]
+    ns = task_namespace("run-ai")
+    for name, refs in ns["HARNESSES"].items():
+        folder = root / "task" / refs["task"].split(",")[0]
+        cmeta = yaml.safe_load((folder / "_cmeta.yaml").read_text(encoding = "utf-8"))
+        block = (yaml.safe_load((folder / "_desc.yaml").read_text(encoding = "utf-8")) or {}).get("harness")
+        assert "ai-harness" in cmeta["tags"] and block, folder
+        decl = ns["harness_declarations"]([(refs["task"], block)])["index"][name]
+        assert decl["task"] == refs["task"] and decl["tool"] == refs["tool"] and decl["title"], name
+        hk = ns["CONV"].harness_key(name)
+        for word, table in (("yes", "YES_HARNESSES"), ("long_prompt_file", "LONG_PROMPT_HARNESSES"),
+                            ("gateway", "GATEWAY_HARNESSES"), ("main_screen", "MAIN_SCREEN_HARNESSES")):
+            assert (word in decl["takes"]) == (hk in ns[table]), (name, word)
+        assert decl["read_only"] == ns["READ_ONLY_FLAGS"].get(hk), name
+        assert decl["cache_ttl_minutes"] == ns["CACHE_TTL_MINUTES"].get(hk), name
+
+        # the facts of the other tables of before, now in the declarations (those tables stay as the fallback)
+        conv, declared = ns["CONV"], decl["declared"]
+        assert conv.resume_flags(name, "S", declared = declared.get("resume")) == conv.resume_flags(name, "S"), name
+        assert conv.chooses_id(name, declared.get("chooses_session_id", False)) == conv.chooses_id(name), name
+        gateway = ast_constants(root / "category" / "ai.gateway" / "api" / "v1.py", "HARNESS_WIRES", "LOGIN_HARNESSES")
+        assert tuple(declared.get("wires") or ()) == tuple(gateway["HARNESS_WIRES"].get(hk, ())), name
+        assert bool(declared.get("login_pass_through")) == (hk in gateway["LOGIN_HARNESSES"]), name
+        assert "output_file" in decl["takes"], name
+
+
+def ast_constants(path, *names):
+    """Module-level constants of a source file, read without running it."""
+    import ast
+    tree = ast.parse(pathlib.Path(path).read_text(encoding = "utf-8"))
+    found = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and getattr(node.targets[0], "id", None) in names:
+            found[node.targets[0].id] = ast.literal_eval(node.value)
+    return found
+
+
+def test_the_task_category_lists_the_harnesses_the_graph_declares(cm):
+    """cx task harnesses: every task tagged ai-harness of the plugged repositories (here cmeta-aops), each by its block."""
+    r = cm.access({"category": "task", "command": "harnesses", "con": False})
+    assert r["return"] == 0, r.get("error")
+    names = [d["name"] for d in r["harnesses"]]
+    for name in ("claude", "codex", "opencode", "openclaw", "agy", "gemini", "hermes", "vibe"):
+        assert name in names, name
+    assert r["index"]["antigravity"]["name"] == "agy" and not r["conflicts"]
+    assert r["index"]["codex"]["task"] == "run-codex,ad2fd6be195a4e36"
+    assert r["index"]["claude"]["declared"]["wires"] == ["anthropic"]
+    one = cm.access({"category": "task", "command": "harnesses", "arg1": "Gemini", "con": False})
+    assert one["return"] == 0 and one["harness"]["title"].startswith("Gemini CLI")
+    none = cm.access({"category": "task", "command": "harnesses", "arg1": "no-such-harness", "con": False})
+    assert none["return"] > 0 and "no task declares the harness" in none["error"]
+
+
+def test_a_program_asks_for_the_harnesses_whose_task_takes_what_it_hands_on(cm):
+    """cx task harnesses --takes=gateway,output_file: only the harnesses whose task declares both words (gen-ai and the
+    pages of ext2 ask so); a text with commas or a list; one harness that does not take them is an error."""
+    every = cm.access({"category": "task", "command": "harnesses", "con": False})
+    want = {d["name"] for d in every["harnesses"] if {"gateway", "output_file"} <= set(d["takes"] or [])}
+    assert {"claude", "codex", "opencode"} <= want and "agy" not in want
+    for takes in ("gateway,output_file", ["gateway", "output_file"]):
+        r = cm.access({"category": "task", "command": "harnesses", "takes": takes, "con": False})
+        assert r["return"] == 0, r.get("error")
+        assert {d["name"] for d in r["harnesses"]} == want and r["takes"] == ["gateway", "output_file"]
+        assert "agy" not in r["index"] and "antigravity" not in r["index"] and "claude" in r["index"]
+    one = cm.access({"category": "task", "command": "harnesses", "arg1": "agy", "takes": "gateway", "con": False})
+    assert one["return"] > 0 and "does not take gateway" in one["error"]
+    assert cm.access({"category": "task", "command": "harnesses", "takes": True, "con": False})["return"] > 0
+
+
+def test_a_bare_harness_with_nobody_to_ask_takes_what_a_run_without_it_takes(fresh):
+    """No terminal (con False, as with -q): the project's last harness, else claude - never a harness called "true"."""
+    assert fresh.run(harness = fresh.harness)["return"] == 0                           # recorded as its last run
+    r = fresh.run(harness = True, dry_run = True)
+    assert r["return"] == 0, r.get("error")
+    assert r["harness"] == fresh.harness
+    assert any("a bare --harness with nobody to ask" in n for n in r["notes"])
+    r = fresh.run(harness = True, cx = True, dry_run = True)
+    assert r["return"] == 1 and "not together with a bare --harness" in r["error"]
