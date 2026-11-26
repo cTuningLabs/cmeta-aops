@@ -47,6 +47,48 @@ compiler_limits:
         since: '2026-11-24'
 
 ###################################################################################################
+# What a target asks of its vendor's toolkit, by the version of PyTorch that is built (README.tech.md, "The toolkit of
+# a target"). For Intel GPUs (xpu), Intel names one release of oneAPI (its package Deep Learning Essentials) per
+# PyTorch release, on its pages "PyTorch Prerequisites for Intel GPUs". When the request names no release
+# (--use.oneapi.version=<version>), the build asks the oneapi tool for the named line: the tool finds it on the
+# machine or installs it (--use.oneapi.with.accept_eula=yes: Intel's licence is the user's to accept). A PyTorch
+# version no line here names asks nothing.
+#
+# works_with is what was seen, where that is more than Intel's one release: PyTorch 2.15 does not compile with
+# oneAPI 2025.3 (c10/xpu/XPUCachingAllocator.cpp uses SYCL's ipc_memory, which that compiler does not have - seen
+# with 2025.3.3 on 2026-11-24), and PyTorch's own CI builds it with 2026.0 and 2026.1.
+toolkits:
+  xpu:
+    oneapi:
+      - program_version: '>=2.15,<2.16'
+        version: '2026.1'
+        works_with: '>=2026.0'
+        reason: 'its XPU allocator uses the SYCL extension ipc_memory, which the compiler of oneAPI 2025.3 does not have
+          (c10/xpu/XPUCachingAllocator.cpp does not compile)'
+        source: 'https://www.intel.com/content/www/us/en/developer/articles/tool/pytorch-prerequisites-for-intel-gpu/2-15.html'
+      - program_version: '>=2.14,<2.15'
+        version: '2026.1'
+        source: 'https://www.intel.com/content/www/us/en/developer/articles/tool/pytorch-prerequisites-for-intel-gpu/2-14.html'
+      - program_version: '>=2.13,<2.14'
+        version: '2026.0'
+        source: 'https://www.intel.com/content/www/us/en/developer/articles/tool/pytorch-prerequisites-for-intel-gpu/2-13.html'
+      - program_version: '>=2.12,<2.13'
+        version: '2025.3'
+        reason: 'Intel: the 2026 releases of oneAPI are not compatible with PyTorch 2.12'
+        source: 'https://www.intel.com/content/www/us/en/developer/articles/tool/pytorch-prerequisites-for-intel-gpu/2-12.html'
+
+###################################################################################################
+# The driver a target needs on a system, by the version of PyTorch that is built - a fact of the vendor's page and a
+# warning: when the driver the target read on this machine is older, the build says so and goes on (the driver
+# matters when the result runs, and updating it is the user's).
+drivers:
+  xpu:
+    windows:
+      - program_version: '>=2.15,<2.16'
+        min: '32.0.101.9033'
+        source: 'https://www.intel.com/content/www/us/en/developer/articles/tool/pytorch-prerequisites-for-intel-gpu/2-15.html'
+
+###################################################################################################
 # The optional parts of this build, and named sets of them (README.tech.md, "The parts of the build"):
 #
 #   cx program run build-pytorch --compute=cpu --compile.variation=lean
@@ -80,7 +122,16 @@ components:
     # caffe2/CMakeLists.txt: if(USE_KINETO) ... third_party/kineto/libkineto/src. A submodule up to 2.14; 2.15 carries
     # it in its own tree - a submodule the source does not have is said by the run, and nothing is left out for it
     submodules: [third_party/kineto]
-    default: {windows: 'off', '*': auto}             # Windows: off, as this program builds it there (build problems met)
+    default: auto                                    # PyTorch's own default (on), Windows too since 2026-11-26
+    # What it was built with here, per system and target: a Windows build with an older one (pytorch: the source's
+    # version.txt, msvc, oneapi), or for a target not listed, says before the build that Kineto may fail to build
+    # (customize_pytorch, kineto_notes; --compile.components.kineto- turns it off). xpu: round lapxpu3, 2026-11-25/26;
+    # cpu: round lapkin1, 2026-11-26 (its torch.profiler records the CPU's operators and exports a trace). cuda: its
+    # configuration finds CUPTI ("Using Kineto with CUPTI support") - the build itself was not finished here
+    proven:
+      windows:
+        xpu: {pytorch: '2.15', msvc: '19.50', oneapi: '2026.1'}
+        cpu: {pytorch: '2.15', msvc: '19.50'}
 
   rocm-kernels:
     desc: AMD's Composable Kernel and AITER for attention and GEMM on ROCm
@@ -101,10 +152,15 @@ components:
     default: auto
 
   mkldnn:
-    desc: oneDNN (MKL-DNN) kernels for CPUs
+    desc: oneDNN (MKL-DNN) kernels for CPUs, and for Intel GPUs
     flags: {USE_MKLDNN: ['ON', 'OFF']}               # cmake_dependent_option(USE_MKLDNN ... "CPU_INTEL OR CPU_AARCH64 ...")
     submodules: [third_party/ideep]                  # cmake/Modules/FindMKLDNN.cmake (only with USE_MKLDNN)
     default: {windows: 'off', '*': auto}             # Windows: off, as this program builds it there
+    # The targets that cannot be built without it - on for them whatever the default or the variation says, and an
+    # error when asked off (2.15 on Windows stopped after 2.5 h on oneapi/dnnl/dnnl.hpp, 2026-11-25)
+    required_for:
+      xpu: 'PyTorch compiles its oneDNN sources for XPU always (aten/src/ATen/CMakeLists.txt: if(USE_XPU) ... mkldnn_xpu_cpp,
+        xpu_mkldnn), and builds oneDNN for the GPU only with USE_MKLDNN (cmake/Dependencies.cmake -> FindMKLDNN.cmake)'
 
   fbgemm:
     desc: FBGEMM, the quantized 8-bit operators for x86 servers
@@ -139,8 +195,8 @@ components:
 
 variations:
   lean:
-    desc: the same build as without a variation, cloned with only what it reads - the submodules shallow, and the
-      submodules of the parts that are off without their own
+    desc: the same build as without a variation, cloned with only what it reads - the superproject and the submodules
+      shallow, and the submodules of the parts that are off without their own
     components: {}
 
   minimal:
@@ -162,6 +218,14 @@ variations:
 updates:
   compile:
     uses:
+      # The host compiler of the template's compiler step is asked for the targets that customize1 leaves to it
+      # (local.pytorch_host_compute): on Linux an xpu build keeps the machine's compiler - asked for xpu, the
+      # compiler task would take icpx for everything (README.tech.md, "The toolkit of a target")
+      - match:
+          task: compiler,f3925b201c704bde
+        update:
+          compute: '{{local.pytorch_host_compute}}'
+
       - match:
           internal_func: customize2
         append:
@@ -180,10 +244,16 @@ updates:
             name: msvc,e823256bbbe54b4e
             if_os: windows
 
-          # Extra C compiler required by PyTorch's CMake
+          # Extra C compiler required by PyTorch's CMake (asked for the same targets as the C++ one)
           - task: compiler,f3925b201c704bde
             lang: c
-            compute: '{{global.target.compute}}'
+            compute: '{{local.pytorch_host_compute}}'
+
+          # Intel GPUs: the oneAPI environment, in which PyTorch's CMake finds the SYCL compiler (icpx) and the
+          # libraries - the release the toolkits block names for this PyTorch
+          - task: setup,a2f9b61079ce4333
+            if: '"xpu" in {{global.target.compute|$[]}}'
+            name: oneapi,3d44b79b6a2b476c
 
           - task: setup,a2f9b61079ce4333
             name: cmake,e26c11ebb3dd40ca
@@ -259,6 +329,34 @@ updates:
             name: lib-cudnn,440a30eb25b64853
 
           ######################################################################################
+          # CUDA libs: what PyTorch links and includes (nvml.h of NVML in c10/cuda; cuFile on every system but
+          # Windows). A toolkit that cMeta installed from NVIDIA's archives holds the compiler until a program asks
+          # for its libraries (lib-cuda adds them to it; a component a system's archives do not have is left out);
+          # a toolkit of the system has them all
+          - task: setup,a2f9b61079ce4333
+            if: '"cuda" in {{global.target.compute|$[]}}'
+            name: lib-cuda,ac9daedec465409e
+            with:
+              lib_names:
+                - $cublas
+                - $cudart
+                - $cufft
+                - $curand
+                - $cusparse
+                - $cusolver
+                - $nvrtc
+                - $nvjitlink
+                - $cupti
+                - $nvtx
+                - $nvml
+                - $cufile
+
+          ######################################################################################
+          # A build of a variation or of named parts reads one commit of the superproject: cloned shallow (plan_clone)
+          - internal_func: plan_clone
+            internal_func_from_local_key: selected-program
+            internal_func_safe: True
+
           # Clone PyTorch source
           - task: clone-git-to-cache,86919b3cfdd443d2
             name: src-pytorch
@@ -266,6 +364,9 @@ updates:
 
             # The newest release (master is the next development version); --checkout=<tag|branch>
             checkout: '{{params.checkout|v2.15.0}}'
+
+            # its tag alone for a variation or named parts (a clone of its own beside the full one); whole otherwise
+            depth: '{{local.pytorch_superproject_depth|$None}}'
 
           # The optional parts of the build for this system and these targets (components: / variations: above):
           # the build variables that follow, and which submodules are fetched without their own

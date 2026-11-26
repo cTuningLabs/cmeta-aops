@@ -15,7 +15,8 @@ version (0.30.0+cu129, 0.30.0+cpu), which pip prefers over PyPI's plain 0.30.0:
          driver with CUDA 12.x: /<version>/cu129 + torch from download.pytorch.org/whl/cu129
   cpu    /<version>/cpu (+ torch +cpu from download.pytorch.org/whl/cpu on Linux);
          Linux wheels need glibc 2.39 (0.30.0), the macOS wheel Python 3.12 and macOS 14
-  rocm   /rocm/<version>/rocm723 (Python 3.12)
+  rocm   /rocm/<version>/<build> (Python 3.12): the build folder is read from the release's listing
+         (rocm100 for 0.34.0; rocm723 earlier) and the wheel's local version pinned (0.34.0+rocm100)
   xpu    /<version>/xpu + download.pytorch.org/whl/xpu
 
 The per-release index needs the version: without --version the newest vLLM on PyPI is used
@@ -25,6 +26,7 @@ The per-release index needs the version: without --version the newest vLLM on Py
 import json
 import os
 import platform
+import re
 
 from tool_c393ba5c6fa14f66.api.ctool import InitCTool
 
@@ -41,14 +43,36 @@ def newest_on_pypi(package, timeout = 30):
         return None
 
 
-def vllm_indexes(version, compute, uname, cuda_driver = None):
-    """(extra index URLs, a note) for this vLLM version, compute and OS - or raise ValueError."""
+def rocm_builds_in(html):
+    """The ROCm builds in the listing of a release's ROCm index (https://wheels.vllm.ai/rocm/<version>/): ['rocm100']."""
+    return sorted(set(re.findall(r'href="(rocm\d+)/"', str(html or ''))))
+
+
+def rocm_builds(version, timeout = 30):
+    """
+    The ROCm builds vLLM publishes for a release - the folders of https://wheels.vllm.ai/rocm/<version>/ (rocm100 for
+    0.34.0; the folder rocm723 the code once assumed is not there: pip then took PyPI's CUDA wheel without a word, and
+    vLLM found no platform - "Device string must not be empty", MI300X, 2026-11-26) - or None when it cannot be read.
+    """
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f'{WHEELS}/rocm/{version}/', timeout = timeout) as r:
+            return rocm_builds_in(r.read().decode('utf-8', 'replace'))
+    except Exception:
+        return None
+
+
+def vllm_indexes(version, compute, uname, cuda_driver = None, rocm_build = None):
+    """(extra index URLs, a note) for this vLLM version, compute and OS - or raise ValueError. rocm_build: the ROCm
+    build of the release (rocm_builds)."""
     if uname == 'windows':
         raise ValueError('vLLM publishes no Windows wheels and does not support Windows natively: '
                          'run it in WSL2 (the same cMeta commands) or in Docker (vllm/vllm-openai)')
 
     if 'rocm' in compute:
-        return [f'{WHEELS}/rocm/{version}/rocm723'], 'the ROCm wheels need Python 3.12'
+        if not rocm_build:
+            raise ValueError(f'vLLM {version}: no ROCm build named (see https://wheels.vllm.ai/rocm/{version}/)')
+        return [f'{WHEELS}/rocm/{version}/{rocm_build}'], f'its ROCm build {rocm_build} (the wheels need Python 3.12)'
 
     if 'xpu' in compute:
         return [f'{WHEELS}/{version}/xpu', f'{TORCH_INDEX}/xpu'], 'the XPU wheels need Python 3.12'
@@ -114,8 +138,25 @@ class CTool(InitCTool):
 
         cuda_driver = target.get('features', {}).get('cuda', {}).get('versions', {}).get('cuda version')
 
+        # ROCm: the build folder of this release, from its listing (never a name assumed), and the wheel's local
+        # version pinned - pip can then take no other vLLM (PyPI's is the CUDA build)
+        rocm_build = None
+        if 'rocm' in compute and uname != 'windows':
+            builds = rocm_builds(simple)
+            if builds is None:
+                return self.cm.error(f"cannot read vLLM's ROCm index for {simple} ({WHEELS}/rocm/{simple}/): no network?")
+            if not builds:
+                return self.cm.error(f'vLLM publishes no ROCm wheels for {simple} ({WHEELS}/rocm/{simple}/): ask for a release that has them (--version)')
+            asked = str(_with.get('rocm_build') or '').strip()
+            if asked and asked not in builds:
+                return self.cm.error(f'vLLM {simple} has no ROCm build "{asked}" - it has: {", ".join(builds)}')
+            if not asked and len(builds) > 1:
+                return self.cm.error(f'vLLM {simple} has several ROCm builds ({", ".join(builds)}): choose one with --with.rocm_build=<build>')
+            rocm_build = asked or builds[0]
+            params['version'] = f'{simple}+{rocm_build}'
+
         try:
-            indexes, note = vllm_indexes(simple, compute, uname, cuda_driver)
+            indexes, note = vllm_indexes(simple, compute, uname, cuda_driver, rocm_build)
         except ValueError as e:
             return self.cm.error(str(e))
 

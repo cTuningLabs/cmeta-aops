@@ -37,6 +37,16 @@ def main():
 
     print('SGLang', sglang_version, '| targets:', targets)
 
+    # ROCm: SGLang publishes its ROCm build only in its docker image (lmsysorg/sglang:<version>-rocm*); outside it pip
+    # gives PyPI's build with a CUDA PyTorch, which finds no GPU on an AMD machine ("No accelerator ... is available",
+    # MI300X, 2026-11-26) - said at once, with the way that works
+    if 'rocm' in targets and 'cuda' not in targets:
+        import torch
+        if not getattr(torch.version, 'hip', None):
+            raise SystemExit('test-sglang: this PyTorch (%s) is no ROCm build: SGLang publishes its ROCm build only in its '
+                             'docker image lmsysorg/sglang:<version>-rocm* - run the program there, on the image\'s python '
+                             '(--use.python.tool_path=/opt/venv/bin/python; see README.md)' % torch.__version__)
+
     kwargs = {'model_path': model,
               'context_length': int(os.environ.get('CMETA_SGLANG_MAX_LEN') or 4096),
               'random_seed': 12345,

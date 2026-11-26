@@ -6,6 +6,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
+import re
 import time
 import copy
 
@@ -33,6 +34,16 @@ def cli_words(ctx):
             words.add((key.rsplit('.', 1)[-1].replace('-', '_'), value))
 
     return words
+
+
+def alias_part(text):
+    """
+    A text as a part of an artifact's alias - one name: what would split it into folders (/ and \\) or is refused
+    in a file name on some system (: * ? " < > |) becomes "-". The extra part of a cache entry's alias comes from a
+    task's parameters (cache_extra_alias: a clone's name and checkout, a model's name), and a checkout such as
+    "max/v26.7.0" or "release/2.12" made the entry a nested folder.
+    """
+    return re.sub(r'[\\/:*?"<>|]+', '-', str(text))
 
 
 def read_cli_words(cm, ctx, ctx_tasks, task_api_code, cdesc, artifact_alias):
@@ -764,7 +775,7 @@ class Category(InitCategory):
                else:
                    if cache_name is None or cache_name == '':
                        cache_uid = self.cm.utils.generate_cmeta_uid()
-                       cache_extra_alias = '' if cache_extra_alias is None else cache_sep + cache_extra_alias
+                       cache_extra_alias = '' if cache_extra_alias is None else cache_sep + alias_part(cache_extra_alias)
                        cache_alias = cache_alias_template.replace('{cache_extra_alias}', cache_extra_alias)
                        cache_name = f'{cache_alias}{cache_sep}{cache_uid},{cache_uid}'
                        if cache_repo:

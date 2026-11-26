@@ -25,13 +25,14 @@ def cmd_of(steps, name):
 
 def test_ubuntu_apt(up):
     steps = up["plan"]("linux", {"id": "ubuntu", "package_manager": "apt-get"})
-    assert names(steps) == ["update", "mounts aside", "configure", "upgrade", "mounts back", "reboot?"]
+    assert names(steps) == ["update", "mounts aside", "configure", "upgrade", "kept back?", "mounts back", "reboot?"]
     assert cmd_of(steps, "update") == "apt-get update"
     assert cmd_of(steps, "upgrade").endswith(" upgrade") and "DEBIAN_FRONTEND=noninteractive" in cmd_of(steps, "upgrade")
     assert cmd_of(steps, "configure").endswith("dpkg --configure -a --force-confdef --force-confold")
     assert cmd_of(steps, "reboot?") == "test -f /var/run/reboot-required"
-    update, aside, configure, upgrade, back, probe = steps
+    update, aside, configure, upgrade, kept, back, probe = steps
     assert update[2] is True and upgrade[2] is True and probe[2] is False and probe[3] == "reboot?" and probe[4] == (0,)
+    assert kept[1] == "apt list --upgradable" and kept[2] is False and kept[3] == "kept?"      # a probe, no sudo
     assert aside[2] is True and back[2] is True and back[3] == "restore"
 
     steps = up["plan"]("linux", {"package_manager": "apt-get"}, full = True, autoremove = True)
@@ -63,8 +64,8 @@ def test_other_linux_package_managers(up):
 
 def test_firmware_and_brew_on_linux(up):
     steps = up["plan"]("linux", {"package_manager": "apt-get", "brew_present": True}, firmware = True)
-    assert names(steps) == ["update", "mounts aside", "configure", "upgrade", "mounts back", "reboot?", "brew upgrade",
-                            "firmware refresh", "firmware update"]
+    assert names(steps) == ["update", "mounts aside", "configure", "upgrade", "kept back?", "mounts back", "reboot?",
+                            "brew upgrade", "firmware refresh", "firmware update"]
     assert cmd_of(steps, "firmware update") == "fwupdmgr update -y" and cmd_of(steps, "brew upgrade") == "brew update && brew upgrade"
     assert next(s for s in steps if s[0] == "firmware update")[2] is True            # fwupd needs root over ssh
     steps = up["plan"]("linux", {"package_manager": "apt-get"}, firmware = True, check = True, system = False, apps = False)
@@ -134,6 +135,59 @@ def test_a_failed_upgrade_still_puts_the_file_mounts_back(up, monkeypatch):
     assert all(line.startswith("sudo -n ") for line in ran)
 
 
+def test_what_a_plain_upgrade_kept_back(up, monkeypatch):
+    """apt upgrade installs no new package, so a new kernel stays listed as upgradable after it (a host needed a second
+    round with dist-upgrade on 2026-11-23): the probe after a plain upgrade names those packages in the result and the
+    final line, with --full as the way; a failing probe fails nothing; --full has no probe."""
+    import types
+    monkeypatch.setattr(up["os"], "geteuid", lambda: 1000, raising=False)
+    listed = """Listing...
+linux-generic/noble-updates 6.8.0-90.91 amd64 [upgradable from: 6.8.0-88.89]
+linux-image-generic/noble-updates 6.8.0-90.91 amd64 [upgradable from: 6.8.0-88.89]
+"""
+    answers = {"apt list --upgradable": (0, listed)}
+    ran = []
+
+    def run(line, **kw):
+        ran.append(line)
+        rc, out = answers.get(line, (0, ""))
+        return {"returncode": rc, "stdout": out, "stderr": ""}
+
+    task = up["CTask"].__new__(up["CTask"])
+    task.cm = types.SimpleNamespace(utils = types.SimpleNamespace(sys = types.SimpleNamespace(run = run)))
+    task.logger = None
+    ctx = {"control": {"con": False, "quiet": True},
+           "tasks": {"global": {"host": {"os": {"uname": "linux"}, "os_extra": {"id": "ubuntu", "package_manager": "apt-get"}}}}}
+    r = task.run(ctx)
+    assert r["return"] == 0 and r["kept_back"] == ["linux-generic", "linux-image-generic"]
+    assert "apt list --upgradable" in ran                                    # never under sudo
+
+    answers["apt list --upgradable"] = (1, "")
+    r = task.run(ctx)
+    assert r["return"] == 0 and "kept_back" not in r
+
+    ran.clear()
+    r = task.run(ctx, full = True)
+    assert r["return"] == 0 and "apt list --upgradable" not in ran and "kept_back" not in r
+
+
+def test_host_upgrade_passes_full_on():
+    """cx host upgrade --system --full runs upgrade-os --full on the host (apt dist-upgrade); without --system it is no
+    upgrade of the OS packages, and --full says nothing to the firmware."""
+    import importlib.util
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location("host_upgrade_os_cmd_test", root / "category" / "host" / "api" / "v1.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    cls = next(v for v in vars(module).values() if isinstance(v, type) and hasattr(v, "_upgrade_os_cmd"))
+    cmd = cls._upgrade_os_cmd
+    assert cmd(True, False, False) == "cx task run upgrade-os -q"
+    assert cmd(True, False, False, True) == "cx task run upgrade-os -q --full"
+    assert cmd(True, False, True, True) == "cx task run upgrade-os -q --check --full"
+    assert cmd(False, True, False, True) == "cx task run upgrade-os -q --system- --apps- --firmware"
+
+
 def test_the_file_mounts_script(up):
     """file-mounts.sh: only the files a package owns, under the system folders and not /etc, bound to a place of their
     own and unmounted; back over their file, a run cut short first put back; plain sh for any Linux."""
@@ -153,6 +207,7 @@ def test_what_a_check_found(up):
     apt = "Listing...\nudev/resolute-updates 259.9 amd64 [upgradable from: 259.5]\nsnapd/noble-updates 2.77 amd64 [upgradable from: 2.76]\n"
     assert up["pending"]("check", apt, "apt-get") == (2, [], "packages")
     assert up["pending"]("check", "anything", "dnf") is None
+    assert up["kept_back"](apt) == ["udev", "snapd"] and up["kept_back"]("Listing...") == []
     su = ("Software Update found the following new or updated software:\n* Label: macOS 27.2-26B123\n"
           "\tTitle: macOS 27.2, Version: 27.2, Size: 6067473KiB, Recommended: YES, Action: restart,\n")
     assert up["pending"]("system check", su) == (1, ["macOS 27.2-26B123"], "macOS updates")

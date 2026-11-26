@@ -375,8 +375,9 @@ class Category(InitCategory):
 
         Returns:
             dict: return, tools (a row per tool: tool, known, latest, latest_source, status - behind, current,
-                  ahead, unknown, no pin or error -, step - major, minor or patch for a pin behind -, notes,
-                  from_cache, asked_at), summary (status -> count, and behind_<step> -> count)
+                  ahead, unknown, no pin or error -, step - major, minor or patch for a pin behind -, unpinned - why a
+                  tool has no pin on purpose (unpinned of its _desc.yaml) -, notes, from_cache, asked_at), summary
+                  (status -> count, and behind_<step> -> count)
         """
 
         con = ctx['control'].get('con', False)
@@ -419,11 +420,11 @@ class Category(InitCategory):
 
             if r['return'] > 0:
                 row = {'tool': name, 'known': None, 'latest': None, 'latest_source': None, 'newest': None, 'limit': None,
-                       'limit_text': None,
+                       'limit_text': None, 'unpinned': None,
                        'status': 'error', 'step': None, 'notes': [str(r.get('error') or '').strip()],
                        'from_cache': None, 'asked_at': None}
             else:
-                row = {k: r.get(k) for k in ('known', 'latest', 'latest_source', 'newest', 'limit', 'limit_text',
+                row = {k: r.get(k) for k in ('known', 'latest', 'latest_source', 'newest', 'limit', 'limit_text', 'unpinned',
                                              'status', 'step', 'notes', 'from_cache', 'asked_at')}
                 row['tool'] = name
             rows.append(row)
@@ -449,6 +450,9 @@ class Category(InitCategory):
                 if row.get('limit'):
                     print (f'  {row["tool"]}: the newest one, {row.get("newest")}, is {row.get("limit_text")}')
             for row in rows:
+                if row.get('unpinned'):
+                    print (f'  {row["tool"]}: no pin on purpose - {row["unpinned"]}')
+            for row in rows:
                 if row['status'] in ('unknown', 'error') and row.get('notes'):
                     print (f'  {row["tool"]}: {"; ".join(n for n in row["notes"] if n)}')
 
@@ -465,7 +469,9 @@ class Category(InitCategory):
                                  [f'| {r["tool"]} | {r.get("known") or "-"} | {r.get("latest") or "-"} | '
                                   f'{r["status"]}{" (" + r["step"] + ")" if r.get("step") else ""} | {r.get("latest_source") or "-"} | '
                                   f'{(str(r.get("newest")) + " " + r["limit_text"]) if r.get("limit_text") else "-"} |'
-                                  for r in ordered]) + '\n'
+                                  for r in ordered] +
+                                 ([''] + [f'- {r["tool"]}: no pin on purpose - {r["unpinned"]}' for r in ordered if r.get('unpinned')]
+                                  if any(r.get('unpinned') for r in ordered) else [])) + '\n'
             try:
                 with open(output, 'w', encoding = 'utf-8') as f:
                     f.write(text)

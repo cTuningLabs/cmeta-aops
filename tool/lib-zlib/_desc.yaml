@@ -11,7 +11,7 @@ skip_detect: True
 names:
   - zlib.h
 
-default_version: '1.3.2'
+default_version: '1.4'
 
 # The versions that exist: the release tags of madler/zlib (git is set up first)
 cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/madler/zlib'

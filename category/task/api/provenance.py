@@ -75,6 +75,9 @@ except ImportError:
     _spec.loader.exec_module(binary_deps)
 
 FORMAT = 1
+
+# The words that name a version instead of a number (task/setup resolves them): --use.<tool>.version=latest
+VERSION_WORDS = ('known', 'latest')
 RECORD_FILE = 'provenance.json'
 STAMP_FILE = '.cmeta-build-stamp.json'
 LD_DEBUG_FILE = 'tmp-cmeta-ld-debug'        # glibc appends .<pid>
@@ -1535,6 +1538,12 @@ def run_checks(record, global_ctx, static_effective, match_version = None):
             add('version', 'info', None, f'--use.{key}.version={spec["version"]}: {key} is not part of this run', tool = key)
             continue
         want, have = str(spec['version']), str(tool['version'])
+
+        # a version asked by a word (latest, known) is no number to compare: what it resolved to is the answer
+        if want.strip().lower() in VERSION_WORDS:
+            add('version', 'info', True, f'--use.{key}.version={want}: resolved {have} (the word "{want.strip().lower()}")', tool = key)
+            continue
+
         ok = None
         if match_version is not None:
             try:

@@ -48,6 +48,14 @@ def test_error_class(ev):
     assert ev["error_class"]("cmake failed: no CMAKE_C_COMPILER", "setup") == "build"
     assert ev["error_class"]("venv: No matching Python version for '3.14.8'", "setup") == "not available"
     assert ev["error_class"]('failed to setup tool "x"', "setup") == "setup"
+    # words of a quoted path are no words of the error: openssl's "ssl" is no download failure
+    assert ev["error_class"]('target compute "android-cpu" must be selected to install tool in '
+                             '"/home/u/tool/lib-openssl-android/api_v1.py"', "setup") == "setup"
+    assert ev["error_class"]('failed to setup tool "lib-openssl" with version "4.1.0" in "C:\\x\\task\\setup\\api_v1.py"',
+                             "setup") == "setup"
+    assert ev["error_class"]("<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed>", "setup") == "download"
+    assert ev["error_class"]("requests.exceptions.SSLError: HTTPSConnectionPool(host='x')", "setup") == "download"
+    assert ev["error_class"]('version 1.6.0 not available from its installation here (it gave 1.5.5)', "setup") == "not available"
     assert ev["error_class"]("the program returned 1", "program") == "program"
 
 
@@ -163,17 +171,23 @@ def test_explore_then_promote(cm, explore_tool, tmp_path):
     assert good["obtained"] == PYTHON_VERSION and good["entry_removed"] is True and good["host"]["uname"]
     assert bad["error"] and bad["error_class"] and bad["obtained"] is None and good["aops"]
 
+    # Its installation ran and left the tool at another version: the way it is installed here does not offer the one
+    # asked (a distribution's package, an older winget or brew) - said in the error, classed "not available"
+    assert f"version {MISSING} not available from its installation here (it gave " in bad["error"]
+    assert PYTHON_VERSION in bad["error"].split("it gave", 1)[1]
+    assert bad["error_class"] == "not available"
+
     # The throwaway entry of the working version is gone
     rf = cm.access({"category": "cache", "command": "find", "tags": "setup,test-explore-python", "con": False})
     assert not rf.get("artifacts") or all(good.get("entry") != a["cmeta_ref_parts"]["artifact_uid"] for a in rf["artifacts"])
 
     assert good["chosen_as"] == "asked"
 
-    # The failure becomes a proposed limit; nothing newer works, so the pin stays
+    # A version its installation does not offer is a note, not a limit; nothing newer works, so the pin stays
     r = cm.access({"category": "task", "command": "run", "arg1": "explore-tool-versions", "promote": True,
                    "verdicts": str(out), "con": False, "quiet": True})
     assert r["return"] == 0, r.get("error")
-    assert [(p["change"], p.get("exclude")) for p in r["proposals"]] == [("latest_limits", f"=={MISSING}")]
+    assert [(p["change"], p.get("version")) for p in r["proposals"]] == [("not available", MISSING)]
     assert r["evidence"]["test-explore-python"][PYTHON_VERSION]["works"]
 
 
@@ -191,6 +205,54 @@ def test_explore_known_by_default_into_a_file_named_after_the_host(cm, explore_t
     assert os.path.dirname(r["output"]) == str(tmp_path)
     assert name.startswith("explore-tool-versions-test-explore-python-") and name.endswith(".jsonl")
     assert not host or host.replace(" ", "_") in name
+
+
+def test_a_version_asked_by_its_word_is_recorded_by_its_number(cm, explore_tool, tmp_path):
+    """--versions=known: the word goes to the setup as it is, the verdict names the version it stood for (--promote
+    weighs a failure of the known version by its number)."""
+    out = tmp_path / "words.jsonl"
+    r = cm.access({"category": "task", "command": "run", "arg1": "explore-tool-versions", "tool": "test-explore-python",
+                   "versions": "known", "output": str(out), "con": False, "quiet": True})
+    assert r["return"] == 0, r.get("error")
+    v = r["verdicts"][0]
+    assert (v["version"], v["chosen_as"], v["works"]) == (PYTHON_VERSION, "asked (known)", True)
+    assert r["works"] == [PYTHON_VERSION]
+
+
+NO_ASSET_HOOK = """from tool_c393ba5c6fa14f66.api.ctool import InitCTool
+
+
+class CTool(InitCTool):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, module_file_path=__file__, **kwargs)
+
+    def install(self, ctx, params, cmd=None, *misc):
+        # as common_release answers for a system its spec has no download for, whatever the version
+        return {'return': 16, 'install_cmd': None, 'error': 'test-explore-no-asset publishes no release asset for plan9/amd64'}
+"""
+
+
+def test_a_release_with_no_download_for_this_system_says_so_and_is_no_limit(cm, tmp_path):
+    """A custom installation that declines (16) and nothing installed after it: setup's error ends with its words, and
+    explore-tool-versions classes it "not supported here" (a note of --promote, never a limit of latest)."""
+    r = cm.access({"category": "tool", "command": "add", "arg1": "local:test-explore-no-asset", "con": False,
+                   "quiet": True, "yaml": True})
+    assert r["return"] == 0, r.get("error")
+    desc = {"names": ["cmeta-test-explore-no-asset-binary"], "default_version": "1.0.0",
+            "match_version": [{"regex": "([0-9.]+)", "group": 1}], "cmd_get_version": "{{tool_path}} --version",
+            "skip_common_install_uses": True}
+    with open(os.path.join(r["path"], "_desc.yaml"), "w", encoding="utf-8") as f:
+        yaml.safe_dump(desc, f)
+    with open(os.path.join(r["path"], "api_v1.py"), "w", encoding="utf-8") as f:
+        f.write(NO_ASSET_HOOK)
+
+    out = tmp_path / "no-asset.jsonl"
+    r = cm.access({"category": "task", "command": "run", "arg1": "explore-tool-versions", "tool": "test-explore-no-asset",
+                   "versions": "1.0.0", "output": str(out), "con": False, "quiet": True})
+    assert r["return"] == 0, r.get("error")
+    v = r["verdicts"][0]
+    assert not v["works"] and v["error"].endswith(": test-explore-no-asset publishes no release asset for plan9/amd64")
+    assert v["error_class"] == "not supported here"
 
 
 def test_explore_without_a_tool_or_verdicts(cm):

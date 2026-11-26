@@ -56,10 +56,15 @@ To one JSONL file, one JSON object per line, written as each version finishes:
   directory. The host name in the default name keeps files from several machines apart in one folder.
 - **A test session:** when the shell has one (`CMETA_TEST_SESSION`), the file is also copied into it, under
   `attachments/` of its record.
-- **The fields:** `tool`, `version` (asked), `chosen_as` (known, latest, asked, ...), `obtained`, `program`,
+- **The fields:** `tool`, `version` (asked; a word asked, `known` or `latest`, is recorded by the version it stood
+  for, and `chosen_as` says the word), `chosen_as` (known, latest, asked, ...), `obtained`, `program`,
   `works`, `stage` (setup or program), `error_class`, `error` (its first line), `limit` (the limit of `latest`
   that excludes the version), `seconds`, `host` (uname, arch, os, hostname, python), `cmeta`, `aops`, `time`.
-- **The error classes:** not available, checksum, download, build, crash, else the stage.
+- **The error classes:** not supported here, not available, checksum, download, build, crash, else the stage -
+  from the words of the error outside its quoted paths (the "ssl" of a path to lib-openssl-android is no download
+  failure). task/setup says why when it knows: "version X not available from its installation here (it gave Y)"
+  when the system's channel installed another version (a distribution's package), "... publishes no release asset
+  for <os>/<arch>" when a release has nothing for this system ("not supported here").
 
 ## Several machines and `--promote`
 
@@ -81,6 +86,11 @@ each version worked and where it failed, with the class of the error), then the 
 - **A note:** a version that some machine's channel does not offer (an older uv, a missing release asset) and
   that failed nowhere else. It is not a limit, because `latest` never takes a version the channel does not list;
   the fix is to update the channel on that machine.
+
+A failure that the known version (`default_version`) has too, on the same operating system and with the same class,
+says what that system cannot do at all (a distribution's own docker, no macOS download of opensearch): it neither
+limits nor holds back the newer version. Explore the known version beside the new one on every system
+(`--versions=<known>,<new>`) to give `--promote` that evidence.
 
 It never changes a tool's meta. A person reads the evidence and commits the change.
 

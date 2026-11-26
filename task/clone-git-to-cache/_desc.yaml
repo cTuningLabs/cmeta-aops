@@ -18,6 +18,8 @@ cache_params:
   - checkout
   - update_submodules
   - submodules_depth              # (a clone with other submodules is another clone)
+  - depth                         # a shallow or a partial clone is another clone too: a full one is never taken for it,
+  - filter                        # nor it for a full one (and it has a folder of its own in the file cache)
   - submodules_not_recursive
   - submodules_files
 

@@ -252,8 +252,9 @@ class CTask(InitCTask):
             record = self.lookup_versions(ctx, desc, tool_read, params, refresh = bool(params.get('refresh_versions')))
             latest, limit = self.newest_allowed(ctx, desc, tool_read, params, record)
             status, step = upgrade.update_status(record.get('known'), latest)
+            unpinned = upgrade.unpinned_reason(desc)
 
-            result.update({'stop': True, 'tool': artifact_au, 'known': record.get('known'),
+            result.update({'stop': True, 'tool': artifact_au, 'known': record.get('known'), 'unpinned': unpinned,
                            'latest': latest, 'latest_source': record.get('source'),
                            'newest': record.get('latest'), 'limit': limit,
                            'limit_text': upgrade.limit_text(limit) if limit else None,
@@ -263,6 +264,7 @@ class CTask(InitCTask):
             if con:
                 print (f'{artifact_print_name}: known {record.get("known") or "-"}, newest {latest or "-"}'
                        f' - {status}{" (" + step + ")" if step else ""}' +
+                       (f' on purpose: {unpinned}' if unpinned else '') +
                        (f'; {record.get("latest")} is {upgrade.limit_text(limit)}' if limit else ''))
 
             return result
@@ -287,7 +289,7 @@ class CTask(InitCTask):
             result['latest_source'] = record.get('source')
             result['newest'] = record.get('latest')
             result['limit'] = limit
-            result['latest_limits'] = upgrade.latest_limits(desc)
+            result['latest_limits'] = upgrade.latest_limits(desc, ctx)
             result['policy'] = policy
             result['versions_lookup'] = record
 
@@ -305,7 +307,7 @@ class CTask(InitCTask):
                 if limit:
                     print (f'Newest allowed by the latest_limits of the tool: {latest or "-"} '
                            f'({record.get("latest")} is {upgrade.limit_text(limit)})')
-                for other in upgrade.latest_limits(desc):
+                for other in upgrade.latest_limits(desc, ctx):
                     if other is not limit:
                         print (f'Limit of "latest": {upgrade.limit_text(other)}')
                 print (f'Policy of a request without a version: {policy} ({policy_source})')
@@ -902,6 +904,24 @@ class CTask(InitCTask):
 
         warning = ''
         install_refused = None
+        install_gave = None     # the versions an installation gave instead of the one asked
+        install_declined = None # why a custom installation declined (a release with no download for this system)
+
+        ##############################################################################
+        # A version chosen by a word ("latest", "known") that this tool handed to a tool it is set up through (clang
+        # and clang-cpp through llvm): when that tool could not obtain it and fell back, this one follows - with one
+        # warning line, and the version obtained in its record
+        followed = None
+        if version and kwargs_copy.get('version_word') and kwargs_copy.get('tool_read'):
+            version, followed = upgrade.follow_used_fallback(ctx, kwargs_copy['tool_read'].get('desc') or {}, version,
+                                                             kwargs_copy.get('version_word'))
+            if followed:
+                kwargs_copy['version'] = version
+                if con:
+                    print ('')
+                    print (f'{space}cMeta warning: version {followed["from"]} of "{kwargs_copy["tool_read"].get("artifact_print_name") or name}" '
+                           f'("{kwargs_copy["version_word"]}") is not what "{followed["through"]}", which it is set up through, '
+                           f'obtained - taking {followed["to"]}' + (f' ({followed["why"]})' if followed.get('why') else ''))
 
         ##############################################################################
         if version:
@@ -1004,6 +1024,10 @@ class CTask(InitCTask):
             if r.get('refused'):
                 install_refused = r.get('warning')
 
+            # A custom installation that declined (16) and nothing installed after it: its words go into the error
+            if r['return'] == 16 and r.get('error'):
+                install_declined = r['error']
+
             _update_params = r.get('_update_params')
             if version_fallback and r['return'] == 0 and not r.get('failed', False):
                 _update_params = dict(_update_params or {}, version = version)
@@ -1035,6 +1059,11 @@ class CTask(InitCTask):
 
                         if version_fallback:
                             result['version_fallback'] = version_fallback
+
+                    elif version and r.get('other_versions'):
+                        # The installation ran and the tool is there at another version: the way it is installed
+                        # here does not offer the one asked (a distribution's package, an older winget or brew)
+                        install_gave = r['other_versions']
 
             xerror = r.get('error')
             xwarning = r.get('warning')
@@ -1129,9 +1158,15 @@ class CTask(InitCTask):
             if warning:
                 extra['warning'] = warning
 
+            why = install_refused
+            if not why and install_gave:
+                why = f'version {version} not available from its installation here (it gave {", ".join(install_gave)})'
+            if not why and install_declined:
+                why = install_declined
+
             # Normally, should not be 16 here and not 16 since setup task failed at this stage
             return self.cm.error(f'failed to setup tool "{artifact_print_name}"{x} in "{__file__}"' +
-                                 (f': {install_refused}' if install_refused else ''), 32, extra = extra)
+                                 (f': {why}' if why else ''), 32, extra = extra)
 
         ##############################################################################
         if upgrade_requested and 'last_upgrade' not in result:
@@ -1180,6 +1215,12 @@ class CTask(InitCTask):
         # The word the version came from ("known", "latest") and the version it became, for the record
         if kwargs_copy.get('version_word'):
             result['version_resolved'] = {'word': kwargs_copy['version_word'], 'version': version}
+
+        # ... and, when it followed the tool it is set up through, the version obtained (the cache entry records it)
+        if followed:
+            result.setdefault('version_fallback', {'from': followed['from'], 'to': followed['to'],
+                                                   'why': f'{followed["through"]}: {followed["why"]}'.rstrip(': ')})
+            result.setdefault('_update_params', {}).setdefault('version', version)
 
         if skip_cache_version_check:
             result['skip_cache_version_check'] = True

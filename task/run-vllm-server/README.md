@@ -13,12 +13,17 @@ cx task run run-vllm-server --action=status
 cx task run run-vllm-server --action=logs --lines=100
 cx task run run-vllm-server --action=stop
 cx task run run-vllm-server --foreground                        # attached: its log on the screen (a host keeps it so)
+cx task run run-vllm-server --gpu=amd                           # an AMD GPU: vLLM's ROCm image of the same release
 cx task run run-vllm-server -- --enable-auto-tool-choice --tool-call-parser hermes    # more words for vLLM
 ```
 
 - **Where it runs.** In Docker (the docker client is cMeta's tool `docker`; Docker Desktop on Windows, Docker with the
   NVIDIA container toolkit on Linux), with `--gpus all`. The container is named `cmeta-vllm-<port>`; a start removes a
   container of that name that ended before.
+- **An AMD GPU** (`--gpu=amd`): vLLM's ROCm image of the same release (`vllm/vllm-openai-rocm:<tag>` for the default
+  `vllm/vllm-openai:<tag>`; an `--image` given on the command line stays), with the kernel's ROCm devices passed in
+  (`--device /dev/kfd --device /dev/dri --group-add video`) instead of `--gpus all`. The kinds of GPU are data:
+  `gpus:` in `_desc.yaml`.
 - **The port** is 8868 by default; vLLM's own 8000 stays inside the container. `--host=0.0.0.0` publishes it to other
   machines: there is no key, so only on a private network.
 - **The models** are downloaded once by vLLM into the state artifact `local:vllm-cache`, mounted as the container's

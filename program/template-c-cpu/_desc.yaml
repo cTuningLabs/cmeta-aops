@@ -125,6 +125,8 @@ run:
       target_exe: '{{local.target_exe|$None}}'
       profile: '{{params.profile|$None}}'
       profile_cuda: '{{params.profile_cuda|$None}}'
+      profile_cuda_range: '{{params.profile_cuda_range|$None}}'
+      profile_cuda_range_end: '{{params.profile_cuda_range_end|$None}}'
       profile_cuda_kernels: '{{params.profile_cuda_kernels|$None}}'
       input_files: '{{local.input_files|$None}}'
       output_files: '{{local.output_files|$None}}'

@@ -197,7 +197,10 @@ def test_a_lifetime_the_harness_does_not_take_stops_the_run(task_namespace, repo
 
 def test_the_next_run_reads_the_lifetime_the_last_one_asked_for(task_namespace):
     """ "probably still warm": by the lifetime the last run asked for when it recorded one, else by the table."""
-    cache_line = task_namespace('run-ai')['CTask']._cache_line
+    ns = task_namespace('run-ai')
+    task = ns['CTask'].__new__(ns['CTask'])
+    task._harness_cache = ns['harness_declarations']([])         # no task declares it: run-ai's table (claude: 5 min)
+    cache_line = task._cache_line
 
     def conv(minutes_ago, **run):
         at = (datetime.datetime.now() - datetime.timedelta(minutes=minutes_ago)).isoformat(timespec='seconds')
@@ -210,6 +213,11 @@ def test_the_next_run_reads_the_lifetime_the_last_one_asked_for(task_namespace):
     line = cache_line('claude', conv(20))                              # an older record: as before
     assert 'cold' in line and 'TTL 5 min' in line
     assert cache_line('claude', None) == ''
+
+    # the lifetime the harness task declares (cache_ttl_minutes of its "harness" block) over the table
+    task._harness_cache = ns['harness_declarations']([('run-claude,38be73ffceaa4f67', {'name': 'claude', 'cache_ttl_minutes': 30})])
+    line = cache_line('claude', conv(20))
+    assert 'still warm' in line and 'TTL 30 min' in line
 
 
 # ---------------------------------------------------------------------------------------------- the run reference

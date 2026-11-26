@@ -39,7 +39,13 @@ class CTool(InitCTool):
                 # cause pip to reinstall a stable torch over our source build.
                 m = re.match(r'^(\d+(?:\.\d+)*)', torch_version)
                 version = m.group(1) if m else torch_version
-                params['version'] = version
+
+                # torchaudio's release of torch's number, else its newest older one: torchaudio follows torch's numbers
+                # up to 2.11 and publishes none after (its 2.11.x asks for torch>=2.11) - torchaudio==2.14.1 is on no
+                # index ("No matching distribution", ROCm 7.2 on an MI300X, 2026-11-26). pip takes what the target's
+                # index has: the pair where it exists (2.10.0 for torch 2.10.0), else 2.11.0 (ROCm 7.2, CUDA 13.0)
+                # or 2.11.1 (CPU) for torch 2.14
+                params['version'] = '<=' + version
 
                 # If the version had non-numeric extras, add --no-deps so pip doesn't
                 # try to resolve (and reinstall) torch as a torchaudio dependency.

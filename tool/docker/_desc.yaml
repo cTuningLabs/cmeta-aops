@@ -20,7 +20,7 @@ cmd_get_versions_regex: '\brefs/tags/v(\d+\.\d+\.\d+)(?![\w.-])'
 # archives (download.docker.com/<mac|win>/static/stable), for a machine whose daemon runs elsewhere - colima
 # (tool/colima) or Docker Desktop on a Mac, an engine behind a docker context or DOCKER_HOST. Docker Desktop, when
 # installed, is detected first (extra_paths). "cx tool setup docker --versions" lists the releases.
-default_version: '29.10.0'
+default_version: '29.10.1'
 
 # On Linux the distribution's own Docker (docker.io on Debian and Ubuntu, docker on Fedora: the engine and
 # the CLI, enabled as a service by the package); the socket needs the "docker" group, which the post_install

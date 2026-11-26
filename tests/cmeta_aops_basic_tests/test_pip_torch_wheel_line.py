@@ -22,7 +22,10 @@ ROCM = 'https://download.pytorch.org/whl/rocm'
 
 
 @pytest.fixture(scope = 'module')
-def pip():
+def pip(cm):
+    # the tool category's package (common_pyvenv, imported by tool/pip) is loaded by cMeta when the category is first
+    # used: asked here, so that this file passes on its own and not only after another test used the category
+    assert cm.access({'category': 'tool,c393ba5c6fa14f66', 'command': 'find', 'arg1': 'pip', 'con': False})['return'] == 0
     path = REPO_ROOT / 'tool' / 'pip' / 'api_v1.py'
     src = path.read_text(encoding = 'utf-8').replace('from tool_c393ba5c6fa14f66.api.ctool import InitCTool',
                                                      'class InitCTool: pass')
@@ -210,3 +213,27 @@ def test_rocm_a_build_of_amd_has_no_say_here(pip, cm):
 def test_rocm_a_named_line(pip, cm):
     variations, flags, asked = setup(pip, cm, '2.13.0+rocm7.1', compute = 'rocm', machine = '10.1', ver = '7.0')
     assert variations == ['rocm', 'rocm7.0', 'cpu'] and flags == f'--index-url {ROCM}7.0' and asked == []
+
+
+def test_a_setup_of_its_own_runs_the_target_task_first(pip, cm):
+    """cx tool setup pip --with.package=torch [--with.compute=xpu] outside a program: the run has no target yet, so the
+    tool runs the target task with --with.compute (cpu without it) - before, KeyError 'target'."""
+    for asked, expected in (('xpu', 'xpu'), (None, 'cpu')):
+        tool = pip['CTool'].__new__(pip['CTool'])
+        engine = Engine(cm, None)
+        calls = []
+
+        def access(ii, calls = calls):
+            calls.append(ii)
+            ii['ctx']['tasks']['global']['target'] = {'compute': sorted({ii['compute'], 'cpu'}), 'features': {}}
+            return {'return': 0}
+
+        engine.access = access
+        tool.cm = engine
+        tool.logger = None
+        ctx = {'control': {'con': False}, 'tasks': {'global': {'python': {'path': sys.executable}}}}
+        params = {'with': dict({'package': 'torch'}, **({'compute': asked} if asked else {}))}
+        r = tool._common_compute_init(ctx, params, skip_extras = True)
+        assert r['return'] == 0, r.get('error')
+        assert calls[0]['arg1'].startswith('target,') and calls[0]['compute'] == expected
+        assert ('download.pytorch.org/whl/xpu' in params['with'].get('post_flags', '')) == (asked == 'xpu')

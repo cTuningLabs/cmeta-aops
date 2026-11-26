@@ -174,6 +174,142 @@ def test_finish_removes_a_large_sandbox_and_keeps_the_log(session):
     assert "## Summary" in md and "compiler crashed" in md and "(removed, 0.3 MiB)" in md
 
 
+def test_finish_removes_read_only_files_too(session):
+    # git makes its objects read-only and Windows refuses to delete a read-only file: a sandbox with a test's git
+    # repository kept 1,486 of them while the session said "removed" (2026-11-25)
+    import stat
+    r = session(start=True, type="git" + session.unique)
+    sid, sandbox = r["id"], r["sandbox"]
+    objects = os.path.join(sandbox, "repo", ".git", "objects", "2e")
+    os.makedirs(objects)
+    path = os.path.join(objects, "4e0c168202f55cede2ec57e4c8b0689d6339")
+    with open(path, "wb") as f:
+        f.write(b"x" * 300000)
+    os.chmod(path, stat.S_IREAD)
+
+    r = session(finish=True, id=sid, max_keep_mib="0.1")
+    assert r["return"] == 0, r.get("error")
+    assert r["record"]["sandbox_removed"] is True and not os.path.exists(sandbox)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="paths over 260 characters are a Windows limit")
+def test_finish_removes_paths_over_260_characters(session):
+    # a test's deep home in a pytest basetemp left 668 such paths behind (2026-11-26): only the extended-length prefix
+    # lists and removes them
+    r = session(start=True, type="deep" + session.unique)
+    sid, sandbox = r["id"], r["sandbox"]
+    prefix = chr(92) * 2 + "?" + chr(92)
+    deep = os.path.join(os.path.abspath(sandbox), *(["a-folder-name-of-forty-characters-long-x"] * 8))
+    os.makedirs(prefix + deep)
+    with open(prefix + os.path.join(deep, "file.txt"), "wb") as f:
+        f.write(b"x" * 300000)
+    assert len(os.path.join(deep, "file.txt")) > 260
+
+    r = session(finish=True, id=sid, max_keep_mib="0.1")
+    assert r["return"] == 0, r.get("error")
+    assert r["record"]["costs"]["sandbox_mib"] == 0.3              # counted, though over 260 characters
+    assert r["record"]["sandbox_removed"] is True and not os.path.exists(sandbox)
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root removes a file from a read-only folder")
+def refuse_held(monkeypatch):
+    """Not on Windows: os.unlink refuses a file named held.bin, as the system does for a file of another account
+    (nothing a test can make refuses its owner there; on Windows the tests hold the file open)."""
+    if os.name == "nt":
+        return
+    real = os.unlink
+
+    def unlink(path, *args, **kwargs):
+        if os.path.basename(os.fspath(path)) == "held.bin":
+            raise PermissionError(1, "Operation not permitted", os.fspath(path))
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", unlink)
+
+
+def test_finish_goes_past_a_file_it_cannot_remove(session, monkeypatch):
+    # one file that could not be deleted (an installer's, of an administrator) stopped the removal with its exception:
+    # the sandbox kept 21,500 files and the session was left unfinished (2026-11-26)
+    refuse_held(monkeypatch)
+    r = session(start=True, type="held" + session.unique)
+    sid, sandbox = r["id"], r["sandbox"]
+    for sub in ("a/b/c", "k", "x/y"):
+        os.makedirs(os.path.join(sandbox, *sub.split("/")))
+        with open(os.path.join(sandbox, *sub.split("/"), "data.bin"), "wb") as f:
+            f.write(b"x" * 200000)
+    held = os.path.join(sandbox, "k", "held.bin")
+    with open(held, "wb") as f:
+        f.write(b"x")
+
+    # Windows: a file that is open cannot be deleted; elsewhere: the removal of that file is refused (refuse_held)
+    handle = open(held, "rb") if os.name == "nt" else None
+    try:
+        r = session(finish=True, id=sid, max_keep_mib="0.1")
+    finally:
+        if handle is not None:
+            handle.close()
+
+    assert r["return"] == 0, r.get("error")
+    rec = r["record"]
+    assert rec["status"] == "passed" and rec["sandbox_removed"] is False
+    assert os.path.isfile(held)
+    assert not os.path.exists(os.path.join(sandbox, "a")) and not os.path.exists(os.path.join(sandbox, "x"))
+    assert any("the sandbox was not removed completely: 1 files stayed" in n["text"] for n in rec["notes"])
+
+
+def test_finish_with_an_engine_that_stops_at_such_a_file(session, cm, monkeypatch):
+    # cMeta up to 0.45.3: its removal raises the exception of the first entry it cannot remove
+    def stops(path, *args, **kwargs):
+        raise PermissionError(13, "Access is denied", os.path.join(path, "held.bin"))
+
+    monkeypatch.setattr(cm.utils.files, "remove_files_and_dirs_in_path", stops)
+    r = session(start=True, type="oldengine" + session.unique)
+    sid, sandbox = r["id"], r["sandbox"]
+    os.makedirs(os.path.join(sandbox, "a", "b"))
+    with open(os.path.join(sandbox, "a", "b", "data.bin"), "wb") as f:
+        f.write(b"x" * 300000)
+
+    r = session(finish=True, id=sid, max_keep_mib="0.1")
+    assert r["return"] == 0, r.get("error")
+    assert r["record"]["sandbox_removed"] is True and not os.path.exists(sandbox)
+
+
+@pytest.mark.skipif(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                    reason="the rights of a folder decide a removal elsewhere than on Windows, and not for root")
+@pytest.mark.parametrize("engine", ["this", "one that stops"])
+def test_finish_removes_a_sandbox_with_a_tree_made_read_only(session, cm, monkeypatch, engine):
+    # a build system's outputs (Bazel's), a module cache: every folder without the right to write - nothing of such a
+    # tree could be removed, with any engine up to 0.45.3 (2026-11-26)
+    if engine == "one that stops":
+        def stops(path, *args, **kwargs):
+            raise PermissionError(13, "Permission denied", path)
+
+        monkeypatch.setattr(cm.utils.files, "remove_files_and_dirs_in_path", stops)
+
+    r = session(start=True, type="readonly" + session.unique)
+    sid, sandbox = r["id"], r["sandbox"]
+    deep = os.path.join(sandbox, "out", "execroot", "pkg")
+    os.makedirs(deep)
+    for folder in (deep, os.path.dirname(deep)):
+        with open(os.path.join(folder, "data.bin"), "wb") as f:
+            f.write(b"x" * 200000)
+        os.chmod(os.path.join(folder, "data.bin"), 0o444)
+    os.makedirs(os.path.join(sandbox, "out", "hidden"))
+    for folder in (deep, os.path.dirname(deep), os.path.join(sandbox, "out")):
+        os.chmod(folder, 0o555)
+    os.chmod(os.path.join(sandbox, "out", "hidden"), 0o000)
+
+    try:
+        r = session(finish=True, id=sid, max_keep_mib="0.1")
+    finally:
+        if os.path.isdir(sandbox):
+            for d, ds, fs in os.walk(sandbox):
+                os.chmod(d, 0o755)
+
+    assert r["return"] == 0, r.get("error")
+    assert r["record"]["sandbox_removed"] is True and not os.path.exists(sandbox)
+
+
 def test_keep_list_and_prune(session):
     u = session.unique
     kept = session(start=True, type="keepme-" + u)

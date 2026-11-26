@@ -271,3 +271,44 @@ def test_an_agent_that_run_ai_started_says_so_in_its_generator_record(task_names
         monkeypatch.delenv('CMETA_AI_RUN')
         rec = gen('no-such-harness-binary', [])
         assert 'cmeta_task' not in rec and 'ai_run' not in rec and 'harness' not in rec, rec
+
+
+def test_a_codex_thread_is_resumed_on_the_provider_it_began_with(tmp_path, task_namespace):
+    """Codex refuses another model provider on resume ("Cannot change this thread's model provider from `openai` to
+    `local-login` on resume", codex 0.171, 2026-11-26): the provider a thread began with is read from its rollout; a
+    thread on the ChatGPT login goes through a gateway that passes that login on as the built-in provider's address
+    (openai_base_url); any other change is said before codex starts, with the ways that work."""
+    import json
+    ns = task_namespace('run-codex')
+    began, decide = ns['thread_provider'], ns['resume_provider']
+
+    sessions = tmp_path / 'sessions' / '2026' / '10' / '13'
+    sessions.mkdir(parents=True)
+    rollout = sessions / 'rollout-2026-10-13T20-38-47-01a1368f-5cb7-7802-8a2b-4aecf9d3d19a.jsonl'
+    rollout.write_text(json.dumps({'type': 'session_meta', 'payload': {'id': '01a1368f', 'model_provider': 'openai'}}) + '\n' +
+                       json.dumps({'type': 'response_item', 'payload': {}}) + '\n', encoding='utf-8')
+    assert began('01a1368f-5cb7-7802-8a2b-4aecf9d3d19a', str(tmp_path)) == 'openai'
+    assert began('no-such-thread', str(tmp_path)) == '' and began('', str(tmp_path)) == ''
+
+    words = ['-c', 'model_provider="local-login"', '-c', 'model_providers.local-login.base_url="http://127.0.0.1:8401/local-login/openai"',
+             '-c', 'model_providers.local-login.requires_openai_auth=true']
+
+    # the same provider, or a thread not found: the gateway's own words
+    assert decide('openai', 'login', False, []) == (None, '')
+    assert decide('local-login', 'local-login', True, words) == (None, '')
+    assert decide('', 'local-login', True, words) == (None, '')
+
+    # a thread on the login, through a gateway that passes the login on: the built-in provider's address
+    assert decide('openai', 'local-login', True, words) == (['-c', 'openai_base_url="http://127.0.0.1:8401/local-login/openai"'], '')
+
+    # a gateway with a key of its own, or back from a gateway to the login: said, with the ways that work
+    instead, why = decide('openai', 'lab-gateway', False, ['-c', 'model_provider="lab-gateway"'])
+    assert instead is None and 'began on the ChatGPT login' in why and '--ln' in why and '--new' in why
+    instead, why = decide('lab-gateway', 'login', False, [])
+    assert instead is None and 'began on the gateway "lab-gateway"' in why and '--gateway=lab-gateway' in why
+    instead, why = decide('lab-gateway', 'local-login', True, words)
+    assert instead is None and '--gateway=lab-gateway' in why
+
+    # the address is read from the gateway's words by the provider's name
+    assert ns['provider_url'](words, 'local-login') == 'http://127.0.0.1:8401/local-login/openai'
+    assert ns['provider_url'](words, 'other') == '' and ns['provider_url']([], 'local-login') == ''

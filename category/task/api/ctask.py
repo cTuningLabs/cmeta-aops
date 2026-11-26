@@ -6,6 +6,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 from pathlib import Path
+import glob
 import os
 import re
 import logging
@@ -273,6 +274,80 @@ def ask(question, how='-q (--quiet) to take the default answers', optional=False
             'error': 'no answer to "%s": there is no terminal to answer in (the standard input is closed). '
                      'Run the command in a terminal, or add %s' % (text, how),
             'no_terminal': True}
+
+
+# Where the NVIDIA driver for Windows keeps RmProfilingAdminOnly, below HKEY_LOCAL_MACHINE: the first is where the
+# NVIDIA Control Panel of a current driver writes it and what that driver obeys (616.92, 2026-11-26: Nsight Compute
+# ran for a user who is no administrator with the value there alone); the second is the place older descriptions name
+NVIDIA_TWEAK_KEYS = (('SYSTEM', 'CurrentControlSet', 'Services', 'nvlddmkm', 'Parameters', 'Global', 'NVTweak'),
+                     ('SYSTEM', 'CurrentControlSet', 'Services', 'nvlddmkm', 'Global', 'NVTweak'))
+
+
+def nvidia_tweak_value(name, read = None):
+    """
+    A setting of the NVIDIA driver for Windows among its NVTweak values: (the value, the key that has it) of the
+    first of NVIDIA_TWEAK_KEYS that has it; (None, None) when a key is there and none has the value; ValueError when
+    no key is there (no NVIDIA driver). read(key parts, name) -> the value, None for no such value, OSError for no
+    such key - the registry's by default (a test gives its own).
+    """
+    def registry(parts, value_name):
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, chr(92).join(parts)) as k:
+            try:
+                return winreg.QueryValueEx(k, value_name)[0]
+            except FileNotFoundError:
+                return None
+
+    read = read or registry
+    there = 0
+    for parts in NVIDIA_TWEAK_KEYS:
+        try:
+            value = read(parts, name)
+        except OSError:
+            continue
+        there += 1
+        if value is not None:
+            return value, chr(92).join(parts)
+    if not there:
+        raise ValueError('no NVTweak key of the NVIDIA driver in the registry')
+    return None, None
+
+
+def nvidia_counters_for_admins_only(params_text = None, read = None):
+    """
+    Whether this machine's NVIDIA driver lets only administrators read the GPU's performance counters, which Nsight
+    Compute (ncu) needs - it stops with ERR_NVGPUCTRPERM otherwise. Linux: RmProfilingAdminOnly of
+    /proc/driver/nvidia/params (params_text: that file's text, for a test); Windows: the driver's value of that name
+    among its NVTweak settings (nvidia_tweak_value; none there: the driver's default, administrators only). True,
+    False, or None when it cannot be read (no NVIDIA driver here).
+    """
+    if params_text is None and (os.name == 'nt' or read is not None):
+        try:
+            value, key = nvidia_tweak_value('RmProfilingAdminOnly', read)
+        except ValueError:
+            return None
+        return True if value is None else bool(value)
+    if params_text is None:
+        try:
+            with open('/proc/driver/nvidia/params', encoding = 'utf-8') as f:
+                params_text = f.read()
+        except OSError:
+            return None
+    for line in params_text.splitlines():
+        if line.startswith('RmProfilingAdminOnly:'):
+            return line.split(':', 1)[1].strip() == '1'
+    return None
+
+
+def running_as_administrator():
+    """An administrator's process (Windows) or root's (Linux, macOS)."""
+    if os.name == 'nt':
+        try:
+            import ctypes
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except (AttributeError, OSError):
+            return False
+    return hasattr(os, 'geteuid') and os.geteuid() == 0
 
 
 def supported_options(program, help_words, options, timeout = 60):
@@ -789,6 +864,91 @@ def file_cache_folder(places, sub_folder='', key='file_cache', con=False, space=
             _FILE_CACHE_SAID.add(note)
             print('%sWARNING: %s' % (space, note))
     return {'return': 0, 'path': path, 'away': away, 'note': note}
+
+
+# The Intel GPU of a Linux machine, from sysfs (no lspci, no root). What a task asks before it sets up Intel's GPU
+# compute runtime (tool/intel-gpu-runtime), which only such a machine can use. In WSL2 the GPU is behind /dev/dxg
+# and is not on this bus.
+def intel_gpu_on_pci(sys_pci = '/sys/bus/pci/devices'):
+    """Whether an Intel display controller (vendor 0x8086, class 0x03xxxx) is on the PCI bus."""
+    for d in glob.glob(os.path.join(sys_pci, '*')):
+        try:
+            with open(os.path.join(d, 'vendor')) as f:
+                vendor = f.read().strip().lower()
+            with open(os.path.join(d, 'class')) as f:
+                cls = f.read().strip().lower()
+        except OSError:
+            continue
+        if vendor == '0x8086' and cls.startswith('0x03'):
+            return True
+    return False
+
+
+# The AI harnesses are artifacts of the graph (2026-11-25, the user: selectors from the graph, never a table in code):
+# a task that runs one carries the tag ai-harness and declares it in the block "harness" of its _desc.yaml. The task
+# category's command "harnesses" (cx task harnesses) finds them in every plugged repository; run-ai, ai.gateway,
+# ai-account-status and the pages that offer a harness ask it (task/run-ai/README.md, "Harnesses as artifacts").
+HARNESS_TAG = 'ai-harness'
+HARNESS_BLOCK = 'harness'
+HARNESS_TAKES = ('yes', 'long_prompt_file', 'gateway', 'main_screen', 'output_file')
+
+
+def harness_declarations(found):
+    """
+    The harnesses the graph declares. found: [(the task's alias,UID, the "harness" block of its _desc.yaml)] of the
+    tasks tagged ai-harness (a task without a block, or with no name in it, is left out).
+    -> {'list': [decl] sorted by (sort, name), 'index': {<every name and other name>: decl},
+        'conflicts': {<a name two tasks declare>: [their tasks]}} - a name in conflict is resolved by neither;
+    decl = {name, also, title, task, tool, sort, takes, read_only, cache_ttl_minutes, declared} - takes, read_only and
+    cache_ttl_minutes are None where the block does not say (the caller's fallback then); declared is the block as it
+    is, for the facts a caller reads by their own key (wires, login_pass_through, resume, ...).
+    """
+    decls = []
+    for cref, block in found or []:
+        if not isinstance(block, dict) or not str(block.get('name') or '').strip():
+            continue
+        name = str(block['name']).strip().lower()
+        also = [str(x).strip().lower() for x in (block.get('also') or []) if str(x).strip() and str(x).strip().lower() != name]
+        try:
+            sort = float(block.get('sort', 1000))
+        except (TypeError, ValueError):
+            sort = 1000.0
+        decls.append({'name': name, 'also': also, 'title': str(block.get('title') or '').strip(), 'task': str(cref),
+                      'tool': str(block.get('tool') or name).strip(), 'sort': sort,
+                      # (an unquoted yes in YAML is True: the one word of HARNESS_TAKES it can be)
+                      'takes': ['yes' if x is True else str(x) for x in block['takes']] if isinstance(block.get('takes'), list) else None,
+                      'read_only': [str(x) for x in block['read_only']] if isinstance(block.get('read_only'), list) else None,
+                      'cache_ttl_minutes': block.get('cache_ttl_minutes'),
+                      'declared': dict(block)})
+    decls.sort(key = lambda d: (d['sort'], d['name'], d['task']))
+    claims = {}
+    for d in decls:
+        for n in [d['name']] + d['also']:
+            if d not in claims.setdefault(n, []):
+                claims[n].append(d)
+    return {'list': decls,
+            'index': {n: ds[0] for n, ds in claims.items() if len(ds) == 1},
+            'conflicts': {n: [d['task'] for d in ds] for n, ds in claims.items() if len(ds) > 1}}
+
+
+def harness_fact(harnesses, harness, key, fallback = None):
+    """
+    A fact a harness declares (a key of its "harness" block: wires, login_pass_through, resume, ...), from the answer
+    of "cx task harnesses" (or harness_declarations); fallback(harness) - a caller's table of before - when the harness
+    or the key is not declared.
+    """
+    d = ((harnesses or {}).get('index') or {}).get(str(harness or '').strip().lower())
+    if d is not None and key in (d.get('declared') or {}):
+        return d['declared'][key]
+    return fallback(harness) if callable(fallback) else fallback
+
+
+def harness_takes(harnesses, harness, word, fallback = ()):
+    """Whether the task of a harness takes a word (HARNESS_TAKES): what it declares, else harness in fallback."""
+    d = ((harnesses or {}).get('index') or {}).get(str(harness or '').strip().lower())
+    if d is not None and d.get('takes') is not None:
+        return word in d['takes']
+    return str(harness or '').strip().lower() in tuple(fallback or ())
 
 
 class InitCTask:

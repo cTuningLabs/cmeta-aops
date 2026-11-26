@@ -27,6 +27,13 @@ Developed with the help of ChatGPT and Claude.
 #include <xopenme.h>
 #endif
 
+/* The measured part marked for a profiler that records only a marked part of a run (Nsight Systems:
+   --profile_cuda --profile_cuda_range=cudaProfilerApi): --compile.d.CUDA_PROFILER_RANGE puts cudaProfilerStart /
+   cudaProfilerStop around it */
+#ifdef CUDA_PROFILER_RANGE
+#include <cuda_profiler_api.h>
+#endif
+
 #include "matmul.h"
 
 typedef enum {
@@ -460,6 +467,10 @@ int main(int argc, char *argv[]) {
 
 #ifdef XOPENME
   xopenme_clock_start(0);
+#endif
+
+#ifdef CUDA_PROFILER_RANGE
+  cudaProfilerStart();
 #endif
 
   if (dtype == DTYPE_FLOAT32) {
@@ -907,6 +918,10 @@ int main(int argc, char *argv[]) {
     free(b);
     free(c);
   }
+
+#ifdef CUDA_PROFILER_RANGE
+  cudaProfilerStop();
+#endif
 
   printf("Input:\n");
   printf("  dtype  = %s\n", dtype_name);

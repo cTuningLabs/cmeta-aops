@@ -18,17 +18,19 @@ import pytest
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
-def load(rel_path, base_import, base_class):
-    """A hook file with a stand-in for its base class (the real one needs cMeta)."""
+def load(rel_path, base_import, base_class, extra = None):
+    """A hook file with a stand-in for its base class (the real one needs cMeta); extra: the shared helpers it
+    imports beside the base class, the real ones (the fixture ctask_helpers)."""
     path = REPO_ROOT / rel_path
     src = path.read_text(encoding = "utf-8").replace(base_import, f"class {base_class}:\n    pass")
-    ns = {"__name__": "hooks", "__file__": str(path)}
+    ns = {"__name__": "hooks", "__file__": str(path), **(extra or {})}
     exec(compile(src, str(path), "exec"), ns)
     return ns
 
 
 TOOL = ("from tool_c393ba5c6fa14f66.api.ctool import InitCTool", "InitCTool")
 TASK = ("from task_c36be4b9314a45e0.api.ctask import InitCTask", "InitCTask")
+TASK_PCI = ("from task_c36be4b9314a45e0.api.ctask import InitCTask, intel_gpu_on_pci", "InitCTask")
 
 
 @pytest.fixture(scope = "module")
@@ -37,8 +39,13 @@ def opencl_tool():
 
 
 @pytest.fixture(scope = "module")
-def opencl_target():
-    return load("task/target--opencl/api_v1.py", *TASK)
+def opencl_target(ctask_helpers):
+    return load("task/target--opencl/api_v1.py", *TASK_PCI, extra = ctask_helpers("intel_gpu_on_pci"))
+
+
+@pytest.fixture(scope = "module")
+def sycl_test(ctask_helpers):
+    return load("task/test-icpx-sycl-gpu/api_v1.py", *TASK_PCI, extra = ctask_helpers("intel_gpu_on_pci"))
 
 
 @pytest.fixture(scope = "module")
@@ -99,6 +106,51 @@ class FakeCM:
 
     def catch_error(self, r, fail16 = False):
         return r["return"] > 0 and (r["return"] != 16 or fail16)
+
+
+class RecordingCM(FakeCM):
+    """What a hook asks of cMeta, and the answer it is given."""
+    def __init__(self, answer = None):
+        self.calls, self.answer = [], answer or {"return": 0}
+
+    def access(self, request):
+        self.calls.append(request)
+        return self.answer
+
+
+@pytest.mark.parametrize("uname, uarch, gpu, asked", [
+    ("linux", "amd64", True, True),           # the machine Intel's GPU compute runtime is for
+    ("linux", "amd64", False, False),         # no Intel GPU: nothing is set up, the test runs as before
+    ("linux", "arm64", True, False),
+    ("windows", "amd64", True, False),        # the graphics driver brings the runtime
+])
+def test_the_sycl_test_sets_up_the_intel_gpu_runtime_only_where_it_is_of_use(sycl_test, monkeypatch, uname, uarch, gpu, asked):
+    monkeypatch.setitem(sycl_test, "intel_gpu_on_pci", lambda: gpu)
+    t = sycl_test["CTask"].__new__(sycl_test["CTask"])
+    t.cm = RecordingCM()
+    ctx = {"control": {"con": False, "quiet": True}, "tasks": {"global": {"host": {"os": {"uname": uname, "uarch": uarch}}}}}
+
+    assert t.intel_gpu_runtime(ctx) == {"return": 0}
+    assert [(c["arg1"], c["name"]) for c in t.cm.calls] == ([("setup,a2f9b61079ce4333", sycl_test["INTEL_GPU_RUNTIME"])] if asked else [])
+    assert all(c["quiet"] is True and c["ctx"] is ctx for c in t.cm.calls)
+
+
+def test_the_sycl_test_stops_when_the_runtime_of_its_gpu_cannot_be_set_up(sycl_test, monkeypatch):
+    monkeypatch.setitem(sycl_test, "intel_gpu_on_pci", lambda: True)
+    t = sycl_test["CTask"].__new__(sycl_test["CTask"])
+    t.cm = RecordingCM({"return": 1, "error": "no network"})
+    ctx = {"control": {}, "tasks": {"global": {"host": {"os": {"uname": "linux", "uarch": "amd64"}}}}}
+    assert t.intel_gpu_runtime(ctx) == {"return": 1, "error": "no network"}
+
+
+def test_the_sycl_test_asks_for_no_intel_gpu():
+    # the test runs on the device SYCL picks: a machine without an Intel GPU is not refused (the xpu target would)
+    import yaml
+    with open(REPO_ROOT / "task" / "test-icpx-sycl-gpu" / "_desc.yaml", encoding = "utf-8") as f:
+        uses = yaml.safe_load(f)["uses"]
+    steps = [u.get("internal_func") or u.get("name") or u.get("task") for u in uses]
+    assert steps.index("intel_gpu_runtime") < steps.index("icpx,2dd552ea24a34a81")
+    assert not any(str(u.get("task", "")).startswith("target") for u in uses)
 
 
 def test_the_opencl_target_needs_a_gpu(opencl_target, opencl_tool):

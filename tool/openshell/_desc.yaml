@@ -19,7 +19,7 @@ authors: Grigori Fursin
 names:
   - openshell
 
-default_version: '0.1.9'
+default_version: '0.1.10'
 
 match_version:
   - regex: 'openshell (\d+\.\d+\.\d+)'

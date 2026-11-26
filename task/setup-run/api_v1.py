@@ -7,12 +7,73 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 
 import os
 import platform
+import re
+import sys
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, supported_options
+from task_c36be4b9314a45e0.api.ctask import InitCTask, supported_options, nvidia_counters_for_admins_only, running_as_administrator
 
 from . import android
 
 from task_c36be4b9314a45e0.api import ios
+
+# What "nsys profile --capture-range-end" takes, as its own help writes it: none, stop, stop-shutdown,
+# repeat[:N][:mode], repeat-shutdown:N[:mode] - mode one of defer, sync, async
+CAPTURE_RANGE_END = re.compile(r'^(none|stop|stop-shutdown|repeat(:\d+)?(:(defer|sync|async))?'
+                               r'|repeat-shutdown:\d+(:(defer|sync|async))?)$')
+
+# nsys's own end of a range is stop-shutdown: the session ends with the first range - and with it the program, which
+# nsys then ends (--kill is true by default); what a program writes after its range would be lost. "stop" ends the
+# recording and lets the program run on
+CAPTURE_RANGE_END_DEFAULT = 'stop'
+
+
+def quoted(word):
+    """A word of a command line as a shell takes it whole: in double quotes unless it is plain (a name, a path
+    without spaces, an option with its value)."""
+    word = str(word)
+    return word if re.fullmatch(r'[\w.:@=/+\-]+', word) else '"' + word + '"'
+
+
+def capture_range(asked, end = None):
+    """
+    The words of "nsys profile" that record only the part of a run the program marks (--profile_cuda_range):
+
+        cudaProfilerApi              from cudaProfilerStart to cudaProfilerStop (torch.cuda.profiler.start / stop)
+        nvtx:<range>[@<domain>]      while that NVTX range is open (<range>@*: in any domain)
+
+    and what the end of the range does (--profile_cuda_range_end, nsys's own words): stop (the default here), repeat or
+    repeat:<N> (every range, or the first N), none, stop-shutdown, repeat-shutdown:<N>.
+
+    Returns (words, error): the list of words - empty when no range is asked - or the text of the error.
+    """
+    asked = str(asked or '').strip()
+    end = str(end or '').strip()
+    if not asked:
+        if end:
+            return [], f'profile_cuda_range_end ({end}) says what the end of a range does: it needs --profile_cuda_range'
+        return [], ''
+
+    if asked.lower() == 'cudaprofilerapi':
+        words = ['--capture-range=cudaProfilerApi']
+    elif asked.lower().startswith('nvtx:') and asked[5:].strip():
+        # the name goes into a command line: nothing a shell reads as its own
+        if re.search(r'["\'`&|;<>$^%!\r\n]', asked[5:]):
+            return [], f'profile_cuda_range: the NVTX range "{asked[5:].strip()}" holds a character a shell reads as its own'
+        # nsys compares a range's name with registered NVTX strings only, unless the program is told otherwise: a
+        # range pushed with a plain string (torch.cuda.nvtx.range_push) started no recording - "No reports were
+        # generated" (seen with Nsight Systems 2026.1 on Linux, 2026-11-26)
+        words = ['--capture-range=nvtx', '--nvtx-capture=' + asked[5:].strip(),
+                 '--env-var=NSYS_NVTX_PROFILER_REGISTER_ONLY=0']
+    else:
+        return [], (f'profile_cuda_range: "{asked}" is not a range Nsight Systems can wait for - cudaProfilerApi '
+                    '(cudaProfilerStart / Stop in the program) or nvtx:<range>[@<domain>] (an NVTX range)')
+
+    end = end or CAPTURE_RANGE_END_DEFAULT
+    if not CAPTURE_RANGE_END.match(end):
+        return [], (f'profile_cuda_range_end: "{end}" is not one of nsys\'s words - none, stop, stop-shutdown, '
+                    'repeat[:N][:defer|sync|async], repeat-shutdown:N[:defer|sync|async]')
+    return words + ['--capture-range-end=' + end], ''
+
 
 class CTask(InitCTask):
     """
@@ -100,7 +161,8 @@ class CTask(InitCTask):
                     src_file_names_str += ' '
                 src_file_names_str += sfn
 
-                sfnp = os.path.join(src_path, sfn)
+                # quoted when it holds a space (a home under "C:\Users\First Last"): the joined list goes into a command line
+                sfnp = self.cm.utils.files.quote_path(os.path.join(src_path, sfn))
                 if src_file_names_str_with_path != '':
                     src_file_names_str_with_path += ' '
                 src_file_names_str_with_path += sfnp
@@ -231,6 +293,16 @@ class CTask(InitCTask):
                 return self.cm.error(f'profile_cuda_kernels is requested but cuda is not found in the global context in "{__file__}"')
             if 'ncu' not in ctx['tasks']['global']:
                 return self.cm.error(f'profile_cuda_kernels is requested but ncu is not found in the global context in "{__file__}"')
+            # Nsight Compute reads the GPU's performance counters: a driver that keeps them for administrators makes it
+            # stop with ERR_NVGPUCTRPERM - said before the run, with the way to allow them (2026-11-25)
+            if con and nvidia_counters_for_admins_only() and not running_as_administrator():
+                how = ('NVIDIA Control Panel - Desktop: Enable Developer Settings, then Developer: Manage GPU Performance '
+                       'Counters: "Allow access to the GPU performance counters to all users" (an administrator)'
+                       if os.name == 'nt' else
+                       'a line "options nvidia NVreg_RestrictProfilingToAdminUsers=0" in a file of /etc/modprobe.d and '
+                       'a reboot (root)')
+                print("cMeta warning: Nsight Compute reads the GPU's performance counters, which this NVIDIA driver "
+                      'lets administrators only read (ERR_NVGPUCTRPERM): ' + how + ' - or run this as an administrator')
 
 
         run_flags_after_exe = params.get('run_flags_after_exe')
@@ -239,6 +311,9 @@ class CTask(InitCTask):
 
         cmds = []
         run_time_cmds = []
+
+        # --profile_cuda_range: the words of nsys for the range (none: the whole run is recorded)
+        ranged = []
 
         # Setup CPU
         if _profile_python:
@@ -295,8 +370,33 @@ class CTask(InitCTask):
                 # A program whose work runs in a process it forks and then executes (a model server's engine) shows no
                 # kernel unless nsys follows it between the two - where this nsys has the option (Linux; the Windows
                 # nsys has none): asked of its own help
-                follow = ''.join(f' {o}=true' for o in supported_options(_global['nsys'].get('path') or str(nsys).strip('"'),
-                                                                        ['profile', '--help'], ['--trace-fork-before-exec']))
+                # and a run again in the same folder replaces the report of before (--force-overwrite), where it can
+                nsys_path = _global['nsys'].get('path') or str(nsys).strip('"')
+                follow = ''.join(f' {o}=true' for o in supported_options(nsys_path, ['profile', '--help'],
+                                                                        ['--trace-fork-before-exec', '--force-overwrite']))
+
+                # only the part of the run the program marks (--profile_cuda_range): asked of this nsys's own help too
+                ranged, why = capture_range(params.get('profile_cuda_range'), params.get('profile_cuda_range_end'))
+                if why:
+                    return self.cm.error(why)
+                if ranged:
+                    needed = [w.split('=')[0] for w in ranged]
+                    missing = [o for o in needed if o not in supported_options(nsys_path, ['profile', '--help'], needed)]
+                    if missing:
+                        return self.cm.error(f'profile_cuda_range: this Nsight Systems ({_global["nsys"].get("version") or nsys_path}) '
+                                             f'has no {", ".join(missing)} - a newer one: --use.nsys.version=latest')
+                    follow += ''.join(' ' + quoted(w) for w in ranged)
+                    if con:
+                        print(f'{space}INFO: Nsight Systems records only {params.get("profile_cuda_range")}'
+                              f' ({" ".join(ranged)})')
+
+                # "repeat" gives every range a report of its own, numbered: cuda_profile.<n>.nsys-rep. Those of a run
+                # before in this folder go before any profiled run, as its one report does (output_files): the summary
+                # of a later run read the reports of the run before otherwise
+                folder = target_path or os.getcwd()
+                for name in os.listdir(folder) if os.path.isdir(folder) else []:
+                    if re.fullmatch(r'cuda_profile\.\d+\.(nsys-rep|sqlite)', name):
+                        os.remove(os.path.join(folder, name))
                 prefix_cmd += f'{nsys} profile --trace=cuda,nvtx{follow} --stats=true -o cuda_profile '
                 output_files.append('cuda_profile.nsys-rep')
                 output_files.append('cuda_profile.sqlite')
@@ -494,7 +594,19 @@ class CTask(InitCTask):
                     run_time_cmds.append(f'{perf} report -i perf.data --sort symbol --children --stdio > perf_report.txt')
 
         if _profile_cuda:
-            x = f'{nsys} stats --report cuda_gpu_kern_sum cuda_profile.nsys-rep'
+            # the export of a run before in this folder is older than this report: nsys refuses it ("Use --force-export
+            # =true to update export file") and the step failed on every run after the first (2026-11-25, WSL)
+            force = ''.join(f' {o}=true' for o in supported_options(_global['nsys'].get('path') or str(nsys).strip('"'),
+                                                                   ['stats', '--help'], ['--force-export']))
+            each = f'{nsys} stats{force} --report cuda_gpu_kern_sum'
+            if ranged:
+                # the summary of every report the run left - one, or one per range with "repeat" - and words when
+                # the program never met its range (nsys: "No reports were generated"): nsys_range_reports.py, the
+                # same line on every system
+                helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nsys_range_reports.py')
+                x = f'{quoted(sys.executable)} {quoted(helper)} {quoted(str(params.get("profile_cuda_range")).strip())} {each}'
+            else:
+                x = f'{each} cuda_profile.nsys-rep'
             run_time_cmds.append(x)
 
         if _profile_cuda_kernels:

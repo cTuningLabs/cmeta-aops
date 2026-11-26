@@ -184,6 +184,16 @@ _ACTIVE = threading.local()
 PLAIN_VERSION = re.compile(r'^\d+(\.\d+)*$')
 
 
+def alias_part(text):
+    """
+    A text as a part of an artifact's alias - one name: what would split it into folders (/ and \\) or is refused
+    in a file name on some system (: * ? " < > |) becomes "-". The extra part of a cache entry's alias comes from a
+    task's parameters (cache_extra_alias: a clone's name and checkout, a model's name), and a checkout such as
+    "max/v26.7.0" or "release/2.12" made the entry a nested folder.
+    """
+    return re.sub(r'[\\/:*?"<>|]+', '-', str(text))
+
+
 def switched_on(name):
     """An environment switch of the task engine that is on unless it says off (off, no, false, 0)."""
     return str(os.environ.get(name, '')).strip().lower() not in ('off', 'no', 'false', '0')
@@ -1281,7 +1291,7 @@ class Category(InitCategory):
                 uid = None
                 if not name:
                     uid = self.cm.utils.generate_cmeta_uid()
-                    extra = '' if cache_extra_alias is None else cache_sep + cache_extra_alias
+                    extra = '' if cache_extra_alias is None else cache_sep + alias_part(cache_extra_alias)
                     alias = cache_alias_template.replace('{cache_extra_alias}', extra) + cache_sep + uid
                     name = f'{alias},{uid}'.lower()
                     if cache_repo:
@@ -2879,6 +2889,85 @@ class Category(InitCategory):
                     ctx['tasks']['global'][k] = v
 
         return {'return':0}
+
+    ############################################################
+    def harnesses_(
+            self,
+            ctx: dict,
+            arg1: str = None,       # one harness, by its name or another one
+            takes = None,           # only those whose task takes all these words (a list, or a text with commas)
+    ):
+        """
+        The AI harnesses the graph declares: every task tagged ai-harness, in every plugged repository, with the block
+        "harness" of its _desc.yaml - its name and other names, a title, its tool, the words of run-ai it takes and
+        the facts it declares (task/run-ai/README.md, "Harnesses as artifacts"). A program asks
+        cm.access({'category': 'task', 'command': 'harnesses'}); nothing lists them in code.
+
+            cx task harnesses              # the table
+            cx task harnesses codex        # one, with every fact it declares (-j: the data)
+            cx task harnesses --takes=gateway,output_file    # those whose task takes a gateway and an output file
+
+        A program that hands a harness more than a prompt asks for the harnesses whose task takes those words (the
+        list "takes" of the block), so a harness of another repository that takes them is offered as well, and one
+        that does not is never offered.
+
+        Returns:
+            dict: {'return': 0, 'harnesses': [decl], 'index': {<name>: decl}, 'conflicts': {<name>: [tasks]}}
+                (with arg1: also 'harness': its decl), or an error.
+        """
+        from task_c36be4b9314a45e0.api.ctask import harness_declarations, HARNESS_TAG, HARNESS_BLOCK, HARNESS_TAKES
+
+        if takes is not None and not isinstance(takes, (str, list, tuple)):
+            return self.cm.error(f'--takes is a list of the words a harness task takes ({", ".join(HARNESS_TAKES)})')
+        words = [str(w).strip() for w in (str(takes).split(',') if isinstance(takes, str) else (takes or [])) if str(w).strip()]
+
+        con = ctx['control'].get('con', False)
+
+        r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'find', 'tags': HARNESS_TAG, 'con': False})
+        found = []
+        for a in (r.get('artifacts') or []) if r.get('return', 1) == 0 else []:
+            parts = a.get('cmeta_ref_parts') or {}
+            rd = self.cm.utils.files.safe_read_yaml_or_json(os.path.join(a.get('path', ''), '_desc'))
+            data = (rd.get('data') or {}) if rd.get('return', 1) == 0 else {}
+            found.append((f"{parts.get('artifact_alias')},{parts.get('artifact_uid')}", data.get(HARNESS_BLOCK)))
+        h = harness_declarations(found)
+        kept = [d for d in h['list'] if all(w in (d.get('takes') or []) for w in words)]
+        names = {d['name'] for d in kept}
+        out = {'return': 0, 'harnesses': kept, 'index': {k: d for k, d in h['index'].items() if d['name'] in names},
+               'conflicts': h['conflicts']}
+        if words:
+            out['takes'] = words
+
+        if arg1:
+            name = str(arg1).strip().lower()
+            if name in h['conflicts']:
+                return self.cm.error(f'the harness "{name}" is declared by {" and ".join(h["conflicts"][name])}')
+            if name not in h['index']:
+                return self.cm.error(f'no task declares the harness "{name}" (cx task harnesses lists those that do)')
+            if name not in out['index']:
+                missing = [w for w in words if w not in (h['index'][name].get('takes') or [])]
+                return self.cm.error(f'the task of the harness "{name}" does not take {", ".join(missing)}')
+            out['harness'] = h['index'][name]
+            if con:
+                for k, v in out['harness']['declared'].items():
+                    print(f'{k}: {v}')
+                print(f'task: {out["harness"]["task"]}')
+            return out
+
+        if con:
+            rows = [(d['name'] + (f' ({", ".join(d["also"])})' if d['also'] else ''), d['title'], d['task'].split(',')[0])
+                    for d in kept]
+            if rows:
+                w = [max(len(r[i]) for r in rows) for i in range(2)]
+                for r in rows:
+                    print(f'{r[0]:<{w[0]}}  {r[1]:<{w[1]}}  {r[2]}')
+            elif words:
+                print(f'no harness task takes {", ".join(words)}')
+            else:
+                print(f'no task declares a harness (the tag {HARNESS_TAG} and the block "{HARNESS_BLOCK}" of its _desc.yaml)')
+            for name, tasks in sorted(h['conflicts'].items()):
+                print(f'(the harness "{name}" is declared by {" and ".join(tasks)}: neither is taken)')
+        return out
 
 
     ############################################################

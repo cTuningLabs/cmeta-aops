@@ -75,6 +75,40 @@ Today's entry: `cl.exe` 19.51 (seen with 19.51.36260) ends with an internal comp
 of SLEEF's configuration probes, which stops CMake; the compilers of Visual Studio 2022 and 2019
 do not.
 
+## The toolkit of a target
+
+A target may need its vendor's toolkit in the release that goes with the PyTorch that is built.
+For Intel GPUs (`xpu`), Intel names one release of oneAPI (its package Deep Learning Essentials)
+per PyTorch release; the program declares them in its `_desc.yaml`:
+
+```yaml
+toolkits:
+  xpu:
+    oneapi:
+      - program_version: '>=2.15,<2.16'   # the PyTorch versions the line is for
+        version: '2026.1'                 # the release Intel names for them
+        works_with: '>=2026.0'            # optional: what the build is seen to work with
+        reason: ...
+        source: <Intel's page>
+```
+
+After the targets are known and before the compiler is set up, the build asks the `oneapi` tool
+for the named line, for this run only, and says so. The tool finds that release on the machine or
+installs it: `--use.oneapi.with.accept_eula=yes` accepts Intel's licence (the tool's `_desc.yaml`
+says what is installed where, per system). `--use.oneapi.version=<version>` names a release
+yourself: it is taken as asked, with a warning when it is outside `works_with`. A PyTorch version
+no line names (a branch, a release outside the table) asks nothing, and the build goes on with the
+oneAPI of the machine.
+
+The driver is declared the same way (`drivers: <target>: <system>`, a `min` per PyTorch
+version): when the driver the target read on the machine is older than the one its vendor names,
+the build says so and goes on - the driver matters when the result runs. Today: the Intel
+graphics driver on Windows for PyTorch 2.15.
+
+A SYCL extension is no package of its own: it is a part of the compiler and its runtime. PyTorch
+2.15 uses `ipc_memory`, which the compiler of oneAPI 2025.3 does not have - with that release
+`c10/xpu/XPUCachingAllocator.cpp` does not compile.
+
 ## The parts of the build
 
 PyTorch's source brings some forty submodules, several with deep trees of their own, and a build
@@ -88,7 +122,7 @@ named sets of them (`variations:`). The general rule is in
 |---|---|---|---|
 | `distributed` | `USE_DISTRIBUTED` | | everywhere (off by default, as this program always built it) |
 | `tensorpipe` | `USE_TENSORPIPE` | `third_party/tensorpipe` | Linux, macOS; needs `distributed` |
-| `kineto` | `USE_KINETO` | `third_party/kineto` (up to 2.14; 2.15 carries it in its own tree) | everywhere (off on Windows by default) |
+| `kineto` | `USE_KINETO` | `third_party/kineto` (up to 2.14; 2.15 carries it in its own tree) | everywhere (on Windows too since 2026-11-26: a build that differs from the one it was proven with there - `proven` in `_desc.yaml` - is told that Kineto may fail to build) |
 | `rocm-kernels` | `USE_ROCM_CK_SDPA`, `USE_ROCM_CK_GEMM` | `third_party/flash-attention`, `third_party/aiter` | Linux, target `rocm` |
 | `mslk` | `USE_MSLK` | `third_party/mslk` | Linux, targets `cuda`, `rocm` |
 | `mkldnn` | `USE_MKLDNN` | `third_party/ideep` | everywhere (off on Windows by default) |

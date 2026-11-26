@@ -1415,15 +1415,23 @@ def new_session_flags(harness, sid, cid, alias, interactive=False):
     return []
 
 
-def chooses_id(harness):
+def chooses_id(harness, declared=None):
+    """Whether cMeta names a new native session of the harness: what it declares (chooses_session_id of its "harness"
+    block), else the table of before."""
+    if declared is not None:
+        return bool(declared)
     return harness_key(harness) in ('claude', 'openclaw', 'gemini', 'pi')
 
 
-def resume_flags(harness, sid, interactive=False):
-    """The flags that RESUME a native session (codex needs a sub-command instead: run-codex --resume=<id>)."""
+def resume_flags(harness, sid, interactive=False, declared=None):
+    """The flags that RESUME a native session (codex needs a sub-command instead: run-codex --resume=<id>): what the
+    harness declares (resume of its "harness" block, {session} its id), else the table of before. OpenClaw's
+    interactive mode keys its session another way: the adaptor's own case."""
     h = harness_key(harness)
     if h == 'openclaw' and interactive:
         return ['--session', openclaw_session_key(sid)]
+    if isinstance(declared, list):
+        return [str(x).replace('{session}', str(sid)) for x in declared]
     return {'claude': ['--resume', sid], 'agy': ['--conversation', sid], 'opencode': ['--session', sid],
             'openclaw': ['--session-id', sid], 'gemini': ['--resume', sid], 'hermes': ['--resume', sid],
             'vibe': ['--resume', sid], 'pi': ['--session', sid]}.get(h, [])

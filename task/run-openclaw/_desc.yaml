@@ -1,5 +1,20 @@
 authors: Grigori Fursin
 
+# The harness this task runs, as run-ai and every list of harnesses find it (the tag ai-harness in _cmeta.yaml):
+# its name for --harness, a title, the tool of its model list, its place in a list, the words of run-ai its run()
+# takes - task/run-ai/README.md, "Harnesses as artifacts"
+harness:
+  name: openclaw
+  title: 'OpenClaw: a personal AI agent with its own settings'
+  tool: openclaw,1776c76162b14545
+  sort: 40
+  takes: [long_prompt_file, output_file]
+  # wires: the APIs it speaks to an AI gateway; login_pass_through: a gateway may pass its own login on; resume:
+  # the flags that continue a native session ({session}: its id); chooses_session_id: cMeta names a new one
+  wires: [anthropic, openai]
+  resume: ['--session-id', '{session}']
+  chooses_session_id: true
+
 # Run the OpenClaw agent (https://openclaw.ai) on an assembled prompt and exit, or open its
 # terminal UI. The same flags as the sister tasks "run-claude", "run-codex" and "run-opencode":
 #

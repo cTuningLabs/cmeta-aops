@@ -86,7 +86,11 @@ install_uses:
       skip_build: True
 
 
-# Add env path keys to aggregated if detected
+# The variables of a tool's environment script (cmd_call_script: vcvars, oneapi-vars) that are lists of paths: what
+# the script added goes in front of what the run already has (a "+KEY" of the aggregated environment) instead of
+# replacing it. A variable that is not named here is taken as the script left it - which, for a list, would drop
+# what another tool of the same run added to it (seen on Linux: oneapi-vars.sh sets LD_LIBRARY_PATH and
+# OCL_ICD_FILENAMES, and the Intel GPU runtime's libraries and ICD were gone from the run).
 add_env_path_keys:
   - PATH
   - PYTHONPATH
@@ -95,6 +99,16 @@ add_env_path_keys:
   - LIB
   - LIBPATH
   - WindowsLibPath
+  - LD_LIBRARY_PATH
+  - DYLD_LIBRARY_PATH
+  - LIBRARY_PATH
+  - CPATH
+  - C_INCLUDE_PATH
+  - CPLUS_INCLUDE_PATH
+  - PKG_CONFIG_PATH
+  - CMAKE_PREFIX_PATH
+  - MANPATH
+  - OCL_ICD_FILENAMES
 
 # What the words of the command line mean, for people: the cMeta CLI builder (cserver.cmeta.cli) and help read it, the
 # engine never does - cli_params above alone says how a word is read (a type, its values: checked at every run). An

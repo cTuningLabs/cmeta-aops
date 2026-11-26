@@ -37,6 +37,7 @@ class Tests(unittest.TestCase):
   self.task=object.__new__(m.CTask);self.task.cmeta={'uses_categories':{'task':'task','log':'log','config':'config'}}
   self.config={};self.gateways={};self.machine={'return':0,'gateway':'login','how':'no default'}
   self.tools={}  # what cMeta's tool detection finds: <tool cRef> -> the setup task's answer (none: the harness is not found)
+  self.harnesses={'return':0,'harnesses':[],'index':{},'conflicts':{}}  # none declared: the tuples of before
   class FakeCM:
    def access(_,params):
     if params['category']=='config':return {'return':0,'config_cmeta':self.config}
@@ -44,6 +45,7 @@ class Tests(unittest.TestCase):
      assert params['command']=='list',params
      return {'return':0,'gateways':[dict(alias=params['arg1'],auth=self.gateways[params['arg1']])] if params['arg1'] in self.gateways else []}
     if params['category']=='task':
+     if params.get('command')=='harnesses':return dict(self.harnesses)  # cx task harnesses: what the graph declares
      if params['arg1']==m.SETUP_TASK:return dict(self.tools.get(params['name'],{'return':16,'error':'not found'}))
      assert params['arg1']==m.SET_AI_GATEWAY and params['connect'] is False,params
      return dict(self.machine)
@@ -251,6 +253,14 @@ class Tests(unittest.TestCase):
   self.gateways={'local-login':'login'}
   with patch.object(self.task,'_selection',side_effect=AssertionError('no login read')):out=self.run_task(harness='opencode',model='openai/x',gateway='local-login')
   self.assertEqual(out['reason'],'gateway');self.assertIn('claude and codex',out['message']);self.assertNotIn('own_login',out)
+ def test_the_harnesses_declare_their_gateway_and_login_facts(self):
+  # what each harness declares (cx task harnesses) over the tuples of before: a harness of one's own included
+  mine={'name':'mine','takes':['gateway'],'declared':{'name':'mine','login_pass_through':True}}
+  codex={'name':'codex','takes':['yes'],'declared':{'name':'codex','login_pass_through':False}}
+  self.harnesses={'return':0,'harnesses':[mine,codex],'index':{'mine':mine,'codex':codex},'conflicts':{}}
+  self.assertTrue(self.task._takes_gateway('mine'));self.assertTrue(self.task._passes_login('mine'))
+  self.assertFalse(self.task._takes_gateway('codex'));self.assertFalse(self.task._passes_login('codex'))
+  self.assertTrue(self.task._takes_gateway('opencode'));self.assertFalse(self.task._passes_login('opencode'))  # not declared: the tuples
  def test_key_gateway_named_without_secret(self):
   self.gateways={'company':'x-api-key (company-secret)','local':'none'}
   with patch.object(self.task,'_selection',side_effect=AssertionError('no login read')):

@@ -1,6 +1,105 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# Intel oneAPI: the environment of an installed release (its script oneapi-vars), which the Intel compilers icx and
+# icpx (DPC++/C++ with SYCL) and the xpu target stand on. Detected where Intel installs and in the cMeta cache;
+# installed from Intel's "Deep Learning Essentials" - the oneAPI package Intel publishes for building PyTorch for
+# its GPUs (the compiler with SYCL, oneMKL, oneDNN, oneCCL, oneTBB, oneDPL, PTI ...):
+#
+#   cx tool status oneapi                                             what is installed, and its version
+#   cx tool setup oneapi --install --with.accept_eula=yes             the default line of oneAPI
+#   cx tool setup oneapi --version=2026.0 --install --with.accept_eula=yes
+#   cx program run build-pytorch --compute=xpu --use.oneapi.with.accept_eula=yes
+#
+# A SYCL extension (sycl_ext_oneapi_ipc_memory, which PyTorch 2.15 uses, for one) is no package of its own: it is a
+# part of the compiler and its runtime, so "which extensions" is "which release".
+#
+#   Linux     Intel's installer runs without root into the tool's cache entry, with an installation instance of
+#             its own: nothing of the system changes, and several releases stand side by side, one per entry.
+#   Windows   Intel's installer needs administrator rights and installs where Intel does (C:\Program Files (x86)\
+#             Intel\oneAPI, or beside the oneAPI the machine has; releases side by side as <line>\oneapi-vars.bat),
+#             or into the folder --with.install_dir=<folder> names.
+#             The tool downloads it; a quiet run from a plain process prints the command instead of starting it.
+#   macOS     Intel publishes no oneAPI compilers for it.
+#
+# Intel's End User License Agreement for Developer Tools is the user's to read and accept
+# (https://www.intel.com/content/www/us/en/developer/articles/license/end-user-license-agreement.html): without
+# --with.accept_eula=yes the install stops and says so. README.tech.md: what an install leaves and how it is removed.
+
 storage_key: oneapi
+
+# The line of oneAPI an install takes when none is asked: the one Intel names for the PyTorch that build-pytorch
+# builds by default (2.15: https://www.intel.com/content/www/us/en/developer/articles/tool/pytorch-prerequisites-for-intel-gpu/2-15.html).
+# A build names its own need (build-pytorch: toolkits), so this default matters for a bare "cx tool setup oneapi".
+default_version: '2026.1'
+
+# Intel Deep Learning Essentials by Intel's release name. Intel names the file of each system with a build number of
+# its own and keeps it at an address that cannot be derived: hence the table (from Intel's pages "PyTorch
+# Prerequisites for Intel GPUs", one per PyTorch release, and its download page for the newest). size and sha256 as
+# downloaded on 2026-11-24.
+#
+# The version of the tool is the compiler's (icx --version), and Intel numbers the compiler apart from the package:
+# the package 2026.1.3 holds the compiler 2026.1.1 ("compiler:", where a release was installed and asked). So a
+# request names a line of oneAPI (2026.1; a range: >=2026.0) or a compiler version this table knows, and takes the
+# newest release here that answers it - never the package's own number.
+releases:
+  '2026.2.0':
+    linux:
+      build: '2026.2.0.640'
+      url: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/aef232d2-aac5-4cd6-bceb-911019bbb6a8/intel-deep-learning-essentials-2026.2.0.640_offline.sh
+      size: 1494601999
+      sha256: 82b280aa3d669d4da2adf93779d16709d0cdca80bb4ccf8c0e916e84969398e8
+    windows:
+      build: '2026.2.0.638'
+      url: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/b177a006-5cd9-4cb2-807f-8199cc73d53c/intel-deep-learning-essentials-2026.2.0.638_offline.exe
+      size: 1452256312
+      sha256: 0e9afca3bea736fc562309a39afd75e350a044417e8ac170d3830d95dc224a49
+  '2026.1.3':
+    linux:
+      build: '2026.1.3.17'
+      url: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/bedab612-cf6b-4ece-872e-e72e9534ccab/intel-deep-learning-essentials-2026.1.3.17_offline.sh
+      size: 1480909075
+      sha256: 03801eed3a0e44a2b6c24caea15573e051b82cffe64fb36d4e0768fd1adad17e
+      compiler: '2026.1.1'
+    windows:
+      build: '2026.1.3.20'
+      url: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/ffd3f1fb-09fa-4b43-9df3-955b0e29ada0/intel-deep-learning-essentials-2026.1.3.20_offline.exe
+      size: 979454336
+      sha256: 062f57f3d4f8b32253ada581c027efb139c9c8e80ada6d5049145879d431367e
+  '2026.1.2':
+    linux:
+      build: '2026.1.2.25'
+      url: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/c109e1ae-e02c-48a6-917b-b03b90d33f77/intel-deep-learning-essentials-2026.1.2.25_offline.sh
+      size: 1481031370
+      sha256: c5de1549af3c3108cb005d5aab4dcca6901cc5f98da63ca77a25fdf5d51c8dca
+    windows:
+      build: '2026.1.2.22'
+      url: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/5d44690a-84fb-4d3b-bc5d-caed4bab56fc/intel-deep-learning-essentials-2026.1.2.22_offline.exe
+      size: 979370408
+      sha256: 46200fa907c52943bfd9ab76394db278bdd4f8e90ff1a293aadbce2ea954e2de
+  '2026.0.0':
+    linux:
+      build: '2026.0.0.624'
+      url: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/8170208e-86db-4faa-a0d6-1ecf62699574/intel-deep-learning-essentials-2026.0.0.624_offline.sh
+      size: 1532829969
+      sha256: fa8620a1d648be2b44ba437c7bf1388524f4d0a6b665f685b08fa683473910f7
+      compiler: '2026.0.0'
+    windows:
+      build: '2026.0.0.613'
+      url: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/d2148e15-b3c4-4313-afa9-a2373318b0b5/intel-deep-learning-essentials-2026.0.0.613_offline.exe
+      size: 1008018632
+      sha256: 6fffff3784b49586b2a781b1307821095ef177c5babd2e91b3473e166073d265
+  '2025.3.3':
+    linux:
+      build: '2025.3.3.16'
+      url: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/56f7923a-adb8-43f3-8b02-2b60fcac8cab/intel-deep-learning-essentials-2025.3.3.16_offline.sh
+      size: 1599111738
+      sha256: 22f24a860672905f73f028c1d53c88eb6f425592838a54804222bbb61b11d498
+    windows:
+      build: '2025.3.3.18'
+      url: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/b60765d1-2b85-4e85-86b6-cb0e9563a699/intel-deep-learning-essentials-2025.3.3.18_offline.exe
+      size: 1144492032
+      sha256: 8d3a3df8caacd7ffbf45adbad4d273c0c585917a1029d4bf89fa435d3bea32e8
 
 names:
   - oneapi-vars{{global.host.vars.file_ext_bat}}
@@ -33,12 +132,22 @@ uses_os:
 
 
 extra_paths:
+  linux:
+    - "/opt/intel/oneapi/*"
+    - "{{global.host.os_env.HOME|}}/intel/oneapi/*"
   windows:
     - "C:\\Program Files (x86)\\Intel\\oneAPI\\**"
     - "D:\\Program Files (x86)\\Intel\\oneAPI\\**"
     - "C:\\Program Files\\Intel\\oneAPI\\**"
     - "D:\\Program Files\\Intel\\oneAPI\\**"
 
-install_help_text:
-  Please install OneAPI from https://www.intel.com/content/www/us/en/developer/tools/oneapi/overview.html !
+# Windows: Intel's installer asks for administrator rights (a UAC prompt). Linux: none (the cache entry)
+requires_sudo:
+  windows: True
+
+install_help_text: |
+  Intel oneAPI was not found. "cx tool setup oneapi --install --with.accept_eula=yes" installs Intel Deep Learning
+  Essentials (Linux and Windows on x86_64; read Intel's EULA first:
+  https://www.intel.com/content/www/us/en/developer/articles/license/end-user-license-agreement.html), or install
+  oneAPI yourself from https://www.intel.com/content/www/us/en/developer/tools/oneapi/overview.html
 

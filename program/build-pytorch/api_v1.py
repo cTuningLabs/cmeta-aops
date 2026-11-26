@@ -16,6 +16,38 @@ import yaml
 from program_22788f3c30d04e6d.api.cprogram import InitCProgram
 from program_22788f3c30d04e6d.api import common_build
 
+
+def source_version(git_repo):
+    """The version of a PyTorch source tree (its version.txt: 2.15.0a0), or None."""
+    try:
+        with open(os.path.join(git_repo or '', 'version.txt'), encoding = 'utf-8') as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def kineto_notes(proven, targets, versions):
+    """
+    Why a build of Kineto may fail on this system, from what it was built with here (proven: the system's entry of
+    the part's "proven" in _desc.yaml, target -> {tool: version}; versions: tool -> the version of this build): a
+    target it was not built for yet, a tool older than the one it was built with, a tool whose version is not known.
+    [] when none.
+    """
+    notes = []
+    for target in targets:
+        built = (proven or {}).get(target)
+        if not built:
+            notes.append(f'it was not built here for {target} yet' + (f' (only for {", ".join(sorted(proven))})' if proven else ''))
+            continue
+        for tool, need in built.items():
+            have = versions.get(tool)
+            if not have:
+                notes.append(f'the version of {tool} is not known (it was built with {need})')
+            elif common_build.version_key(have) < common_build.version_key(need):
+                notes.append(f'{tool} {have} is older than the {need} it was built with')
+    return notes
+
+
 class CProgram(InitCProgram):
     """
     """
@@ -38,6 +70,97 @@ class CProgram(InitCProgram):
         if 'cuda' in compute:
             _local['lang'] = 'cuda'
 
+        # The targets the host compilers are asked for (the compiler steps of _desc.yaml read it): on Linux an xpu
+        # build keeps the machine's compiler, and PyTorch finds icpx of oneAPI for its SYCL kernels
+        system = _global['host']['os']['uname']
+        _local['pytorch_host_compute'] = common_build.host_compute(compute, system)
+        if _local['pytorch_host_compute'] != list(compute) and ctx['control'].get('con', False):
+            print('')
+            print(f'INFO: the host compilers of this build are asked for {",".join(_local["pytorch_host_compute"])}, not '
+                  f'{",".join(compute)}: PyTorch builds for an Intel GPU with the compiler of the machine, and compiles its SYCL '
+                  f'kernels with icpx of oneAPI, which it finds in the oneAPI environment (--use.compiler-cpp.name=<tool> '
+                  f'names another host compiler)')
+
+        return self.toolkits_of_targets(ctx, compute, params.get('params') or {})
+
+    ############################################################
+    def toolkits_of_targets(self,
+                            ctx: dict,
+                            compute: list,
+                            run_params: dict,
+    ):
+        """
+        After the targets are known and before the compiler is set up: the release of a vendor's toolkit this
+        version of PyTorch is built with, where _desc.yaml declares it (toolkits: <target>: <tool>; xpu and
+        oneapi today - Intel names one release of oneAPI per PyTorch release).
+
+        When the request names no version of the tool, the declared one is asked for THIS run (a pin of the run,
+        as --use.<tool>.version=<it> would be): the tool finds it on the machine or installs it, and the console
+        says which and where it comes from. A version the request names is taken as asked, with a line when it is
+        outside what the build is known to work with. A PyTorch version no rule names (a branch, a release older
+        or newer than the table) asks nothing: the build goes on with what the machine has.
+        """
+        con = ctx['control'].get('con', False)
+
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml'), encoding = 'utf-8') as f:
+            desc = yaml.safe_load(f) or {}
+        toolkits, drivers = desc.get('toolkits') or {}, desc.get('drivers') or {}
+
+        checkout = str(run_params.get('checkout') or 'v2.15.0')   # the default of the clone step in _desc.yaml
+        built = checkout[1:] if checkout.startswith('v') and checkout[1:2].isdigit() else ''
+
+        def matches(spec, version):
+            return self.cm.packages.match_version(spec, version).get('matched', False)
+
+        use = ctx['tasks'].setdefault('use', {})
+        for target, tools in toolkits.items():
+            if target not in compute:
+                continue
+            for tool, rules in (tools or {}).items():
+                asked = str((use.get(tool) or {}).get('version') or '').strip()
+                r = common_build.toolkit_request(rules, built, asked, matches)
+                rule = r['rule']
+                if r['version']:
+                    use.setdefault(tool, {})['version'] = r['version']
+                    ctx['tasks']['local'].setdefault('pytorch_toolkits', {})[tool] = {'version': r['version'], 'for': built}
+                    if con:
+                        print('')
+                        print(f'INFO: PyTorch {built} for {target} is built with {tool} {r["version"]} '
+                              f'({rule.get("source") or "declared in the program"})')
+                        print(f'      (this run only; --use.{tool}.version=<version> names another one)')
+                elif r['outside'] and con:
+                    print('')
+                    print(f'WARNING: {tool} {asked} is asked for, and PyTorch {built} for {target} is built with '
+                          f'{rule.get("works_with") or rule["version"]}: {rule.get("reason") or rule.get("source") or "declared in the program"}')
+
+        # The driver the vendor names for this version, against the ones the target read on this machine: a line
+        # when one is older. The build goes on - the driver matters when the result runs
+        system = ctx['tasks']['global']['host']['os']['uname']
+        for target, systems in drivers.items():
+            if target not in compute:
+                continue
+            devices = ((ctx['tasks']['global'].get('target--' + target) or {}).get('features') or {}).get('devices') or []
+            have = [d['driver_version'] for d in devices if isinstance(d, dict) and d.get('driver_version')]
+            rule, older = common_build.drivers_older_than_named((systems or {}).get(system), built, have, matches)
+            if older and con:
+                print('')
+                print(f'WARNING: the {target} driver of this machine ({", ".join(older)}) is older than {rule["min"]}, which its '
+                      f'vendor names for PyTorch {built} ({rule.get("source") or "declared in the program"}): the build goes on, '
+                      f'the result may not run on the device until the driver is updated')
+
+        return {'return': 0}
+
+    ############################################################
+    def plan_clone(self, ctx, desc = {}, **misc):
+        """
+        The step before the clone: a build of a variation or of named parts (--compile.variation, --compile.components)
+        reads one commit of the superproject - cloned shallow, its tag alone (clone-git takes it with --branch; depth is
+        part of the clone's identity and folder, so it is a clone of its own beside the full one). Any other build
+        clones it whole, as before.
+        """
+        compile_params = (misc.get('params') or {}).get('compile') or {}
+        if compile_params.get('variation') not in (None, '', False) or compile_params.get('components'):
+            ctx['tasks']['local']['pytorch_superproject_depth'] = 1
         return {'return': 0}
 
     ############################################################
@@ -70,8 +193,18 @@ class CProgram(InitCProgram):
             return self.cm.packages.match_version(spec, version).get('matched', False)
 
         use = ctx['tasks'].setdefault('use', {})
+
+        def same_installation(version):
+            # The installation of Visual Studio follows the msvc of the run (both carry cl.exe's version): a step that
+            # sets Visual Studio up before msvc - oneAPI for xpu, which asks for no version - would otherwise take the
+            # newest installation, and msvc then finds its version taken (2026-11-25: an xpu build stopped at once)
+            vs = use.setdefault('microsoft-visual-studio', {})
+            if not str(vs.get('version') or '').strip():
+                vs['version'] = version
+
         asked = str((use.get('msvc') or {}).get('version') or '').strip()
         if asked:
+            same_installation(asked)
             why = next((str(l.get('reason')) for l in limits if common_build.version_key(asked) != () and
                         re.fullmatch(r'=*[0-9.]+', asked) and matches(str(l['exclude']), asked.lstrip('='))), None)
             if why and con:
@@ -89,6 +222,7 @@ class CProgram(InitCProgram):
         if r['choice']:
             version, where = r['choice']
             use.setdefault('msvc', {})['version'] = version
+            same_installation(version)
             _global_note = {'version': version, 'instead_of': r['excluded'][0][0], 'why': r['excluded'][0][2]}
             ctx['tasks']['local']['pytorch_host_compiler'] = _global_note
             if con:
@@ -121,8 +255,6 @@ class CProgram(InitCProgram):
         asked = compile_params.get('components') or {}
         if not isinstance(asked, dict):
             return self.cm.error('--compile.components.<name> (on) or --compile.components.<name>- (off): one part at a time')
-        if variation in (None, '', False) and not asked:
-            return {'return': 0}
 
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml'), encoding = 'utf-8') as f:
             own = yaml.safe_load(f) or {}
@@ -131,6 +263,20 @@ class CProgram(InitCProgram):
         # params.compile.d are the parts' defaults now, and no request)
         defaults = ((own.get('params') or {}).get('compile') or {}).get('d') or {}
         given = {k: v for k, v in (compile_params.get('d') or {}).items() if str(defaults.get(k)) != str(v)}
+
+        if variation in (None, '', False) and not asked:
+            # The build of before the parts were declared - but with the parts its targets cannot do without
+            # (required_for: oneDNN for xpu), over the defaults of customize_pytorch
+            r = common_build.required_flags(own.get('components'), list(_global['target']['compute']), given)
+            if r['return'] > 0:
+                return self.cm.error(r['error'])
+            if r['flags']:
+                _local['pytorch_component_flags'] = r['flags']
+                if con:
+                    print('')
+                    for part, target, why in r['reasons']:
+                        print(f'INFO: the part {part} of this build is on: the target {target} needs it ({why})')
+            return {'return': 0}
 
         # the submodules this version of the source has (2.15 carries kineto in its own tree, 2.14 as a submodule)
         git_repo = _global['clone-git-to-cache-src-pytorch']['path_to_git_repo']
@@ -162,6 +308,13 @@ class CProgram(InitCProgram):
                   (' - all of them whole: this Python reads no pyproject.toml (before 3.11), so nothing is left out'
                    if listed is None and r['not_recursive'] else ''))
         return {'return': 0}
+
+    ############################################################
+    def kineto_proven(self, system):
+        """What the part kineto was built with here on a system (its "proven" in _desc.yaml): target -> {tool: version}."""
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml'), encoding = 'utf-8') as f:
+            own = yaml.safe_load(f) or {}
+        return (((own.get('components') or {}).get('kineto') or {}).get('proven') or {}).get(system) or {}
 
     ############################################################
     def customize_pytorch(self,
@@ -327,18 +480,28 @@ class CProgram(InitCProgram):
 
         # HOST SHOULD ALWAYS BE CL on Windows, gcc/clang on Linux and clang on MacOS
         if uname == 'windows':
+            # Kineto (torch.profiler's library) is built on Windows too since 2026-11-26 - PyTorch's own default. Before,
+            # this program turned it off there (build problems met with older versions): what it was built with since is
+            # the part's "proven" in _desc.yaml, and a build that differs is told so (kineto_notes)
+            if str(env.get('USE_KINETO', '1')).upper() not in ('0', 'OFF', 'FALSE', 'NO'):
+                notes = kineto_notes(self.kineto_proven('windows'), [t for t in compute if t != 'cpu'] or ['cpu'],
+                                     {'pytorch': source_version(git_repo),
+                                      'msvc': (_global.get('msvc') or {}).get('version'),
+                                      'oneapi': (_global.get('oneapi') or {}).get('version')})
+                if notes and con:
+                    print ('')
+                    print (f'{space}WARNING: Kineto (the library of torch.profiler) is built on Windows: '
+                           + '; '.join(notes) + ' - its build may fail (--compile.components.kineto- turns it off)')
+
             if 'xpu' in compute:
-                # FGG: I had problems installing KINETO on Windows
-                if 'USE_KINETO' not in env: 
-                    env['USE_KINETO'] = 'OFF' # various issues
                 if 'TORCH_XPU_ARCH_LIST' not in env: 
                     env['TORCH_XPU_ARCH_LIST'] = 'bmg' # reducing compilation time for a test
                 if 'USE_SYSTEM_XNNPACK' not in env:
                     env['USE_SYSTEM_XNNPACK'] = 'OFF'
                 if 'USE_XNNPACK' not in env:
                     env['USE_XNNPACK'] = 'OFF'
-                if 'USE_MKLDNN' not in env:
-                    env['USE_MKLDNN'] = 'OFF' # various issues
+                # (oneDNN is not turned off here: an xpu build cannot do without it - required_for of the part mkldnn in
+                # _desc.yaml, whose flag plan_components set above)
 
 #                cflags = env.setdefault('CFLAGS', '')
 #                cflags += ' -DSLEEF_ENABLE_FLOAT128=OFF -DENABLEFLOAT128=OFF'
@@ -353,9 +516,7 @@ class CProgram(InitCProgram):
             if 'USE_XNNPACK' not in env:
                 env['USE_XNNPACK'] = 'OFF' # various issues - though may need for XPU ???
             if 'USE_MKLDNN' not in env:
-                env['USE_MKLDNN'] = 'OFF' # various issues - though may need for XPU !!!
-            if 'USE_KINETO' not in env: 
-                env['USE_KINETO'] = 'OFF' # various issues
+                env['USE_MKLDNN'] = 'OFF' # various issues (not for xpu: it needs oneDNN - set ON above, from _desc.yaml)
 
             msvc_compiler_path = _global['msvc']['path']
 
@@ -399,6 +560,10 @@ class CProgram(InitCProgram):
 
             env.setdefault('CUDA_HOME', cuda_home)
             env.setdefault('CUDA_PATH', cuda_home)
+
+            # ... and CMake's own CUDA language takes the same compiler: without it, the nvcc of the PATH (another
+            # toolkit of the system) compiled while PyTorch read CUDA_HOME - two toolkits in one build
+            env.setdefault('CUDACXX', nvcc_path)
 
             if use_cudnn:
                 cudnn_paths = _global['lib-cudnn']['features']['paths']

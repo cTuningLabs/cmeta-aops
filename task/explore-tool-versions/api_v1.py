@@ -26,19 +26,25 @@ VERDICT_SCHEMA = 1
 # The class of a failure from the words of its error, the first that matches; else the stage it failed at
 ERROR_CLASSES = (
     # the machine lacks what the tool's hardware rules ask (task/setup check_hardware): not the version's fault
-    ('not supported here', ('not supported on this machine',)),
+    # a release that publishes nothing for this system (common_release: whatever the version)
+    ('not supported here', ('not supported on this machine', 'publishes no release asset for')),
     ('not available', ('no matching', 'could not find a version', 'no versions of', 'not available',
                        'not found for version', '404')),
     ('checksum', ('sha256', 'sha-256', 'checksum')),
-    ('download', ('download', 'http error', 'urlopen', 'timed out', 'connection', 'ssl')),
+    ('download', ('download', 'http error', 'urlopen', 'timed out', 'connection', 'sslerror', '[ssl', 'ssl certificate',
+                  'ssl handshake')),
     ('build', ('compil', 'cmake', 'msbuild', 'ninja', 'linker', 'link error', 'build failed')),
 )
+
+# A quoted path of an error ('... in "/home/u/tool/lib-openssl-android/api_v1.py"') holds no words of it: the "ssl"
+# of openssl in such a path made the error a download failure
+QUOTED_PATH = re.compile(r'"[^"]*[/\\][^"]*"')
 
 
 def error_class(text, stage):
     """'not supported here', 'not available', 'checksum', 'download', 'build', else the stage that failed ('setup' or
     'program')."""
-    low = str(text or '').lower()
+    low = QUOTED_PATH.sub('""', str(text or '')).lower()
     for name, words in ERROR_CLASSES:
         if any(word in low for word in words):
             return name
@@ -155,6 +161,8 @@ def proposals_of(verdicts, descs, min_os = 2, today = None):
     What the verdicts support, per tool (descs: tool -> its _desc.yaml as a dict):
       - default_version: the newest version obtained that works wherever it was tried, on at least min_os
         operating systems, when it is newer than the tool's default_version (first: the tool had none);
+      - unpinned: the same for a tool that has no default_version on purpose (unpinned: '<reason>' of its _desc.yaml)
+        - a note with the reason, never a first pin;
       - latest_limits: a version newer than default_version that failed somewhere for a reason other than "not
         available" and that no limit excludes yet, excluded with the class and the first line of its error, and
         today's date;
@@ -230,8 +238,13 @@ def proposals_of(verdicts, descs, min_os = 2, today = None):
 
         if candidates:
             v, version, ok, n = max(candidates)
-            proposals.append({'tool': tool, 'change': 'default_version', 'from': known, 'to': version,
-                              'works_on': ok, 'evidence': n, 'first': not known})
+            unpinned = desc.get('unpinned') if not known else None
+            if isinstance(unpinned, str) and unpinned.strip():
+                proposals.append({'tool': tool, 'change': 'unpinned', 'version': version, 'reason': unpinned.strip(),
+                                  'works_on': ok, 'evidence': n})
+            else:
+                proposals.append({'tool': tool, 'change': 'default_version', 'from': known, 'to': version,
+                                  'works_on': ok, 'evidence': n, 'first': not known})
 
     return proposals
 
@@ -316,7 +329,11 @@ class CTask(InitCTask):
         results = []
         for version in asked:
             t0 = time.monotonic()
-            verdict = {'schema': VERDICT_SCHEMA, 'tool': tool, 'version': version, 'chosen_as': chosen[version],
+            # A word (known, latest) goes to the setup as it is; the verdict names the version it stands for here, so
+            # that --promote can weigh it (a failure of the known version says what the machine cannot do)
+            number = info.get(version) if version in ('known', 'latest') else None
+            verdict = {'schema': VERDICT_SCHEMA, 'tool': tool, 'version': number or version,
+                       'chosen_as': chosen[version] + (f' ({version})' if number else ''),
                        'obtained': None, 'program': program or None, 'works': False, 'stage': 'setup', 'error_class': None, 'error': None,
                        'limit': None, 'host': host, 'cmeta': getattr(self.cm, '__version__', None), 'aops': aops,
                        'time': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec = 'seconds')}
@@ -340,7 +357,7 @@ class CTask(InitCTask):
                 verdict.update({'error': first_line(r.get('error')),
                                 'error_class': 'crash' if r.get('crash') else error_class(r.get('error'), 'setup')})
 
-            limit = excluded_by(verdict['obtained'] or version, limits)
+            limit = excluded_by(verdict['obtained'] or verdict['version'], limits)
             if limit:
                 verdict['limit'] = limit.get('exclude')
             verdict['seconds'] = round(time.monotonic() - t0, 1)
@@ -364,7 +381,7 @@ class CTask(InitCTask):
                 return self.cm.error(f'explore-tool-versions: the verdicts could not be written to {path}: {e}')
 
             if con:
-                print (f'  {version:<16} {str(verdict["obtained"] or "-"):<16} {"works" if verdict["works"] else "FAILS":<6} '
+                print (f'  {verdict["version"]:<16} {str(verdict["obtained"] or "-"):<16} {"works" if verdict["works"] else "FAILS":<6} '
                        f'{verdict["seconds"]:>7} s' + (f'  {verdict["error_class"]}: {verdict["error"]}' if not verdict['works'] else '')
                        + (f'  (excluded from latest: {verdict["limit"]})' if verdict['limit'] else ''))
 
@@ -441,9 +458,16 @@ class CTask(InitCTask):
                            f'{p["evidence"]} run{"s" if p["evidence"] != 1 else ""}' +
                            ('; a first pin: the tool has no default_version, so this changes what a request without a version installs' if p.get('first') else '') + ')')
                     print (f"  default_version: '{p['to']}'")
+                elif p['change'] == 'unpinned':
+                    print (f'tool/{p["tool"]}: note - {p["version"]} works on {", ".join(p["works_on"])} '
+                           f'({p["evidence"]} run{"s" if p["evidence"] != 1 else ""}); no default_version is proposed: '
+                           f'the tool has no pin on purpose - {p["reason"]}')
                 elif p['change'] == 'not available':
                     print (f'tool/{p["tool"]}: note - {p["version"]} is not available on {p["on"]} ({p["error"]})'
                            + (f'; it works on {", ".join(p["works_on"])}' if p['works_on'] else '') + ' - not a limit: update the channel there')
+                elif p['change'] == 'not supported here':
+                    print (f'tool/{p["tool"]}: note - {p["version"]} is not supported on {p["on"]} ({p["error"]})'
+                           + (f'; it works on {", ".join(p["works_on"])}' if p['works_on'] else '') + ' - not a limit: the hardware of that machine')
                 else:
                     print (f'tool/{p["tool"]}/_desc.yaml: exclude {p["version"]} from latest ({p["evidence"]} run{"s" if p["evidence"] != 1 else ""})')
                     print ('  latest_limits:')

@@ -7,6 +7,10 @@ uses:
     if: '"{{global.host.os.uname}}" == "darwin"'
     text: 'task "{{task_artifact_alias}}" does not work on MacOS'
 
+  # On Linux with an Intel GPU: its compute runtime (Level Zero and OpenCL, set up without root - intel_gpu_runtime
+  # of api_v1.py). Without it SYCL sees the CPU only, and the test runs there. Other machines: as before
+  - internal_func: intel_gpu_runtime
+
   - task: setup,a2f9b61079ce4333
     name: icpx,2dd552ea24a34a81
 

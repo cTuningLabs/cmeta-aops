@@ -68,14 +68,14 @@ def task(module):
     return t
 
 
-REFS = ['docker:debian --on_template.os_version=11', 'docker:debian --on_template.os_version=12', 'fgg-t470p-ubuntu']
+REFS = ['docker:debian --on_template.os_version=11', 'docker:debian --on_template.os_version=12', 'lab-linux-host']
 
 
 def test_a_launch_leaves_out_a_ref_that_cannot_be_made(module):
     t = task(module)
     r = t.resolve_refs(False, REFS, tolerant=True)
     assert r['return'] == 0
-    assert r['hosts'] == ['here-docker-debian-12', 'fgg-t470p-ubuntu']
+    assert r['hosts'] == ['here-docker-debian-12', 'lab-linux-host']
     assert list(r['failed']) == [REFS[0]] and 'debian:11' in r['failed'][REFS[0]]
     assert r['instances']['here-docker-debian-12']['tree_inside'] == '/home/cmeta/repos/ctuninglabs@cmeta-aops'
 
@@ -110,10 +110,10 @@ def test_a_peek_or_collect_from_another_directory_says_so_and_leaves_nothing(mod
     monkeypatch.chdir(elsewhere)
     t.local_folder = lambda rid: str(elsewhere / f'test-on-hosts-{rid}')
 
-    r = t.peek(False, 'm2', str(elsewhere / 'test-on-hosts-m2'), 'cmeta-tests/test-on-hosts-m2', ['here', 'fgg-t470p-ubuntu'])
+    r = t.peek(False, 'm2', str(elsewhere / 'test-on-hosts-m2'), 'cmeta-tests/test-on-hosts-m2', ['here', 'lab-linux-host'])
     assert r['return'] == 0 and not r['done']
     assert r['hosts']['here']['lines'][0].startswith('unknown: ')
-    assert r['hosts']['fgg-t470p-ubuntu']['done']                      # the remote host answered through its script
+    assert r['hosts']['lab-linux-host']['done']                      # the remote host answered through its script
     assert list(elsewhere.iterdir()) == []                              # no folder made for the helper script
 
     c = t.collect(False, 'm2', str(elsewhere / 'test-on-hosts-m2'), 'cmeta-tests/test-on-hosts-m2', ['here'], '*.jsonl',
@@ -171,7 +171,7 @@ def test_the_tarball_leaves_out_links_that_lead_out_of_the_tree(module, tmp_path
 
 
 DESCS = {'win-host': {'type': 'ssh', 'os': 'windows', 'access': {'shell': 'powershell'}},
-         'fgg-t470p-ubuntu': {'type': 'ssh', 'os': 'linux', 'access': {'shell': 'bash -l'}}}
+         'lab-linux-host': {'type': 'ssh', 'os': 'linux', 'access': {'shell': 'bash -l'}}}
 
 
 class FleetCM(FakeCM):
@@ -206,25 +206,26 @@ def test_a_windows_host_gets_powershell_scripts_and_its_commands_in_a_file(modul
     (tree / '_cmr.yaml').write_text('alias: x\n')
     local = tmp_path / 'test-on-hosts-w1'
     remote = 'cmeta-tests/test-on-hosts-w1'
-    hosts = ['win-host', 'fgg-t470p-ubuntu']
+    hosts = ['win-host', 'lab-linux-host']
 
     r = t.launch(False, 'w1', str(local), remote, hosts, 'task run upgrade-os --check -q; !echo "a b"', str(tree))
     assert r['return'] == 0
     assert json.loads((local / 'commands.json').read_text()) == ['task run upgrade-os --check -q', '!echo "a b"']
     assert f'{remote}/commands.json' in t.cm.pushed['win-host']
-    assert not [to for to in t.cm.pushed['fgg-t470p-ubuntu'] if to.endswith('commands.json')]
-    win, linux = t.cm.ran['win-host'][0], t.cm.ran['fgg-t470p-ubuntu'][0]
+    assert not [to for to in t.cm.pushed['lab-linux-host'] if to.endswith('commands.json')]
+    win, linux = t.cm.ran['win-host'][0], t.cm.ran['lab-linux-host'][0]
     assert "Join-Path $HOME 'cmeta-tests\\test-on-hosts-w1'" in win and 'Win32_Process' in win and '@commands.json' in win
     assert linux.startswith('#!/bin/bash') and 'nohup' in linux and '@commands.json' not in linux
 
     p = t.peek(False, 'w1', str(local), remote, hosts)
     assert p['return'] == 0 and p['done']
-    assert 'Test-Path "$ROOT\\DONE"' in t.cm.ran['win-host'][1] and t.cm.ran['fgg-t470p-ubuntu'][1].startswith('#!/bin/bash')
+    assert 'Test-Path "$ROOT\\DONE"' in t.cm.ran['win-host'][1] and t.cm.ran['lab-linux-host'][1].startswith('#!/bin/bash')
 
     d = t.remove(False, 'w1', str(local), remote, hosts)
-    assert d['removed'] == {'win-host': True, 'fgg-t470p-ubuntu': True}
+    assert d['removed'] == {'win-host': True, 'lab-linux-host': True}
     assert 'Remove-Item -LiteralPath $ROOT -Recurse -Force' in t.cm.ran['win-host'][2]
-    assert t.cm.ran['fgg-t470p-ubuntu'][2] == f'rm -rf ~/{remote}'
+    # (a tree made read-only - a build system's outputs - is given back to its owner when "rm -rf" leaves something)
+    assert t.cm.ran['lab-linux-host'][2] == f'rm -rf ~/{remote} 2>/dev/null || {{ chmod -R u+rwX ~/{remote}; rm -rf ~/{remote}; }}'
 
     # an instance (a container or a WSL distribution of a Windows machine) is no Windows host
     t.instances = {'win-host': {'engine': 'docker'}}
@@ -239,10 +240,10 @@ def test_the_posix_launcher_takes_the_python_of_cx_without_a_system_python3(modu
     tree = tmp_path / 'tree'
     tree.mkdir()
     (tree / '_cmr.yaml').write_text('alias: x\n')
-    r = t.launch(False, 'py1', str(tmp_path / 'test-on-hosts-py1'), 'cmeta-tests/test-on-hosts-py1', ['fgg-t470p-ubuntu'],
+    r = t.launch(False, 'py1', str(tmp_path / 'test-on-hosts-py1'), 'cmeta-tests/test-on-hosts-py1', ['lab-linux-host'],
                  'task run test-python -q', str(tree))
     assert r['return'] == 0
-    linux = t.cm.ran['fgg-t470p-ubuntu'][0]
+    linux = t.cm.ran['lab-linux-host'][0]
     assert 'PY=$(command -v python3)' in linux and 'python path:' in linux and 'start failed: no python3' in linux
     assert '"$PY" "$ROOT/runner.py"' in linux and 'nohup python3' not in linux
 
@@ -267,19 +268,19 @@ def test_peek_says_a_runner_that_never_started_or_died_and_the_round_finishes(mo
     process; the launch's own failure is said; a round where nothing runs any more is finished."""
     answers = {'bare': 'not started\nrun.out: nohup: failed to run command python3\n',
                'dead': 'stopped: the runner ended before its last command\n1: exit 0 in 1 s: task run test-python -q\n',
-               'fgg-t470p-ubuntu': 'done 2026-10-30T11:00:00Z\n1: exit 0 in 1 s: task run test-python -q\n'}
+               'lab-linux-host': 'done 2026-10-30T11:00:00Z\n1: exit 0 in 1 s: task run test-python -q\n'}
     t = task(module)
     t.cm = PeekCM(answers)
     t.launch_started = {'bare': 'start failed: command failed on bare (exit code 1)', 'dead': 'started on x: pid 5',
-                        'fgg-t470p-ubuntu': 'started on t: pid 7'}
+                        'lab-linux-host': 'started on t: pid 7'}
     local, remote = str(tmp_path / 'test-on-hosts-p1'), 'cmeta-tests/test-on-hosts-p1'
-    hosts = ['bare', 'dead', 'fgg-t470p-ubuntu']
+    hosts = ['bare', 'dead', 'lab-linux-host']
 
     r = t.peek(False, 'p1', local, remote, hosts)
     assert r['return'] == 0 and not r['done'] and r['finished']
     assert r['hosts']['bare']['state'] == 'not started'
     assert r['hosts']['bare']['lines'][0] == 'not started: start failed: command failed on bare (exit code 1)'
-    assert r['hosts']['dead']['state'] == 'stopped' and r['hosts']['fgg-t470p-ubuntu']['done']
+    assert r['hosts']['dead']['state'] == 'stopped' and r['hosts']['lab-linux-host']['done']
     script = t.cm.ran['bare'][0]
     assert 'pgrep -f -- "$ROOT/runner.py"' in script and '/proc/[0-9]*/cmdline' in script
 

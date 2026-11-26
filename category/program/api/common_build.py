@@ -189,6 +189,79 @@ def compiler_outside_limits(installed, limits, matches):
     return result
 
 
+def host_compute(compute, system, sycl_targets = ('xpu',)):
+    """
+    The targets a build asks its host compilers (C and C++) for: its targets without those whose kernels another
+    compiler builds, which the build finds by itself - on Linux, xpu: PyTorch builds for an Intel GPU with the
+    machine's compiler (GCC, as Intel's own instructions do) and compiles its SYCL kernels with icpx of oneAPI,
+    which its CMake finds in the oneAPI environment. Asked for xpu, the compiler task would take the one compiler
+    that names it (icpx) for everything, and the third-party code that builds with -Werror stops on icpx's warnings.
+    Every other system and target: the targets as they are (Windows builds with MSVC and names icx itself).
+    """
+    compute = [str(c) for c in (compute or [])]
+    if system != 'linux' or not any(c in sycl_targets for c in compute):
+        return compute
+    return [c for c in compute if c not in sycl_targets] or ['cpu']
+
+
+def toolkit_request(rules, built, asked, matches):
+    """
+    What a build asks of a vendor's toolkit for the version of the program it builds (toolkits: <target>: <tool> of
+    a program's _desc.yaml).
+
+    rules: [{'program_version': '>=2.15,<2.16' - the versions of the program the rule is for,
+             'version': '2026.1' - the toolkit release its vendor names for them,
+             'works_with': '>=2026.0' - optional: the releases the build is seen to work with, when that is known to
+                                        be more than the named one,
+             'reason': ..., 'source': ...}];
+    built: the version that is built ('2.15.0'; '' when it is no release - a branch);
+    asked: the version the request names for the tool ('' when none); matches(range, version) -> bool.
+
+    -> {'rule': the first rule whose program_version the built version matches, or None,
+        'version': what to ask the tool for - the rule's version, when the request names none; else None,
+        'outside': True when the request names a plain version outside what the rule says works}
+
+    A version no rule names asks nothing, and a version the request names is taken as asked.
+    """
+    rule = None
+    if built:
+        rule = next((r for r in (rules or []) if isinstance(r, dict) and r.get('program_version') and
+                     matches(str(r['program_version']), str(built))), None)
+    result = {'rule': rule, 'version': None, 'outside': False}
+    if not rule or not rule.get('version'):
+        return result
+
+    asked = str(asked or '').strip()
+    if not asked:
+        result['version'] = str(rule['version'])
+    elif re.fullmatch(r'=*[0-9.]+', asked):
+        result['outside'] = not matches(str(rule.get('works_with') or rule['version']), asked.lstrip('='))
+    return result
+
+
+def drivers_older_than_named(rules, built, versions, matches):
+    """
+    The drivers of a machine that are older than the one a vendor names for the version of the program that is
+    built (drivers: <target>: <system> of a program's _desc.yaml).
+
+    rules: [{'program_version': '>=2.15,<2.16', 'min': '32.0.101.9033', 'source': ...}]; built: the version that is
+    built ('' for a branch); versions: the driver versions the target read on this machine; matches(range, version).
+
+    -> (the first rule whose program_version the built version matches, or None,
+        the versions older than its 'min', as they were given). A version that is no dotted number is left out:
+        nothing is said of what cannot be compared.
+    """
+    rule = None
+    if built:
+        rule = next((r for r in (rules or []) if isinstance(r, dict) and r.get('program_version') and r.get('min') and
+                     matches(str(r['program_version']), str(built))), None)
+    if not rule:
+        return None, []
+    least = version_key(rule['min'])
+    older = [v for v in (versions or []) if re.fullmatch(r'[0-9]+(\.[0-9]+)*', str(v).strip()) and version_key(v) < least]
+    return rule, older
+
+
 ###################################################################################################
 # What a Python project's metadata lists
 
@@ -246,6 +319,44 @@ def _switch(value):
     return 'on' if word in ON_WORDS else 'off' if word in OFF_WORDS else None
 
 
+def required_by(component, targets):
+    """
+    The targets of a run that cannot be built without a part (its required_for: {<target>: <why>} or a list):
+    [(target, why)], in the order of the run's targets.
+    """
+    needed = (component or {}).get('required_for') or {}
+    if isinstance(needed, (list, tuple)):
+        needed = {str(t): '' for t in needed}
+    needed = {str(t).lower(): str(why or 'it needs this part').strip() for t, why in needed.items()}
+    return [(t, needed[t]) for t in (str(x).lower() for x in targets or []) if t in needed]
+
+
+def required_flags(components, targets, given_flags = None):
+    """
+    The build variables of the parts the targets of a run cannot be built without (required_for), on - for a run that
+    asks no part and no variation, whose build is otherwise the one of before the parts were declared: the parts the
+    targets need are on all the same. A variable the request set itself is left to it - unless it turns such a part
+    off, which is an error (as in resolve_components).
+    -> {'return': 0, 'flags': {<variable>: <value when on>}, 'reasons': [(part, target, why)]} or {'return': 1, 'error'}
+    """
+    given_flags = {str(k): v for k, v in (given_flags or {}).items()}
+    flags, reasons = {}, []
+    for name, c in (components or {}).items():
+        needed_by = required_by(c, targets)
+        if not needed_by:
+            continue
+        reasons.append((name, needed_by[0][0], needed_by[0][1]))
+        for var, values in ((c or {}).get('flags') or {}).items():
+            if var not in given_flags:
+                flags[var] = str(values[0])
+                continue
+            v, off_value = str(given_flags[var]).strip().lower(), str(values[1]).strip().lower()
+            if v == off_value or (_switch(v) == 'off' and _switch(off_value) == 'off'):
+                return {'return': 1, 'error': f'--compile.d.{var}={given_flags[var]}: the target {needed_by[0][0]} cannot be '
+                                              f'built without the part {name} ({needed_by[0][1]})'}
+    return {'return': 0, 'flags': flags, 'reasons': reasons}
+
+
 def resolve_components(components, variations = None, variation = None, asked = None, facts = None, given_flags = None):
     """
     Which optional parts of a build are on, and what follows.
@@ -259,6 +370,9 @@ def resolve_components(components, variations = None, variation = None, asked = 
         os          the systems the part can be built on (linux, darwin, windows); none: all
         targets     the compute targets it is for (cuda, rocm ...): on only when one of them is asked; none: all
         requires    other parts it needs on
+        required_for  the targets that cannot be built without it: {<target>: <why>} (or a list of targets) - with
+                    one of them asked, the part is on whatever its default or the variation says, and asking it off
+                    is an error
         default     on | off | auto (the build's own choice: no variable is set, its submodules are fetched whole),
                     or by system: {windows: off, '*': auto}; none: auto
     variations: {name: {desc, components: {<part>: on | off | auto}}} - named sets; variation: the one asked for
@@ -269,8 +383,8 @@ def resolve_components(components, variations = None, variation = None, asked = 
                  such a variable is the request's word for its part, and is left as it is
 
     The order of the rule, the first that speaks: the part cannot be built here -> off; the request asked the part;
-    the request set one of the part's build variables; the variation; the part's default. Then: a part whose
-    required part is off is off. A request that cannot be honoured is an error, never a silent change: an unknown
+    the request set one of the part's build variables; a target that requires it (required_for) -> on; the variation;
+    the part's default. Then: a part whose required part is off is off. A request that cannot be honoured is an error, never a silent change: an unknown
     part or variation, a part asked on where it cannot be built or whose required part is off, a part asked one way
     and its build variable set the other way.
 
@@ -317,9 +431,13 @@ def resolve_components(components, variations = None, variation = None, asked = 
             why_not = f'not for {system or "this system"} (only {", ".join(only_os)})'
         elif only_targets and not [t for t in targets if t in only_targets]:
             why_not = f'only for the target{"s" if len(only_targets) != 1 else ""} {", ".join(only_targets)}'
+        needed_by = required_by(c, targets)
         if why_not:
             if wish == 'on':
                 return error(f'--compile.components.{name}: this part cannot be built here - {why_not}')
+            if needed_by:
+                return error(f'the target {needed_by[0][0]} needs the part {name} ({needed_by[0][1]}), which cannot be built '
+                             f'here - {why_not}')
             parts[name] = {'state': 'off', 'why': why_not, 'applies': False}
             continue
 
@@ -336,6 +454,11 @@ def resolve_components(components, variations = None, variation = None, asked = 
             return error(f'the build variables of the part {name} are set both ways: ' + ', '.join(f'{k}={given_flags[k]}' for k in said))
         by_flag = by_flag[0] if by_flag else None
 
+        if needed_by and 'off' in (wish, by_flag):
+            word = f'--compile.components.{name}-' if wish == 'off' else \
+                   f'--compile.d.{next(k for k, v in said.items() if v == "off")}={given_flags[next(k for k, v in said.items() if v == "off")]}'
+            return error(f'{word}: the target {needed_by[0][0]} cannot be built without the part {name} ({needed_by[0][1]})')
+
         if wish:
             if by_flag and by_flag != wish:
                 var = next(k for k, v in said.items() if v == by_flag)
@@ -344,6 +467,8 @@ def resolve_components(components, variations = None, variation = None, asked = 
         elif by_flag:
             var = next(k for k, v in said.items() if v == by_flag)
             parts[name] = {'state': by_flag, 'why': f'by --compile.d.{var}={given_flags[var]}', 'applies': True, 'asked': True}
+        elif needed_by:
+            parts[name] = {'state': 'on', 'why': f'needed by the target {needed_by[0][0]}', 'applies': True}
         elif name in chosen:
             state = _switch(chosen[name]) or ('auto' if str(chosen[name]).strip().lower() == 'auto' else None)
             if state is None:

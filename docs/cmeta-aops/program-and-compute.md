@@ -619,6 +619,33 @@ as `--use.msvc.version=<it>` would be). The machine's newest compiler stays the 
 other request; a compiler the request names is taken as asked; a machine without a compiler
 outside the limits stops with the reason. First program: `build-pytorch`.
 
+### The toolkit release a target needs
+
+A target may need its vendor's toolkit in the release that goes with the version of the program
+that is built: Intel names one release of oneAPI per PyTorch release, and a PyTorch built for
+Intel GPUs with another one may stop in the middle of the compilation. The program declares the
+pairs, by target and tool:
+
+```yaml
+toolkits:
+  xpu:
+    oneapi:
+      - program_version: '>=2.15,<2.16'   # the versions of the program the line is for
+        version: '2026.1'                 # the release its vendor names for them
+        works_with: '>=2026.0'            # optional: what the build is seen to work with
+        reason: what happens outside it
+        source: the vendor's page
+```
+
+The program applies them once the targets are known and before the compiler is set up (its
+`customize1` hook): `common_build.toolkit_request(rules, built, asked, matches)` gives the release
+to ask the tool for, and the hook makes it the request of this run (a pin of the run, as
+`--use.<tool>.version=<it>` would be) and says so. The tool finds that release on the machine or
+installs it; a release that comes under a vendor's licence is installed only with the user's
+word (`--use.oneapi.with.accept_eula=yes`). A release the request names is taken as asked, with
+a warning when it is outside what the build works with; a version of the program no line names
+asks nothing, and the build goes on with what the machine has. First program: `build-pytorch`.
+
 **Rules for an author**
 
 - Without a variation and without a part asked, the program must build exactly what it built

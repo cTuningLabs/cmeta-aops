@@ -26,6 +26,7 @@ import os
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -41,6 +42,60 @@ MAX_ATTACH_MIB = 20                    # a larger file is not copied into the lo
 
 def now():
     return datetime.datetime.now().astimezone()
+
+
+def extended_path(path):
+    """A Windows path with the extended-length prefix (\\\\?\\), through which paths over 260 characters are listed and
+    removed; elsewhere the path as it is."""
+    p = os.path.abspath(path)
+    if os.name != 'nt' or p.startswith('\\\\?\\'):
+        return p
+    return '\\\\?\\UNC\\' + p[2:] if p.startswith('\\\\') else '\\\\?\\' + p
+
+
+def writable_then_again(func, path, exc_info):
+    """shutil.rmtree's error handler: what refuses the removal is lifted and the entry removed again - on Windows the
+    read-only attribute of the entry; elsewhere the rights of its folder when its owner may not write to it (a tree
+    made read-only: a build system's outputs, a module cache), and of a folder that cannot be listed. What still
+    cannot be removed (files another account owns) stays with the rights it had, and the session notes how many
+    files stayed."""
+    if os.name == 'nt':
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except OSError:
+            pass
+        return
+
+    changed = []
+    try:
+        parent = os.path.dirname(os.path.abspath(path))
+        mode = stat.S_IMODE(os.stat(parent).st_mode)
+        if mode & 0o300 != 0o300:
+            os.chmod(parent, mode | 0o300)
+            changed.append((parent, mode))
+
+        st = os.lstat(path)
+        mode = stat.S_IMODE(st.st_mode)
+        if not stat.S_ISDIR(st.st_mode):
+            os.unlink(path)
+        elif mode & 0o500 != 0o500:
+            # a folder that could not be listed: now it can, and goes with what it holds
+            os.chmod(path, mode | 0o700)
+            changed.append((path, mode))
+            shutil.rmtree(path, onerror = writable_then_again)
+        else:
+            # (a folder that still holds what could not be removed stays: no second walk of it)
+            os.rmdir(path)
+    except OSError:
+        pass
+    finally:
+        for changed_path, mode in reversed(changed):
+            if os.path.lexists(changed_path):
+                try:
+                    os.chmod(changed_path, mode)
+                except OSError:
+                    pass
 
 
 def parse_time(text):
@@ -116,8 +171,9 @@ def changed_text(n):
 
 
 def folder_mib(path):
+    """The size of a folder in MiB, paths over 260 characters on Windows too (extended_path)."""
     total = 0
-    for root, _, files in os.walk(path):
+    for root, _, files in os.walk(extended_path(path)):
         for name in files:
             try:
                 total += os.path.getsize(os.path.join(root, name))
@@ -669,8 +725,24 @@ class CTask(InitCTask):
     def _remove_sandbox(self, rec):
         if os.path.isdir(rec['sandbox']):
             rec.setdefault('costs', {})['sandbox_mib'] = folder_mib(rec['sandbox'])
-            shutil.rmtree(rec['sandbox'], ignore_errors = True)
-        rec['sandbox_removed'] = True
+            # Read-only files too: git makes its objects read-only, and Windows refuses to delete a read-only file -
+            # shutil.rmtree with ignore_errors left 1,486 of them (5.8 MB) while the session said "removed"
+            # (2026-11-25). The engine's removal clears the flag; then the folder itself, now empty.
+            # An entry it cannot remove (a file in use, a file of another account) stops an engine up to 0.45.3 with
+            # that entry's exception, everything it had not reached left: a sandbox kept 21,500 files beside an
+            # installer's files of an administrator (2026-11-26). A newer engine goes on and returns an error
+            try:
+                self.cm.utils.files.remove_files_and_dirs_in_path(rec['sandbox'])
+            except OSError:
+                pass
+            # What that leaves is removed here, past every entry that stays - through the extended-length prefix,
+            # which lists paths over 260 characters on a Windows without long-path support too - then the folder
+            shutil.rmtree(extended_path(rec['sandbox']), onerror = writable_then_again)
+        rec['sandbox_removed'] = not os.path.isdir(rec['sandbox'])
+        if not rec['sandbox_removed']:
+            left = sum(len(files) for _, _, files in os.walk(extended_path(rec['sandbox'])))
+            rec.setdefault('notes', []).append({'time': now().isoformat(timespec = 'seconds'),
+                                                'text': f'the sandbox was not removed completely: {left} files stayed'})
 
     def _finish(self, params):
         rec, err = self._load(params.get('id'))

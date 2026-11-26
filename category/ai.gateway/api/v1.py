@@ -66,6 +66,46 @@ ANTHROPIC_VERSION = '2023-06-01'
 LOGIN = 'login'
 LOGIN_HARNESSES = ('claude', 'codex')
 
+# HARNESS_WIRES and LOGIN_HARNESSES are the fallback since 2026-11-25: each harness declares its wires and whether a
+# gateway may pass its own login on in the block "harness" of its task (wires, login_pass_through), and the task
+# category finds them in every plugged repository (cx task harnesses) - a harness of another repository needs no word
+# here. How to connect each one (its recipe below) stays code.
+HARNESSES_TASK = 'task,c36be4b9314a45e0'
+
+
+def _declared(facts, harness):
+    """The block a harness declares (the answer of cx task harnesses), or None."""
+    d = ((facts or {}).get('index') or {}).get(str(harness or '').strip().lower())
+    return (d or {}).get('declared') if d else None
+
+
+def harness_wires(facts, harness):
+    """The wires a harness speaks to a gateway: what it declares, else HARNESS_WIRES (None: neither)."""
+    block = _declared(facts, harness)
+    if block is not None and isinstance(block.get('wires'), list) and block['wires']:
+        return tuple(str(w) for w in block['wires'])
+    return HARNESS_WIRES.get(str(harness or '').strip().lower())
+
+
+def passes_login(facts, harness):
+    """Whether a gateway may pass the harness's own login on: what it declares, else LOGIN_HARNESSES."""
+    block = _declared(facts, harness)
+    if block is not None and 'login_pass_through' in block:
+        return bool(block['login_pass_through'])
+    return str(harness or '').strip().lower() in LOGIN_HARNESSES
+
+
+def login_harnesses(facts):
+    """The harnesses a gateway may pass their own login on for: those that declare it, and the table's undeclared ones."""
+    declared = [d['name'] for d in (facts or {}).get('harnesses') or [] if (d.get('declared') or {}).get('login_pass_through')]
+    return tuple(declared + [h for h in LOGIN_HARNESSES if h not in ((facts or {}).get('index') or {})])
+
+
+def wire_harnesses(facts):
+    """The harnesses that speak a wire to a gateway: those that declare wires, and the table's undeclared ones."""
+    declared = [d['name'] for d in (facts or {}).get('harnesses') or [] if (d.get('declared') or {}).get('wires')]
+    return tuple(declared + [h for h in HARNESS_WIRES if h not in ((facts or {}).get('index') or {})])
+
 # what a pass-through takes from the gateway its "upstream" names, when it does not say it itself
 INHERITED = ('wires', 'catalog', 'catalogs', 'auth', 'models', 'codex_wire', 'opencode_openai_npm', 'thinking_off')
 
@@ -91,6 +131,14 @@ class Category(InitCategory):
         super().__init__(*args, module_file_path = __file__, **kwargs)
 
     ############################################################ the artifacts
+    def _harness_facts(self):
+        """The harnesses the graph declares (cx task harnesses), or {} when the task category cannot answer."""
+        try:
+            r = self.cm.access({'category': HARNESSES_TASK, 'command': 'harnesses', 'con': False})
+        except Exception:
+            return {}
+        return r if r.get('return', 1) == 0 else {}
+
     def _one(self, ctx, arg1):
         """One gateway artifact -> {'return': 0, 'alias', 'uid', 'path', 'repo', 'desc'}; 16 when there is none."""
         if not arg1:
@@ -415,12 +463,13 @@ class Category(InitCategory):
         r = self.list_({'control': {'con': False}}, arg1)
         if r['return'] > 0:
             return r
-        need = HARNESS_WIRES.get(harness)
+        facts = self._harness_facts() if harness else {}
+        need = harness_wires(facts, harness)
         rows = []
         for x in r['gateways']:
             wires = [w for w in x['wires'].split(',') if w]
             login = x['auth'].split(' ')[0] == LOGIN
-            if need and (not [w for w in need if w in wires] or (login and harness not in LOGIN_HARNESSES)):
+            if need and (not [w for w in need if w in wires] or (login and not passes_login(facts, harness))):
                 continue
             rows.append(dict(x, pays='the harness\'s own login' if login else ('no key' if x['auth'] == 'none' else 'a key: ' + x['auth'])))
         if not rows:
@@ -479,7 +528,7 @@ class Category(InitCategory):
         if err:
             return self.cm.error(err)
         harness = str(harness or '').strip().lower()
-        wanted = HARNESS_WIRES.get(harness, tuple(wires)) if harness else tuple(wires)
+        wanted = (harness_wires(self._harness_facts(), harness) or tuple(wires)) if harness else tuple(wires)
         out = {'return': 0, 'gateway': g['alias'], 'harness': harness, 'models': {}, 'catalogs': {}, 'errors': {}}
         for wire in wanted:
             if wire not in wires:
@@ -522,9 +571,10 @@ class Category(InitCategory):
             return g
         alias, desc, wires = g['alias'], g['desc'], self._wires(g['desc'])
         harness = str(harness or '').strip().lower()
-        need = HARNESS_WIRES.get(harness)
+        facts = self._harness_facts()
+        need = harness_wires(facts, harness)
         if not need:
-            return self.cm.error('no connection recipe for the harness "%s" (claude, codex, opencode)' % harness)
+            return self.cm.error('no connection recipe for the harness "%s" (%s)' % (harness, ', '.join(wire_harnesses(facts))))
         avail = [w for w in need if w in wires]
         if not avail:
             return self.cm.error('%s needs the %s wire; the gateway "%s" offers %s' % (
@@ -535,9 +585,9 @@ class Category(InitCategory):
         # the harness's own account through another address (auth.header: login): a recipe per harness, and nothing
         # of a key - no variable, no helper, no catalog asked on its behalf
         own_login = header == LOGIN
-        if own_login and harness not in LOGIN_HARNESSES:
+        if own_login and not passes_login(facts, harness):
             return self.cm.error('the gateway "%s" passes a harness\'s own login on: %s have a recipe for that, %s has none' % (
-                alias, ' and '.join(LOGIN_HARNESSES), harness))
+                alias, ' and '.join(login_harnesses(facts)), harness))
         # the gateway's own key, when it asks one of its clients (client_key): with every request made here and given to
         # the harness below
         client, err = self._client_key(ctx, desc)

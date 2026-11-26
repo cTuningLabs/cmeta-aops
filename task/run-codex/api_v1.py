@@ -3,8 +3,10 @@ Licensed under the Apache License, Version 2.0.
 See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
+import glob
 import json
 import os
+import re
 import subprocess
 import time
 
@@ -126,6 +128,72 @@ STILL_ACTIVE = 259
 
 def _codex_home():
     return os.environ.get('CODEX_HOME') or os.path.join(os.path.expanduser('~'), '.codex')
+
+
+# The provider codex counts as its own: the ChatGPT login or an OpenAI key, at its own address (openai_base_url)
+BUILT_IN_PROVIDER = 'openai'
+
+
+def thread_provider(session_id, home = None):
+    """
+    The model provider a codex thread began with: model_provider of the session_meta record that opens its rollout
+    file (<CODEX_HOME>/sessions/<y>/<m>/<d>/rollout-<time>-<id>.jsonl). '' when the thread or the record is not
+    found - codex then decides.
+    """
+    sid = str(session_id or '').strip()
+    if not sid:
+        return ''
+    files = sorted(glob.glob(os.path.join(home or _codex_home(), 'sessions', '*', '*', '*', 'rollout-*-%s.jsonl' % glob.escape(sid))))
+    for path in files:
+        try:
+            with open(path, encoding = 'utf-8', errors = 'replace') as f:
+                for _ in range(5):
+                    line = f.readline()
+                    if not line:
+                        break
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue
+                    if record.get('type') == 'session_meta':
+                        return str((record.get('payload') or {}).get('model_provider') or '')
+        except OSError:
+            continue
+    return ''
+
+
+def provider_url(args, provider):
+    """The address a gateway's words give to its provider (-c model_providers.<provider>.base_url="..."), or ''."""
+    m = None
+    for word in args or []:
+        m = re.fullmatch(r'model_providers\.%s\.base_url="(.*)"' % re.escape(provider), str(word)) or m
+    return m.group(1) if m else ''
+
+
+def resume_provider(thread, gateway, own_login, args):
+    """
+    How a thread is resumed when the run asks for this gateway ('login' or an ai.gateway alias), given the provider
+    the thread began with (thread_provider): (the gateway's words to use instead of its own, an error or ''). Codex
+    keeps a thread on its provider:
+
+      - the same provider, or a thread not found: the gateway's own words (None);
+      - a thread on the built-in provider and a gateway that passes the ChatGPT login on (own_login): the built-in
+        provider's address set to the gateway's ("openai_base_url") - the thread stays on its provider, the requests
+        go through the gateway with the same login;
+      - anything else: an error that names the thread's provider and the two ways that work.
+    """
+    wanted = BUILT_IN_PROVIDER if gateway == 'login' else gateway
+    if not thread or thread == wanted:
+        return None, ''
+    if thread == BUILT_IN_PROVIDER and gateway != 'login' and own_login:
+        url = provider_url(args, gateway)
+        if url:
+            return ['-c', 'openai_base_url="%s"' % url], ''
+    began = 'the ChatGPT login (no gateway)' if thread == BUILT_IN_PROVIDER else 'the gateway "%s"' % thread
+    way = '--ln (login, no gateway)' if thread == BUILT_IN_PROVIDER else '--gateway=%s' % thread
+    asked = 'login (no gateway)' if gateway == 'login' else 'the gateway "%s"' % gateway
+    return None, ('this codex thread began on %s, and codex keeps a thread on the provider it began with - it cannot '
+                  'be resumed through %s: continue it with %s, or start a new one with --new' % (began, asked, way))
 
 
 def _process_now(pid):
@@ -499,8 +567,25 @@ class CTask(InitCTask):
         gwc = self._gateway(ctx, 'codex', gateway, gw, ln)
         if gwc.get('return', 0) > 0:
             return gwc
+
+        # A resumed thread stays on the provider it began with (codex refuses another on resume): the gateway's words
+        # are adapted where that works, else the reason is said before codex starts (resume_provider)
+        gateway_args = gwc.get('args') or []
+        if resume and 'model_provider' not in ' '.join(extra_flags):
+            began = thread_provider(resume)
+            instead, why = resume_provider(began, gwc['gateway'], bool(gwc.get('own_login')), gateway_args)
+            if why:
+                return self.cm.error(why)
+            if instead is not None:
+                gateway_args = instead
+                if con:
+                    print('')
+                    print(f'{space}INFO: this codex thread began on the ChatGPT login, and codex keeps a thread on its '
+                          f'provider: it goes through {gwc["gateway"]} as the built-in provider\'s address '
+                          f'({instead[1]})')
+
         if gwc['gateway'] != 'login':
-            flags += gwc.get('args') or []
+            flags += gateway_args
             if gwc.get('model') and not [x for x in extra_keys if x in MODEL_FLAGS]:
                 flags += ['-m', gwc['model']]
 

@@ -424,3 +424,52 @@ def test_cuda_libraries_of_a_cached_toolkit(tmp_path):
     assert v["CMAKE_EXE_LINKER_FLAGS"] == f"-fuse-ld=gold -Wl,-rpath-link,{lib}"
     assert v["CMAKE_SHARED_LINKER_FLAGS"] == f"-Wl,-rpath-link,{lib}"
     assert common.cuda_link_vars([], {}) == {}
+
+
+@pytest.mark.parametrize('rel_path', ['task/setup-run/api_v1.py', 'task/compile-and-run-program/api_v1.py'])
+def test_a_source_path_with_a_space_is_quoted_in_the_joined_list(rel_path):
+    # On a machine whose home holds a space (C:/Users/First Last) "python <program.py>" read the first word only and
+    # stopped with "can't open file 'C:/Users/First'" after a whole PyTorch build: each path of the joined lists
+    # (src_file_names_str_with_path, run_src_file_names_str_with_path) is quoted by the engine's quote_path
+    src = (REPO_ROOT / rel_path).read_text(encoding = 'utf-8')
+    assert src.count('sfnp = self.cm.utils.files.quote_path(os.path.join(src_path, sfn))') == 1
+    assert 'sfnp = os.path.join(src_path, sfn)' not in src
+
+
+def test_who_may_read_the_nvidia_counters(ctask_helpers):
+    """Nsight Compute needs the GPU's performance counters: the driver's RmProfilingAdminOnly says whether only
+    administrators may read them (/proc/driver/nvidia/params on Linux); nothing there says nothing (2026-11-25)."""
+    f = ctask_helpers("nvidia_counters_for_admins_only")["nvidia_counters_for_admins_only"]
+    assert f("ResmanDebugLevel: 4294967295" + chr(10) + "RmProfilingAdminOnly: 1" + chr(10)) is True
+    assert f("RmProfilingAdminOnly: 0" + chr(10)) is False
+    assert f("ResmanDebugLevel: 4294967295" + chr(10)) is None and f("") is None
+
+
+def test_where_the_windows_driver_keeps_the_counters_setting(ctask_helpers):
+    """The NVIDIA Control Panel of a current driver writes RmProfilingAdminOnly below ...nvlddmkm, Parameters, Global,
+    NVTweak - not below ...nvlddmkm, Global, NVTweak, the place read before: the counters were open to everybody and
+    cMeta still warned that only administrators read them (2026-11-26). The current place first, then the older one."""
+    helpers = ctask_helpers("nvidia_counters_for_admins_only", "nvidia_tweak_value", "NVIDIA_TWEAK_KEYS")
+    f, value_of, keys = helpers["nvidia_counters_for_admins_only"], helpers["nvidia_tweak_value"], helpers["NVIDIA_TWEAK_KEYS"]
+    current, older = keys
+    assert current[-3:] == ("Parameters", "Global", "NVTweak") and older[-2:] == ("Global", "NVTweak") and "Parameters" not in older
+
+    def registry(values):
+        def read(parts, name):
+            if parts not in values:
+                raise OSError("no such key")
+            return values[parts].get(name)
+        return read
+
+    # the value in the current place alone (what the Control Panel leaves): everybody
+    assert f(read = registry({current: {"RmProfilingAdminOnly": 0}, older: {}})) is False
+    assert value_of("RmProfilingAdminOnly", registry({current: {"RmProfilingAdminOnly": 0}, older: {}})) == (0, chr(92).join(current))
+
+    # the current place decides when both say something; the older one when the current says nothing
+    assert f(read = registry({current: {"RmProfilingAdminOnly": 1}, older: {"RmProfilingAdminOnly": 0}})) is True
+    assert f(read = registry({current: {}, older: {"RmProfilingAdminOnly": 0}})) is False
+    assert f(read = registry({older: {"RmProfilingAdminOnly": 0}})) is False
+
+    # no value anywhere: the driver's default, administrators only; no key at all: no NVIDIA driver
+    assert f(read = registry({current: {}, older: {}})) is True
+    assert f(read = registry({})) is None

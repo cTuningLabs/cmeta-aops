@@ -19,12 +19,12 @@ cx tool setup torch-cpp --with.build=prebuilt            # the same through tool
 
 ## Builds
 
-| System | Builds of 2.14.1 (the default) | Builds of 2.7.1 |
-|---|---|---|
-| Linux x86_64 | `cpu`, `cu126`, `cu130`, `cu132`, `rocm7.2` | `cpu`, `cu118`, `cu126`, `cu128`, `rocm6.3` |
-| Windows x64 | `cpu`, `cu126`, `cu130`, `cu132` | `cpu`, `cu118`, `cu126`, `cu128` |
-| Windows ARM64 | `cpu` | `cpu` |
-| macOS arm64 | `cpu` (with MPS, for Apple GPUs) | `cpu` (with MPS) |
+| System | Builds of 2.15.0 (the default) | Builds of 2.14.1 | Builds of 2.7.1 |
+|---|---|---|---|
+| Linux x86_64 | `cpu`, `cu132`, `cu134`, `rocm7.14`, `rocm10.0` | `cpu`, `cu126`, `cu130`, `cu132`, `rocm7.2` | `cpu`, `cu118`, `cu126`, `cu128`, `rocm6.3` |
+| Windows x64 | `cpu`, `cu132`, `cu134` | `cpu`, `cu126`, `cu130`, `cu132` | `cpu`, `cu118`, `cu126`, `cu128` |
+| Windows ARM64 | `cpu` | `cpu` | `cpu` |
+| macOS arm64 | `cpu` (with MPS, for Apple GPUs) | `cpu` (with MPS) | `cpu` (with MPS) |
 
 Other systems (Linux on ARM), versions and backends (XPU) have no pinned archive: the setup says so,
 and `tool/torch-cpp` builds LibTorch from source for them. Since 2.8 the Linux archives have the C++11
@@ -36,7 +36,8 @@ supports; with an older driver of the same CUDA major version, a build is still 
 version compatibility). The architectures each build has code for are listed in `api_v1.py`
 (`CUDA_BUILDS`), read with `cuobjdump --list-elf` from its CUDA library; code for compute capability
 X.y also runs on X.z for z >= y. For example, the CUDA 13 builds of 2.14.1 have no code for Maxwell,
-Pascal and Volta GPUs (compute capability 5.x to 7.0), so those take cu126, and cu128 is the only 2.7.1
+Pascal and Volta GPUs (compute capability 5.x to 7.0), so those take cu126 - and 2.15.0 has no build for
+them at all (`--version=2.14.1`) -, and cu128 is the only 2.7.1
 build with code for Blackwell GPUs (compute capability 10.0 and 12.0). The archives bring the CUDA
 run-time libraries they need; only the driver must be installed.
 

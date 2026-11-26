@@ -11,7 +11,7 @@ skip_detect: True
 names:
   - zstd.h
 
-default_version: '1.5.7'
+default_version: '1.6.0'
 
 # The versions that exist: the release tags of facebook/zstd (git is set up first)
 cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/facebook/zstd'

@@ -1,5 +1,20 @@
 authors: Grigori Fursin
 
+# The harness this task runs, as run-ai and every list of harnesses find it (the tag ai-harness in _cmeta.yaml):
+# its name for --harness, a title, the tool of its model list, its place in a list, the words of run-ai its run()
+# takes - task/run-ai/README.md, "Harnesses as artifacts"
+harness:
+  name: gemini
+  title: 'Gemini CLI (Google): Code Assist licences and API keys'
+  tool: gemini,40a20e8dca604ece
+  sort: 60
+  takes: ['yes', long_prompt_file, output_file]
+  read_only: ['--approval-mode', 'plan']
+  # wires: the APIs it speaks to an AI gateway; login_pass_through: a gateway may pass its own login on; resume:
+  # the flags that continue a native session ({session}: its id); chooses_session_id: cMeta names a new one
+  resume: ['--resume', '{session}']
+  chooses_session_id: true
+
 # Run Google's Gemini CLI non-interactively on an assembled prompt and exit, or open
 # an interactive session. Same flags as the sister tasks "run-claude", "run-codex"
 # and "run-opencode":

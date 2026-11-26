@@ -134,7 +134,7 @@ import yaml
 
 from cmeta.utils.names import parse_cmeta_name
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive, gateways_here, gateway_asked, NO_GATEWAYS
+from task_c36be4b9314a45e0.api.ctask import InitCTask, recorded_process_alive, gateways_here, gateway_asked, NO_GATEWAYS, harness_declarations, HARNESS_TAG, HARNESS_BLOCK, HARNESS_TAKES
 
 TASK_CATEGORY = 'task,c36be4b9314a45e0'
 TOOL_CATEGORY = 'tool,c393ba5c6fa14f66'
@@ -143,7 +143,14 @@ REPO_CATEGORY = 'repo,f4f792ab40c7498f'
 LOG_PROJECT = 'task-run-ai'
 MODELS_FILE = '_desc_models.yaml'
 
-# The harnesses, the tasks that run them and the tools that hold their model lists (alias,UID: rename-safe).
+# The harnesses are artifacts of the graph: a task that runs one carries the tag ai-harness and declares it in the
+# block "harness" of its _desc.yaml (its name and other names, a title, the tool that holds its model list, where it
+# sorts, the words of run-ai its run() takes, its read-only flags) - run-ai lists and resolves them from there, so a
+# harness of any plugged repository (pi, a user's own) is found without a word here (README.md, "Harnesses as
+# artifacts"). The tables of this file are the fallback of a task that declares nothing: an older copy of a
+# repository, or any --harness=<x>, which tries the task run-<x> and the tool <x>.
+
+# The fallback: the harnesses, the tasks that run them and the tools that hold their model lists (alias,UID: rename-safe).
 # Any other --harness=<x> tries the task run-<x> and the tool <x>: so runs pi (Pi, pi.dev), whose task and tool are not
 # part of this repository - the tables below and the session adapter of conversations.py know it by its name.
 HARNESSES = {
@@ -401,6 +408,20 @@ def harness_choice(harness, agent, cx = False):
             return given, given, '--cx is --harness=codex in short: not together with --harness=%s' % given
         given = 'codex'
     return given, given or 'claude', None
+
+
+def harness_answer(answer, names, index = None, default = ''):
+    """
+    The harness an answer to the question of a bare --harness names: its number in the list, its name, another name
+    of a listed one (index: harness_declarations), or nothing (Enter) for the default. -> the name as listed, or ''.
+    """
+    answer = str(answer or '').strip().lower() or str(default or '').strip().lower()
+    if answer.isdigit():
+        return names[int(answer) - 1] if 1 <= int(answer) <= len(names) else ''
+    if answer in names:
+        return answer
+    d = (index or {}).get(answer)
+    return d['name'] if d and d['name'] in names else ''
 
 
 def run_ai_config_text(text, values):
@@ -1255,8 +1276,7 @@ class CTask(InitCTask):
             pass
         return DEFAULT_MAX_CONTEXT_TOKENS, 'default (cx config set %s --meta.%s=<n> changes it)' % (CONFIG_ARTIFACT, CONFIG_TOKENS_KEY)
 
-    @staticmethod
-    def _cache_line(harness, conv):
+    def _cache_line(self, harness, conv):
         """"last turn N min ago" and, for a harness with a known prompt-cache TTL, whether the context is probably warm."""
         runs = (conv or {}).get('runs') or []
         last = (runs[-1].get('finished') or runs[-1].get('started')) if runs else ''
@@ -1266,7 +1286,7 @@ class CTask(InitCTask):
             minutes = (datetime.datetime.now() - datetime.datetime.fromisoformat(last)).total_seconds() / 60.0
         except Exception:
             return ''
-        ttl = CACHE_TTL_MINUTES.get(CONV.harness_key(harness))
+        ttl = self._harness_value(harness, 'cache_ttl_minutes', CACHE_TTL_MINUTES)
         text = 'last turn %s ago' % ('%.0f min' % minutes if minutes < 120 else '%.1f h' % (minutes / 60))
 
         # the lifetime that run itself asked for (--prompt_cache_minutes, recorded with it) says more than the table
@@ -1435,11 +1455,98 @@ class CTask(InitCTask):
         return value, out
 
     # ------------------------------------------------------------------ the harness, its tool and its model list
-    @staticmethod
-    def _harness_refs(harness):
-        """-> (the task that runs the harness, the tool that holds its model list); alias,UID for the known ones."""
+    def _harnesses(self):
+        """The harnesses the graph declares (harness_declarations of the tasks tagged ai-harness), found once per run."""
+        if getattr(self, '_harness_cache', None) is None:
+            r = self.cm.access({'category': TASK_CATEGORY, 'command': 'harnesses', 'con': False})
+            self._harness_cache = ({'list': r.get('harnesses') or [], 'index': r.get('index') or {},
+                                    'conflicts': r.get('conflicts') or {}} if r.get('return', 1) == 0
+                                   else harness_declarations([]))
+        return self._harness_cache
+
+    def _harness_decl(self, harness):
+        """What the task of a harness declares (by its name or another one), or None."""
+        index = self._harnesses()['index']
+        h = str(harness or '').strip().lower()
+        return index.get(h) or index.get(CONV.harness_key(h))
+
+    def _harness_refs(self, harness):
+        """-> (the task that runs the harness, the tool that holds its model list): the task that declares it (alias,UID),
+        else run-ai's table (alias,UID), else the task run-<harness> and the tool <harness>."""
+        d = self._harness_decl(harness)
+        if d:
+            return d['task'], d['tool']
         h = HARNESSES.get(harness)
         return (h['task'], h['tool']) if h else ('run-' + harness, harness)
+
+    def _harness_takes(self, harness, word, table):
+        """Whether the task of a harness takes a word of run-ai (HARNESS_TAKES): what it declares, else run-ai's table."""
+        d = self._harness_decl(harness)
+        if d is not None and d.get('takes') is not None:
+            return word in d['takes']
+        return CONV.harness_key(harness) in table
+
+    def _harness_value(self, harness, key, table):
+        """A fact of a harness (read_only, cache_ttl_minutes, resume, chooses_session_id, ...): what its task declares,
+        else run-ai's table (or None)."""
+        d = self._harness_decl(harness)
+        if d is not None:
+            if d.get(key) is not None:
+                return d[key]
+            if key in (d.get('declared') or {}):
+                return d['declared'][key]
+        return table.get(CONV.harness_key(harness))
+
+    def _gateway_harnesses(self):
+        """The harnesses whose task takes a gateway: those that declare it, and the ones of the table that declare nothing."""
+        h = self._harnesses()
+        declared = [d['name'] for d in h['list'] if d['takes'] is not None and 'gateway' in d['takes']]
+        return tuple(declared + [n for n in GATEWAY_HARNESSES if n not in h['index'] and n not in declared])
+
+    def _no_gateway_support(self, harness):
+        return 'the harness "%s" has no gateway support (%s have): -ln for its own login' % (harness, ', '.join(self._gateway_harnesses()))
+
+    def _pick_harness(self, default, why = ''):
+        """
+        A bare --harness at a terminal: the harnesses the graph declares (the tasks tagged ai-harness: run-ai's own,
+        those of every plugged repository) as a numbered list with their titles, and a question - which one; Enter
+        takes the default (what a run without --harness takes). -> {'return': 0, 'harness': <name>} or an error.
+        """
+        h = self._harnesses()
+        rows = [d for d in h['list'] if d['name'] not in h['conflicts']]
+        if not rows:
+            return self.cm.error('no harness declared on this machine (no task tagged %s: cx task find --tags=%s)' % (HARNESS_TAG, HARNESS_TAG))
+        names = [d['name'] for d in rows]
+        default = harness_answer(default, names, h['index'])
+
+        def label(d):
+            return d['name'] + (' (%s)' % ', '.join(d['also']) if d['also'] else '')
+
+        w = max(len(label(d)) for d in rows)
+        print('')
+        print('The harnesses of this machine:')
+        for i, d in enumerate(rows, 1):
+            print('  %2d  %-*s  %s%s' % (i, w, label(d), d['title'] or 'the task ' + d['task'].split(',')[0],
+                                       ('   <- ' + (why or 'the default')) if d['name'] == default else ''))
+        for name, tasks in sorted(h['conflicts'].items()):
+            print('  (not listed: the harness "%s" is declared by %s)' % (name, ' and '.join(tasks)))
+        # an empty line between the list and its question, as the other selections of cMeta
+        print('')
+        try:
+            answer = input('Which one? [1-%d or its name%s]: ' % (len(rows), (', Enter = ' + default) if default else ''))
+        except EOFError:
+            # the input closed at once: nobody to ask after all (on Windows a NUL input looks like a terminal)
+            print('')
+            if default:
+                print('nobody to answer: the default, %s' % default)
+                return {'return': 0, 'harness': default}
+            return self.cm.error('no harness chosen (nobody to ask: name one, --harness=<name>)')
+        except KeyboardInterrupt:
+            return self.cm.error('no harness chosen')
+        chosen = harness_answer(answer, names, h['index'], default)
+        if not chosen:
+            return self.cm.error('no harness chosen ("%s" is none of the list)' % str(answer).strip())
+        return {'return': 0, 'harness': chosen}
 
     def _artifact_path(self, category, ref):
         """The folder of one artifact, or ''."""
@@ -1815,9 +1922,9 @@ class CTask(InitCTask):
         if r.get('return', 1) > 0:
             return '', '', r, ''
 
-        if r['gateway'] != 'login' and r.get('general') and harness and CONV.harness_key(harness) not in GATEWAY_HARNESSES:
+        if r['gateway'] != 'login' and r.get('general') and harness and not self._harness_takes(harness, 'gateway', GATEWAY_HARNESSES):
             return 'login', 'its own login: %s takes no gateway' % harness, None, \
-                'AI gateway: none for %s - the default gateway %s (%s) is for %s' % (harness, r['gateway'], r['how'], ', '.join(GATEWAY_HARNESSES))
+                'AI gateway: none for %s - the default gateway %s (%s) is for %s' % (harness, r['gateway'], r['how'], ', '.join(self._gateway_harnesses()))
 
         # A gateway that is not on this machine is said here, before anything is started - and never replaced by
         # another one: the account that pays would change without a word. One the project ran with last names its record.
@@ -1835,7 +1942,7 @@ class CTask(InitCTask):
         """--list_models: the models and efforts of one harness, with every --model=<model>,<effort> ready to copy;
         without a harness, a compact list for every known one. "gateways": the gateway each harness would run with
         ({harness: alias or 'login'}); a harness without one lists its own models."""
-        names = [harness] if harness else [h for h in HARNESSES if h != 'agy']
+        names = [harness] if harness else ([d['name'] for d in self._harnesses()['list']] or [h for h in HARNESSES if h != 'agy'])
         compact = not harness
         lines = []
         for h in names:
@@ -2012,12 +2119,11 @@ class CTask(InitCTask):
             print('RUN-AI: %s has no status command: start it (cx tool run %s) to see whether it is signed in' % (harness, tool))
         return out
 
-    @staticmethod
-    def _recover_sessions(conv, project_path):
+    def _recover_sessions(self, conv, project_path):
         """A run that crashed before its native session was discovered left "session: ''": try again from its start time."""
         notes = []
         for r in conv.get('runs') or []:
-            if r.get('session') or CONV.chooses_id(r.get('harness', '')):
+            if r.get('session') or CONV.chooses_id(r.get('harness', ''), self._harness_value(r.get('harness', ''), 'chooses_session_id', {})):
                 continue
             try:
                 t0 = datetime.datetime.fromisoformat(r.get('started')).timestamp()
@@ -2185,6 +2291,14 @@ class CTask(InitCTask):
         space = '  ' * (ctx['tasks']['nested_call'] + 1) if verbose else ''
         today = datetime.date.today().isoformat()
 
+        # a bare --harness (or --agent): the harnesses of this machine listed and one chosen - by a person at a terminal;
+        # a run nobody watches takes what a run without the flag takes (below)
+        harness_asked = _bare_flag(harness) or _bare_flag(agent)
+        if harness_asked:
+            if cx:
+                return self.cm.error('--cx is --harness=codex in short: not together with a bare --harness (the question which one)')
+            harness = agent = ''
+
         given, harness, err = harness_choice(harness, agent, cx)
         if err:
             return self.cm.error(err)
@@ -2194,6 +2308,16 @@ class CTask(InitCTask):
         # their harness - a Claude model never reaches Codex
         saved = self._saved_run_config(project, log_project, l, space, ai_dir)
         saved_notes = []
+        if harness_asked:
+            terminal = con and not ctx['control'].get('quiet', False) and bool(getattr(sys.stdin, 'isatty', lambda: False)())
+            if terminal:
+                last = str(saved.get('harness') or '').strip().lower()
+                r = self._pick_harness(last or harness, "this project's last run" if last else 'the default')
+                if r['return'] > 0:
+                    return r
+                given = harness = r['harness']
+            else:
+                saved_notes.append('a bare --harness with nobody to ask: the harness a run without it takes')
         if not given and saved.get('harness'):
             harness = saved['harness'].lower()
             saved_notes.append("the harness %s: the project's %s (its last run; --harness changes it)" % (harness, RUN_AI_CONFIG_KEY))
@@ -2208,6 +2332,10 @@ class CTask(InitCTask):
                 seen['model'], ', effort ' + str(seen['effort']) if seen.get('effort') else '', RUN_AI_CONFIG_KEY,
                 str(seen.get('since') or '?')[:16]))
 
+        conflict = self._harnesses()['conflicts'].get(str(harness).strip().lower())
+        if conflict:
+            return self.cm.error('the harness "%s" is declared by %s: one of them must take another name (the "harness" '
+                                 'block of its _desc.yaml)' % (harness, ' and '.join(conflict)))
         task_ref, tool_ref = self._harness_refs(harness)
         hk = CONV.harness_key(harness)
         notes = list(saved_notes)
@@ -2217,12 +2345,12 @@ class CTask(InitCTask):
         if list_models or models:
             # the gateway each listed harness would run with: only claude, codex and opencode take one
             gateways = {}
-            for h in ([given] if given else list(GATEWAY_HARNESSES)):
+            for h in ([given] if given else list(self._gateway_harnesses())):
                 g_name, _, g_err, _ = self._gateway_choice(ctx, h, gateway, gw, ln)
                 if g_err:
                     return g_err
-                if g_name != 'login' and CONV.harness_key(h) not in GATEWAY_HARNESSES:
-                    return self.cm.error(NO_GATEWAY_SUPPORT % h)
+                if g_name != 'login' and not self._harness_takes(h, 'gateway', GATEWAY_HARNESSES):
+                    return self.cm.error(self._no_gateway_support(h))
                 gateways[h] = g_name
             return self._list_models(given, con, gateways)
 
@@ -2391,7 +2519,7 @@ class CTask(InitCTask):
         # sandbox), or its read-only mode
         forward_yes = False
         if write_mode in ('project', 'all'):
-            forward_yes = bool(yes) or hk in YES_HARNESSES
+            forward_yes = bool(yes) or self._harness_takes(harness, 'yes', YES_HARNESSES)
             notes.append('write: %s (%s) - %s; the memory and skills of the used artifacts %s' % (
                 write_mode, write_from,
                 ('%s asks nothing and may write' % harness) if forward_yes else
@@ -2400,7 +2528,7 @@ class CTask(InitCTask):
                 {'restore': 'take proposals only (a direct change is put back and staged)', 'ask': 'take proposals (you are asked about a direct change)',
                  'report': 'are compared after the run (a direct change is reported)', 'off': 'are not looked at after the run'}[guard_mode]))
         elif write_mode == 'none':
-            read_only = READ_ONLY_FLAGS.get(hk)
+            read_only = self._harness_value(harness, 'read_only', READ_ONLY_FLAGS)
 
             # the same setting given after "--" is the user's own choice for this run
             names = ('--sandbox', '-s') if hk == 'codex' else ((read_only[0],) if read_only else ())
@@ -2483,7 +2611,7 @@ class CTask(InitCTask):
                 if hk == 'codex':
                     pass        # run-codex --resume=<id> (a sub-command, not a flag)
                 else:
-                    extra = CONV.resume_flags(harness, native_sid, interactive) + extra
+                    extra = CONV.resume_flags(harness, native_sid, interactive, self._harness_value(harness, 'resume', {})) + extra
             else:
                 if conv_how == 'continued' and conv.get('runs'):
                     # a hand-over needs something to hand over: a session that was quit before its first message
@@ -2504,7 +2632,7 @@ class CTask(InitCTask):
                     else:
                         notes.append('the previous run(s) of this conversation left no transcript (quit before the first message): '
                                      'a fresh %s session, nothing to hand over' % hk)
-                if CONV.chooses_id(harness):
+                if CONV.chooses_id(harness, self._harness_value(harness, 'chooses_session_id', {})):
                     new_sid = CONV.new_id()
                     extra = CONV.new_session_flags(harness, new_sid, conv['id'], alias, interactive) + extra
 
@@ -2606,10 +2734,10 @@ class CTask(InitCTask):
         cache_asked = ('%d min - %s' % (cache_minutes, cache_from)) if cache_minutes else cache_from
 
         params = {'prompt': prompt, 'prompt_file': prompt_file, 'interactive': interactive, 'stats': stats}
-        if hk in GATEWAY_HARNESSES:
+        if self._harness_takes(harness, 'gateway', GATEWAY_HARNESSES):
             params['gateway'] = gateway_name        # the harness task connects, or runs as before with login
         elif gateway_name != 'login':
-            return self.cm.error(NO_GATEWAY_SUPPORT % harness)
+            return self.cm.error(self._no_gateway_support(harness))
 
         # only when asked for: not every run-<harness> task has them (run-openclaw has neither)
         if cache_minutes:
@@ -2624,7 +2752,7 @@ class CTask(InitCTask):
         screen_env = {}
         if interactive and screen_on is True:
             screen_env[NO_ALT_SCREEN_ENV] = '1'
-            if hk not in MAIN_SCREEN_HARNESSES:
+            if not self._harness_takes(harness, 'main_screen', MAIN_SCREEN_HARNESSES):
                 notes.append('main screen asked (%s), but run-ai knows no way to keep %s there: it may keep its history '
                              'inside itself' % (screen_from, harness))
         elif interactive and screen_on is False:
@@ -2647,7 +2775,7 @@ class CTask(InitCTask):
 
             # a prompt too long for a command line argument (an interactive session preloads it that way; opencode and
             # openclaw have no stdin mode) is written here by the run task, and the harness is asked to read it first
-            if hk in LONG_PROMPT_HARNESSES:
+            if self._harness_takes(harness, 'long_prompt_file', LONG_PROMPT_HARNESSES):
                 params['long_prompt_file'] = os.path.join(log_dir, '%s.%s.prompt.md' % (stamp, harness))
         else:
             params['skip_output_file'] = True       # else the run task writes run-<harness>-output.txt into the project
@@ -2837,7 +2965,7 @@ class CTask(InitCTask):
                 conv_line = 'conversation %s continued with a fresh %s session (nothing to hand over)' % (conv['id'], hk)
             if new_sid:
                 conv_line += ' (new %s session %s)' % (hk, new_sid)
-            elif not native_sid and not CONV.chooses_id(harness):
+            elif not native_sid and not CONV.chooses_id(harness, self._harness_value(harness, 'chooses_session_id', {})):
                 conv_line += ' (the %s session id is read from its store after the run)' % hk
 
         if con:

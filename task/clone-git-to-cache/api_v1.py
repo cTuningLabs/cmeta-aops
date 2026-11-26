@@ -6,6 +6,7 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 """
 
 import os
+import re
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask, file_cache_folder
 
@@ -64,6 +65,16 @@ class CTask(InitCTask):
                         root_dir += '-'
 
                     root_dir += checkout
+
+            # a shallow or partial clone has a folder of its own (as it has an identity of its own: depth and filter
+            # are cache parameters); a clone without them keeps the folder of before
+            if not params.get('root_dir'):
+                extra = []
+                if params.get('depth') not in (None, '', 0, '0'):
+                    extra.append('depth' + str(int(params['depth'])))
+                if params.get('filter') not in (None, ''):
+                    extra.append('filter-' + re.sub('[^A-Za-z0-9._-]+', '-', str(params['filter'])))
+                root_dir = '-'.join([x for x in [root_dir] + extra if x])
 
             # The place of the file cache that has this clone already, else the first one that is there: a drive
             # that is away is passed over and the run says so; none there stops it (file_cache_folder)
