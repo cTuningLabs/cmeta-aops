@@ -192,6 +192,25 @@ def test_finish_removes_read_only_files_too(session):
     assert r["record"]["sandbox_removed"] is True and not os.path.exists(sandbox)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="paths over 260 characters are a Windows limit")
+def test_finish_removes_paths_over_260_characters(session):
+    # a test's deep home in a pytest basetemp left 668 such paths behind (2026-11-26): only the extended-length prefix
+    # lists and removes them
+    r = session(start=True, type="deep" + session.unique)
+    sid, sandbox = r["id"], r["sandbox"]
+    prefix = chr(92) * 2 + "?" + chr(92)
+    deep = os.path.join(os.path.abspath(sandbox), *(["a-folder-name-of-forty-characters-long-x"] * 8))
+    os.makedirs(prefix + deep)
+    with open(prefix + os.path.join(deep, "file.txt"), "wb") as f:
+        f.write(b"x" * 300000)
+    assert len(os.path.join(deep, "file.txt")) > 260
+
+    r = session(finish=True, id=sid, max_keep_mib="0.1")
+    assert r["return"] == 0, r.get("error")
+    assert r["record"]["costs"]["sandbox_mib"] == 0.3              # counted, though over 260 characters
+    assert r["record"]["sandbox_removed"] is True and not os.path.exists(sandbox)
+
+
 def test_keep_list_and_prune(session):
     u = session.unique
     kept = session(start=True, type="keepme-" + u)

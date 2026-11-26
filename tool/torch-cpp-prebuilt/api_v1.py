@@ -10,8 +10,8 @@ release (--version, default in _desc.yaml) for this system, CPU and build is dow
 cache, checked against its SHA-256 pinned below and unpacked; tool/torch-cpp --with.build=prebuilt
 uses it.
 
-The build ("variant") is cpu, a CUDA build (2.14.1: cu126, cu130, cu132) or, on Linux, the ROCm
-build. For --with.compute=cuda it is the newest CUDA build that has code for every GPU of this
+The build ("variant") is cpu, a CUDA build (2.15.0: cu132, cu134; 2.14.1: cu126, cu130, cu132) or, on
+Linux, a ROCm build (2.15.0: rocm7.14, rocm10.0). For --with.compute=cuda it is the newest CUDA build that has code for every GPU of this
 machine (their compute capability, from tool/cuda) and whose CUDA version the driver supports;
 --with.variant=<build> picks one. macOS has one build, for the CPU and for Apple GPUs (MPS).
 """
@@ -32,6 +32,33 @@ BASE = 'https://download.pytorch.org/libtorch'
 # the archives as downloaded. A release added here needs its CUDA_BUILDS below (cuobjdump of each
 # CUDA archive) and its default_version in _desc.yaml.
 ARCHIVES = {
+    # CUDA 13.2 and 13.4 only (no cu126 / cu130 any more: a Maxwell, Pascal or Volta GPU has no CUDA build of 2.15);
+    # ROCm 7.14 and 10.0 on Linux. Pinned 2026-11-26
+    '2.15.0': {
+        ('linux', 'amd64', 'cpu'): ('libtorch-shared-with-deps-2.15.0+cpu.zip',
+                                    'f26d7550019005bac238fec4ae316b220b006cfcca29b40d7313c50f26875f60'),
+        ('linux', 'amd64', 'cu132'): ('libtorch-shared-with-deps-2.15.0+cu132.zip',
+                                      '37935f5f267e4dcc8ea388a5cb13d63e3fb8365357e5d8bf22a68d747e0ee50d'),
+        ('linux', 'amd64', 'cu134'): ('libtorch-shared-with-deps-2.15.0+cu134.zip',
+                                      '786f18f4af224e1caa2f649c8c0db6c3cc3dda98f47e6d8cd863a3c3b86859f5'),
+        ('linux', 'amd64', 'rocm7.14'): ('libtorch-shared-with-deps-2.15.0+rocm7.14.zip',
+                                         'ae4d94d550cead69d704b20fc01c4f73601448b84eee8ed748ccbe4d8a016106'),
+        ('linux', 'amd64', 'rocm10.0'): ('libtorch-shared-with-deps-2.15.0+rocm10.0.zip',
+                                         '3bcb8a806faaa9616d26006504871207b81331212ad936d0c8fee87cb447e36b'),
+
+        ('windows', 'amd64', 'cpu'): ('libtorch-win-shared-with-deps-2.15.0+cpu.zip',
+                                      '390bdedd984c71c6b8120a99f7179269f8c17c4d53a3b00c76c73915eba5412f'),
+        ('windows', 'amd64', 'cu132'): ('libtorch-win-shared-with-deps-2.15.0+cu132.zip',
+                                        '06c8bd772e381aefeceee173dcf28033aae21848aa40993842505645f6c06820'),
+        ('windows', 'amd64', 'cu134'): ('libtorch-win-shared-with-deps-2.15.0+cu134.zip',
+                                        '41c6725bdedd9a1489427dbefa20cee9c1aad556885f728d8f23b736df33a4dc'),
+        ('windows', 'arm64', 'cpu'): ('libtorch-win-arm64-shared-with-deps-2.15.0+cpu.zip',
+                                      'cb4016ce42ccdf18cb830ac4a33362d17672c81cda7b704b06a8af4706f3d716'),
+
+        ('darwin', 'arm64', 'cpu'): ('libtorch-macos-arm64-2.15.0.zip',
+                                     '9fb883c4defb251733a068c6776bc9937e5a20543ed9d5d9c88a395c287a6b70'),
+    },
+
     # The Linux archives have the C++11 ABI only since 2.8: their names lost "cxx11-abi". No CUDA 11.8 or
     # 12.8 build any more; the ROCm line is 7.2 (6.1 GB). Pinned 2026-10-17
     '2.14.1': {
@@ -93,6 +120,14 @@ ARCHIVES = {
 # (compute capability x10) their CUDA library has code for (cuobjdump --list-elf of libtorch_cuda.so,
 # torch_cuda.dll). Code for X.y also runs on X.z, z >= y.
 CUDA_BUILDS = {
+    # sm_121 only as sm_121a (its own architecture, left out) since 2.15
+    '2.15.0': {
+        ('linux', 'cu132'): (132, [75, 80, 86, 89, 90, 100, 103, 120]),
+        ('linux', 'cu134'): (134, [75, 80, 86, 89, 90, 100, 103, 120]),
+        ('windows', 'cu132'): (132, [75, 80, 86, 89, 90, 100, 103, 120]),
+        ('windows', 'cu134'): (134, [75, 80, 86, 89, 90, 100, 103, 120]),
+    },
+
     # CUDA 13 dropped Maxwell, Pascal and Volta (sm_50-sm_70): those GPUs take cu126
     '2.14.1': {
         ('linux', 'cu126'): (126, [50, 60, 70, 75, 80, 86, 89, 90]),

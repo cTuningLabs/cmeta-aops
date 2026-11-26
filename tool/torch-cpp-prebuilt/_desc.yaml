@@ -4,16 +4,16 @@ storage_key: torch-cpp-prebuilt
 
 # LibTorch, the PyTorch C++ distribution, from PyTorch's prebuilt archives
 # (https://download.pytorch.org/libtorch/) instead of a local build (tool/torch-cpp): the archive of
-# a release for this system, CPU and build (2.14.1: cpu, cu126, cu130, cu132, rocm7.2) is downloaded into
+# a release for this system, CPU and build (2.15.0: cpu, cu132, cu134, rocm7.14, rocm10.0) is downloaded into
 # the cache, checked against the SHA-256 pinned in api_v1.py and unpacked. The releases pinned there:
-# 2.14.1 (the default) and 2.7.1 (--version=2.7.1).
+# 2.15.0 (the default), 2.14.1 (--version=2.14.1: also cu126 for older GPUs) and 2.7.1.
 #
 #   cx tool setup torch-cpp-prebuilt                        # the CPU build (macOS: CPU and MPS)
 #   cx tool setup torch-cpp-prebuilt --with.compute=cuda    # the newest CUDA build for this machine's GPUs
 #   cx tool setup torch-cpp-prebuilt --with.variant=cu126   # a given build
 #   cx tool setup torch-cpp --with.build=prebuilt           # the same through tool/torch-cpp
 
-default_version: '2.14.1'
+default_version: '2.15.0'
 
 # Only the downloaded archive: a libtorch in PATH could be any build
 skip_detect: True

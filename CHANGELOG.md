@@ -3,6 +3,22 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.83.0.1)
+- **lib-openssl-android 4.1.0 by default, and set up on its own.** Its setup selects the target android-cpu itself
+  (`target--android-cpu`, which reads the ABI of the connected device) where `cx tool setup lib-openssl-android` and
+  `explore-tool-versions` stopped with "target compute android-cpu must be selected"; 4.0.0 and 4.1.0 explored, and
+  test-nmm-c-cpu built and run with both on a Pixel.
+- **LibTorch 2.15.0 by default, from source or prebuilt.** tool/torch-cpp builds the tag `v2.15.0` by default, and
+  tool/torch-cpp-prebuilt pins the archives of 2.15.0 (`default_version`): Linux `cpu`, `cu132`, `cu134`, `rocm7.14`,
+  `rocm10.0`; Windows `cpu`, `cu132`, `cu134` and ARM64 `cpu`; macOS `cpu` - their SHA-256 as downloaded, and the
+  GPU architectures of the CUDA builds (`cuobjdump --list-elf`: compute capability 7.5 to 12.0). 2.15 has no CUDA
+  build for Maxwell, Pascal and Volta GPUs: `--version=2.14.1` (cu126) for them.
+- **build-pytorch builds Kineto on Windows too** (PyTorch's own default; before, this program turned it off there).
+  What it was built with on Windows is data of the part (`proven` in `_desc.yaml`: xpu with PyTorch 2.15, MSVC 19.50,
+  oneAPI 2026.1); a build with an older compiler or PyTorch, or for a target not built that way yet, is told before
+  the build that Kineto may fail to build (`--compile.components.kineto-` turns it off).
+- **test-session --finish removes paths over 260 characters on Windows** (a test's deep home in a pytest basetemp):
+  the sandbox is measured and removed through the extended-length prefix; before, such files stayed and the
+  session was left unfinished.
 - **tool/nsys installs Nsight Systems without root.** When no `nsys` is found, or not the version asked, it takes
   the component `nsight_systems` of a CUDA release from NVIDIA's CUDA redistributable archives (checked against the
   sha256 of NVIDIA's list) into its cache entry: `--version=<nsys version>` the newest release that carries it, else

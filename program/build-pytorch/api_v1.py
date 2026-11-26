@@ -16,6 +16,38 @@ import yaml
 from program_22788f3c30d04e6d.api.cprogram import InitCProgram
 from program_22788f3c30d04e6d.api import common_build
 
+
+def source_version(git_repo):
+    """The version of a PyTorch source tree (its version.txt: 2.15.0a0), or None."""
+    try:
+        with open(os.path.join(git_repo or '', 'version.txt'), encoding = 'utf-8') as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def kineto_notes(proven, targets, versions):
+    """
+    Why a build of Kineto may fail on this system, from what it was built with here (proven: the system's entry of
+    the part's "proven" in _desc.yaml, target -> {tool: version}; versions: tool -> the version of this build): a
+    target it was not built for yet, a tool older than the one it was built with, a tool whose version is not known.
+    [] when none.
+    """
+    notes = []
+    for target in targets:
+        built = (proven or {}).get(target)
+        if not built:
+            notes.append(f'it was not built here for {target} yet' + (f' (only for {", ".join(sorted(proven))})' if proven else ''))
+            continue
+        for tool, need in built.items():
+            have = versions.get(tool)
+            if not have:
+                notes.append(f'the version of {tool} is not known (it was built with {need})')
+            elif common_build.version_key(have) < common_build.version_key(need):
+                notes.append(f'{tool} {have} is older than the {need} it was built with')
+    return notes
+
+
 class CProgram(InitCProgram):
     """
     """
@@ -278,6 +310,13 @@ class CProgram(InitCProgram):
         return {'return': 0}
 
     ############################################################
+    def kineto_proven(self, system):
+        """What the part kineto was built with here on a system (its "proven" in _desc.yaml): target -> {tool: version}."""
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml'), encoding = 'utf-8') as f:
+            own = yaml.safe_load(f) or {}
+        return (((own.get('components') or {}).get('kineto') or {}).get('proven') or {}).get(system) or {}
+
+    ############################################################
     def customize_pytorch(self,
                           ctx: dict,
                           desc: dict = {},
@@ -441,10 +480,20 @@ class CProgram(InitCProgram):
 
         # HOST SHOULD ALWAYS BE CL on Windows, gcc/clang on Linux and clang on MacOS
         if uname == 'windows':
+            # Kineto (torch.profiler's library) is built on Windows too since 2026-11-26 - PyTorch's own default. Before,
+            # this program turned it off there (build problems met with older versions): what it was built with since is
+            # the part's "proven" in _desc.yaml, and a build that differs is told so (kineto_notes)
+            if str(env.get('USE_KINETO', '1')).upper() not in ('0', 'OFF', 'FALSE', 'NO'):
+                notes = kineto_notes(self.kineto_proven('windows'), [t for t in compute if t != 'cpu'] or ['cpu'],
+                                     {'pytorch': source_version(git_repo),
+                                      'msvc': (_global.get('msvc') or {}).get('version'),
+                                      'oneapi': (_global.get('oneapi') or {}).get('version')})
+                if notes and con:
+                    print ('')
+                    print (f'{space}WARNING: Kineto (the library of torch.profiler) is built on Windows: '
+                           + '; '.join(notes) + ' - its build may fail (--compile.components.kineto- turns it off)')
+
             if 'xpu' in compute:
-                # FGG: I had problems installing KINETO on Windows
-                if 'USE_KINETO' not in env: 
-                    env['USE_KINETO'] = 'OFF' # various issues
                 if 'TORCH_XPU_ARCH_LIST' not in env: 
                     env['TORCH_XPU_ARCH_LIST'] = 'bmg' # reducing compilation time for a test
                 if 'USE_SYSTEM_XNNPACK' not in env:
@@ -468,8 +517,6 @@ class CProgram(InitCProgram):
                 env['USE_XNNPACK'] = 'OFF' # various issues - though may need for XPU ???
             if 'USE_MKLDNN' not in env:
                 env['USE_MKLDNN'] = 'OFF' # various issues (not for xpu: it needs oneDNN - set ON above, from _desc.yaml)
-            if 'USE_KINETO' not in env: 
-                env['USE_KINETO'] = 'OFF' # various issues
 
             msvc_compiler_path = _global['msvc']['path']
 

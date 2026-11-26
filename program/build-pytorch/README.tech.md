@@ -122,7 +122,7 @@ named sets of them (`variations:`). The general rule is in
 |---|---|---|---|
 | `distributed` | `USE_DISTRIBUTED` | | everywhere (off by default, as this program always built it) |
 | `tensorpipe` | `USE_TENSORPIPE` | `third_party/tensorpipe` | Linux, macOS; needs `distributed` |
-| `kineto` | `USE_KINETO` | `third_party/kineto` (up to 2.14; 2.15 carries it in its own tree) | everywhere (off on Windows by default) |
+| `kineto` | `USE_KINETO` | `third_party/kineto` (up to 2.14; 2.15 carries it in its own tree) | everywhere (on Windows too since 2026-11-26: a build that differs from the one it was proven with there - `proven` in `_desc.yaml` - is told that Kineto may fail to build) |
 | `rocm-kernels` | `USE_ROCM_CK_SDPA`, `USE_ROCM_CK_GEMM` | `third_party/flash-attention`, `third_party/aiter` | Linux, target `rocm` |
 | `mslk` | `USE_MSLK` | `third_party/mslk` | Linux, targets `cuda`, `rocm` |
 | `mkldnn` | `USE_MKLDNN` | `third_party/ideep` | everywhere (off on Windows by default) |

@@ -31,10 +31,22 @@ class CTool(InitCTool):
 
 
         ctx_tasks = ctx['tasks']
-        _global = ctx_tasks['global']
 
         k = 'target--android-cpu'
 
+        # A setup of its own (cx tool setup lib-openssl-android, explore-tool-versions) runs the target android-cpu
+        # first: it reads the ABI of the connected device - where such a setup failed with "must be selected" before
+        # (2026-11-26); in a program's run for android-cpu the target is there already. The task of the target itself:
+        # the task target, already run for this tool (its uses), would be taken again as it was (cpu)
+        if k not in ctx_tasks['global']:
+            c = ctx['control']
+            r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'run',
+                                'arg1': 'target--android-cpu,eb4790d97cf74df9', 'ctx': ctx, 'con': c.get('con', False),
+                                'quiet': c.get('quiet', False), 'verbose': c.get('verbose', False)})
+            if r.get('return', 1) > 0:
+                return r
+
+        _global = ctx_tasks['global']
         if k not in _global:
             return self.cm.error(f'target compute "android-cpu" must be selected to install tool in "{__file__}"')
 

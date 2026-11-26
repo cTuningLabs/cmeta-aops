@@ -122,7 +122,13 @@ components:
     # caffe2/CMakeLists.txt: if(USE_KINETO) ... third_party/kineto/libkineto/src. A submodule up to 2.14; 2.15 carries
     # it in its own tree - a submodule the source does not have is said by the run, and nothing is left out for it
     submodules: [third_party/kineto]
-    default: {windows: 'off', '*': auto}             # Windows: off, as this program builds it there (build problems met)
+    default: auto                                    # PyTorch's own default (on), Windows too since 2026-11-26
+    # What it was built with here, per system and target: a Windows build with an older one (pytorch: the source's
+    # version.txt, msvc, oneapi), or for a target not listed, says before the build that Kineto may fail to build
+    # (customize_pytorch, kineto_notes; --compile.components.kineto- turns it off). xpu: round lapxpu3, 2026-11-25/26
+    proven:
+      windows:
+        xpu: {pytorch: '2.15', msvc: '19.50', oneapi: '2026.1'}
 
   rocm-kernels:
     desc: AMD's Composable Kernel and AITER for attention and GEMM on ROCm

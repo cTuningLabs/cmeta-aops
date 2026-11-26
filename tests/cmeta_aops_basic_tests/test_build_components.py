@@ -44,16 +44,33 @@ def test_lean_on_windows_for_the_cpu_fetches_no_part_that_is_off(build, pytorch)
     r = resolve(build, pytorch, 'windows', ['cpu'], 'lean')
     assert r['return'] == 0, r
     s = states(r)
-    assert s['distributed'] == 'off' and s['tensorpipe'] == 'off' and s['kineto'] == 'off' and s['rocm-kernels'] == 'off'
+    assert s['distributed'] == 'off' and s['tensorpipe'] == 'off' and s['rocm-kernels'] == 'off'
+    assert s['kineto'] == 'auto'                     # PyTorch's own default (on) on Windows too since 2026-11-26
     assert s['mkldnn'] == 'off' and s['mslk'] == 'off' and s['fbgemm'] == 'auto' and s['tests'] == 'off'
     assert r['parts']['tensorpipe']['why'].startswith('not for windows') and r['parts']['rocm-kernels']['applies'] is False
     # every submodule with deep submodules of its own is fetched without them
-    assert set(r['not_recursive']) == {'third_party/tensorpipe', 'third_party/kineto', 'third_party/flash-attention',
+    assert set(r['not_recursive']) == {'third_party/tensorpipe', 'third_party/flash-attention',
                                        'third_party/aiter', 'third_party/mslk', 'third_party/ideep'}
     # the build variables are the ones this program always set on Windows; a part that cannot be built sets none
-    assert r['flags'] == {'USE_DISTRIBUTED': 'OFF', 'USE_KINETO': 'OFF', 'USE_MKLDNN': 'OFF', 'USE_XNNPACK': 'OFF', 'BUILD_TEST': '0'}
+    assert r['flags'] == {'USE_DISTRIBUTED': 'OFF', 'USE_MKLDNN': 'OFF', 'USE_XNNPACK': 'OFF', 'BUILD_TEST': '0'}
     assert r['lines'][0] == 'The parts of this build (variation lean; windows, cpu):'
     assert any('tensorpipe' in l and 'without its own submodules' in l for l in r['lines'])
+
+
+def test_kineto_on_windows_says_what_differs_from_the_build_it_was_proven_with(build, pytorch):
+    # the versions it was built with here, per target (round lapxpu3, 2026-11-25/26), as data of the part
+    proven = pytorch['components']['kineto']['proven']['windows']
+    assert proven['xpu'] == {'pytorch': '2.15', 'msvc': '19.50', 'oneapi': '2026.1'}
+
+    notes = build_pytorch_class(build).kineto_proven.__globals__['kineto_notes']
+    assert notes(proven, ['xpu'], {'pytorch': '2.15.0a0', 'msvc': '19.50.35726', 'oneapi': '2026.1.1'}) == []
+    assert notes(proven, ['xpu'], {'pytorch': '2.14.1', 'msvc': '19.44.35211', 'oneapi': None}) == [
+        'pytorch 2.14.1 is older than the 2.15 it was built with', 'msvc 19.44.35211 is older than the 19.50 it was built with',
+        'the version of oneapi is not known (it was built with 2026.1)']
+
+    # a target it was not built for here yet
+    assert notes(proven, ['cuda'], {}) == ['it was not built here for cuda yet (only for xpu)']
+    assert notes({}, ['cpu'], {}) == ['it was not built here for cpu yet']
 
 
 def test_lean_on_linux_for_cuda_keeps_what_the_build_chooses_itself(build, pytorch):
@@ -183,14 +200,15 @@ def test_a_submodule_this_version_of_the_source_does_not_have_is_nothing_to_leav
     assert have == ['third_party/tensorpipe', 'third_party/ideep']
     assert build.source_submodules(str(tmp_path / 'nothing-here')) == []
 
-    r = build.resolve_components(pytorch['components'], pytorch['variations'], 'lean', None,
+    # (the variation minimal: kineto is off there - its own default is on, Windows too since 2026-11-26)
+    r = build.resolve_components(pytorch['components'], pytorch['variations'], 'minimal', None,
                                  {'os': 'windows', 'targets': ['cpu'], 'submodules': have}, None)
     assert set(r['not_recursive']) == {'third_party/tensorpipe', 'third_party/ideep'}
     assert 'third_party/kineto' in r['not_in_source'] and 'third_party/mslk' in r['not_in_source']
     assert states(r)['kineto'] == 'off' and r['flags']['USE_KINETO'] == 'OFF'          # the part itself is still off
     assert any('kineto' in l and 'third_party/kineto: no submodule of this source' in l for l in r['lines'])
     # without the fact, nothing is known of the source: every declared one is named
-    assert resolve(build, pytorch, 'windows', ['cpu'], 'lean')['not_in_source'] == []
+    assert resolve(build, pytorch, 'windows', ['cpu'], 'minimal')['not_in_source'] == []
 
 
 # ---------------------------------------------------------------- a build's own limits on its host compiler
