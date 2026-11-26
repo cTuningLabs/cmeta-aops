@@ -1,0 +1,12 @@
+artifact: 6f680740cc7d42e9
+category: tool,c393ba5c6fa14f66
+authors: Grigori Fursin
+desc: 'The SDK of oneAPI Level Zero (Intel''s GPU and NPU interface): its headers and, on Windows, ze_loader.lib, from Intel''s release, checked against its SHA-256.'
+creation_timestamp: '2026-11-26T19:37:44.844262+00:00'
+generator:
+  agent: Claude Code 2.1.332
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_update_timestamp: '2026-11-26T19:56:05.507340+00:00'

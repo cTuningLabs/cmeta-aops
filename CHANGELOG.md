@@ -3,6 +3,12 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.84.0.1)
+- **`tool/lib-level-zero`: Intel's Level Zero SDK.** The headers and, on Windows, `ze_loader.lib` of oneAPI Level Zero
+  (Intel's interface to its GPUs and NPUs) from Intel's release (github.com/oneapi-src/level-zero), checked against the
+  SHA-256 pinned for the release (Intel publishes a signature, no digest; `--with.sha256` for another) and unpacked
+  into the tool's cache entry; `features.paths.root` is what `LEVEL_ZERO_V1_SDK_PATH` names. The launcher of Triton's
+  Intel backend links it on Windows: with it Triton's kernels ran on a laptop's Intel GPU. Linux: the distribution's
+  development package (`libze-dev`).
 - **Several ROCm side by side, each known by its release.** `tool/rocm` knew a ROCm found through rocm-smi by
   rocm-smi's own version (4.0.0 for ROCm 10.2, 3.x for ROCm 6 and 7), and the ROCm it installs from AMD's Python
   distribution by its release: two side by side could not be told apart, and the system's ROCm could not be asked for
