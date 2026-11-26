@@ -1,5 +1,8 @@
 authors: Grigori Fursin
 copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICENSE files in the project root for details.
+
+# Found where a CUDA toolkit or Nsight Systems put it (extra_paths), else installed without root from NVIDIA's
+# CUDA redistributable archives (api_v1.py; README.md)
 names:
   - nsys{{global.host.vars.file_ext_exe}}
 
@@ -28,3 +31,6 @@ extra_paths:
     - "/usr/cuda/bin"
     - "/opt/nvidia/nsight-systems/*/bin"
 
+install_help_text: |
+  Nsight Systems: https://developer.nvidia.com/nsight-systems (or a CUDA toolkit, which carries it); then
+  "cx tool setup nsys" again.

@@ -279,6 +279,12 @@ def detect_existing_tool(self,
                     cmd_call = None
                     if cmd_call_script:
                         cmd_call = host['vars']['call_script'] + ' ' + cmd_call_script.replace('{{tool_path}}', qpath)
+                        if uname == 'windows':
+                            # an agent's shell sets NoDefaultCurrentDirectoryInExePath, and cmd then runs no script of
+                            # its current folder by name: Intel's oneapi-vars.bat ("pushd <component>", "call vars.bat")
+                            # failed for every component and its environment was lost (2026-11-25) - cleared for the
+                            # script and all it calls; cmd's own default is to look there
+                            cmd_call = 'set "NoDefaultCurrentDirectoryInExePath=" ' + host['vars']['cmd_sep'] + ' ' + cmd_call
 
                         r = self.cm.utils.common.expand_string(cmd_call, ctx_tasks)
                         if self.cm.catch_error(r): return r
@@ -332,6 +338,13 @@ def detect_existing_tool(self,
                         print ('')
                         self.cm.j(rx)
                         print ('='*60)
+
+                    if cmd_call_script and rx.get('return', 0) > 0:
+                        # the script or the version command after it failed, so no environment after it was written:
+                        # this candidate is no tool here (oneAPI's 2026.2 folder of a VTune install, without a compiler,
+                        # beside 2026.1 - 2026-11-25), never the end of the search for the others
+                        warning += f'\nProblem running the script of {xpath}: {rx.get("error", "")}\n'
+                        continue
 
                     if self.cm.catch_error(rx): return rx
 
@@ -448,7 +461,9 @@ def detect_existing_tool(self,
                 matched_paths_with_versions.append(x)
 
     if not matched_paths_with_versions:
-        return self.cm.error(f'failed to find tool "{artifact_print_name}" with matched version ({version}):{warning}', 16)
+        # The versions found instead (task/setup says them when an installation gave one of them)
+        return self.cm.error(f'failed to find tool "{artifact_print_name}" with matched version ({version}):{warning}', 16,
+                             extra = {'other_versions': sorted({str(x['detected_version']) for x in parsed_paths_with_versions})})
 
     if hasattr(tool_api_code, 'check_features') and callable(getattr(tool_api_code, 'check_features')):
         r = tool_api_code.check_features(ctx, matched_paths_with_versions, params)

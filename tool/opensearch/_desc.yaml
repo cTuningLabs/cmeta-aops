@@ -1,7 +1,7 @@
 authors: Grigori Fursin
 description: Detect or install OpenSearch with its bundled Java runtime and plugins.
 names: [cmeta-opensearch.cmd, opensearch, opensearch.bat]
-default_version: '3.10.0'
+default_version: '3.10.1'
 cmd_get_version: '{{tool_path}} --version'
 match_version:
   - regex: 'Version:\s*(\d+\.\d+\.\d+)'

@@ -87,6 +87,13 @@ def test_setup_run_asks_nsys_for_the_fork_option():
     assert "stats{force} --report cuda_gpu_kern_sum cuda_profile.nsys-rep" in src
 
 
+def test_a_tool_script_on_windows_runs_with_its_folder_searched():
+    """An agent's shell sets NoDefaultCurrentDirectoryInExePath: Intel's oneapi-vars.bat ("pushd", "call vars.bat")
+    then failed for every component (2026-11-25) - task/setup clears it for the script it calls."""
+    src = (REPO_ROOT / 'task' / 'setup' / 'detect.py').read_text(encoding = 'utf-8')
+    assert "cmd_call = 'set \"NoDefaultCurrentDirectoryInExePath=\" ' + host['vars']['cmd_sep'] + ' ' + cmd_call" in src
+
+
 # ---------------------------------------------------------------- the resolution date
 def test_a_day_is_taken_as_it_is_and_release_is_the_day_after_the_upload(pyvenv):
     d = pyvenv.resolution_date

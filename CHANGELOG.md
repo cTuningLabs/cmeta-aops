@@ -3,6 +3,40 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.83.0.1)
+- **tool/nsys installs Nsight Systems without root.** When no `nsys` is found, or not the version asked, it takes
+  the component `nsight_systems` of a CUDA release from NVIDIA's CUDA redistributable archives (checked against the
+  sha256 of NVIDIA's list) into its cache entry: `--version=<nsys version>` the newest release that carries it, else
+  the release of the newest CUDA this driver runs; `--status` and `--version=latest` know that newest one. An older
+  Nsight Systems can record no CUDA activity on a newer GPU or driver ("does not contain CUDA kernel data"):
+  `--use.nsys.version=latest` for the run of `--profile_cuda`.
+- **Newer versions by default:** ansible-lint 26.11.1, docker 29.10.1, grafana 13.3.2, kubectl 1.37.3, lib-zlib 1.4,
+  lib-zstd 1.6.0 (with the SHA-256 that zstd publishes for its source), llama-cpp 12728 (`program/build-llama-cpp`
+  checks out `b12728` by default: built and run on Linux and macOS), opensearch 3.10.1, openshell 0.1.10, sccache
+  0.20.1 and zstd 1.6.0, explored on Linux, macOS and Windows (`explore-tool-versions --promote`).
+- **A release with no download for this system is said so.** A tool whose own installation declined (its release
+  publishes nothing for this system, as opensearch for macOS or openshell for Windows) failed with "failed to setup
+  tool ..." alone; the error now ends with the installation's own words ("... publishes no release asset for
+  darwin/arm64"), and `explore-tool-versions` classes it "not supported here": a note of `--promote`, not a limit.
+- **explore-tool-versions: a version asked by its word is recorded by its number.** `--versions=known` (or
+  `latest`) goes to the setup as it is, and the verdict names the version the word stood for: `--promote` weighs a
+  failure of the known version (what the machine cannot do at all) by its number.
+- **explore-tool-versions: the words of a quoted path are no words of the error.** A failure of
+  `lib-openssl-android` was classed a download failure by the "ssl" of the tool's own path in the error; the class
+  now comes from the error's words outside its quoted paths, and an SSL error is named by its own words
+  (`SSLError`, `[SSL: ...]`, `SSL certificate`).
+- **A version that a tool's installation does not offer is said so.** A tool installed through a channel that has
+  another version (a distribution's package, an older winget or brew) failed with "failed to setup tool ... with
+  version ..." alone. task/setup now ends that error with `version <asked> not available from its installation here
+  (it gave <found>)`, and `explore-tool-versions --promote` makes such a failure a note, not a proposed
+  `latest_limits` entry: the version is not worse, that machine's channel does not have it.
+- **One failing candidate no longer ends a tool's detection.** The environment script of every candidate folder is
+  run; when one fails (the 2026.2 folder that a VTune install leaves without a compiler fails oneAPI's
+  `icx --version`), task/setup warns and goes on with the other candidates instead of stopping the setup.
+- **A tool's environment script on Windows runs as cmd runs it by default.** An AI agent's shell sets
+  `NoDefaultCurrentDirectoryInExePath`, and cmd then runs no script of its current folder by name: Intel's
+  `oneapi-vars.bat` (`pushd <component>`, `call vars.bat`) failed for every component, and a setup of oneapi in a new
+  home stopped ("Capture env output file not found"). task/setup clears that variable for the script and what it
+  calls.
 - **Nsight Systems: a run again in the same folder, and the right nsys on Linux.** `--profile_cuda` failed on every
   run after the first in a build folder: nsys refused to overwrite the export of the run before ("Use
   --force-export=true to update export file"). Its summary step now passes `--force-export=true` and the capture

@@ -5,7 +5,7 @@ containers or micro-VMs, under a YAML policy that limits their files, processes,
 binaries: the CLI `openshell` and the gateway `openshell-gateway`, the control plane that creates the sandboxes.
 
 ```sh
-cx tool setup openshell                        # detect, else install the pinned release (0.1.9)
+cx tool setup openshell                        # detect, else install the pinned release (0.1.10)
 cx tool setup openshell --versions             # the released versions
 cx tool run openshell -- --help
 cx task run run-openshell-gateway start        # a local gateway of this user (Docker or Podman), registered with the CLI

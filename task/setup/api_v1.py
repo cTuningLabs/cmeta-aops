@@ -902,6 +902,8 @@ class CTask(InitCTask):
 
         warning = ''
         install_refused = None
+        install_gave = None     # the versions an installation gave instead of the one asked
+        install_declined = None # why a custom installation declined (a release with no download for this system)
 
         ##############################################################################
         # A version chosen by a word ("latest", "known") that this tool handed to a tool it is set up through (clang
@@ -1020,6 +1022,10 @@ class CTask(InitCTask):
             if r.get('refused'):
                 install_refused = r.get('warning')
 
+            # A custom installation that declined (16) and nothing installed after it: its words go into the error
+            if r['return'] == 16 and r.get('error'):
+                install_declined = r['error']
+
             _update_params = r.get('_update_params')
             if version_fallback and r['return'] == 0 and not r.get('failed', False):
                 _update_params = dict(_update_params or {}, version = version)
@@ -1051,6 +1057,11 @@ class CTask(InitCTask):
 
                         if version_fallback:
                             result['version_fallback'] = version_fallback
+
+                    elif version and r.get('other_versions'):
+                        # The installation ran and the tool is there at another version: the way it is installed
+                        # here does not offer the one asked (a distribution's package, an older winget or brew)
+                        install_gave = r['other_versions']
 
             xerror = r.get('error')
             xwarning = r.get('warning')
@@ -1145,9 +1156,15 @@ class CTask(InitCTask):
             if warning:
                 extra['warning'] = warning
 
+            why = install_refused
+            if not why and install_gave:
+                why = f'version {version} not available from its installation here (it gave {", ".join(install_gave)})'
+            if not why and install_declined:
+                why = install_declined
+
             # Normally, should not be 16 here and not 16 since setup task failed at this stage
             return self.cm.error(f'failed to setup tool "{artifact_print_name}"{x} in "{__file__}"' +
-                                 (f': {install_refused}' if install_refused else ''), 32, extra = extra)
+                                 (f': {why}' if why else ''), 32, extra = extra)
 
         ##############################################################################
         if upgrade_requested and 'last_upgrade' not in result:

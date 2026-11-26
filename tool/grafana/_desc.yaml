@@ -4,7 +4,7 @@ description: Detect or install Grafana (the open-source edition) from its offici
 names:
   - grafana{{global.host.vars.file_ext_exe}}
 
-default_version: '13.3.1'
+default_version: '13.3.2'
 
 cmd_get_version: '{{tool_path}} --version'
 match_version:

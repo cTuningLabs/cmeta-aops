@@ -10,7 +10,7 @@ copyright: 2025-2026 Grigori Fursin and cTuning Labs. See the COPYRIGHT and LICE
 names:
   - zstd{{global.host.vars.file_ext_exe}}
 
-default_version: '1.5.7'
+default_version: '1.6.0'
 
 match_version:
   - regex: 'v(\d+\.\d+\.\d+)'

@@ -26,19 +26,25 @@ VERDICT_SCHEMA = 1
 # The class of a failure from the words of its error, the first that matches; else the stage it failed at
 ERROR_CLASSES = (
     # the machine lacks what the tool's hardware rules ask (task/setup check_hardware): not the version's fault
-    ('not supported here', ('not supported on this machine',)),
+    # a release that publishes nothing for this system (common_release: whatever the version)
+    ('not supported here', ('not supported on this machine', 'publishes no release asset for')),
     ('not available', ('no matching', 'could not find a version', 'no versions of', 'not available',
                        'not found for version', '404')),
     ('checksum', ('sha256', 'sha-256', 'checksum')),
-    ('download', ('download', 'http error', 'urlopen', 'timed out', 'connection', 'ssl')),
+    ('download', ('download', 'http error', 'urlopen', 'timed out', 'connection', 'sslerror', '[ssl', 'ssl certificate',
+                  'ssl handshake')),
     ('build', ('compil', 'cmake', 'msbuild', 'ninja', 'linker', 'link error', 'build failed')),
 )
+
+# A quoted path of an error ('... in "/home/u/tool/lib-openssl-android/api_v1.py"') holds no words of it: the "ssl"
+# of openssl in such a path made the error a download failure
+QUOTED_PATH = re.compile(r'"[^"]*[/\\][^"]*"')
 
 
 def error_class(text, stage):
     """'not supported here', 'not available', 'checksum', 'download', 'build', else the stage that failed ('setup' or
     'program')."""
-    low = str(text or '').lower()
+    low = QUOTED_PATH.sub('""', str(text or '')).lower()
     for name, words in ERROR_CLASSES:
         if any(word in low for word in words):
             return name
@@ -316,7 +322,11 @@ class CTask(InitCTask):
         results = []
         for version in asked:
             t0 = time.monotonic()
-            verdict = {'schema': VERDICT_SCHEMA, 'tool': tool, 'version': version, 'chosen_as': chosen[version],
+            # A word (known, latest) goes to the setup as it is; the verdict names the version it stands for here, so
+            # that --promote can weigh it (a failure of the known version says what the machine cannot do)
+            number = info.get(version) if version in ('known', 'latest') else None
+            verdict = {'schema': VERDICT_SCHEMA, 'tool': tool, 'version': number or version,
+                       'chosen_as': chosen[version] + (f' ({version})' if number else ''),
                        'obtained': None, 'program': program or None, 'works': False, 'stage': 'setup', 'error_class': None, 'error': None,
                        'limit': None, 'host': host, 'cmeta': getattr(self.cm, '__version__', None), 'aops': aops,
                        'time': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec = 'seconds')}
@@ -340,7 +350,7 @@ class CTask(InitCTask):
                 verdict.update({'error': first_line(r.get('error')),
                                 'error_class': 'crash' if r.get('crash') else error_class(r.get('error'), 'setup')})
 
-            limit = excluded_by(verdict['obtained'] or version, limits)
+            limit = excluded_by(verdict['obtained'] or verdict['version'], limits)
             if limit:
                 verdict['limit'] = limit.get('exclude')
             verdict['seconds'] = round(time.monotonic() - t0, 1)
@@ -364,7 +374,7 @@ class CTask(InitCTask):
                 return self.cm.error(f'explore-tool-versions: the verdicts could not be written to {path}: {e}')
 
             if con:
-                print (f'  {version:<16} {str(verdict["obtained"] or "-"):<16} {"works" if verdict["works"] else "FAILS":<6} '
+                print (f'  {verdict["version"]:<16} {str(verdict["obtained"] or "-"):<16} {"works" if verdict["works"] else "FAILS":<6} '
                        f'{verdict["seconds"]:>7} s' + (f'  {verdict["error_class"]}: {verdict["error"]}' if not verdict['works'] else '')
                        + (f'  (excluded from latest: {verdict["limit"]})' if verdict['limit'] else ''))
 
