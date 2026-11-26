@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.84.0.1)
+## 0.85.0
 - **`tool/lib-level-zero`: Intel's Level Zero SDK.** The headers and, on Windows, `ze_loader.lib` of oneAPI Level Zero
   (Intel's interface to its GPUs and NPUs) from Intel's release (github.com/oneapi-src/level-zero), checked against the
   SHA-256 pinned for the release (Intel publishes a signature, no digest; `--with.sha256` for another) and unpacked
