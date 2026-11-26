@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.83.0.1)
+## 0.84.0
 - **torchaudio for a newer PyTorch.** `tool/pip-torchaudio` asked for the torchaudio of PyTorch's own number
   (`torchaudio==2.14.1`), but torchaudio follows PyTorch's numbers only up to 2.11 and publishes none after (its
   2.11.x asks for `torch>=2.11`): no index had it. It now asks for the newest torchaudio not newer than the PyTorch
