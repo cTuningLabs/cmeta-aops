@@ -45,7 +45,8 @@ storage_key: intel-gpu-runtime
 #   device_id_prefixes: the first byte of the PCI device ids the line is for: taken when every Intel GPU of the
 #                       machine has one of them
 #   provides:           a file of the package that the runtime must have, and the variable its folder goes on for
-#                       the steps that follow (dir: that folder, when it is not the file's own). A command the
+#                       the steps that follow (dir: that folder, when it is not the file's own); a list of them when
+#                       a package provides several. A command the
 #                       package names <name>-<version> (its update-alternatives make <name>, which an unpacking
 #                       without root does not run) gets a link of that name, to the newest one
 releases:
@@ -75,13 +76,16 @@ releases:
           env: PATH
 
       # The headers of Level Zero, which a program built against it includes (PyTorch's XPU build: ATen's
-      # LazyLevelZero)
+      # LazyLevelZero), and the loader as a linker names it (libze_loader.so, -lze_loader: Triton's Intel backend
+      # compiles its launcher against it at its first kernel - "cannot find -lze_loader" without the folder)
       - path: oneapi-src/level-zero/releases/download/v1.34.0/libze-dev_1.34.0+u24.04_amd64.deb
         sha256: '2813bb3b06d0d8c0f3c771051defabdd74da2e454661cd654ebabcfb5ab21c01'
         provides:
-          file: usr/include/level_zero/ze_api.h
-          env: CPATH
-          dir: usr/include
+          - file: usr/include/level_zero/ze_api.h
+            env: CPATH
+            dir: usr/include
+          - file: usr/lib/x86_64-linux-gnu/libze_loader.so
+            env: LIBRARY_PATH
 
   '24.35.30872.36':
     for: 'legacy1, Gen8, Gen9 and Gen11 GPUs: Broadwell, Skylake, Kaby Lake, Coffee Lake, Ice Lake, ...'

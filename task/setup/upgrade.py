@@ -977,6 +977,18 @@ def known_version(desc):
     return str(v).strip() if v not in (None, '') else None
 
 
+def unpinned_reason(desc):
+    """
+    Why a tool has no pin on purpose: unpinned of its _desc.yaml ("unpinned: 'the system's package manager installs
+    its own version everywhere'"), or None. None too for a tool with a default_version: a pin and a reason for having
+    none contradict each other, and the pin is what is installed.
+    """
+    if known_version(desc):
+        return None
+    v = (desc or {}).get('unpinned')
+    return str(v).strip() if isinstance(v, str) and v.strip() else None
+
+
 def ttl_hours(value, default = VERSIONS_TTL_HOURS):
     """A time to live in hours from a config value, an env value or a parameter; the default when it is not a number."""
     try:
@@ -1222,7 +1234,7 @@ def lookup_versions(self, ctx, desc, tool_read, params, refresh = False, list_al
 
     record = memo.get(alias)
     if record and not refresh and complete(record):
-        return dict(record, from_cache = True)
+        return dict(record, known = known_version(desc), from_cache = True)
 
     folder = self.versions_folder(ctx)
     path = os.path.join(folder, alias + '.json') if folder else None
@@ -1237,7 +1249,7 @@ def lookup_versions(self, ctx, desc, tool_read, params, refresh = False, list_al
         age = lookup_age_hours(record) if isinstance(record, dict) else None
         if age is not None and 0 <= age < ttl and complete(record):
             memo[alias] = record
-            return dict(record, from_cache = True)
+            return dict(record, known = known_version(desc), from_cache = True)
 
     # Asked: the channel and upstream, and the list when wanted; the sub-setups they need stay quiet. A version
     # check (--check_update) installs no helper: what is not on the machine makes the answer unknown

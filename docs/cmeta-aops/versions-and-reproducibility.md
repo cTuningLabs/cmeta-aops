@@ -179,8 +179,12 @@ cx tool check-updates --output=updates.md   # the report as Markdown (.json: JSO
 ```
 
 `ahead` means the pin is newer than what the channel offers. `unknown` means the tool has no source of its newest
-version: add `cmd_get_versions`. Nothing is installed or changed: moving a pin stays a decision, with a test. The
-Python API returns a row per tool and the counts.
+version: add `cmd_get_versions`. `no pin` means the tool has no `default_version`; a tool that has none **on
+purpose** says why in its `_desc.yaml` - `unpinned: '<the reason>'` (python: a request without a version takes the
+machine's own Python; apache2: the system's package manager installs the version it carries, no install command takes
+one) - and the report prints the reason. The pin is read from the description at each report; only the newest
+versions are cached. Nothing is installed or changed: moving a pin stays a decision, with a test. The Python API
+returns a row per tool and the counts.
 
 **The exploration runs: `cx task run explore-tool-versions`.** It tries a tool at a few versions, each in a fresh
 cache entry, and runs a program with each one when asked. It writes a verdict per version to a JSONL file: works or
@@ -197,7 +201,9 @@ fails, the class of the error, the machine.
   - the next `default_version`: the newest version that worked everywhere it was tried, on at least two operating
     systems;
   - a new limit of `latest`: a newer version that failed somewhere;
-  - a note: a version that a machine's channel does not offer, such as an older uv.
+  - a note: a version that a machine's channel does not offer, such as an older uv; a version a machine's hardware
+    does not support; a version that works for a tool that has no pin on purpose (`unpinned`) - no first pin is
+    proposed for it.
 
 ```
 cx task run explore-tool-versions yq                       # known and latest

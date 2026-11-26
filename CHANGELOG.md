@@ -3,6 +3,76 @@
 All notable changes to cMeta AOps are documented here, newest first.
 
 ## DEV VERSION (0.83.0.1)
+- **torchaudio for a newer PyTorch.** `tool/pip-torchaudio` asked for the torchaudio of PyTorch's own number
+  (`torchaudio==2.14.1`), but torchaudio follows PyTorch's numbers only up to 2.11 and publishes none after (its
+  2.11.x asks for `torch>=2.11`): no index had it. It now asks for the newest torchaudio not newer than the PyTorch
+  (`torchaudio<=2.14.1`): the pair where it exists, else torchaudio's last release on the target's index (2.11.0 for
+  ROCm 7.2 and CUDA 13.0, 2.11.1 for the CPU). `program/test-pytorch-with-audio` asks for a Python torchaudio has
+  wheels for (3.10-3.14): with a shared Python 3.15 there was no torchaudio at all.
+- **test-sglang on ROCm says the way that works.** SGLang publishes its ROCm build only in its docker image
+  (`lmsysorg/sglang:<version>-rocm*`); a native `--compute=rocm` run got PyPI's build with a CUDA PyTorch and stopped
+  deep inside SGLang ("No accelerator ... is available"). It now stops at once and names the image route.
+- **vLLM's ROCm wheels again: the release's own ROCm build.** `tool/pip-vllm` took vLLM's ROCm wheels from a fixed
+  folder (`https://wheels.vllm.ai/rocm/<version>/rocm723`) that vLLM 0.34.0 does not have (its build is `rocm100`):
+  pip then installed PyPI's CUDA wheel without a word, and on an AMD GPU vLLM found no platform ("Device string must
+  not be empty"). The build folder is now read from the release's listing (`/rocm/<version>/`), the wheel's local
+  version is pinned (`vllm==0.34.0+rocm100`, so no other build can be taken), a release with several ROCm builds asks
+  for `--with.rocm_build=<build>`, and one without any says so. Checked on an MI300X.
+- **run-vllm-server on an AMD GPU: `--gpu=amd`.** vLLM's server in vLLM's ROCm image of the same release
+  (`vllm/vllm-openai-rocm:<tag>` for the default `vllm/vllm-openai:<tag>`; an `--image` of the command line stays),
+  the GPU passed in the way AMD's GPUs are (`--device /dev/kfd --device /dev/dri --group-add video`,
+  `seccomp=unconfined`) instead of `--gpus all`. The kinds of GPU, their image repositories and docker words are data
+  (`gpus:` in the task's `_desc.yaml`). Checked on an MI300X: started, answered, measured by MLPerf's Endpoints client
+  and vLLM's own `vllm bench serve`.
+- **A codex conversation continues through a gateway that passes the login on.** Codex keeps a thread on the model
+  provider it began with and refuses another on resume ("Cannot change this thread's model provider from `openai` to
+  `local-login` on resume", codex 0.171): `cxai --gw` with `local-login` for a conversation begun on the ChatGPT login
+  stopped at once. run-codex reads the provider a thread began with (its rollout's `session_meta`): a thread on the
+  ChatGPT login goes through a gateway that passes that login on (`own_login`) as the built-in provider's address
+  (`openai_base_url`) - the thread stays on its provider, the requests go through the gateway with the same login;
+  any other change (a gateway with a key of its own, back from a gateway to the login) is said before codex starts,
+  with the ways that work (`--ln`, `--gateway=<the thread's>`, `--new`).
+- **Nsight Compute: no false "administrators only" warning on Windows.** `--profile_cuda_kernels` warned that the
+  NVIDIA driver lets only administrators read the GPU's performance counters although they had been opened to
+  everybody: the NVIDIA Control Panel of a current driver keeps `RmProfilingAdminOnly` in the registry below
+  `Services\nvlddmkm\Parameters\Global\NVTweak`, and cMeta read the older place `Services\nvlddmkm\Global\NVTweak`.
+  The current place is read first, then the older one (`nvidia_tweak_value` in `ctask.py`).
+- **A cache entry named after a checkout with a slash is one folder.** A task names its cache entries after its
+  parameters (`cache_extra_alias`: the name and the checkout of `clone-git-to-cache`), and a checkout such as
+  `max/v26.7.0` or `release/2.12` made the entry a folder inside a folder (`...--<name>--max/v26.7.0--<UID>`).
+  What would split the alias into folders, or is refused in a file name on some system
+  (`/ \ : * ? " < > |`), becomes `-` in a new entry's name; entries made before are found as before (by their
+  parameters).
+- **A tool without a pin on purpose says why: `unpinned`.** A tool's `_desc.yaml` may say `unpinned: '<the reason>'`
+  in place of a `default_version`. `cx tool check-updates` prints the reason under its table (and in its Markdown
+  and JSON: the row's `unpinned`), and `explore-tool-versions --promote` proposes no first pin for such a tool - a
+  note with the reason instead. tool/python says its reason; **tool/apache2 has no pin any more**: its 2.4.69 was
+  taken by no install command (the system's package manager installs its own version on every system), so the
+  report called it "ahead" on Ubuntu and "behind" on Windows. Also: the report reads the pin from the tool's
+  description at each run (a pin that was moved showed its old value until the cached lookup of the newest version
+  expired), and the promotion prints the note of a version a machine's hardware does not support (it stopped with a
+  KeyError on such a verdict).
+- **A Python tool from a vendor's own package index.** `common_pyvenv.py` (the shared installer of a tool that is a
+  Python package in an environment of its own) takes an `index` in a tool's SPEC: the environment is then filled from
+  that index instead of PyPI (uv's `--index-url`) - for a vendor whose packages PyPI only has placeholders of, such as
+  AMD's ROCm wheels. `--with.exclude_newer=release`, which reads the release day from PyPI, is refused for such a
+  tool (a day is given instead); an index that is no plain http(s) address installs nothing. The SPEC's `python` may
+  be the path of an interpreter too (a tool that must have the system's own Python).
+- **tool/intel-gpu-runtime: the Level Zero loader for a linker too.** A program that links against Level Zero at run
+  time (Triton's Intel backend compiles its launcher with `-lze_loader` at its first kernel) stopped with "cannot find
+  -lze_loader": the runtime's folder of `libze_loader.so` goes on `LIBRARY_PATH` now, beside the headers on `CPATH`.
+  A package of a release line may provide several things (`provides:` takes a list).
+- **Nsight Systems: only the part of a run the program marks.** `--profile_cuda_range=cudaProfilerApi` (from
+  `cudaProfilerStart` to `cudaProfilerStop`) or `=nvtx:<range>[@<domain>]` (while that NVTX range is open) makes
+  `--profile_cuda` record the measured part of a program and not its start-up or warm-up
+  (`nsys profile --capture-range`); `--profile_cuda_range_end` is what the end of the range does, in nsys's own words -
+  `stop` by default (nsys's own default, `stop-shutdown`, ends the program with the first range, before it writes its
+  results), `repeat[:N]` for a report and a summary per range (`cuda_profile.<n>.nsys-rep`). An NVTX range pushed
+  with a plain string (`torch.cuda.nvtx.range_push`) is found too (`NSYS_NVTX_PROFILER_REGISTER_ONLY=0` for the
+  program); a program that never meets its range fails with "Nsight Systems recorded nothing - the program never met
+  the range ..." instead of nsys's "input file does not exist"; the options are asked of the nsys in use. The numbered
+  reports of a run before are removed before a profiled run. `program/test-nmm-nvcc-cuda` marks its measured part
+  with `--compile.d.CUDA_PROFILER_RANGE`. tool/nsys's README has the section.
 - **lib-openssl-android 4.1.0 by default, and set up on its own.** Its setup selects the target android-cpu itself
   (`target--android-cpu`, which reads the ABI of the connected device) where `cx tool setup lib-openssl-android` and
   `explore-tool-versions` stopped with "target compute android-cpu must be selected"; 4.0.0 and 4.1.0 explored, and
@@ -14,11 +84,19 @@ All notable changes to cMeta AOps are documented here, newest first.
   build for Maxwell, Pascal and Volta GPUs: `--version=2.14.1` (cu126) for them.
 - **build-pytorch builds Kineto on Windows too** (PyTorch's own default; before, this program turned it off there).
   What it was built with on Windows is data of the part (`proven` in `_desc.yaml`: xpu with PyTorch 2.15, MSVC 19.50,
-  oneAPI 2026.1); a build with an older compiler or PyTorch, or for a target not built that way yet, is told before
-  the build that Kineto may fail to build (`--compile.components.kineto-` turns it off).
-- **test-session --finish removes paths over 260 characters on Windows** (a test's deep home in a pytest basetemp):
-  the sandbox is measured and removed through the extended-length prefix; before, such files stayed and the
-  session was left unfinished.
+  oneAPI 2026.1; cpu with PyTorch 2.15 and MSVC 19.50); a build with an older compiler or PyTorch, or for a target
+  not built that way yet (cuda), is told before the build that Kineto may fail to build
+  (`--compile.components.kineto-` turns it off).
+- **test-session --finish goes past what it cannot remove.** A file of the sandbox that could not be deleted (a file
+  in use, a file of another account - an installer that had run as an administrator) stopped the engine's removal
+  with that file's exception: the sandbox kept everything not reached yet and the session was left unfinished. The
+  finish now removes every other entry, notes how many files stayed and is recorded, with any engine (a cMeta after
+  0.45.3 goes past such an entry itself and returns an error). The sandbox is measured and removed through the
+  extended-length prefix, which lists paths over 260 characters on a Windows without long-path support too.
+  **On Linux and macOS a sandbox with a tree made read-only is removed too** (a build system's outputs - Bazel's -,
+  a module cache: every folder without the right to write, which stopped the removal with any engine up to 0.45.3),
+  a folder that cannot be listed with what it holds; what stays keeps the rights it had. `test-on-hosts
+  --action=remove` gives such a tree back to its owner when `rm -rf` leaves something on a host.
 - **tool/nsys installs Nsight Systems without root.** When no `nsys` is found, or not the version asked, it takes
   the component `nsight_systems` of a CUDA release from NVIDIA's CUDA redistributable archives (checked against the
   sha256 of NVIDIA's list) into its cache entry: `--version=<nsys version>` the newest release that carries it, else

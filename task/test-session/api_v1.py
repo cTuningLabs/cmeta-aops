@@ -54,13 +54,48 @@ def extended_path(path):
 
 
 def writable_then_again(func, path, exc_info):
-    """shutil.rmtree's error handler: a read-only entry made writable and removed again; what still cannot be removed
-    (files another account owns) stays, and the session notes how many files stayed."""
+    """shutil.rmtree's error handler: what refuses the removal is lifted and the entry removed again - on Windows the
+    read-only attribute of the entry; elsewhere the rights of its folder when its owner may not write to it (a tree
+    made read-only: a build system's outputs, a module cache), and of a folder that cannot be listed. What still
+    cannot be removed (files another account owns) stays with the rights it had, and the session notes how many
+    files stayed."""
+    if os.name == 'nt':
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except OSError:
+            pass
+        return
+
+    changed = []
     try:
-        os.chmod(path, stat.S_IWRITE)
-        func(path)
+        parent = os.path.dirname(os.path.abspath(path))
+        mode = stat.S_IMODE(os.stat(parent).st_mode)
+        if mode & 0o300 != 0o300:
+            os.chmod(parent, mode | 0o300)
+            changed.append((parent, mode))
+
+        st = os.lstat(path)
+        mode = stat.S_IMODE(st.st_mode)
+        if not stat.S_ISDIR(st.st_mode):
+            os.unlink(path)
+        elif mode & 0o500 != 0o500:
+            # a folder that could not be listed: now it can, and goes with what it holds
+            os.chmod(path, mode | 0o700)
+            changed.append((path, mode))
+            shutil.rmtree(path, onerror = writable_then_again)
+        else:
+            # (a folder that still holds what could not be removed stays: no second walk of it)
+            os.rmdir(path)
     except OSError:
         pass
+    finally:
+        for changed_path, mode in reversed(changed):
+            if os.path.lexists(changed_path):
+                try:
+                    os.chmod(changed_path, mode)
+                except OSError:
+                    pass
 
 
 def parse_time(text):
@@ -692,10 +727,16 @@ class CTask(InitCTask):
             rec.setdefault('costs', {})['sandbox_mib'] = folder_mib(rec['sandbox'])
             # Read-only files too: git makes its objects read-only, and Windows refuses to delete a read-only file -
             # shutil.rmtree with ignore_errors left 1,486 of them (5.8 MB) while the session said "removed"
-            # (2026-11-25). The engine's removal clears the flag; then the folder itself, now empty
-            self.cm.utils.files.remove_files_and_dirs_in_path(rec['sandbox'])
-            # What it leaves on Windows: paths over 260 characters (a test's deep home in a pytest basetemp: 668 of
-            # them stayed, 2026-11-26), which only the extended-length prefix lists - then the folder itself
+            # (2026-11-25). The engine's removal clears the flag; then the folder itself, now empty.
+            # An entry it cannot remove (a file in use, a file of another account) stops an engine up to 0.45.3 with
+            # that entry's exception, everything it had not reached left: a sandbox kept 21,500 files beside an
+            # installer's files of an administrator (2026-11-26). A newer engine goes on and returns an error
+            try:
+                self.cm.utils.files.remove_files_and_dirs_in_path(rec['sandbox'])
+            except OSError:
+                pass
+            # What that leaves is removed here, past every entry that stays - through the extended-length prefix,
+            # which lists paths over 260 characters on a Windows without long-path support too - then the folder
             shutil.rmtree(extended_path(rec['sandbox']), onerror = writable_then_again)
         rec['sandbox_removed'] = not os.path.isdir(rec['sandbox'])
         if not rec['sandbox_removed']:

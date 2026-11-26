@@ -49,6 +49,21 @@ def image_release(image):
     return (int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)) if m else None
 
 
+def image_for_gpu(image, given, gpu_spec, nvidia_repository):
+    """
+    The image of a start on a GPU of this kind (gpus: in _desc.yaml): an image the command line names stays; else the
+    default one - when it is vLLM's NVIDIA image, its release in the repository of this kind of GPU
+    (vllm/vllm-openai:v0.34.0 -> vllm/vllm-openai-rocm:v0.34.0); any other default image stays as it is.
+    """
+    if given:
+        return image
+    repository, sep, tag = str(image or '').rpartition(':')
+    wanted = str((gpu_spec or {}).get('image_repository') or '')
+    if sep and '/' not in tag and repository == nvidia_repository and wanted:
+        return wanted + ':' + tag
+    return image
+
+
 def http_get(url, timeout = 2.0):
     """GET -> (status or 0, the body's text)."""
     try:
@@ -83,6 +98,7 @@ class CTask(InitCTask):
             port: int = DEFAULT_PORT,       # 8868 by default (vLLM's own 8000 stays inside the container)
             host: str = '127.0.0.1',        # the address the port is published on (0.0.0.0 for other machines: there is no key)
             image: str = '',                # vLLM's container image, its release (default: the config's, else vllm/vllm-openai:v0.31.0)
+            gpu: str = '',                  # the GPU's kind: nvidia (default) or amd - vLLM's image for it and how it is passed in (gpus: in _desc.yaml)
             max_model_len: int = 0,         # the context window in tokens (default: the config's, else 8192)
             gpu_memory_utilization: float = 0.0,   # the share of the GPU's memory vLLM takes (default: the config's, else by vLLM's release: none from 0.34 - vLLM sizes its cache -, 0.85 before)
             served_name: str = '',          # the model's name in /v1/models (default: the config's, else the model's own)
@@ -187,9 +203,16 @@ class CTask(InitCTask):
         if listening(host, port):
             return self.cm.error('port %d is taken by another process; --port=<another> or stop it' % port)
 
+        # the GPU's kind: its image and how docker passes it in (data: gpus in _desc.yaml)
+        gpus = self._gpus()
+        kind = str(gpu or 'nvidia').strip().lower()
+        if kind not in gpus:
+            return self.cm.error('--gpu is one of %s (got "%s")' % (', '.join(gpus), kind))
+
         # what the command line does not say: the config of this machine (the server's page sets it), else built in
         d = self._defaults()
-        model, image, served_name = model or d['model'], image or d['image'], served_name or d['served_name']
+        image = image_for_gpu(image or d['image'], bool(image), gpus[kind], str(gpus.get('nvidia', {}).get('image_repository') or ''))
+        model, served_name = model or d['model'], served_name or d['served_name']
         max_model_len = int(max_model_len or 0) or int(d['max_model_len'])
         gpu_memory_utilization = float(gpu_memory_utilization or 0) or float(d['gpu_memory_utilization'] or 0)
         release = image_release(image)
@@ -216,9 +239,9 @@ class CTask(InitCTask):
         params = {'category': TASK_CATEGORY, 'command': 'run', 'arg1': CONTAINER_RUN, 'ctx': ctx, 'engine': 'docker',
                   'image': image, 'name': name, 'detach': not foreground, 'rm': bool(foreground),
                   'ports': ['%s:%d:%d' % (host, port, INNER_PORT)], 'volumes': ['%s:/root/.cache' % cache],
-                  'run_flags': ['--gpus', 'all', '--ipc=host'], 'cmd': args, 'env_secrets': secrets,
+                  'run_flags': [str(f) for f in gpus[kind].get('run_flags') or []], 'cmd': args, 'env_secrets': secrets,
                   'labels': {'cmeta.task': 'run-vllm-server', 'cmeta.port': str(port)}, 'con': con, 'quiet': quiet}
-        rec = {'name': name, 'port': port, 'host': host, 'image': image, 'model': model, 'served_name': served_name or model,
+        rec = {'name': name, 'port': port, 'host': host, 'image': image, 'gpu': kind, 'model': model, 'served_name': served_name or model,
                'max_model_len': max_model_len, 'gpu_memory_utilization': gpu_memory_utilization,
                'max_num_seqs': max_num_seqs, 'args': args, 'cache': cache, 'foreground': bool(foreground),
                'started': time.strftime('%Y-%m-%dT%H:%M:%S')}
@@ -306,6 +329,16 @@ class CTask(InitCTask):
     def _logs(self, name, lines):
         rc, out = self._docker('logs', '--tail', str(max(1, min(int(lines), 5000))), name, timeout = 30)
         return out if rc == 0 else ''
+
+    def _gpus(self):
+        """The kinds of GPU (gpus: in _desc.yaml): from the description the engine read, else from the file beside this
+        module (a task object made without the engine, as the tests make it)."""
+        desc = getattr(self, 'cdesc', None)
+        if not isinstance(desc, dict):
+            import yaml
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '_desc.yaml'), encoding = 'utf-8') as f:
+                desc = yaml.safe_load(f) or {}
+        return desc.get('gpus') or {}
 
     def _defaults(self):
         """The defaults of a start: config::task-run-vllm-server over BUILT_IN (a key empty or absent: built in)."""

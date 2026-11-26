@@ -125,10 +125,13 @@ components:
     default: auto                                    # PyTorch's own default (on), Windows too since 2026-11-26
     # What it was built with here, per system and target: a Windows build with an older one (pytorch: the source's
     # version.txt, msvc, oneapi), or for a target not listed, says before the build that Kineto may fail to build
-    # (customize_pytorch, kineto_notes; --compile.components.kineto- turns it off). xpu: round lapxpu3, 2026-11-25/26
+    # (customize_pytorch, kineto_notes; --compile.components.kineto- turns it off). xpu: round lapxpu3, 2026-11-25/26;
+    # cpu: round lapkin1, 2026-11-26 (its torch.profiler records the CPU's operators and exports a trace). cuda: its
+    # configuration finds CUPTI ("Using Kineto with CUPTI support") - the build itself was not finished here
     proven:
       windows:
         xpu: {pytorch: '2.15', msvc: '19.50', oneapi: '2026.1'}
+        cpu: {pytorch: '2.15', msvc: '19.50'}
 
   rocm-kernels:
     desc: AMD's Composable Kernel and AITER for attention and GEMM on ROCm

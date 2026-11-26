@@ -356,6 +356,12 @@ A bump of `default_version` is backed by `explore-tool-versions` verdicts from m
 exploration on each machine, put the verdict files in one folder, and `--promote --verdicts=<folder>` prints the
 evidence and the proposal. A version asked for by number is always taken as asked.
 
+A tool whose version no install command can choose - the system's package manager installs what it carries on every
+system (`tool/apache2`), or a request without a version means the machine's own (`tool/python`) - has **no**
+`default_version` and says why: `unpinned: '<the reason>'`. The report then shows `no pin` with the reason, and the
+promotion proposes no first pin. A pin that nothing installs is worse than none: the report compares it with the
+system's version and calls it "ahead" or "behind".
+
 The spec keys:
 
 - **Templates:** `url`, `member` and the checksum URLs expand `{version}`, `{os}`, `{arch}`,
@@ -390,6 +396,14 @@ SPEC = {'name': 'ansible', 'package': 'ansible-core', 'python': '3.12',
 The package version installed by default is `default_version: '2.21.4'` in `_desc.yaml`, as for every tool.
 `extra` pins companion packages (`tool/ansible-lint` pins `ansible-core==2.21.4`), and
 `unsupported_os` turns a known-broken OS into one clear message instead of a traceback.
+
+A package that comes from a vendor's own package index, with what it needs, names it in the SPEC: `'index':
+'https://<vendor's index>/'` fills the environment from that index **instead of** PyPI (uv's `--index-url`) - for a
+vendor whose names PyPI only has placeholders of (AMD's ROCm wheels), so the two are never mixed. What such a package
+needs from PyPI besides is installed by the tool in a second step, from the package's own requirements. `python` may
+be the path of an interpreter (`/usr/bin/python3`) for a tool that must have the system's own Python - a native
+extension that takes a shared library (SQLite) from the Python that runs it does not start with the Pythons uv
+downloads, which carry theirs inside.
 A package that builds a C extension from source (no wheel) takes `'c_compiler': True` (cMeta's C compiler as `CC`)
 and `'c_libraries': ['lib-augeas']`: the tools set up first through `install_uses` whose include and library folders
 the build gets in `CFLAGS` / `LDFLAGS` - Homebrew's `/opt/homebrew` is not among Apple clang's folders

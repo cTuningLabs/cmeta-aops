@@ -123,9 +123,14 @@ def device_access():
 
 
 def provided(version, lines = None):
-    """What the packages of a line provide (provides: of _desc.yaml): [{'file', 'env', 'dir'}], relative to its root."""
+    """What the packages of a line provide (provides: of _desc.yaml - one entry, or a list of them): [{'file', 'env',
+    'dir'}], relative to its root."""
     lines = LINES if lines is None else lines
-    return [dict(p['provides']) for p in (lines.get(version) or {}).get('packages') or [] if p.get('provides')]
+    found = []
+    for p in (lines.get(version) or {}).get('packages') or []:
+        entries = p.get('provides') or []
+        found += [dict(e) for e in (entries if isinstance(entries, list) else [entries])]
+    return found
 
 
 def version_key(path):

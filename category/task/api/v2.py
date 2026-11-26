@@ -184,6 +184,16 @@ _ACTIVE = threading.local()
 PLAIN_VERSION = re.compile(r'^\d+(\.\d+)*$')
 
 
+def alias_part(text):
+    """
+    A text as a part of an artifact's alias - one name: what would split it into folders (/ and \\) or is refused
+    in a file name on some system (: * ? " < > |) becomes "-". The extra part of a cache entry's alias comes from a
+    task's parameters (cache_extra_alias: a clone's name and checkout, a model's name), and a checkout such as
+    "max/v26.7.0" or "release/2.12" made the entry a nested folder.
+    """
+    return re.sub(r'[\\/:*?"<>|]+', '-', str(text))
+
+
 def switched_on(name):
     """An environment switch of the task engine that is on unless it says off (off, no, false, 0)."""
     return str(os.environ.get(name, '')).strip().lower() not in ('off', 'no', 'false', '0')
@@ -1281,7 +1291,7 @@ class Category(InitCategory):
                 uid = None
                 if not name:
                     uid = self.cm.utils.generate_cmeta_uid()
-                    extra = '' if cache_extra_alias is None else cache_sep + cache_extra_alias
+                    extra = '' if cache_extra_alias is None else cache_sep + alias_part(cache_extra_alias)
                     alias = cache_alias_template.replace('{cache_extra_alias}', extra) + cache_sep + uid
                     name = f'{alias},{uid}'.lower()
                     if cache_repo:

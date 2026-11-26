@@ -135,6 +135,13 @@ def here_dir(cm):
         os.path.join(os.path.expanduser('~'), REMOTE_BASE)
 
 
+def posix_remove(remote):
+    """The command that removes a round's folder (below the home) on a Linux or macOS host: "rm -rf", and when that
+    leaves something - a tree made read-only, such as a build system's outputs (Bazel's), which "rm -rf" cannot
+    empty - once more after its owner is given the rights to its own folders."""
+    return f'rm -rf ~/{remote} 2>/dev/null || {{ chmod -R u+rwX ~/{remote}; rm -rf ~/{remote}; }}'
+
+
 class CTask(InitCTask):
     """
     cx commands on several hosts at once, each in a throwaway cMeta home.
@@ -613,7 +620,7 @@ class CTask(InitCTask):
                 shutil.rmtree(script_dir, ignore_errors = True)
                 removed[h] = r['return'] == 0
             else:
-                r = self.host('run', arg1 = h, arg2 = f'rm -rf ~/{remote}', capture = True)
+                r = self.host('run', arg1 = h, arg2 = posix_remove(remote), capture = True)
                 removed[h] = r['return'] == 0
 
             if con:

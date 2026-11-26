@@ -61,6 +61,7 @@ def test_kineto_on_windows_says_what_differs_from_the_build_it_was_proven_with(b
     # the versions it was built with here, per target (round lapxpu3, 2026-11-25/26), as data of the part
     proven = pytorch['components']['kineto']['proven']['windows']
     assert proven['xpu'] == {'pytorch': '2.15', 'msvc': '19.50', 'oneapi': '2026.1'}
+    assert proven['cpu'] == {'pytorch': '2.15', 'msvc': '19.50'}                      # round lapkin1, 2026-11-26
 
     notes = build_pytorch_class(build).kineto_proven.__globals__['kineto_notes']
     assert notes(proven, ['xpu'], {'pytorch': '2.15.0a0', 'msvc': '19.50.35726', 'oneapi': '2026.1.1'}) == []
@@ -68,8 +69,12 @@ def test_kineto_on_windows_says_what_differs_from_the_build_it_was_proven_with(b
         'pytorch 2.14.1 is older than the 2.15 it was built with', 'msvc 19.44.35211 is older than the 19.50 it was built with',
         'the version of oneapi is not known (it was built with 2026.1)']
 
+    # a CPU build with what it was built with says nothing; with an older compiler it says so
+    assert notes(proven, ['cpu'], {'pytorch': '2.15.0a0', 'msvc': '19.50.35726', 'oneapi': None}) == []
+    assert notes(proven, ['cpu'], {'pytorch': '2.15.0', 'msvc': '19.44.35211'}) == ['msvc 19.44.35211 is older than the 19.50 it was built with']
+
     # a target it was not built for here yet
-    assert notes(proven, ['cuda'], {}) == ['it was not built here for cuda yet (only for xpu)']
+    assert notes(proven, ['cuda'], {}) == ['it was not built here for cuda yet (only for cpu, xpu)']
     assert notes({}, ['cpu'], {}) == ['it was not built here for cpu yet']
 
 

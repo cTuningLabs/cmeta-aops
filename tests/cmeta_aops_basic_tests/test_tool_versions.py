@@ -246,6 +246,32 @@ def test_check_updates_reports_each_tool(cm, tools, update_tools):
     assert r["tools"][0]["from_cache"] is True and r["tools"][0]["latest"] == LATEST
 
 
+def test_a_cached_lookup_shows_the_pin_of_now_and_the_reason_for_none(cm, tools):
+    """The cached answer holds the newest version; the pin is the description's, read at each report (a pin moved or
+    taken away showed its old value for a day - 2026-11-26), and a tool without one on purpose says why."""
+    path = fake_tool(cm, "test-versions-moved", one_liner(LATEST))
+    r = check_updates(cm, ["test-versions-moved"], refresh_versions=True)
+    assert r["tools"][0]["known"] == PYTHON_VERSION and r["tools"][0]["unpinned"] is None
+
+    desc_file = os.path.join(path, "_desc.yaml")
+    with open(desc_file, encoding="utf-8") as f:
+        desc = yaml.safe_load(f)
+
+    desc["default_version"] = "1.0.0"
+    with open(desc_file, "w", encoding="utf-8") as f:
+        yaml.safe_dump(desc, f)
+    row = check_updates(cm, ["test-versions-moved"])["tools"][0]
+    assert row["from_cache"] is True and row["known"] == "1.0.0" and row["status"] == "behind"
+
+    del desc["default_version"]
+    desc["unpinned"] = "the system's package manager installs its own version"
+    with open(desc_file, "w", encoding="utf-8") as f:
+        yaml.safe_dump(desc, f)
+    row = check_updates(cm, ["test-versions-moved"])["tools"][0]
+    assert row["from_cache"] is True and row["known"] is None and row["status"] == "no pin"
+    assert row["unpinned"] == "the system's package manager installs its own version" and row["latest"] == LATEST
+
+
 def test_check_updates_saves_the_report(cm, tools, update_tools, tmp_path):
     for name in ("report.json", "report.md"):
         r = check_updates(cm, ["test-versions-newest", "test-versions-current"], output=str(tmp_path / name))

@@ -276,25 +276,57 @@ def ask(question, how='-q (--quiet) to take the default answers', optional=False
             'no_terminal': True}
 
 
-def nvidia_counters_for_admins_only(params_text = None):
+# Where the NVIDIA driver for Windows keeps RmProfilingAdminOnly, below HKEY_LOCAL_MACHINE: the first is where the
+# NVIDIA Control Panel of a current driver writes it and what that driver obeys (616.92, 2026-11-26: Nsight Compute
+# ran for a user who is no administrator with the value there alone); the second is the place older descriptions name
+NVIDIA_TWEAK_KEYS = (('SYSTEM', 'CurrentControlSet', 'Services', 'nvlddmkm', 'Parameters', 'Global', 'NVTweak'),
+                     ('SYSTEM', 'CurrentControlSet', 'Services', 'nvlddmkm', 'Global', 'NVTweak'))
+
+
+def nvidia_tweak_value(name, read = None):
+    """
+    A setting of the NVIDIA driver for Windows among its NVTweak values: (the value, the key that has it) of the
+    first of NVIDIA_TWEAK_KEYS that has it; (None, None) when a key is there and none has the value; ValueError when
+    no key is there (no NVIDIA driver). read(key parts, name) -> the value, None for no such value, OSError for no
+    such key - the registry's by default (a test gives its own).
+    """
+    def registry(parts, value_name):
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, chr(92).join(parts)) as k:
+            try:
+                return winreg.QueryValueEx(k, value_name)[0]
+            except FileNotFoundError:
+                return None
+
+    read = read or registry
+    there = 0
+    for parts in NVIDIA_TWEAK_KEYS:
+        try:
+            value = read(parts, name)
+        except OSError:
+            continue
+        there += 1
+        if value is not None:
+            return value, chr(92).join(parts)
+    if not there:
+        raise ValueError('no NVTweak key of the NVIDIA driver in the registry')
+    return None, None
+
+
+def nvidia_counters_for_admins_only(params_text = None, read = None):
     """
     Whether this machine's NVIDIA driver lets only administrators read the GPU's performance counters, which Nsight
     Compute (ncu) needs - it stops with ERR_NVGPUCTRPERM otherwise. Linux: RmProfilingAdminOnly of
     /proc/driver/nvidia/params (params_text: that file's text, for a test); Windows: the driver's value of that name
-    among its NVTweak settings (none there: the driver's default, administrators only). True, False, or None when it
-    cannot be read (no NVIDIA driver here).
+    among its NVTweak settings (nvidia_tweak_value; none there: the driver's default, administrators only). True,
+    False, or None when it cannot be read (no NVIDIA driver here).
     """
-    if params_text is None and os.name == 'nt':
+    if params_text is None and (os.name == 'nt' or read is not None):
         try:
-            import winreg
-            key = chr(92).join(['SYSTEM', 'CurrentControlSet', 'Services', 'nvlddmkm', 'Global', 'NVTweak'])
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as k:
-                try:
-                    return bool(winreg.QueryValueEx(k, 'RmProfilingAdminOnly')[0])
-                except FileNotFoundError:
-                    return True
-        except OSError:
+            value, key = nvidia_tweak_value('RmProfilingAdminOnly', read)
+        except ValueError:
             return None
+        return True if value is None else bool(value)
     if params_text is None:
         try:
             with open('/proc/driver/nvidia/params', encoding = 'utf-8') as f:

@@ -161,6 +161,8 @@ def proposals_of(verdicts, descs, min_os = 2, today = None):
     What the verdicts support, per tool (descs: tool -> its _desc.yaml as a dict):
       - default_version: the newest version obtained that works wherever it was tried, on at least min_os
         operating systems, when it is newer than the tool's default_version (first: the tool had none);
+      - unpinned: the same for a tool that has no default_version on purpose (unpinned: '<reason>' of its _desc.yaml)
+        - a note with the reason, never a first pin;
       - latest_limits: a version newer than default_version that failed somewhere for a reason other than "not
         available" and that no limit excludes yet, excluded with the class and the first line of its error, and
         today's date;
@@ -236,8 +238,13 @@ def proposals_of(verdicts, descs, min_os = 2, today = None):
 
         if candidates:
             v, version, ok, n = max(candidates)
-            proposals.append({'tool': tool, 'change': 'default_version', 'from': known, 'to': version,
-                              'works_on': ok, 'evidence': n, 'first': not known})
+            unpinned = desc.get('unpinned') if not known else None
+            if isinstance(unpinned, str) and unpinned.strip():
+                proposals.append({'tool': tool, 'change': 'unpinned', 'version': version, 'reason': unpinned.strip(),
+                                  'works_on': ok, 'evidence': n})
+            else:
+                proposals.append({'tool': tool, 'change': 'default_version', 'from': known, 'to': version,
+                                  'works_on': ok, 'evidence': n, 'first': not known})
 
     return proposals
 
@@ -451,9 +458,16 @@ class CTask(InitCTask):
                            f'{p["evidence"]} run{"s" if p["evidence"] != 1 else ""}' +
                            ('; a first pin: the tool has no default_version, so this changes what a request without a version installs' if p.get('first') else '') + ')')
                     print (f"  default_version: '{p['to']}'")
+                elif p['change'] == 'unpinned':
+                    print (f'tool/{p["tool"]}: note - {p["version"]} works on {", ".join(p["works_on"])} '
+                           f'({p["evidence"]} run{"s" if p["evidence"] != 1 else ""}); no default_version is proposed: '
+                           f'the tool has no pin on purpose - {p["reason"]}')
                 elif p['change'] == 'not available':
                     print (f'tool/{p["tool"]}: note - {p["version"]} is not available on {p["on"]} ({p["error"]})'
                            + (f'; it works on {", ".join(p["works_on"])}' if p['works_on'] else '') + ' - not a limit: update the channel there')
+                elif p['change'] == 'not supported here':
+                    print (f'tool/{p["tool"]}: note - {p["version"]} is not supported on {p["on"]} ({p["error"]})'
+                           + (f'; it works on {", ".join(p["works_on"])}' if p['works_on'] else '') + ' - not a limit: the hardware of that machine')
                 else:
                     print (f'tool/{p["tool"]}/_desc.yaml: exclude {p["version"]} from latest ({p["evidence"]} run{"s" if p["evidence"] != 1 else ""})')
                     print ('  latest_limits:')

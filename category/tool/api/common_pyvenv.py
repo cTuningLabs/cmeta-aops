@@ -27,7 +27,8 @@ What it does:
 SPEC keys:
   name             the console script (without .exe)
   package          the PyPI package (default: name)
-  python           Python version of the environment (e.g. '3.12')
+  python           Python version of the environment (e.g. '3.12': the machine's own of that version, else the one uv
+                   downloads), or the path of an interpreter (a tool that must have the system's own Python)
   extra            more requirement strings installed alongside (e.g. 'ansible-core==2.21.4')
   unsupported_os   {uname: message} for systems the tool does not run on (e.g. Windows for Ansible)
   bin              {uname: folder of the environment} holding the command, for packages that install
@@ -42,6 +43,10 @@ SPEC keys:
                    (the tool's install_uses, e.g. ['lib-augeas']): their include and library folders go to the build's
                    CFLAGS and LDFLAGS, unless the compiler searches them anyway (/usr/include, /usr/lib) - Homebrew's
                    /opt/homebrew is not among Apple clang's folders
+  index            the package index the environment is filled from INSTEAD of PyPI: a vendor's own index that carries
+                   the package and what it needs (AMD's ROCm wheels: PyPI only has placeholders of the same names, so
+                   the two are never mixed) - uv's --index-url. --with.exclude_newer=release reads the release day
+                   from PyPI and is refused for such a package: a day (YYYY-MM-DD) is given instead
 
 The version is not a SPEC key: default_version in the tool's _desc.yaml is the one place that says which
 version cMeta installs by default (common_release.default_version reads it; a 'default_version' SPEC key of
@@ -120,6 +125,17 @@ def library_flags(_global, names):
     return cflags, ldflags
 
 
+def index_words(index):
+    """The words that make uv fill an environment from this package index instead of PyPI ('' for none); ValueError
+    for what is no http(s) address or would break the command line."""
+    index = str(index or '').strip()
+    if not index:
+        return ''
+    if not re.fullmatch(r'https?://[A-Za-z0-9._~:/@%+=-]+', index):
+        raise ValueError(f'the package index "{index}" is no plain http(s) address')
+    return f' --index-url {index}'
+
+
 def install_pyvenv(tool, ctx, params, cmd, spec):
     """The tool's install() hook for a pinned PyPI package in its own environment (see the module docstring)."""
     _global = ctx['tasks']['global']
@@ -181,21 +197,33 @@ def install_pyvenv(tool, ctx, params, cmd, spec):
         return {'return': 0}
 
     if not os.path.isfile(python):
-        r = run(f'{uv} venv --python {spec["python"]} "{venv}"', f'creating a Python {spec["python"]} environment')
+        r = run(f'{uv} venv --python "{spec["python"]}" "{venv}"', f'creating a Python {spec["python"]} environment')
         if r['return'] > 0:
             return r
     reqs = ' '.join(f'"{x}"' for x in [requirement] + list(spec.get('extra', [])))
 
-    # --with.exclude_newer=<day | release>: the dependencies as they were on that day (uv's --exclude-newer)
+    # A vendor's own package index instead of PyPI (SPEC key "index")
     try:
-        day = resolution_date((params.get('with') or {}).get('exclude_newer'), spec.get('package', spec['name']), version_simple)
+        source = index_words(spec.get('index'))
+    except ValueError as e:
+        return tool.cm.error(str(e))
+    if source and con:
+        print(f'{space}INFO: {requirement} and what it needs come from {str(spec["index"]).strip()} (not from PyPI)')
+
+    # --with.exclude_newer=<day | release>: the dependencies as they were on that day (uv's --exclude-newer)
+    asked_day = (params.get('with') or {}).get('exclude_newer')
+    if source and str(asked_day or '').strip().lower() == 'release':
+        return tool.cm.error(f'--with.exclude_newer=release reads the release day from PyPI, and {requirement} comes from '
+                             f'{str(spec["index"]).strip()}: give the day (YYYY-MM-DD)')
+    try:
+        day = resolution_date(asked_day, spec.get('package', spec['name']), version_simple)
     except ValueError as e:
         return tool.cm.error(str(e))
     older = f' --exclude-newer {day}' if day else ''
     if day and con:
         print(f'{space}INFO: the dependencies of {requirement} are resolved as of {day} (--with.exclude_newer)')
 
-    r = run(f'{uv} pip install{older} --python "{python}" {reqs}', f'installing {requirement}')
+    r = run(f'{uv} pip install{older}{source} --python "{python}" {reqs}', f'installing {requirement}')
     if r['return'] > 0:
         return r
 

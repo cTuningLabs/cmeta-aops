@@ -30,6 +30,9 @@ cmd_get_versions_uses:
     name: uv,92f171fc18714ebd
 cmd_get_versions_regex: 'cpython-(\d+\.\d+\.\d+)-'
 
+# No default_version, on purpose (the update report and the promotion of explored versions say this reason)
+unpinned: "a request without a version takes the Python the machine has, within the range a task or a program asks for (version: '>=3.11,<3.16'): a pin would replace every machine's own Python"
+
 # The versions "latest" must not take, with why and since when ("cx tool check-updates" and "--versions" show
 # them; a version asked for by number is still taken): the cap of cMeta's own installer (">=3.9,<3.15")
 latest_limits:

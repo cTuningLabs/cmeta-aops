@@ -10,6 +10,7 @@ usage: |
   cx task run run-vllm-server --action=status
   cx task run run-vllm-server --action=logs --lines=100
   cx task run run-vllm-server --action=stop
+  cx task run run-vllm-server --gpu=amd                           an AMD GPU: vLLM's ROCm image of the same release
 
   The container: cmeta-vllm-<port> (docker); the record: the state artifact local:vllm-server-<port>; the models,
   downloaded once by vLLM: the state artifact local:vllm-cache (mounted as its /root/.cache).
@@ -17,6 +18,19 @@ usage: |
 
 # The defaults of a start on this machine (a word on the command line wins): a page of the server sets them, and a
 # server kept by its host (server: run: cxt run-vllm-server --foreground) takes them at its next start.
+
+# The kinds of GPU (--gpu; nvidia when not said): the repository of vLLM's image for it - a default image of vLLM's
+# NVIDIA repository becomes the same release there (an --image of the command line stays) - and how docker passes
+# the GPU in. AMD: the kernel's ROCm devices and the video group, as vLLM's ROCm documentation runs its image
+# (checked on an MI300X, 2026-11-26).
+gpus:
+  nvidia:
+    image_repository: vllm/vllm-openai
+    run_flags: ['--gpus', 'all', '--ipc=host']
+  amd:
+    image_repository: vllm/vllm-openai-rocm
+    run_flags: ['--device', '/dev/kfd', '--device', '/dev/dri', '--group-add', 'video', '--ipc=host',
+                '--security-opt', 'seccomp=unconfined']
 
 configs:
   task-run-vllm-server:
@@ -49,6 +63,7 @@ configs:
 cli_help:
   model: {choice: run}
   image: {choice: run}
+  gpu: {choice: run}
   max_model_len: {choice: run}
   gpu_memory_utilization: {choice: run}
   action: {group: main}

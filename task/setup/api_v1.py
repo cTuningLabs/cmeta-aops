@@ -252,8 +252,9 @@ class CTask(InitCTask):
             record = self.lookup_versions(ctx, desc, tool_read, params, refresh = bool(params.get('refresh_versions')))
             latest, limit = self.newest_allowed(ctx, desc, tool_read, params, record)
             status, step = upgrade.update_status(record.get('known'), latest)
+            unpinned = upgrade.unpinned_reason(desc)
 
-            result.update({'stop': True, 'tool': artifact_au, 'known': record.get('known'),
+            result.update({'stop': True, 'tool': artifact_au, 'known': record.get('known'), 'unpinned': unpinned,
                            'latest': latest, 'latest_source': record.get('source'),
                            'newest': record.get('latest'), 'limit': limit,
                            'limit_text': upgrade.limit_text(limit) if limit else None,
@@ -263,6 +264,7 @@ class CTask(InitCTask):
             if con:
                 print (f'{artifact_print_name}: known {record.get("known") or "-"}, newest {latest or "-"}'
                        f' - {status}{" (" + step + ")" if step else ""}' +
+                       (f' on purpose: {unpinned}' if unpinned else '') +
                        (f'; {record.get("latest")} is {upgrade.limit_text(limit)}' if limit else ''))
 
             return result

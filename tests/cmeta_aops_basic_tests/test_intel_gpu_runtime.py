@@ -142,8 +142,11 @@ def test_the_line_of_gen12_and_later_provides_the_offline_compiler_and_the_level
     assert "intel-ocloc_" + tool["MODERN"] + "-0_amd64.deb" in names
     loader = next(n for n in names if n.startswith("libze1_"))
     assert loader.replace("libze1_", "libze-dev_") in names
+    # ... and the loader as a linker names it (-lze_loader: Triton's Intel backend links its launcher against it),
+    # on LIBRARY_PATH - a package may provide several things
     assert tool["provided"](tool["MODERN"]) == [{"file": "usr/bin/ocloc", "env": "PATH"},
-                                                {"file": "usr/include/level_zero/ze_api.h", "env": "CPATH", "dir": "usr/include"}]
+                                                {"file": "usr/include/level_zero/ze_api.h", "env": "CPATH", "dir": "usr/include"},
+                                                {"file": "usr/lib/x86_64-linux-gnu/libze_loader.so", "env": "LIBRARY_PATH"}]
     assert tool["provided"](tool["LEGACY"]) == []
     assert not any("ocloc" in p for p, _ in tool["RELEASES"][tool["LEGACY"]])
 
@@ -151,7 +154,8 @@ def test_the_line_of_gen12_and_later_provides_the_offline_compiler_and_the_level
 def test_what_a_line_provides_is_linked_and_exported(tool, tmp_path):
     modern = tool["MODERN"]
     root = tmp_path / "content" / modern
-    assert tool["provide"](str(root), modern) == ["usr/bin/ocloc", "usr/include/level_zero/ze_api.h"]
+    assert tool["provide"](str(root), modern) == ["usr/bin/ocloc", "usr/include/level_zero/ze_api.h",
+                                                  "usr/lib/x86_64-linux-gnu/libze_loader.so"]
     assert tool["exports"](str(root), modern) == {}
 
     # the package names its command ocloc-<version> (update-alternatives makes "ocloc", which an unpacking without
@@ -163,12 +167,16 @@ def test_what_a_line_provides_is_linked_and_exported(tool, tmp_path):
     headers = root / "usr" / "include" / "level_zero"
     headers.mkdir(parents = True)
     (headers / "ze_api.h").write_text("")
+    libs = root / "usr" / "lib" / "x86_64-linux-gnu"
+    libs.mkdir(parents = True)
+    (libs / "libze_loader.so").write_text("")
     if os.name == "nt":
         pytest.skip("symbolic links need privileges on Windows (the runtime is for Linux)")
     assert tool["provide"](str(root), modern) == []
     assert os.path.realpath(bin_dir / "ocloc") == os.path.realpath(bin_dir / "ocloc-26.35.1")
     assert tool["command_link"](str(root), "usr/bin/ocloc") == str(bin_dir / "ocloc")
-    assert tool["exports"](str(root), modern) == {"PATH": [str(bin_dir)], "CPATH": [str(root / "usr" / "include")]}
+    assert tool["exports"](str(root), modern) == {"PATH": [str(bin_dir)], "CPATH": [str(root / "usr" / "include")],
+                                                  "LIBRARY_PATH": [str(libs)]}
 
 
 def test_a_runtime_unpacked_before_a_package_was_added_gets_it_on_its_next_use(tool):
@@ -215,6 +223,8 @@ def test_complete_unpacks_only_what_the_line_gained_and_records_it(tool, tmp_pat
         unpacked.append((entry, into, [p for p, _ in packages]))
         (root / "usr" / "include" / "level_zero").mkdir(parents = True)
         (root / "usr" / "include" / "level_zero" / "ze_api.h").write_text("")
+        (root / "usr" / "lib" / "x86_64-linux-gnu").mkdir(parents = True)
+        (root / "usr" / "lib" / "x86_64-linux-gnu" / "libze_loader.so").write_text("")
         return {"return": 0, "sha256": {p.rsplit("/", 1)[-1]: "f" * 64 for p, _ in packages}}
 
     runtime._unpack = unpack
