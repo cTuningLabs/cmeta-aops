@@ -72,6 +72,14 @@ updates:
                  - $cudart
 
           ######################################################################################
+          # Prepare Target ROCm (HIP): hipcc of the ROCm installation - customize_llama_cpp takes hipconfig
+          # beside it (HIPCXX, HIP_PATH) and the GPUs of tool rocm (GPU_TARGETS)
+
+          - task: setup,a2f9b61079ce4333
+            if: '"rocm" in {{global.target.compute|$[]}}'
+            name: hipcc,61369ac07fad4edd
+
+          ######################################################################################
           # Prepare Libs for Target Android CPU
           - task: setup,a2f9b61079ce4333
             if: '"android-cpu" in {{global.target.compute|$[]}}'

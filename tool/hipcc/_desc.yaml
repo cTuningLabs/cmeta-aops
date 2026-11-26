@@ -27,6 +27,16 @@ uses:
   - task: setup,a2f9b61079ce4333
     name: rocm,b2584c1c8e984202
 
+# The hipcc of one ROCm: its cache entry follows the ROCm selected (several side by side: cx tool setup rocm --install
+# --version=<v>), and api_v1.py's find_paths takes the hipcc of that ROCm before any search (2026-11-26: a run with
+# --use.rocm.version=10.1.0 had compiled with the system ROCm's hipcc)
+cache_params_use:
+  all:
+    rocm:
+      version: "{{global.rocm.version}}"
+      path: "{{global.rocm.path}}"
+
+# Searched only when the selected ROCm has no hipcc beside it (api_v1.py), after the PATH, in this order
 extra_paths:
   linux:
     - "{{global.rocm.features.paths.bin|}}"     # next to the rocm-smi that tool/rocm found (a ROCm from AMD's pip distribution has both in its venv)

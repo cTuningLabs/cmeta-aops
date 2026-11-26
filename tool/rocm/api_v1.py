@@ -103,6 +103,50 @@ def prefer_rocm_smi(paths):
     return kept
 
 
+def link_chain(path, limit = 16):
+    """
+    A program and each link it goes through, in order: /usr/bin/rocm-smi, /etc/alternatives/rocm-smi,
+    /opt/rocm/core-10.2/bin/rocm-smi, /opt/rocm/core-10.2/libexec/rocm_smi/rocm_smi.py - the folders the
+    installation of the program is known by, without a search.
+    """
+    chain = [path]
+    while os.path.islink(chain[-1]) and len(chain) < limit:
+        chain.append(os.path.normpath(os.path.join(os.path.dirname(chain[-1]), os.readlink(chain[-1]))))
+    return chain
+
+
+def release_of(chain, version_output):
+    """
+    The ROCm release of the installation a found program belongs to, in the installation's own words, and the
+    folder that said it (the installation's bin): the .info/version above a folder of the program's link chain
+    (AMD's layouts: /opt/rocm/core-10.2/.info/version, /opt/rocm-6.4.1/.info/version), else amd-smi ("ROCm
+    version: 10.1.0") or rocm-sdk (AMD's Python distribution) in one of those folders - the real end of the chain
+    first. version_output(exe) answers what "<exe> version" prints. (None, None) when the installation names no
+    release (a distribution's rocm-smi alone).
+    """
+    folders = []
+    for p in reversed(chain):
+        d = os.path.dirname(p)
+        if d not in folders:
+            folders.append(d)
+    for d in folders:
+        try:
+            with open(os.path.join(os.path.dirname(d), '.info', 'version')) as f:
+                m = re.match(r'\s*([0-9]+\.[0-9]+(?:\.[0-9]+)*)', f.read())
+            if m:
+                return m.group(1), d
+        except OSError:
+            pass
+    for d in folders:
+        for exe, regex in (('amd-smi', r'ROCm version:\s*([0-9]+\.[0-9]+(?:\.[0-9]+)*)'), ('rocm-sdk', r'^\s*([0-9]+\.[0-9]+(?:\.[0-9]+)*)\s*$')):
+            path = os.path.join(d, exe)
+            if os.path.isfile(path):
+                m = re.search(regex, version_output(path) or '', re.M)
+                if m:
+                    return m.group(1), d
+    return None, None
+
+
 def gfx_name(target_version):
     """The GPU family of the kernel's gfx_target_version (kfd): 110502 -> gfx1152, 90402 -> gfx942."""
     v = int(target_version)
@@ -129,6 +173,52 @@ class CTool(InitCTool):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, module_file_path = __file__, **kwargs)
+
+
+    ############################################################
+    def detect_versions(self, ctx, paths, params = {}):
+        """
+        Each ROCm found is known by its release (10.2.0), as its installation says it (release_of), so that several
+        side by side are told apart and asked for by their releases (--use.rocm.version=10.1.0) and the newest is
+        taken when none is asked for. Before 2026-11-26 an AMD ROCm found through rocm-smi was known by rocm-smi's
+        own version (4.0.0 for ROCm 10.2, 3.x for ROCm 6 and 7), the ROCm this tool installs by its release. The
+        output keeps what the program prints (features.versions); a ROCm that names no release keeps rocm-smi's
+        version, as before.
+        """
+        _with = params.get('with', {})
+        env = _with.get('env', {})
+        timeout = _with.get('timeout')
+
+        found = {}
+        for xpath in paths:
+            path = xpath[1:] if xpath.startswith('!') else xpath
+
+            # what cmd_get_version asks: rocm-smi answers --version, rocm-sdk "version"
+            output = None
+            for arg in ('--version', 'version'):
+                r = self._output(path, arg, env, timeout)
+                if r is not None:
+                    output = r
+                    break
+            if output is None:
+                continue
+
+            release, _ = release_of(link_chain(path), lambda exe: self._output(exe, 'version', env, timeout))
+            if release:
+                output = f'ROCm release: {release}\n' + output
+            found[xpath] = {'output': output}
+
+        return {'return': 0, 'found_paths_with_versions': found}
+
+
+    ############################################################
+    def _output(self, path, arg, env, timeout):
+        """What "<path> <arg>" prints, None when it fails."""
+        r = self.cm.utils.sys.run(f'{self.cm.q(path)} {arg}', capture_output = True, fail_on_error = False,
+                                  env = env, timeout = timeout or 60, logger = self.logger)
+        if r.get('returncode') != 0:
+            return None
+        return ((r.get('stdout') or '') + '\n' + (r.get('stderr') or '')).replace('\r', '\n').strip()
 
 
     ############################################################
@@ -181,6 +271,14 @@ class CTool(InitCTool):
             sdk = is_rocm_sdk(rocm_smi_path)
             path_bin = os.path.dirname(os.path.realpath(rocm_smi_path))
             path_home = os.path.dirname(path_bin)
+
+            # The release and the bin folder its installation names (AMD's rocm-smi is a link into
+            # libexec/rocm_smi: its real folder is not the bin of hipcc and amd-smi)
+            release, release_bin = release_of(link_chain(rocm_smi_path), lambda exe: self._output(exe, 'version', env, timeout))
+            if release_bin and not sdk:
+                path_bin = release_bin
+                path_home = os.path.dirname(release_bin)
+
             if sdk:
                 sdk_bin, sdk_root = self._sdk_paths(rocm_smi_path, env, timeout)
                 if sdk_bin:
@@ -194,7 +292,9 @@ class CTool(InitCTool):
             if sdk:
                 features['rocm_sdk'] = rocm_smi_path
 
-            rocm_version = self._rocm_version(path_bin, env, timeout)
+            # the release of the installation itself; else, as before, what amd-smi on the PATH or in AMD's
+            # folders says (a distribution's rocm-smi beside AMD's ROCm)
+            rocm_version = release or self._rocm_version(path_bin, env, timeout)
             if rocm_version:
                 features.setdefault('versions', {})['rocm'] = rocm_version
                 features['rocm_version'] = rocm_version

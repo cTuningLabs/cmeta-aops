@@ -58,11 +58,15 @@ def test_the_description_detects_rocm_sdk_too(desc):
 
     # rocm-sdk has no --version: the command falls back to "version"
     assert "|| {{tool_path}} version" in desc["cmd_get_version"]
+    # the order is the point (the first that matches wins): the release that detect_versions puts in front
+    # (2026-11-26), then rocm-smi's own version, then the bare line of rocm-sdk
     regexes = [m["regex"] for m in desc["match_version"]]
-    assert re.search(regexes[0], "ROCM-SMI version: 3.0.0+unknown\nROCM-SMI-LIB version: 7.5.0\n").group(1) == "3.0.0+unknown"
-    assert not re.search(regexes[0], "10.1.0\n")
-    assert re.search(regexes[1], "10.1.0\n").group(1) == "10.1.0"
-    assert re.search(regexes[1], "10.1.0rc1\n").group(1) == "10.1.0rc1"
+    assert re.search(regexes[0], "ROCm release: 10.2.0\nROCM-SMI version: 4.0.0+2a0e6e67\n").group(1) == "10.2.0"
+    assert not re.search(regexes[0], "ROCM-SMI version: 3.0.0+unknown\n")
+    assert re.search(regexes[1], "ROCM-SMI version: 3.0.0+unknown\nROCM-SMI-LIB version: 7.5.0\n").group(1) == "3.0.0+unknown"
+    assert not re.search(regexes[1], "10.1.0\n")
+    assert re.search(regexes[2], "10.1.0\n").group(1) == "10.1.0"
+    assert re.search(regexes[2], "10.1.0rc1\n").group(1) == "10.1.0rc1"
 
 
 def test_is_rocm_sdk(rocm):

@@ -72,12 +72,23 @@ updates:
           - task: setup,a2f9b61079ce4333
             name: python,c00fb574d8ca4463
             if_os: linux,windows
+            if: '"rocm" not in {{global.target.compute|$[]}}'
             version: '{{params.python_version|>=3.10,<3.14}}'
 
             # Its own venv per set of targets: another program's packages, or the CPU and the
             # CUDA builds of torch, must not mix in
             with:
               venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+
+          # ROCm: the build starts from vLLM's own ROCm wheel of the release, made for Python 3.12
+          - task: setup,a2f9b61079ce4333
+            name: python,c00fb574d8ca4463
+            if_os: linux
+            if: '"rocm" in {{global.target.compute|$[]}}'
+            version: '{{params.python_version|3.12}}'
+            with:
+              venv_path: '{{local.target_path}}/venv-{{global.target.cmeta_targets_tag}}'
+
           - task: setup,a2f9b61079ce4333
             name: python,c00fb574d8ca4463
             if_os: darwin
@@ -98,6 +109,21 @@ updates:
           - internal_func: customize_vllm
             internal_func_from_local_key: selected-program
             internal_func_safe: True
+
+          # ROCm (--checkout=v<release>): vLLM's own ROCm wheel of the release into the venv - its torch, triton and
+          # aiter for one ROCm (tool pip-vllm) - then the development files of that ROCm and the build requirements
+          # over it (customize_vllm_rocm, api_v1.py); the source build below replaces the wheel's vLLM
+          - task: setup,a2f9b61079ce4333
+            name: pip
+            if: '"rocm" in {{global.target.compute|$[]}}'
+            with:
+              package: vllm
+            version: '{{local.vllm_release}}'
+
+          - internal_func: customize_vllm_rocm
+            internal_func_from_local_key: selected-program
+            internal_func_safe: True
+            if: '"rocm" in {{global.target.compute|$[]}}'
 
           - task: cmd,c9ba0a88df394d7f
             storage_key: compile-program

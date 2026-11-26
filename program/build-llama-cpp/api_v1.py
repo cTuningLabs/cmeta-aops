@@ -247,6 +247,7 @@ class CProgram(InitCProgram):
         for x in [
                 ('cpu', 'GGML_CPU', 'OFF'),
                 ('cuda', 'GGML_CUDA', 'OFF'),
+                ('rocm', 'GGML_HIP', 'OFF'),
                 ('metal', 'GGML_METAL', 'OFF'),
                 ('vulkan', 'GGML_VULKAN', 'OFF'),
             ]:
@@ -290,6 +291,28 @@ class CProgram(InitCProgram):
             build_env['CC'] = str(d['CMAKE_C_COMPILER']).strip('"')
         if 'CMAKE_CXX_COMPILER' in d:
             build_env['CXX'] = str(d['CMAKE_CXX_COMPILER']).strip('"')
+
+        # ROCm (HIP), as llama.cpp's docs/build.md builds it: HIPCXX = ROCm's clang (hipconfig -l), HIP_PATH = the ROCm
+        # installation (hipconfig -R) - hipconfig beside the hipcc cMeta set up (tool hipcc); GPU_TARGETS = the AMD GPUs
+        # of this machine (tool rocm: gfx942 of an MI300X), or --compile.gpu_targets=<gfx;gfx> for other ones
+        if 'rocm' in compute:
+            hipcc = str(_global.get('hipcc', {}).get('path') or '').strip('"')
+            hipconfig = os.path.join(os.path.dirname(hipcc), 'hipconfig') if hipcc else ''
+            if not hipconfig or not os.path.isfile(hipconfig):
+                return self.cm.error('the ROCm build needs hipconfig beside hipcc (%s): cx tool setup hipcc' % (hipcc or 'not set up'))
+            paths = {}
+            for flag in ('-l', '-R'):
+                r = self.cm.utils.sys.run(f'{self.cm.q(hipconfig)} {flag}', capture_output = True, fail_on_error = False, logger = self.logger)
+                paths[flag] = (r.get('stdout') or '').strip() if r.get('returncode') == 0 else ''
+            if not paths['-l'] or not paths['-R']:
+                return self.cm.error(f'{hipconfig} -l / -R gave no folder: the ROCm installation is not complete')
+            build_env['HIPCXX'] = os.path.join(paths['-l'], 'clang')
+            build_env['HIP_PATH'] = paths['-R']
+
+            targets = str(_compile.get('gpu_targets') or '').strip() or ';'.join(_global.get('rocm', {}).get('features', {}).get('gfx', []))
+            if not targets:
+                return self.cm.error('no AMD GPU found to build for (tool rocm): --compile.gpu_targets=<gfx942;...> names them')
+            d.setdefault('GPU_TARGETS', targets)
 
         # --max_jobs=N: parallel compile jobs. Without it, the jobs that fit the RAM available now: Ninja's default,
         # the CPU count plus 2, took more memory than a small or busy machine has - two builds in the Mac's 8 GB
