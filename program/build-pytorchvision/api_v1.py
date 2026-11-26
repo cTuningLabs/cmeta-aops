@@ -68,13 +68,14 @@ def missing_tag_note(tag, ls_remote):
             f'--checkout=main builds the development version, --checkout={newest} the newest release')
 
 
-def pair_env(checkout, torch_version, compute, cuda_caps = None):
+def pair_env(checkout, torch_version, compute, cuda_caps = None, rocm_gfx = None):
     """
     The environment that ties the torchvision build to its torch: BUILD_VERSION from a release tag (so
     the package is 0.29.1, not 0.29.1a0+<sha>, and "pip install torchvision==0.29.1" later finds it
     satisfied), PYTORCH_VERSION (setup.py then requires torch==<this> in the package's metadata, so pip
     never swaps the torch), FORCE_CUDA for the CUDA and ROCm ops, TORCH_CUDA_ARCH_LIST for this
-    machine's GPUs (unset, the build compiles for every architecture nvcc knows).
+    machine's GPUs (unset, the build compiles for every architecture nvcc knows), PYTORCH_ROCM_ARCH for its
+    AMD GPUs; for a build without a GPU, no GPU seen by torch (an empty CUDA_VISIBLE_DEVICES).
     """
     env = {}
     checkout = str(checkout or '')
@@ -87,6 +88,15 @@ def pair_env(checkout, torch_version, compute, cuda_caps = None):
         env['FORCE_CUDA'] = '1'
     if 'cuda' in compute and cuda_caps:
         env['TORCH_CUDA_ARCH_LIST'] = ';'.join(sorted(cuda_caps))
+    # an AMD GPU: PYTORCH_ROCM_ARCH for this machine's GPUs (unset, every architecture of the ROCm torch's own
+    # list - a dozen, each compiled)
+    if 'rocm' in compute and rocm_gfx:
+        env['PYTORCH_ROCM_ARCH'] = ';'.join(sorted(set(rocm_gfx)))
+    # no GPU asked for: the GPUs hidden from torch while it builds - torchvision compiles its CUDA / ROCm sources
+    # whenever torch sees a GPU (a CPU build beside a CUDA torch called nvcc for the machine's old GPU: a laptop's sm_50,
+    # 2026-11-26, "Unsupported gpu architecture 'compute_50'"); an empty CUDA_VISIBLE_DEVICES hides AMD GPUs too
+    if 'cuda' not in compute and 'rocm' not in compute:
+        env['CUDA_VISIBLE_DEVICES'] = ''
     return env
 
 
@@ -442,7 +452,8 @@ class CProgram(InitCProgram):
         # The pair: the version of the package, the torch it requires, the GPU ops and their architectures
         devices = _global.get('target', {}).get('features', {}).get('cuda', {}).get('devices', [])
         caps = {dv.get('compute_cap') for dv in devices if dv.get('compute_cap')}
-        for k, v in pair_env(_local.get('checkout'), _local.get('torch_version'), compute, caps).items():
+        gfx = _global.get('rocm', {}).get('features', {}).get('gfx', [])     # the AMD GPUs of this machine (tool rocm)
+        for k, v in pair_env(_local.get('checkout'), _local.get('torch_version'), compute, caps, gfx).items():
             env.setdefault(k, v)
 
         # setup.py starts one compile job per CPU: the usual limit of the build programs
@@ -454,6 +465,10 @@ class CProgram(InitCProgram):
             env.setdefault('MAX_JOBS', str(common_build.default_max_jobs(device)))
 
         _local['pip_install_env'] = env
+
+        # the device of the check after the build (src/program.py): the one the build is for - torch's "cuda" for CUDA
+        # and ROCm - never the first GPU torch sees (a CPU build on a machine with a GPU too old for its torch)
+        _local['torch_device'] = next((d for c, d in (('cuda', 'cuda'), ('rocm', 'cuda'), ('xpu', 'xpu'), ('metal', 'mps')) if c in compute), 'cpu')
 
         # -----------------------------------------------------------------------
         # Check file: torch/__init__.py in venv after pip install

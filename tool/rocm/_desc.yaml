@@ -13,9 +13,14 @@ storage_key: rocm
 #   cx tool setup rocm --install --with.channel=nightly  # the nightlies (dev: the development builds)
 #   cx tool setup rocm --install --with.gfx=gfx942 --new # for another GPU family (a build machine)
 #
-# The features: the versions rocm-smi prints, "rocm_version" (amd-smi, rocm-sdk or /opt/rocm/.info),
-# "gfx" (the GPU families from the kernel: gfx942, gfx1152 ...), "devices", "paths.bin" (hipcc and
-# amd-smi are next to rocm-smi in AMD's layouts; tool/hipcc looks there first).
+# The version of a ROCm found is its release (10.2.0), as the installation itself says it - the .info/version of
+# AMD's layouts, amd-smi or rocm-sdk beside the program, the links of /usr/bin/rocm-smi followed (api_v1.py's
+# detect_versions); a distribution's rocm-smi that names no release keeps its own version. Several ROCm side by
+# side are then asked for by release: --use.rocm.version=10.1.0, the newest when none is asked for.
+#
+# The features: the versions rocm-smi prints, "rocm_version" (the release), "gfx" (the GPU families from the
+# kernel: gfx942, gfx1152 ...), "devices", "paths.bin" and "paths.home" (the installation's bin - hipcc and
+# amd-smi are there in AMD's layouts; tool/hipcc takes the hipcc of the ROCm selected).
 
 names:
   - rocm-smi{{global.host.vars.file_ext_exe}}
@@ -26,6 +31,12 @@ names:
   - rocm-sdk
 
 match_version:
+  # The ROCm release, as the installation says it (api_v1.py's detect_versions puts it first): several ROCm side
+  # by side are told apart and asked for by it (--use.rocm.version=10.1.0)
+  - regex: '^ROCm release:\s*([^\s]+)'
+    group: 1
+
+  # Else rocm-smi's own version (a distribution's rocm-smi that names no release)
   - regex: 'ROCM-SMI version:\s*([^\s]+)'
     group: 1
 

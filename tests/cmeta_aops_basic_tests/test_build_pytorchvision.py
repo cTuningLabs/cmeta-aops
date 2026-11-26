@@ -71,9 +71,17 @@ def test_pair_env(mod):
     # a ROCm torch: the GPU ops, no CUDA architectures, the torch version without its local tag
     assert mod["pair_env"]("v0.28.0", "2.13.0+rocm10.1.0", ["rocm"]) == {"BUILD_VERSION": "0.28.0", "PYTORCH_VERSION": "2.13.0", "FORCE_CUDA": "1"}
 
-    # main with a development torch: no package version, no torch pin, CPU only
-    assert mod["pair_env"]("main", "2.15.0a0+git1", ["cpu"]) == {"PYTORCH_VERSION": "2.15.0a0"}
-    assert mod["pair_env"](None, None, ["cpu"]) == {}
+    # with the AMD GPUs of this machine: only their architectures (gfx942 of an MI300X)
+    assert mod["pair_env"]("v0.29.1", "2.14.1+rocm7.2", ["rocm"], None, ["gfx942"])["PYTORCH_ROCM_ARCH"] == "gfx942"
+    assert "PYTORCH_ROCM_ARCH" not in mod["pair_env"]("v0.29.1", "2.14.1", ["cuda"], {"8.6"}, ["gfx942"])
+
+    # main with a development torch: no package version, no torch pin, CPU only - the GPUs hidden from torch while
+    # it builds (a CPU build beside a CUDA torch compiled the CUDA sources, 2026-11-26)
+    assert mod["pair_env"]("main", "2.15.0a0+git1", ["cpu"]) == {"PYTORCH_VERSION": "2.15.0a0", "CUDA_VISIBLE_DEVICES": ""}
+    assert mod["pair_env"](None, None, ["cpu"]) == {"CUDA_VISIBLE_DEVICES": ""}
+    assert mod["pair_env"](None, None, ["metal"]) == {"CUDA_VISIBLE_DEVICES": ""}
+    assert "CUDA_VISIBLE_DEVICES" not in mod["pair_env"]("v0.29.1", "2.14.1", ["cuda"], {"8.6"})
+    assert "CUDA_VISIBLE_DEVICES" not in mod["pair_env"]("v0.29.1", "2.14.1+rocm7.2", ["rocm"], None, ["gfx942"])
 
 
 def test_the_torch_probe_survives_the_shell(mod, monkeypatch):

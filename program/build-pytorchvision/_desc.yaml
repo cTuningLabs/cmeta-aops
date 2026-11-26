@@ -13,6 +13,11 @@ local_vars:
   run_src_file_names:
     - 'program.py'
 
+  # The device of the check after the build: the one the build is for (api_v1.py; a run without the build: the
+  # first device torch has)
+  run_time_env:
+    CMETA_TORCH_DEVICE: '{{local.torch_device|}}'
+
   output_files:
     - output.txt
 

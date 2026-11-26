@@ -2,6 +2,32 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.84.0.1)
+- **Several ROCm side by side, each known by its release.** `tool/rocm` knew a ROCm found through rocm-smi by
+  rocm-smi's own version (4.0.0 for ROCm 10.2, 3.x for ROCm 6 and 7), and the ROCm it installs from AMD's Python
+  distribution by its release: two side by side could not be told apart, and the system's ROCm could not be asked for
+  (`--use.rocm.version=10.2.0`). A ROCm is now known by its release as the installation says it (its `.info/version`,
+  or amd-smi / rocm-sdk, along the links of the program found: /usr/bin/rocm-smi -> /opt/rocm/core-10.2/bin); its
+  `paths.bin` / `paths.home` are the installation's (AMD's rocm-smi is a link into libexec/rocm_smi); a distribution's
+  rocm-smi that names no release keeps its own version. `tool/hipcc` takes the hipcc of the ROCm selected (its cache
+  entry follows that ROCm): a run with `--use.rocm.version=10.1.0` compiled with the system ROCm's hipcc before. An
+  entry made by an older version keeps rocm-smi's version until it is set up again. Checked on an MI300X with ROCm
+  10.1 of AMD's Python distribution beside the system's ROCm 10.2.
+- **llama.cpp for AMD GPUs.** `build-llama-cpp --compute=rocm`: GGML_HIP, the GPU families of the machine (tool rocm)
+  or `--compile.gpu_targets`, HIPCXX and HIP_PATH from the hipconfig of the ROCm selected.
+- **vLLM from source for AMD GPUs.** `build-vllm --compute=rocm --checkout=v<release>` builds on top of vLLM's own ROCm
+  wheel of the release (its torch, triton and aiter for one ROCm, Python 3.12): the development files of that ROCm
+  (`rocm[libraries,devel]` of the wheel's version, AMD's index), vLLM's build requirements of AMD's distribution
+  (`requirements/build/rock.txt`) without what the wheel brought, `PYTORCH_ROCM_ARCH` from the machine's GPUs
+  (`--gpu_targets`); the source build then replaces the wheel's vLLM. Checked on an MI300X.
+- **torchvision builds: AMD GPUs, a CPU build beside a GPU torch, a check of torchvision itself.**
+  `build-pytorchvision` compiles for the machine's AMD GPUs only (`PYTORCH_ROCM_ARCH`, not every family of ROCm); a
+  build for no GPU hides the GPUs from torch while it builds (torchvision compiles its CUDA sources whenever torch
+  sees a GPU: a CPU build next to a CUDA torch called nvcc for an old GPU and failed); the check after the build runs
+  torchvision's `nms` on the device the build is for and compares it with the CPU (before, only torch was checked),
+  and prints cuDNN only where it works. Checked with torchvision's main against PyTorch 2.15 on CPU, CUDA, Metal and
+  XPU, and on ROCm.
+
 ## 0.84.0
 - **torchaudio for a newer PyTorch.** `tool/pip-torchaudio` asked for the torchaudio of PyTorch's own number
   (`torchaudio==2.14.1`), but torchaudio follows PyTorch's numbers only up to 2.11 and publishes none after (its

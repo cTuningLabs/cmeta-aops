@@ -6,6 +6,7 @@
     "supported_compute": [
       "cpu",
       "cuda",
+      "rocm",
       "metal",
       "vulkan",
       "android-cpu"
