@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.85.0.1)
+## 0.86.0
 - **Which targets a machine has: `task/detect-targets` and `--compute=auto`.** Each target task declares a cheap probe
   beside its `support:` block (`probe:` in its `_desc.yaml`: files and device classes per OS - the NVIDIA driver's
   /proc file, an AMD GPU in the kernel's ROCm interface with its gfx, an Intel GPU by its PCI vendor and driver, an
