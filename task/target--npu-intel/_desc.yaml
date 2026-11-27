@@ -65,3 +65,12 @@ support:
   hardware: 'Intel NPUs (Meteor Lake and newer)'
   host_os: [linux, windows]
   status: supported
+
+# The probe of detect-targets (--compute=auto): Intel's NPU (driver intel_vpu); on Windows a compute accelerator of vendor 8086
+probe:
+  linux:
+    any:
+      - {accel_driver: [intel_vpu]}
+  windows:
+    any:
+      - {pnp: {class: [ComputeAccelerator], vendor: ['8086']}}

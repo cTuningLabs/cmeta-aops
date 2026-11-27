@@ -2331,9 +2331,11 @@ class Category(InitCategory):
 
         if ref in ('docker', 'podman') or ref.startswith('docker:') or ref.startswith('podman:'):
             engine, _, template = ref.partition(':')
-            compute = str(params.get('compute') or 'cpu')
-            if compute not in ('cuda', 'rocm'):
-                compute = 'cpu'
+
+            # A target that needs its device given to the instance says so itself (instance_overlay in its _desc.yaml):
+            # the instance is made with the template's compute overlay of that name; any other target: a CPU instance
+            from task_c36be4b9314a45e0.api.ctask import targets, instance_compute
+            compute = instance_compute(targets(self.cm), params.get('compute'), engine)
             r = self.cm.access({'category': 'task,' + self.cmeta['artifact'], 'command': 'run', 'arg1': 'get-host--docker,08e0250b15e2486a',
                                 'name': template or 'ubuntu', 'engine': engine, 'template': options.get('template') or {},
                                 'distro': str(options.get('distro') or ''),
@@ -2351,7 +2353,10 @@ class Category(InitCategory):
             if os.name != 'nt':
                 return self.cm.error('--on=wsl needs Windows (WSL): --on=docker, --on=podman or a host artifact (cx host ls)')
             engine, _, template = ref.partition(':')
-            compute = 'cuda' if str(params.get('compute') or '') == 'cuda' else 'cpu'
+
+            # as for a container: the target says whether a WSL instance needs the template's overlay of its name
+            from task_c36be4b9314a45e0.api.ctask import targets, instance_compute
+            compute = instance_compute(targets(self.cm), params.get('compute'), 'wsl')
             r = self.cm.access({'category': 'task,' + self.cmeta['artifact'], 'command': 'run', 'arg1': 'get-host--wsl,a3396a4efa35460b',
                                 'name': template or 'ubuntu', 'template': options.get('template') or {},
                                 'distro': str(options.get('distro') or ''), 'compute': compute,

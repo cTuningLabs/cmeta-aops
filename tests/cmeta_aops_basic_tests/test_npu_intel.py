@@ -152,10 +152,21 @@ def test_device_names_with_parentheses(common):
 
 
 def test_npu_selects_the_openvino_release(tool):
-    assert tool["backend_from_compute"](["npu-intel"], "windows") == "openvino"
-    assert tool["backend_from_compute"](["xpu"], "windows") == "sycl"
+    table = llama_target_backends()
+    assert tool["backend_from_compute"](["npu-intel"], "windows", table) == "openvino"
+    assert tool["backend_from_compute"](["xpu"], "windows", table) == "sycl"
 
     # npu-intel,openvino is one backend; cuda,vulkan are two
-    assert tool["backends_of"](["cpu", "npu-intel", "openvino"]) == ["openvino"]
-    assert tool["backends_of"](["cuda", "vulkan"]) == ["cuda", "vulkan"]
-    assert "npu-intel" in tool["GPU_TARGETS"]
+    assert tool["backends_of"](["cpu", "npu-intel", "openvino"], table) == ["openvino"]
+    assert tool["backends_of"](["cuda", "vulkan"], table) == ["cuda", "vulkan"]
+    assert "npu-intel" in table
+
+
+def llama_target_backends():
+    """`target_backends` of tool/llama-cpp/_desc.yaml: the targets that select a backend of a release build."""
+    import pathlib
+
+    import yaml
+
+    desc = pathlib.Path(__file__).resolve().parents[2] / 'tool' / 'llama-cpp' / '_desc.yaml'
+    return yaml.safe_load(desc.read_text(encoding = 'utf-8'))['target_backends']

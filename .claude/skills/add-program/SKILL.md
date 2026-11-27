@@ -396,3 +396,12 @@ A change that cannot keep one of them is raised with the maintainer before it is
       didn't touch author scratch siblings (`*.yaml2`, `*.py2`, `*.arc1`, `tmp*/`,
       `cmeta-task-saved-*.json`).
 ```
+
+
+## Targets are found, never listed
+
+A compute target is an artifact (`task/target--<name>`, in any repository - a private backend is a target of a private
+repository). A program names the targets it supports in `constraints.supported_compute` and gates what one target
+needs with `if:` conditions in its `uses`: that is a program's own business. It never needs a change of shared code,
+and code shared by programs (`category/program/api/*.py`, a template) holds no list of target names: it asks the
+target artifacts (`ctask.targets(cm)`) for the fact it needs. Adding a target: the skill `add-target`.

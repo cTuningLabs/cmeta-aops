@@ -155,7 +155,7 @@ def test_offline_naming_rules(ll):
     (["xpu"], "linux", "sycl"),
 ])
 def test_backend_from_compute(ll, compute, uname, backend):
-    assert ll.backend_from_compute(compute, uname) == backend
+    assert ll.backend_from_compute(compute, uname, llama_target_backends()) == backend
 
 
 def test_a_cuda_build_must_carry_kernels_for_the_gpu(ll):
@@ -178,3 +178,78 @@ def test_a_cuda_build_must_carry_kernels_for_the_gpu(ll):
     assert sel["asset"] == "llama-b11324-bin-ubuntu-cuda-13.4-x64.tar.gz"
     sel = ll.select_asset("11324", "linux", "amd64", "cuda", assets=B11324, cuda_driver="13.0", gpu_arch_min=35)
     assert "error" in sel and "build-llama-cpp" in sel["error"]
+
+
+# Stable releases (v1.0.0 = build 12359, 2026-11-13): names of builds, resolved from the releases the tool lists,
+# else from upstream's file nightly-tag.txt of the release
+
+def _releases():
+    import yaml
+
+    desc = yaml.safe_load((REPO_ROOT / "tool" / "llama-cpp" / "_desc.yaml").read_text(encoding="utf-8"))
+    return desc
+
+
+def test_a_stable_release_is_the_build_the_tool_lists(ll):
+    desc = _releases()
+    known = desc["releases"]
+
+    assert ll.build_of_release("1.0.0", known)["build"] == "12359"
+    assert ll.build_of_release("v1.1.0", known)["build"] == "12774"
+
+    # every key is a release name and every value a build number; the pin is a build
+    import re
+
+    assert all(re.fullmatch(r"[0-9]+[.][0-9]+[.][0-9]+", k) and str(v).isdigit() for k, v in known.items())
+    assert str(desc["default_version"]).isdigit()
+
+
+def test_a_build_number_a_range_and_a_word_are_no_release_names(ll):
+    for version in (12774, "12774", ">=1.0.0", "latest", "known", "1.1", "b12774", "", None):
+        assert ll.build_of_release(version, {"1.1.0": 12774}) is None, version
+
+
+def test_a_release_the_tool_does_not_list_is_read_from_upstream(ll, monkeypatch):
+    import io
+    import urllib.error
+    import urllib.request
+
+    asked = []
+
+    class Answer(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def urlopen(request, timeout = None):
+        asked.append(request.full_url)
+        if "/v2.0.0/" in request.full_url:
+            return Answer(b"b13000\n")
+        if "/v2.0.1/" in request.full_url:
+            return Answer(b"<html>not a build</html>")
+        raise urllib.error.HTTPError(request.full_url, 404, "Not Found", None, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+
+    r = ll.build_of_release("2.0.0", {"1.1.0": 12774})
+    assert r["build"] == "13000" and r["release"] == "2.0.0"
+    assert asked == ["https://github.com/ggml-org/llama.cpp/releases/download/v2.0.0/nightly-tag.txt"]
+
+    # a listed release asks nobody
+    assert ll.build_of_release("1.1.0", {"1.1.0": 12774})["build"] == "12774" and len(asked) == 1
+
+    # no such release, and a file that names no build: an error that says so, never a guess
+    assert "no stable release 9.9.9" in ll.build_of_release("9.9.9", {})["error"]
+    assert "names no build" in ll.build_of_release("2.0.1", {})["error"]
+
+
+def llama_target_backends():
+    """`target_backends` of tool/llama-cpp/_desc.yaml: the targets that select a backend of a release build."""
+    import pathlib
+
+    import yaml
+
+    desc = pathlib.Path(__file__).resolve().parents[2] / 'tool' / 'llama-cpp' / '_desc.yaml'
+    return yaml.safe_load(desc.read_text(encoding = 'utf-8'))['target_backends']

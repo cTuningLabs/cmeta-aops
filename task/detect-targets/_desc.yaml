@@ -1,0 +1,41 @@
+authors: Grigori Fursin
+
+# detect-targets - the compute targets of this machine: each target task's probe (`probe:` in its _desc.yaml, per OS:
+# files, device classes, drivers - nothing is installed, well under a second for all), the findings cached in
+# state::local:detect-targets with a fingerprint of the OS, kernel, devices and driver / runtime versions, detected again
+# when the fingerprint changes (and what changed is said) or with --redetect.
+#
+#   cx task run detect-targets                       # what this machine has (cached while nothing changed)
+#   cx task run detect-targets --only=gpu,npu        # some kinds or targets only
+#   cx task run detect-targets --full                # also each present target's own task: tools, devices, versions
+#   cx task run detect-targets --redetect            # whatever the fingerprint says
+#
+# A program takes it with --compute=auto: the targets present here that it supports - one accelerator kind is taken,
+# several are listed with their command lines (never a guess), none means the CPU. An accelerator of the machine
+# itself goes first (cuda, rocm, xpu, metal, an NPU); a portable interface over its devices (opencl, vulkan, the
+# openvino stack: `auto: portable` in the target's _desc.yaml) is taken only when the program supports none of those;
+# a target that is another device driven from this machine (`support.device_os`: an Android tablet) is listed, never
+# taken by itself.
+#
+# A probe (`probe: <linux | windows | darwin | all>: any: [checks]`) holds when one of its checks does: always,
+# machine, glob (+ version, names), kfd_gfx, drm_vendor (+ drivers), accel_driver, pci (+ device, drivers), pnp,
+# pnp_driver_value, registry_values, cpu_vendor, adb_devices, script (the target's own probe code: probe(host) of a
+# file of its artifact), and all / any of such checks.
+#
+# A target is an artifact of any repository, a private one too (task/target--<name>: its support, probe, set-up):
+# they are found by their alias among the repositories this call sees - a target of a repository the call must not see
+# (--hide_repos, a clearance) is neither probed nor named, and the findings are kept per set of targets probed.
+# task/target/README.tech.md says how a target is added.
+
+cache: False
+
+cli_params:
+  redetect:
+    type: bool
+  full:
+    type: bool
+
+cli_help:
+  only: {choice: run}
+  full: {choice: run}
+  redetect: {choice: run}

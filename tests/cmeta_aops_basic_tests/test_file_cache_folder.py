@@ -191,6 +191,10 @@ class FakeCM:
     def catch_error(self, r, fail16 = False):
         return r['return'] > 0 and (r['return'] != 16 or fail16)
 
+    def q(self, path):
+        # as the engine's: a path with a space, a comma or a plus in double quotes
+        return '"' + path + '"' if not path.startswith('"') and (' ' in path or ',' in path or '+' in path) else path
+
     def access(self, ii):
         self.calls.append(ii)
         return {'return': 0, 'path_to_git_repo': os.path.join(ii['path'], 'src')}
@@ -217,6 +221,14 @@ def test_a_download_goes_to_the_place_that_is_there(task_namespace, tmp_path, ca
     assert task.check_params(ctx, dict(params), {})['return'] == 0
     assert ctx['tasks']['local']['directory'] == os.path.join(str(second), name, folder)
     assert 'WARNING: the file cache %s is not available' % away in capsys.readouterr().out
+
+    # the folder as one word of the download's command line: quoted when its path holds a space
+    assert ctx['tasks']['local']['qdirectory'] == task.cm.q(ctx['tasks']['local']['directory'])
+    spaced = tmp_path / 'First Last' / 'cache'
+    spaced.mkdir(parents = True)
+    ctx = {'control': {'con': True}, 'tasks': {'local': {}, 'global': {'init': {'file_cache': str(spaced)}}}}
+    assert task.check_params(ctx, dict(params), {})['return'] == 0
+    assert ctx['tasks']['local']['qdirectory'] == '"' + os.path.join(str(spaced), name, folder) + '"'
 
     # the only place away: the run stops with what to do - no download into a folder called "None"
     ctx = {'control': {'con': True}, 'tasks': {'local': {}, 'global': {'init': {'file_cache': str(away)}}}}

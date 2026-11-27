@@ -11,6 +11,7 @@ usage: |
   cx task run run-vllm-server --action=logs --lines=100
   cx task run run-vllm-server --action=stop
   cx task run run-vllm-server --gpu=amd                           an AMD GPU: vLLM's ROCm image of the same release
+  cx task run run-vllm-server --model=openai/gpt-oss-120b --hf_cache=/data/hf    a model of a Hugging Face folder of this machine
 
   The container: cmeta-vllm-<port> (docker); the record: the state artifact local:vllm-server-<port>; the models,
   downloaded once by vLLM: the state artifact local:vllm-cache (mounted as its /root/.cache).
@@ -64,6 +65,7 @@ cli_help:
   model: {choice: run}
   image: {choice: run}
   gpu: {choice: run}
+  hf_cache: {choice: run}
   max_model_len: {choice: run}
   gpu_memory_utilization: {choice: run}
   action: {group: main}

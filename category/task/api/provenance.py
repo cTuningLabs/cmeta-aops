@@ -1544,6 +1544,12 @@ def run_checks(record, global_ctx, static_effective, match_version = None):
             add('version', 'info', True, f'--use.{key}.version={want}: resolved {have} (the word "{want.strip().lower()}")', tool = key)
             continue
 
+        # a version asked by a name the tool itself gives the version resolved (version_names of its result: the
+        # stable release 1.1.0 of llama.cpp is its build 12774) is that version, no number to compare
+        if want.strip() in [str(n) for n in tool.get('version_names') or []]:
+            add('version', 'info', True, f'--use.{key}.version={want}: resolved {have} (the name of that version)', tool = key)
+            continue
+
         ok = None
         if match_version is not None:
             try:

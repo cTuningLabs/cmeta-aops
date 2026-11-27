@@ -1101,3 +1101,27 @@ def test_a_version_asked_by_a_word_is_what_it_resolved_to(prov):
     assert by["nvcc"]["ok"] is True and 'the word "known"' in by["nvcc"]["detail"]
     assert by["python"]["ok"] is True and by["python"]["level"] == "error"            # 3.14 is 3.14.8
     assert by["cmake"]["ok"] is False and "(mismatch)" in by["cmake"]["detail"] and rec["ok"] is False
+
+
+def test_a_version_asked_by_a_name_of_the_tool_is_the_version_it_names(prov):
+    # --use.llama-cpp.version=1.1.0: llama.cpp's stable release 1.1.0 is its build 12774 - the tool's result lists the
+    # names of the build it found (version_names); a strict run ended as a "mismatch" (exit 99, 2026-11-27)
+    def record(asked):
+        return {"requested": {"use": {"llama-cpp": {"version": asked}}}, "compute": ["cpu"], "host": {"uname": "linux"},
+                "loaded": {"method": "resolved", "libraries": []}, "build": {"binary": {"format": "elf"}, "toolchain": {}},
+                "runtime": {}, "resolved": {}}
+
+    g = {"llama-cpp": {"version": "12774", "version_names": ["1.1.0", "v1.1.0"]}}
+    for asked in ("1.1.0", "v1.1.0"):
+        rec = record(asked)
+        prov.run_checks(rec, g, False)
+        check = [c for c in rec["checks"] if c["rule"] == "version"][0]
+        assert check["ok"] is True and check["level"] == "info"
+        assert check["detail"] == f'--use.llama-cpp.version={asked}: resolved 12774 (the name of that version)'
+
+    # another release's name, and a tool that lists no names: compared as before
+    for asked, tool in (("1.0.0", g["llama-cpp"]), ("1.1.0", {"version": "12774"})):
+        rec = record(asked)
+        prov.run_checks(rec, {"llama-cpp": tool}, False)
+        check = [c for c in rec["checks"] if c["rule"] == "version"][0]
+        assert check["ok"] is False and "(mismatch)" in check["detail"]

@@ -26,4 +26,4 @@ uses2:
 
   - task: cmd,c9ba0a88df394d7f
     if: "not {{local.skip_cmd}}"
-    cmd: '{{global.hf.qpath}} download {{local.repo}} {{local.includes}} --local-dir {{local.directory}}'
+    cmd: '{{global.hf.qpath}} download {{local.repo}} {{local.includes}} --local-dir {{local.qdirectory}}'

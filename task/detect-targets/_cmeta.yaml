@@ -1,0 +1,12 @@
+artifact: 652bc8a3853d4077
+category: task,c36be4b9314a45e0
+authors: Grigori Fursin
+creation_timestamp: '2026-11-26T21:05:53.677662+00:00'
+desc: 'The compute targets of this machine (GPUs, NPUs, Apple silicon, the CPU), found by cheap probes the target tasks declare, cached with a fingerprint of the hardware, drivers and runtimes - detected again when it changes.'
+generator:
+  agent: Claude Code 2.1.332
+  by: Grigori Fursin
+  effort: max
+  method: agent
+  model: claude-opus-5-5
+last_update_timestamp: '2026-11-26T21:07:05.179163+00:00'

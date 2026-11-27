@@ -431,6 +431,24 @@ Before proposing a change, check it against the five: does it replace something
 instead of adding beside it? does it stop an older artifact, caller, system or
 tool version from working? does any step guess? If yes, say so and ask.
 
+### 8.3 Targets are found, never listed
+
+A compute target is an artifact - `task/target--<name>`, in any repository, a private one too - and what it is
+stands in its `_desc.yaml`: `support` (its kind, the OSes, `device_os` for another device), `probe` and `auto`
+(`task/detect-targets`), `instance_overlay` (the instances that must be given its device), `backends` (the backend
+of a tool it selects). `--compute=<name>`, `cx program targets`, `detect-targets` and `--compute=auto` find targets
+by their alias among the repositories plugged in.
+
+- **Shared code holds no list of target names** and does not test `compute == '<name>'` for a fact a target can say
+  about itself. It asks: `targets(cm)`, `targets_on_device(...)`, `instance_compute(...)` of
+  `category/task/api/ctask.py`; a tool's `self.target_backends(compute)`. A new fact is a new key of the targets'
+  descriptions.
+- **A target's name is right inside an adaptor** that chooses among what its own tool, library or vendor supports
+  (the wheel index of a CUDA version, a build flag of one backend, a check of one vendor's libraries, a program's
+  `if:` conditions): a selector for a supported version, kept with what it belongs to, as data where it can be.
+- The guide: [`task/target/README.tech.md`](task/target/README.tech.md); the skill `add-target`; the guard:
+  `tests/cmeta_aops_basic_tests/test_targets_from_the_graph.py`.
+
 ## 9. Pointers
 
 - **Python API in artifacts** (dispatch, hooks, return contract, error handling):

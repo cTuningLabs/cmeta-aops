@@ -431,3 +431,20 @@ A change that cannot keep one of them is raised with the maintainer before it is
 - [ ] Ran `cx task index <ref>` (or `cx --reindex`) after adding the folder / changing `_cmeta.*`; a `_desc.yaml`-only edit needs neither.
 - [ ] Verified with a real run (safe passthrough, not `--info` for pipeline-only tasks); used `-j` to read the trace.
 - [ ] The `.py` header is the licence pointer only ("Licensed under the Apache License, Version 2.0." + the COPYRIGHT/LICENSE line), no `Copyright (C)` line; upstream notices on any vendored third-party source left verbatim (and added to `THIRD-PARTY.md`); didn't touch author scratch siblings (`*.yaml2`, `*.py2`, `*.arc1`, `tmp*/`, `cmeta-task-saved-*.json`).
+
+
+## Targets are found, never listed
+
+A task that needs to know something about compute targets asks the target artifacts - it holds no list of their
+names and does not test `compute == '<name>'` for a fact a target can say about itself:
+
+```python
+from task_c36be4b9314a45e0.api.ctask import targets, targets_on_device, instance_compute
+
+found = targets(self.cm)                               # {name: its _desc.yaml}: every task::target--<name> the call sees
+if targets_on_device(found, compute, 'android'): ...   # support.device_os of the targets
+```
+
+A new fact is a new key in the targets' `_desc.yaml`, read the same way; a target of another repository (a private
+backend) then works without a change of the task. A target's name stays in code only where an adaptor chooses among
+what its own tool or vendor supports. Adding a target: the skill `add-target`.

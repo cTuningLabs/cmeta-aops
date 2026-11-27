@@ -14,6 +14,7 @@ cx task run run-vllm-server --action=logs --lines=100
 cx task run run-vllm-server --action=stop
 cx task run run-vllm-server --foreground                        # attached: its log on the screen (a host keeps it so)
 cx task run run-vllm-server --gpu=amd                           # an AMD GPU: vLLM's ROCm image of the same release
+cx task run run-vllm-server --model=openai/gpt-oss-120b --hf_cache=/data/hf   # a model downloaded before
 cx task run run-vllm-server -- --enable-auto-tool-choice --tool-call-parser hermes    # more words for vLLM
 ```
 
@@ -29,6 +30,9 @@ cx task run run-vllm-server -- --enable-auto-tool-choice --tool-call-parser herm
 - **The models** are downloaded once by vLLM into the state artifact `local:vllm-cache`, mounted as the container's
   `/root/.cache` (vLLM's compiled kernels are kept there too, so a second start is quicker). A model that needs a
   Hugging Face login takes `HF_TOKEN` of this console, passed through a temporary env file, never on a command line.
+  `--hf_cache=<folder>` mounts a folder of Hugging Face models of this machine (a `HF_HOME`, with its `hub/`) over
+  the container's `/root/.cache/huggingface` instead: a large model downloaded once serves several servers
+  (`run-sglang-server` takes the same word); vLLM's compiled kernels stay in `local:vllm-cache`.
 - **The memory.** `--gpu_memory_utilization` is the share of the GPU's memory vLLM takes for the model and its KV
   cache, `--max_model_len` (8192) the context window; a context the memory cannot hold stops the start, with vLLM's
   own words in the error. When neither the command line nor the config names a share, the task follows vLLM's

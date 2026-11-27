@@ -46,3 +46,13 @@ support:
   hardware: 'Intel GPUs (oneAPI, Level Zero)'
   host_os: [linux, windows]
   status: supported
+
+# The probe of detect-targets (--compute=auto): an Intel GPU with the i915 or xe driver; on Windows a display device of
+# vendor 8086
+probe:
+  linux:
+    any:
+      - {drm_vendor: '0x8086', drivers: [i915, xe]}
+  windows:
+    any:
+      - {pnp: {class: [Display], vendor: ['8086']}}

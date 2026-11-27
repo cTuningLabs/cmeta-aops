@@ -6,7 +6,24 @@ name: llama-cli
 
 # Build number of the release installed when no --version is given (and checked out for
 # source builds). "cx tool setup llama-cpp --versions" lists the builds.
-default_version: 12728
+default_version: 12774
+
+# The stable releases (v0.1.2 ... v1.0.0 of 2026-11-13, v1.1.0) are names of builds: a stable release has no binaries
+# of its own - its file nightly-tag.txt names the build that has them, at the same commit. "--version=1.1.0" (or
+# v1.1.0) means the build below; a stable release that is not listed here is looked up in that file of upstream
+releases:
+  '1.1.0': 12774
+  '1.0.0': 12359
+  '0.9.0': 12110
+  '0.8.0': 11960
+  '0.7.0': 11669
+  '0.6.0': 11429
+  '0.5.0': 11146
+  '0.4.1': 10964
+  '0.4.0': 10809
+  '0.3.0': 10621
+  '0.2.0': 10566
+  '0.1.2': 10485
 
 # "llama-cli --version" prints "version: 0.5.0-dev (build 11324, commit 32dd62ee6)" since
 # the 0.5.0 line (September 2026) and "version: 9524 (59917d392)" before
@@ -26,6 +43,19 @@ cmd_get_versions_regex: '\brefs/tags/b(\d+)\b'
 # a build's tag comes minutes before the files of its release: the newest version is the newest tag whose GitHub
 # release has its files (cx tool check-updates, 2026-11-21: b12591 was named while its binaries were not published)
 latest_needs_assets: true
+
+# The cMeta targets that select an accelerator backend of a release build, and the backend, in the order of their
+# rank (the first one of a request that is listed here counts; none of them: cpu, metal on macOS). The Intel NPU runs
+# through the OpenVINO build. A target of another repository names its backend itself, in its own _desc.yaml:
+# `backends: {llama-cpp: <backend>}`
+target_backends:
+  cuda: cuda
+  vulkan: vulkan
+  rocm: rocm
+  xpu: sycl
+  npu-intel: openvino
+  openvino: openvino
+  metal: metal
 
 install_help_text:
   Please check https://github.com/ggml-org/llama.cpp !

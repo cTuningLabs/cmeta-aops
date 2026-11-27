@@ -64,6 +64,30 @@ def image_for_gpu(image, given, gpu_spec, nvidia_repository):
     return image
 
 
+def cache_volumes(cache, hf_cache = ''):
+    """
+    The container's caches: the task's own folder as its /root/.cache (vLLM's compiled kernels, and the models it
+    downloads), and - with --hf_cache - a folder of Hugging Face models of this machine over its
+    /root/.cache/huggingface, so a model downloaded once serves several servers (run-sglang-server takes the same word).
+    """
+    volumes = ['%s:/root/.cache' % cache]
+    if hf_cache:
+        volumes.append('%s:/root/.cache/huggingface' % hf_cache)
+    return volumes
+
+
+def model_folder(model):
+    """
+    A model in a folder of this machine (a model artifact's download, a model one made) instead of a Hugging Face id:
+    mounted read-only into the container as /models/<the folder's name>. Returns (what vLLM is given, the volume or '').
+    """
+    if model and os.path.isdir(model):
+        folder = os.path.abspath(model)
+        inner = '/models/' + (os.path.basename(folder.rstrip('/\\')) or 'model')
+        return inner, '%s:%s:ro' % (folder, inner)
+    return model, ''
+
+
 def http_get(url, timeout = 2.0):
     """GET -> (status or 0, the body's text)."""
     try:
@@ -94,7 +118,7 @@ class CTask(InitCTask):
     def run(self,
             ctx: dict,
             action: str = 'start',          # start | status | logs | stop | restart
-            model: str = '',                # the model as Hugging Face names it (default: the config's, else Qwen/Qwen3-0.6B)
+            model: str = '',                # the model as Hugging Face names it, or a folder of this machine with one (default: the config's, else Qwen/Qwen3-0.6B)
             port: int = DEFAULT_PORT,       # 8868 by default (vLLM's own 8000 stays inside the container)
             host: str = '127.0.0.1',        # the address the port is published on (0.0.0.0 for other machines: there is no key)
             image: str = '',                # vLLM's container image, its release (default: the config's, else vllm/vllm-openai:v0.31.0)
@@ -103,6 +127,7 @@ class CTask(InitCTask):
             gpu_memory_utilization: float = 0.0,   # the share of the GPU's memory vLLM takes (default: the config's, else by vLLM's release: none from 0.34 - vLLM sizes its cache -, 0.85 before)
             served_name: str = '',          # the model's name in /v1/models (default: the config's, else the model's own)
             max_num_seqs: int = 0,          # requests served at once (default: the config's, else vLLM's own)
+            hf_cache: str = '',             # a folder of Hugging Face models to use instead of the task's own (mounted as the container's /root/.cache/huggingface)
             swap: bool = False,             # a start that finds the server up with another model than asked for replaces it (default: it is left as it is, and said)
             lines: int = 60,                # logs: how many of the last lines
             timeout: int = 1200,            # seconds a start waits for the server to answer (a first start downloads the model)
@@ -116,6 +141,7 @@ class CTask(InitCTask):
             cx task run run-vllm-server --model=Qwen/Qwen3-4B --max_model_len=16384
             cx task run run-vllm-server --model=<another> --swap      # replace the model a running server serves
             cx task run run-vllm-server --model=<another> --port=8869 # a second server: vLLM serves one model each
+            cx task run run-vllm-server --model=openai/gpt-oss-120b --hf_cache=/data/hf  # a model downloaded before
             cx task run run-vllm-server --action=status|logs|stop|restart
         """
         con = ctx['control'].get('con', False)
@@ -225,8 +251,17 @@ class CTask(InitCTask):
         if r['return'] > 0:
             return r
         cache = r['path']
+        if hf_cache:
+            hf_cache = os.path.abspath(hf_cache)
+            if not os.path.isdir(hf_cache):
+                return self.cm.error('--hf_cache names no folder: %s' % hf_cache)
 
-        args = ['--model', model, '--max-model-len', str(max_model_len)]
+        # a model of a folder of this machine: mounted, named by --served_name (else its folder's name)
+        inner, model_volume = model_folder(model)
+        if model_volume and not served_name:
+            served_name = os.path.basename(inner)
+
+        args = ['--model', inner, '--max-model-len', str(max_model_len)]
         if gpu_memory_utilization:
             args += ['--gpu-memory-utilization', str(gpu_memory_utilization)]
         if served_name:
@@ -238,12 +273,12 @@ class CTask(InitCTask):
         secrets = {'HF_TOKEN': os.environ['HF_TOKEN']} if os.environ.get('HF_TOKEN') else {}
         params = {'category': TASK_CATEGORY, 'command': 'run', 'arg1': CONTAINER_RUN, 'ctx': ctx, 'engine': 'docker',
                   'image': image, 'name': name, 'detach': not foreground, 'rm': bool(foreground),
-                  'ports': ['%s:%d:%d' % (host, port, INNER_PORT)], 'volumes': ['%s:/root/.cache' % cache],
+                  'ports': ['%s:%d:%d' % (host, port, INNER_PORT)], 'volumes': cache_volumes(cache, hf_cache) + ([model_volume] if model_volume else []),
                   'run_flags': [str(f) for f in gpus[kind].get('run_flags') or []], 'cmd': args, 'env_secrets': secrets,
                   'labels': {'cmeta.task': 'run-vllm-server', 'cmeta.port': str(port)}, 'con': con, 'quiet': quiet}
         rec = {'name': name, 'port': port, 'host': host, 'image': image, 'gpu': kind, 'model': model, 'served_name': served_name or model,
                'max_model_len': max_model_len, 'gpu_memory_utilization': gpu_memory_utilization,
-               'max_num_seqs': max_num_seqs, 'args': args, 'cache': cache, 'foreground': bool(foreground),
+               'max_num_seqs': max_num_seqs, 'args': args, 'cache': cache, 'hf_cache': hf_cache, 'foreground': bool(foreground),
                'started': time.strftime('%Y-%m-%dT%H:%M:%S')}
         if con:
             print('')

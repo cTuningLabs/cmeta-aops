@@ -1606,7 +1606,11 @@ class CTask(InitCTask):
                     if compile_target_compute and set(selected_compute) != set(compile_target_compute):
                         recompile = True
 
-                    if not recompile and any(c in ('android-cpu', 'android-gpu', 'android-npu') for c in compile_target_compute):
+                    # built for an Android device (a target whose support.device_os is android - asked of the
+                    # target artifacts, not a list of names here): the same device?
+                    from task_c36be4b9314a45e0.api.ctask import targets, targets_on_device
+
+                    if not recompile and targets_on_device(targets(self.cm), compile_target_compute, 'android'):
                         compile_target_adb_serial = _compiled_state_global.get('target--android-cpu',{}).get('serial')
                         target_adb_serial = ctx_tasks['global'].get('target--android-cpu',{}).get('serial')
                         if compile_target_adb_serial != target_adb_serial:

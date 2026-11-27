@@ -26,3 +26,12 @@ support:
   host_os: [linux, windows, darwin]
   device_os: android
   status: supported
+
+# The probe of detect-targets: an Android device that the adb server of this machine lists as ready, asked on the
+# server's own socket. Nothing is started: a device shows once "adb devices" or "cx host connect" started the server.
+# It is another device (`support.device_os`), so --compute=auto never takes it by itself - it is listed, with its
+# command line
+probe:
+  all:
+    any:
+      - {adb_devices: true}

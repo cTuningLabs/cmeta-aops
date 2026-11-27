@@ -50,3 +50,18 @@ def test_how_docker_passes_each_kind_of_gpu_in():
     amd = kinds['amd']['run_flags']
     assert '/dev/kfd' in amd and '/dev/dri' in amd and 'video' in amd and '--gpus' not in amd
     assert all('--ipc=host' in kinds[k]['run_flags'] for k in kinds)
+
+
+def test_a_folder_of_hugging_face_models_over_the_tasks_own_cache():
+    cache_volumes = helpers()['cache_volumes']
+    assert cache_volumes('/c') == ['/c:/root/.cache']
+    assert cache_volumes('/c', '/data/hf') == ['/c:/root/.cache', '/data/hf:/root/.cache/huggingface']
+
+
+def test_a_model_in_a_folder_of_this_machine(tmp_path):
+    model_folder = helpers()['model_folder']
+    assert model_folder('openai/gpt-oss-120b') == ('openai/gpt-oss-120b', '')
+    folder = tmp_path / 'gpt-oss-120b'
+    folder.mkdir()
+    inner, volume = model_folder(str(folder))
+    assert inner == '/models/gpt-oss-120b' and volume == '%s:/models/gpt-oss-120b:ro' % folder
