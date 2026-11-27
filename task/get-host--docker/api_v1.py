@@ -239,6 +239,19 @@ def wait_ready(engine, inst, first_repo, con):
     return False
 
 
+def overlay_run_flags(overlay, engine):
+    """The run flags of a compute overlay for an engine: a list for both engines, or {docker: [...], podman: [...]}."""
+    flags = (overlay or {}).get('run_flags') or []
+    if isinstance(flags, dict):
+        flags = flags.get(engine) or []
+    return [str(x) for x in flags]
+
+
+def asks_nvidia_gpus(flags):
+    """Whether run flags ask the engine for NVIDIA GPUs: docker's --gpus, podman's CDI device nvidia.com/gpu=..."""
+    return any(f == '--gpus' or f.startswith('--gpus=') or 'nvidia.com/gpu' in f for f in flags or [])
+
+
 def readme(instance, engine, engine_version, image, name, params, compute, arch, carrier, home, mounts, made, cmeta_version, base=''):
     """The readme-cmeta.md written into the instance's home."""
     lines = [
@@ -518,10 +531,12 @@ class CTask(InitCTask):
             return self.cm.error(f'the template "{name}"{f" on {base_name}" if base_name else ""} has no compute overlay "{compute}" '
                                  f'(it has: {", ".join(overlays.keys()) or "none"})')
 
-        # A CUDA instance on a Linux engine needs the NVIDIA Container Toolkit (docker: the "nvidia" runtime, podman:
-        # the CDI file of the GPUs) - asked for explicitly, so a machine without it fails here with the cure instead
-        # of a container that starts without its GPU (Docker Desktop on Windows passes the GPU itself)
-        if compute == 'cuda' and sys.platform.startswith('linux') and not self._gpu_ready(engine):
+        # An instance whose overlay asks the engine for NVIDIA GPUs (its run flags: docker's --gpus, podman's CDI device)
+        # needs the NVIDIA Container Toolkit on a Linux engine (docker: the "nvidia" runtime, podman: the CDI file of
+        # the GPUs) - asked for explicitly, so a machine without it fails here with the cure instead of a container
+        # that starts without its GPU (Docker Desktop on Windows passes the GPU itself). Read from the overlay's flags,
+        # whatever the overlay is called
+        if asks_nvidia_gpus(overlay_run_flags(overlays.get(compute), engine)) and sys.platform.startswith('linux') and not self._gpu_ready(engine):
             return self.cm.error(f'{engine} here cannot give a container the NVIDIA GPU: the NVIDIA Container Toolkit is '
                                  f'missing or {engine} is not configured for it - '
                                  f'"cx tool setup nvidia-container-toolkit --install" (sudo), then try again')
@@ -672,12 +687,7 @@ class CTask(InitCTask):
         image = rb.get('image', '')
 
         # ---- the container, detached and persistent
-        run_flags = []
-        if compute != 'cpu':
-            rf = (overlays.get(compute) or {}).get('run_flags') or []
-            if isinstance(rf, dict):
-                rf = rf.get(engine) or []
-            run_flags = [str(x) for x in rf]
+        run_flags = overlay_run_flags(overlays.get(compute), engine) if compute != 'cpu' else []
         # the template's own run flags, whatever the compute (a list for both engines, or {docker: [...], podman: [...]}):
         # what an instance of it always needs - a cluster node's --privileged (container/slurm-node of cmeta-aops-ext2)
         for src in ((bdesc, tdesc) if bdesc is not tdesc else (tdesc,)):

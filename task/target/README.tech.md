@@ -121,5 +121,105 @@ A target's result is cached, but it is refreshed on every run:
 A `CMETA_HOME` copied or shared between machines therefore never builds for another
 machine's GPU.
 
+## Which targets a machine has
+
+```bash
+cx task run detect-targets                      # every target with a probe: there or not, its devices
+cx task run detect-targets --only=gpu,npu       # some kinds or targets (a view: all are still probed)
+cx task run detect-targets --full               # also the target task of each one found: tools, devices, versions
+cx task run detect-targets --redetect           # whatever the fingerprint says
+cx program targets <program> --detect           # where a program can run here, with the command lines
+cx program run <program> --compute=auto         # take what this machine has
+```
+
+- Each target task declares a cheap probe (`probe:` in its `_desc.yaml`). Nothing is installed or started.
+- The findings are kept in `state::local:detect-targets` with a fingerprint of the OS, the kernel, the devices and
+  the driver versions. A changed fingerprint means the targets are detected again and what changed is said.
+- `--compute=auto` takes, among the targets found that the program supports:
+  1. an accelerator of the machine itself (`cuda`, `rocm`, `xpu`, `metal`, an NPU): one kind is taken, several are
+     listed with their command lines - never a guess;
+  2. else a portable interface over its devices (`auto: portable` in the target: `opencl`, `vulkan`, `openvino`),
+     the same way;
+  3. else the CPU.
+  A target that is another device driven from the machine (`support.device_os`: an Android tablet) is never taken
+  by itself: it is listed with its command line.
+- A run without `--compute` is unchanged: the CPU, nothing probed.
+
+## Adding a target, in any repository
+
+A target is an artifact, `task/target--<name>`. Nothing else names it: `--compute=<name>`, `cx program targets`,
+`detect-targets` and `--compute=auto` find the targets by their alias among the repositories plugged in. A backend
+that must not be public is a target in a repository of its own:
+
+```bash
+cx task add <repository>:target--acme-npu --yaml
+```
+
+Its `_desc.yaml` holds what the public targets hold:
+
+```yaml
+store_global: True
+storage_key: target--acme-npu
+cache: True
+
+uses:                              # how it is set up: its driver, runtime or SDK as cMeta tools (they may be private too)
+  - task: setup,a2f9b61079ce4333
+    name: acme-runtime
+
+env_if_not_used:
+  CMETA_TARGET_ACME_NPU: 0
+env:
+  CMETA_TARGET_ACME_NPU: 1
+
+support:                           # what "cx program targets" shows
+  kind: npu                        # cpu, gpu, npu, stack, app
+  hardware: 'the Acme NPU'
+  host_os: [linux, windows]
+  status: supported
+
+probe:                             # how detect-targets finds it: per OS (linux, windows, darwin) or all
+  linux:
+    any:
+      - {pci: {vendor: ['0xfff0']}}                    # its PCI vendor id (0xfff0 stands for it here)
+  windows:
+    any:
+      - {pnp: {class: [System], vendor: ['FFF0']}}
+```
+
+The checks of a probe (one that holds is enough; `all:` / `any:` combine them):
+
+| Check | Holds when |
+|---|---|
+| `{always: true}` | always (the CPU) |
+| `{machine: [arm64]}` | the machine's architecture is one of these |
+| `{glob: <pattern>}` (+ `version: <regex>`, `names: true`) | a file is there; its version is read from it; the files are the devices |
+| `{pci: {vendor: [...], device: [...], drivers: [...]}}` | Linux: a PCI device with these ids (and this driver) |
+| `{drm_vendor: '0x10de', drivers: [...]}` | Linux: a GPU of this vendor with one of these kernel drivers |
+| `{accel_driver: [...]}` | Linux: an accelerator of `/sys/class/accel` with one of these drivers |
+| `{kfd_gfx: true}` | Linux: an AMD GPU in the kernel's ROCm interface |
+| `{pnp: {class: [...], vendor: [...]}}` | Windows: a present device of these classes and vendors |
+| `{pnp_driver_value: {class: [...], value: <name>}}` | Windows: a present device whose driver key has this value |
+| `{registry_values: <key>}` | Windows: the key (under HKEY_LOCAL_MACHINE) has values |
+| `{cpu_vendor: [GenuineIntel]}` | the CPU says one of these vendors |
+| `{adb_devices: true}` | the adb server of the machine lists an Android device as ready |
+| `{script: probe.py}` | the target's own code says so: `probe(host)` of that file of the artifact returns `{'present': bool, 'devices': [...], 'versions': {...}}` - for a device none of the checks above describes |
+
+- A probe is expected to be cheap: it runs at every `--compute=auto`. What takes time (asking a runtime for its
+  devices) belongs to the target task itself, which `--full` runs and caches.
+- What else a target says about itself, read by shared code through one query (`targets(cm)` of
+  `category/task/api/ctask.py`) - no list of target names stands in shared code:
+
+  | Key | Says | Read by |
+  |---|---|---|
+  | `auto: portable` | an interface over the devices of other targets: `--compute=auto` takes it second | `detect-targets` |
+  | `support.device_os: android` | another device, driven from the machine: pushed to and run on it; never the choice of `--compute=auto` by itself | `detect-targets`, `setup-run`, `compile-and-run-program` |
+  | `instance_overlay: [docker, podman, wsl]` | in such an instance (`--on=docker` ...) the device must be given to it: the instance is made with the template's compute overlay of this target's name, and a template without one stops the run. Any other target runs in a CPU instance | the task category (`--on`) |
+  | `backends: {<tool's storage key>: <backend>}` | the backend of a tool that this target selects, for a tool that does not list the target in its own `target_backends:` | the tool (`self.target_backends(compute)`) |
+- **A target of a repository that a call must not see** (`--hide_repos`, a clearance of a site) is neither probed nor
+  named by that call, and the findings are kept per set of targets probed - such a call never reads what a call
+  that sees more has found.
+- A program names the targets it supports in `constraints.supported_compute`; a program for a private backend
+  lives in the private repository beside its target.
+
 See also: [docs/cmeta-aops/program-and-compute.md](../../docs/cmeta-aops/program-and-compute.md),
 [docs/cmeta-aops/llm-stacks.md](../../docs/cmeta-aops/llm-stacks.md).

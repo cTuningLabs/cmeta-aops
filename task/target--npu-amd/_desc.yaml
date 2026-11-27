@@ -61,3 +61,12 @@ support:
   hardware: 'AMD Ryzen AI NPUs (XDNA)'
   host_os: [linux, windows]
   status: supported
+
+# The probe of detect-targets (--compute=auto): AMD's NPU (driver amdxdna); on Windows a compute accelerator of vendor 1022
+probe:
+  linux:
+    any:
+      - {accel_driver: [amdxdna]}
+  windows:
+    any:
+      - {pnp: {class: [ComputeAccelerator], vendor: ['1022']}}

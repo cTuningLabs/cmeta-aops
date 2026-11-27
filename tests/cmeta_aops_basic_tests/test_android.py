@@ -74,7 +74,7 @@ def test_android_release_assets(tool):
     assert sel("11324", "android", "arm64", "cpu") == {"asset": "llama-b11324-bin-android-arm64.tar.gz"}
     assert sel("11324", "android", "aarch64", "snapdragon") == {"asset": "llama-b11324-bin-android-arm64-snapdragon.tar.gz"}
     assert "error" in sel("11324", "android", "arm64", "vulkan")
-    assert tool["backend_from_compute"](["android-cpu"], "android") == "cpu"
+    assert tool["backend_from_compute"](["android-cpu"], "android", llama_target_backends()) == "cpu"
 
 
 def test_android_release_version_marker(tool, tmp_path):
@@ -134,3 +134,13 @@ def test_setup_run_never_empties_the_device_work_folder():
     rm = src.index("shell \"rm -rf {adb_tmp_path}/{target_exe}\"")
     guard = src.rfind("if target_exe:", 0, rm)
     assert guard != -1 and rm - guard < 400
+
+
+def llama_target_backends():
+    """`target_backends` of tool/llama-cpp/_desc.yaml: the targets that select a backend of a release build."""
+    import pathlib
+
+    import yaml
+
+    desc = pathlib.Path(__file__).resolve().parents[2] / 'tool' / 'llama-cpp' / '_desc.yaml'
+    return yaml.safe_load(desc.read_text(encoding = 'utf-8'))['target_backends']

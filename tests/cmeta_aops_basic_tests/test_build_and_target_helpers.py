@@ -393,9 +393,10 @@ def test_llama_cpp_run_flags(compute, params, flags, settings):
 def test_llama_cpp_release_gpu_targets():
     ll = load_head("tool/llama-cpp/api_v1.py", "\nclass CTool",
                    ["from tool_c393ba5c6fa14f66.api.ctool import InitCTool"])
-    assert set(ll.GPU_TARGETS) >= {"cuda", "vulkan", "metal"}
-    assert ll.backend_from_compute(["cpu", "cuda"], "linux") == "cuda"
-    assert ll.backend_from_compute(["cpu"], "darwin") == "metal"
+    table = llama_target_backends()
+    assert set(table) >= {"cuda", "vulkan", "metal"}
+    assert ll.backend_from_compute(["cpu", "cuda"], "linux", table) == "cuda"
+    assert ll.backend_from_compute(["cpu"], "darwin", table) == "metal"
 
 
 def test_build_llama_cpp_default_checkout_is_the_release_build():
@@ -473,3 +474,13 @@ def test_where_the_windows_driver_keeps_the_counters_setting(ctask_helpers):
     # no value anywhere: the driver's default, administrators only; no key at all: no NVIDIA driver
     assert f(read = registry({current: {}, older: {}})) is True
     assert f(read = registry({})) is None
+
+
+def llama_target_backends():
+    """`target_backends` of tool/llama-cpp/_desc.yaml: the targets that select a backend of a release build."""
+    import pathlib
+
+    import yaml
+
+    desc = pathlib.Path(__file__).resolve().parents[2] / 'tool' / 'llama-cpp' / '_desc.yaml'
+    return yaml.safe_load(desc.read_text(encoding = 'utf-8'))['target_backends']

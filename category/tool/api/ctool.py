@@ -50,3 +50,28 @@ class InitCTool:
 
             self.logger.debug(f"Initializing CTool class from: {caller_frame.filename}:{caller_frame.lineno}")
 
+    ############################################################
+    def target_backends(self, compute = None):
+        """
+        Which backend of this tool each compute target selects: {target: backend}, in the order the tool ranks
+        them. The tool's own `target_backends` (its _desc.yaml) first; a target of the request that it does not
+        list - a target of another repository, a private backend - says it itself: `backends: {<this tool's
+        storage key>: <backend>}` in the target's _desc.yaml (task::target--<name>, found by its alias among the
+        repositories plugged in). Targets and what they select are data found by query: a tool's code holds no
+        list of target names.
+        """
+        table = dict(self.cdesc.get('target_backends') or {})
+        key = str(self.cdesc.get('storage_key') or '')
+
+        for c in compute or []:
+            if c in table or not key:
+                continue
+            r = self.cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'find', 'arg1': 'target--' + str(c),
+                                'load_files': ['_desc'], 'con': False})
+            if r.get('return', 1) == 0 and len(r.get('artifacts') or []) == 1:
+                desc = ((r['artifacts'][0].get('loaded_files') or {}).get('_desc') or {}).get('data') or {}
+                backend = (desc.get('backends') or {}).get(key)
+                if backend:
+                    table[str(c)] = str(backend)
+
+        return table

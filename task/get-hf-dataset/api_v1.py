@@ -127,6 +127,10 @@ class CTask(InitCTask):
                     directory = 'content'
 
         ctx['tasks']['local']['directory'] = directory
+
+        # the folder as one word of the command line: a path with a space (a user profile such as "C:/Users/First Last")
+        # was cut at the space, and hf took the rest for a file of the model ("File not found in model")
+        ctx['tasks']['local']['qdirectory'] = self.cm.q(directory)
         ctx['tasks']['local']['filename'] = filename
 
         return {'return':0}

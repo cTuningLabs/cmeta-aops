@@ -7,9 +7,40 @@ See the COPYRIGHT and LICENSE files in the project root for details.
 
 import os
 import platform
+import re
 import shutil
 
 from task_c36be4b9314a45e0.api.ctask import InitCTask, file_cache_folder
+
+WILDCARDS = set('*?[')
+
+
+def quoted(pattern):
+    """A file or pattern of a repository for the hf command line: a POSIX path, quoted when it holds a wildcard (so that
+    no shell turns "*.json" into the names of files of the current folder), else as it is."""
+    p = '/'.join(x for x in str(pattern).replace('\\', '/').split('/') if x)
+    return '"%s"' % p if WILDCARDS & set(p) else p
+
+
+def patterns_of(value):
+    """Patterns given as a list or as one text, separated by commas or semicolons."""
+    if not value:
+        return []
+    items = value if isinstance(value, (list, tuple)) else str(value).replace(';', ',').split(',')
+    return [str(i).strip() for i in items if str(i).strip()]
+
+
+def hf_words(revision = None, include = None, exclude = None):
+    """The words of a download at a revision of the repository, by Hugging Face's own patterns (fnmatch on the path:
+    "*.safetensors" matches the files of sub-folders too - exclude those)."""
+    words = ''
+    if revision:
+        words += ' --revision ' + str(revision).strip()
+    for p in patterns_of(include):
+        words += ' --include ' + quoted(p)
+    for p in patterns_of(exclude):
+        words += ' --exclude ' + quoted(p)
+    return words
 
 class CTask(InitCTask):
     """
@@ -105,9 +136,17 @@ class CTask(InitCTask):
             # README came); the file names of the cache entry stay as described
             if files:
                 for f in files:
-                    includes += ' --include ' + '/'.join(p for p in f.replace('\\', '/').split('/') if p)
+                    includes += ' --include ' + quoted(f)
 
             ctx['tasks']['local']['includes'] = includes
+
+            # A whole model at a revision, by patterns (2026-11-26, the models of the MLPerf benchmarks): the
+            # revision of the repository (a commit, a branch or a tag) and Hugging Face's own include / exclude
+            # patterns; a description without them downloads as before
+            revision = str(params.get('revision') or '').strip()
+            if revision and not re.match(r'^[A-Za-z0-9][A-Za-z0-9._/-]*$', revision):
+                return self.cm.error(f'revision "{revision}" is not a commit, branch or tag name ("{__file__}")')
+            ctx['tasks']['local']['hf_words'] = hf_words(revision, params.get('include'), params.get('exclude'))
 
             path_file_cache_list = ctx['tasks'].get('global', {}).get('init', {}).get('file_cache')
             if (ctx['tasks'].get('local') or {}).get('in_data_repository'):
@@ -126,6 +165,10 @@ class CTask(InitCTask):
                     directory = 'content'
 
         ctx['tasks']['local']['directory'] = directory
+
+        # the folder as one word of the command line: a path with a space (a user profile such as "C:/Users/First Last")
+        # was cut at the space, and hf took the rest for a file of the model ("File not found in model")
+        ctx['tasks']['local']['qdirectory'] = self.cm.q(directory)
         ctx['tasks']['local']['filename'] = filename
 
         return {'return':0}
@@ -148,6 +191,11 @@ class CTask(InitCTask):
 
         cache_params['path_root'] = ctx['tasks']['local']['directory']
         cache_params['filename'] = ctx['tasks']['local']['filename']
+
+        # a revision and patterns are what the entry holds: an entry of another revision or of other files is another one
+        for key in ('revision', 'include', 'exclude'):
+            if params.get(key):
+                cache_params[key] = params[key]
 
         return {'return':0}
 

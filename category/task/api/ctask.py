@@ -884,6 +884,53 @@ def intel_gpu_on_pci(sys_pci = '/sys/bus/pci/devices'):
     return False
 
 
+# The compute targets are artifacts of the graph (2026-11-27, the user: targets by query, no names hard-wired in shared
+# code): task::target--<name> in any repository - a private backend is a target of a private repository - each with what
+# it is in its _desc.yaml: `support` (its kind, the OSes, device_os when it is another device), `probe` and `auto`
+# (task/detect-targets), `backends` (the backend of a tool that it selects). Shared code asks for them here and reads
+# those facts. A target's name stays in code only where an adaptor chooses among what ITS tool or library supports (the
+# wheel index of a CUDA version, a build flag of one backend, a vendor's own check).
+TARGET_PREFIX = 'target--'
+
+
+def targets(cm):
+    """
+    The compute targets this call sees: {name: its _desc.yaml} of every task::target--<name>, from all the repositories
+    plugged in (task/target/README.tech.md says how one is added). A description that cannot be read is an empty one.
+    """
+    r = cm.access({'category': 'task,c36be4b9314a45e0', 'command': 'find', 'arg1': TARGET_PREFIX + '*',
+                   'load_files': ['_desc'], 'con': False})
+    out = {}
+    if not isinstance(r, dict) or r.get('return', 1) > 0:
+        return out
+    for a in r.get('artifacts') or []:
+        alias = (a.get('cmeta_ref_parts') or {}).get('artifact_alias') or ''
+        if alias.startswith(TARGET_PREFIX):
+            out[alias[len(TARGET_PREFIX):]] = ((a.get('loaded_files') or {}).get('_desc') or {}).get('data') or {}
+    return out
+
+
+def instance_compute(found, compute, kind):
+    """
+    The compute overlay that an instance of this kind (docker, podman, wsl: --on=<kind>) is made with for the targets
+    of a request: the first of them that says it needs its device given to such an instance - `instance_overlay:
+    [docker, podman, wsl]` in the target's _desc.yaml, the template's overlay of the target's name (its image, its
+    run flags). No such target: 'cpu'. compute: a list, or the text of a command line (names separated by commas).
+    found: what targets() gave.
+    """
+    names = [str(c).strip() for c in (compute if isinstance(compute, (list, tuple)) else str(compute or '').split(','))
+             if str(c).strip()]
+    return next((c for c in names if kind in ((found.get(c) or {}).get('instance_overlay') or [])), 'cpu')
+
+
+def targets_on_device(found, compute, device_os):
+    """
+    Whether one of the targets of a request is another device of this OS, driven from this machine (`support.device_os`
+    of the target: android, ios). found: what targets() gave.
+    """
+    return any(((found.get(c) or {}).get('support') or {}).get('device_os') == device_os for c in compute or [])
+
+
 # The AI harnesses are artifacts of the graph (2026-11-25, the user: selectors from the graph, never a table in code):
 # a task that runs one carries the tag ai-harness and declares it in the block "harness" of its _desc.yaml. The task
 # category's command "harnesses" (cx task harnesses) finds them in every plugged repository; run-ai, ai.gateway,

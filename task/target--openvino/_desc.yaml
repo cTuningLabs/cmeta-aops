@@ -31,3 +31,25 @@ support:
   hardware: 'the OpenVINO stack on Intel CPUs, GPUs and NPUs'
   host_os: [linux, windows, darwin]
   status: supported
+
+# How --compute=auto treats this target when it is present (detect-targets): a portable interface over the devices of
+# other targets - taken only when the program supports no target of this machine's own accelerators (cuda, rocm, xpu,
+# metal, an NPU)
+auto: portable
+
+# The probe of detect-targets (--compute=auto): hardware of the OpenVINO stack as `support` names it - an Intel CPU, an
+# Intel GPU or an Intel NPU
+probe:
+  linux:
+    any:
+      - {cpu_vendor: [GenuineIntel]}
+      - {drm_vendor: '0x8086', drivers: [i915, xe]}
+      - {accel_driver: [intel_vpu]}
+  windows:
+    any:
+      - {cpu_vendor: [GenuineIntel]}
+      - {pnp: {class: [Display], vendor: ['8086']}}
+      - {pnp: {class: [ComputeAccelerator], vendor: ['8086']}}
+  darwin:
+    any:
+      - {cpu_vendor: [GenuineIntel]}

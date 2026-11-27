@@ -97,10 +97,49 @@ class Category(InitCategory):
             if 'compute' not in p:
                 p['compute'] = target
 
+        # --compute=auto: the targets this machine has (task detect-targets: probes, cached with a fingerprint) that the
+        # program supports - one accelerator kind is taken, none means the CPU, several are listed (never a guess)
+        if str(p.get('compute') or '').strip().lower() == 'auto':
+            r = self._auto_compute(ctx, arg1, p)
+            if r['return'] > 0:
+                return r
+            p['compute'] = r['compute']
+
         r = self.cm.access(p)
         if self.cm.catch_error(r): return r
 
         return r
+
+    ############################################################
+    def _auto_compute(self, ctx, program, p):
+        """The target of --compute=auto for a program (its constraints.supported_compute) on this machine."""
+        supported = []
+        if program:
+            rf = self.cm.access({'category': 'program,' + self.cmeta['artifact'], 'command': 'find', 'arg1': program, 'con': False})
+            if rf.get('return', 1) == 0 and len(rf.get('artifacts') or []) == 1:
+                supported = list(((rf['artifacts'][0].get('cmeta') or {}).get('constraints') or {}).get('supported_compute') or [])
+        r = self.cm.access({'category': self.cmeta['uses_categories']['task'], 'command': 'run', 'arg1': 'detect-targets',
+                            'ctx': ctx, 'supported': ','.join(supported), 'redetect': bool(p.pop('redetect_targets', False)),
+                            'con': False, 'quiet': True})
+        if r.get('return', 1) > 0:
+            return r
+        con = ctx['control'].get('con', False)
+        if r.get('auto'):
+            if con:
+                print(f'cMeta info: --compute=auto -> {r["auto"]} (this machine: {", ".join(r["present"])}'
+                      + (f'; the program supports {", ".join(supported)}' if supported else '') + ')')
+            return {'return': 0, 'compute': r['auto']}
+        if r.get('candidates'):
+            lines = '\n'.join(f'  cx program run {program} --compute={c}' for c in r['candidates'])
+            return self.cm.error(f'--compute=auto: this machine has several targets {program or "the program"} supports - '
+                                 f'choose one:\n{lines}')
+        if r.get('attached'):
+            # another device (an Android tablet) is never taken by itself: which one, and how to ask for it
+            lines = '\n'.join(f'  cx program run {program} --compute={c}' for c in r['attached'])
+            return self.cm.error(f'--compute=auto takes a target of this machine itself, and {program or "the program"} '
+                                 f'supports none of them; it can run on a device attached to it - ask for it by name:\n{lines}')
+        return self.cm.error(f'--compute=auto: no target of this machine ({", ".join(r.get("present") or [])}) is one that '
+                             f'{program or "the program"} supports ({", ".join(supported) or "none declared"})')
 
     ############################################################
     def targets(self, params):
@@ -160,7 +199,30 @@ class Category(InitCategory):
                         where = f'{os_names.get(s["device_os"], s["device_os"])} devices, driven from {where}'
                     print (f'  {"":{width}}  -> {where}')
             print ('')
-            print ('A bare --compute (or --target) asks which ones to use.')
+            print ('A bare --compute (or --target) asks which ones to use; --compute=auto takes what this machine has.')
+
+        # --detect: what this machine has (task detect-targets, cached), and with a program (arg1) the targets it can run
+        # here - the suggestion of what to test, each with its command line; --only=<kinds or targets> filters
+        if params.get('detect'):
+            program = params.get('arg1') or ''
+            supported = []
+            if program:
+                rf = self.cm.access({'category': 'program,' + self.cmeta['artifact'], 'command': 'find', 'arg1': program, 'con': False})
+                if rf.get('return', 1) > 0 or len(rf.get('artifacts') or []) != 1:
+                    return self.cm.error(f'no single program "{program}"')
+                supported = list(((rf['artifacts'][0].get('cmeta') or {}).get('constraints') or {}).get('supported_compute') or [])
+            rd = self.cm.access({'category': self.cmeta['uses_categories']['task'], 'command': 'run', 'arg1': 'detect-targets',
+                                 'ctx': ctx, 'only': params.get('only', ''), 'redetect': bool(params.get('redetect')),
+                                 'con': con, 'quiet': True})
+            if rd.get('return', 1) > 0:
+                return rd
+            here = [t for t in rd.get('present') or [] if not supported or t in supported]
+            if con and program:
+                print ('')
+                print (f'{program} can run here on: {", ".join(here) or "none of its targets"}')
+                for t in here:
+                    print (f'  cx program run {program} --compute={t}')
+            return {'return': 0, 'targets': targets, 'present': rd.get('present'), 'here': here, 'supported': supported}
 
         return {'return': 0, 'targets': targets}
 

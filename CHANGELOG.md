@@ -2,6 +2,78 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.85.0.1)
+- **Which targets a machine has: `task/detect-targets` and `--compute=auto`.** Each target task declares a cheap probe
+  beside its `support:` block (`probe:` in its `_desc.yaml`: files and device classes per OS - the NVIDIA driver's
+  /proc file, an AMD GPU in the kernel's ROCm interface with its gfx, an Intel GPU by its PCI vendor and driver, an
+  NPU in /dev/accel by its driver, Windows' display and compute-accelerator devices by vendor, Apple silicon); the
+  task asks them in well under a second, nothing installed, and keeps the findings in `state::local:detect-targets`
+  with a fingerprint (the OS, the kernel, the devices, the driver versions). A changed fingerprint means the targets
+  are detected again and what changed is said; `--redetect` asks again, `--full` also runs the target tasks of the
+  targets found. `cx program run <program> --compute=auto` takes the target the machine has and the program supports
+  when there is one accelerator kind; with two it stops and lists the command lines (never a guess); with none, the
+  CPU. `cx program targets <program> --detect [--only=gpu]` says what a program can run on here. A target without a
+  probe is listed as such. A run without `--compute` is unchanged (the CPU, nothing probed).
+  The portable interfaces and Android have probes too: `opencl` and `vulkan` (Linux: a GPU and the file its driver
+  gives the loader - a distribution installs the Vulkan manifests of every Mesa driver, so a manifest alone says
+  nothing; Windows: a present display device whose driver names its OpenCL library or its Vulkan manifest in its
+  driver key, where the Khronos loaders read them; macOS: the system's OpenCL framework, MoltenVK's manifest),
+  `openvino` (an Intel CPU, GPU or NPU) and the four Android targets (the devices that the adb server of the machine
+  lists as ready, asked on the server's socket: nothing is started). `--compute=auto` takes an accelerator of the
+  machine itself first (cuda, rocm, xpu, metal, an NPU); a portable interface over its devices (`auto: portable` in the
+  target's description) only when the program supports none of those; and never by itself a target that is another
+  device driven from the machine (`support.device_os`: an attached tablet is listed with its command line). A probe
+  may combine checks (`all:` / `any:`). The iOS targets have no probe yet.
+  **A target is an artifact of any repository, a private one too**: `--compute=<name>`, `cx program targets`,
+  `detect-targets` and `--compute=auto` find the targets by their alias among the repositories plugged in, so a
+  backend that must not be public is a `task/target--<name>` in a repository of its own, with its `support:`, its
+  set-up (`uses:`) and its `probe:`. For a device none of the declared checks describes, the probe may be the target's
+  own code (`{script: probe.py}`: `probe(host)` of that file of the artifact; its failure is said in its row, the
+  other targets are still probed); `{pci: {vendor, device, drivers}}` matches a PCI device of a Linux machine, and
+  Windows is asked for the device classes the probes name (they were three, written in the code). A call that must
+  not see a repository (`--hide_repos`, a clearance) neither probes nor names its targets, and the findings are kept
+  per set of targets probed - such a call never reads what a call that sees more has found.
+  `task/target/README.tech.md` says how a target is added.
+- **Targets by query: no list of target names in shared code.** What shared code needs to know of a compute target
+  is a fact in the target's own `_desc.yaml`, asked through one query - `targets(cm)` of
+  `category/task/api/ctask.py`: every `task::target--<name>` the call sees, from any repository. Three places that
+  named targets ask now. **Instances** (`--on=docker`, `--on=podman`, `--on=wsl`): the task category let `cuda` and
+  `rocm` through by name; a target now says `instance_overlay: [docker, podman, wsl]` when such an instance must be
+  given its device (`cuda`: all three, `rocm`: the two container engines - the behaviour is the one before), and
+  `get-host--docker` asks for the NVIDIA Container Toolkit when the overlay's run flags ask the engine for NVIDIA
+  GPUs, whatever the overlay is called. **A tool's backends:** the targets that select a backend of llama.cpp's
+  release builds are `target_backends:` of `tool/llama-cpp/_desc.yaml`, and a target the tool does not list names its
+  backend itself (`backends: {llama-cpp: <backend>}`) - `self.target_backends(compute)` of the tool class gives both
+  in one table, for any tool. **Android:** `setup-run` and `compile-and-run-program` listed three targets; an
+  Android target is one whose `support.device_os` is `android`. A target's name stays in code where an adaptor
+  chooses among what its own tool or vendor supports (the wheel index of a CUDA version, a build flag of one backend).
+  For agents: AGENTS.md 8.3 and the skill `add-target`; a test refuses such a list back in those places.
+- **llama.cpp's stable releases by their names.** llama.cpp publishes stable releases since v0.1.2 (v1.0.0 in November
+  2026) beside its numbered builds: a stable release is the name of a build - it has no binaries of its own, and its
+  file `nightly-tag.txt` names the build that has them, at the same commit. `cx tool setup llama-cpp --version=1.1.0`
+  (or `v1.1.0`, also as `--use.llama-cpp.version=1.1.0` of a program) now means that build: `tool/llama-cpp` lists the
+  stable releases with their builds (`releases:` in its `_desc.yaml`) and reads upstream's file for one it does not
+  list; a version that is no release and no build is an error that says so. Builds stay the tool's versions - what
+  `llama-cli --version` prints, what the release files and the git tags carry - so cache entries and build numbers are
+  unchanged. The pinned build is 12774, the stable release 1.1.0 (it was 12728), also the default checkout of
+  `program/build-llama-cpp`; `--checkout=v1.0.0` builds a stable release from its tag. The tool's result lists the
+  names of the build it found (`version_names`), and the provenance check of a run takes a version asked by such a
+  name as the version resolved - a strict run with `--use.llama-cpp.version=1.1.0` ended as a mismatch otherwise.
+- **`get-hf-model` at a revision, by patterns.** `revision` (a commit, a branch or a tag), `include` and `exclude`
+  (Hugging Face's own patterns) in a model's description: a whole model at the commit a benchmark names, without the
+  copies of its sub-folders (`*.safetensors` matches `original/` too). A pattern is quoted on the command line, so no
+  shell turns `*.json` into the names of the entry's own files; the revision and the patterns are part of the cache
+  entry. Descriptions without them download as before.
+- **`get-hf-model` and `get-hf-dataset`: a download folder with a space in its path.** The folder was written into
+  the `hf download` command line as it is: under a file cache whose path holds a space (a user profile such as
+  `C:\Users\First Last`), `--local-dir` got the part before the space and `hf` took the rest for a file of the
+  repository ("File not found in model"). The folder is now one quoted word of the command line.
+- **`run-vllm-server`: a folder of Hugging Face models, a model in a folder.** `--hf_cache=<folder>` mounts a folder
+  of Hugging Face models of the machine (a `HF_HOME`) as the container's `/root/.cache/huggingface` - a large model
+  downloaded once serves several servers (`run-sglang-server` has the same word); `--model=<folder>` serves a model
+  of a folder of the machine (a model artifact's download), mounted read-only, named by `--served_name` or its
+  folder's name.
+
 ## 0.85.0
 - **`tool/lib-level-zero`: Intel's Level Zero SDK.** The headers and, on Windows, `ze_loader.lib` of oneAPI Level Zero
   (Intel's interface to its GPUs and NPUs) from Intel's release (github.com/oneapi-src/level-zero), checked against the

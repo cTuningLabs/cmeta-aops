@@ -43,3 +43,15 @@ support:
   hardware: 'AMD GPUs (ROCm)'
   host_os: [linux]
   status: supported
+
+# The probe of detect-targets (--compute=auto): AMD GPUs in the kernel's ROCm interface (their gfx), amdgpu's version
+probe:
+  linux:
+    any:
+      - {kfd_gfx: true}
+
+# In an instance (--on=docker, --on=podman, --on=wsl) this target needs its device given to the instance: the kinds of
+# instance that are made with the template's compute overlay of this target's name (its image, its GPU run flags) -
+# a template without that overlay stops the run and says so. In another kind of instance, and for a target that
+# declares nothing here, the instance is a CPU one
+instance_overlay: [docker, podman]

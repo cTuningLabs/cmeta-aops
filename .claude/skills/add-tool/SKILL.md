@@ -699,3 +699,24 @@ A change that cannot keep one of them is raised with the maintainer before it is
 - [ ] The `.py` header is the licence pointer only ("Licensed under the Apache License, Version 2.0." + the COPYRIGHT/LICENSE line), no `Copyright (C)` line (upstream notices on vendored third-party source left verbatim); referenced sub-tasks by `alias,UID`.
 - [ ] Don't touch author scratch siblings (`*.yaml2`, `*.py2`, `*.arc1`, `tmp*/`).
 ```
+
+
+## Targets are found, never listed
+
+A tool with backends of its own (a CPU, a CUDA, a Vulkan build ...) maps compute targets to them as **data**:
+
+```yaml
+target_backends:            # in the tool's _desc.yaml, in the order of their rank
+  cuda: cuda
+  xpu: sycl
+```
+
+```python
+table = self.target_backends(compute)     # the tool's list, plus what a target it does not list says itself
+```
+
+A target of another repository names its backend for the tool in its own description (`backends: {<the tool's
+storage key>: <backend>}`), so a private backend reuses a public tool without a change of it. What stays in a
+tool's code is the choice among what the tool supports for a target (the release file of a CUDA version, the wheel
+index of a backend): a selector for a supported version. `tool/llama-cpp` is the worked case; adding a target: the
+skill `add-target`.

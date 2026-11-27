@@ -29,3 +29,42 @@ support:
   hardware: 'any Vulkan GPU (NVIDIA, AMD, Intel, Apple through MoltenVK, Mesa)'
   host_os: [linux, windows, darwin]
   status: supported
+
+# How --compute=auto treats this target when it is present (detect-targets): a portable interface over the devices of
+# other targets - taken only when the program supports no target of this machine's own accelerators (cuda, rocm, xpu,
+# metal, an NPU)
+auto: portable
+
+# The probe of detect-targets (--compute=auto): a GPU with a driver registered for Vulkan. Linux: a GPU and the manifest
+# of its driver (a distribution installs the manifests of every Mesa driver, so a manifest alone says nothing; Mesa's
+# lvp, a CPU device, is no accelerator - --compute=vulkan still takes it when asked); WSL2: the GPU device of WSL and
+# Mesa's driver over Direct3D 12. Windows: a present display device (or a software component of one) whose driver names
+# its Vulkan manifest - what the Khronos loader reads - or the older list of the registry. macOS: MoltenVK's manifest
+# from Homebrew
+probe:
+  linux:
+    any:
+      - all:
+          - {drm_vendor: '0x10de', drivers: [nvidia]}
+          - any:
+              - {glob: '/etc/vulkan/icd.d/nvidia_icd*.json'}
+              - {glob: '/usr/share/vulkan/icd.d/nvidia_icd*.json'}
+      - all:
+          - {drm_vendor: '0x8086', drivers: [i915, xe]}
+          - {glob: '/usr/share/vulkan/icd.d/intel_icd*.json'}
+      - all:
+          - {drm_vendor: '0x1002', drivers: [amdgpu, radeon]}
+          - {glob: '/usr/share/vulkan/icd.d/radeon_icd*.json'}
+      - all:
+          - {glob: /dev/dxg}
+          - {glob: '/usr/share/vulkan/icd.d/dzn_icd*.json', names: true}
+  windows:
+    any:
+      - {pnp_driver_value: {class: [Display, SoftwareComponent], value: VulkanDriverName}}
+      - {registry_values: 'SOFTWARE\Khronos\Vulkan\Drivers'}
+  darwin:
+    any:
+      - {glob: '/opt/homebrew/etc/vulkan/icd.d/*.json', names: true}
+      - {glob: '/opt/homebrew/share/vulkan/icd.d/*.json', names: true}
+      - {glob: '/usr/local/etc/vulkan/icd.d/*.json', names: true}
+      - {glob: '/usr/local/share/vulkan/icd.d/*.json', names: true}

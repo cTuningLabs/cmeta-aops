@@ -38,3 +38,9 @@ support:
   hardware: 'Apple GPUs (Metal)'
   host_os: [darwin]
   status: supported
+
+# The probe of detect-targets (--compute=auto): Apple silicon (its GPU through Metal)
+probe:
+  darwin:
+    any:
+      - {machine: [arm64]}

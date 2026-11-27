@@ -18,3 +18,9 @@ support:
   hardware: 'the host CPU (x86-64, Arm64)'
   host_os: [linux, windows, darwin]
   status: supported
+
+# The probe of detect-targets (--compute=auto): the CPU is always there
+probe:
+  all:
+    any:
+      - {always: true}

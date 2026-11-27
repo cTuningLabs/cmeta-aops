@@ -56,6 +56,17 @@ class FakeCM:
             return {'return': 0, 'host': f'pc-wsl-{i["name"]}-26.04', 'made': True,
                     'image': f'cmeta/{i["name"]}:26.04-cmeta-latest', 'status': 'registered'}
 
+        # the targets as their artifacts describe them (ctask.targets): which of them ask for an instance's overlay
+        if category.startswith('task,') and command == 'find' and i.get('arg1') == 'target--*':
+            import pathlib
+
+            import yaml
+
+            found = sorted((pathlib.Path(__file__).resolve().parents[2] / 'task').glob('target--*/_desc.yaml'))
+            return {'return': 0, 'artifacts': [{'cmeta_ref_parts': {'artifact_alias': d.parent.name},
+                                                'loaded_files': {'_desc': {'data': yaml.safe_load(d.read_text(encoding = 'utf-8'))}}}
+                                               for d in found]}
+
         if category.startswith('host,') and command == 'find':
             if i['arg1'] in self.hosts:
                 return {'return': 0, 'artifacts': [{'path': '/hosts/' + i['arg1'],
@@ -82,11 +93,31 @@ class FakeCM:
 
 @pytest.fixture(scope='module')
 def module():
+    import sys
+    import types
+
+    # The engine gives the task category's helpers this module name; _run_on imports targets and instance_compute
+    # from it. Here: the real ctask.py loaded from its file (it needs no cMeta), under that name while these tests run
+    spec = importlib.util.spec_from_file_location('ctask_for_run_on', str(REPO_ROOT / 'category' / 'task' / 'api' / 'ctask.py'))
+    ctask = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ctask)
+    names = {'task_c36be4b9314a45e0': types.ModuleType('task_c36be4b9314a45e0'),
+             'task_c36be4b9314a45e0.api': types.ModuleType('task_c36be4b9314a45e0.api'),
+             'task_c36be4b9314a45e0.api.ctask': ctask}
+    before = {name: sys.modules.get(name) for name in names}
+    sys.modules.update(names)
+
     path = REPO_ROOT / 'category' / 'task' / 'api' / 'v2.py'
     spec = importlib.util.spec_from_file_location('task_api_v2_run_on_under_test', str(path))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
-    return m
+    yield m
+
+    for name, old in before.items():
+        if old is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = old
 
 
 def category(module, **kwargs):
@@ -110,7 +141,8 @@ def host_run(c):
 
 
 def instance_request(c):
-    made = [i for i in c.cm.calls if i['category'].startswith('task,')]
+    # the runs of the task category: the instance task (the query of the targets, a find, comes before it)
+    made = [i for i in c.cm.calls if i['category'].startswith('task,') and i['command'] == 'run']
     assert len(made) == 1 and made[0]['arg1'].startswith('get-host--docker')
     return made[0]
 
@@ -130,7 +162,7 @@ def test_the_words_minus_on_reach_the_host(module):
     assert r['run_on']['host'] == 'lab-thinkpad-ubuntu' and r['run_on']['returncode'] == 0
     assert r['run_on']['terminal'] is False
     assert ctx['on'] is r['run_on']
-    assert not any(i['category'].startswith('task,') for i in c.cm.calls)      # a host artifact: no instance made
+    assert not any(i['category'].startswith('task,') and i['command'] == 'run' for i in c.cm.calls)      # a host artifact: no instance made
 
 
 def test_a_docker_template_goes_through_get_host_docker(module):
@@ -169,7 +201,7 @@ def test_wsl_goes_through_get_host_wsl_on_windows_and_is_refused_elsewhere(modul
 
     if os.name == 'nt':
         assert r['return'] == 0
-        made = [i for i in c.cm.calls if i['category'].startswith('task,')]
+        made = [i for i in c.cm.calls if i['category'].startswith('task,') and i['command'] == 'run']
         assert len(made) == 1 and made[0]['arg1'].startswith('get-host--wsl')
         assert made[0]['name'] == 'debian' and made[0]['repos'] == 'a'
         inner = host_run(c)['arg2']

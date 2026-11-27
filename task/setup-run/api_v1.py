@@ -10,7 +10,7 @@ import platform
 import re
 import sys
 
-from task_c36be4b9314a45e0.api.ctask import InitCTask, supported_options, nvidia_counters_for_admins_only, running_as_administrator
+from task_c36be4b9314a45e0.api.ctask import InitCTask, supported_options, nvidia_counters_for_admins_only, running_as_administrator, targets, targets_on_device
 
 from . import android
 
@@ -126,7 +126,9 @@ class CTask(InitCTask):
         # android-npu set it up too): pushed and run over adb. A program that drives the device
         # from the host itself (run_on_host: True, e.g. one that exports models with the host's
         # Python and then pushes and runs them with adb) runs on the host.
-        _android_cpu = (any(c in ('android-cpu', 'android-gpu', 'android-npu') for c in target_compute)
+        # (an Android target is one whose support.device_os is android - asked of the target artifacts, so a target
+        # of another repository for an Android device needs no change here)
+        _android_cpu = (targets_on_device(targets(self.cm), target_compute, 'android')
                         and not params.get('run_on_host'))
         _cuda = True if 'cuda' in target_compute else False
 

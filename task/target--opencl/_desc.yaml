@@ -29,3 +29,31 @@ support:
   hardware: 'any OpenCL GPU (the ICDs of the drivers)'
   host_os: [linux, windows, darwin]
   status: supported
+
+# How --compute=auto treats this target when it is present (detect-targets): a portable interface over the devices of
+# other targets - taken only when the program supports no target of this machine's own accelerators (cuda, rocm, xpu,
+# metal, an NPU)
+auto: portable
+
+# The probe of detect-targets (--compute=auto): a GPU with a driver registered for OpenCL. Linux: an NVIDIA or AMD GPU
+# and the file its driver gives the ICD loader, or an Intel GPU (cMeta's tool intel-gpu-runtime brings its driver without
+# root); WSL2 is not probed. Windows: a present display device (or a software component of one) whose driver names its
+# OpenCL library - what the Khronos loader reads - or a driver in the older list of the registry (Intel's CPU runtime).
+# macOS: the system's framework
+probe:
+  linux:
+    any:
+      - all:
+          - {drm_vendor: '0x10de', drivers: [nvidia]}
+          - {glob: '/etc/OpenCL/vendors/nvidia*.icd'}
+      - all:
+          - {drm_vendor: '0x1002', drivers: [amdgpu]}
+          - {glob: '/etc/OpenCL/vendors/amdocl*.icd'}
+      - {drm_vendor: '0x8086', drivers: [i915, xe]}
+  windows:
+    any:
+      - {pnp_driver_value: {class: [Display, SoftwareComponent], value: OpenCLDriverName}}
+      - {registry_values: 'SOFTWARE\Khronos\OpenCL\Vendors'}
+  darwin:
+    any:
+      - {glob: /System/Library/Frameworks/OpenCL.framework}

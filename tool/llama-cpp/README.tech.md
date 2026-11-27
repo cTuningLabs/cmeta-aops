@@ -15,11 +15,16 @@ Targets are chosen with `--compute` (or `--target`); see [task/target/README.tec
 ```bash
 cx tool setup llama-cpp                          # the release for the host: cpu (metal on macOS)
 cx tool setup llama-cpp --with.compute=cuda      # the CUDA build
-cx tool setup llama-cpp --version=11324          # a given build (default: 12728)
+cx tool setup llama-cpp --version=11324          # a given build (default: 12774, the stable release 1.1.0)
+cx tool setup llama-cpp --version=1.0.0          # a stable release by its name: the build it names (12359)
 cx tool setup llama-cpp --versions               # the published builds
 cx tool setup llama-cpp --status | --upgrade     # newest build available / install it
 ```
 
+- A version is a build number, what `llama-cli --version` prints. A stable release (`1.1.0`, `v1.1.0`) is the
+  name of a build: llama.cpp publishes it without binaries, with a file `nightly-tag.txt` that names the build
+  which has them, at the same commit. The tool lists the stable releases with their builds (`releases` in its
+  `_desc.yaml`) and reads that file for one it does not list.
 - The asset comes from the release's own list, for the OS, the CPU and the backend.
 - The backend follows the targets: `cuda`, `vulkan`, `rocm`, `xpu` (SYCL), `openvino` or
   `metal`; `cpu` otherwise.
@@ -79,7 +84,8 @@ chat template and a single turn.
 ## Building from source: program/build-llama-cpp
 
 ```bash
-cx program run build-llama-cpp --compute=cuda                     # b12728 (as the release), for the detected GPU
+cx program run build-llama-cpp --compute=cuda                     # b12774 (as the release), for the detected GPU
+cx program run build-llama-cpp --checkout=v1.0.0                  # a stable release: its git tag
 cx program run build-llama-cpp --compute=cuda,vulkan --target_tmp=auto
 cx program run build-llama-cpp --compute=cuda,vulkan --target_tmp=auto --devices=Vulkan0
 cx program run build-llama-cpp --compute=metal --checkout=b11400 --compile.d.GGML_METAL_EMBED_LIBRARY=OFF

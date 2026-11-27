@@ -52,6 +52,50 @@ def _version_tuple(v):
         return ()
 
 
+# The name of a stable release: 1.1.0 or v1.1.0 (a build is a plain number)
+RELEASE_NAME = re.compile(r'^v?(\d+\.\d+\.\d+)$')
+
+
+def build_of_release(version, known = None, timeout = 30):
+    """
+    The build a stable release names (1.1.0 or v1.1.0 -> 12774): from the releases the tool's description lists
+    (known: {'1.1.0': 12774}), else from upstream's own file nightly-tag.txt of that release ("b12774").
+
+    Returns None for a version that is no stable release's name (a build number, a range, a word),
+    else {'build', 'release', 'source'} or {'error'}.
+    """
+    m = RELEASE_NAME.match(str(version or '').strip())
+    if not m:
+        return None
+
+    release = m.group(1)
+
+    known = {str(k): v for k, v in (known or {}).items()}
+    if release in known:
+        return {'build': str(known[release]), 'release': release, 'source': 'the releases this tool lists'}
+
+    import urllib.error
+    import urllib.request
+
+    url = f'{RELEASES}/download/v{release}/nightly-tag.txt'
+    try:
+        request = urllib.request.Request(url, headers = {'User-Agent': 'cmeta-aops'})
+        with urllib.request.urlopen(request, timeout = timeout) as response:
+            text = response.read(100).decode('utf-8', 'replace').strip()
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return {'error': f'llama.cpp has no stable release {release} that names its build ({url}: not found)'}
+        return {'error': f'the build of llama.cpp {release} could not be read from {url} (HTTP {e.code})'}
+    except Exception as e:
+        return {'error': f'the build of llama.cpp {release} could not be read from {url} ({e})'}
+
+    m = re.match(r'^b(\d+)$', text)
+    if not m:
+        return {'error': f'{url} names no build ("{text[:40]}")'}
+
+    return {'build': m.group(1), 'release': release, 'source': url}
+
+
 def release_assets(build, timeout = 30):
     """
     The asset names of release b<build>, read from the release's expanded-assets page:
@@ -202,28 +246,26 @@ def select_asset(build, uname, uarch, backend, assets = None, cuda_driver = None
     return {'error': f'unknown llama.cpp backend "{backend}"'}
 
 
-# The cMeta targets that select an accelerator backend of llama.cpp, and the backend: the
-# Intel NPU runs through the OpenVINO build (GGML_OPENVINO_DEVICE=NPU)
-TARGET_BACKENDS = (('cuda', 'cuda'), ('vulkan', 'vulkan'), ('rocm', 'rocm'), ('xpu', 'sycl'),
-                   ('npu-intel', 'openvino'), ('openvino', 'openvino'), ('metal', 'metal'))
-GPU_TARGETS = tuple(c for c, _ in TARGET_BACKENDS)
+# The cMeta targets that select an accelerator backend of llama.cpp are data: `target_backends` of this tool's
+# _desc.yaml ({target: backend}, in the order of their rank), and for a target the tool does not list - one of another
+# repository - the target's own `backends: {llama-cpp: <backend>}` (InitCTool.target_backends puts both in one table).
 
-
-def backend_from_compute(compute, uname):
-    """The llama.cpp backend for a cMeta compute list (accelerators first; CPU is in every build)."""
-    for c, backend in TARGET_BACKENDS:
+def backend_from_compute(compute, uname, table):
+    """The llama.cpp backend for a cMeta compute list: the first target of the table that the request holds
+    (accelerators first; CPU is in every build)."""
+    for c, backend in (table or {}).items():
         if c in compute:
             return backend
     return 'metal' if uname == 'darwin' else 'cpu'
 
 
-def backends_of(compute):
+def backends_of(compute, table):
     """The accelerator backends a compute list asks for (npu-intel,openvino is one: OpenVINO)."""
     backends = []
     for c in compute:
-        for target, backend in TARGET_BACKENDS:
-            if c == target and backend not in backends:
-                backends.append(backend)
+        backend = (table or {}).get(c)
+        if backend and backend not in backends:
+            backends.append(backend)
     return backends
 
 
@@ -242,7 +284,22 @@ class CTool(InitCTool):
                      cparams: dict = {},
     ):
         """
+        A stable release asked for by its name (--version=1.1.0 or v1.1.0, --use.llama-cpp.version=1.1.0) becomes
+        the build it names, before the cache lookup: builds are this tool's versions - what "llama-cli --version"
+        prints and the release files and git tags (b12774) carry.
         """
+
+        r = build_of_release(params.get('version'), self.cdesc.get('releases'))
+        if r is not None:
+            if 'error' in r:
+                return self.cm.error(r['error'])
+
+            if ctx['control'].get('con', False):
+                space = '  ' * ctx['tasks'].get('nested_call', 0) if ctx['control'].get('verbose', False) else ''
+                print ('')
+                print (f'{space}INFO: llama.cpp {r["release"]} is build {r["build"]} ({r["source"]})')
+
+            params['version'] = r['build']
 
         name = self.cdesc['name']
 
@@ -406,6 +463,12 @@ class CTool(InitCTool):
         if not path:
             return {'return': 0}
 
+        # The names of this build: the stable releases the tool lists for it (1.1.0 and v1.1.0 for 12774). A strict
+        # provenance check takes a version asked by one of them as the version resolved, not as a mismatch
+        names = [str(k) for k, v in (self.cdesc.get('releases') or {}).items() if str(v) == str(result.get('version'))]
+        if names:
+            result['version_names'] = names + ['v' + n for n in names]
+
         path_bin = os.path.dirname(path)
         ext = os.path.splitext(path)[1]
 
@@ -463,14 +526,15 @@ class CTool(InitCTool):
 
         # A release build has one GPU backend (and the CPU one): taking the first of two GPU
         # targets would run a different experiment than the one asked for
-        gpu_targets = [c for c in compute if c in GPU_TARGETS]
-        if len(backends_of(compute)) > 1 and not _with.get('backend'):
+        table = self.target_backends(compute)
+        gpu_targets = [c for c in compute if c in table]
+        if len(backends_of(compute, table)) > 1 and not _with.get('backend'):
             return self.cm.error(f'llama.cpp releases have one GPU backend per build, not '
                                  f'{" + ".join(gpu_targets)}: build one with all of them '
                                  f'(cx program run build-llama-cpp --compute={",".join(compute)}) '
                                  f'or run one target at a time')
 
-        backend = _with.get('backend') or backend_from_compute(compute, uname)
+        backend = _with.get('backend') or backend_from_compute(compute, uname, table)
 
         # Forces the CUDA version of the build (--with.ver=12.4)
         ver = _with.get('ver')
