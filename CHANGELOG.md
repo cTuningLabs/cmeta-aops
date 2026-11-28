@@ -2,7 +2,7 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
-## DEV VERSION (0.86.0.1)
+## 0.87.0
 - **Secrets: a value that cMeta makes, shown once when asked.** `cx secret store <alias> --generate` writes a new
   random 256-bit value instead of asking for one (owner-only, or sealed with `--password_protected`; a plain generated
   value needs no terminal), and `--print_key` shows a generated value once and returns it in the answer - for a key
