@@ -1,0 +1,15 @@
+artifact: 34fbaa2deedb448a
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-11-28T10:57:00+00:00'
+desc: "The static C library of a Linux system (libc.a), which a static link needs: found by asking the C compiler, installed with the distribution's package where it is missing (Fedora, the RHEL family, Amazon Linux, Azure Linux and openSUSE do not install it by default)."
+generator:
+  agent: Claude Code
+  by: Grigori Fursin
+  method: agent
+tags:
+- tool
+- lib
+- libc
+- static
+- linux

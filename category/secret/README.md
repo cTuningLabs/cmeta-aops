@@ -91,10 +91,15 @@ cx secret add my-vault:my-master --yaml --password_protected --generate --print_
                                                                           # the artifact and its value in one step
 ```
 
+`--value_env=<NAME>` (store and add) takes the value from that environment variable of the calling process - for a
+tool that has it in hand and has checked it (a keystore password it opened the keystore with): it is not asked again,
+and only the variable's name is on the command line.
+
 `cx secret add` (and `create`) takes the words of `store` - `--generate`, `--print_key`, `--password_protected`,
 `--store` for a value typed at the prompt kept owner-only, `--force` - beside every word of the common `add`
 (`--yaml`, `--desc.<key>=`, `--tags=` ...): with none of them it is the common `add`, and a request that needs a
-person at a terminal is refused before the artifact is made. A generated value without a password needs no
+person at a terminal is refused before the artifact is made, and when the value step does not end well (cancelled,
+Ctrl-C, two passwords that differ) the artifact it made is removed again - the next add of the name works. A generated value without a password needs no
 terminal (a script, a quiet run); a password is always typed by a person.
 
 When to show a value: a key that can be made again (a client key: generate another, give the service its new

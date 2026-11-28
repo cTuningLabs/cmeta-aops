@@ -183,6 +183,11 @@ libraries, compilers, profilers and run wrapping. Two consumers filter on it:
    NVIDIA ships (cuBLAS, cuDNN, the dynamic runtime) depend on the shared `libstdc++`, and a second,
    static copy in the executable would put two C++ runtimes in one process; a static CPU build
    (`-static`) links them statically.
+   A static link on Linux takes the system's static C library (`libc.a`), which Fedora, the RHEL
+   family, Amazon Linux, Azure Linux and openSUSE keep in a package that is not installed by default
+   (`ld: cannot find -lc`): a program that links statically sets up `tool/libc-static` before its
+   compile - it asks the compiler where its `libc.a` is and installs the distribution's package when
+   there is none (`tool/libc-static/README.md`).
 
 ## 6. Run machinery
 
@@ -226,6 +231,10 @@ and OS/compute libs `lib-openssl`, `lib-openmp`, `lib-cuda`, `lib-cudnn`,
 OpenCL headers and the library to link for the `opencl` target - Windows `OpenCL.lib` made
 from the Khronos ICD loader's export list, Linux the system's ICD loader, macOS the SDK's
 OpenCL framework; set it up with `if: '"opencl" in {{global.target.compute|$[]}}'`).
+`lib-sodium` (libsodium's pinned release with the static and the shared library in one cache entry, the
+same way on Linux, macOS and Windows) and `lib-sodium-android` (the same release built with the NDK for
+the device's ABI) follow the same pattern: one for `{{global.target.compute|$[]}} == ["cpu"]`, the other
+for `"android-cpu" in {{global.target.compute|$[]}}`.
 
 ## 8. Program taxonomy (all ~31)
 

@@ -1,0 +1,212 @@
+authors: Grigori Fursin
+
+# libsodium for an Android device, in the tool's own cache entry: upstream's pinned source release,
+# checked against the SHA-256 pinned below, compiled with the NDK's clang for the ABI of the attached
+# device - the static and the shared library side by side (api_v1.py). The same on a Windows, Linux
+# or macOS host; nothing goes into the system or the NDK.
+#
+#   cx tool setup lib-sodium-android                    # for the device attached (adb); its tests run on the device
+#   cx tool setup lib-sodium-android --with.check-      # without upstream's test suite on the device
+#   cx tool setup lib-sodium-android --with.abi=arm64-v8a   # no device attached: this ABI, no tests
+#   cx tool setup lib-sodium-android --version=1.0.21   # another release this file pins
+#
+# A program for --compute=android-cpu sets it up after the target; setup-compile links every global
+# key that starts with "lib-": the shared library for a dynamic build (the run puts it on the device),
+# the static one (by its path) for a static build.
+
+# Always the pinned release, built here
+skip_detect: True
+
+names:
+  - sodium.h
+
+default_version: '1.0.22'
+
+# One cache entry per version, ABI and NDK serves the static and the dynamic build
+cache_params_with: False
+
+cache_meta_const:
+  params:
+    target_abi: '{{local.target_abi}}'
+
+cache_params_use:
+  all:
+    android-ndk-clang:
+      version: "{{global.android-ndk-clang.version}}"
+      path: "{{global.android-ndk-clang.path}}"
+
+uses:
+  - task: target,94decb2ddd28441f
+
+  - task: setup,a2f9b61079ce4333
+    name: google.android-ndk.clang,0f9584af13b0402c
+
+# The versions that exist: the release tags of jedisct1/libsodium (git is set up first)
+cmd_get_versions: '{{global.git.qpath}} ls-remote --tags https://github.com/jedisct1/libsodium'
+
+cmd_get_versions_uses:
+  - task: setup,a2f9b61079ce4333
+    name: git,959d8c0fbc004bd0
+
+cmd_get_versions_regex: '\brefs/tags/(\d+\.\d+\.\d+)-RELEASE(?![\w.-])'
+
+match_version:
+  - regex: '^.*$'
+    group: 0
+
+# The source release (the same file and digests as tool/lib-sodium). A new version is an edit of
+# this block: its SHA-256 (GitHub publishes it for the files of a release: "digest" in
+# https://api.github.com/repos/jedisct1/libsodium/releases) and, when it works, default_version.
+release:
+
+  # Where the file is, in the order the addresses are tried
+  urls:
+    - 'https://github.com/jedisct1/libsodium/releases/download/{version}-RELEASE/{file}'
+    - 'https://download.libsodium.org/libsodium/releases/{file}'
+
+  files:
+    source: 'libsodium-{version}.tar.gz'
+
+  sha256:
+    '1.0.22':
+      source: 'adbdd8f16149e81ac6078a03aca6fc03b592b89ef7b5ed83841c086191be3349'
+    '1.0.21':
+      source: '9e4285c7a419e82dedb0be63a72eea357d6943bc3e28e6735bf600dd4883feaf'
+
+  # The source folder inside the release
+  source_dir: 'libsodium-{version}'
+
+# How the library is compiled: what upstream's own build (configure, make) does for Android with the
+# NDK, written as data - the sources it compiles, the flags and the definitions it decides. Read from
+# real configure runs of libsodium 1.0.22 with NDK r30 for both ABIs (the README says how to repeat
+# them for a new version).
+build:
+
+  # The Android API level the library is built for: the lowest one, as upstream's Android builds, so
+  # that one build serves every device of the ABI. An NDK that no longer has this level builds for
+  # its lowest one above it (the definitions below hold for every later level: configure only adds
+  # to them - getrandom and getentropy from 28, memset_explicit later - and libsodium does without)
+  api_level: 21
+
+  # The clang target of each ABI (the API level is added)
+  targets:
+    arm64-v8a: 'aarch64-linux-android'
+    armeabi-v7a: 'armv7a-linux-androideabi'
+
+  # The library's sources: every C file of the folder but the x86-64 assembly variants
+  src: 'src/libsodium'
+
+  sources:
+    - '**/*.c'
+
+  skip:
+    - 'crypto_scalarmult/curve25519/sandy2x/'
+    - 'crypto_stream/salsa20/xmm6/'
+
+  include_dirs:
+    - '.'
+    - 'include/sodium'
+
+  # The public headers (relative to src), and the version header: configure makes it from
+  # version.h.in; the release carries the same file ready for the builds without configure
+  headers:
+    - 'include/sodium.h'
+    - 'include/sodium/*.h'
+
+  version_header: 'builds/msvc/version.h'
+
+  cflags:
+    - '-std=gnu23'
+    - '-O3'
+    - '-pthread'
+    - '-fvisibility=hidden'
+    - '-fPIC'
+    - '-fno-strict-aliasing'
+    - '-fno-strict-overflow'
+    - '-fstack-protector'
+    - '-Wno-deprecated-declarations'
+    - '-Wno-unknown-pragmas'
+    - '-ftls-model=global-dynamic'
+
+  # The link of the shared library
+  ldflags_shared:
+    - '-shared'
+    - '-fstack-protector'
+    - '-pthread'
+    - '-Wl,-z,relro'
+    - '-Wl,-z,now'
+    - '-Wl,-z,noexecstack'
+    - '-Wl,-soname,libsodium.so'
+
+  # What configure defines for Android at the API level above, on every ABI
+  defines:
+    - 'CONFIGURED=1'
+    - '_GNU_SOURCE=1'
+    - 'ASM_HIDE_SYMBOL=.hidden'
+    - 'NATIVE_LITTLE_ENDIAN=1'
+    - 'TLS=thread_local'
+    - 'HAVE_ALLOCA=1'
+    - 'HAVE_ALLOCA_H=1'
+    - 'HAVE_ARC4RANDOM=1'
+    - 'HAVE_ARC4RANDOM_BUF=1'
+    - 'HAVE_ATOMIC_OPS=1'
+    - 'HAVE_C11_MEMORY_FENCES=1'
+    - 'HAVE_CET_H=1'
+    - 'HAVE_CLOCK_GETTIME=1'
+    - 'HAVE_C_VARARRAYS=1'
+    - 'HAVE_DLFCN_H=1'
+    - 'HAVE_GCC_MEMORY_FENCES=1'
+    - 'HAVE_GETAUXVAL=1'
+    - 'HAVE_GETPID=1'
+    - 'HAVE_INLINE_ASM=1'
+    - 'HAVE_INTTYPES_H=1'
+    - 'HAVE_MADVISE=1'
+    - 'HAVE_MLOCK=1'
+    - 'HAVE_MMAP=1'
+    - 'HAVE_MPROTECT=1'
+    - 'HAVE_NANOSLEEP=1'
+    - 'HAVE_POSIX_MEMALIGN=1'
+    - 'HAVE_PTHREAD=1'
+    - 'HAVE_PTHREAD_PRIO_INHERIT=1'
+    - 'HAVE_RAISE=1'
+    - 'HAVE_STDINT_H=1'
+    - 'HAVE_STDIO_H=1'
+    - 'HAVE_STDLIB_H=1'
+    - 'HAVE_STRINGS_H=1'
+    - 'HAVE_STRING_H=1'
+    - 'HAVE_SYSCONF=1'
+    - 'HAVE_SYS_AUXV_H=1'
+    - 'HAVE_SYS_MMAN_H=1'
+    - 'HAVE_SYS_PARAM_H=1'
+    - 'HAVE_SYS_RANDOM_H=1'
+    - 'HAVE_SYS_STAT_H=1'
+    - 'HAVE_SYS_TYPES_H=1'
+    - 'HAVE_THREADS_H=1'
+    - 'HAVE_UNISTD_H=1'
+    - 'HAVE_WCHAR_H=1'
+    - 'HAVE_WEAK_SYMBOLS=1'
+
+  # ... and what it adds for an ABI: the 128-bit integers and the ARM crypto extensions (used only
+  # where the CPU has them, asked at run time) of 64-bit ARM
+  defines_abi:
+    arm64-v8a:
+      - 'HAVE_TI_MODE=1'
+      - 'HAVE_ARMCRYPTO=1'
+    armeabi-v7a: []
+
+  # Upstream's test programs (--with.check, the default): compiled against the shared library, run on
+  # the attached device in a folder of their own, which is removed after
+  tests:
+    sources: 'test/default/*.c'
+    expected: 'test/default/*.exp'
+    include_dirs:
+      - 'src/libsodium/include'
+      - 'src/libsodium/include/sodium'
+      - 'test/quirks'
+    device_dir: '/data/local/tmp/cmeta-lib-sodium-check'
+
+install_help_text: |
+  Could not build libsodium for Android: see the error above.
+  It needs an Android device attached (adb), whose ABI is built for, and the NDK (cMeta sets it up).
+  A version that _desc.yaml does not pin needs the SHA-256 of its source release:
+    cx tool setup lib-sodium-android --version=<version> --with.sha256=<SHA-256 of libsodium-<version>.tar.gz>

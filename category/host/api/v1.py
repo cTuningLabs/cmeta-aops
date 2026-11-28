@@ -8062,6 +8062,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if con:
             if rr.get('returncode', 0) == 0:
                 print(f'INDEX ({h["alias"]}): {cmd} - ok ({out["seconds"]:.1f}s)')
+
+                # what the host's own engine said of one UID in two folders (shown already in a verbose run)
+                for line in str(rr.get('stdout') or '').splitlines():
+                    if line.startswith('cMeta warning:') and ('in two folders' in line or 'left out of the index' in line):
+                        print(f'  ({h["alias"]}) {line}')
             else:
                 print(f'WARNING: "{cmd}" on {h["alias"]} returned {rr.get("returncode")} - run it there by hand')
         return out
@@ -8587,8 +8592,22 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         if con:
             if r.get('return', 0) == 0:
                 print(f'INDEX (here): {what} - ok ({time.monotonic() - t0:.1f}s)')
+                self._say_duplicates(r.get('duplicates'), name)
             else:
                 print(f'WARNING: {name} was not reindexed here after the two-way sync: {r.get("error")} - run "cx repo reindex {name}"')
+
+    @staticmethod
+    def _say_duplicates(duplicates, name):
+        """
+        One artifact UID found in two folders by the reindex after a sync, as the engine lists it (`duplicates` of
+        "cx repo reindex", cMeta after 0.45.6; an older engine lists none): said where the sync brought it in - a
+        folder moved to another repository on one machine and brought back by the sync is the usual way. The engine
+        keeps the copy of the repository that comes first and leaves the other out of the index.
+        """
+        for d in duplicates or []:
+            print(f'cMeta warning: after this sync the {d.get("category")} artifact {d.get("uid")} is in two folders: '
+                  f'"{d.get("kept")}" is in the index, "{d.get("left_out")}" is left out of it - remove one of the two '
+                  f'(or give one a UID of its own), then "cx repo reindex {name}"')
 
     def _index_after_sync(self, ctx, h, name, entry, method, con, verbose, on_host=True):
         """

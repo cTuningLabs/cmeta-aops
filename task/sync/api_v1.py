@@ -948,7 +948,7 @@ class CTask(InitCTask):
         done = []
         for t in targets:
             began = time.monotonic()
-            ok, error = [], ''
+            ok, error, duplicates = [], '', []
             if t['remote']:
                 home = t['home'] if t['home'].startswith('/') else '$HOME/' + shlex.quote(t['home'])
                 script = ('H=' + home + '; test -f $H/repos.json || { echo NOHOME; exit 0; }; CX=$H/.venv/bin/cx; '
@@ -968,6 +968,9 @@ class CTask(InitCTask):
                         error = r.get('error', '')
                     else:
                         ok.append(repo)
+
+                        # one UID in two folders, as an engine after 0.45.6 lists it
+                        duplicates += r.get('duplicates') or []
             else:
                 env = dict(os.environ, CMETA_HOME=t['home'])
                 for k in ('CMETA_HOME2', 'CMETA_INTERNAL_REPO_PATH', 'CMETA_TOOL_EXTRA_PATHS'):
@@ -986,10 +989,14 @@ class CTask(InitCTask):
             failed = [r for r in t['repos'] if r not in ok]
             where = (host_label(t['host']) + ':' if t['remote'] else '') + t['home']
             done.append({'side': t['side'], 'home': t['home'], 'host': t['host'], 'ok': ok, 'failed': failed,
-                         'error': error, 'elapsed': round(time.monotonic() - began, 1)})
+                         'error': error, 'duplicates': duplicates, 'elapsed': round(time.monotonic() - began, 1)})
             if con:
                 if ok:
                     print('reindexed ' + ', '.join(ok) + ' in ' + where + ' (%.1f s)' % (time.monotonic() - began), flush=True)
+                for d in duplicates:
+                    print('cMeta warning: after this sync the %s artifact %s is in two folders: "%s" is in the index, "%s" '
+                          'is left out of it - remove one of the two (or give one a UID of its own), then reindex its '
+                          'repository' % (d.get('category'), d.get('uid'), d.get('kept'), d.get('left_out')), flush=True)
                 if failed or error:
                     print('cMeta warning: could not reindex ' + (', '.join(failed) or 'there') + ' in ' + where +
                           (' - ' + error if error else '') + ' - the files are there; reindex that home by hand', flush=True)

@@ -187,3 +187,54 @@ def test_add_asks_for_a_person_before_it_makes_anything(cm):
     r = secret(c, 'create', 'test-vault:not-made', yaml=True, print_key=True, quiet=True)
     assert r['return'] > 0 and '--generate' in r['error']
     assert not (vault / 'secret' / 'not-made').exists()
+
+
+def test_a_cancelled_add_leaves_nothing_behind(cm, monkeypatch):
+    c, vault = cm
+
+    # the two passwords differ: refused, and the artifact the call made is removed again
+    answers(monkeypatch, 'a keystore password of a test', 'one password', 'another password')
+    r = secret(c, 'add', 'test-vault:android-release', yaml=True, password_protected=True)
+    assert r['return'] > 0 and 'removed again' in r['error']
+    assert not (vault / 'secret' / 'android-release').exists()
+
+    # cancelled at the prompt (Escape / Ctrl-C end the hidden input): the same
+    def cancel(prompt=''):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr('getpass.getpass', cancel)
+    monkeypatch.setattr('cmeta.utils.sys.read_hidden', cancel, raising=False)
+    r = secret(c, 'add', 'test-vault:android-release', yaml=True, password_protected=True)
+    assert r['return'] > 0 and not (vault / 'secret' / 'android-release').exists()
+
+    # and the next add of the name works
+    answers(monkeypatch, 'a keystore password of a test', 'one password', 'one password')
+    r = secret(c, 'add', 'test-vault:android-release', yaml=True, password_protected=True)
+    assert r['return'] == 0, r
+    sealed = (vault / 'secret' / 'android-release' / 'files' / 'token.sealed').read_text(encoding='utf-8')
+    assert v1.unseal(sealed, 'one password') == 'a keystore password of a test'
+
+
+def test_a_value_from_a_variable_of_the_caller(cm, monkeypatch):
+    c, vault = cm
+
+    # a plain value: no terminal needed, the value never in the answer
+    monkeypatch.setenv('CMETA_TEST_VALUE_ENV', 'a value the caller has checked')
+    r = secret(c, 'store', 'kept-key', value_env='CMETA_TEST_VALUE_ENV', quiet=True)
+    assert r['return'] == 0, r
+    assert kept_value(vault, 'kept-key') == 'a value the caller has checked' and 'a value the caller' not in str(r)
+
+    # sealed: the password is asked (a person), the value is not
+    answers(monkeypatch, 'a password of a test', 'a password of a test')
+    r = secret(c, 'add', 'test-vault:from-env', yaml=True, password_protected=True, value_env='CMETA_TEST_VALUE_ENV')
+    assert r['return'] == 0, r
+    sealed = (vault / 'secret' / 'from-env' / 'files' / 'token.sealed').read_text(encoding='utf-8')
+    assert v1.unseal(sealed, 'a password of a test') == 'a value the caller has checked'
+
+    # an unset variable: refused, and nothing is made
+    monkeypatch.delenv('CMETA_TEST_VALUE_ENV')
+    r = secret(c, 'add', 'test-vault:from-env-2', yaml=True, value_env='CMETA_TEST_VALUE_ENV', quiet=True)
+    assert r['return'] > 0 and 'not set' in r['error'] and not (vault / 'secret' / 'from-env-2').exists()
+
+    r = secret(c, 'store', 'kept-key', value_env='X', generate=True, force=True, quiet=True)
+    assert r['return'] > 0 and 'two sources' in r['error']

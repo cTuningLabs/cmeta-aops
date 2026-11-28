@@ -1,0 +1,20 @@
+artifact: 604ec3c64fab44b1
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+desc: "libsodium (Argon2id, XChaCha20-Poly1305, scrypt ...) in the tool's own cache entry, the same way on Linux, macOS and Windows: upstream's pinned release, checked by SHA-256, with the static and the shared library (built from source on Linux and macOS, upstream's MSVC build on Windows)."
+generator:
+  agent: Claude Code
+  by: Grigori Fursin
+  method: agent
+tags:
+- tool
+- lib
+- libsodium
+- sodium
+- crypto
+creation_timestamp: '2026-11-27T22:08:13.699062+00:00'
+last_generator:
+  agent: Claude Code
+  by: Grigori Fursin
+  date: '2026-11-28'
+  method: agent

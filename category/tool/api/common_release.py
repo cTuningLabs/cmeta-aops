@@ -116,6 +116,61 @@ def _sha256(path):
     return h.hexdigest()
 
 
+def fetch_pinned(tool, ctx, params, release, kind, version):
+    """
+    One file of a release whose facts are data in a tool's _desc.yaml, into <entry>/download, checked
+    against its pinned SHA-256: {'return': 0, 'path', 'url', 'sha256'}.
+
+    `release` is that block (tool/lib-sodium and tool/lib-sodium-android):
+
+        urls:    ['https://.../{version}/{file}', <a mirror>]     tried in order
+        files:   {<kind>: 'name-{version}.tar.gz'}                the file of each kind of package
+        sha256:  {<version>: {<kind>: <SHA-256>}}                 the pins
+
+    A version the block does not pin needs --with.sha256=<SHA-256 of the file>. A file a previous
+    attempt left is kept when its digest is right and fetched again when it is not.
+    """
+
+    c = params.get('control', {})
+    con = c.get('con', False)
+    space = '  ' * ctx['tasks'].get('nested_call', 0) if c.get('verbose', False) else ''
+
+    filename = release['files'][kind].format(version = version)
+    pins = release.get('sha256') or {}
+    sha256 = str((params.get('with') or {}).get('sha256') or (pins.get(version) or {}).get(kind) or '').lower()
+
+    if not sha256:
+        return tool.cm.error(f'no SHA-256 is pinned for {filename}: give --with.sha256=<SHA-256 of that file> or add the '
+                             f'version to "release: sha256:" of the tool\'s _desc.yaml (pinned: {", ".join(sorted(pins))})')
+
+    path = os.path.join(os.getcwd(), 'download', filename)
+    errors = []
+
+    for url in [u.format(version = version, file = filename) for u in release['urls']]:
+        if os.path.isfile(path) and _sha256(path) != sha256:
+            os.remove(path)
+
+        if not os.path.isfile(path):
+            if con:
+                print(f'{space}INFO: downloading {url} ...')
+
+            r = _download(tool, ctx, params, url, 'download', filename)
+            if r['return'] > 0:
+                errors.append(f'{url}: {r.get("error")}')
+                continue
+
+        digest = _sha256(path)
+        if digest == sha256:
+            return {'return': 0, 'path': path, 'url': url, 'sha256': sha256}
+
+        errors.append(f'{url}: SHA-256 {digest}, expected {sha256}')
+
+    if os.path.isfile(path):
+        os.remove(path)
+
+    return tool.cm.error(f'could not get {filename}: ' + '; '.join(errors))
+
+
 def _expected_sha256(tool, ctx, params, checksum, v, asset, directory):
     """Upstream checksum; the legacy sha256 result key also carries a selected per-file SHA-512."""
     if not checksum:
