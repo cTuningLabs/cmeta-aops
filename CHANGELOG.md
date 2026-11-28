@@ -2,6 +2,17 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## DEV VERSION (0.86.0.1)
+- **Secrets: a value that cMeta makes, shown once when asked.** `cx secret store <alias> --generate` writes a new
+  random 256-bit value instead of asking for one (owner-only, or sealed with `--password_protected`; a plain generated
+  value needs no terminal), and `--print_key` shows a generated value once and returns it in the answer - for a key
+  that must be backed up elsewhere, as the master key of an encryption tool. `cx secret generate <alias> --print_key`
+  does the same for a token secret that names its file. A typed value is never shown: `--print_key` without
+  `--generate` is refused. `cx secret add` (and `create`) takes these words beside every word of the common `add`
+  and makes the artifact and its value in one step; with none of them it is the common `add`, and a request that
+  needs a person at a terminal is refused before the artifact is made. `category/secret/README.md` says when a
+  value should be shown. Tests: `test_secret_generate_print_key.py`.
+
 ## 0.86.0
 - **Which targets a machine has: `task/detect-targets` and `--compute=auto`.** Each target task declares a cheap probe
   beside its `support:` block (`probe:` in its `_desc.yaml`: files and device classes per OS - the NVIDIA driver's

@@ -76,6 +76,35 @@ that holds no trace of the value or the password; a wrong password and a changed
 A short password keeps the value from a casual reader, not from someone who copies the file and tries passwords for
 long: prefer a passphrase, and a token with the narrowest scope the service offers (a PyPI token for one project).
 
+## A value that cMeta makes, shown once when asked
+
+`--generate` makes the value instead of asking for it: 256 random bits as text (`secrets.token_urlsafe(32)` of
+Python, 43 characters). It is for a key that no service hands out - a client key, the master key of an encryption
+tool. `--print_key` shows a generated value once and returns it in the answer; without it the value is never
+shown, and a value you typed never is (`--print_key` without `--generate` is refused):
+
+```
+cx secret store my-client-key --generate                                  # a new random value, kept owner-only, never shown
+cx secret store my-master --password_protected --generate --print_key     # sealed under a password, and shown once
+cx secret generate my-client-key --print_key                              # the same for a token secret that names its file
+cx secret add my-vault:my-master --yaml --password_protected --generate --print_key
+                                                                          # the artifact and its value in one step
+```
+
+`cx secret add` (and `create`) takes the words of `store` - `--generate`, `--print_key`, `--password_protected`,
+`--store` for a value typed at the prompt kept owner-only, `--force` - beside every word of the common `add`
+(`--yaml`, `--desc.<key>=`, `--tags=` ...): with none of them it is the common `add`, and a request that needs a
+person at a terminal is refused before the artifact is made. A generated value without a password needs no
+terminal (a script, a quiet run); a password is always typed by a person.
+
+When to show a value: a key that can be made again (a client key: generate another, give the service its new
+SHA-256) never needs it. A key that encrypts what you keep is different - the sealed file and its password are then
+the only way back to your data, so a second copy belongs somewhere that survives this disk (a password manager,
+paper in a safe place). Use `--print_key` at a terminal of your own, write the value down there and clear the screen:
+what a terminal shows stays in its scroll-back, and in the transcript of an AI agent that ran the command.
+
+## The value given to one command
+
 `cx secret run <alias> --env.<NAME>={secret} -- <command>` runs a command with the value in its environment and
 nowhere else (not on its command line, not in a file, not in cMeta's own environment); `{secret}` stands for the
 value in the text of a variable. A password-protected secret asks for its password first, and a quiet run (`-q`) is
@@ -97,11 +126,15 @@ cx secret import [<alias>] [--force]           # copy the files in from files.fr
                                                # key, mark files.status imported (done 2026-10-15 for the four)
 cx secret generate <alias> [--comment=..]      # a new ed25519 key pair without a passphrase at ssh.key (--force: over it);
                                                # a token secret: a random value in its token file, owner-only, never
-                                               # printed - only its SHA-256 (what another machine keeps to check it)
+                                               # printed - only its SHA-256 (what another machine keeps to check it) -
+                                               # unless --print_key asks to show it once
 cx secret use <alias> --repo=<path>            # the identity into a clone's .git/config (name, email, core.sshCommand,
 cx secret use <alias> --git_global             # gpg.format, user.signingkey, commit.gpgsign, allowed signers), or the user's
 cx secret render <alias> --out=<file>          # a standalone git config include file (+ the ssh config stanza)
-cx secret store <alias> [--password_protected] # a token typed at a hidden prompt, kept owner-only or encrypted
+cx secret store <alias> [--password_protected] # a token typed at a hidden prompt, kept owner-only or encrypted;
+                 [--generate [--print_key]]    # --generate: a random value instead, --print_key: shown once
+cx secret add <repo>:<alias> --yaml [--password_protected] [--generate [--print_key]] [--store]
+                                               # the artifact and, with one of these words, its value in one step
 cx secret run <alias> --env.<NAME>={secret} [--window] -- <command>   # the value in the command's environment alone
 cx secret settings <alias>                     # the git settings of a git or ssh identity (paths and names) - what
                                                # cx repo pull --identity=<alias> gives a clone (since 2026-11-14)
