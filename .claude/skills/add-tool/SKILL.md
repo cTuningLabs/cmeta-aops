@@ -409,6 +409,39 @@ and `'c_libraries': ['lib-augeas']`: the tools set up first through `install_use
 the build gets in `CFLAGS` / `LDFLAGS` - Homebrew's `/opt/homebrew` is not among Apple clang's folders
 (`tool/certbot`).
 
+### 5.4 A library with its release facts as data: `fetch_pinned`
+
+A library whose upstream publishes a source release and, for some systems, ready libraries keeps what changes
+with a release in its `_desc.yaml`, so that a new version is a data edit:
+
+```yaml
+release:
+  urls:                                   # tried in order: the release, then a mirror
+    - 'https://github.com/<owner>/<project>/releases/download/{version}/{file}'
+    - 'https://<mirror>/{file}'
+  files:
+    source: '<project>-{version}.tar.gz'  # one name per kind of package
+    msvc: '<project>-{version}-msvc.zip'
+  sha256:
+    '1.2.3': {source: '<SHA-256>', msvc: '<SHA-256>'}
+```
+
+```python
+from tool_c393ba5c6fa14f66.api.common_release import fetch_pinned
+
+r = fetch_pinned(self, ctx, params, self.cdesc['release'], 'source', version)   # {'path', 'url', 'sha256'}
+```
+
+`fetch_pinned` downloads the file into `<entry>/download`, checks it against the pinned SHA-256, tries the
+mirrors, keeps a file that is right and fetches a wrong one again; a version without a pin needs
+`--with.sha256=<SHA-256>`. `tool/lib-sodium` is the example for a host library with both kinds in one cache
+entry (built with upstream's configure and make on Linux and macOS, upstream's MSVC package on Windows; what
+a program links is read from the installation in `finish_dynamic_result`, so a reused entry follows a change
+of the tool). `tool/lib-sodium-android` is the example for a device: the same release compiled directly with
+the NDK's clang on any host, what upstream's configure decides written as data (`build:`), and upstream's
+tests run on the attached device. A static link on Linux that needs the system's static C library sets up
+`tool/libc-static`.
+
 ---
 
 ## 6. Worked example — bazel (cross-platform, Tier 1)

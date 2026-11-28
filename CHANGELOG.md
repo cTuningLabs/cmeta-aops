@@ -2,6 +2,52 @@
 
 All notable changes to cMeta AOps are documented here, newest first.
 
+## 0.87.0
+- **Secrets: a value that cMeta makes, shown once when asked.** `cx secret store <alias> --generate` writes a new
+  random 256-bit value instead of asking for one (owner-only, or sealed with `--password_protected`; a plain generated
+  value needs no terminal), and `--print_key` shows a generated value once and returns it in the answer - for a key
+  that must be backed up elsewhere, as the master key of an encryption tool. `cx secret generate <alias> --print_key`
+  does the same for a token secret that names its file. A typed value is never shown: `--print_key` without
+  `--generate` is refused. `cx secret add` (and `create`) takes these words beside every word of the common `add`
+  and makes the artifact and its value in one step; with none of them it is the common `add`, and a request that
+  needs a person at a terminal is refused before the artifact is made. `category/secret/README.md` says when a
+  value should be shown. Tests: `test_secret_generate_print_key.py`.
+- **Secrets: an add that does not end well leaves nothing behind; a value from a variable of the caller.** `cx secret
+  add` with a value (`--password_protected`, `--store`, `--generate`) removes the artifact it made when the value step
+  does not end well - cancelled at the prompt, Ctrl-C, two passwords that differ - so the next add of the name works
+  (before, an empty artifact stayed and the next add was refused). `--value_env=<NAME>` (store and add) takes the value
+  from that environment variable of the calling process: a tool that has the value in hand, checked already, keeps it
+  without asking again, and only the name is on a command line. The prompts say what they ask for (the value to keep,
+  then a password of your own that protects it).
+- **libsodium for programs: `tool/lib-sodium` and `tool/lib-sodium-android`.** `cx tool setup lib-sodium` puts
+  upstream's pinned release into the tool's own cache entry the same way on Linux, macOS and Windows, checked against
+  the SHA-256 pinned in its `_desc.yaml`, with the static and the shared library side by side: on Linux and macOS the
+  source release built with its own configure and make and the C compiler of cMeta, then upstream's test suite
+  (`--with.check-` skips it); on Windows upstream's build for MSVC, which clang links too (the oldest toolset of the
+  package unless `--with.toolset` names one). Nothing goes into the system and no package manager is asked; a
+  libsodium that is already there is used only when its header is named (`--tool_path=<prefix>/include/sodium.h`).
+  One entry per version serves a dynamic build (the shared library, its folder on the run-time path) and a static one
+  (the static library by its path, with what it needs). `lib-sodium-android` builds the same release for the ABI of
+  the attached Android device with the NDK's clang - on a Windows, Linux or macOS host - from what upstream's
+  configure decides for Android written as data (`build:` in its `_desc.yaml`), for the lowest API level so that one
+  entry serves every device of the ABI, and runs upstream's test suite on the device; `--with.abi=<ABI>` builds
+  without a device. A new version of either is an edit of the `release:` block. `fetch_pinned`
+  (`category/tool/api/common_release.py`) is the shared part: one file of a release whose addresses, names and
+  SHA-256 are data in a tool's `_desc.yaml`, with mirrors. Tests: `test_tool_lib_sodium.py`.
+- **A static link on Linux gets the static C library: `tool/libc-static`.** Fedora, the RHEL family, Amazon Linux,
+  Azure Linux and openSUSE keep `libc.a` in a package that is not installed by default, and a static link stopped
+  there with `ld: cannot find -lc`. The tool asks the C compiler of the run where its `libc.a` is
+  (`-print-file-name`) and installs the distribution's package when there is none (`glibc-static`,
+  `glibc-devel-static`; on Rocky Linux, AlmaLinux and CentOS Stream from the CRB repository, enabled for that one
+  install). Nothing is added to the link. A program that links statically on Linux sets it up before its compile
+  (`tool/libc-static/README.md` has the step).
+- **A sync says when it brought one artifact in twice.** After a two-way `cx host sync` and after a named sync, the
+  reindex of this machine lists every artifact UID that is now in two folders (`duplicates` of `cx repo reindex`, a cMeta
+  after 0.45.6; an older engine lists none and nothing changes): the folder that is in the index, the one left out, and
+  what to do. A folder moved to another repository on one machine and brought back by a sync entered unseen before,
+  and stopped the next full reindex. `cx host sync` also passes on such lines of the host's own reindex. Test:
+  `test_sync_says_duplicate_uids.py`.
+
 ## 0.86.0
 - **Which targets a machine has: `task/detect-targets` and `--compute=auto`.** Each target task declares a cheap probe
   beside its `support:` block (`probe:` in its `_desc.yaml`: files and device classes per OS - the NVIDIA driver's

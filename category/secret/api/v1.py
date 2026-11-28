@@ -528,7 +528,7 @@ class Category(InitCategory):
         return {'return': 0, 'pairs': pairs}
 
     ############################################################
-    def generate_(self, ctx, arg1: str = None, comment: str = '', force: bool = False):
+    def generate_(self, ctx, arg1: str = None, comment: str = '', force: bool = False, print_key: bool = False):
         """
         A new ed25519 key pair for an ssh or git secret, at the files its _desc.yaml names (ssh.key and
         ssh.public_key, inside the artifact), without a passphrase - the key of automation, containers and hosts
@@ -551,7 +551,7 @@ class Category(InitCategory):
         con = ctx['control'].get('con', False)
 
         if str(d.get('kind') or '') == 'token':
-            return self._generate_token(ctx, s, force)
+            return self._generate_token(ctx, s, force, print_key)
 
         if str(_get(d, 'ssh.passphrase') or 'none') != 'none':
             return self.cm.error(f'{s["alias"]}: ssh.passphrase is {_get(d, "ssh.passphrase")} - a key with a passphrase is made by '
@@ -588,8 +588,9 @@ class Category(InitCategory):
             print (f'            {fp}')
         return {'return': 0, 'key': path, 'public_key': pub or path + '.pub', 'fingerprint': fp}
 
-    def _generate_token(self, ctx, s, force):
-        """A random value into a token secret's file, owner-only; its SHA-256 printed, the value never."""
+    def _generate_token(self, ctx, s, force, print_key=False):
+        """A random 256-bit value into a token secret's file, owner-only; its SHA-256 printed, the value never -
+        unless --print_key asks to show and return it once (a key that must be backed up elsewhere)."""
         d = s['desc']
         con = ctx['control'].get('con', False)
         if _get(d, 'token.env'):
@@ -615,9 +616,15 @@ class Category(InitCategory):
             return self.cm.error(f'{s["alias"]}: the value was made but its permissions could not be tightened ({left})')
         digest = hashlib.sha256(value.encode('utf-8')).hexdigest()
         if con:
-            print(f'cMeta info: {s["alias"]}: a new random value in {rel} (never printed)')
+            print(f'cMeta info: {s["alias"]}: a new random value in {rel}')
             print(f'            its SHA-256: {digest}')
-        return {'return': 0, 'token_file': path, 'sha256': digest}
+            if print_key:
+                print(f'            the value: {value}')
+                print( '            back it up now in a safe place - it is not shown again')
+        result = {'return': 0, 'token_file': path, 'sha256': digest}
+        if print_key:
+            result['value'] = value
+        return result
 
     ############################################################
     def settings_(self, ctx, arg1: str = None):
@@ -842,19 +849,106 @@ class Category(InitCategory):
         return self.cm.error(f'{s["alias"]}: the password does not open it ({TRIES} tries)')
 
     ############################################################
-    def store_(self, ctx, arg1: str = None, password_protected: bool = False, force: bool = False):
+    def create_(self, ctx, arg1: str = None, password_protected: bool = False, generate: bool = False,
+                print_key: bool = False, store: bool = False, force: bool = False, value_env: str = '', **create_params):
+        """
+        A new secret artifact (cx secret add / create, with every word the common command takes) and, when asked,
+        its value in the same step - what "cx secret add" and then "cx secret store" do:
+
+            cx secret add my-vault:my-note --yaml                             # the artifact alone, as before
+            cx secret add my-vault:my-pypi --yaml --password_protected        # + a value typed at the hidden prompt, sealed
+            cx secret add my-vault:my-master --yaml --password_protected --generate --print_key
+                # + a new random 256-bit value, sealed under a password you choose, shown once to back it up
+
+        --generate makes the value (the same as cx secret store --generate), --print_key shows and returns a generated
+        value once, --password_protected seals it (the password is asked twice), --store asks for a typed value kept
+        owner-only, --value_env=<NAME> takes it from that variable of the calling process (a tool that has it in hand).
+        What needs a person at a terminal is asked for before the artifact is made.
+        """
+        wants_value = store or password_protected or generate or print_key or bool(value_env)
+
+        if print_key and not generate:
+            return self.cm.error('--print_key shows a value that --generate makes: add --generate (a typed value is never shown)')
+
+        if wants_value and ((not generate and not value_env) or password_protected) and not self._interactive(ctx):
+            return self.cm.error('cx secret add with a typed value or a password asks at a hidden prompt: run it in a terminal, '
+                                 'without -q (nothing was made)')
+        if value_env and generate:
+            return self.cm.error('--value_env and --generate are two sources of the value: give one (nothing was made)')
+
+        # the artifact by the common create ("base": the common command, not this one), with its words as they came
+        base_input = dict(create_params)
+        base_input.update({'category': CATEGORY, 'command': 'create', 'base': True, 'arg1': arg1,
+                           'con': ctx['control'].get('con', False)})
+
+        r = self.cm.access(base_input)
+        if r['return'] > 0 or not wants_value:
+            return r
+
+        ref = (r.get('meta') or {}).get('artifact') or arg1
+
+        # the value: when it does not end well (cancelled, Ctrl-C, the passwords differ) the artifact this call made is
+        # removed again - an add is done completely or not at all (2026-11-28: a cancelled add left an empty artifact
+        # behind, and the next add of the name was refused)
+        try:
+            sr = self.store_(ctx, ref, password_protected=password_protected, force=force, generate=generate,
+                             print_key=print_key, value_env=value_env)
+        except BaseException:
+            self._undo_add(r)
+            raise
+
+        if sr['return'] > 0:
+            undone = self._undo_add(r)
+            sr['error'] = f'{sr.get("error")} - ' + ('the new secret artifact was removed again: nothing was made' if undone else
+                                                     f'the secret artifact was made without a value: "cx secret store {arg1}" '
+                                                     f'with the same words gives it one')
+            return sr
+
+        out = dict(r)
+        out.update({k: v for k, v in sr.items() if k != 'return'})
+
+        return out
+
+    def _undo_add(self, made):
+        """The artifact an add made (its answer), removed again because its value was not stored: True when it is gone."""
+        path = (made.get('artifact') or {}).get('path') or made.get('path') or ''
+        uid = (made.get('meta') or {}).get('artifact') or ''
+
+        r = self.cm.access({'category': CATEGORY, 'command': 'delete', 'arg1': uid, 'force': True, 'con': False, 'quiet': True})
+        if r.get('return', 1) == 0:
+            return True
+
+        # the folder itself, when the index does not know it yet - only a folder that holds no value
+        if path and os.path.isdir(path) and not os.path.exists(os.path.join(path, 'files')):
+            shutil.rmtree(path, ignore_errors=True)
+            return not os.path.exists(path)
+
+        return False
+
+    def store_(self, ctx, arg1: str = None, password_protected: bool = False, force: bool = False,
+               generate: bool = False, print_key: bool = False, value_env: str = ''):
         """
         Keep a value (a token) in a secret: typed at a hidden prompt, never printed. Kept owner-only in files/token,
         or with --password_protected encrypted with a password you choose (asked twice) in files/token.sealed - every
         use asks for that password again (cx secret run, the task upload-to-pypi). _desc.yaml gets kind: token,
         token.file, token.stored and password_protected. Needs a person at a terminal (never -q).
 
+        --generate makes a random 256-bit value (secrets.token_urlsafe(32)) instead of asking for one: alone it needs
+        no terminal; with --password_protected the password is still asked. --print_key shows a generated value once
+        and returns it in the answer (a key that must be backed up elsewhere, as the master key of an encryption
+        tool) - without it the value is never shown, and a typed value never is. --value_env=<NAME> takes the value
+        from that environment variable of the calling process: a tool that has it in hand (checked already) keeps it
+        without asking again; only the name is on the command line, never the value.
+
             cx secret add my-vault:my-pypi --yaml --desc.service=pypi   # the artifact first; service: what it is for
             cx secret store my-pypi --password_protected
             cx secret store my-pypi --password_protected --force        # a new value or a new password
+            cx secret store my-master --password_protected --generate --print_key   # a new random key, sealed, shown once
         """
         if not arg1:
-            return self.cm.error('cx secret store <alias> [--password_protected]')
+            return self.cm.error('cx secret store <alias> [--password_protected] [--generate [--print_key]]')
+        if print_key and not generate:
+            return self.cm.error('--print_key shows a value that --generate makes: add --generate (a typed value is never shown)')
         r = self._select(ctx, arg1)
         if r['return'] > 0:
             return r
@@ -867,8 +961,10 @@ class Category(InitCategory):
             return self.cm.error(f'{s["alias"]} is a secret of kind "{kind}": store keeps the value of a token')
         if _get(d, 'token.env'):
             return self.cm.error(f'{s["alias"]} takes its value from the variable {_get(d, "token.env")}: nothing to store')
-        if not self._interactive(ctx):
-            return self.cm.error('cx secret store asks for the value at a hidden prompt: run it in a terminal, without -q')
+        if value_env and generate:
+            return self.cm.error('--value_env and --generate are two sources of the value: give one')
+        if ((not generate and not value_env) or password_protected) and not self._interactive(ctx):
+            return self.cm.error('cx secret store asks for a value/password at a hidden prompt: run it in a terminal, without -q')
 
         rel = 'files/token.sealed' if password_protected else 'files/token'
         path = os.path.join(s['path'], *rel.split('/'))
@@ -877,18 +973,28 @@ class Category(InitCategory):
             return self.cm.error(f'{s["alias"]}: a value is kept already ({os.path.relpath(kept[0], s["path"])}): --force replaces it')
 
         try:
-            if ctx['control'].get('con', False):
-                print (f'cMeta info: {s["alias"]} keeps one token (an API key, the password of a service): paste it at the next '
-                       'prompt - a * for every character, Backspace takes one away, Escape all' + (', then choose the password that protects it' if password_protected else ''))
-            value = self._hidden(f'Token/secret of {s["alias"]}: ').strip()
-            if not value:
-                return self.cm.error('no token typed: nothing was written')
+            if generate:
+                # 256 random bits as URL-safe text (43 characters)
+                value = secrets.token_urlsafe(32)
+            elif value_env:
+                value = os.environ.get(str(value_env), '').strip()
+                if not value:
+                    return self.cm.error(f'the variable {value_env} (--value_env) is not set or empty: nothing was written')
+            else:
+                if ctx['control'].get('con', False):
+                    what = f' ({d["service"]})' if d.get('service') else ''
+                    print (f'cMeta info: {s["alias"]}{what} keeps one value - an API key, the password of a service or of a keystore: '
+                           'type or paste it at the next prompt (a * for every character, Backspace takes one away, Escape all)'
+                           + ('; then choose a password of your own that protects it - asked at each use' if password_protected else ''))
+                value = self._hidden(f'The value to keep in {s["alias"]}: ').strip()
+                if not value:
+                    return self.cm.error('no token typed: nothing was written')
             text = value + '\n'
             if password_protected:
-                password = self._hidden('A password for it (asked at each use): ')
+                password = self._hidden('A password of your own that protects it (asked at each use): ')
                 if not password:
                     return self.cm.error('an empty password: nothing was written')
-                if self._hidden('The same password again: ') != password:
+                if self._hidden('That password again: ') != password:
                     return self.cm.error('the two passwords differ: nothing was written')
                 text = seal(value, password)
                 # never keep what would not open again
@@ -938,7 +1044,16 @@ class Category(InitCategory):
             if password_protected and len(password) < 8:
                 print ('cMeta warning: a password of fewer than 8 characters keeps the value from a casual reader, '
                        'not from someone who copies the file and tries passwords')
-        return {'return': 0, 'secret': s['alias'], 'file': path, 'password_protected': bool(password_protected)}
+        result = {'return': 0, 'secret': s['alias'], 'file': path, 'password_protected': bool(password_protected)}
+        if generate:
+            result['generated'] = True
+        # a generated value shown and returned once, when asked: a key that must be backed up elsewhere
+        if print_key:
+            if ctx['control'].get('con', False):
+                print (f'cMeta info: {s["alias"]}: the value: {value}')
+                print ( '            back it up now in a safe place - it is not shown again')
+            result['value'] = value
+        return result
 
     ############################################################
     def call_(self, ctx, arg1: str = None, func = None):

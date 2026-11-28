@@ -1,0 +1,16 @@
+artifact: 64d4a023c2e74206
+authors: Grigori Fursin
+category: tool,c393ba5c6fa14f66
+creation_timestamp: '2026-11-28T10:28:23.689890+00:00'
+desc: "libsodium for an Android device in the tool's own cache entry: upstream's pinned source release, checked by SHA-256, compiled with the NDK's clang for the ABI of the attached device (the static and the shared library), upstream's tests run on the device; the same on a Windows, Linux or macOS host."
+generator:
+  agent: Claude Code
+  by: Grigori Fursin
+  method: agent
+tags:
+- tool
+- lib
+- libsodium
+- sodium
+- crypto
+- android

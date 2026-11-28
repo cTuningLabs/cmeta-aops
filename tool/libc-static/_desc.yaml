@@ -1,0 +1,57 @@
+authors: Grigori Fursin
+
+# The static C library of a Linux system (libc.a) - what a static link ("gcc -static", "clang -static")
+# takes. Debian and Ubuntu install it with the C library's development package; Fedora, the RHEL family,
+# Amazon Linux, Azure Linux and openSUSE keep it in a package of its own that is not installed by
+# default, and a static link stops there with "ld: cannot find -lc".
+#
+#   cx tool setup libc-static        # asks the C compiler where its libc.a is; missing: the distribution's package (sudo)
+#
+# A program that links statically on Linux sets it up before its compile. Nothing is added to the link:
+# the compiler finds its own C library. Linux only (macOS has no static C library, Windows links its
+# run time statically with a compiler flag).
+
+# Not "lib-...": task setup-compile links every global key that starts with "lib-", and the C library
+# is the compiler's own
+storage_key: libc-static
+
+# The package that holds libc.a, by distribution (ID of /etc/os-release)
+package_name: 'libc6-dev'
+
+package_name_os_id:
+  fedora: 'glibc-static'
+  rhel: 'glibc-static'
+  rocky: 'glibc-static'
+  almalinux: 'glibc-static'
+  centos: 'glibc-static'
+  amzn: 'glibc-static'
+  azurelinux: 'glibc-static'
+  opensuse-leap: 'glibc-devel-static'
+  opensuse-tumbleweed: 'glibc-devel-static'
+  alpine: 'musl-dev'
+  arch: 'glibc'
+
+# Where the package is in a repository that the distribution does not enable by default: the repository,
+# enabled for this one install (api_v1.py adds --enablerepo=<repository>)
+package_repo_os_id:
+  rocky: 'crb'
+  almalinux: 'crb'
+  centos: 'crb'
+
+install_cmd:
+  linux: '{{global.host.os_extra.install_cmd_sudo}}'
+
+requires_sudo:
+  linux: True
+
+# The version is the C library's, which the system decides: nothing to pin
+unpinned: 'the static C library is the one of the system''s own C library package'
+
+install_help_text: |
+  libc-static is the static C library (libc.a) of a Linux system, which a static link there needs; other
+  systems have no use for it. On Linux, when it could not be installed here: install the package of your
+  distribution and run the command again:
+    Fedora, RHEL family, Amazon Linux, Azure Linux: glibc-static
+      (Rocky, AlmaLinux, CentOS Stream: dnf install --enablerepo=crb glibc-static; RHEL: the CodeReady Builder repository)
+    openSUSE: glibc-devel-static      Debian, Ubuntu: libc6-dev      Alpine: musl-dev
+  or link dynamically (build without --compile.static).
